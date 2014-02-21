@@ -588,7 +588,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           MallocExtension::GetBytesAllocatedOnCurrentThread,
           tracked_objects::TIME_SOURCE_TYPE_TCMALLOC);
     }
-#endif
+#endif  // !OS_MACOSX && USE_TCMALLOC
 
     // On Android,
     // - setlocale() is not supported.
@@ -671,6 +671,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           command_line.GetSwitchValueASCII(switches::kTraceStartup));
       base::debug::TraceLog::GetInstance()->SetEnabled(
           category_filter,
+          base::debug::TraceLog::RECORDING_MODE,
           base::debug::TraceLog::RECORD_UNTIL_FULL);
     }
 #if !defined(OS_ANDROID)

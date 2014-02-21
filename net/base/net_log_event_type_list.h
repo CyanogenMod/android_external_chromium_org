@@ -989,6 +989,14 @@ EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST_BODY)
 //   }
 EVENT_TYPE(HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS)
 
+// This event is sent for a HTTP request over a SPDY stream.
+// The following parameters are attached:
+//   {
+//     "headers": <The list of header:value pairs>,
+//     "quic_priority": <Integer representing the priority of this request>,
+//   }
+EVENT_TYPE(HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS)
+
 // Measures the time to read HTTP response headers from the server.
 EVENT_TYPE(HTTP_TRANSACTION_READ_HEADERS)
 
@@ -2267,3 +2275,7 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_CLOSE_BEGIN)
 // This event is created when the Simple Cache finishes a CloseEntry call.  It
 // contains no parameters.
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_CLOSE_END)
+
+// This event is created (in a source of the same name) when the internal DNS
+// resolver creates a UDP socket to check for global IPv6 connectivity.
+EVENT_TYPE(IPV6_REACHABILITY_CHECK)

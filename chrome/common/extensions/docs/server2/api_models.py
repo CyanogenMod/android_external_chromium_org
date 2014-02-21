@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import logging
 import os
 import posixpath
 
@@ -46,7 +45,7 @@ class APIModels(object):
     # Callers sometimes specify a filename which includes .json or .idl - if
     # so, believe them. They may even include the 'api/' prefix.
     if os.path.splitext(api_name)[1] in ('.json', '.idl'):
-      if not api_name.startswith(API + '/'):
+      if not api_name.startswith(API):
         api_name = posixpath.join(API, api_name)
       return self._model_cache.GetFromFile(api_name)
 
@@ -63,7 +62,8 @@ class APIModels(object):
           'devtools', file_name.replace(basename,
                                         basename.replace('devtools_' , '')))
 
-    futures = [self._model_cache.GetFromFile('%s/%s.%s' % (API, file_name, ext))
+    futures = [self._model_cache.GetFromFile(
+                   posixpath.join(API, '%s.%s' % (file_name, ext)))
                for ext in ('json', 'idl')]
     def resolve():
       for future in futures:

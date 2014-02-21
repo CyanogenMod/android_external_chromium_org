@@ -41,9 +41,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#if defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
-#endif
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -84,6 +81,13 @@
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(TOOLKIT_GTK)
+#include <gdk/gdk.h>
+#endif
+#if defined(TOOLKIT_VIEWS) && !defined(OS_CHROMEOS)
+#include "ui/views/linux_ui/linux_ui.h"
+#endif
 
 using content::BrowserThread;
 
@@ -299,10 +303,10 @@ bool DisplayProfileInUseError(const base::FilePath& lock_path,
   base::string16 error = l10n_util::GetStringFUTF16(
       IDS_PROFILE_IN_USE_LINUX,
       base::IntToString16(pid),
-      ASCIIToUTF16(hostname));
+      base::ASCIIToUTF16(hostname));
   base::string16 relaunch_button_text = l10n_util::GetStringUTF16(
       IDS_PROFILE_IN_USE_LINUX_RELAUNCH);
-  LOG(ERROR) << base::SysWideToNativeMB(UTF16ToWide(error)).c_str();
+  LOG(ERROR) << base::SysWideToNativeMB(base::UTF16ToWide(error)).c_str();
   if (!g_disable_prompt)
     return ShowProcessSingletonDialog(error, relaunch_button_text);
   return false;
@@ -816,6 +820,13 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessWithTimeout(
     // window, GTK will not automatically call this for us.
     gdk_notify_startup_complete();
 #endif
+#if defined(TOOLKIT_VIEWS) && !defined(OS_CHROMEOS)
+    // Likely NULL in unit tests.
+    views::LinuxUI* linux_ui = views::LinuxUI::instance();
+    if (linux_ui)
+      linux_ui->NotifyWindowManagerStartupComplete();
+#endif
+
     // Assume the other process is handling the request.
     return PROCESS_NOTIFIED;
   }

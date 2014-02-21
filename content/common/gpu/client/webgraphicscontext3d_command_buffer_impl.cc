@@ -477,11 +477,6 @@ void WebGraphicsContext3DCommandBufferImpl::Destroy() {
   host_ = NULL;
 }
 
-// TODO(apatrick,piman): This should be renamed to something clearer.
-int WebGraphicsContext3DCommandBufferImpl::GetGPUProcessID() {
-  return host_.get() ? host_->gpu_host_id() : 0;
-}
-
 gpu::ContextSupport*
 WebGraphicsContext3DCommandBufferImpl::GetContextSupport() {
   return real_gl_.get();
@@ -537,23 +532,10 @@ void WebGraphicsContext3DCommandBufferImpl::setVisibilityCHROMIUM(
 DELEGATE_TO_GL_3(discardFramebufferEXT, DiscardFramebufferEXT, WGC3Denum,
                  WGC3Dsizei, const WGC3Denum*)
 
-void WebGraphicsContext3DCommandBufferImpl::discardBackbufferCHROMIUM() {
-  gl_->Flush();
-  command_buffer_->DiscardBackbuffer();
-}
-
-void WebGraphicsContext3DCommandBufferImpl::ensureBackbufferCHROMIUM() {
-  gl_->Flush();
-  command_buffer_->EnsureBackbuffer();
-}
-
 void WebGraphicsContext3DCommandBufferImpl::copyTextureToParentTextureCHROMIUM(
     WebGLId texture, WebGLId parentTexture) {
   NOTIMPLEMENTED();
 }
-
-DELEGATE_TO_GL(rateLimitOffscreenContextCHROMIUM,
-               RateLimitOffscreenContextCHROMIUM)
 
 blink::WebString WebGraphicsContext3DCommandBufferImpl::
     getRequestableExtensionsCHROMIUM() {
@@ -577,12 +559,6 @@ void WebGraphicsContext3DCommandBufferImpl::blitFramebufferCHROMIUM(
 DELEGATE_TO_GL_5(renderbufferStorageMultisampleCHROMIUM,
                  RenderbufferStorageMultisampleCHROMIUM, WGC3Denum, WGC3Dsizei,
                  WGC3Denum, WGC3Dsizei, WGC3Dsizei)
-
-DELEGATE_TO_GL_1R(createStreamTextureCHROMIUM, CreateStreamTextureCHROMIUM,
-                  WebGLId, WebGLId)
-
-DELEGATE_TO_GL_1(destroyStreamTextureCHROMIUM, DestroyStreamTextureCHROMIUM,
-                 WebGLId)
 
 DELEGATE_TO_GL_1(activeTexture, ActiveTexture, WGC3Denum)
 
@@ -1335,6 +1311,14 @@ DELEGATE_TO_GL_2R(mapImageCHROMIUM, MapImageCHROMIUM,
                   WGC3Duint, WGC3Denum, void*);
 
 DELEGATE_TO_GL_1(unmapImageCHROMIUM, UnmapImageCHROMIUM, WGC3Duint);
+
+DELEGATE_TO_GL_6(framebufferTexture2DMultisampleEXT,
+                 FramebufferTexture2DMultisampleEXT,
+                 WGC3Denum, WGC3Denum, WGC3Denum, WebGLId, WGC3Dint, WGC3Dsizei)
+
+DELEGATE_TO_GL_5(renderbufferStorageMultisampleEXT,
+                 RenderbufferStorageMultisampleEXT, WGC3Denum, WGC3Dsizei,
+                 WGC3Denum, WGC3Dsizei, WGC3Dsizei)
 
 GrGLInterface* WebGraphicsContext3DCommandBufferImpl::createGrGLInterface() {
   return skia_bindings::CreateCommandBufferSkiaGLBinding();

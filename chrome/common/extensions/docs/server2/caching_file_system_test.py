@@ -8,17 +8,18 @@ import sys
 import unittest
 
 from caching_file_system import CachingFileSystem
-from file_system import FileSystem, StatInfo
-from future import Future
+from extensions_paths import SERVER2
+from file_system import  StatInfo
 from local_file_system import LocalFileSystem
 from mock_file_system import MockFileSystem
 from object_store_creator import ObjectStoreCreator
 from test_file_system import TestFileSystem
 from test_object_store import TestObjectStore
 
+
 def _CreateLocalFs():
-  return LocalFileSystem(
-      os.path.join(sys.path[0], 'test_data', 'file_system'))
+  return LocalFileSystem.Create(SERVER2, 'test_data', 'file_system/')
+
 
 class CachingFileSystemTest(unittest.TestCase):
   def setUp(self):
@@ -138,7 +139,7 @@ class CachingFileSystemTest(unittest.TestCase):
         tuple(future.Get() for future in futures))
     self.assertTrue(*mock_fs.CheckAndReset(read_resolve_count=3))
 
-    test_fs.IncrementStat(path='bob/')
+    test_fs.IncrementStat(path='bob/bob0')
     file_system = create_empty_caching_fs()
     self.assertEqual('bob/bob1 contents',
                      file_system.ReadSingle('bob/bob1').Get())

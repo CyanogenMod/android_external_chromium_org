@@ -67,14 +67,14 @@ BrowserProcessResource::~BrowserProcessResource() {
 }
 
 // Resource methods:
-string16 BrowserProcessResource::GetTitle() const {
+base::string16 BrowserProcessResource::GetTitle() const {
   if (title_.empty()) {
     title_ = l10n_util::GetStringUTF16(IDS_TASK_MANAGER_WEB_BROWSER_CELL_TEXT);
   }
   return title_;
 }
 
-string16 BrowserProcessResource::GetProfileName() const {
+base::string16 BrowserProcessResource::GetProfileName() const {
   return base::string16();
 }
 
@@ -143,9 +143,9 @@ BrowserProcessResourceProvider::~BrowserProcessResourceProvider() {
 
 Resource* BrowserProcessResourceProvider::GetResource(
     int origin_pid,
-    int render_process_host_id,
-    int routing_id) {
-  if (origin_pid || render_process_host_id != -1) {
+    int child_id,
+    int route_id) {
+  if (origin_pid || child_id != -1) {
     return NULL;
   }
 

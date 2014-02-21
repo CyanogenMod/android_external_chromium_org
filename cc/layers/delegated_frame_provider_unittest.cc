@@ -20,8 +20,9 @@ class DelegatedFrameProviderTest
  protected:
   DelegatedFrameProviderTest() : resources_available_(false) {}
 
-  scoped_ptr<DelegatedFrameData> CreateFrameData(gfx::Rect root_output_rect,
-                                                 gfx::Rect root_damage_rect) {
+  scoped_ptr<DelegatedFrameData> CreateFrameData(
+          const gfx::Rect& root_output_rect,
+          const gfx::Rect& root_damage_rect) {
     scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
@@ -37,7 +38,7 @@ class DelegatedFrameProviderTest
                                ResourceProvider::ResourceId resource_id) {
     TransferableResource resource;
     resource.id = resource_id;
-    resource.target = GL_TEXTURE_2D;
+    resource.mailbox_holder.texture_target = GL_TEXTURE_2D;
     frame->resource_list.push_back(resource);
   }
 

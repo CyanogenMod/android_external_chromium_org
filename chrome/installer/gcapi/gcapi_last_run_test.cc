@@ -27,7 +27,7 @@ class GCAPILastRunTest : public ::testing::Test {
   void SetUp() {
     // Override keys - this is undone during destruction.
     std::wstring hkcu_override = base::StringPrintf(
-        L"hkcu_override\\%ls", ASCIIToWide(base::GenerateGUID()));
+        L"hkcu_override\\%ls", base::ASCIIToWide(base::GenerateGUID()));
     override_manager_.OverrideRegistry(HKEY_CURRENT_USER, hkcu_override);
 
     // Create the client state key in the right places.
@@ -55,7 +55,7 @@ class GCAPILastRunTest : public ::testing::Test {
     return SetLastRunTimeString(base::Int64ToString16(last_run_time));
   }
 
-  bool SetLastRunTimeString(const string16& last_run_time_string) {
+  bool SetLastRunTimeString(const base::string16& last_run_time_string) {
     const wchar_t* base_path = google_update::kRegPathClientState;
     std::wstring path(base_path);
     path += L"\\";

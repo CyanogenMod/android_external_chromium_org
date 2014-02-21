@@ -35,11 +35,13 @@ FileGrid.prototype.__proto__ = cr.ui.Grid.prototype;
  * @param {HTMLElement} self The grid to decorate.
  * @param {MetadataCache} metadataCache Metadata cache to find entries
  *                                      metadata.
+ * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
  */
-FileGrid.decorate = function(self, metadataCache) {
+FileGrid.decorate = function(self, metadataCache, volumeManager) {
   cr.ui.Grid.decorate(self);
   self.__proto__ = FileGrid.prototype;
   self.metadataCache_ = metadataCache;
+  self.volumeManager_ = volumeManager;
 
   self.scrollBar_ = new MainPanelScrollBar();
   self.scrollBar_.initialize(self.parentNode, self);
@@ -71,6 +73,7 @@ FileGrid.prototype.updateListItemsMetadata = function(type, props) {
     FileGrid.decorateThumbnailBox(box,
                                   entry,
                                   this.metadataCache_,
+                                  this.volumeManager_,
                                   ThumbnailLoader.FillMode.FIT,
                                   FileGrid.ThumbnailQuality.HIGH);
   }
@@ -100,8 +103,9 @@ FileGrid.prototype.relayoutImmediately_ = function() {
  * @param {HTMLElement} li List item.
  * @param {Entry} entry Entry to render a thumbnail for.
  * @param {MetadataCache} metadataCache To retrieve metadata.
+ * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
  */
-FileGrid.decorateThumbnail = function(li, entry, metadataCache) {
+FileGrid.decorateThumbnail = function(li, entry, metadataCache, volumeManager) {
   li.className = 'thumbnail-item';
   if (entry)
     filelist.decorateListItem(li, entry, metadataCache);
@@ -115,6 +119,7 @@ FileGrid.decorateThumbnail = function(li, entry, metadataCache) {
     FileGrid.decorateThumbnailBox(box,
                                   entry,
                                   metadataCache,
+                                  volumeManager,
                                   ThumbnailLoader.FillMode.AUTO,
                                   FileGrid.ThumbnailQuality.HIGH);
   }
@@ -132,13 +137,15 @@ FileGrid.decorateThumbnail = function(li, entry, metadataCache) {
  * @param {HTMLDivElement} box Box to decorate.
  * @param {Entry} entry Entry which thumbnail is generating for.
  * @param {MetadataCache} metadataCache To retrieve metadata.
+ * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
  * @param {ThumbnailLoader.FillMode} fillMode Fill mode.
  * @param {FileGrid.ThumbnailQuality} quality Thumbnail quality.
  * @param {function(HTMLElement)=} opt_imageLoadCallback Callback called when
  *     the image has been loaded before inserting it into the DOM.
  */
 FileGrid.decorateThumbnailBox = function(
-    box, entry, metadataCache, fillMode, quality, opt_imageLoadCallback) {
+    box, entry, metadataCache, volumeManager, fillMode, quality,
+    opt_imageLoadCallback) {
   box.className = 'img-container';
   if (entry.isDirectory) {
     box.setAttribute('generic-thumbnail', 'folder');
@@ -147,10 +154,10 @@ FileGrid.decorateThumbnailBox = function(
     return;
   }
 
-  var imageUrl = entry.toURL();
   var metadataTypes = 'thumbnail|filesystem';
 
-  if (FileType.isOnDrive(imageUrl)) {
+  var locationInfo = volumeManager.getLocationInfo(entry);
+  if (locationInfo && locationInfo.isDriveBased) {
     metadataTypes += '|drive';
   } else {
     // TODO(dgozman): If we ask for 'media' for a Drive file we fall into an
@@ -167,15 +174,16 @@ FileGrid.decorateThumbnailBox = function(
       useEmbedded = ThumbnailLoader.UseEmbedded.USE_EMBEDDED;
       break;
     case FileGrid.ThumbnailQuality.HIGH:
-      useEmbedded = FileType.isOnDrive(imageUrl) ?
+      // TODO(mtomasz): Use Entry instead of paths.
+      useEmbedded = (locationInfo && locationInfo.isDriveBased) ?
           ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
           ThumbnailLoader.UseEmbedded.NO_EMBEDDED;
       break;
   }
 
-  metadataCache.get(imageUrl, metadataTypes,
+  metadataCache.get(entry, metadataTypes,
       function(metadata) {
-        new ThumbnailLoader(imageUrl,
+        new ThumbnailLoader(entry,
                             ThumbnailLoader.LoaderType.IMAGE,
                             metadata,
                             undefined,  // opt_mediaType
@@ -217,7 +225,10 @@ Object.defineProperty(FileGrid.Item.prototype, 'label', {
  */
 FileGrid.Item.decorate = function(li, entry, grid) {
   li.__proto__ = FileGrid.Item.prototype;
-  FileGrid.decorateThumbnail(li, entry, grid.metadataCache_, true);
+  // TODO(mtomasz): Pass the metadata cache and the volume manager directly
+  // instead of accessing private members of grid.
+  FileGrid.decorateThumbnail(
+      li, entry, grid.metadataCache_, grid.volumeManager_, true);
 
   // Override the default role 'listitem' to 'option' to match the parent's
   // role (listbox).
@@ -243,7 +254,7 @@ FileGrid.prototype.setBottomMarginForPanel = function(margin) {
  */
 FileGrid.prototype.shouldStartDragSelection = function(event) {
   var pos = DragSelector.getScrolledPosition(this, event);
-  return this.getHitElements(pos.x, pos.y).length == 0;
+  return this.getHitElements(pos.x, pos.y).length === 0;
 };
 
 /**

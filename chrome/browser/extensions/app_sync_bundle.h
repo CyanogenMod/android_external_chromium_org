@@ -17,7 +17,6 @@
 #include "sync/api/syncable_service.h"
 
 class ExtensionSyncService;
-class ExtensionSet;
 
 namespace syncer {
 class SyncChangeProcessor;
@@ -27,6 +26,7 @@ class SyncErrorFactory;
 namespace extensions {
 
 class Extension;
+class ExtensionSet;
 
 // Bundle of app specific sync stuff.
 class AppSyncBundle : public SyncBundle {
@@ -75,7 +75,7 @@ class AppSyncBundle : public SyncBundle {
 
   // Appends sync data objects for every app in |extensions|.
   void GetAppSyncDataListHelper(
-      const ExtensionSet* extensions,
+      const ExtensionSet& extensions,
       std::vector<extensions::AppSyncData>* sync_data_list) const;
 
   // Overrides for SyncBundle.

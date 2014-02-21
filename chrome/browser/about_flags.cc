@@ -21,6 +21,7 @@
 #include "chrome/browser/flags_storage.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/autofill/core/common/autofill_switches.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/switches.h"
@@ -36,7 +37,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/keyboard/keyboard_switches.h"
 #include "ui/message_center/message_center_switches.h"
-#include "ui/surface/surface_switches.h"
 #include "ui/views/views_switches.h"
 
 #if defined(USE_ASH)
@@ -52,7 +52,7 @@
 #include "ui/app_list/app_list_switches.h"
 #endif
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace about_flags {
 
@@ -78,7 +78,7 @@ const unsigned kOsDesktop = kOsMac | kOsWin | kOsLinux | kOsCrOS;
 
 // Adds a |StringValue| to |list| for each platform where |bitmask| indicates
 // whether the experiment is available on that platform.
-void AddOsStrings(unsigned bitmask, ListValue* list) {
+void AddOsStrings(unsigned bitmask, base::ListValue* list) {
   struct {
     unsigned bit;
     const char* const name;
@@ -92,7 +92,7 @@ void AddOsStrings(unsigned bitmask, ListValue* list) {
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kBitsToOs); ++i)
     if (bitmask & kBitsToOs[i].bit)
-      list->Append(new StringValue(kBitsToOs[i].name));
+      list->Append(new base::StringValue(kBitsToOs[i].name));
 }
 
 // Convert switch constants to proper CommandLine::StringType strings.
@@ -154,14 +154,6 @@ const Experiment::Choice kEnableAcceleratedFixedRootBackgroundChoices[] = {
     switches::kDisableAcceleratedFixedRootBackground, ""},
 };
 
-const Experiment::Choice kGDIPresentChoices[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_FLAGS_PRESENT_WITH_GDI_FIRST_SHOW,
-    switches::kDoFirstShowPresentWithGDI, ""},
-  { IDS_FLAGS_PRESENT_WITH_GDI_ALL_SHOW,
-    switches::kDoAllShowPresentWithGDI, ""}
-};
-
 const Experiment::Choice kTouchEventsChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_AUTOMATIC, "", "" },
   { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
@@ -181,6 +173,18 @@ const Experiment::Choice kTouchOptimizedUIChoices[] = {
     switches::kTouchOptimizedUI,
     switches::kTouchOptimizedUIDisabled }
 };
+
+#if defined(USE_AURA)
+const Experiment::Choice kOverscrollHistoryNavigationChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kOverscrollHistoryNavigation,
+    "0" },
+  { IDS_OVERSCROLL_HISTORY_NAVIGATION_SIMPLE_UI,
+    switches::kOverscrollHistoryNavigation,
+    "2" }
+};
+#endif
 
 const Experiment::Choice kNaClDebugMaskChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
@@ -311,6 +315,16 @@ const Experiment::Choice kTabCaptureDownscaleQualityChoices[] = {
 };
 #endif
 
+#if defined(USE_AURA) || defined(OS_LINUX)
+const Experiment::Choice kOverlayScrollbarChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    switches::kEnableOverlayScrollbar, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableOverlayScrollbar, ""}
+};
+#endif
+
 const Experiment::Choice kMapImageChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
@@ -335,10 +349,58 @@ const Experiment::Choice kZeroSuggestExperimentsChoices[] = {
 
 const Experiment::Choice kNumRasterThreadsChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_FLAGS_NUM_RASTER_THREADS_ONE, cc::switches::kNumRasterThreads, "1" },
-  { IDS_FLAGS_NUM_RASTER_THREADS_TWO, cc::switches::kNumRasterThreads, "2" },
-  { IDS_FLAGS_NUM_RASTER_THREADS_THREE, cc::switches::kNumRasterThreads, "3" },
-  { IDS_FLAGS_NUM_RASTER_THREADS_FOUR, cc::switches::kNumRasterThreads, "4" }
+  { IDS_FLAGS_NUM_RASTER_THREADS_ONE, switches::kNumRasterThreads, "1" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_TWO, switches::kNumRasterThreads, "2" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_THREE, switches::kNumRasterThreads, "3" },
+  { IDS_FLAGS_NUM_RASTER_THREADS_FOUR, switches::kNumRasterThreads, "4" }
+};
+
+// We're using independent flags here (as opposed to a common flag with
+// different values) to be able to enable/disable the entire experience
+// associated with this feature server-side from the FieldTrial (the complete
+// experience includes other flag changes as well). It is not currently possible
+// to do that with "flag=value" flags.
+const Experiment::Choice kSearchButtonInOmniboxChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableSearchButtonInOmnibox, ""},
+  { IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_ENABLE_FOR_STR,
+    switches::kEnableSearchButtonInOmniboxForStr, ""},
+  { IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_ENABLE_FOR_STR_OR_IIP,
+    switches::kEnableSearchButtonInOmniboxForStrOrIip, ""},
+  { IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_ENABLED,
+    switches::kEnableSearchButtonInOmniboxAlways, ""}
+};
+
+// See comment above for kSearchButtonInOmniboxChoices. The same reasoning
+// applies here.
+const Experiment::Choice kOriginChipChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED, switches::kDisableOriginChip, ""},
+  { IDS_FLAGS_ORIGIN_CHIP_TRAILING_LOCATION_BAR,
+    switches::kEnableOriginChipTrailingLocationBar, ""},
+  { IDS_FLAGS_ORIGIN_CHIP_LEADING_LOCATION_BAR,
+    switches::kEnableOriginChipLeadingLocationBar, ""},
+  { IDS_FLAGS_ORIGIN_CHIP_LEADING_MENU_BUTTON,
+    switches::kEnableOriginChipLeadingMenuButton, ""}
+};
+const Experiment::Choice kOriginChipV2Choices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED, switches::kDisableOriginChipV2, ""},
+  { IDS_FLAGS_ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE,
+    switches::kEnableOriginChipV2HideOnMouseRelease, ""},
+  { IDS_FLAGS_ORIGIN_CHIP_V2_HIDE_ON_USER_INPUT,
+    switches::kEnableOriginChipV2HideOnUserInput, ""}
+};
+
+const Experiment::Choice kNotificationCenterTrayBehaviorChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_NEVER,
+    message_center::switches::kNotificationCenterTrayBehavior, "never" },
+  { IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_ALWAYS,
+    message_center::switches::kNotificationCenterTrayBehavior, "always" },
+  { IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_UNREAD,
+    message_center::switches::kNotificationCenterTrayBehavior, "unread" }
 };
 
 // RECORDING USER METRICS FOR FLAGS:
@@ -377,18 +439,6 @@ const Experiment::Choice kNumRasterThreadsChoices[] = {
 // When adding a new choice, add it to the end of the list.
 const Experiment kExperiments[] = {
   {
-    "expose-for-tabs",  // FLAGS:RECORD_UMA
-    IDS_FLAGS_TABPOSE_NAME,
-    IDS_FLAGS_TABPOSE_DESCRIPTION,
-    kOsMac,
-#if defined(OS_MACOSX)
-    // The switch exists only on OS X.
-    SINGLE_VALUE_TYPE(switches::kEnableExposeForTabs)
-#else
-    SINGLE_VALUE_TYPE("")
-#endif
-  },
-  {
     "conflicting-modules-check",  // FLAGS:RECORD_UMA
     IDS_FLAGS_CONFLICTS_CHECK_NAME,
     IDS_FLAGS_CONFLICTS_CHECK_DESCRIPTION,
@@ -406,7 +456,7 @@ const Experiment kExperiments[] = {
     "force-compositing-mode-2",
     IDS_FLAGS_FORCE_COMPOSITING_MODE_NAME,
     IDS_FLAGS_FORCE_COMPOSITING_MODE_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
+    kOsLinux,
     ENABLE_DISABLE_VALUE_TYPE(switches::kForceCompositingMode,
                               switches::kDisableForceCompositingMode)
   },
@@ -414,7 +464,7 @@ const Experiment kExperiments[] = {
     "threaded-compositing-mode",
     IDS_FLAGS_THREADED_COMPOSITING_MODE_NAME,
     IDS_FLAGS_THREADED_COMPOSITING_MODE_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
+    kOsLinux,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableThreadedCompositing,
                               switches::kDisableThreadedCompositing)
   },
@@ -434,22 +484,6 @@ const Experiment kExperiments[] = {
      ENABLE_DISABLE_VALUE_TYPE(
          switches::kEnableUniversalAcceleratedOverflowScroll,
          switches::kDisableUniversalAcceleratedOverflowScroll)
-  },
-  {
-    "enable-layer-squashing",
-    IDS_FLAGS_LAYER_SQUASHING_NAME,
-    IDS_FLAGS_LAYER_SQUASHING_DESCRIPTION,
-    kOsAll,
-    ENABLE_DISABLE_VALUE_TYPE(
-        switches::kEnableLayerSquashing,
-        switches::kDisableLayerSquashing)
-  },
-  {
-    "present-with-GDI",
-    IDS_FLAGS_PRESENT_WITH_GDI_NAME,
-    IDS_FLAGS_PRESENT_WITH_GDI_DESCRIPTION,
-    kOsWin,
-    MULTI_VALUE_TYPE(kGDIPresentChoices)
   },
 #if defined(OS_WIN)
   {
@@ -473,13 +507,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_ACCELERATED_2D_CANVAS_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableAccelerated2dCanvas)
-  },
-  {
-    "disable-threaded-animation",
-    IDS_FLAGS_DISABLE_THREADED_ANIMATION_NAME,
-    IDS_FLAGS_DISABLE_THREADED_ANIMATION_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(cc::switches::kDisableThreadedAnimation)
   },
   {
     "composited-layer-borders",
@@ -664,34 +691,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableAdview)
   },
   {
-    "enable-adview-src-attribute",
-    IDS_FLAGS_ENABLE_ADVIEW_SRC_ATTRIBUTE_NAME,
-    IDS_FLAGS_ENABLE_ADVIEW_SRC_ATTRIBUTE_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableAdviewSrcAttribute)
-  },
-  {
     "enable-app-window-controls",
     IDS_FLAGS_ENABLE_APP_WINDOW_CONTROLS_NAME,
     IDS_FLAGS_ENABLE_APP_WINDOW_CONTROLS_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableAppWindowControls)
-  },
-  {
-    "script-badges",
-    IDS_FLAGS_SCRIPT_BADGES_NAME,
-    IDS_FLAGS_SCRIPT_BADGES_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(extensions::switches::kScriptBadges)
-  },
-  {
-    "script-bubble",
-    IDS_FLAGS_SCRIPT_BUBBLE_NAME,
-    IDS_FLAGS_SCRIPT_BUBBLE_DESCRIPTION,
-    kOsDesktop,
-    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
-        extensions::switches::kScriptBubble, "1",
-        extensions::switches::kScriptBubble, "0")
   },
   {
     "apps-new-install-bubble",
@@ -723,6 +727,13 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewNTP,
                               switches::kDisableNewNTP)
   },
+  {
+    "contextual-search",
+    IDS_FLAGS_ENABLE_CONTEXTUAL_SEARCH,
+    IDS_FLAGS_ENABLE_CONTEXTUAL_SEARCH_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableContextualSearch)
+  },
 #endif
   {
     "show-autofill-type-predictions",
@@ -745,18 +756,20 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_SMOOTH_SCROLLING_DESCRIPTION,
     // Can't expose the switch unless the code is compiled in.
     // On by default for the Mac (different implementation in WebKit).
-    kOsWin | kOsLinux,
+    kOsLinux,
     SINGLE_VALUE_TYPE(switches::kEnableSmoothScrolling)
   },
+#if defined(USE_AURA) || defined(OS_LINUX)
   {
-    "enable-overlay-scrollbars",
+    "overlay-scrollbars",
     IDS_FLAGS_ENABLE_OVERLAY_SCROLLBARS_NAME,
     IDS_FLAGS_ENABLE_OVERLAY_SCROLLBARS_DESCRIPTION,
     // Uses the system preference on Mac (a different implementation).
     // On Android, this is always enabled.
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableOverlayScrollbars)
+    kOsLinux | kOsCrOS | kOsWin,
+    MULTI_VALUE_TYPE(kOverlayScrollbarChoices)
   },
+#endif
   {
     "enable-panels",
     IDS_FLAGS_ENABLE_PANELS_NAME,
@@ -890,13 +903,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE_AND_VALUE(switches::kJavaScriptFlags, "--harmony")
   },
   {
-    "enable-tab-browser-dragging",
-    IDS_FLAGS_ENABLE_TAB_BROWSER_DRAGGING_NAME,
-    IDS_FLAGS_ENABLE_TAB_BROWSER_DRAGGING_DESCRIPTION,
-    kOsWin,
-    SINGLE_VALUE_TYPE(switches::kTabBrowserDragging)
-  },
-  {
     "disable-restore-session-state",
     IDS_FLAGS_DISABLE_RESTORE_SESSION_STATE_NAME,
     IDS_FLAGS_DISABLE_RESTORE_SESSION_STATE_DESCRIPTION,
@@ -913,6 +919,13 @@ const Experiment kExperiments[] = {
     0,
 #endif
     SINGLE_VALUE_TYPE(switches::kDisableSoftwareRasterizer)
+  },
+  {
+    "enable-gpu-rasterization",
+    IDS_FLAGS_ENABLE_GPU_RASTERIZATION_NAME,
+    IDS_FLAGS_ENABLE_GPU_RASTERIZATION_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(cc::switches::kEnableGPURasterization)
   },
   {
     "enable-experimental-web-platform-features",
@@ -1024,11 +1037,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(ash::switches::kAshDisableDockedWindows)
   },
   {
-    "ash-enable-immersive-fullscreen-all-windows",
+    "ash-enable-immersive-fullscreen-all-windows2",
     IDS_FLAGS_IMMERSIVE_FULLSCREEN_FOR_ALL_WINDOWS_NAME,
     IDS_FLAGS_IMMERSIVE_FULLSCREEN_FOR_ALL_WINDOWS_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshEnableImmersiveFullscreenForAllWindows)
+    ENABLE_DISABLE_VALUE_TYPE(
+        ash::switches::kAshEnableImmersiveFullscreenForAllWindows,
+        ash::switches::kAshEnableImmersiveFullscreenForBrowserOnly)
   },
 #endif
   {
@@ -1128,6 +1143,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(cc::switches::kEnablePinchVirtualViewport),
   },
 #endif  // defined(USE_ASH)
+  {
+    "enable-viewport-meta",
+    IDS_FLAGS_ENABLE_VIEWPORT_META_NAME,
+    IDS_FLAGS_ENABLE_VIEWPORT_META_DESCRIPTION,
+    kOsLinux | kOsWin | kOsCrOS | kOsMac,
+    SINGLE_VALUE_TYPE(switches::kEnableViewportMeta),
+  },
 #if defined(OS_CHROMEOS)
   {
     "disable-boot-animation",
@@ -1144,11 +1166,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerShowCheckboxes)
   },
   {
-    "file-manager-enable-webstore-integration",
-    IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION,
-    IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION_DESCRIPTION,
+    "enable-new-audio-player",
+    IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_AUDIO_PLAYER_NAME,
+    IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_AUDIO_PLAYER_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableWebstoreIntegration)
+    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableNewAudioPlayer)
   },
   {
     "disable-quickoffice-component-app",
@@ -1158,11 +1180,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kDisableQuickofficeComponentApp),
   },
   {
-    "enable-saml-signin",
-    IDS_FLAGS_ENABLE_SAML_SIGNIN_NAME,
-    IDS_FLAGS_ENABLE_SAML_SIGNIN_DESCRIPTION,
+    "disable-saml-signin",
+    IDS_FLAGS_DISABLE_SAML_SIGNIN_NAME,
+    IDS_FLAGS_DISABLE_SAML_SIGNIN_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kEnableSamlSignin),
+    SINGLE_VALUE_TYPE(chromeos::switches::kDisableSamlSignin),
   },
   {
     "enable-multi-profiles",
@@ -1229,12 +1251,6 @@ const Experiment kExperiments[] = {
   },
 #endif
 #if defined(OS_CHROMEOS)
-  { "ash-enable-full-multi-profile-mode",
-      IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE,
-      IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE_DESCRIPTION,
-      kOsCrOS,
-      SINGLE_VALUE_TYPE(ash::switches::kAshEnableFullMultiProfileMode),
-  },
   { "ash-enable-multi-user-tray",
       IDS_FLAGS_ENABLE_MULTI_USER_TRAY,
       IDS_FLAGS_ENABLE_MULTI_USER_TRAY_DESCRIPTION,
@@ -1293,7 +1309,7 @@ const Experiment kExperiments[] = {
     "password-autofill-public-suffix-domain-matching",
     IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_NAME,
     IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_DESCRIPTION,
-    kOsAndroid,
+    kOsAll,
     ENABLE_DISABLE_VALUE_TYPE(
         switches::kEnablePasswordAutofillPublicSuffixDomainMatching,
         switches::kDisablePasswordAutofillPublicSuffixDomainMatching)
@@ -1336,9 +1352,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_OVERSCROLL_HISTORY_NAVIGATION_NAME,
     IDS_FLAGS_OVERSCROLL_HISTORY_NAVIGATION_DESCRIPTION,
     kOsAll,
-    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
-        switches::kOverscrollHistoryNavigation, "1",
-        switches::kOverscrollHistoryNavigation, "0")
+    MULTI_VALUE_TYPE(kOverscrollHistoryNavigationChoices)
   },
 #endif
   {
@@ -1400,6 +1414,15 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableSyncSyncedNotifications,
                               switches::kDisableSyncSyncedNotifications)
   },
+#if defined(ENABLE_APP_LIST)
+  {
+    "enable-sync-app-list",
+    IDS_FLAGS_ENABLE_SYNC_APP_LIST_NAME,
+    IDS_FLAGS_ENABLE_SYNC_APP_LIST_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEnableSyncAppList)
+  },
+#endif
   {
     "disable-full-history-sync",
     IDS_FLAGS_FULL_HISTORY_SYNC_NAME,
@@ -1413,13 +1436,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_SCREEN_CAPTURE_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableUserMediaScreenCapturing)
-  },
-  {
-    "enable-apps-devtool-app",
-    IDS_FLAGS_ENABLE_APPS_DEVTOOL_APP_NAME,
-    IDS_FLAGS_ENABLE_APPS_DEVTOOL_APP_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kAppsDevtool)
   },
   {
     "impl-side-painting",
@@ -1484,6 +1500,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableOfflineCacheAccess)
   },
   {
+    "enable-offline-auto-reload",
+    IDS_FLAGS_ENABLE_OFFLINE_AUTO_RELOAD_NAME,
+    IDS_FLAGS_ENABLE_OFFLINE_AUTO_RELOAD_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableOfflineAutoReload)
+  },
+  {
     "default-tile-width",
     IDS_FLAGS_DEFAULT_TILE_WIDTH_NAME,
     IDS_FLAGS_DEFAULT_TILE_WIDTH_DESCRIPTION,
@@ -1497,16 +1520,6 @@ const Experiment kExperiments[] = {
     kOsAll,
     MULTI_VALUE_TYPE(kDefaultTileHeightChoices)
   },
-  // TODO(sky): ifdef needed until focus sorted out in DesktopNativeWidgetAura.
-#if !defined(USE_AURA)
-  {
-    "track-active-visit-time",
-    IDS_FLAGS_TRACK_ACTIVE_VISIT_TIME_NAME,
-    IDS_FLAGS_TRACK_ACTIVE_VISIT_TIME_DESCRIPTION,
-    kOsWin,
-    SINGLE_VALUE_TYPE(switches::kTrackActiveVisitTime)
-  },
-#endif
 #if defined(OS_ANDROID)
   {
     "disable-gesture-requirement-for-media-playback",
@@ -1521,7 +1534,7 @@ const Experiment kExperiments[] = {
     "enable-google-now",
     IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_NAME,
     IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_DESCRIPTION,
-    kOsWin | kOsCrOS | kOsMac,
+    kOsDesktop,
     ENABLE_DISABLE_VALUE_TYPE(
         switches::kEnableGoogleNowIntegration,
         switches::kDisableGoogleNowIntegration)
@@ -1561,7 +1574,7 @@ const Experiment kExperiments[] = {
     "apps-use-native-frame",
     IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_NAME,
     IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
+    kOsMac | kOsWin,
     SINGLE_VALUE_TYPE(switches::kAppsUseNativeFrame)
   },
   {
@@ -1594,21 +1607,14 @@ const Experiment kExperiments[] = {
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kDisablePrivetLocalPrinting)
   },
-  {
-    "enable-print-preview-register-promos",
-    IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_NAME,
-    IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_DESCRIPTION,
-    kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnablePrintPreviewRegisterPromos)
-  },
 #endif  // ENABLE_MDNS
 #if defined(OS_MACOSX)
   {
-    "enable-app-shims",
-    IDS_FLAGS_ENABLE_APP_SHIMS_NAME,
-    IDS_FLAGS_ENABLE_APP_SHIMS_DESCRIPTION,
+    "disable-app-shims",
+    IDS_FLAGS_DISABLE_APP_SHIMS_NAME,
+    IDS_FLAGS_DISABLE_APP_SHIMS_DESCRIPTION,
     kOsMac,
-    SINGLE_VALUE_TYPE(switches::kEnableAppShims)
+    SINGLE_VALUE_TYPE(switches::kDisableAppShims)
   },
   {
     "enable-simplified-fullscreen",
@@ -1673,43 +1679,26 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(switches::kHighDPISupport, "1",
                                         switches::kHighDPISupport, "0")
   },
-#if defined(OS_CHROMEOS)
-  {
-    "enable-quickoffice-viewing",
-    IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_VIEWING_NAME,
-    IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_VIEWING_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableQuickofficeViewing),
-  },
-  {
-    "enable-sticky-keys",
-    IDS_FLAGS_ENABLE_STICKY_KEYS_NAME,
-    IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION,
-    kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableStickyKeys,
-                              switches::kDisableStickyKeys)
-  },
-#endif
   {
     "enable-web-midi",
     IDS_FLAGS_ENABLE_WEB_MIDI_NAME,
     IDS_FLAGS_ENABLE_WEB_MIDI_DESCRIPTION,
-    kOsMac | kOsWin,
+    kOsMac | kOsWin | kOsLinux | kOsCrOS | kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kEnableWebMIDI)
   },
   {
     "enable-new-profile-management",
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_NAME,
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
+    kOsAndroid | kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kNewProfileManagement)
   },
   {
-    "enable-inline-signin",
-    IDS_FLAGS_ENABLE_INLINE_SIGNIN_NAME,
-    IDS_FLAGS_ENABLE_INLINE_SIGNIN_DESCRIPTION,
+    "enable-web-based-signin",
+    IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_NAME,
+    IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_DESCRIPTION,
     kOsMac | kOsWin | kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kEnableInlineSignin)
+    SINGLE_VALUE_TYPE(switches::kEnableWebBasedSignin)
   },
   {
     "enable-google-profile-info",
@@ -1719,10 +1708,10 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kGoogleProfileInfo)
   },
   {
-    "disable-app-launcher",
+    "reset-app-list-install-state",
     IDS_FLAGS_RESET_APP_LIST_INSTALL_STATE_NAME,
     IDS_FLAGS_RESET_APP_LIST_INSTALL_STATE_DESCRIPTION,
-    kOsMac | kOsWin,
+    kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kResetAppListInstallState)
   },
 #if defined(ENABLE_APP_LIST)
@@ -1733,12 +1722,38 @@ const Experiment kExperiments[] = {
     kOsWin | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kShowAppListStartPage)
   },
+#if defined(OS_LINUX)
+  {
+    // This is compiled out on non-Linux platforms because otherwise it would be
+    // visible on Win/Mac/CrOS but not on Linux GTK, which would be confusing.
+    // TODO(mgiuca): Remove the #if when Aura is the default on Linux.
+    "enable-app-list",
+    IDS_FLAGS_ENABLE_APP_LIST_NAME,
+    IDS_FLAGS_ENABLE_APP_LIST_DESCRIPTION,
+    kOsLinux,
+    SINGLE_VALUE_TYPE(switches::kEnableAppList)
+  },
+#endif
   {
     "enable-app-list-folder",
     IDS_FLAGS_ENABLE_APP_LIST_FOLDER,
     IDS_FLAGS_ENABLE_APP_LIST_FOLDER_DESCRIPTION,
-    kOsWin | kOsCrOS,
+    kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(app_list::switches::kEnableFolderUI)
+  },
+  {
+    "disable-app-list-voice-search",
+    IDS_FLAGS_DISABLE_APP_LIST_VOICE_SEARCH,
+    IDS_FLAGS_DISABLE_APP_LIST_VOICE_SEARCH_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(app_list::switches::kDisableVoiceSearch)
+  },
+  {
+    "enable-app-list-app-info",
+    IDS_FLAGS_ENABLE_APP_INFO_IN_APP_LIST,
+    IDS_FLAGS_ENABLE_APP_INFO_IN_APP_LIST_DESCRIPTION,
+    kOsLinux | kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(app_list::switches::kEnableAppInfo)
   },
 #endif
 #if defined(OS_CHROMEOS)
@@ -1774,18 +1789,6 @@ const Experiment kExperiments[] = {
     kOsAll,
     MULTI_VALUE_TYPE(kMapImageChoices)
   },
-  {
-    "enable-add-to-homescreen",
-    IDS_FLAGS_ENABLE_ADD_TO_HOMESCREEN_NAME,
-    IDS_FLAGS_ENABLE_ADD_TO_HOMESCREEN_DESCRIPTION,
-    kOsAndroid,
-#if defined(OS_ANDROID)
-    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAddToHomescreen,
-                              switches::kDisableAddToHomescreen),
-#else
-    SINGLE_VALUE_TYPE("")
-#endif
-  },
 #if defined(OS_CHROMEOS)
   {
     "disable-first-run-ui",
@@ -1793,6 +1796,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_FIRST_RUN_UI_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kDisableFirstRunUI)
+  },
+  {
+    "enable-first-run-ui-transitions",
+    IDS_FLAGS_ENABLE_FIRST_RUN_UI_TRANSITIONS_NAME,
+    IDS_FLAGS_ENABLE_FIRST_RUN_UI_TRANSITIONS_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableFirstRunUITransitions)
   },
 #endif
   {
@@ -1822,7 +1832,7 @@ const Experiment kExperiments[] = {
     "enable-streamlined-hosted-apps",
     IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_NAME,
     IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_DESCRIPTION,
-    kOsWin | kOsCrOS,
+    kOsWin | kOsCrOS | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kEnableStreamlinedHostedApps)
   },
   {
@@ -1831,6 +1841,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_EPHEMERAL_APPS_DESCRIPTION,
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableEphemeralApps)
+  },
+  {
+    "enable-linkable-ephemeral-apps",
+    IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_NAME,
+    IDS_FLAGS_ENABLE_LINKABLE_EPHEMERAL_APPS_DESCRIPTION,
+    kOsWin | kOsLinux | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableLinkableEphemeralApps)
   },
   {
     "enable-service-worker",
@@ -1848,14 +1865,6 @@ const Experiment kExperiments[] = {
     // Java-only switch: CommandLine.DISABLE_CLICK_DELAY
     SINGLE_VALUE_TYPE("disable-click-delay")
   },
-  {
-    "low-end-device-mode",
-     IDS_FLAGS_LOW_END_DEVICE_MODE_NAME,
-     IDS_FLAGS_LOW_END_DEVICE_MODE_DESCRIPTION,
-     kOsAndroid,
-     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableLowEndDeviceMode,
-                               switches::kDisableLowEndDeviceMode)
-  },
 #endif
 #if defined(OS_CHROMEOS)
   {
@@ -1866,13 +1875,15 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kDisableIMEModeIndicator)
   },
 #endif
+#if defined(OS_MACOSX)
   {
     "enable-translate-new-ux",
     IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_NAME,
     IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_DESCRIPTION,
-    kOsDesktop,
+    kOsMac,
     SINGLE_VALUE_TYPE(switches::kEnableTranslateNewUX)
   },
+#endif
 #if defined(TOOLKIT_VIEWS)
   {
     "disable-views-rect-based-targeting",  // FLAGS:RECORD_UMA
@@ -1912,7 +1923,99 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_NUM_RASTER_THREADS_DESCRIPTION,
     kOsAll,
     MULTI_VALUE_TYPE(kNumRasterThreadsChoices)
-  }
+  },
+  {
+    "origin-chip",
+    IDS_FLAGS_ORIGIN_CHIP_NAME,
+    IDS_FLAGS_ORIGIN_CHIP_DESCRIPTION,
+    kOsCrOS | kOsWin,
+    MULTI_VALUE_TYPE(kOriginChipChoices)
+  },
+  {
+    "origin-chip-in-omnibox",
+    IDS_FLAGS_ORIGIN_CHIP_V2_NAME,
+    IDS_FLAGS_ORIGIN_CHIP_V2_DESCRIPTION,
+    kOsCrOS | kOsMac | kOsWin,
+    MULTI_VALUE_TYPE(kOriginChipV2Choices)
+  },
+  {
+    "search-button-in-omnibox",
+    IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_NAME,
+    IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_DESCRIPTION,
+    kOsCrOS | kOsMac | kOsWin,
+    MULTI_VALUE_TYPE(kSearchButtonInOmniboxChoices)
+  },
+  {
+    "disable-ignore-autocomplete-off",
+    IDS_FLAGS_DISABLE_IGNORE_AUTOCOMPLETE_OFF_NAME,
+    IDS_FLAGS_DISABLE_IGNORE_AUTOCOMPLETE_OFF_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(autofill::switches::kDisableIgnoreAutocompleteOff)
+  },
+#if defined(USE_AURA) || defined(OS_WIN)
+  {
+    "enable-save-password-bubble",
+    IDS_FLAGS_ENABLE_PASSWORD_BUBBLE_NAME,
+    IDS_FLAGS_ENABLE_PASSWORD_BUBBLE_DESCRIPTION,
+    kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableSavePasswordBubble)
+  },
+#endif
+  {
+    "fullscreen-within-tab",
+    IDS_FLAGS_FULLSCREEN_WITHIN_TAB_NAME,
+    IDS_FLAGS_FULLSCREEN_WITHIN_TAB_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEmbedFlashFullscreen)
+  },
+#if defined(USE_AURA) || defined(OS_WIN)
+  {
+    "enable-permissions-bubbles",
+    IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_NAME,
+    IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_DESCRIPTION,
+    kOsCrOS | kOsWin,
+    SINGLE_VALUE_TYPE(switches::kEnablePermissionsBubbles)
+  },
+#endif
+  {
+    "notification-center-tray-behavior",
+    IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_NAME,
+    IDS_FLAGS_NOTIFICATION_TRAY_BEHAVIOR_DESCRIPTION,
+    kOsMac,
+    MULTI_VALUE_TYPE(kNotificationCenterTrayBehaviorChoices)
+  },
+  {
+    "out-of-process-pdf",
+    IDS_FLAGS_OUT_OF_PROCESS_PDF_NAME,
+    IDS_FLAGS_OUT_OF_PROCESS_PDF_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kOutOfProcessPdf)
+  },
+#if defined(OS_ANDROID)
+  {
+    "enable-fast-text-autosizing",
+    IDS_FLAGS_ENABLE_FAST_TEXT_AUTOSIZING_NAME,
+    IDS_FLAGS_ENABLE_FAST_TEXT_AUTOSIZING_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableFastTextAutosizing)
+  },
+#endif
+  {
+    "prefetch-search-results",
+    IDS_FLAGS_PREFETCH_SEARCH_RESULTS_NAME,
+    IDS_FLAGS_PREFETCH_SEARCH_RESULTS_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kPrefetchSearchResults)
+  },
+#if defined(ENABLE_APP_LIST)
+  {
+    "enable-experimental-app-list",
+    IDS_FLAGS_ENABLE_EXPERIMENTAL_APP_LIST_NAME,
+    IDS_FLAGS_ENABLE_EXPERIMENTAL_APP_LIST_DESCRIPTION,
+    kOsWin | kOsLinux | kOsCrOS,
+    SINGLE_VALUE_TYPE(app_list::switches::kEnableExperimentalAppList)
+  },
+#endif
 };
 
 const Experiment* experiments = kExperiments;
@@ -2053,13 +2156,14 @@ void GetSanitizedEnabledFlagsForCurrentPlatform(
 }
 
 // Returns the Value representing the choice data in the specified experiment.
-Value* CreateChoiceData(const Experiment& experiment,
-                        const std::set<std::string>& enabled_experiments) {
+base::Value* CreateChoiceData(
+    const Experiment& experiment,
+    const std::set<std::string>& enabled_experiments) {
   DCHECK(experiment.type == Experiment::MULTI_VALUE ||
          experiment.type == Experiment::ENABLE_DISABLE_VALUE);
-  ListValue* result = new ListValue;
+  base::ListValue* result = new base::ListValue;
   for (int i = 0; i < experiment.num_choices; ++i) {
-    DictionaryValue* value = new DictionaryValue;
+    base::DictionaryValue* value = new base::DictionaryValue;
     const std::string name = experiment.NameForChoice(i);
     value->SetString("internal_name", name);
     value->SetString("description", experiment.DescriptionForChoice(i));
@@ -2133,7 +2237,7 @@ void GetFlagsExperimentsData(FlagsStorage* flags_storage,
     if (SkipConditionalExperiment(experiment))
       continue;
 
-    DictionaryValue* data = new DictionaryValue();
+    base::DictionaryValue* data = new base::DictionaryValue();
     data->SetString("internal_name", experiment.internal_name);
     data->SetString("name",
                     l10n_util::GetStringUTF16(experiment.visible_name_id));
@@ -2141,7 +2245,7 @@ void GetFlagsExperimentsData(FlagsStorage* flags_storage,
                     l10n_util::GetStringUTF16(
                         experiment.visible_description_id));
 
-    ListValue* supported_platforms = new ListValue();
+    base::ListValue* supported_platforms = new base::ListValue();
     AddOsStrings(experiment.supported_platforms, supported_platforms);
     data->Set("supported_platforms", supported_platforms);
 

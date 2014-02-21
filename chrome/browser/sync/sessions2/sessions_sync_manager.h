@@ -45,6 +45,7 @@ namespace browser_sync {
 class DataTypeErrorHandler;
 class SyncedTabDelegate;
 class SyncedWindowDelegate;
+class SyncedWindowDelegatesGetter;
 
 // An interface defining the ways in which local open tab events can interact
 // with session sync.  All local tab events flow to sync via this interface.
@@ -125,6 +126,7 @@ class SessionsSyncManager : public syncer::SyncableService,
                              const SessionID::id_type tab_id,
                              const SessionTab** tab) OVERRIDE;
   virtual void DeleteForeignSession(const std::string& tag) OVERRIDE;
+  virtual bool GetLocalSession(const SyncedSession* * local_session) OVERRIDE;
 
   // LocalSessionEventHandler implementation.
   virtual void OnLocalTabModified(SyncedTabDelegate* modified_tab) OVERRIDE;
@@ -200,6 +202,10 @@ class SessionsSyncManager : public syncer::SyncableService,
                            CheckPrerenderedWebContentsSwap);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
                            AssociateWindowsDontReloadTabs);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           SwappedOutOnRestore);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           ProcessRemoteDeleteOfLocalSession);
 
   void InitializeCurrentMachineTag();
 
@@ -210,8 +216,13 @@ class SessionsSyncManager : public syncer::SyncableService,
       const base::Time& modification_time);
 
   // Returns true if |sync_data| contained a header node for the current
-  // machine, false otherwise.
+  // machine, false otherwise. |restored_tabs| is a filtered tab-only
+  // subset of |sync_data| returned by this function for convenience.
+  // |new_changes| is a link to the SyncChange pipeline that exists in the
+  // caller's context. This function will append necessary changes for
+  // processing later.
   bool InitFromSyncModel(const syncer::SyncDataList& sync_data,
+                         syncer::SyncDataList* restored_tabs,
                          syncer::SyncChangeList* new_changes);
 
   // Helper to construct a deletion SyncChange for a *tab node*.
@@ -260,6 +271,11 @@ class SessionsSyncManager : public syncer::SyncableService,
   // RELOAD_TABS will additionally cause a resync of all tabs (same as calling
   // AssociateTabs with a vector of all tabs).
   //
+  // |restored_tabs| is a filtered tab-only subset of initial sync data, if
+  // available (during MergeDataAndStartSyncing). It can be used to obtain
+  // baseline SessionSpecifics for tabs we can't fully associate any other
+  // way because they don't yet have a WebContents.
+  //
   // Returns: false if the local session's sync nodes were deleted and
   // reassociation is necessary, true otherwise.
   //
@@ -271,6 +287,7 @@ class SessionsSyncManager : public syncer::SyncableService,
     DONT_RELOAD_TABS
   };
   void AssociateWindows(ReloadTabsOption option,
+                        const syncer::SyncDataList& restored_tabs,
                         syncer::SyncChangeList* change_output);
 
   // Loads and reassociates the local tabs referenced in |tabs|.
@@ -279,12 +296,6 @@ class SessionsSyncManager : public syncer::SyncableService,
   // changes for processing later.
   void AssociateTab(SyncedTabDelegate* const tab,
                     syncer::SyncChangeList* change_output);
-
-  // Control which local tabs we're interested in syncing.
-  // Ensures the profile matches sync's profile and that the tab has valid
-  // entries.
-  bool ShouldSyncTab(const SyncedTabDelegate& tab) const;
-  static bool ShouldSyncWindow(const SyncedWindowDelegate* window);
 
   // Set |session_tab| from |tab_delegate| and |mtime|.
   static void SetSessionTabFromDelegate(
@@ -302,11 +313,21 @@ class SessionsSyncManager : public syncer::SyncableService,
   // as they may have changed after a session was restored.  This method
   // compares new_tab_id against the previously persisted tab ID (from
   // our TabNodePool) and updates it if it differs.
+  // |restored_tabs| is a filtered tab-only subset of initial sync data, if
+  // available (during MergeDataAndStartSyncing). It can be used to obtain
+  // baseline SessionSpecifics for tabs we can't fully associate any other
+  // way because they don't yet have a WebContents.
   // TODO(tim): Bug 98892. We should be able to test this for this on android
   // even though we didn't have tests for old API-based sessions sync.
-  void UpdateTabIdIfNecessary(const SyncedTabDelegate& tab_delegate,
-                              SessionID::id_type new_tab_id,
-                              syncer::SyncChangeList* change_output);
+  void AssociateRestoredPlaceholderTab(
+      const SyncedTabDelegate& tab_delegate,
+      SessionID::id_type new_tab_id,
+      const syncer::SyncDataList& restored_tabs,
+      syncer::SyncChangeList* change_output);
+
+  // Stops and re-starts syncing to rebuild association mappings.
+  // See |local_tab_pool_out_of_sync_|.
+  void RebuildAssociations();
 
   // Mapping of current open (local) tabs to their sync identifiers.
   TabLinksMap local_tab_map_;
@@ -316,6 +337,15 @@ class SessionsSyncManager : public syncer::SyncableService,
 
   // Pool of used/available sync nodes associated with local tabs.
   TabNodePool2 local_tab_pool_;
+
+  // Tracks whether our local representation of which sync nodes map to what
+  // tabs (belonging to the current local session) is inconsistent.  This can
+  // happen if a foreign client deems our session as "stale" and decides to
+  // delete it. Rather than respond by bullishly re-creating our nodes
+  // immediately, which could lead to ping-pong sequences, we give the benefit
+  // of the doubt and hold off until another local navigation occurs, which
+  // proves that we are still relevant.
+  bool local_tab_pool_out_of_sync_;
 
   SyncPrefs sync_prefs_;
 
@@ -341,6 +371,7 @@ class SessionsSyncManager : public syncer::SyncableService,
   size_t stale_session_threshold_days_;
 
   scoped_ptr<LocalSessionEventRouter> local_event_router_;
+  scoped_ptr<SyncedWindowDelegatesGetter> synced_window_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionsSyncManager);
 };

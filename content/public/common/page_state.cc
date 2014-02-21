@@ -12,7 +12,7 @@ namespace content {
 namespace {
 
 base::NullableString16 ToNullableString16(const std::string& utf8) {
-  return base::NullableString16(UTF8ToUTF16(utf8), false);
+  return base::NullableString16(base::UTF8ToUTF16(utf8), false);
 }
 
 base::FilePath ToFilePath(const base::NullableString16& s) {
@@ -42,6 +42,16 @@ void RecursivelyRemovePasswordData(ExplodedFrameState* state) {
 
 void RecursivelyRemoveScrollOffset(ExplodedFrameState* state) {
   state->scroll_offset = gfx::Point();
+}
+
+void RecursivelyRemoveReferrer(ExplodedFrameState* state) {
+  state->referrer = base::NullableString16();
+  state->referrer_policy = blink::WebReferrerPolicyDefault;
+  for (std::vector<ExplodedFrameState>::iterator it = state->children.begin();
+       it != state->children.end();
+       ++it) {
+    RecursivelyRemoveReferrer(&*it);
+  }
 }
 
 }  // namespace
@@ -136,6 +146,19 @@ PageState PageState::RemoveScrollOffset() const {
     return PageState();  // Oops!
 
   RecursivelyRemoveScrollOffset(&state.top);
+
+  return ToPageState(state);
+}
+
+PageState PageState::RemoveReferrer() const {
+  if (data_.empty())
+    return *this;
+
+  ExplodedPageState state;
+  if (!DecodePageState(data_, &state))
+    return PageState();  // Oops!
+
+  RecursivelyRemoveReferrer(&state.top);
 
   return ToPageState(state);
 }

@@ -85,7 +85,7 @@ struct ExtensionBasicInfo {
 // Compare the fields of |extension| to those in |value|; this is a check to
 // make sure the extension data was recorded properly in the event.
 void ValidateExtensionInfo(const ExtensionBasicInfo extension,
-                           const DictionaryValue* value) {
+                           const base::DictionaryValue* value) {
   std::string extension_description;
   std::string extension_id;
   std::string extension_name;
@@ -474,7 +474,7 @@ IN_PROC_BROWSER_TEST_F(PerformanceMonitorBrowserTest, UpdateExtensionEvent) {
       chrome::NOTIFICATION_CRX_INSTALLER_DONE,
       content::Source<extensions::CrxInstaller>(crx_installer));
   ASSERT_TRUE(extension_service->
-      UpdateExtension(extension->id(), path_v2_, GURL(), &crx_installer));
+      UpdateExtension(extension->id(), path_v2_, true, GURL(), &crx_installer));
   windowed_observer.Wait();
 
   extension = extension_service->GetExtensionById(
@@ -622,13 +622,13 @@ IN_PROC_BROWSER_TEST_F(PerformanceMonitorBrowserTest,
 #endif  // !defined(OS_WIN)
 
 IN_PROC_BROWSER_TEST_F(PerformanceMonitorBrowserTest, RendererCrashEvent) {
-  content::WindowedNotificationObserver windowed_observer(
-      content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
-      content::NotificationService::AllSources());
+  content::RenderProcessHostWatcher observer(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
 
   ui_test_utils::NavigateToURL(browser(), GURL(content::kChromeUICrashURL));
 
-  windowed_observer.Wait();
+  observer.Wait();
 
   Database::EventVector events = GetEvents();
   ASSERT_EQ(1u, events.size());

@@ -11,9 +11,12 @@
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "media/base/audio_converter.h"
-#include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "third_party/webrtc/modules/interface/module_common_types.h"
+
+namespace blink {
+class WebMediaConstraints;
+}
 
 namespace media {
 class AudioBus;
@@ -27,15 +30,18 @@ class AudioFrame;
 
 namespace content {
 
+class RTCMediaConstraints;
+
 // This class owns an object of webrtc::AudioProcessing which contains signal
 // processing components like AGC, AEC and NS. It enables the components based
 // on the getUserMedia constraints, processes the data and outputs it in a unit
 // of 10 ms data chunk.
-class CONTENT_EXPORT MediaStreamAudioProcessor {
+class CONTENT_EXPORT MediaStreamAudioProcessor :
+    public base::RefCountedThreadSafe<MediaStreamAudioProcessor> {
  public:
-  explicit MediaStreamAudioProcessor(
-      const webrtc::MediaConstraintsInterface* constraints);
-  ~MediaStreamAudioProcessor();
+  MediaStreamAudioProcessor(const media::AudioParameters& source_params,
+                            const blink::WebMediaConstraints& constraints,
+                            int effects);
 
   // Pushes capture data in |audio_source| to the internal FIFO.
   // Called on the capture audio thread.
@@ -57,6 +63,9 @@ class CONTENT_EXPORT MediaStreamAudioProcessor {
   // the post-processed data if the method is returning a true. The lifetime
   // of the data represeted by |out| is guaranteed to outlive the method call.
   // That also says *|out| won't change until this method is called again.
+  // |new_volume| receives the new microphone volume from the AGC.
+  // The new microphoen volume range is [0, 255], and the value will be 0 if
+  // the microphone volume should not be adjusted.
   // Returns true if the internal FIFO has at least 10 ms data for processing,
   // otherwise false.
   // |capture_delay|, |volume| and |key_pressed| will be passed to
@@ -65,25 +74,34 @@ class CONTENT_EXPORT MediaStreamAudioProcessor {
   bool ProcessAndConsumeData(base::TimeDelta capture_delay,
                              int volume,
                              bool key_pressed,
+                             int* new_volume,
                              int16** out);
 
-  // Called when the format of the capture data has changed.
-  // This has to be called before PushCaptureData() and ProcessAndConsumeData().
-  // Called on the main render thread.
-  void SetCaptureFormat(const media::AudioParameters& source_params);
+
+  // The audio format of the input to the processor.
+  const media::AudioParameters& InputFormat() const;
 
   // The audio format of the output from the processor.
   const media::AudioParameters& OutputFormat() const;
 
   // Accessor to check if the audio processing is enabled or not.
-  bool has_audio_processing() const { return audio_processing_.get() != NULL; }
+  bool has_audio_processing() const { return audio_processing_ != NULL; }
+
+ protected:
+  friend class base::RefCountedThreadSafe<MediaStreamAudioProcessor>;
+  virtual ~MediaStreamAudioProcessor();
 
  private:
+  friend class MediaStreamAudioProcessorTest;
+
   class MediaStreamAudioConverter;
 
   // Helper to initialize the WebRtc AudioProcessing.
   void InitializeAudioProcessingModule(
-      const webrtc::MediaConstraintsInterface* constraints);
+      const blink::WebMediaConstraints& constraints, int effects);
+
+  // Helper to initialize the capture converter.
+  void InitializeCaptureConverter(const media::AudioParameters& source_params);
 
   // Helper to initialize the render converter.
   void InitializeRenderConverterIfNeeded(int sample_rate,
@@ -91,10 +109,12 @@ class CONTENT_EXPORT MediaStreamAudioProcessor {
                                          int frames_per_buffer);
 
   // Called by ProcessAndConsumeData().
-  void ProcessData(webrtc::AudioFrame* audio_frame,
-                   base::TimeDelta capture_delay,
-                   int volume,
-                   bool key_pressed);
+  // Returns the new microphone volume in the range of |0, 255].
+  // When the volume does not need to be updated, it returns 0.
+  int ProcessData(webrtc::AudioFrame* audio_frame,
+                  base::TimeDelta capture_delay,
+                  int volume,
+                  bool key_pressed);
 
   // Called when the processor is going away.
   void StopAudioProcessing();
@@ -131,6 +151,9 @@ class CONTENT_EXPORT MediaStreamAudioProcessor {
 
   // Used to DCHECK that PushRenderData() is called on the render audio thread.
   base::ThreadChecker render_thread_checker_;
+
+  // Flag to enable the stereo channels mirroring.
+  bool audio_mirroring_;
 };
 
 }  // namespace content

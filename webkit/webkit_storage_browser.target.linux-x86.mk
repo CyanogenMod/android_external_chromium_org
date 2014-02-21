@@ -49,6 +49,7 @@ LOCAL_SRC_FILES := \
 	webkit/browser/blob/blob_storage_host.cc \
 	webkit/browser/blob/blob_url_request_job.cc \
 	webkit/browser/blob/blob_url_request_job_factory.cc \
+	webkit/browser/blob/file_stream_reader.cc \
 	webkit/browser/blob/local_file_stream_reader.cc \
 	webkit/browser/blob/view_blob_internals_job.cc \
 	webkit/browser/database/database_quota_client.cc \
@@ -104,6 +105,7 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/upload_file_system_file_element_reader.cc \
 	webkit/browser/quota/quota_database.cc \
 	webkit/browser/quota/quota_manager.cc \
+	webkit/browser/quota/quota_manager_proxy.cc \
 	webkit/browser/quota/quota_task.cc \
 	webkit/browser/quota/quota_temporary_storage_evictor.cc \
 	webkit/browser/quota/special_storage_policy.cc \
@@ -138,15 +140,16 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-fno-stack-protector \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -157,7 +160,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -170,14 +172,16 @@ MY_DEFS_Debug := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -240,7 +244,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -273,17 +276,16 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-fno-stack-protector \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
 	-fomit-frame-pointer \
-	-fno-unwind-tables \
-	-fno-asynchronous-unwind-tables
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -294,7 +296,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -307,14 +308,16 @@ MY_DEFS_Release := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -378,7 +381,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

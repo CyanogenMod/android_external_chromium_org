@@ -7,14 +7,14 @@
 #include "base/callback_helpers.h"
 #include "net/base/net_errors.h"
 #include "net/quic/quic_session.h"
-#include "net/spdy/write_blocked_list.h"
+#include "net/quic/quic_write_blocked_list.h"
 
 namespace net {
 
 QuicReliableClientStream::QuicReliableClientStream(QuicStreamId id,
                                                    QuicSession* session,
                                                    const BoundNetLog& net_log)
-    : ReliableQuicStream(id, session),
+    : QuicDataStream(id, session),
       net_log_(net_log),
       delegate_(NULL) {
 }
@@ -57,9 +57,9 @@ void QuicReliableClientStream::OnCanWrite() {
 
 QuicPriority QuicReliableClientStream::EffectivePriority() const {
   if (delegate_ && delegate_->HasSendHeadersComplete()) {
-    return ReliableQuicStream::EffectivePriority();
+    return QuicDataStream::EffectivePriority();
   }
-  return kHighestPriority;
+  return QuicWriteBlockedList::kHighestPriority;
 }
 
 int QuicReliableClientStream::WriteStreamData(
@@ -69,7 +69,7 @@ int QuicReliableClientStream::WriteStreamData(
   // We should not have data buffered.
   DCHECK(!HasBufferedData());
   // Writes the data, or buffers it.
-  WriteData(data, fin);
+  WriteOrBufferData(data, fin);
   if (!HasBufferedData()) {
     return OK;
   }

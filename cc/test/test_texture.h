@@ -9,24 +9,24 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/resources/resource_format.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/size.h"
 
 namespace cc {
 
-size_t TextureSizeBytes(gfx::Size size, ResourceFormat format);
+size_t TextureSizeBytes(const gfx::Size& size, ResourceFormat format);
 
 struct TestTexture : public base::RefCounted<TestTexture> {
   TestTexture();
 
-  void Reallocate(gfx::Size size, ResourceFormat format);
-  bool IsValidParameter(blink::WGC3Denum pname);
+  void Reallocate(const gfx::Size& size, ResourceFormat format);
+  bool IsValidParameter(GLenum pname);
 
   gfx::Size size;
   ResourceFormat format;
   scoped_ptr<uint8_t[]> data;
 
-  typedef base::hash_map<blink::WGC3Denum, blink::WGC3Dint>
+  typedef base::hash_map<GLenum, GLint>
       TextureParametersMap;
   TextureParametersMap params;
 

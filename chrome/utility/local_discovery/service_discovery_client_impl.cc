@@ -18,6 +18,9 @@ namespace {
 // TODO(noamsml): Make this configurable through the LocalDomainResolver
 // interface.
 const int kLocalDomainSecondAddressTimeoutMs = 100;
+
+const int kInitialRequeryTimeSeconds = 1;
+const int kMaxRequeryTimeSeconds = 2; // Time for last requery
 }
 
 ServiceDiscoveryClientImpl::ServiceDiscoveryClientImpl(
@@ -55,7 +58,7 @@ ServiceWatcherImpl::ServiceWatcherImpl(
     const ServiceWatcher::UpdatedCallback& callback,
     net::MDnsClient* mdns_client)
     : service_type_(service_type), callback_(callback), started_(false),
-      mdns_client_(mdns_client) {
+      actively_refresh_services_(false), mdns_client_(mdns_client) {
 }
 
 void ServiceWatcherImpl::Start() {
@@ -74,8 +77,18 @@ void ServiceWatcherImpl::DiscoverNewServices(bool force_update) {
   DCHECK(started_);
   if (force_update)
     services_.clear();
-  CreateTransaction(true /*network*/, false /*cache*/, force_update,
-                    &transaction_network_);
+  SendQuery(kInitialRequeryTimeSeconds, force_update);
+}
+
+void ServiceWatcherImpl::SetActivelyRefreshServices(
+    bool actively_refresh_services) {
+  DCHECK(started_);
+  actively_refresh_services_ = actively_refresh_services;
+
+  for (ServiceListenersMap::iterator i = services_.begin();
+       i != services_.end(); i++) {
+    i->second->SetActiveRefresh(actively_refresh_services);
+  }
 }
 
 void ServiceWatcherImpl::ReadCachedServices() {
@@ -127,7 +140,7 @@ void ServiceWatcherImpl::OnRecordUpdate(
         NOTREACHED();
         break;
       case net::MDnsListener::RECORD_REMOVED:
-        RemoveService(rdata->ptrdomain());
+        RemovePTR(rdata->ptrdomain());
         break;
     }
   } else {
@@ -135,7 +148,20 @@ void ServiceWatcherImpl::OnRecordUpdate(
            record->type() == net::dns_protocol::kTypeTXT);
     DCHECK(services_.find(record->name()) != services_.end());
 
-    DeferUpdate(UPDATE_CHANGED, record->name());
+    if (record->type() == net::dns_protocol::kTypeSRV) {
+      if (update == net::MDnsListener::RECORD_REMOVED) {
+        RemoveSRV(record->name());
+      } else if (update == net::MDnsListener::RECORD_ADDED) {
+        AddSRV(record->name());
+      }
+    }
+
+    // If this is the first time we see an SRV record, do not send
+    // an UPDATE_CHANGED.
+    if (record->type() != net::dns_protocol::kTypeSRV ||
+        update != net::MDnsListener::RECORD_ADDED) {
+      DeferUpdate(UPDATE_CHANGED, record->name());
+    }
   }
 }
 
@@ -163,7 +189,9 @@ void ServiceWatcherImpl::OnTransactionResponse(
 ServiceWatcherImpl::ServiceListeners::ServiceListeners(
     const std::string& service_name,
     ServiceWatcherImpl* watcher,
-    net::MDnsClient* mdns_client) : update_pending_(false) {
+    net::MDnsClient* mdns_client)
+    : service_name_(service_name), mdns_client_(mdns_client),
+      update_pending_(false), has_ptr_(true), has_srv_(false) {
   srv_listener_ = mdns_client->CreateListener(
       net::dns_protocol::kTypeSRV, service_name, watcher);
   txt_listener_ = mdns_client->CreateListener(
@@ -179,18 +207,60 @@ bool ServiceWatcherImpl::ServiceListeners::Start() {
   return txt_listener_->Start();
 }
 
+void ServiceWatcherImpl::ServiceListeners::SetActiveRefresh(
+    bool active_refresh) {
+  srv_listener_->SetActiveRefresh(active_refresh);
+
+  if (active_refresh && !has_srv_) {
+    DCHECK(has_ptr_);
+    srv_transaction_ = mdns_client_->CreateTransaction(
+        net::dns_protocol::kTypeSRV, service_name_,
+        net::MDnsTransaction::SINGLE_RESULT |
+        net::MDnsTransaction::QUERY_CACHE | net::MDnsTransaction::QUERY_NETWORK,
+        base::Bind(&ServiceWatcherImpl::ServiceListeners::OnSRVRecord,
+                   base::Unretained(this)));
+    srv_transaction_->Start();
+  } else if (!active_refresh) {
+    srv_transaction_.reset();
+  }
+}
+
+void ServiceWatcherImpl::ServiceListeners::OnSRVRecord(
+    net::MDnsTransaction::Result result,
+    const net::RecordParsed* record) {
+  set_has_srv(record != NULL);
+}
+
+void ServiceWatcherImpl::ServiceListeners::set_has_srv(bool has_srv) {
+  has_srv_ = has_srv;
+
+  srv_transaction_.reset();
+}
+
 void ServiceWatcherImpl::AddService(const std::string& service) {
   DCHECK(started_);
   std::pair<ServiceListenersMap::iterator, bool> found = services_.insert(
       make_pair(service, linked_ptr<ServiceListeners>(NULL)));
+
   if (found.second) {  // Newly inserted.
     found.first->second = linked_ptr<ServiceListeners>(
         new ServiceListeners(service, this, mdns_client_));
     bool success = found.first->second->Start();
-
+    found.first->second->SetActiveRefresh(actively_refresh_services_);
     DeferUpdate(UPDATE_ADDED, service);
 
     DCHECK(success);
+  }
+
+  found.first->second->set_has_ptr(true);
+}
+
+void ServiceWatcherImpl::AddSRV(const std::string& service) {
+  DCHECK(started_);
+
+  ServiceListenersMap::iterator found = services_.find(service);
+  if (found != services_.end()) {
+    found->second->set_has_srv(true);
   }
 }
 
@@ -218,13 +288,33 @@ void ServiceWatcherImpl::DeliverDeferredUpdate(
   }
 }
 
-void ServiceWatcherImpl::RemoveService(const std::string& service) {
+void ServiceWatcherImpl::RemovePTR(const std::string& service) {
   DCHECK(started_);
+
   ServiceListenersMap::iterator found = services_.find(service);
   if (found != services_.end()) {
-    services_.erase(found);
-    if (!callback_.is_null())
-      callback_.Run(UPDATE_REMOVED, service);
+    found->second->set_has_ptr(false);
+
+    if (!found->second->has_ptr_or_srv()) {
+      services_.erase(found);
+      if (!callback_.is_null())
+        callback_.Run(UPDATE_REMOVED, service);
+    }
+  }
+}
+
+void ServiceWatcherImpl::RemoveSRV(const std::string& service) {
+  DCHECK(started_);
+
+  ServiceListenersMap::iterator found = services_.find(service);
+  if (found != services_.end()) {
+    found->second->set_has_srv(false);
+
+    if (!found->second->has_ptr_or_srv()) {
+      services_.erase(found);
+      if (!callback_.is_null())
+        callback_.Run(UPDATE_REMOVED, service);
+    }
   }
 }
 
@@ -232,6 +322,25 @@ void ServiceWatcherImpl::OnNsecRecord(const std::string& name,
                                       unsigned rrtype) {
   // Do nothing. It is an error for hosts to broadcast an NSEC record for PTR
   // on any name.
+}
+
+void ServiceWatcherImpl::ScheduleQuery(int timeout_seconds) {
+  if (timeout_seconds <= kMaxRequeryTimeSeconds) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ServiceWatcherImpl::SendQuery,
+                   AsWeakPtr(),
+                   timeout_seconds * 2 /*next_timeout_seconds*/,
+                   false /*force_update*/),
+        base::TimeDelta::FromSeconds(timeout_seconds));
+  }
+}
+
+void ServiceWatcherImpl::SendQuery(int next_timeout_seconds,
+                                   bool force_update) {
+  CreateTransaction(true /*network*/, false /*cache*/, force_update,
+                    &transaction_network_);
+  ScheduleQuery(next_timeout_seconds);
 }
 
 ServiceResolverImpl::ServiceResolverImpl(

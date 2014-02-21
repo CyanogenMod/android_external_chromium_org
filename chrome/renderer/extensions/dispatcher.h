@@ -12,13 +12,13 @@
 
 #include "base/memory/shared_memory.h"
 #include "base/timer/timer.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "chrome/renderer/extensions/v8_schema_registry.h"
 #include "chrome/renderer/resource_bundle_source_map.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "extensions/common/event_filter.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/extensions_client.h"
 #include "extensions/common/features/feature.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -143,6 +143,8 @@ class Dispatcher : public content::RenderProcessObserver {
       const base::ListValue& args,
       bool user_gesture);
 
+  void ClearPortData(int port_id);
+
  private:
   friend class ::ChromeRenderViewTest;
   FRIEND_TEST_ALL_PREFIXES(RendererPermissionsPolicyDelegateTest,
@@ -243,7 +245,7 @@ class Dispatcher : public content::RenderProcessObserver {
 
   // Returns the Feature::Context type of context for a JavaScript context.
   Feature::Context ClassifyJavaScriptContext(
-      const std::string& extension_id,
+      const Extension* extension,
       int extension_group,
       const GURL& url,
       const blink::WebSecurityOrigin& origin);
@@ -308,6 +310,9 @@ class Dispatcher : public content::RenderProcessObserver {
   // The platforms system font family and size;
   std::string system_font_family_;
   std::string system_font_size_;
+
+  // Mapping of port IDs to tabs. If there is no tab, the value would be -1.
+  std::map<int, int> port_to_tab_id_map_;
 
   DISALLOW_COPY_AND_ASSIGN(Dispatcher);
 };

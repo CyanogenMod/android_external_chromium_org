@@ -16,6 +16,8 @@ const char kBackgroundPage[] = "background.page";
 const char kBackgroundPageLegacy[] = "background_page";
 const char kBackgroundPersistent[] = "background.persistent";
 const char kBackgroundScripts[] = "background.scripts";
+const char kBluetooth[] = "bluetooth";
+const char kBookmarkUI[] = "chrome_settings_overrides.bookmarks_ui";
 const char kBrowserAction[] = "browser_action";
 const char kChromeURLOverrides[] = "chrome_url_overrides";
 const char kCommands[] = "commands";
@@ -46,9 +48,11 @@ const char kFileHandlerExtensions[] = "extensions";
 const char kFileHandlerTitle[] = "title";
 const char kFileHandlerTypes[] = "types";
 const char kGlobal[] = "global";
+const char kHideBookmarkButton[] = "hide_bookmark_button";
 const char kHomepageURL[] = "homepage_url";
 const char kIcons[] = "icons";
 const char kId[] = "id";
+const char kImeOptionsPage[] = "options_page";
 const char kImport[] = "import";
 const char kIncognito[] = "incognito";
 const char kIncludeGlobs[] = "include_globs";
@@ -106,6 +110,7 @@ const char kPlugins[] = "plugins";
 const char kPluginsPath[] = "path";
 const char kPluginsPublic[] = "public";
 const char kPublicKey[] = "key";
+const char kRemoveButton[] = "remove_button";
 const char kResources[] = "resources";
 const char kRequirements[] = "requirements";
 const char kRunAt[] = "run_at";
@@ -158,7 +163,8 @@ const char kWebAccessibleResources[] = "web_accessible_resources";
 const char kWebURLs[] = "app.urls";
 const char kWebview[] = "webview";
 const char kWebviewAccessibleResources[] = "accessible_resources";
-const char kWebviewPrivilegedPartitions[] = "privileged_partitions";
+const char kWebviewName[] = "name";
+const char kWebviewPartitions[] = "partitions";
 
 }  // namespace manifest_keys
 
@@ -217,6 +223,11 @@ const char kLaunchContainerWindow[] = "window";
 // cross-platform.
 namespace manifest_errors {
 
+const char kActiveTabPermissionNotGranted[] =
+    "The 'activeTab' permission is not in effect because this extension has "
+    "not been in invoked.";
+const char kAllURLOrActiveTabNeeded[] =
+    "Either the '<all_urls>' or 'activeTab' permission is required.";
 const char kAppsNotEnabled[] =
     "Apps are not enabled.";
 const char kBackgroundPermissionNeeded[] =
@@ -513,6 +524,8 @@ const char kInvalidPageActionsListSize[] =
     "Invalid value for 'page_actions'. There can be at most one page action.";
 const char kInvalidPageActionTypeValue[] =
     "Invalid value for 'page_actions[*].type', expected 'tab' or 'permanent'.";
+const char kInvalidPermissionWithDetail[] =
+    "Invalid value for 'permissions[*]': *.";
 const char kInvalidPermission[] =
     "Invalid value for 'permissions[*]'.";
 const char kInvalidPermissions[] =
@@ -610,10 +623,12 @@ const char kInvalidWebviewAccessibleResourcesList[] =
     "Invalid value for'webview.accessible_resources'.";
 const char kInvalidWebviewAccessibleResource[] =
     "Invalid value for 'webview.accessible_resources[*]'.";
-const char kInvalidWebviewPrivilegedPartitionList[] =
-    "Invalid value for 'webview.privileged_partitions'.";
-const char kInvalidWebviewPrivilegedPartition[] =
-    "Invalid value for 'webview.privileged_partitions[*]'.";
+const char kInvalidWebviewPartition[] =
+    "Invalid value for 'webview.partitions[*]'.";
+const char kInvalidWebviewPartitionName[] =
+    "Invalid value for 'webview.partitions[*].name'.";
+const char kInvalidWebviewPartitionsList[] =
+    "Invalid value for 'webview.partitions'.";
 const char kInvalidWebURL[] =
     "Invalid value for 'app.urls[*]': *";
 const char kInvalidWebURLs[] =
@@ -628,6 +643,8 @@ const char kInsecureContentSecurityPolicy[] =
     " \"'unsafe-eval'\", \"http://127.0.0.1\", \"http://localhost\", or any"
     " \"https://\" or \"chrome-extension://\" origin. For more information,"
     " see http://developer.chrome.com/extensions/contentSecurityPolicy.html";
+const char kKeyIsDeprecatedWithReplacement[] =
+    "Key \"*\" is deprecated.  Key \"*\" should be used instead.";
 const char kLaunchPathAndExtentAreExclusive[] =
     "The 'app.launch.local_path' and 'app.urls' keys cannot both be set.";
 const char kLaunchPathAndURLAreExclusive[] =
@@ -680,6 +697,8 @@ const char kScriptBadgeTitleIgnored[] =
     "default_title specified in script_badge manifest section will not be "
     "used.";
 const char kUnrecognizedManifestKey[] = "Unrecognized manifest key '*'.";
+const char kUnrecognizedManifestProperty[] =
+    "Unrecognized property '*' of manifest key '*'.";
 const char kWebRequestConflictsWithLazyBackground[] =
     "The 'webRequest' API cannot be used with event pages.";
 #if defined(OS_CHROMEOS)

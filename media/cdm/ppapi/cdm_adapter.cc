@@ -4,8 +4,11 @@
 
 #include "media/cdm/ppapi/cdm_adapter.h"
 
+#include "media/cdm/ppapi/cdm_file_io_impl.h"
 #include "media/cdm/ppapi/cdm_helpers.h"
+#include "media/cdm/ppapi/cdm_logging.h"
 #include "media/cdm/ppapi/supported_cdm_versions.h"
+#include "ppapi/c/ppb_console.h"
 
 #if defined(CHECK_DOCUMENT_URL)
 #include "ppapi/cpp/dev/url_util_dev.h"
@@ -13,6 +16,12 @@
 #endif  // defined(CHECK_DOCUMENT_URL)
 
 namespace {
+
+#if !defined(NDEBUG)
+  #define DLOG_TO_CONSOLE(message) LogToConsole(message);
+#else
+  #define DLOG_TO_CONSOLE(message) (void)(message);
+#endif
 
 bool IsMainThread() {
   return pp::Module::Get()->core()->IsMainThread();
@@ -48,7 +57,6 @@ void ConfigureInputBuffer(
   input_buffer->data = static_cast<uint8_t*>(encrypted_buffer.data());
   input_buffer->data_size = encrypted_block_info.data_size;
   PP_DCHECK(encrypted_buffer.size() >= input_buffer->data_size);
-  input_buffer->data_offset = encrypted_block_info.data_offset;
 
   PP_DCHECK(encrypted_block_info.key_id_size <=
             arraysize(encrypted_block_info.key_id));
@@ -230,12 +238,23 @@ bool CdmAdapter::CreateCdmInstance(const std::string& key_system) {
   PP_DCHECK(!cdm_);
   cdm_ = make_linked_ptr(CdmWrapper::Create(
       key_system.data(), key_system.size(), GetCdmHost, this));
-  return (cdm_ != NULL);
+  bool success = cdm_ != NULL;
+
+  const std::string message = "CDM instance for " + key_system +
+                              (success ? "" : " could not be") + " created.";
+  DLOG_TO_CONSOLE(message);
+  CDM_DLOG() << message;
+
+  return success;
 }
 
-// No KeyErrors should be reported in this function because they cannot be
-// bubbled up in the WD EME API. Those errors will be reported during session
-// creation (CreateSession).
+// No errors should be reported in this function because the spec says:
+// "Store this new error object internally with the MediaKeys instance being
+// created. This will be used to fire an error against any session created for
+// this instance." These errors will be reported during session creation
+// (CreateSession()) or session loading (LoadSession()).
+// TODO(xhwang): If necessary, we need to store the error here if we want to
+// support more specific error reporting (other than "Unknown").
 void CdmAdapter::Initialize(const std::string& key_system) {
   PP_DCHECK(!key_system.empty());
   PP_DCHECK(key_system_.empty() || (key_system_ == key_system && cdm_));
@@ -248,7 +267,7 @@ void CdmAdapter::Initialize(const std::string& key_system) {
 }
 
 void CdmAdapter::CreateSession(uint32_t session_id,
-                               const std::string& type,
+                               const std::string& content_type,
                                pp::VarArrayBuffer init_data) {
   // Initialize() doesn't report an error, so CreateSession() can be called
   // even if Initialize() failed.
@@ -273,10 +292,24 @@ void CdmAdapter::CreateSession(uint32_t session_id,
 #endif  // defined(CHECK_DOCUMENT_URL)
 
   cdm_->CreateSession(session_id,
-                      type.data(),
-                      type.size(),
+                      content_type.data(),
+                      content_type.size(),
                       static_cast<const uint8_t*>(init_data.Map()),
                       init_data.ByteLength());
+}
+
+void CdmAdapter::LoadSession(uint32_t session_id,
+                             const std::string& web_session_id) {
+  // Initialize() doesn't report an error, so LoadSession() can be called
+  // even if Initialize() failed.
+  if (!cdm_) {
+    OnSessionError(session_id, cdm::kUnknownError, 0);
+    return;
+  }
+
+  if (!cdm_->LoadSession(
+           session_id, web_session_id.data(), web_session_id.size()))
+    OnSessionError(session_id, cdm::kUnknownError, 0);
 }
 
 void CdmAdapter::UpdateSession(uint32_t session_id,
@@ -781,6 +814,7 @@ bool CdmAdapter::IsValidVideoFrame(const LinkedVideoFrame& video_frame) {
       !video_frame->FrameBuffer() ||
       (video_frame->Format() != cdm::kI420 &&
        video_frame->Format() != cdm::kYv12)) {
+    CDM_DLOG() << "Invalid video frame!";
     return false;
   }
 
@@ -799,6 +833,15 @@ bool CdmAdapter::IsValidVideoFrame(const LinkedVideoFrame& video_frame) {
 
   return true;
 }
+
+#if !defined(NDEBUG)
+void CdmAdapter::LogToConsole(const pp::Var& value) {
+  PP_DCHECK(IsMainThread());
+  const PPB_Console* console = reinterpret_cast<const PPB_Console*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_CONSOLE_INTERFACE));
+  console->Log(pp_instance(), PP_LOGLEVEL_LOG, value.pp_var());
+}
+#endif  // !defined(NDEBUG)
 
 void CdmAdapter::SendPlatformChallenge(
     const char* service_id, uint32_t service_id_length,
@@ -836,13 +879,15 @@ void CdmAdapter::SendPlatformChallenge(
 
 void CdmAdapter::EnableOutputProtection(uint32_t desired_protection_mask) {
 #if defined(OS_CHROMEOS)
-  output_protection_.EnableProtection(
+  int32_t result = output_protection_.EnableProtection(
       desired_protection_mask, callback_factory_.NewCallback(
           &CdmAdapter::EnableProtectionDone));
 
   // Errors are ignored since clients must call QueryOutputProtectionStatus() to
   // inspect the protection status on a regular basis.
-  // TODO(dalecurtis): It'd be nice to log a message or non-fatal error here...
+
+  if (result != PP_OK && result != PP_OK_COMPLETIONPENDING)
+    CDM_DLOG() << __FUNCTION__ << " failed!";
 #endif
 }
 
@@ -894,11 +939,17 @@ void CdmAdapter::OnDeferredInitializationDone(cdm::StreamType stream_type,
   }
 }
 
+// The CDM owns the returned object and must call FileIO::Close() to release it.
+cdm::FileIO* CdmAdapter::CreateFileIO(cdm::FileIOClient* client) {
+  return new CdmFileIOImpl(client, pp_instance());
+}
+
 #if defined(OS_CHROMEOS)
 void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
   challenge_in_progress_ = false;
 
   if (result != PP_OK) {
+    CDM_DLOG() << __FUNCTION__ << ": Platform challenge failed!";
     cdm::PlatformChallengeResponse response = {};
     cdm_->OnPlatformChallengeResponse(response);
     return;
@@ -928,7 +979,7 @@ void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
 void CdmAdapter::EnableProtectionDone(int32_t result) {
   // Does nothing since clients must call QueryOutputProtectionStatus() to
   // inspect the protection status on a regular basis.
-  // TODO(dalecurtis): It'd be nice to log a message or non-fatal error here...
+  CDM_DLOG() << __FUNCTION__ << " : " << result;
 }
 
 void CdmAdapter::QueryOutputProtectionStatusDone(int32_t result) {
@@ -949,7 +1000,7 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
     return NULL;
 
   COMPILE_ASSERT(cdm::ContentDecryptionModule::Host::kVersion ==
-                 cdm::ContentDecryptionModule_3::Host::kVersion,
+                 cdm::ContentDecryptionModule_4::Host::kVersion,
                  update_code_below);
 
   // Ensure IsSupportedCdmHostVersion matches implementation of this function.
@@ -969,9 +1020,10 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
   PP_DCHECK(IsSupportedCdmHostVersion(host_interface_version));
 
   CdmAdapter* cdm_adapter = static_cast<CdmAdapter*>(user_data);
+  CDM_DLOG() << "Create CDM Host with version " << host_interface_version;
   switch (host_interface_version) {
-    case cdm::Host_3::kVersion:
-      return static_cast<cdm::Host_3*>(cdm_adapter);
+    case cdm::Host_4::kVersion:
+      return static_cast<cdm::Host_4*>(cdm_adapter);
     case cdm::Host_2::kVersion:
       return static_cast<cdm::Host_2*>(cdm_adapter);
     case cdm::Host_1::kVersion:
@@ -998,6 +1050,9 @@ class CdmAdapterModule : public pp::Module {
   virtual pp::Instance* CreateInstance(PP_Instance instance) {
     return new CdmAdapter(instance, this);
   }
+
+ private:
+  CdmFileIOImpl::ResourceTracker cdm_file_io_impl_resource_tracker;
 };
 
 }  // namespace media

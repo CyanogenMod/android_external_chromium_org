@@ -14,11 +14,8 @@ namespace cc {
 
 class LayerPainter;
 
-// This class records the content_rect into an SkPicture. Subclasses, provide
-// different implementations of tile updating based on this recorded picture.
-// The BitmapSkPictureContentLayerUpdater and
-// FrameBufferSkPictureContentLayerUpdater are two examples of such
-// implementations.
+// This class records the content_rect into an SkPicture. Subclass provides
+// SkCanvas to DrawPicture() for tile updating based on this recorded picture.
 class SkPictureContentLayerUpdater : public ContentLayerUpdater {
  protected:
   SkPictureContentLayerUpdater(
@@ -27,8 +24,8 @@ class SkPictureContentLayerUpdater : public ContentLayerUpdater {
       int layer_id);
   virtual ~SkPictureContentLayerUpdater();
 
-  virtual void PrepareToUpdate(gfx::Rect content_rect,
-                               gfx::Size tile_size,
+  virtual void PrepareToUpdate(const gfx::Rect& content_rect,
+                               const gfx::Size& tile_size,
                                float contents_width_scale,
                                float contents_height_scale,
                                gfx::Rect* resulting_opaque_rect) OVERRIDE;

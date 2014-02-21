@@ -13,20 +13,21 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
+#include "chrome/browser/omaha_query_params/omaha_query_params.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/extensions/api/runtime.h"
-#include "chrome/common/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/process_manager.h"
@@ -73,24 +74,23 @@ const char kUninstallUrl[] = "uninstall_url";
 // with the equivalent Pepper API.
 const char kPackageDirectoryPath[] = "crxfs";
 
-static void DispatchOnStartupEventImpl(
-    Profile* profile,
-    const std::string& extension_id,
-    bool first_call,
-    ExtensionHost* host) {
+void DispatchOnStartupEventImpl(BrowserContext* browser_context,
+                                const std::string& extension_id,
+                                bool first_call,
+                                ExtensionHost* host) {
   // A NULL host from the LazyBackgroundTaskQueue means the page failed to
   // load. Give up.
   if (!host && !first_call)
     return;
 
-  // Don't send onStartup events to incognito profiles.
-  if (profile->IsOffTheRecord())
+  // Don't send onStartup events to incognito browser contexts.
+  if (browser_context->IsOffTheRecord())
     return;
 
-  if (g_browser_process->IsShuttingDown() ||
-      !g_browser_process->profile_manager()->IsValidProfile(profile))
+  if (ExtensionsBrowserClient::Get()->IsShuttingDown() ||
+      !ExtensionsBrowserClient::Get()->IsValidContext(browser_context))
     return;
-  ExtensionSystem* system = ExtensionSystem::Get(profile);
+  ExtensionSystem* system = ExtensionSystem::Get(browser_context);
   if (!system)
     return;
 
@@ -98,15 +98,16 @@ static void DispatchOnStartupEventImpl(
   // (it might not be ready, since this is startup). But only enqueue once.
   // If it fails to load the first time, don't bother trying again.
   const Extension* extension =
-      system->extension_service()->extensions()->GetByID(extension_id);
+      ExtensionRegistry::Get(browser_context)->enabled_extensions().GetByID(
+          extension_id);
   if (extension && BackgroundInfo::HasPersistentBackgroundPage(extension) &&
       first_call &&
       system->lazy_background_task_queue()->
-          ShouldEnqueueTask(profile, extension)) {
+          ShouldEnqueueTask(browser_context, extension)) {
     system->lazy_background_task_queue()->AddPendingTask(
-        profile, extension_id,
+        browser_context, extension_id,
         base::Bind(&DispatchOnStartupEventImpl,
-                   profile, extension_id, false));
+                   browser_context, extension_id, false));
     return;
   }
 
@@ -116,7 +117,7 @@ static void DispatchOnStartupEventImpl(
   system->event_router()->DispatchEventToExtension(extension_id, event.Pass());
 }
 
-void SetUninstallUrl(ExtensionPrefs* prefs,
+void SetUninstallURL(ExtensionPrefs* prefs,
                      const std::string& extension_id,
                      const std::string& url_string) {
   prefs->UpdateExtensionPref(extension_id,
@@ -125,7 +126,7 @@ void SetUninstallUrl(ExtensionPrefs* prefs,
 }
 
 #if defined(ENABLE_EXTENSIONS)
-std::string GetUninstallUrl(ExtensionPrefs* prefs,
+std::string GetUninstallURL(ExtensionPrefs* prefs,
                             const std::string& extension_id) {
   std::string url_string;
   prefs->ReadPrefAsString(extension_id, kUninstallUrl, &url_string);
@@ -158,7 +159,7 @@ RuntimeAPI::RuntimeAPI(content::BrowserContext* context)
 
 RuntimeAPI::~RuntimeAPI() {
   if (registered_for_updates_) {
-    ExtensionSystem::GetForBrowserContext(browser_context_)->
+    ExtensionSystem::Get(browser_context_)->
         extension_service()->RemoveUpdateObserver(this);
   }
 }
@@ -201,7 +202,7 @@ void RuntimeAPI::OnExtensionsReady() {
 
   registered_for_updates_ = true;
 
-  ExtensionSystem::GetForBrowserContext(browser_context_)->extension_service()->
+  ExtensionSystem::Get(browser_context_)->extension_service()->
       AddUpdateObserver(this);
 }
 
@@ -220,8 +221,13 @@ void RuntimeAPI::OnExtensionLoaded(const Extension* extension) {
 }
 
 void RuntimeAPI::OnExtensionInstalled(const Extension* extension) {
+  // Ephemeral apps are not considered to be installed and do not receive
+  // the onInstalled() event.
+  if (extension->is_ephemeral())
+    return;
+
   // Get the previous version to check if this is an upgrade.
-  ExtensionService* service = ExtensionSystem::GetForBrowserContext(
+  ExtensionService* service = ExtensionSystem::Get(
       browser_context_)->extension_service();
   const Extension* old = service->GetExtensionById(extension->id(), true);
   Version old_version;
@@ -240,6 +246,11 @@ void RuntimeAPI::OnExtensionInstalled(const Extension* extension) {
 }
 
 void RuntimeAPI::OnExtensionUninstalled(const Extension* extension) {
+  // Ephemeral apps are not considered to be installed, so the uninstall URL
+  // is not invoked when they are removed.
+  if (extension->is_ephemeral())
+    return;
+
   Profile* profile = Profile::FromBrowserContext(browser_context_);
   RuntimeEventRouter::OnExtensionUninstalled(profile, extension->id());
 }
@@ -260,9 +271,7 @@ void RuntimeAPI::OnChromeUpdateAvailable() {
 // static
 void RuntimeEventRouter::DispatchOnStartupEvent(
     content::BrowserContext* context, const std::string& extension_id) {
-  // TODO(jamescook): Convert to BrowserContext all the way down.
-  Profile* profile = static_cast<Profile*>(context);
-  DispatchOnStartupEventImpl(profile, extension_id, true, NULL);
+  DispatchOnStartupEventImpl(context, extension_id, true, NULL);
 }
 
 // static
@@ -273,7 +282,7 @@ void RuntimeEventRouter::DispatchOnInstalledEvent(
     bool chrome_updated) {
   if (!ExtensionsBrowserClient::Get()->IsValidContext(context))
     return;
-  ExtensionSystem* system = ExtensionSystem::GetForBrowserContext(context);
+  ExtensionSystem* system = ExtensionSystem::Get(context);
   if (!system)
     return;
 
@@ -348,7 +357,7 @@ void RuntimeEventRouter::OnExtensionUninstalled(
     Profile* profile,
     const std::string& extension_id) {
 #if defined(ENABLE_EXTENSIONS)
-  GURL uninstall_url(GetUninstallUrl(ExtensionPrefs::Get(profile),
+  GURL uninstall_url(GetUninstallURL(ExtensionPrefs::Get(profile),
                                      extension_id));
 
   if (uninstall_url.is_empty())
@@ -397,7 +406,7 @@ void RuntimeGetBackgroundPageFunction::OnPageLoaded(ExtensionHost* host) {
   }
 }
 
-bool RuntimeSetUninstallUrlFunction::RunImpl() {
+bool RuntimeSetUninstallURLFunction::RunImpl() {
   std::string url_string;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url_string));
 
@@ -407,7 +416,7 @@ bool RuntimeSetUninstallUrlFunction::RunImpl() {
     return false;
   }
 
-  SetUninstallUrl(
+  SetUninstallURL(
       ExtensionPrefs::Get(GetProfile()), extension_id(), url_string);
   return true;
 }
@@ -512,7 +521,7 @@ bool RuntimeRestartFunction::RunImpl() {
 bool RuntimeGetPlatformInfoFunction::RunImpl() {
   GetPlatformInfo::Results::PlatformInfo info;
 
-  const char* os = chrome::OmahaQueryParams::getOS();
+  const char* os = chrome::OmahaQueryParams::GetOS();
   if (strcmp(os, "mac") == 0) {
     info.os = GetPlatformInfo::Results::PlatformInfo::OS_MAC_;
   } else if (strcmp(os, "win") == 0) {
@@ -530,7 +539,7 @@ bool RuntimeGetPlatformInfoFunction::RunImpl() {
     return false;
   }
 
-  const char* arch = chrome::OmahaQueryParams::getArch();
+  const char* arch = chrome::OmahaQueryParams::GetArch();
   if (strcmp(arch, "arm") == 0) {
     info.arch = GetPlatformInfo::Results::PlatformInfo::ARCH_ARM;
   } else if (strcmp(arch, "x86") == 0) {
@@ -542,7 +551,7 @@ bool RuntimeGetPlatformInfoFunction::RunImpl() {
     return false;
   }
 
-  const char* nacl_arch = chrome::OmahaQueryParams::getNaclArch();
+  const char* nacl_arch = chrome::OmahaQueryParams::GetNaclArch();
   if (strcmp(nacl_arch, "arm") == 0) {
     info.nacl_arch = GetPlatformInfo::Results::PlatformInfo::NACL_ARCH_ARM;
   } else if (strcmp(nacl_arch, "x86-32") == 0) {

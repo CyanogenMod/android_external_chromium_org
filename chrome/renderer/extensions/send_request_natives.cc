@@ -38,6 +38,7 @@ void SendRequestNatives::GetNextRequestId(
 // callback will be dispatched to EventBindings::HandleResponse.
 void SendRequestNatives::StartRequest(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
+  CHECK_EQ(6, args.Length());
   std::string name = *v8::String::Utf8Value(args[0]);
   int request_id = args[2]->Int32Value();
   bool has_callback = args[3]->BooleanValue();
@@ -53,16 +54,16 @@ void SendRequestNatives::StartRequest(
   if (!preserve_null_in_objects)
     converter->SetStripNullFromObjects(true);
 
-  scoped_ptr<Value> value_args(
+  scoped_ptr<base::Value> value_args(
       converter->FromV8Value(args[1], context()->v8_context()));
-  if (!value_args.get() || !value_args->IsType(Value::TYPE_LIST)) {
+  if (!value_args.get() || !value_args->IsType(base::Value::TYPE_LIST)) {
     NOTREACHED() << "Unable to convert args passed to StartRequest";
     return;
   }
 
   request_sender_->StartRequest(
       context(), name, request_id, has_callback, for_io_thread,
-      static_cast<ListValue*>(value_args.get()));
+      static_cast<base::ListValue*>(value_args.get()));
 }
 
 void SendRequestNatives::GetGlobal(

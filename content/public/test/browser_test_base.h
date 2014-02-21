@@ -118,13 +118,15 @@ class BrowserTestBase : public testing::Test {
   // returns.
   void PostTaskToInProcessRendererAndWait(const base::Closure& task);
 
-  // Call this before SetUp() to use real GL contexts in Compositor for the
-  // test.
-  void UseRealGLContexts() { allow_test_contexts_ = false; }
+  // Call this before SetUp() to cause the test to generate pixel output.
+  void EnablePixelOutput();
 
-  // Call this before SetUp() to use real GL drivers instead of OSMesa for the
-  // test.
-  void UseRealGLBindings() { allow_osmesa_ = false; }
+  // Call this before SetUp() to not use GL, but use software compositing
+  // instead.
+  void UseSoftwareCompositing();
+
+  // Returns true if the test will be using GL acceleration via OSMesa.
+  bool UsingOSMesa() const;
 
  private:
   void ProxyRunTestOnMainThreadLoop();
@@ -138,13 +140,12 @@ class BrowserTestBase : public testing::Test {
   // Host resolver used during tests.
   scoped_refptr<net::RuleBasedHostResolverProc> rule_based_resolver_;
 
-  // When false, the ui::Compositor will be forced to use real GL contexts for
-  // the test, so that it produces real pixel output.
-  bool allow_test_contexts_;
+  // When true, the compositor will produce pixel output that can be read back
+  // for pixel tests.
+  bool enable_pixel_output_;
 
-  // When false, the GL backend will use a real GPU. When true, it uses OSMesa
-  // to run GL on the CPU in a way that works across all platforms.
-  bool allow_osmesa_;
+  // When true, do compositing with the software backend instead of using GL.
+  bool use_software_compositing_;
 
 #if defined(OS_POSIX)
   bool handle_sigterm_;

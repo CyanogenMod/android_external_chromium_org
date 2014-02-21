@@ -18,13 +18,13 @@ namespace cast {
 
 const int64 kDontShowTimeoutMs = 33;
 const float kDefaultCongestionControlBackOff = 0.875f;
-const uint32 kStartFrameId = GG_UINT32_C(0xffffffff);
 const uint32 kVideoFrequency = 90000;
 const int64 kSkippedFramesCheckPeriodkMs = 10000;
+const uint32 kStartFrameId = GG_UINT32_C(0xffffffff);
 
 // Number of skipped frames threshold in fps (as configured) per period above.
 const int kSkippedFramesThreshold = 3;
-const size_t kIpPacketSize = 1500;
+const size_t kMaxIpPacketSize = 1500;
 const int kStartRttMs = 20;
 const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
@@ -41,15 +41,19 @@ enum DefaultSettings {
   kDefaultRtpMaxDelayMs = 100,
 };
 
+enum PacketType {
+  kNewPacket,
+  kNewPacketCompletingFrame,
+  kDuplicatePacket,
+  kTooOldPacket,
+};
+
 const uint16 kRtcpCastAllPacketsLost = 0xffff;
 
 const size_t kMinLengthOfRtcp = 8;
 
 // Basic RTP header + cast header.
 const size_t kMinLengthOfRtp = 12 + 6;
-
-const size_t kAesBlockSize = 16;
-const size_t kAesKeySize = 16;
 
 // Each uint16 represents one packet id within a cast frame.
 typedef std::set<uint16> PacketIdSet;
@@ -70,12 +74,12 @@ static const double kMagicFractionalUnit = 4.294967296E3;
 
 inline bool IsNewerFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id != prev_frame_id) &&
-      static_cast<uint32>(frame_id - prev_frame_id) < 0x80000000;
+         static_cast<uint32>(frame_id - prev_frame_id) < 0x80000000;
 }
 
 inline bool IsNewerRtpTimestamp(uint32 timestamp, uint32 prev_timestamp) {
   return (timestamp != prev_timestamp) &&
-      static_cast<uint32>(timestamp - prev_timestamp) < 0x80000000;
+         static_cast<uint32>(timestamp - prev_timestamp) < 0x80000000;
 }
 
 inline bool IsOlderFrameId(uint32 frame_id, uint32 prev_frame_id) {
@@ -84,7 +88,7 @@ inline bool IsOlderFrameId(uint32 frame_id, uint32 prev_frame_id) {
 
 inline bool IsNewerPacketId(uint16 packet_id, uint16 prev_packet_id) {
   return (packet_id != prev_packet_id) &&
-      static_cast<uint16>(packet_id - prev_packet_id) < 0x8000;
+         static_cast<uint16>(packet_id - prev_packet_id) < 0x8000;
 }
 
 inline bool IsNewerSequenceNumber(uint16 sequence_number,
@@ -122,7 +126,8 @@ inline void ConvertTimeTicksToNtp(const base::TimeTicks& time,
   base::TimeDelta elapsed_since_unix_epoch =
       time - base::TimeTicks::UnixEpoch();
 
-  int64 ntp_time_us = elapsed_since_unix_epoch.InMicroseconds() +
+  int64 ntp_time_us =
+      elapsed_since_unix_epoch.InMicroseconds() +
       (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond);
 
   ConvertTimeToFractions(ntp_time_us, ntp_seconds, ntp_fractions);
@@ -130,93 +135,14 @@ inline void ConvertTimeTicksToNtp(const base::TimeTicks& time,
 
 inline base::TimeTicks ConvertNtpToTimeTicks(uint32 ntp_seconds,
                                              uint32 ntp_fractions) {
-  int64 ntp_time_us = static_cast<int64>(ntp_seconds) *
-      base::Time::kMicrosecondsPerSecond +
-          static_cast<int64>(ntp_fractions) / kMagicFractionalUnit;
+  int64 ntp_time_us =
+      static_cast<int64>(ntp_seconds) * base::Time::kMicrosecondsPerSecond +
+      static_cast<int64>(ntp_fractions) / kMagicFractionalUnit;
 
-  base::TimeDelta elapsed_since_unix_epoch =
-      base::TimeDelta::FromMicroseconds(ntp_time_us -
-          (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond));
+  base::TimeDelta elapsed_since_unix_epoch = base::TimeDelta::FromMicroseconds(
+      ntp_time_us -
+      (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond));
   return base::TimeTicks::UnixEpoch() + elapsed_since_unix_epoch;
-}
-
-class FrameIdWrapHelper {
- public:
-  FrameIdWrapHelper()
-      : first_(true),
-        frame_id_wrap_count_(0),
-        range_(kLowRange) {}
-
-  uint32 MapTo32bitsFrameId(const uint8 over_the_wire_frame_id) {
-    if (first_) {
-      first_ = false;
-      if (over_the_wire_frame_id == 0xff) {
-        // Special case for startup.
-        return kStartFrameId;
-      }
-    }
-
-    uint32 wrap_count = frame_id_wrap_count_;
-    switch (range_) {
-      case kLowRange:
-        if (over_the_wire_frame_id > kLowRangeThreshold &&
-            over_the_wire_frame_id < kHighRangeThreshold) {
-          range_ = kMiddleRange;
-        }
-        if (over_the_wire_frame_id > kHighRangeThreshold) {
-          // Wrap count was incremented in High->Low transition, but this frame
-          // is 'old', actually from before the wrap count got incremented.
-          --wrap_count;
-        }
-        break;
-      case kMiddleRange:
-        if (over_the_wire_frame_id > kHighRangeThreshold) {
-          range_ = kHighRange;
-        }
-        break;
-      case kHighRange:
-        if (over_the_wire_frame_id < kLowRangeThreshold) {
-          // Wrap-around detected.
-          range_ = kLowRange;
-          ++frame_id_wrap_count_;
-          // Frame triggering wrap-around so wrap count should be incremented as
-          // as well to match |frame_id_wrap_count_|.
-          ++wrap_count;
-        }
-        break;
-    }
-    return (wrap_count << 8) + over_the_wire_frame_id;
-  }
-
- private:
-  enum Range {
-    kLowRange,
-    kMiddleRange,
-    kHighRange,
-  };
-
-  static const uint8 kLowRangeThreshold = 0x0f;
-  static const uint8 kHighRangeThreshold = 0xf0;
-
-  bool first_;
-  uint32 frame_id_wrap_count_;
-  Range range_;
-};
-
-inline std::string GetAesNonce(uint32 frame_id, const std::string& iv_mask) {
-  std::string aes_nonce(kAesBlockSize, 0);
-
-  // Serializing frame_id in big-endian order (aes_nonce[8] is the most
-  // significant byte of frame_id).
-  aes_nonce[11] = frame_id & 0xff;
-  aes_nonce[10] = (frame_id >> 8) & 0xff;
-  aes_nonce[9] = (frame_id >> 16) & 0xff;
-  aes_nonce[8] = (frame_id >> 24) & 0xff;
-
-  for (size_t i = 0; i < kAesBlockSize; ++i) {
-    aes_nonce[i] ^= iv_mask[i];
-  }
-  return aes_nonce;
 }
 
 inline uint32 GetVideoRtpTimestamp(const base::TimeTicks& time_ticks) {

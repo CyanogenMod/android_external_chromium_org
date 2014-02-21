@@ -11,7 +11,6 @@
 #include "base/memory/shared_memory.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/messaging/message.h"
-#include "chrome/common/extensions/permissions/bluetooth_permission_data.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission_data.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
 #include "chrome/common/extensions/permissions/usb_device_permission_data.h"
@@ -30,7 +29,9 @@
 
 #define IPC_MESSAGE_START ExtensionMsgStart
 
-IPC_ENUM_TRAITS(extensions::ViewType)
+IPC_ENUM_TRAITS_MAX_VALUE(extensions::ViewType, extensions::VIEW_TYPE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::SocketPermissionRequest::OperationType,
+                          content::SocketPermissionRequest::OPERATION_TYPE_LAST)
 
 // Parameters structure for ExtensionHostMsg_AddAPIActionToActivityLog and
 // ExtensionHostMsg_AddEventToActivityLog.
@@ -81,6 +82,9 @@ IPC_STRUCT_BEGIN(ExtensionHostMsg_Request_Params)
   // in which case extension_id will indicate the ID of the associated
   // extension. Or, they can originate from hosted apps or normal web pages.
   IPC_STRUCT_MEMBER(GURL, source_url)
+
+  // The id of the tab that sent this request, or -1 if there is no source tab.
+  IPC_STRUCT_MEMBER(int, source_tab_id)
 
   // Unique request id to match requests and responses.
   IPC_STRUCT_MEMBER(int, request_id)
@@ -165,17 +169,12 @@ IPC_STRUCT_TRAITS_BEGIN(WebApplicationInfo)
   IPC_STRUCT_TRAITS_MEMBER(description)
   IPC_STRUCT_TRAITS_MEMBER(app_url)
   IPC_STRUCT_TRAITS_MEMBER(icons)
-  IPC_STRUCT_TRAITS_MEMBER(permissions)
-  IPC_STRUCT_TRAITS_MEMBER(launch_container)
-  IPC_STRUCT_TRAITS_MEMBER(is_offline_enabled)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::DraggableRegion)
   IPC_STRUCT_TRAITS_MEMBER(draggable)
   IPC_STRUCT_TRAITS_MEMBER(bounds)
 IPC_STRUCT_TRAITS_END()
-
-IPC_ENUM_TRAITS(content::SocketPermissionRequest::OperationType)
 
 IPC_STRUCT_TRAITS_BEGIN(content::SocketPermissionRequest)
   IPC_STRUCT_TRAITS_MEMBER(type)
@@ -199,10 +198,6 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::MediaGalleriesPermissionData)
   IPC_STRUCT_TRAITS_MEMBER(permission())
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(extensions::BluetoothPermissionData)
-  IPC_STRUCT_TRAITS_MEMBER(uuid())
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::Message)
@@ -671,8 +666,9 @@ IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddDOMActionToActivityLog,
 // certain conditions.  This message is sent in response to several events:
 //
 // * ExtensionMsg_WatchPages was received, updating the set of conditions.
-// * A new page is loaded.  This will be sent after ViewHostMsg_FrameNavigate.
-//   Currently this only fires for the main frame.
+// * A new page is loaded.  This will be sent after
+//   FrameHostMsg_DidCommitProvisionalLoad. Currently this only fires for the
+//   main frame.
 // * Something changed on an existing frame causing the set of matching searches
 //   to change.
 IPC_MESSAGE_ROUTED1(ExtensionHostMsg_OnWatchedPageChange,

@@ -21,6 +21,36 @@ bool GetValue(const base::ListValue& list, int pos, bool& value) {
   return list.GetBoolean(pos, &value);
 }
 
+bool GetValue(const base::ListValue& list, int pos, gfx::Insets& insets) {
+  const base::DictionaryValue* dict;
+  if (!list.GetDictionary(pos, &dict))
+    return false;
+  int top = 0;
+  int left = 0;
+  int bottom = 0;
+  int right = 0;
+  if (!dict->GetInteger("top", &top) ||
+      !dict->GetInteger("left", &left) ||
+      !dict->GetInteger("bottom", &bottom) ||
+      !dict->GetInteger("right", &right))
+    return false;
+  insets.Set(top, left, bottom, right);
+  return true;
+}
+
+bool GetValue(const base::ListValue& list, int pos, gfx::Size& size) {
+  const base::DictionaryValue* dict;
+  if (!list.GetDictionary(pos, &dict))
+    return false;
+  int width = 0;
+  int height = 0;
+  if (!dict->GetInteger("width", &width) ||
+      !dict->GetInteger("height", &height))
+    return false;
+  size.SetSize(width, height);
+  return true;
+}
+
 template <typename T>
 struct StorageTraits {
   typedef T StorageType;
@@ -158,14 +188,20 @@ DevToolsEmbedderMessageDispatcher::DevToolsEmbedderMessageDispatcher(
   RegisterHandler("closeWindow",
       BindToListParser(base::Bind(&Delegate::CloseWindow,
                                   base::Unretained(delegate))));
-  RegisterHandler("setWindowBounds",
-      BindToListParser(base::Bind(&Delegate::SetWindowBounds,
+  RegisterHandler("setContentsInsets",
+      BindToListParser(base::Bind(&Delegate::SetContentsInsets,
                                   base::Unretained(delegate))));
+  RegisterHandler("setContentsResizingStrategy",
+      BindToListParser(base::Bind(&Delegate::SetContentsResizingStrategy,
+                                  base::Unretained(delegate))));
+  RegisterHandler("inspectElementCompleted",
+        BindToListParser(base::Bind(&Delegate::InspectElementCompleted,
+                                    base::Unretained(delegate))));
   RegisterHandler("moveWindowBy",
       BindToListParser(base::Bind(&Delegate::MoveWindow,
                                   base::Unretained(delegate))));
-  RegisterHandler("requestSetDockSide",
-      BindToListParser(base::Bind(&Delegate::SetDockSide,
+  RegisterHandler("setIsDocked",
+      BindToListParser(base::Bind(&Delegate::SetIsDocked,
                                   base::Unretained(delegate))));
   RegisterHandler("openInNewTab",
       BindToListParser(base::Bind(&Delegate::OpenInNewTab,
@@ -197,6 +233,15 @@ DevToolsEmbedderMessageDispatcher::DevToolsEmbedderMessageDispatcher(
                                   base::Unretained(delegate))));
   RegisterHandler("searchInPath",
       BindToListParser(base::Bind(&Delegate::SearchInPath,
+                                  base::Unretained(delegate))));
+  RegisterHandler("zoomIn",
+      BindToListParser(base::Bind(&Delegate::ZoomIn,
+                                  base::Unretained(delegate))));
+  RegisterHandler("zoomOut",
+      BindToListParser(base::Bind(&Delegate::ZoomOut,
+                                  base::Unretained(delegate))));
+  RegisterHandler("resetZoom",
+      BindToListParser(base::Bind(&Delegate::ResetZoom,
                                   base::Unretained(delegate))));
 }
 

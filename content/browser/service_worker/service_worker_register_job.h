@@ -5,27 +5,54 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTER_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTER_JOB_H_
 
+#include <vector>
+
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_registration_status.h"
 #include "content/browser/service_worker/service_worker_storage.h"
+#include "content/browser/service_worker/service_worker_version.h"
 
 namespace content {
+
+class EmbeddedWorkerRegistry;
+class ServiceWorkerJobCoordinator;
 
 // A ServiceWorkerRegisterJob lives only for the lifetime of a single
 // registration or unregistration.
 class ServiceWorkerRegisterJob {
  public:
-  typedef base::Callback<void(
-      ServiceWorkerRegisterJob* job,
-      ServiceWorkerRegistrationStatus status,
-      ServiceWorkerRegistration* registration)> RegistrationCompleteCallback;
+  enum RegistrationType {
+    REGISTER,
+    UNREGISTER,
+  };
+
+  typedef base::Callback<void(ServiceWorkerStatusCode status,
+                              const scoped_refptr<ServiceWorkerRegistration>&
+                                  registration)> RegistrationCallback;
+  typedef base::Callback<void(ServiceWorkerStatusCode status)>
+      UnregistrationCallback;
+  // TODO(alecflett): Unify this with RegistrationCallback
+  typedef base::Callback<
+      void(const scoped_refptr<ServiceWorkerRegistration>& registration,
+           ServiceWorkerStatusCode status)> StatusCallback;
 
   // All type of jobs (Register and Unregister) complete through a
   // single call to this callback on the IO thread.
-  ServiceWorkerRegisterJob(const base::WeakPtr<ServiceWorkerStorage>& storage,
-                           const RegistrationCompleteCallback& callback);
+  ServiceWorkerRegisterJob(ServiceWorkerStorage* storage,
+                           EmbeddedWorkerRegistry* worker_registry,
+                           ServiceWorkerJobCoordinator* coordinator,
+                           const GURL& pattern,
+                           const GURL& script_url,
+                           RegistrationType type);
   ~ServiceWorkerRegisterJob();
 
+  void AddCallback(const RegistrationCallback& callback, int process_id);
+
+  void Start();
+
+  bool Equals(ServiceWorkerRegisterJob* job);
+
+ private:
   // The Registration flow includes most or all of the following,
   // depending on what is already registered:
   //  - creating a ServiceWorkerRegistration instance if there isn't
@@ -38,38 +65,57 @@ class ServiceWorkerRegisterJob {
   //  - Waiting for older ServiceWorkerVersions to deactivate
   //  - designating the new version to be the 'active' version
   // This method should be called once and only once per job.
-  void StartRegister(const GURL& pattern, const GURL& script_url);
+  void StartRegister();
 
   // The Unregistration process is primarily cleanup, removing
   // everything that was created during the Registration process,
   // including the ServiceWorkerRegistration itself.
   // This method should be called once and only once per job.
-  void StartUnregister(const GURL& pattern);
+  void StartUnregister();
 
- private:
   // These are all steps in the registration and unregistration pipeline.
   void RegisterPatternAndContinue(
-      const GURL& pattern,
-      const GURL& script_url,
-      const ServiceWorkerStorage::RegistrationCallback& callback,
-      ServiceWorkerRegistrationStatus previous_status);
+      const RegistrationCallback& callback,
+      ServiceWorkerStatusCode previous_status);
 
   void UnregisterPatternAndContinue(
-      const GURL& pattern,
-      const GURL& script_url,
-      const ServiceWorkerStorage::UnregistrationCallback& callback,
-      ServiceWorkerRegistrationStatus previous_status,
+      const UnregistrationCallback& callback,
+      bool found,
+      ServiceWorkerStatusCode previous_status,
       const scoped_refptr<ServiceWorkerRegistration>& previous_registration);
+
+  void StartWorkerAndContinue(
+      const StatusCallback& callback,
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
 
   // These methods are the last internal callback in the callback
   // chain, and ultimately call callback_.
-  void UnregisterComplete(ServiceWorkerRegistrationStatus status);
+  void UnregisterComplete(ServiceWorkerStatusCode status);
   void RegisterComplete(
-      ServiceWorkerRegistrationStatus status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration,
+      ServiceWorkerStatusCode start_status);
+
+  void RunCallbacks(
+      ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
 
-  const base::WeakPtr<ServiceWorkerStorage> storage_;
-  const RegistrationCompleteCallback callback_;
+  // The ServiceWorkerStorage object should always outlive
+  // this.
+
+  // TODO(alecflett) When we support job cancelling, if we are keeping
+  // this job alive for any reason, be sure to clear this variable,
+  // because we may be cancelling while there are outstanding
+  // callbacks that expect access to storage_.
+  ServiceWorkerStorage* storage_;
+  EmbeddedWorkerRegistry* worker_registry_;
+  ServiceWorkerJobCoordinator* coordinator_;
+  scoped_refptr<ServiceWorkerVersion> pending_version_;
+  const GURL pattern_;
+  const GURL script_url_;
+  const RegistrationType type_;
+  std::vector<RegistrationCallback> callbacks_;
+  std::vector<int> pending_process_ids_;
   base::WeakPtrFactory<ServiceWorkerRegisterJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegisterJob);

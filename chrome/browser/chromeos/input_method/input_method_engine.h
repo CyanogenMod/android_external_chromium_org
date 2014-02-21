@@ -9,25 +9,24 @@
 #include <string>
 #include <vector>
 #include "chrome/browser/chromeos/input_method/input_method_engine_interface.h"
-#include "ui/base/ime/chromeos/ibus_bridge.h"
+#include "chromeos/ime/input_method_descriptor.h"
 #include "url/gurl.h"
 
 namespace ui {
+class CandidateWindow;
 class KeyEvent;
 }  // namespace ui
 
 namespace chromeos {
 
-class IBusText;
+class CompositionText;
 
 namespace input_method {
-class CandidateWindow;
 struct InputMethodProperty;
 struct KeyEventHandle;
 }  // namespace input_method
 
-class InputMethodEngine : public InputMethodEngineInterface,
-                              public IBusEngineHandlerInterface {
+class InputMethodEngine : public InputMethodEngineInterface {
  public:
   InputMethodEngine();
 
@@ -44,6 +43,8 @@ class InputMethodEngine : public InputMethodEngineInterface,
       const GURL& input_view);
 
   // InputMethodEngineInterface overrides.
+  virtual const input_method::InputMethodDescriptor& GetDescriptor()
+      const OVERRIDE;
   virtual void StartIme() OVERRIDE;
   virtual bool SetComposition(int context_id,
                               const char* text,
@@ -55,14 +56,14 @@ class InputMethodEngine : public InputMethodEngineInterface,
   virtual bool ClearComposition(int context_id, std::string* error) OVERRIDE;
   virtual bool CommitText(int context_id, const char* text,
                           std::string* error) OVERRIDE;
+  virtual bool SendKeyEvents(int context_id,
+                             const std::vector<KeyboardEvent>& events) OVERRIDE;
   virtual const CandidateWindowProperty&
     GetCandidateWindowProperty() const OVERRIDE;
   virtual void SetCandidateWindowProperty(
       const CandidateWindowProperty& property) OVERRIDE;
   virtual bool SetCandidateWindowVisible(bool visible,
                                          std::string* error) OVERRIDE;
-  virtual void SetCandidateWindowAuxText(const char* text) OVERRIDE;
-  virtual void SetCandidateWindowAuxTextVisible(bool visible) OVERRIDE;
   virtual bool SetCandidates(int context_id,
                              const std::vector<Candidate>& candidates,
                              std::string* error) OVERRIDE;
@@ -78,9 +79,9 @@ class InputMethodEngine : public InputMethodEngineInterface,
                                      size_t number_of_chars,
                                      std::string* error) OVERRIDE;
 
-  // IBusEngineHandlerInterface overrides.
+  // IMEEngineHandlerInterface overrides.
   virtual void FocusIn(
-      const IBusEngineHandlerInterface::InputContext& input_context) OVERRIDE;
+      const IMEEngineHandlerInterface::InputContext& input_context) OVERRIDE;
   virtual void FocusOut() OVERRIDE;
   virtual void Enable() OVERRIDE;
   virtual void Disable() OVERRIDE;
@@ -91,11 +92,15 @@ class InputMethodEngine : public InputMethodEngineInterface,
   virtual void CandidateClicked(uint32 index) OVERRIDE;
   virtual void SetSurroundingText(const std::string& text, uint32 cursor_pos,
                                   uint32 anchor_pos) OVERRIDE;
+  virtual void HideInputView() OVERRIDE;
 
  private:
   // Converts MenuItem to InputMethodProperty.
   void MenuItemToProperty(const MenuItem& item,
                           input_method::InputMethodProperty* property);
+
+  // Descriptor of this input method.
+  input_method::InputMethodDescriptor descriptor_;
 
   // True if the current context has focus.
   bool focused_;
@@ -112,22 +117,21 @@ class InputMethodEngine : public InputMethodEngineInterface,
   // This IME ID in Chrome Extension.
   std::string engine_id_;
 
-  // This IME ID in ibus.
-  std::string ibus_id_;
+  // This IME's Chrome Extension ID.
+  std::string extension_id_;
 
-  // The current auxialy text and it's visiblity.
-  std::string aux_text_;
-  bool aux_text_visible_;
+  // This IME ID in InputMethodManager.
+  std::string imm_id_;
 
   // Pointer to the object recieving events for this IME.
   InputMethodEngineInterface::Observer* observer_;
 
   // The current preedit text, and it's cursor position.
-  scoped_ptr<IBusText> preedit_text_;
-  int preedit_cursor_;
+  scoped_ptr<CompositionText> composition_text_;
+  int composition_cursor_;
 
   // The current candidate window.
-  scoped_ptr<input_method::CandidateWindow> candidate_window_;
+  scoped_ptr<ui::CandidateWindow> candidate_window_;
 
   // The current candidate window property.
   CandidateWindowProperty candidate_window_property_;
@@ -143,6 +147,10 @@ class InputMethodEngine : public InputMethodEngineInterface,
 
   // Used for input view window.
   GURL input_view_url_;
+
+  // Used with SendKeyEvents and ProcessKeyEvent to check if the key event
+  // sent to ProcessKeyEvent is sent by SendKeyEvents.
+  const ui::KeyEvent* sent_key_event_;
 };
 
 }  // namespace chromeos

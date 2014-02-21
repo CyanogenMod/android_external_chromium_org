@@ -23,6 +23,18 @@ class GCM_EXPORT ConnectionFactory {
   typedef base::Callback<void(mcs_proto::LoginRequest* login_request)>
       BuildLoginRequestCallback;
 
+  // Reasons for triggering a connection reset. Note that these enums are
+  // consumed by a histogram, so ordering should not be modified.
+  enum ConnectionResetReason {
+    LOGIN_FAILURE,      // Login response included an error.
+    CLOSE_COMMAND,      // Received a close command.
+    HEARTBEAT_FAILURE,  // Heartbeat was not acknowledged in time.
+    SOCKET_FAILURE,     // net::Socket error.
+    // Count of total number of connection reset reasons. All new reset reasons
+    // should be added above this line.
+    CONNECTION_RESET_COUNT,
+  };
+
   ConnectionFactory();
   virtual ~ConnectionFactory();
 
@@ -57,6 +69,12 @@ class GCM_EXPORT ConnectionFactory {
   // a null time, indicating either no attempt to connect has been made or no
   // backoff is in progress.
   virtual base::TimeTicks NextRetryAttempt() const = 0;
+
+  // Manually reset the connection. This can occur if an application specific
+  // event forced a reset (e.g. server sends a close connection response).
+  // If the last connection was made within kConnectionResetWindowSecs, the old
+  // backoff is restored, else a new backoff kicks off.
+  virtual void SignalConnectionReset(ConnectionResetReason reason) = 0;
 };
 
 }  // namespace gcm

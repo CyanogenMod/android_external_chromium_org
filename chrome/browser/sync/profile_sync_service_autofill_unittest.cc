@@ -21,14 +21,14 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
-#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
 #include "chrome/browser/sync/glue/autofill_profile_data_type_controller.h"
-#include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/shared_change_processor.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
@@ -37,15 +37,16 @@
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
-#include "chrome/browser/webdata/autofill_profile_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
+#include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/sync_driver/data_type_controller.h"
 #include "components/webdata/common/web_data_service_test_util.h"
 #include "components/webdata/common/web_database.h"
 #include "content/public/test/test_browser_thread.h"
@@ -69,6 +70,7 @@ using autofill::ServerFieldType;
 using autofill::AutofillKey;
 using autofill::AutofillProfile;
 using autofill::AutofillProfileChange;
+using autofill::AutofillProfileSyncableService;
 using autofill::AutofillTable;
 using autofill::AutofillWebDataService;
 using autofill::PersonalDataManager;
@@ -194,7 +196,9 @@ syncer::ModelType GetModelType<AutofillProfile>() {
 class TokenWebDataServiceFake : public TokenWebData {
  public:
   TokenWebDataServiceFake()
-      : TokenWebData() {
+      : TokenWebData(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)) {
   }
 
   virtual bool IsDatabaseLoaded() OVERRIDE {
@@ -508,8 +512,9 @@ class ProfileSyncServiceAutofillTest
   virtual void SetUp() OVERRIDE {
     AbstractProfileSyncServiceTest::SetUp();
     TestingProfile::Builder builder;
-    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeOAuth2TokenService::BuildTokenService);
+    builder.AddTestingFactory(
+        ProfileOAuth2TokenServiceFactory::GetInstance(),
+        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     profile_ = builder.Build().Pass();
     web_database_.reset(new WebDatabaseFake(&autofill_table_));
     MockWebDataServiceWrapper* wrapper =
@@ -570,10 +575,8 @@ class ProfileSyncServiceAutofillTest
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile_.get());
     signin->SetAuthenticatedUsername("test_user@gmail.com");
-    sync_service_ = static_cast<TestProfileSyncService*>(
-        ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), &TestProfileSyncService::BuildAutoStartAsyncInit));
-    sync_service_->set_backend_init_callback(callback);
+    sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(
+        profile_.get(), callback);
 
     ProfileSyncComponentsFactoryMock* components =
         sync_service_->components_factory_mock();
@@ -624,7 +627,8 @@ class ProfileSyncServiceAutofillTest
 
     syncer::WriteNode node(&trans);
     std::string tag = AutocompleteSyncableService::KeyToTag(
-        UTF16ToUTF8(entry.key().name()), UTF16ToUTF8(entry.key().value()));
+        base::UTF16ToUTF8(entry.key().name()),
+        base::UTF16ToUTF8(entry.key().value()));
     syncer::WriteNode::InitUniqueByCreationResult result =
         node.InitUniqueByCreation(syncer::AUTOFILL, autofill_root, tag);
     if (result != syncer::WriteNode::INIT_SUCCESS)
@@ -641,7 +645,7 @@ class ProfileSyncServiceAutofillTest
   bool AddAutofillSyncNode(const AutofillProfile& profile) {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(kAutofillProfileTag) !=
+    if (autofill_root.InitByTagLookup(autofill::kAutofillProfileTag) !=
             BaseNode::INIT_OK) {
       return false;
     }
@@ -680,8 +684,8 @@ class ProfileSyncServiceAutofillTest
       const sync_pb::AutofillSpecifics& autofill(
           child_node.GetAutofillSpecifics());
       if (autofill.has_value()) {
-        AutofillKey key(UTF8ToUTF16(autofill.name()),
-                        UTF8ToUTF16(autofill.value()));
+        AutofillKey key(base::UTF8ToUTF16(autofill.name()),
+                        base::UTF8ToUTF16(autofill.value()));
         std::vector<base::Time> timestamps;
         int timestamps_count = autofill.usage_timestamp_size();
         for (int i = 0; i < timestamps_count; ++i) {
@@ -705,7 +709,7 @@ class ProfileSyncServiceAutofillTest
       std::vector<AutofillProfile>* profiles) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(kAutofillProfileTag) !=
+    if (autofill_root.InitByTagLookup(autofill::kAutofillProfileTag) !=
             BaseNode::INIT_OK) {
       return false;
     }
@@ -748,7 +752,8 @@ class ProfileSyncServiceAutofillTest
     if (time_shift1 > 0)
       timestamps.push_back(base_time + TimeDelta::FromSeconds(time_shift1));
     return AutofillEntry(
-        AutofillKey(ASCIIToUTF16(name), ASCIIToUTF16(value)), timestamps);
+        AutofillKey(base::ASCIIToUTF16(name), base::ASCIIToUTF16(value)),
+        timestamps);
   }
 
   static AutofillEntry MakeAutofillEntry(const char* name,
@@ -845,10 +850,11 @@ class FakeServerUpdater : public base::RefCountedThreadSafe<FakeServerUpdater> {
 
     // Create autofill protobuf.
     std::string tag = AutocompleteSyncableService::KeyToTag(
-        UTF16ToUTF8(entry_.key().name()), UTF16ToUTF8(entry_.key().value()));
+        base::UTF16ToUTF8(entry_.key().name()),
+        base::UTF16ToUTF8(entry_.key().value()));
     sync_pb::AutofillSpecifics new_autofill;
-    new_autofill.set_name(UTF16ToUTF8(entry_.key().name()));
-    new_autofill.set_value(UTF16ToUTF8(entry_.key().value()));
+    new_autofill.set_name(base::UTF16ToUTF8(entry_.key().name()));
+    new_autofill.set_value(base::UTF16ToUTF8(entry_.key().value()));
     const std::vector<base::Time>& ts(entry_.timestamps());
     for (std::vector<base::Time>::const_iterator timestamp = ts.begin();
          timestamp != ts.end(); ++timestamp) {

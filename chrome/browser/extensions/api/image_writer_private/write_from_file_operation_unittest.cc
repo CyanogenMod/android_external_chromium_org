@@ -23,17 +23,17 @@ TEST_F(ImageWriterFromFileTest, InvalidFile) {
   scoped_refptr<WriteFromFileOperation> op = new WriteFromFileOperation(
     manager.AsWeakPtr(),
     kDummyExtensionId,
-    test_image_,
-    test_device_.AsUTF8Unsafe());
+    test_image_path_,
+    test_device_path_.AsUTF8Unsafe());
 
-  base::DeleteFile(test_image_, false);
+  base::DeleteFile(test_image_path_, false);
 
   EXPECT_CALL(manager, OnProgress(kDummyExtensionId, _, _)).Times(0);
   EXPECT_CALL(manager, OnComplete(kDummyExtensionId)).Times(0);
   EXPECT_CALL(manager, OnError(kDummyExtensionId,
                                image_writer_api::STAGE_UNKNOWN,
                                0,
-                               error::kInvalidImage)).Times(1);
+                               error::kImageInvalid)).Times(1);
 
   op->Start();
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,6 @@
 
 #if defined(OS_LINUX)
 #include <linux/serial.h>
-#endif
-
-#if defined(OS_MACOSX)
-#include <IOKit/serial/ioss.h>
 #endif
 
 namespace extensions {
@@ -107,7 +103,9 @@ bool SetCustomBitrate(base::PlatformFile file,
   return ioctl(file, TIOCSSERIAL, &serial) >= 0;
 #elif defined(OS_MACOSX)
   speed_t speed = static_cast<speed_t>(bitrate);
-  return ioctl(file, IOSSIOSPEED, &speed) != -1;
+  cfsetispeed(config, speed);
+  cfsetospeed(config, speed);
+  return true;
 #else
   return false;
 #endif
@@ -254,6 +252,8 @@ bool SerialConnection::GetPortInfo(api::serial::ConnectionInfo* info) const {
     int bitrate = 0;
     if (SpeedConstantToBitrate(ispeed, &bitrate)) {
       info->bitrate.reset(new int(bitrate));
+    } else if (ispeed > 0) {
+      info->bitrate.reset(new int(static_cast<int>(ispeed)));
     }
   }
   if ((config.c_cflag & CSIZE) == CS7) {

@@ -146,11 +146,13 @@ class ParallelAuthenticatorTest : public testing::Test {
                           const std::string& password,
                           const std::string& username_hash_,
                           bool pending) {
-    EXPECT_CALL(consumer_, OnLoginSuccess(UserContext(username,
-                                                      password,
-                                                      std::string(),
-                                                      username_hash_,
-                                                      true /* using_oauth */)))
+    EXPECT_CALL(consumer_, OnLoginSuccess(UserContext(
+        username,
+        password,
+        std::string(),
+        username_hash_,
+        true,  // using_oauth
+        UserContext::AUTH_FLOW_OFFLINE)))
         .WillOnce(Invoke(MockConsumer::OnSuccessQuit))
         .RetiresOnSaturation();
   }
@@ -207,11 +209,13 @@ class ParallelAuthenticatorTest : public testing::Test {
 };
 
 TEST_F(ParallelAuthenticatorTest, OnLoginSuccess) {
-  EXPECT_CALL(consumer_, OnLoginSuccess(UserContext(username_,
-                                                    password_,
-                                                    std::string(),
-                                                    username_hash_,
-                                                    true /* using oauth */)))
+  EXPECT_CALL(consumer_, OnLoginSuccess(UserContext(
+      username_,
+      password_,
+      std::string(),
+      username_hash_,
+      true,  // using oauth
+      UserContext::AUTH_FLOW_OFFLINE)))
       .Times(1)
       .RetiresOnSaturation();
 
@@ -317,11 +321,9 @@ TEST_F(ParallelAuthenticatorTest, ResolveOwnerNeededFailedMount) {
             SetAndResolveState(auth_.get(), state_.release()));
   EXPECT_TRUE(LoginState::Get()->IsInSafeMode());
 
-  // Simulate certificates load event. The exact certificates loaded are not
-  // actually used by the DeviceSettingsService, so it is OK to pass an empty
-  // list.
-  DeviceSettingsService::Get()->OnCertificatesLoaded(net::CertificateList(),
-                                                     true);
+  // Simulate TPM token ready event.
+  DeviceSettingsService::Get()->OnTPMTokenReady();
+
   // Flush all the pending operations. The operations should induce an owner
   // verification.
   device_settings_test_helper_.Flush();

@@ -18,6 +18,7 @@
 #include "webkit/browser/database/database_util.h"
 #include "webkit/browser/database/vfs_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/database/database_identifier.h"
 
 #if defined(OS_POSIX)
@@ -25,7 +26,6 @@
 #endif
 
 using quota::QuotaManager;
-using quota::QuotaManagerProxy;
 using quota::QuotaStatusCode;
 using webkit_database::DatabaseTracker;
 using webkit_database::DatabaseUtil;
@@ -41,7 +41,8 @@ const int kDelayDeleteRetryMs = 100;
 
 DatabaseMessageFilter::DatabaseMessageFilter(
     webkit_database::DatabaseTracker* db_tracker)
-    : db_tracker_(db_tracker),
+    : BrowserMessageFilter(DatabaseMsgStart),
+      db_tracker_(db_tracker),
       observer_added_(false) {
   DCHECK(db_tracker_.get());
 }
@@ -186,7 +187,7 @@ void DatabaseMessageFilter::DatabaseDeleteFile(
     // In order to delete a journal file in incognito mode, we only need to
     // close the open handle to it that's stored in the database tracker.
     if (db_tracker_->IsIncognitoProfile()) {
-      const base::string16 wal_suffix(ASCIIToUTF16("-wal"));
+      const base::string16 wal_suffix(base::ASCIIToUTF16("-wal"));
       base::string16 sqlite_suffix;
 
       // WAL files can be deleted without having previously been opened.
@@ -287,7 +288,7 @@ void DatabaseMessageFilter::OnDatabaseOpened(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   if (!DatabaseUtil::IsValidOriginIdentifier(origin_identifier)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DBMF"));
     BadMessageReceived();
     return;
   }
@@ -306,7 +307,7 @@ void DatabaseMessageFilter::OnDatabaseModified(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   if (!database_connections_.IsDatabaseOpened(
           origin_identifier, database_name)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DBMF"));
     BadMessageReceived();
     return;
   }
@@ -320,7 +321,7 @@ void DatabaseMessageFilter::OnDatabaseClosed(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   if (!database_connections_.IsDatabaseOpened(
           origin_identifier, database_name)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DBMF"));
     BadMessageReceived();
     return;
   }
@@ -335,7 +336,7 @@ void DatabaseMessageFilter::OnHandleSqliteError(
     int error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   if (!DatabaseUtil::IsValidOriginIdentifier(origin_identifier)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DBMF"));
     BadMessageReceived();
     return;
   }

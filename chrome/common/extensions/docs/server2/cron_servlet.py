@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import logging
+import posixpath
 import traceback
 
 from app_yaml_helper import AppYamlHelper
@@ -11,17 +12,18 @@ from appengine_wrappers import (
 from branch_utility import BranchUtility
 from compiled_file_system import CompiledFileSystem
 from data_source_registry import CreateDataSources
-from empty_dir_file_system import EmptyDirFileSystem
 from environment import IsDevServer
-from extensions_paths import EXAMPLES, PUBLIC_TEMPLATES, SERVER2, STATIC_DOCS
+from extensions_paths import EXAMPLES, PUBLIC_TEMPLATES, STATIC_DOCS
 from file_system_util import CreateURLsFromPaths
 from future import Gettable, Future
+from gcs_file_system_provider import CloudStorageFileSystemProvider
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
 from object_store_creator import ObjectStoreCreator
 from render_servlet import RenderServlet
 from server_instance import ServerInstance
 from servlet import Servlet, Request, Response
+from special_paths import SITE_VERIFICATION_FILE
 from timer import Timer, TimerClosure
 
 
@@ -102,6 +104,9 @@ class CronServlet(Servlet):
     def CreateGithubFileSystemProvider(self, object_store_creator):
       return GithubFileSystemProvider(object_store_creator)
 
+    def CreateGCSFileSystemProvider(self, object_store_creator):
+      return CloudStorageFileSystemProvider(object_store_creator)
+
     def GetAppVersion(self):
       return GetAppVersion()
 
@@ -143,11 +148,18 @@ class CronServlet(Servlet):
       delegate = _SingletonRenderServletDelegate(server_instance)
       return RenderServlet(request, delegate).Get()
 
-    def request_files_in_dir(path, prefix=''):
+    def request_files_in_dir(path, prefix='', strip_ext=None):
       '''Requests every file found under |path| in this host file system, with
-      a request prefix of |prefix|.
+      a request prefix of |prefix|. |strip_ext| is an optional list of file
+      extensions that should be stripped from paths before requesting.
       '''
-      files = [name for name, _ in CreateURLsFromPaths(trunk_fs, path, prefix)]
+      def maybe_strip_ext(name):
+        if name == SITE_VERIFICATION_FILE or not strip_ext:
+          return name
+        base, ext = posixpath.splitext(name)
+        return base if ext in strip_ext else name
+      files = [maybe_strip_ext(name)
+               for name, _ in CreateURLsFromPaths(trunk_fs, path, prefix)]
       return _RequestEachItem(path, files, render)
 
     results = []
@@ -189,7 +201,8 @@ class CronServlet(Servlet):
 
       # Rendering the public templates will also pull in all of the private
       # templates.
-      results.append(request_files_in_dir(PUBLIC_TEMPLATES))
+      results.append(request_files_in_dir(PUBLIC_TEMPLATES,
+                                          strip_ext=('.html', '.md')))
 
       # Rendering the public templates will have pulled in the .js and
       # manifest.json files (for listing examples on the API reference pages),
@@ -288,8 +301,11 @@ class CronServlet(Servlet):
         object_store_creator, max_trunk_revision=revision)
     github_file_system_provider = self._delegate.CreateGithubFileSystemProvider(
         object_store_creator)
+    gcs_file_system_provider = self._delegate.CreateGCSFileSystemProvider(
+        object_store_creator)
     return ServerInstance(object_store_creator,
                           CompiledFileSystem.Factory(object_store_creator),
                           branch_utility,
                           host_file_system_provider,
-                          github_file_system_provider)
+                          github_file_system_provider,
+                          gcs_file_system_provider)

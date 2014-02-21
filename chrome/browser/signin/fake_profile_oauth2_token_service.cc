@@ -4,29 +4,42 @@
 
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 
+#include "base/message_loop/message_loop.h"
+#include "chrome/browser/signin/signin_account_id_helper.h"
+
 FakeProfileOAuth2TokenService::PendingRequest::PendingRequest() {
 }
 
 FakeProfileOAuth2TokenService::PendingRequest::~PendingRequest() {
 }
 
-// static
-BrowserContextKeyedService* FakeProfileOAuth2TokenService::Build(
-    content::BrowserContext* profile) {
-  FakeProfileOAuth2TokenService* service = new FakeProfileOAuth2TokenService();
-  service->Initialize(reinterpret_cast<Profile*>(profile));
-  return service;
-}
-
-FakeProfileOAuth2TokenService::FakeProfileOAuth2TokenService() {
+FakeProfileOAuth2TokenService::FakeProfileOAuth2TokenService()
+    : auto_post_fetch_response_on_message_loop_(false) {
+  SigninAccountIdHelper::SetDisableForTest(true);
 }
 
 FakeProfileOAuth2TokenService::~FakeProfileOAuth2TokenService() {
+  SigninAccountIdHelper::SetDisableForTest(false);
 }
 
 bool FakeProfileOAuth2TokenService::RefreshTokenIsAvailable(
     const std::string& account_id) {
   return !GetRefreshToken(account_id).empty();
+}
+
+void FakeProfileOAuth2TokenService::LoadCredentials(
+    const std::string& primary_account_id) {
+  // Empty implementation as FakeProfileOAuth2TokenService does not have any
+  // credentials to load.
+}
+
+std::vector<std::string> FakeProfileOAuth2TokenService::GetAccounts() {
+  std::vector<std::string> account_ids;
+  for (std::map<std::string, std::string>::const_iterator iter =
+           refresh_tokens_.begin(); iter != refresh_tokens_.end(); ++iter) {
+    account_ids.push_back(iter->first);
+  }
+  return account_ids;
 }
 
 void FakeProfileOAuth2TokenService::UpdateCredentials(
@@ -43,19 +56,34 @@ void FakeProfileOAuth2TokenService::IssueRefreshToken(
 void FakeProfileOAuth2TokenService::IssueRefreshTokenForUser(
     const std::string& account_id,
     const std::string& token) {
-  refresh_token_ = token;
-  if (refresh_token_.empty())
+  if (token.empty()) {
+    refresh_tokens_.erase(account_id);
     FireRefreshTokenRevoked(account_id);
-  else
+  } else {
+    refresh_tokens_[account_id] = token;
     FireRefreshTokenAvailable(account_id);
-  // TODO(atwilson): Maybe we should also call FireRefreshTokensLoaded() here?
+    // TODO(atwilson): Maybe we should also call FireRefreshTokensLoaded() here?
+  }
+}
+
+void FakeProfileOAuth2TokenService::IssueAllTokensForAccount(
+    const std::string& account_id,
+    const std::string& access_token,
+    const base::Time& expiration) {
+  CompleteRequests(account_id,
+                   true,
+                   ScopeSet(),
+                   GoogleServiceAuthError::AuthErrorNone(),
+                   access_token,
+                   expiration);
 }
 
 void FakeProfileOAuth2TokenService::IssueTokenForScope(
     const ScopeSet& scope,
     const std::string& access_token,
     const base::Time& expiration) {
-  CompleteRequests(false,
+  CompleteRequests("",
+                   false,
                    scope,
                    GoogleServiceAuthError::AuthErrorNone(),
                    access_token,
@@ -65,18 +93,19 @@ void FakeProfileOAuth2TokenService::IssueTokenForScope(
 void FakeProfileOAuth2TokenService::IssueErrorForScope(
     const ScopeSet& scope,
     const GoogleServiceAuthError& error) {
-  CompleteRequests(false, scope, error, std::string(), base::Time());
+  CompleteRequests("", false, scope, error, std::string(), base::Time());
 }
 
 void FakeProfileOAuth2TokenService::IssueErrorForAllPendingRequests(
     const GoogleServiceAuthError& error) {
-  CompleteRequests(true, ScopeSet(), error, std::string(), base::Time());
+  CompleteRequests("", true, ScopeSet(), error, std::string(), base::Time());
 }
 
 void FakeProfileOAuth2TokenService::IssueTokenForAllPendingRequests(
     const std::string& access_token,
     const base::Time& expiration) {
-  CompleteRequests(true,
+  CompleteRequests("",
+                   true,
                    ScopeSet(),
                    GoogleServiceAuthError::AuthErrorNone(),
                    access_token,
@@ -84,6 +113,7 @@ void FakeProfileOAuth2TokenService::IssueTokenForAllPendingRequests(
 }
 
 void FakeProfileOAuth2TokenService::CompleteRequests(
+    const std::string& account_id,
     bool all_scopes,
     const ScopeSet& scope,
     const GoogleServiceAuthError& error,
@@ -95,24 +125,25 @@ void FakeProfileOAuth2TokenService::CompleteRequests(
   // Walk the requests and notify the callbacks.
   for (std::vector<PendingRequest>::iterator it = pending_requests_.begin();
        it != pending_requests_.end(); ++it) {
-    if (it->request && (all_scopes || it->scopes == scope))
+    if (!it->request)
+      continue;
+
+    bool scope_matches = all_scopes || it->scopes == scope;
+    bool account_matches = account_id.empty() || account_id == it->account_id;
+    if (account_matches && scope_matches)
       it->request->InformConsumer(error, access_token, expiration);
   }
 }
 
 std::string FakeProfileOAuth2TokenService::GetRefreshToken(
     const std::string& account_id) {
-  return refresh_token_;
+  return refresh_tokens_.count(account_id) > 0 ? refresh_tokens_[account_id] :
+      std::string();
 }
 
 net::URLRequestContextGetter*
 FakeProfileOAuth2TokenService::GetRequestContext() {
   return NULL;
-}
-
-void FakeProfileOAuth2TokenService::RevokeCredentialsOnServer(
-    const std::string& refresh_token) {
-  // Don't try to contact server in tests.
 }
 
 std::vector<FakeProfileOAuth2TokenService::PendingRequest>
@@ -140,6 +171,15 @@ void FakeProfileOAuth2TokenService::FetchOAuth2Token(
   pending_request.scopes = scopes;
   pending_request.request = request->AsWeakPtr();
   pending_requests_.push_back(pending_request);
+
+  if (auto_post_fetch_response_on_message_loop_) {
+    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+        &FakeProfileOAuth2TokenService::IssueAllTokensForAccount,
+        base::Unretained(this),
+        account_id,
+        "access_token",
+        base::Time::Max()));
+  }
 }
 
 void FakeProfileOAuth2TokenService::InvalidateOAuth2Token(

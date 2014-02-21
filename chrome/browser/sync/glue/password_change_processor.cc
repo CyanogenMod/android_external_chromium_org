@@ -9,15 +9,13 @@
 #include "base/location.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/password_manager/password_store.h"
-#include "chrome/browser/password_manager/password_store_change.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/password_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "components/autofill/core/common/password_form.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_change.h"
+#include "content/public/browser/browser_thread.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/write_node.h"
@@ -39,23 +37,17 @@ PasswordChangeProcessor::PasswordChangeProcessor(
       disconnected_(false) {
   DCHECK(model_associator);
   DCHECK(error_handler);
-#if defined(OS_MACOSX)
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-#else
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-#endif
+  DCHECK(password_store->GetBackgroundTaskRunner()->RunsTasksOnCurrentThread());
 }
 
 PasswordChangeProcessor::~PasswordChangeProcessor() {
-  DCHECK(expected_loop_ == base::MessageLoop::current());
+  base::AutoLock lock(disconnect_lock_);
+  password_store_->RemoveObserver(this);
 }
 
-void PasswordChangeProcessor::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+void PasswordChangeProcessor::OnLoginsChanged(
+    const PasswordStoreChangeList& changes) {
   DCHECK(expected_loop_ == base::MessageLoop::current());
-  DCHECK(chrome::NOTIFICATION_LOGINS_CHANGED == type);
 
   base::AutoLock lock(disconnect_lock_);
   if (disconnected_)
@@ -72,10 +64,8 @@ void PasswordChangeProcessor::Observe(
     return;
   }
 
-  PasswordStoreChangeList* changes =
-      content::Details<PasswordStoreChangeList>(details).ptr();
-  for (PasswordStoreChangeList::iterator change = changes->begin();
-       change != changes->end(); ++change) {
+  for (PasswordStoreChangeList::const_iterator change = changes.begin();
+       change != changes.end(); ++change) {
     std::string tag = PasswordModelAssociator::MakeTag(change->form());
     switch (change->type()) {
       case PasswordStoreChange::ADD: {
@@ -253,7 +243,6 @@ void PasswordChangeProcessor::Disconnect() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::AutoLock lock(disconnect_lock_);
   disconnected_ = true;
-  password_store_ = NULL;
 }
 
 void PasswordChangeProcessor::StartImpl(Profile* profile) {
@@ -273,18 +262,13 @@ void PasswordChangeProcessor::InitObserving() {
 void PasswordChangeProcessor::StartObserving() {
   DCHECK(expected_loop_ == base::MessageLoop::current());
   disconnect_lock_.AssertAcquired();
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_LOGINS_CHANGED,
-                              content::Source<PasswordStore>(password_store_));
+  password_store_->AddObserver(this);
 }
 
 void PasswordChangeProcessor::StopObserving() {
   DCHECK(expected_loop_ == base::MessageLoop::current());
   disconnect_lock_.AssertAcquired();
-  notification_registrar_.Remove(
-      this,
-      chrome::NOTIFICATION_LOGINS_CHANGED,
-      content::Source<PasswordStore>(password_store_));
+  password_store_->RemoveObserver(this);
 }
 
 }  // namespace browser_sync

@@ -3,25 +3,13 @@
 # found in the LICENSE file.
 
 import("flags.gni")
+import("//build/config/linux/pkg_config.gni")
 
 config("ssl_preprocessor_flags") {
   if (use_openssl) {
     defines = [ "USE_OPENSSL" ]
   } else if (use_nss) {
     defines = [ "USE_NSS" ]
-  }
-}
-
-# Config for system SSL on Linux.
-if (is_linux && use_system_ssl) {
-  pkg_script = "//build/config/linux/pkg-config.py"
-  config("system_ssl_config") {
-    defines = [ "USE_SYSTEM_SSL" ]
-    pkgresult = exec_script(pkg_script, [ "nss" ], "value")
-    include_dirs = pkgresult[0]
-    cflags = pkgresult[1]
-    libs = pkgresult[2]
-    lib_dirs = pkgresult[3]
   }
 }
 
@@ -33,9 +21,6 @@ group("metassl") {
     assert(is_linux)
     deps = "//third_party/openssl"
     use_openssl = false
-  } else if (use_system_ssl) {
-    assert(is_linux)
-    direct_dependent_configs = ":system_ssl_config"
   } else {
     deps = [ "//net/third_party/nss:ssl" ]
   }

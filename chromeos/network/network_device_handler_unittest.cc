@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chromeos/network/network_device_handler.h"
-
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/values.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/shill_device_client.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
+#include "chromeos/dbus/fake_shill_device_client.h"
+#include "chromeos/dbus/fake_shill_manager_client.h"
+#include "chromeos/network/network_device_handler_impl.h"
+#include "chromeos/network/network_state_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -26,46 +27,58 @@ const char kResultSuccess[] = "success";
 
 class NetworkDeviceHandlerTest : public testing::Test {
  public:
-  NetworkDeviceHandlerTest() {}
+  NetworkDeviceHandlerTest() : fake_device_client_(NULL) {}
   virtual ~NetworkDeviceHandlerTest() {}
 
   virtual void SetUp() OVERRIDE {
-    DBusThreadManager::InitializeWithStub();
+    FakeDBusThreadManager* dbus_manager = new FakeDBusThreadManager;
+    dbus_manager->SetFakeShillClients();
 
-    ShillDeviceClient::TestInterface* device_test =
-        DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface();
-    device_test->ClearDevices();
-    device_test->AddDevice(
-        kDefaultCellularDevicePath, shill::kTypeCellular, "cellular1");
-    device_test->AddDevice(kDefaultWifiDevicePath, shill::kTypeWifi, "wifi1");
-
-    base::FundamentalValue allow_roaming(false);
-    device_test->SetDeviceProperty(kDefaultCellularDevicePath,
-                                   shill::kCellularAllowRoamingProperty,
-                                   allow_roaming);
-
-    base::ListValue test_ip_configs;
-    test_ip_configs.AppendString("ip_config1");
-    device_test->SetDeviceProperty(
-        kDefaultWifiDevicePath, shill::kIPConfigsProperty, test_ip_configs);
+    fake_device_client_ = new FakeShillDeviceClient;
+    dbus_manager->SetShillDeviceClient(
+        scoped_ptr<ShillDeviceClient>(fake_device_client_));
+    DBusThreadManager::InitializeForTesting(dbus_manager);
 
     success_callback_ = base::Bind(&NetworkDeviceHandlerTest::SuccessCallback,
                                    base::Unretained(this));
     properties_success_callback_ =
         base::Bind(&NetworkDeviceHandlerTest::PropertiesSuccessCallback,
                    base::Unretained(this));
+    string_success_callback_ =
+        base::Bind(&NetworkDeviceHandlerTest::StringSuccessCallback,
+                   base::Unretained(this));
     error_callback_ = base::Bind(&NetworkDeviceHandlerTest::ErrorCallback,
                                  base::Unretained(this));
-    network_device_handler_.reset(new NetworkDeviceHandler);
+
+    network_state_handler_.reset(NetworkStateHandler::InitializeForTest());
+    NetworkDeviceHandlerImpl* device_handler = new NetworkDeviceHandlerImpl;
+    device_handler->Init(network_state_handler_.get());
+    network_device_handler_.reset(device_handler);
+
+    // Add devices after handlers have been initialized.
+    ShillDeviceClient::TestInterface* device_test =
+        fake_device_client_->GetTestInterface();
+    device_test->AddDevice(
+        kDefaultCellularDevicePath, shill::kTypeCellular, "cellular1");
+    device_test->AddDevice(kDefaultWifiDevicePath, shill::kTypeWifi, "wifi1");
+
+    base::ListValue test_ip_configs;
+    test_ip_configs.AppendString("ip_config1");
+    device_test->SetDeviceProperty(
+        kDefaultWifiDevicePath, shill::kIPConfigsProperty, test_ip_configs);
+
+    message_loop_.RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
     network_device_handler_.reset();
+    network_state_handler_.reset();
     DBusThreadManager::Shutdown();
   }
 
   void ErrorCallback(const std::string& error_name,
                      scoped_ptr<base::DictionaryValue> error_data) {
+    LOG(ERROR) << "ErrorCallback: " << error_name;
     result_ = error_name;
   }
 
@@ -79,13 +92,21 @@ class NetworkDeviceHandlerTest : public testing::Test {
     properties_.reset(properties.DeepCopy());
   }
 
+  void StringSuccessCallback(const std::string& result) {
+    LOG(ERROR) << "StringSuccessCallback: " << result;
+    result_ = kResultSuccess;
+  }
+
  protected:
   std::string result_;
 
+  FakeShillDeviceClient* fake_device_client_;
   scoped_ptr<NetworkDeviceHandler> network_device_handler_;
+  scoped_ptr<NetworkStateHandler> network_state_handler_;
   base::MessageLoopForUI message_loop_;
   base::Closure success_callback_;
   network_handler::DictionaryResultCallback properties_success_callback_;
+  network_handler::StringResultCallback string_success_callback_;
   network_handler::ErrorCallback error_callback_;
   scoped_ptr<base::DictionaryValue> properties_;
 
@@ -104,26 +125,13 @@ TEST_F(NetworkDeviceHandlerTest, GetDeviceProperties) {
 }
 
 TEST_F(NetworkDeviceHandlerTest, SetDeviceProperty) {
-  // Check that GetDeviceProperties returns the expected initial values.
-  network_device_handler_->GetDeviceProperties(kDefaultCellularDevicePath,
-                                               properties_success_callback_,
-                                               error_callback_);
-  message_loop_.RunUntilIdle();
-  EXPECT_EQ(kResultSuccess, result_);
-  bool allow_roaming;
-  EXPECT_TRUE(properties_->GetBooleanWithoutPathExpansion(
-      shill::kCellularAllowRoamingProperty, &allow_roaming));
-  EXPECT_FALSE(allow_roaming);
-
-  // Set the shill::kCellularAllowRoamingProperty to true. The call
+  // Set the shill::kScanIntervalProperty to true. The call
   // should succeed and the value should be set.
-  base::FundamentalValue allow_roaming_value(true);
-  network_device_handler_->SetDeviceProperty(
-      kDefaultCellularDevicePath,
-      shill::kCellularAllowRoamingProperty,
-      allow_roaming_value,
-      success_callback_,
-      error_callback_);
+  network_device_handler_->SetDeviceProperty(kDefaultCellularDevicePath,
+                                             shill::kScanIntervalProperty,
+                                             base::FundamentalValue(1),
+                                             success_callback_,
+                                             error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
 
@@ -133,19 +141,136 @@ TEST_F(NetworkDeviceHandlerTest, SetDeviceProperty) {
                                                error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
+  int interval = 0;
+  EXPECT_TRUE(properties_->GetIntegerWithoutPathExpansion(
+      shill::kScanIntervalProperty, &interval));
+  EXPECT_EQ(1, interval);
+
+  // Repeat the same with value false.
+  network_device_handler_->SetDeviceProperty(kDefaultCellularDevicePath,
+                                             shill::kScanIntervalProperty,
+                                             base::FundamentalValue(2),
+                                             success_callback_,
+                                             error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+
+  network_device_handler_->GetDeviceProperties(kDefaultCellularDevicePath,
+                                               properties_success_callback_,
+                                               error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+  EXPECT_TRUE(properties_->GetIntegerWithoutPathExpansion(
+      shill::kScanIntervalProperty, &interval));
+  EXPECT_EQ(2, interval);
+
+  // Set property on an invalid path.
+  network_device_handler_->SetDeviceProperty(kUnknownCellularDevicePath,
+                                             shill::kScanIntervalProperty,
+                                             base::FundamentalValue(1),
+                                             success_callback_,
+                                             error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
+
+  // Setting a owner-protected device property through SetDeviceProperty must
+  // fail.
+  network_device_handler_->SetDeviceProperty(
+      kDefaultCellularDevicePath,
+      shill::kCellularAllowRoamingProperty,
+      base::FundamentalValue(true),
+      success_callback_,
+      error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_NE(kResultSuccess, result_);
+
+}
+
+TEST_F(NetworkDeviceHandlerTest, CellularAllowRoaming) {
+  // Start with disabled data roaming.
+  ShillDeviceClient::TestInterface* device_test =
+      fake_device_client_->GetTestInterface();
+  device_test->SetDeviceProperty(kDefaultCellularDevicePath,
+                                 shill::kCellularAllowRoamingProperty,
+                                 base::FundamentalValue(false));
+
+  network_device_handler_->SetCellularAllowRoaming(true);
+  message_loop_.RunUntilIdle();
+
+  // Roaming should be enabled now.
+  network_device_handler_->GetDeviceProperties(kDefaultCellularDevicePath,
+                                               properties_success_callback_,
+                                               error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+  bool allow_roaming;
   EXPECT_TRUE(properties_->GetBooleanWithoutPathExpansion(
       shill::kCellularAllowRoamingProperty, &allow_roaming));
   EXPECT_TRUE(allow_roaming);
 
-  // Set property on an invalid path.
-  network_device_handler_->SetDeviceProperty(
-      kUnknownCellularDevicePath,
-      shill::kCellularAllowRoamingProperty,
-      allow_roaming_value,
-      success_callback_,
-      error_callback_);
+  network_device_handler_->SetCellularAllowRoaming(false);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
+
+  // Roaming should be disable again.
+  network_device_handler_->GetDeviceProperties(kDefaultCellularDevicePath,
+                                               properties_success_callback_,
+                                               error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+  EXPECT_TRUE(properties_->GetBooleanWithoutPathExpansion(
+      shill::kCellularAllowRoamingProperty, &allow_roaming));
+  EXPECT_FALSE(allow_roaming);
+}
+
+TEST_F(NetworkDeviceHandlerTest, SetWifiTDLSEnabled) {
+  // We add a wifi device by default, initial call should succeed.
+  network_device_handler_->SetWifiTDLSEnabled(
+      "fake_ip_address", true, string_success_callback_, error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+}
+
+TEST_F(NetworkDeviceHandlerTest, SetWifiTDLSEnabledMissing) {
+  // Remove the wifi device. Call should fail with "device missing" error.
+  fake_device_client_->GetTestInterface()->RemoveDevice(kDefaultWifiDevicePath);
+  message_loop_.RunUntilIdle();
+  network_device_handler_->SetWifiTDLSEnabled(
+      "fake_ip_address", true, string_success_callback_, error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
+}
+
+TEST_F(NetworkDeviceHandlerTest, SetWifiTDLSEnabledBusy) {
+  // Set the busy count, call should succeed after repeat attempt.
+  fake_device_client_->set_tdls_busy_count(1);
+  network_device_handler_->SetWifiTDLSEnabled(
+      "fake_ip_address", true, string_success_callback_, error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+
+  // Set the busy count to a large number, call should fail after max number
+  // of repeat attempt.
+  fake_device_client_->set_tdls_busy_count(100000);
+  network_device_handler_->SetWifiTDLSEnabled(
+      "fake_ip_address", true, string_success_callback_, error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkDeviceHandler::kErrorTimeout, result_);
+}
+
+TEST_F(NetworkDeviceHandlerTest, GetWifiTDLSStatus) {
+  // We add a wifi device by default, initial call should succeed.
+  network_device_handler_->GetWifiTDLSStatus(
+      "fake_ip_address", string_success_callback_, error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kResultSuccess, result_);
+
+  // Remove the wifi device. Call should fail with "device missing" error.
+  fake_device_client_->GetTestInterface()->RemoveDevice(kDefaultWifiDevicePath);
+  message_loop_.RunUntilIdle();
+  network_device_handler_->GetWifiTDLSStatus(
+      "fake_ip_address", string_success_callback_, error_callback_);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, RequestRefreshIPConfigs) {
@@ -170,7 +295,7 @@ TEST_F(NetworkDeviceHandlerTest, SetCarrier) {
   network_device_handler_->SetCarrier(
       kUnknownCellularDevicePath, kCarrier, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, RequirePin) {
@@ -192,7 +317,7 @@ TEST_F(NetworkDeviceHandlerTest, RequirePin) {
                                       success_callback_,
                                       error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, EnterPin) {
@@ -208,7 +333,7 @@ TEST_F(NetworkDeviceHandlerTest, EnterPin) {
   network_device_handler_->EnterPin(
       kUnknownCellularDevicePath, kPin, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, UnblockPin) {
@@ -231,7 +356,7 @@ TEST_F(NetworkDeviceHandlerTest, UnblockPin) {
                                       success_callback_,
                                       error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, ChangePin) {
@@ -254,7 +379,7 @@ TEST_F(NetworkDeviceHandlerTest, ChangePin) {
                                      success_callback_,
                                      error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorDeviceMissing, result_);
 }
 
 }  // namespace chromeos

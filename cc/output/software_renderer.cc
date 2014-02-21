@@ -35,8 +35,40 @@ namespace cc {
 
 namespace {
 
+class OnDemandRasterTaskImpl : public internal::Task {
+ public:
+  OnDemandRasterTaskImpl(PicturePileImpl* picture_pile,
+                         SkCanvas* canvas,
+                         gfx::Rect content_rect,
+                         float contents_scale)
+      : picture_pile_(picture_pile),
+        canvas_(canvas),
+        content_rect_(content_rect),
+        contents_scale_(contents_scale) {
+    DCHECK(picture_pile_);
+    DCHECK(canvas_);
+  }
+
+  // Overridden from internal::Task:
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
+    picture_pile_->RasterDirect(canvas_, content_rect_, contents_scale_, NULL);
+  }
+
+ protected:
+  virtual ~OnDemandRasterTaskImpl() {}
+
+ private:
+  PicturePileImpl* picture_pile_;
+  SkCanvas* canvas_;
+  const gfx::Rect content_rect_;
+  const float contents_scale_;
+
+  DISALLOW_COPY_AND_ASSIGN(OnDemandRasterTaskImpl);
+};
+
 static inline bool IsScalarNearlyInteger(SkScalar scalar) {
-  return SkScalarNearlyZero(scalar - SkScalarRound(scalar));
+  return SkScalarNearlyZero(scalar - SkScalarRoundToScalar(scalar));
 }
 
 bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
@@ -92,11 +124,13 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
 
   capabilities_.using_map_image = settings_->use_map_image;
   capabilities_.using_shared_memory_resources = true;
+
+  capabilities_.allow_rasterize_on_demand = true;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {}
 
-const RendererCapabilities& SoftwareRenderer::Capabilities() const {
+const RendererCapabilitiesImpl& SoftwareRenderer::Capabilities() const {
   return capabilities_;
 }
 
@@ -117,6 +151,7 @@ void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
 }
 
 void SoftwareRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
+  TRACE_EVENT0("cc,benchmark", "SoftwareRenderer::SwapBuffers");
   CompositorFrame compositor_frame;
   compositor_frame.metadata = metadata;
   compositor_frame.software_frame_data = current_frame_data_.Pass();
@@ -157,7 +192,7 @@ void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
 bool SoftwareRenderer::BindFramebufferToTexture(
     DrawingFrame* frame,
     const ScopedResource* texture,
-    gfx::Rect target_rect) {
+    const gfx::Rect& target_rect) {
   current_framebuffer_lock_.reset();
   current_framebuffer_lock_ = make_scoped_ptr(
       new ResourceProvider::ScopedWriteLockSoftware(
@@ -170,13 +205,13 @@ bool SoftwareRenderer::BindFramebufferToTexture(
   return true;
 }
 
-void SoftwareRenderer::SetScissorTestRect(gfx::Rect scissor_rect) {
+void SoftwareRenderer::SetScissorTestRect(const gfx::Rect& scissor_rect) {
   is_scissor_enabled_ = true;
   scissor_rect_ = scissor_rect;
   SetClipRect(scissor_rect);
 }
 
-void SoftwareRenderer::SetClipRect(gfx::Rect rect) {
+void SoftwareRenderer::SetClipRect(const gfx::Rect& rect) {
   // Skia applies the current matrix to clip rects so we reset it temporary.
   SkMatrix current_matrix = current_canvas_->getTotalMatrix();
   current_canvas_->resetMatrix();
@@ -209,7 +244,8 @@ void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame,
   }
 }
 
-void SoftwareRenderer::SetDrawViewport(gfx::Rect window_space_viewport) {}
+void SoftwareRenderer::SetDrawViewport(
+    const gfx::Rect& window_space_viewport) {}
 
 bool SoftwareRenderer::IsSoftwareResource(
     ResourceProvider::ResourceId resource_id) const {
@@ -280,6 +316,11 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     case DrawQuad::TILED_CONTENT:
       DrawTileQuad(frame, TileDrawQuad::MaterialCast(quad));
       break;
+    case DrawQuad::SURFACE_CONTENT:
+      // Surface content should be fully resolved to other quad types before
+      // reaching a direct renderer.
+      NOTREACHED();
+      break;
     case DrawQuad::INVALID:
     case DrawQuad::IO_SURFACE_CONTENT:
     case DrawQuad::YUV_VIDEO_CONTENT:
@@ -341,8 +382,14 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
   TRACE_EVENT0("cc",
                "SoftwareRenderer::DrawPictureQuad");
-  quad->picture_pile->RasterDirect(
-      current_canvas_, quad->content_rect, quad->contents_scale, NULL);
+
+  // Create and run on-demand raster task for tile.
+  scoped_refptr<internal::Task> on_demand_raster_task(
+      new OnDemandRasterTaskImpl(quad->picture_pile,
+                                 current_canvas_,
+                                 quad->content_rect,
+                                 quad->contents_scale));
+  RunOnDemandRasterTask(on_demand_raster_task.get());
 
   current_canvas_->setDrawFilter(NULL);
 }
@@ -367,6 +414,8 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
   // TODO(skaslev): Add support for non-premultiplied alpha.
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
+  if (!lock.valid())
+    return;
   const SkBitmap* bitmap = lock.sk_bitmap();
   gfx::RectF uv_rect = gfx::ScaleRect(gfx::BoundingRect(quad->uv_top_left,
                                                         quad->uv_bottom_right),
@@ -423,6 +472,8 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
 
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
+  if (!lock.valid())
+    return;
   DCHECK_EQ(GL_CLAMP_TO_EDGE, lock.wrap_mode());
 
   gfx::RectF visible_tex_coord_rect = MathUtil::ScaleRectProportional(
@@ -449,6 +500,8 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   DCHECK(IsSoftwareResource(content_texture->id()));
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 content_texture->id());
+  if (!lock.valid())
+    return;
   SkShader::TileMode content_tile_mode = WrapModeToTileMode(lock.wrap_mode());
 
   SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
@@ -504,6 +557,8 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   if (quad->mask_resource_id) {
     ResourceProvider::ScopedReadLockSoftware mask_lock(resource_provider_,
                                                        quad->mask_resource_id);
+    if (!lock.valid())
+      return;
     SkShader::TileMode mask_tile_mode = WrapModeToTileMode(
         mask_lock.wrap_mode());
 
@@ -587,14 +642,16 @@ void SoftwareRenderer::EnsureBackbuffer() {
   is_backbuffer_discarded_ = false;
 }
 
-void SoftwareRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
+void SoftwareRenderer::GetFramebufferPixels(void* pixels,
+                                            const gfx::Rect& rect) {
   TRACE_EVENT0("cc", "SoftwareRenderer::GetFramebufferPixels");
   SkBitmap subset_bitmap;
-  rect += current_viewport_rect_.OffsetFromOrigin();
-  output_device_->CopyToBitmap(rect, &subset_bitmap);
+  gfx::Rect frame_rect(rect);
+  frame_rect += current_viewport_rect_.OffsetFromOrigin();
+  output_device_->CopyToBitmap(frame_rect, &subset_bitmap);
   subset_bitmap.copyPixelsTo(pixels,
-                             4 * rect.width() * rect.height(),
-                             4 * rect.width());
+                             4 * frame_rect.width() * frame_rect.height(),
+                             4 * frame_rect.width());
 }
 
 void SoftwareRenderer::SetVisible(bool visible) {

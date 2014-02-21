@@ -23,11 +23,11 @@
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebElementCollection.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/web/WebImageCache.h"
 #include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "url/url_canon.h"
@@ -37,20 +37,12 @@ namespace android_webview {
 
 namespace {
 
-bool AllowMixedContent(const blink::WebURL& url) {
-  // We treat non-standard schemes as "secure" in the WebView to allow them to
-  // be used for request interception.
-  // TODO(benm): Tighten this restriction by requiring embedders to register
-  // their custom schemes? See b/9420953.
-  GURL gurl(url);
-  return !gurl.IsStandard();
-}
-
-GURL GetAbsoluteUrl(const blink::WebNode& node, const string16& url_fragment) {
+GURL GetAbsoluteUrl(const blink::WebNode& node,
+                    const base::string16& url_fragment) {
   return GURL(node.document().completeURL(url_fragment));
 }
 
-string16 GetHref(const blink::WebElement& element) {
+base::string16 GetHref(const blink::WebElement& element) {
   // Get the actual 'href' attribute, which might relative if valid or can
   // possibly contain garbage otherwise, so not using absoluteLinkURL here.
   return element.getAttribute("href");
@@ -62,14 +54,13 @@ GURL GetAbsoluteSrcUrl(const blink::WebElement& element) {
   return GetAbsoluteUrl(element, element.getAttribute("src"));
 }
 
-blink::WebNode GetImgChild(const blink::WebNode& node) {
+blink::WebElement GetImgChild(const blink::WebElement& element) {
   // This implementation is incomplete (for example if is an area tag) but
   // matches the original WebViewClassic implementation.
 
-  blink::WebNodeList list = node.getElementsByTagName("img");
-  if (list.length() > 0)
-    return list.item(0);
-  return blink::WebNode();
+  blink::WebElementCollection collection = element.getElementsByTagName("img");
+  DCHECK(!collection.isNull());
+  return collection.firstItem();
 }
 
 bool RemovePrefixAndAssignIfMatches(const base::StringPiece& prefix,
@@ -81,8 +72,8 @@ bool RemovePrefixAndAssignIfMatches(const base::StringPiece& prefix,
     url_canon::RawCanonOutputW<1024> output;
     url_util::DecodeURLEscapeSequences(spec.data() + prefix.length(),
         spec.length() - prefix.length(), &output);
-    std::string decoded_url = UTF16ToUTF8(
-        string16(output.data(), output.length()));
+    std::string decoded_url = base::UTF16ToUTF8(
+        base::string16(output.data(), output.length()));
     dest->assign(decoded_url.begin(), decoded_url.end());
     return true;
   }
@@ -108,6 +99,8 @@ void DistinguishAndAssignSrcLinkType(const GURL& url, AwHitTestData* data) {
   } else {
     data->type = AwHitTestData::SRC_LINK_TYPE;
     data->extra_data_for_type = url.possibly_invalid_spec();
+    if (!data->extra_data_for_type.empty())
+      data->href = base::UTF8ToUTF16(data->extra_data_for_type);
   }
 }
 
@@ -132,6 +125,8 @@ void PopulateHitTestData(const GURL& absolute_link_url,
   } else if (has_link_url && has_image_url && !is_javascript_scheme) {
     data->type = AwHitTestData::SRC_IMAGE_LINK_TYPE;
     data->extra_data_for_type = data->img_src.possibly_invalid_spec();
+    if (absolute_link_url.is_valid())
+      data->href = base::UTF8ToUTF16(absolute_link_url.possibly_invalid_spec());
   } else if (!has_link_url && has_image_url) {
     data->type = AwHitTestData::IMAGE_TYPE;
     data->extra_data_for_type = data->img_src.possibly_invalid_spec();
@@ -145,7 +140,6 @@ void PopulateHitTestData(const GURL& absolute_link_url,
 
 AwRenderViewExt::AwRenderViewExt(content::RenderView* render_view)
     : content::RenderViewObserver(render_view), page_scale_factor_(0.0f) {
-  render_view->GetWebView()->setPermissionClient(this);
 }
 
 AwRenderViewExt::~AwRenderViewExt() {
@@ -184,22 +178,6 @@ void AwRenderViewExt::OnDocumentHasImagesRequest(int id) {
   }
   Send(new AwViewHostMsg_DocumentHasImagesResponse(routing_id(), id,
                                                    hasImages));
-}
-
-bool AwRenderViewExt::allowDisplayingInsecureContent(
-      blink::WebFrame* frame,
-      bool enabled_per_settings,
-      const blink::WebSecurityOrigin& origin,
-      const blink::WebURL& url) {
-  return enabled_per_settings ? true : AllowMixedContent(url);
-}
-
-bool AwRenderViewExt::allowRunningInsecureContent(
-      blink::WebFrame* frame,
-      bool enabled_per_settings,
-      const blink::WebSecurityOrigin& origin,
-      const blink::WebURL& url) {
-  return enabled_per_settings ? true : AllowMixedContent(url);
 }
 
 void AwRenderViewExt::DidCommitProvisionalLoad(blink::WebFrame* frame,
@@ -283,10 +261,10 @@ void AwRenderViewExt::FocusedNodeChanged(const blink::WebNode& node) {
     absolute_link_url = GetAbsoluteUrl(node, data.href);
 
   GURL absolute_image_url;
-  const blink::WebNode child_img = GetImgChild(node);
-  if (!child_img.isNull() && child_img.isElementNode()) {
+  const blink::WebElement child_img = GetImgChild(element);
+  if (!child_img.isNull()) {
     absolute_image_url =
-        GetAbsoluteSrcUrl(child_img.toConst<blink::WebElement>());
+        GetAbsoluteSrcUrl(child_img);
   }
 
   PopulateHitTestData(absolute_link_url,

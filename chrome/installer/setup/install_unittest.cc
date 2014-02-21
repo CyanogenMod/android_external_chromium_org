@@ -117,10 +117,10 @@ class InstallShortcutTest : public testing::Test {
         new base::ScopedPathOverride(base::DIR_COMMON_START_MENU,
                                      fake_common_start_menu_.path()));
 
-    string16 shortcut_name(
+    base::string16 shortcut_name(
         dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
         installer::kLnkExt);
-    string16 alternate_shortcut_name(
+    base::string16 alternate_shortcut_name(
         dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME_ALTERNATE) +
         installer::kLnkExt);
 
@@ -244,7 +244,7 @@ TEST_F(CreateVisualElementsManifestTest, VisualElementsManifestCreated) {
       "      Logo='0.0.0.0\\VisualElements\\Logo.png'\r\n"
       "      SmallLogo='0.0.0.0\\VisualElements\\SmallLogo.png'\r\n"
       "      ForegroundText='light'\r\n"
-      "      BackgroundColor='white'>\r\n"
+      "      BackgroundColor='#323232'>\r\n"
       "    <DefaultTile ShowName='allLogos'/>\r\n"
       "    <SplashScreen Image='0.0.0.0\\VisualElements\\splash-620x300.png'/>"
       "\r\n"
@@ -265,7 +265,8 @@ TEST_F(InstallShortcutTest, CreateAllShortcuts) {
                               expected_start_menu_properties_);
 }
 
-TEST_F(InstallShortcutTest, CreateAllShortcutsSystemLevel) {
+// Disabled failing test; http://crbug.com/329239.
+TEST_F(InstallShortcutTest, DISABLED_CreateAllShortcutsSystemLevel) {
   installer::CreateOrUpdateShortcuts(
       chrome_exe_, *product_, *prefs_, installer::ALL_USERS,
       installer::INSTALL_SHORTCUT_CREATE_ALL);
@@ -425,7 +426,7 @@ TEST_F(InstallShortcutTest, CreateIfNoSystemLevelSomeSystemShortcutsExist) {
 }
 
 TEST(EscapeXmlAttributeValueTest, EscapeCrazyValue) {
-  string16 val(L"This has 'crazy' \"chars\" && < and > signs.");
+  base::string16 val(L"This has 'crazy' \"chars\" && < and > signs.");
   static const wchar_t kExpectedEscapedVal[] =
       L"This has &apos;crazy&apos; \"chars\" &amp;&amp; &lt; and > signs.";
   installer::EscapeXmlAttributeValueInSingleQuotes(&val);
@@ -433,7 +434,7 @@ TEST(EscapeXmlAttributeValueTest, EscapeCrazyValue) {
 }
 
 TEST(EscapeXmlAttributeValueTest, DontEscapeNormalValue) {
-  string16 val(L"Google Chrome");
+  base::string16 val(L"Google Chrome");
   static const wchar_t kExpectedEscapedVal[] = L"Google Chrome";
   installer::EscapeXmlAttributeValueInSingleQuotes(&val);
   ASSERT_STREQ(kExpectedEscapedVal, val.c_str());

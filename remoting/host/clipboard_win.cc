@@ -195,7 +195,7 @@ void ClipboardWin::InjectClipboardEvent(
     return;
   }
 
-  string16 text = UTF8ToUTF16(ReplaceLfByCrLf(event.data()));
+  base::string16 text = base::UTF8ToUTF16(ReplaceLfByCrLf(event.data()));
 
   ScopedClipboard clipboard;
   if (!clipboard.Init(window_->hwnd())) {
@@ -225,7 +225,7 @@ void ClipboardWin::OnClipboardUpdate() {
   DCHECK(window_);
 
   if (::IsClipboardFormatAvailable(CF_UNICODETEXT)) {
-    string16 text;
+    base::string16 text;
     // Add a scope, so that we keep the clipboard open for as short a time as
     // possible.
     {
@@ -252,7 +252,7 @@ void ClipboardWin::OnClipboardUpdate() {
 
     protocol::ClipboardEvent event;
     event.set_mime_type(kMimeTypeTextUtf8);
-    event.set_data(ReplaceCrLfByLf(UTF16ToUTF8(text)));
+    event.set_data(ReplaceCrLfByLf(base::UTF16ToUTF8(text)));
 
     if (client_clipboard_.get()) {
       client_clipboard_->InjectClipboardEvent(event);

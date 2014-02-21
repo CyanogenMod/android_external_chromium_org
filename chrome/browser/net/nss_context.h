@@ -11,6 +11,12 @@
 #include "base/compiler_specific.h"
 #include "crypto/scoped_nss_types.h"
 
+class Profile;
+
+namespace net {
+class NSSCertDatabase;
+}
+
 namespace content {
 class ResourceContext;
 }  // namespace content
@@ -28,5 +34,25 @@ crypto::ScopedPK11Slot GetPrivateNSSKeySlotForResourceContext(
     content::ResourceContext* context,
     const base::Callback<void(crypto::ScopedPK11Slot)>& callback)
     WARN_UNUSED_RESULT;
+
+// Returns a pointer to the NSSCertDatabase for the user associated with
+// |context|, if it is ready. If it is not ready and |callback| is non-null, the
+// |callback| will be run once the DB is initialized. Ownership is not
+// transferred, but the caller may save the pointer, which will remain valid for
+// the lifetime of the ResourceContext.
+// Should be called only on the IO thread.
+net::NSSCertDatabase* GetNSSCertDatabaseForResourceContext(
+    content::ResourceContext* context,
+    const base::Callback<void(net::NSSCertDatabase*)>& callback)
+    WARN_UNUSED_RESULT;
+
+// Gets a pointer to the NSSCertDatabase for the user associated with |context|.
+// It's a wrapper around |GetNSSCertDatabaseForResourceContext| which makes
+// sure it's called on IO thread (with |profile|'s resource context). The
+// callback will be called on the originating message loop.
+// It's accessing profile, so it should be called on the UI thread.
+void GetNSSCertDatabaseForProfile(
+    Profile* profile,
+    const base::Callback<void(net::NSSCertDatabase*)>& callback);
 
 #endif  // CHROME_BROWSER_NET_NSS_CONTEXT_H_

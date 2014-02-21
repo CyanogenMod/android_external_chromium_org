@@ -12,7 +12,6 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -38,16 +37,13 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
-
-// http://crbug.com/31663
-// TODO(linux_aura) http://crbug.com/163931
-#if !(defined(OS_WIN) && defined(USE_AURA)) && !(defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
 
 using content::WebContents;
 
@@ -97,12 +93,10 @@ class TaskManagerNoShowBrowserTest : public ExtensionBrowserTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionBrowserTest::SetUpCommandLine(command_line);
 
-    // Do not prelaunch the GPU process and disable accelerated compositing
-    // for these tests as the GPU process will show up in task manager but
-    // whether it appears before or after the new tab renderer process is not
-    // well defined.
-    command_line->AppendSwitch(switches::kDisableGpuProcessPrelaunch);
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
+    // Do not launch the GPU process as the GPU process will show up in task
+    // manager but whether it appears before or after the new tab renderer
+    // process is not well defined.
+    command_line->AppendSwitch(switches::kDisableGpu);
 
     // Do not launch device discovery process.
     command_line->AppendSwitch(switches::kDisableDeviceDiscoveryNotifications);
@@ -514,12 +508,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, DISABLED_WebWorkerJSHeapMemory) {
 }
 
 IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeInTabDevToolsWindow) {
-  DevToolsWindow* dev_tools = DevToolsWindow::ToggleDevToolsWindow(
-      model()->GetResourceWebContents(1)->GetRenderViewHost(),
-      true,
-      DevToolsToggleAction::Inspect());
-  // Dock side bottom should be the default.
-  ASSERT_EQ(DEVTOOLS_DOCK_SIDE_BOTTOM, dev_tools->dock_side());
+  DevToolsWindow::OpenDevToolsWindowForTest(
+      model()->GetResourceWebContents(1)->GetRenderViewHost(), true);
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(2);
 }
 
@@ -528,12 +518,9 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeInTabDevToolsWindow) {
 IN_PROC_BROWSER_TEST_F(TaskManagerNoShowBrowserTest,
                        NoticeInTabDevToolsWindow) {
   // First create the devtools window.
-  DevToolsWindow* dev_tools = DevToolsWindow::ToggleDevToolsWindow(
+  DevToolsWindow::OpenDevToolsWindowForTest(
       browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
-      true,
-      DevToolsToggleAction::Inspect());
-  // Dock side bottom should be the default.
-  ASSERT_EQ(DEVTOOLS_DOCK_SIDE_BOTTOM, dev_tools->dock_side());
+      true);
   // Make sure that the devtools window is loaded before starting the task
   // manager.
   content::RunAllPendingInMessageLoop();
@@ -546,5 +533,3 @@ IN_PROC_BROWSER_TEST_F(TaskManagerNoShowBrowserTest,
                  base::Unretained(this)));
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(2);
 }
-
-#endif

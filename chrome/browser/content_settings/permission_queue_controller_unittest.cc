@@ -13,7 +13,6 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
-#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 
@@ -28,7 +27,8 @@ class PermissionQueueControllerTests : public ChromeRenderViewHostTestHarness {
     return PermissionRequestID(
         web_contents()->GetRenderProcessHost()->GetID(),
         web_contents()->GetRenderViewHost()->GetRoutingID(),
-        bridge_id);
+        bridge_id,
+        0);
   }
 
  private:

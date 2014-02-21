@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "net/base/net_errors.h"
@@ -17,8 +17,10 @@
 #include "third_party/sqlite/sqlite3.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/database/database_identifier.h"
+
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -171,19 +173,11 @@ class TestQuotaManagerProxy : public quota::QuotaManagerProxy {
 
 
 bool EnsureFileOfSize(const base::FilePath& file_path, int64 length) {
-  base::PlatformFileError error_code(base::PLATFORM_FILE_ERROR_FAILED);
-  base::PlatformFile file =
-      base::CreatePlatformFile(
-          file_path,
-          base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_WRITE,
-          NULL,
-          &error_code);
-  if (error_code != base::PLATFORM_FILE_OK)
+  base::File file(file_path,
+                  base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE);
+  if (!file.IsValid())
     return false;
-  if (!base::TruncatePlatformFile(file, length))
-    error_code = base::PLATFORM_FILE_ERROR_FAILED;
-  base::ClosePlatformFile(file);
-  return error_code == base::PLATFORM_FILE_OK;
+  return file.SetLength(length);
 }
 
 }  // namespace

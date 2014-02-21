@@ -25,6 +25,7 @@
 #include "net/cookies/cookie_store.h"
 #include "net/dns/mapped_host_resolver.h"
 #include "net/http/http_cache.h"
+#include "net/http/http_stream_factory.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
@@ -91,29 +92,29 @@ scoped_ptr<net::URLRequestJobFactory> CreateJobFactory(
     content::ProtocolHandlerMap* protocol_handlers) {
   scoped_ptr<AwURLRequestJobFactory> aw_job_factory(new AwURLRequestJobFactory);
   bool set_protocol = aw_job_factory->SetProtocolHandler(
-      chrome::kFileScheme,
+      content::kFileScheme,
       new net::FileProtocolHandler(
           content::BrowserThread::GetBlockingPool()->
               GetTaskRunnerWithShutdownBehavior(
                   base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      chrome::kDataScheme, new net::DataProtocolHandler());
+      content::kDataScheme, new net::DataProtocolHandler());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
       chrome::kBlobScheme, (*protocol_handlers)[chrome::kBlobScheme].release());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      chrome::kFileSystemScheme,
-      (*protocol_handlers)[chrome::kFileSystemScheme].release());
+      content::kFileSystemScheme,
+      (*protocol_handlers)[content::kFileSystemScheme].release());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      chrome::kChromeUIScheme,
-      (*protocol_handlers)[chrome::kChromeUIScheme].release());
+      content::kChromeUIScheme,
+      (*protocol_handlers)[content::kChromeUIScheme].release());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      chrome::kChromeDevToolsScheme,
-      (*protocol_handlers)[chrome::kChromeDevToolsScheme].release());
+      content::kChromeDevToolsScheme,
+      (*protocol_handlers)[content::kChromeDevToolsScheme].release());
   DCHECK(set_protocol);
   protocol_handlers->clear();
 
@@ -196,6 +197,7 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   }
   PopulateNetworkSessionParams(url_request_context_.get(),
                                &network_session_params);
+
   net::HttpCache* main_cache = new net::HttpCache(
       network_session_params,
       new net::HttpCache::DefaultBackend(
@@ -210,6 +212,10 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
 
   job_factory_ = CreateJobFactory(&protocol_handlers_);
   url_request_context_->set_job_factory(job_factory_.get());
+
+  // TODO(sgurun) remove once crbug.com/329681 is fixed. Should be
+  // called only once.
+  net::HttpStreamFactory::EnableNpnSpdy31();
 }
 
 net::URLRequestContext* AwURLRequestContextGetter::GetURLRequestContext() {

@@ -11,18 +11,18 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/drive/drive_app_registry.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/file_manager/app_id.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chrome/browser/drive/drive_app_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_builder.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -46,8 +46,8 @@ void RegisterDefaultTaskPreferences(TestingPrefServiceSimple* pref_service) {
 // Updates the default task preferences per the given dictionary values. Used
 // for testing ChooseAndSetDefaultTask.
 void UpdateDefaultTaskPreferences(TestingPrefServiceSimple* pref_service,
-                                  const DictionaryValue& mime_types,
-                                  const DictionaryValue& suffixes) {
+                                  const base::DictionaryValue& mime_types,
+                                  const base::DictionaryValue& suffixes) {
   DCHECK(pref_service);
 
   pref_service->Set(prefs::kDefaultTasksByMimeType, mime_types);
@@ -167,13 +167,13 @@ TEST(FileManagerFileTasksTest, ParseTaskID_UnknownTaskType) {
 }
 
 TEST(FileManagerFileTasksTest, FindDriveAppTasks) {
+  TestingProfile profile;
   // For DriveAppRegistry, which checks CurrentlyOn(BrowserThread::UI).
   content::TestBrowserThreadBundle thread_bundle;
 
   // Foo.app can handle "text/plain" and "text/html"
   scoped_ptr<google_apis::AppResource> foo_app(new google_apis::AppResource);
-  foo_app->set_product_url(
-      GURL("https://chrome.google.com/webstore/detail/foo_app_id"));
+  foo_app->set_product_id("foo_app_id");
   foo_app->set_application_id("foo_app_id");
   foo_app->set_name("Foo");
   foo_app->set_object_type("foo_object_type");
@@ -184,8 +184,7 @@ TEST(FileManagerFileTasksTest, FindDriveAppTasks) {
 
   // Bar.app can only handle "text/plain".
   scoped_ptr<google_apis::AppResource> bar_app(new google_apis::AppResource);
-  bar_app->set_product_url(
-      GURL("https://chrome.google.com/webstore/detail/bar_app_id"));
+  bar_app->set_product_id("bar_app_id");
   bar_app->set_application_id("bar_app_id");
   bar_app->set_name("Bar");
   bar_app->set_object_type("bar_object_type");
@@ -206,7 +205,7 @@ TEST(FileManagerFileTasksTest, FindDriveAppTasks) {
   PathAndMimeTypeSet path_mime_set;
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.txt"),
+          drive::util::GetDriveMountPointPath(&profile).AppendASCII("foo.txt"),
           "text/plain"));
   std::vector<FullTaskDescriptor> tasks;
   FindDriveAppTasks(drive_app_registry,
@@ -227,11 +226,11 @@ TEST(FileManagerFileTasksTest, FindDriveAppTasks) {
   path_mime_set.clear();
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.txt"),
+          drive::util::GetDriveMountPointPath(&profile).AppendASCII("foo.txt"),
           "text/plain"));
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.html"),
+          drive::util::GetDriveMountPointPath(&profile).AppendASCII("foo.html"),
           "text/html"));
   tasks.clear();
   FindDriveAppTasks(drive_app_registry,
@@ -289,8 +288,8 @@ TEST(FileManagerFileTasksTest, ChooseAndSetDefaultTask_MultipleTasks) {
   EXPECT_FALSE(tasks[1].is_default());
 
   // Set Text.app as default for "text/plain" in the preferences.
-  DictionaryValue empty;
-  DictionaryValue mime_types;
+  base::DictionaryValue empty;
+  base::DictionaryValue mime_types;
   mime_types.SetStringWithoutPathExpansion(
       "text/plain",
       TaskDescriptorToId(text_app_task));
@@ -311,7 +310,7 @@ TEST(FileManagerFileTasksTest, ChooseAndSetDefaultTask_MultipleTasks) {
   EXPECT_FALSE(tasks[1].is_default());
 
   // Set Nice.app as default for ".txt" in the preferences.
-  DictionaryValue suffixes;
+  base::DictionaryValue suffixes;
   suffixes.SetStringWithoutPathExpansion(
       ".txt",
       TaskDescriptorToId(nice_app_task));
@@ -434,7 +433,8 @@ TEST_F(FileManagerFileTasksComplexTest, FindFileHandlerTasks) {
   PathAndMimeTypeSet path_mime_set;
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.txt"),
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.txt"),
           "text/plain"));
 
   std::vector<FullTaskDescriptor> tasks;
@@ -454,11 +454,13 @@ TEST_F(FileManagerFileTasksComplexTest, FindFileHandlerTasks) {
   path_mime_set.clear();
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.txt"),
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.txt"),
           "text/plain"));
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.html"),
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.html"),
           "text/html"));
   tasks.clear();
   FindFileHandlerTasks(&test_profile_, path_mime_set, &tasks);
@@ -606,8 +608,7 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks) {
   // Baz.app can handle "text/plain".
   // This is a Drive app.
   scoped_ptr<google_apis::AppResource> baz_app(new google_apis::AppResource);
-  baz_app->set_product_url(
-      GURL("https://chrome.google.com/webstore/detail/baz_app_id"));
+  baz_app->set_product_id("baz_app_id");
   baz_app->set_application_id(kBazId);
   baz_app->set_name("Baz");
   baz_app->set_object_type("baz_object_type");
@@ -627,7 +628,8 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks) {
   std::vector<GURL> file_urls;
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.txt"),
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.txt"),
           "text/plain"));
   file_urls.push_back(GURL("filesystem:chrome-extension://id/dir/foo.txt"));
 
@@ -658,8 +660,7 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks_GoogleDocument) {
 
   // Foo.app can handle ".gdoc" files.
   scoped_ptr<google_apis::AppResource> foo_app(new google_apis::AppResource);
-  foo_app->set_product_url(
-      GURL("https://chrome.google.com/webstore/detail/foo_app"));
+  foo_app->set_product_id("foo_app");
   foo_app->set_application_id(kFooId);
   foo_app->set_name("Foo");
   foo_app->set_object_type("foo_object_type");
@@ -718,7 +719,8 @@ TEST_F(FileManagerFileTasksComplexTest, FindAllTypesOfTasks_GoogleDocument) {
   std::vector<GURL> file_urls;
   path_mime_set.insert(
       std::make_pair(
-          drive::util::GetDriveMountPointPath().AppendASCII("foo.gdoc"),
+          drive::util::GetDriveMountPointPath(&test_profile_).AppendASCII(
+              "foo.gdoc"),
           "application/vnd.google-apps.document"));
   file_urls.push_back(GURL("filesystem:chrome-extension://id/dir/foo.gdoc"));
 

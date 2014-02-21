@@ -10,6 +10,7 @@
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_session.h"
+#include "net/quic/quic_utils.h"
 
 using std::string;
 using base::StringPiece;
@@ -33,8 +34,8 @@ void QuicCryptoStream::OnHandshakeMessage(
   session()->OnCryptoHandshakeMessageReceived(message);
 }
 
-uint32 QuicCryptoStream::ProcessData(const char* data,
-                                     uint32 data_len) {
+uint32 QuicCryptoStream::ProcessRawData(const char* data,
+                                        uint32 data_len) {
   // Do not process handshake messages after the handshake is confirmed.
   if (handshake_confirmed()) {
     CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
@@ -47,6 +48,10 @@ uint32 QuicCryptoStream::ProcessData(const char* data,
   return data_len;
 }
 
+QuicPriority QuicCryptoStream::EffectivePriority() const {
+  return QuicUtils::HighestPriority();
+}
+
 void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message) {
   session()->OnCryptoHandshakeMessageSent(message);
@@ -55,7 +60,7 @@ void QuicCryptoStream::SendHandshakeMessage(
   // any other frames in a single packet.
   session()->connection()->Flush();
   // TODO(wtc): check the return value.
-  WriteData(string(data.data(), data.length()), false);
+  WriteOrBufferData(string(data.data(), data.length()), false);
   session()->connection()->Flush();
 }
 

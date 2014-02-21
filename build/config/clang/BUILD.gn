@@ -2,17 +2,32 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+declare_args() {
+  # Indicates if the build should use the Chrome-specific plugins for enforcing
+  # coding guidelines, etc.
+  clang_use_chrome_plugins = true
+}
+
 config("find_bad_constructs") {
-  cflags = [
-    "-Xclang", "-load",
-    "-Xclang",
+  if (clang_use_chrome_plugins) {
+    cflags = [
+      "-Xclang", "-load",
+      "-Xclang",
+    ]
 
-    # TODO(brettw) express this in terms of a relative dir from the output.
-    # for now, assume the output dir is two levels deep under the source
-    # (like "out/Debug").
-    "../../third_party/llvm-build/Release+Asserts/lib/libFindBadConstructs.dylib",
+    if (is_mac || is_ios) {
+      cflags += [ rebase_path(
+        "//third_party/llvm-build/Release+Asserts/lib/libFindBadConstructs.dylib",
+        ".", root_build_dir) ]
+    } else if (is_linux) {
+      cflags += [ rebase_path(
+        "//third_party/llvm-build/Release+Asserts/lib/libFindBadConstructs.so",
+        ".", root_build_dir) ]
+    }
 
-    "-Xclang", "-add-plugin",
-    "-Xclang", "find-bad-constructs",
-  ]
+    cflags += [
+      "-Xclang", "-add-plugin",
+      "-Xclang", "find-bad-constructs",
+    ]
+  }
 }

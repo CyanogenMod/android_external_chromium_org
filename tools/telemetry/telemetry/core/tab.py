@@ -1,9 +1,16 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+from telemetry.core import bitmap
 from telemetry.core import web_contents
 
 DEFAULT_TAB_TIMEOUT = 60
+
+
+class BoundingBoxNotFoundException(Exception):
+  pass
+
 
 class Tab(web_contents.WebContents):
   """Represents a tab in the browser
@@ -18,6 +25,7 @@ class Tab(web_contents.WebContents):
   """
   def __init__(self, inspector_backend):
     super(Tab, self).__init__(inspector_backend)
+    self._previous_tab_contents_bounding_box = None
 
   def __del__(self):
     super(Tab, self).__del__()
@@ -80,33 +88,142 @@ class Tab(web_contents.WebContents):
     """True if the browser instance is capable of capturing video."""
     return self.browser.platform.CanCaptureVideo()
 
+  def Highlight(self, color):
+    """Synchronously highlights entire tab contents with the given RgbaColor.
+
+    TODO(tonyg): It is possible that the z-index hack here might not work for
+    all pages. If this happens, DevTools also provides a method for this.
+    """
+    self.ExecuteJavaScript("""
+      (function() {
+        var screen = document.createElement('div');
+        screen.style.background = 'rgba(%d, %d, %d, %d)';
+        screen.style.position = 'fixed';
+        screen.style.top = '0';
+        screen.style.left = '0';
+        screen.style.width = '100%%';
+        screen.style.height = '100%%';
+        screen.style.zIndex = '2147483638';
+        document.body.appendChild(screen);
+        requestAnimationFrame(function() {
+          window.__telemetry_screen_%d = screen;
+        });
+      })();
+    """ % (color.r, color.g, color.b, color.a, int(color)))
+    self.WaitForJavaScriptExpression(
+        '!!window.__telemetry_screen_%d' % int(color), 5)
+
+  def ClearHighlight(self, color):
+    """Clears a highlight of the given bitmap.RgbaColor."""
+    self.ExecuteJavaScript("""
+      (function() {
+        document.body.removeChild(window.__telemetry_screen_%d);
+        requestAnimationFrame(function() {
+          window.__telemetry_screen_%d = null;
+        });
+      })();
+    """ % (int(color), int(color)))
+    self.WaitForJavaScriptExpression(
+        '!window.__telemetry_screen_%d' % int(color), 5)
+
   def StartVideoCapture(self, min_bitrate_mbps):
     """Starts capturing video of the tab's contents.
+
+    This works by flashing the entire tab contents to a arbitrary color and then
+    starting video recording. When the frames are processed, we can look for
+    that flash as the content bounds.
 
     Args:
       min_bitrate_mbps: The minimum caputre bitrate in MegaBits Per Second.
           The platform is free to deliver a higher bitrate if it can do so
           without increasing overhead.
     """
+    self.Highlight(bitmap.WEB_PAGE_TEST_ORANGE)
     self.browser.platform.StartVideoCapture(min_bitrate_mbps)
+    self.ClearHighlight(bitmap.WEB_PAGE_TEST_ORANGE)
+
+  def _FindHighlightBoundingBox(self, bmp, color, bounds_tolerance=4,
+      color_tolerance=8):
+    """Returns the bounding box of the content highlight of the given color.
+
+    Raises:
+      BoundingBoxNotFoundException if the hightlight could not be found.
+    """
+    content_box, pixel_count = bmp.GetBoundingBox(color,
+        tolerance=color_tolerance)
+
+    if not content_box:
+      return None
+
+    # We assume arbitrarily that tabs are all larger than 200x200. If this
+    # fails it either means that assumption has changed or something is
+    # awry with our bounding box calculation.
+    if content_box[2] < 200 or content_box[3] < 200:
+      raise BoundingBoxNotFoundException('Unexpectedly small tab contents.')
+
+    # TODO(tonyg): Can this threshold be increased?
+    if pixel_count < 0.9 * content_box[2] * content_box[3]:
+      raise BoundingBoxNotFoundException(
+          'Low count of pixels in tab contents matching expected color.')
+
+    # Since Telemetry doesn't know how to resize the window, we assume
+    # that we should always get the same content box for a tab. If this
+    # fails, it means either that assumption has changed or something is
+    # awry with our bounding box calculation. If this assumption changes,
+    # this can be removed.
+    #
+    # TODO(tonyg): This assert doesn't seem to work.
+    if (self._previous_tab_contents_bounding_box and
+        self._previous_tab_contents_bounding_box != content_box):
+      # Check if there's just a minor variation on the bounding box. If it's
+      # just a few pixels, we can assume it's probably due to
+      # compression artifacts.
+      for i in xrange(len(content_box)):
+        bounds_difference = abs(content_box[i] -
+            self._previous_tab_contents_bounding_box[i])
+        if bounds_difference > bounds_tolerance:
+          raise BoundingBoxNotFoundException(
+              'Unexpected change in tab contents box.')
+    self._previous_tab_contents_bounding_box = content_box
+
+    return content_box
 
   def StopVideoCapture(self):
     """Stops recording video of the tab's contents.
 
+    This looks for the initial color flash in the first frame to establish the
+    tab content boundaries and then omits all frames displaying the flash.
+
     Yields:
       (time_ms, bitmap) tuples representing each video keyframe. Only the first
-      frame in a run of sequential duplicate bitmaps is included.
+      frame in a run of sequential duplicate bitmaps is typically included.
         time_ms is milliseconds since navigationStart.
         bitmap is a telemetry.core.Bitmap.
     """
-    # TODO(tonyg/szym): platform's video capture may include offscreen content
-    # from a webcam, OS framing and browser framing. However, this API must
-    # return only the tab contents. So we need to display a color flash in the
-    # tab and then crop out all the other pixels. We also need to translate that
-    # initial flash time into navigationStart timespace.
+    frame_generator = self.browser.platform.StopVideoCapture()
 
-    for t in self.browser.platform.StopVideoCapture():
-      return t
+    # Flip through frames until we find the initial tab contents flash.
+    content_box = None
+    for _, bmp in frame_generator:
+      content_box = self._FindHighlightBoundingBox(
+          bmp, bitmap.WEB_PAGE_TEST_ORANGE)
+      if content_box:
+        break
+
+    if not content_box:
+      raise BoundingBoxNotFoundException(
+          'Failed to identify tab contents in video capture.')
+
+    # Flip through frames until the flash goes away and emit that as frame 0.
+    timestamp = 0
+    for timestamp, bmp in frame_generator:
+      if not self._FindHighlightBoundingBox(bmp, bitmap.WEB_PAGE_TEST_ORANGE):
+        yield 0, bmp.Crop(*content_box)
+        break
+
+    start_time = timestamp
+    for timestamp, bmp in frame_generator:
+      yield timestamp - start_time, bmp.Crop(*content_box)
 
   def PerformActionAndWaitForNavigate(
       self, action_function, timeout=DEFAULT_TAB_TIMEOUT):
@@ -136,6 +253,21 @@ class Tab(web_contents.WebContents):
   def CollectGarbage(self):
     self._inspector_backend.CollectGarbage()
 
-  def ClearCache(self):
-    """Clears the browser's HTTP disk cache and the tab's HTTP memory cache."""
-    self._inspector_backend.ClearCache()
+  def ClearCache(self, force):
+    """Clears the browser's networking related disk, memory and other caches.
+
+    Args:
+      force: Iff true, navigates to about:blank which destroys the previous
+          renderer, ensuring that even "live" resources in the memory cache are
+          cleared.
+    """
+    self.ExecuteJavaScript("""
+        if (window.chrome && chrome.benchmarking &&
+            chrome.benchmarking.clearCache) {
+          chrome.benchmarking.clearCache();
+          chrome.benchmarking.clearPredictorCache();
+          chrome.benchmarking.clearHostResolverCache();
+        }
+    """)
+    if force:
+      self.Navigate('about:blank')

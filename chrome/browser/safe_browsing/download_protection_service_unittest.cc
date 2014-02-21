@@ -25,9 +25,9 @@
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/signature_util.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
-#include "content/public/browser/render_process_host.h"
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_utils.h"
 #include "net/cert/x509_certificate.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -157,7 +157,6 @@ class DownloadProtectionServiceTest : public testing::Test {
             content::TestBrowserThreadBundle::IO_MAINLOOP) {
   }
   virtual void SetUp() {
-    content::RenderProcessHost::SetRunRendererInProcess(true);
     // Start real threads for the IO and File threads so that the DCHECKs
     // to test that we're on the correct thread work.
     sb_service_ = new StrictMock<FakeSafeBrowsingService>();
@@ -185,7 +184,6 @@ class DownloadProtectionServiceTest : public testing::Test {
     // tasks currently running.
     FlushThreadMessageLoops();
     sb_service_ = NULL;
-    content::RenderProcessHost::SetRunRendererInProcess(false);
   }
 
   bool RequestContainsResource(const ClientDownloadRequest& request,
@@ -318,6 +316,7 @@ class DownloadProtectionServiceTest : public testing::Test {
   DownloadProtectionService::DownloadCheckResult result_;
   bool has_result_;
   content::TestBrowserThreadBundle test_browser_thread_bundle_;
+  content::InProcessUtilityThreadHelper in_process_utility_thread_helper_;
   base::FilePath testdata_path_;
 };
 
@@ -358,38 +357,85 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadInvalidUrl) {
 }
 
 TEST_F(DownloadProtectionServiceTest, CheckClientDownloadWhitelistedUrl) {
+  // Response to any requests will be DANGEROUS.
+  ClientDownloadResponse response;
+  response.set_verdict(ClientDownloadResponse::DANGEROUS);
+  net::FakeURLFetcherFactory factory(NULL);
+  factory.SetFakeResponse(
+      DownloadProtectionService::GetDownloadRequestUrl(),
+      response.SerializeAsString(),
+      net::HTTP_OK, net::URLRequestStatus::SUCCESS);
+
+  std::string hash = "hash";
   base::FilePath a_tmp(FILE_PATH_LITERAL("a.tmp"));
   base::FilePath a_exe(FILE_PATH_LITERAL("a.exe"));
   std::vector<GURL> url_chain;
-  url_chain.push_back(GURL("http://www.evil.com/bla.exe"));
-  url_chain.push_back(GURL("http://www.google.com/a.exe"));
-  GURL referrer("http://www.google.com/");
+  GURL referrer;
 
   content::MockDownloadItem item;
-  EXPECT_CALL(item, AddObserver(_)).Times(2);
-  EXPECT_CALL(item, RemoveObserver(_)).Times(2);
+  EXPECT_CALL(item, AddObserver(_)).Times(4);
+  EXPECT_CALL(item, RemoveObserver(_)).Times(4);
   EXPECT_CALL(item, GetFullPath()).WillRepeatedly(ReturnRef(a_tmp));
   EXPECT_CALL(item, GetTargetFilePath()).WillRepeatedly(ReturnRef(a_exe));
   EXPECT_CALL(item, GetUrlChain()).WillRepeatedly(ReturnRef(url_chain));
   EXPECT_CALL(item, GetReferrerUrl()).WillRepeatedly(ReturnRef(referrer));
+  EXPECT_CALL(item, GetHash()).WillRepeatedly(ReturnRef(hash));
+  EXPECT_CALL(item, GetReceivedBytes()).WillRepeatedly(Return(100));
+  EXPECT_CALL(item, HasUserGesture()).WillRepeatedly(Return(true));
+  EXPECT_CALL(item, GetRemoteAddress()).WillRepeatedly(Return(""));
+  EXPECT_CALL(*signature_util_.get(), CheckSignature(a_tmp, _)).Times(4);
+
+  // We should not get whilelist checks for other URLs than specified below.
   EXPECT_CALL(*sb_service_->mock_database_manager(),
-              MatchDownloadWhitelistUrl(_))
+              MatchDownloadWhitelistUrl(_)).Times(0);
+  EXPECT_CALL(*sb_service_->mock_database_manager(),
+              MatchDownloadWhitelistUrl(GURL("http://www.evil.com/bla.exe")))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*sb_service_->mock_database_manager(),
               MatchDownloadWhitelistUrl(GURL("http://www.google.com/a.exe")))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(*signature_util_.get(), CheckSignature(a_tmp, _)).Times(2);
 
+  // With no referrer and just the bad url, should be marked DANGEROUS.
+  url_chain.push_back(GURL("http://www.evil.com/bla.exe"));
   download_service_->CheckClientDownload(
       &item,
       base::Bind(&DownloadProtectionServiceTest::CheckDoneCallback,
                  base::Unretained(this)));
   MessageLoop::current()->Run();
+#if defined(OS_WIN)
+  EXPECT_TRUE(IsResult(DownloadProtectionService::DANGEROUS));
+#else
   EXPECT_TRUE(IsResult(DownloadProtectionService::SAFE));
+#endif
 
-  // Check that the referrer is matched against the whitelist.
-  url_chain.pop_back();
-  referrer = GURL("http://www.google.com/a.exe");
+  // Check that the referrer is not matched against the whitelist.
+  referrer = GURL("http://www.google.com/");
+  download_service_->CheckClientDownload(
+      &item,
+      base::Bind(&DownloadProtectionServiceTest::CheckDoneCallback,
+                 base::Unretained(this)));
+  MessageLoop::current()->Run();
+#if defined(OS_WIN)
+  EXPECT_TRUE(IsResult(DownloadProtectionService::DANGEROUS));
+#else
+  EXPECT_TRUE(IsResult(DownloadProtectionService::SAFE));
+#endif
+
+  // Redirect from a site shouldn't be checked either.
+  url_chain.insert(url_chain.begin(), GURL("http://www.google.com/redirect"));
+  download_service_->CheckClientDownload(
+      &item,
+      base::Bind(&DownloadProtectionServiceTest::CheckDoneCallback,
+                 base::Unretained(this)));
+  MessageLoop::current()->Run();
+#if defined(OS_WIN)
+  EXPECT_TRUE(IsResult(DownloadProtectionService::DANGEROUS));
+#else
+  EXPECT_TRUE(IsResult(DownloadProtectionService::SAFE));
+#endif
+
+  // Only if the final url is whitelisted should it be SAFE.
+  url_chain.push_back(GURL("http://www.google.com/a.exe"));
   download_service_->CheckClientDownload(
       &item,
       base::Bind(&DownloadProtectionServiceTest::CheckDoneCallback,

@@ -14,13 +14,13 @@ TestManagementPolicyProvider::TestManagementPolicyProvider()
       must_remain_enabled_(false),
       must_remain_disabled_(false),
       disable_reason_(Extension::DISABLE_NONE) {
-  error_message_ = UTF8ToUTF16(expected_error());
+  error_message_ = base::UTF8ToUTF16(expected_error());
 }
 
 TestManagementPolicyProvider::TestManagementPolicyProvider(
     int prohibited_actions) {
   SetProhibitedActions(prohibited_actions);
-  error_message_ = UTF8ToUTF16(expected_error());
+  error_message_ = base::UTF8ToUTF16(expected_error());
 }
 
 void TestManagementPolicyProvider::SetProhibitedActions(
@@ -41,21 +41,22 @@ std::string TestManagementPolicyProvider::GetDebugPolicyProviderName() const {
 }
 
 bool TestManagementPolicyProvider::UserMayLoad(const Extension* extension,
-                                               string16* error) const {
+                                               base::string16* error) const {
   if (error && !may_load_)
     *error = error_message_;
   return may_load_;
 }
 
 bool TestManagementPolicyProvider::UserMayModifySettings(
-    const Extension* extension, string16* error) const {
+    const Extension* extension, base::string16* error) const {
   if (error && !may_modify_status_)
     *error = error_message_;
   return may_modify_status_;
 }
 
 bool TestManagementPolicyProvider::MustRemainEnabled(const Extension* extension,
-                                                     string16* error) const {
+                                                     base::string16* error)
+    const {
   if (error && must_remain_enabled_)
     *error = error_message_;
   return must_remain_enabled_;
@@ -64,7 +65,7 @@ bool TestManagementPolicyProvider::MustRemainEnabled(const Extension* extension,
 bool TestManagementPolicyProvider::MustRemainDisabled(
     const Extension* extension,
     Extension::DisableReason* reason,
-    string16* error) const {
+    base::string16* error) const {
   if (must_remain_disabled_) {
     if (error)
       *error = error_message_;

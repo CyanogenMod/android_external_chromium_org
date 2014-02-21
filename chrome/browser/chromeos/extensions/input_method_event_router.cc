@@ -10,9 +10,9 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/extensions/input_method_api.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace chromeos {
 
@@ -30,14 +30,13 @@ void ExtensionInputMethodEventRouter::InputMethodChanged(
     input_method::InputMethodManager *manager,
     bool show_message) {
   extensions::EventRouter *router =
-      extensions::ExtensionSystem::GetForBrowserContext(context_)->
-          event_router();
+      extensions::ExtensionSystem::Get(context_)->event_router();
 
   if (!router->HasEventListener(extensions::event_names::kOnInputMethodChanged))
     return;
 
-  scoped_ptr<ListValue> args(new ListValue());
-  StringValue *input_method_name = new StringValue(
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  base::StringValue *input_method_name = new base::StringValue(
       extensions::InputMethodAPI::GetInputMethodForXkb(
           manager->GetCurrentInputMethod().id()));
   args->Append(input_method_name);

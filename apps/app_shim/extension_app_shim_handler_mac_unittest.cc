@@ -18,11 +18,12 @@
 namespace apps {
 
 using extensions::Extension;
-typedef ShellWindowRegistry::ShellWindowList ShellWindowList;
+typedef AppWindowRegistry::AppWindowList AppWindowList;
 
 using ::testing::_;
 using ::testing::Invoke;
 using ::testing::Return;
+using ::testing::WithArgs;
 
 class MockDelegate : public ExtensionAppShimHandler::Delegate {
  public:
@@ -34,9 +35,12 @@ class MockDelegate : public ExtensionAppShimHandler::Delegate {
                void(const base::FilePath&,
                     base::Callback<void(Profile*)>));
 
-  MOCK_METHOD2(GetWindows, ShellWindowList(Profile*, const std::string&));
+  MOCK_METHOD2(GetWindows, AppWindowList(Profile*, const std::string&));
 
   MOCK_METHOD2(GetAppExtension, const Extension*(Profile*, const std::string&));
+  MOCK_METHOD3(EnableExtension, void(Profile*,
+                                     const std::string&,
+                                     const base::Callback<void()>&));
   MOCK_METHOD3(LaunchApp,
                void(Profile*,
                     const Extension*,
@@ -56,6 +60,10 @@ class MockDelegate : public ExtensionAppShimHandler::Delegate {
       Profile* profile) {
     callbacks_[path].Run(profile);
     return callbacks_.erase(path);
+  }
+
+  void RunCallback(const base::Callback<void()>& callback) {
+    callback.Run();
   }
 
  private:
@@ -167,10 +175,10 @@ class ExtensionAppShimHandlerTest : public testing::Test {
 
     // In most tests, we don't care about the result of GetWindows, it just
     // needs to be non-empty.
-    ShellWindowList shell_window_list;
-    shell_window_list.push_back(static_cast<ShellWindow*>(NULL));
+    AppWindowList app_window_list;
+    app_window_list.push_back(static_cast<AppWindow*>(NULL));
     EXPECT_CALL(*delegate_, GetWindows(_, _))
-        .WillRepeatedly(Return(shell_window_list));
+        .WillRepeatedly(Return(app_window_list));
 
     EXPECT_CALL(*delegate_, GetAppExtension(_, kTestAppIdA))
         .WillRepeatedly(Return(extension_a_.get()));
@@ -209,19 +217,32 @@ class ExtensionAppShimHandlerTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(ExtensionAppShimHandlerTest);
 };
 
-TEST_F(ExtensionAppShimHandlerTest, LaunchFailure) {
+TEST_F(ExtensionAppShimHandlerTest, LaunchProfileNotFound) {
   // Bad profile path.
   EXPECT_CALL(*delegate_, ProfileExistsForPath(profile_path_a_))
       .WillOnce(Return(false))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(host_aa_, OnAppLaunchComplete(APP_SHIM_LAUNCH_PROFILE_NOT_FOUND));
   NormalLaunch(&host_aa_);
+}
 
+TEST_F(ExtensionAppShimHandlerTest, LaunchAppNotFound) {
+  // App not found.
+  EXPECT_CALL(*delegate_, GetAppExtension(&profile_a_, kTestAppIdA))
+      .WillRepeatedly(Return(static_cast<const Extension*>(NULL)));
+  EXPECT_CALL(*delegate_, EnableExtension(&profile_a_, kTestAppIdA, _))
+      .WillOnce(WithArgs<2>(Invoke(delegate_, &MockDelegate::RunCallback)));
+  EXPECT_CALL(host_aa_, OnAppLaunchComplete(APP_SHIM_LAUNCH_APP_NOT_FOUND));
+  NormalLaunch(&host_aa_);
+}
+
+TEST_F(ExtensionAppShimHandlerTest, LaunchAppNotEnabled) {
   // App not found.
   EXPECT_CALL(*delegate_, GetAppExtension(&profile_a_, kTestAppIdA))
       .WillOnce(Return(static_cast<const Extension*>(NULL)))
       .WillRepeatedly(Return(extension_a_.get()));
-  EXPECT_CALL(host_aa_, OnAppLaunchComplete(APP_SHIM_LAUNCH_APP_NOT_FOUND));
+  EXPECT_CALL(*delegate_, EnableExtension(&profile_a_, kTestAppIdA, _))
+      .WillOnce(WithArgs<2>(Invoke(delegate_, &MockDelegate::RunCallback)));
   NormalLaunch(&host_aa_);
 }
 
@@ -281,10 +302,10 @@ TEST_F(ExtensionAppShimHandlerTest, AppLifetime) {
   RegisterOnlyLaunch(&host_aa_);
   EXPECT_EQ(&host_aa_, handler_->FindHost(&profile_a_, kTestAppIdA));
 
-  // Return no shell windows for OnShimFocus and OnShimQuit.
-  ShellWindowList shell_window_list;
+  // Return no app windows for OnShimFocus and OnShimQuit.
+  AppWindowList app_window_list;
   EXPECT_CALL(*delegate_, GetWindows(&profile_a_, kTestAppIdA))
-      .WillRepeatedly(Return(shell_window_list));
+      .WillRepeatedly(Return(app_window_list));
 
   // Non-reopen focus does nothing.
   EXPECT_CALL(*handler_, OnShimFocus(&host_aa_, APP_SHIM_FOCUS_NORMAL, _))
@@ -330,9 +351,9 @@ TEST_F(ExtensionAppShimHandlerTest, MaybeTerminate) {
   EXPECT_EQ(&host_ab_, handler_->FindHost(&profile_a_, kTestAppIdB));
 
   // Return empty window list.
-  ShellWindowList shell_window_list;
+  AppWindowList app_window_list;
   EXPECT_CALL(*delegate_, GetWindows(_, _))
-      .WillRepeatedly(Return(shell_window_list));
+      .WillRepeatedly(Return(app_window_list));
 
   // Quitting when there's another shim should not terminate.
   EXPECT_CALL(*delegate_, MaybeTerminate())

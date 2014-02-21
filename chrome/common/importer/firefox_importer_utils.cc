@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -23,7 +24,7 @@
 namespace {
 
 // Retrieves the file system path of the profile name.
-base::FilePath GetProfilePath(const DictionaryValue& root,
+base::FilePath GetProfilePath(const base::DictionaryValue& root,
                               const std::string& profile_name) {
   base::string16 path16;
   std::string is_relative;
@@ -33,7 +34,7 @@ base::FilePath GetProfilePath(const DictionaryValue& root,
 
 #if defined(OS_WIN)
   ReplaceSubstringsAfterOffset(
-      &path16, 0, ASCIIToUTF16("/"), ASCIIToUTF16("\\"));
+      &path16, 0, base::ASCIIToUTF16("/"), base::ASCIIToUTF16("\\"));
 #endif
   base::FilePath path = base::FilePath::FromUTF16Unsafe(path16);
 
@@ -47,7 +48,7 @@ base::FilePath GetProfilePath(const DictionaryValue& root,
 }
 
 // Checks if the named profile is the default profile.
-bool IsDefaultProfile(const DictionaryValue& root,
+bool IsDefaultProfile(const base::DictionaryValue& root,
                       const std::string& profile_name) {
   std::string is_default;
   root.GetStringASCII(profile_name + ".Default", &is_default);
@@ -66,7 +67,7 @@ base::FilePath GetFirefoxProfilePath() {
 }
 
 base::FilePath GetFirefoxProfilePathFromDictionary(
-    const DictionaryValue& root) {
+    const base::DictionaryValue& root) {
   std::vector<std::string> profiles;
   for (int i = 0; ; ++i) {
     std::string current_profile = base::StringPrintf("Profile%d", i);
@@ -92,6 +93,40 @@ base::FilePath GetFirefoxProfilePathFromDictionary(
   // If no default profile is found, the path to Profile0 will be returned.
   return GetProfilePath(root, profiles.front());
 }
+
+#if defined(OS_MACOSX)
+// Find the "*.app" component of the path and build up from there.
+// The resulting path will be .../Firefox.app/Contents/MacOS.
+// We do this because we don't trust LastAppDir to always be
+// this particular path, without any subdirs, and we want to make
+// our assumption about Firefox's root being in that path explicit.
+bool ComposeMacAppPath(const std::string& path_from_file,
+                       base::FilePath* output) {
+  base::FilePath path(path_from_file);
+  typedef std::vector<base::FilePath::StringType> ComponentVector;
+  ComponentVector path_components;
+  path.GetComponents(&path_components);
+  if (path_components.empty())
+    return false;
+  // The first path component is special because it may be absolute. Calling
+  // Append with an absolute path component will trigger an assert, so we
+  // must handle it differently and initialize output with it.
+  *output = base::FilePath(path_components[0]);
+  // Append next path components untill we find the *.app component. When we do,
+  // append Contents/MacOS.
+  for (size_t i = 1; i < path_components.size(); ++i) {
+    *output = output->Append(path_components[i]);
+    if (EndsWith(path_components[i], ".app", true)) {
+      *output = output->Append("Contents");
+      *output = output->Append("MacOS");
+      return true;
+    }
+  }
+  LOG(ERROR) << path_from_file << " doesn't look like a valid Firefox "
+             << "installation path: missing /*.app/ directory.";
+  return false;
+}
+#endif  // OS_MACOSX
 
 bool GetFirefoxVersionAndPathFromProfile(const base::FilePath& profile_path,
                                          int* version,
@@ -120,7 +155,15 @@ bool GetFirefoxVersionAndPathFromProfile(const base::FilePath& profile_path,
         // UTF-8, what does Firefox do?  If it puts raw bytes in the
         // file, we could go straight from bytes -> filepath;
         // otherwise, we're out of luck here.
+#if defined(OS_MACOSX)
+        // Extract path from "LastAppDir=/actual/path"
+        size_t separator_pos = line.find_first_of('=');
+        const std::string& path_from_ini = line.substr(separator_pos + 1);
+        if (!ComposeMacAppPath(path_from_ini, app_path))
+          return false;
+#else  // !OS_MACOSX
         *app_path = base::FilePath::FromUTF8Unsafe(line.substr(equal + 1));
+#endif  // OS_MACOSX
       }
     }
   }

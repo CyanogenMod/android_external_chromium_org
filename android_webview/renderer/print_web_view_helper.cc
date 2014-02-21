@@ -78,7 +78,7 @@ void ExecuteScript(blink::WebFrame* frame,
   std::string json;
   base::JSONWriter::Write(&parameters, &json);
   std::string script = base::StringPrintf(script_format, json.c_str());
-  frame->executeScript(blink::WebString(UTF8ToUTF16(script)));
+  frame->executeScript(blink::WebString(base::UTF8ToUTF16(script)));
 }
 #endif
 
@@ -433,9 +433,8 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
 
   blink::WebView* web_view = blink::WebView::create(NULL);
   web_view->settings()->setJavaScriptEnabled(true);
-  web_view->initializeMainFrame(NULL);
-
-  blink::WebFrame* frame = web_view->mainFrame();
+  blink::WebFrame* frame = blink::WebFrame::create(NULL)
+  web_view->setMainFrame(web_frame);
 
   base::StringValue html(
       ResourceBundle::GetSharedInstance().GetLocalizedString(
@@ -461,6 +460,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   frame->printEnd();
 
   web_view->close();
+  frame->close();
 
   device->setDrawingArea(SkPDFDevice::kContent_DrawingArea);
 #endif
@@ -534,9 +534,13 @@ class PrepareFrameAndViewForPrint : public blink::WebViewClient,
   // blink::WebViewClient override:
   virtual void didStopLoading();
 
-  virtual void CallOnReady();
+  // blink::WebFrameClient override:
+  virtual blink::WebFrame* createChildFrame(blink::WebFrame* parent,
+                                            const blink::WebString& name);
+  virtual void frameDetached(blink::WebFrame* frame);
 
  private:
+  void CallOnReady();
   void ResizeForPrinting();
   void RestoreSize();
   void CopySelection(const WebPreferences& preferences);
@@ -650,7 +654,7 @@ void PrepareFrameAndViewForPrint::CopySelection(
   blink::WebView* web_view = blink::WebView::create(this);
   owns_web_view_ = true;
   content::ApplyWebPreferences(prefs, web_view);
-  web_view->initializeMainFrame(this);
+  web_view->setMainFrame(blink::WebFrame::create(this));
   frame_.Reset(web_view->mainFrame());
   node_to_print_.reset();
 
@@ -667,6 +671,20 @@ void PrepareFrameAndViewForPrint::didStopLoading() {
       FROM_HERE,
       base::Bind(&PrepareFrameAndViewForPrint::CallOnReady,
                  weak_ptr_factory_.GetWeakPtr()));
+}
+
+blink::WebFrame* PrepareFrameAndViewForPrint::createChildFrame(
+    blink::WebFrame* parent,
+    const blink::WebString& name) {
+  blink::WebFrame* frame = blink::WebFrame::create(this);
+  parent->appendChild(frame);
+  return frame;
+}
+
+void PrepareFrameAndViewForPrint::frameDetached(blink::WebFrame* frame) {
+  if (frame->parent())
+    frame->parent()->removeChild(frame);
+  frame->close();
 }
 
 void PrepareFrameAndViewForPrint::CallOnReady() {
@@ -806,7 +824,7 @@ bool PrintWebViewHelper::OnMessageReceived(const IPC::Message& message) {
 }
 
 void PrintWebViewHelper::OnPrintForPrintPreview(
-    const DictionaryValue& job_settings) {
+    const base::DictionaryValue& job_settings) {
   DCHECK(is_preview_enabled_);
   // If still not finished with earlier print request simply ignore.
   if (prep_frame_view_)
@@ -1399,7 +1417,7 @@ bool PrintWebViewHelper::CalculateNumberOfPages(blink::WebFrame* frame,
     // TODO(sgurun) android_webview hack
     render_view()->RunModalAlertDialog(
         frame,
-        l10n_util::GetStringUTF16(IDS_PRINT_PREVIEW_INVALID_PRINTER_SETTINGS));
+        l10n_util::GetStringUTF16(IDS_PRINT_INVALID_PRINTER_SETTINGS));
 #endif  //  !defined(OS_ANDROID)
     return false;
   }
@@ -1467,7 +1485,7 @@ bool PrintWebViewHelper::UpdatePrintSettings(
         render_view()->RunModalAlertDialog(
             print_frame,
             l10n_util::GetStringUTF16(
-                IDS_PRINT_PREVIEW_INVALID_PRINTER_SETTINGS));
+                IDS_PRINT_INVALID_PRINTER_SETTINGS));
       }
 #endif  // !defined(OS_ANDROID)
     }

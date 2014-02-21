@@ -42,12 +42,14 @@ namespace keyboard {
 class KeyboardController;
 }
 
+namespace ui {
+class EventHandler;
+}
+
 namespace ash {
 class ShelfWidget;
-class SoloWindowTracker;
 class StackingController;
 class SystemTray;
-class ToplevelWindowEventHandler;
 
 namespace internal {
 
@@ -90,17 +92,20 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // keyboard displays.
   static void CreateForVirtualKeyboardDisplay(aura::RootWindow* root_window);
 
-  // Returns a RootWindowController that has a launcher for given
+  // Returns a RootWindowController that has a shelf for given
   // |window|. This returns the RootWindowController for the |window|'s
-  // root window when multiple launcher mode is enabled, or the primary
+  // root window when multiple shelf mode is enabled, or the primary
   // RootWindowController otherwise.
-  static RootWindowController* ForLauncher(aura::Window* window);
+  static RootWindowController* ForShelf(aura::Window* window);
 
   // Returns a RootWindowController of the window's root window.
   static RootWindowController* ForWindow(const aura::Window* window);
 
   // Returns the RootWindowController of the target root window.
   static internal::RootWindowController* ForTargetRootWindow();
+
+  // Returns container which contains a given |window|.
+  static aura::Window* GetContainerForWindow(aura::Window* window);
 
   virtual ~RootWindowController();
 
@@ -151,16 +156,12 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   }
   void SetAnimatingWallpaperController(AnimatingDesktopController* controller);
 
-  SoloWindowTracker* solo_window_tracker() {
-    return solo_window_tracker_.get();
-  }
-
   // Access the shelf layout manager associated with this root
   // window controller, NULL if no such shelf exists.
   ShelfLayoutManager* GetShelfLayoutManager();
 
   // Returns the system tray on this root window. Note that
-  // calling this on the root window that doesn't have a launcher will
+  // calling this on the root window that doesn't have a shelf will
   // lead to a crash.
   SystemTray* GetSystemTray();
 
@@ -182,11 +183,11 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   aura::Window* GetContainer(int container_id);
   const aura::Window* GetContainer(int container_id) const;
 
-  // Show launcher view if it was created hidden (before session has started).
-  void ShowLauncher();
+  // Show shelf view if it was created hidden (before session has started).
+  void ShowShelf();
 
-  // Called when the launcher associated with this root window is created.
-  void OnLauncherCreated();
+  // Called when the shelf associated with this root window is created.
+  void OnShelfCreated();
 
   // Called when the login status changes after login (such as lock/unlock).
   // TODO(oshima): Investigate if we can merge this and |OnLoginStateChanged|.
@@ -269,7 +270,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   scoped_ptr<StackingController> stacking_controller_;
 
-  // The shelf for managing the launcher and the status widget.
+  // The shelf for managing the shelf and the status widget.
   scoped_ptr<ShelfWidget> shelf_;
 
   // An invisible/empty window used as a event target for
@@ -299,18 +300,12 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   TouchHudDebug* touch_hud_debug_;
   TouchHudProjection* touch_hud_projection_;
 
-  // We need to own event handlers for various containers.
-  scoped_ptr<ToplevelWindowEventHandler> default_container_handler_;
-  scoped_ptr<ToplevelWindowEventHandler> always_on_top_container_handler_;
-  scoped_ptr<ToplevelWindowEventHandler> modal_container_handler_;
-  scoped_ptr<ToplevelWindowEventHandler> lock_modal_container_handler_;
-  scoped_ptr<ToplevelWindowEventHandler> panel_container_handler_;
-  scoped_ptr<ToplevelWindowEventHandler> docked_container_handler_;
+  // Handles double clicks on the panel window header.
+  scoped_ptr<ui::EventHandler> panel_container_handler_;
 
   scoped_ptr<DesktopBackgroundWidgetController> wallpaper_controller_;
   scoped_ptr<AnimatingDesktopController> animating_wallpaper_controller_;
   scoped_ptr<views::corewm::ScopedCaptureClient> capture_client_;
-  scoped_ptr<SoloWindowTracker> solo_window_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowController);
 };

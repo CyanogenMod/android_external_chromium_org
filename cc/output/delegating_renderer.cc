@@ -23,11 +23,10 @@
 #include "cc/quads/yuv_video_draw_quad.h"
 #include "cc/resources/resource_provider.h"
 #include "gpu/command_buffer/client/context_support.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 
-using blink::WebGraphicsContext3D;
 
 namespace cc {
 
@@ -70,17 +69,20 @@ bool DelegatingRenderer::Initialize() {
   const ContextProvider::Capabilities& caps =
       output_surface_->context_provider()->ContextCapabilities();
 
-  DCHECK(!caps.iosurface || caps.texture_rectangle);
+  DCHECK(!caps.gpu.iosurface || caps.gpu.texture_rectangle);
 
-  capabilities_.using_egl_image = caps.egl_image_external;
-  capabilities_.using_map_image = settings_->use_map_image && caps.map_image;
+  capabilities_.using_egl_image = caps.gpu.egl_image_external;
+  capabilities_.using_map_image =
+      settings_->use_map_image && caps.gpu.map_image;
+
+  capabilities_.allow_rasterize_on_demand = false;
 
   return true;
 }
 
 DelegatingRenderer::~DelegatingRenderer() {}
 
-const RendererCapabilities& DelegatingRenderer::Capabilities() const {
+const RendererCapabilitiesImpl& DelegatingRenderer::Capabilities() const {
   return capabilities_;
 }
 
@@ -96,8 +98,8 @@ static ResourceProvider::ResourceId AppendToArray(
 void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                    ContextProvider* offscreen_context_provider,
                                    float device_scale_factor,
-                                   gfx::Rect device_viewport_rect,
-                                   gfx::Rect device_clip_rect,
+                                   const gfx::Rect& device_viewport_rect,
+                                   const gfx::Rect& device_clip_rect,
                                    bool allow_partial_swap,
                                    bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
@@ -122,14 +124,15 @@ void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
 }
 
 void DelegatingRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
-  TRACE_EVENT0("cc", "DelegatingRenderer::SwapBuffers");
+  TRACE_EVENT0("cc,benchmark", "DelegatingRenderer::SwapBuffers");
   CompositorFrame compositor_frame;
   compositor_frame.metadata = metadata;
   compositor_frame.delegated_frame_data = delegated_frame_data_.Pass();
   output_surface_->SwapBuffers(&compositor_frame);
 }
 
-void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
+void DelegatingRenderer::GetFramebufferPixels(void* pixels,
+                                              const gfx::Rect& rect) {
   NOTREACHED();
 }
 
@@ -155,7 +158,7 @@ void DelegatingRenderer::SetVisible(bool visible) {
     TRACE_EVENT0("cc", "DelegatingRenderer::SetVisible dropping resources");
     resource_provider_->ReleaseCachedData();
     if (context_provider)
-      context_provider->Context3d()->flush();
+      context_provider->ContextGL()->Flush();
   }
   // We loop visibility to the GPU process, since that's what manages memory.
   // That will allow it to feed us with memory allocations that we can act

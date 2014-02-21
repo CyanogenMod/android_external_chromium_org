@@ -33,6 +33,7 @@
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/elide_url.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -81,10 +82,10 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
 
+using base::UserMetricsAction;
 using content::OpenURLParams;
 using content::PageNavigator;
 using content::Referrer;
-using content::UserMetricsAction;
 using ui::DropTargetEvent;
 using views::CustomButton;
 using views::MenuButton;
@@ -611,12 +612,12 @@ base::string16 BookmarkBarView::CreateToolTipForURLAndTitle(
   if (!title.empty()) {
     base::string16 localized_title = title;
     base::i18n::AdjustStringForLocaleDirection(&localized_title);
-    result.append(gfx::ElideText(localized_title, tt_fonts, max_width,
-                                gfx::ELIDE_AT_END));
+    result.append(ElideText(localized_title, tt_fonts, max_width,
+                            gfx::ELIDE_AT_END));
   }
 
   // Only show the URL if the url and title differ.
-  if (title != UTF8ToUTF16(url.spec())) {
+  if (title != base::UTF8ToUTF16(url.spec())) {
     if (!result.empty())
       result.push_back('\n');
 
@@ -628,8 +629,7 @@ base::string16 BookmarkBarView::CreateToolTipForURLAndTitle(
     // default.
     std::string languages = profile->GetPrefs()->GetString(
         prefs::kAcceptLanguages);
-    base::string16 elided_url(
-        gfx::ElideUrl(url, tt_fonts, max_width, languages));
+    base::string16 elided_url(ElideUrl(url, tt_fonts, max_width, languages));
     elided_url = base::i18n::GetDisplayStringInLTRDirectionality(elided_url);
     result.append(elided_url);
   }
@@ -973,7 +973,8 @@ void BookmarkBarView::OnBookmarkBubbleHidden() {
   StopThrobbing(false);
 }
 
-void BookmarkBarView::Loaded(BookmarkModel* model, bool ids_reassigned) {
+void BookmarkBarView::BookmarkModelLoaded(BookmarkModel* model,
+                                          bool ids_reassigned) {
   // There should be no buttons. If non-zero it means Load was invoked more than
   // once, or we didn't properly clear things. Either of which shouldn't happen.
   DCHECK_EQ(0, GetBookmarkButtonCount());
@@ -1294,7 +1295,7 @@ void BookmarkBarView::Init() {
   if (model_) {
     model_->AddObserver(this);
     if (model_->loaded())
-      Loaded(model_, false);
+      BookmarkModelLoaded(model_, false);
     // else case: we'll receive notification back from the BookmarkModel when
     // done loading, then we'll populate the bar.
   }

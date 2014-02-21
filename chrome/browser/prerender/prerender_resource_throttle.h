@@ -9,14 +9,14 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/resource_throttle.h"
+#include "webkit/common/resource_type.h"
 
 namespace net {
 class URLRequest;
 }
 
 namespace prerender {
-
-class PrerenderTracker;
+class PrerenderContents;
 
 // This class implements policy on resource requests in prerenders.  It cancels
 // prerenders on certain requests.  It also defers certain requests until after
@@ -28,26 +28,47 @@ class PrerenderResourceThrottle
     : public content::ResourceThrottle,
       public base::SupportsWeakPtr<PrerenderResourceThrottle> {
  public:
-  PrerenderResourceThrottle(net::URLRequest* request,
-                            PrerenderTracker* tracker);
+  explicit PrerenderResourceThrottle(net::URLRequest* request);
 
   // content::ResourceThrottle implementation:
   virtual void WillStartRequest(bool* defer) OVERRIDE;
   virtual void WillRedirectRequest(const GURL& new_url, bool* defer) OVERRIDE;
   virtual const char* GetNameForLogging() const OVERRIDE;
 
-  // Called by the PrerenderTracker when a prerender becomes visible.
+  // Called by the PrerenderContents when a prerender becomes visible.
   // May only be called if currently throttling the resource.
   void Resume();
 
-  // Called by the PrerenderTracker when a prerender is destroyed.
-  // May only be called if currently throttling the resource.
-  void Cancel();
+  static void OverridePrerenderContentsForTesting(PrerenderContents* contents);
 
  private:
+  // Helper method to cancel the request. May only be called if currently
+  // throttling the resource.
+  void Cancel();
+
+  static void WillStartRequestOnUI(
+      const base::WeakPtr<PrerenderResourceThrottle>& throttle,
+      const std::string& method,
+      ResourceType::Type resource_type,
+      int render_process_id,
+      int render_frame_id,
+      const GURL& url);
+
+  static void WillRedirectRequestOnUI(
+      const base::WeakPtr<PrerenderResourceThrottle>& throttle,
+      const std::string& follow_only_when_prerender_shown_header,
+      ResourceType::Type resource_type,
+      bool async,
+      int render_process_id,
+      int render_frame_id,
+      const GURL& new_url);
+
+  // Helper to return the PrerenderContents given a render frame id. May return
+  // NULL if it's gone.
+  static PrerenderContents* PrerenderContentsFromRenderFrame(
+      int render_process_id, int render_frame_id);
+
   net::URLRequest* request_;
-  PrerenderTracker* tracker_;
-  bool throttled_;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderResourceThrottle);
 };

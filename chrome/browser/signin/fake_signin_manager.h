@@ -13,6 +13,10 @@
 class Profile;
 class BrowserContextKeyedService;
 
+// SigninManager to use for testing. Tests should use the type
+// SigninManagerForTesting to ensure that the right type for their platform is
+// used.
+
 // Overrides InitTokenService to do-nothing in tests.
 class FakeSigninManagerBase : public SigninManagerBase {
  public:
@@ -20,8 +24,11 @@ class FakeSigninManagerBase : public SigninManagerBase {
   virtual ~FakeSigninManagerBase();
 
   // Helper function to be used with
-  // BrowserContextKeyedService::SetTestingFactory().
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile);
+  // BrowserContextKeyedService::SetTestingFactory(). In order to match
+  // the API of SigninManagerFactory::GetForProfile(), returns a
+  // FakeSigninManagerBase* on ChromeOS, and a FakeSigninManager* on all other
+  // platforms. The returned instance is initialized.
+  static BrowserContextKeyedService* Build(content::BrowserContext* context);
 };
 
 #if !defined(OS_CHROMEOS)
@@ -37,6 +44,10 @@ class FakeSigninManager : public SigninManager {
     possibly_invalid_username_ = username;
   }
 
+  void set_password(const std::string& password) { password_ = password; }
+
+  void SignIn(const std::string& username, const std::string& password);
+
   virtual void SignOut() OVERRIDE;
 
   virtual void StartSignInWithCredentials(
@@ -46,12 +57,14 @@ class FakeSigninManager : public SigninManager {
       const OAuthTokenFetchedCallback& oauth_fetched_callback) OVERRIDE;
 
   virtual void CompletePendingSignin() OVERRIDE;
-
-  // Helper function to be used with
-  // BrowserContextKeyedService::SetTestingFactory().
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile);
 };
 
 #endif  // !defined (OS_CHROMEOS)
+
+#if defined(OS_CHROMEOS)
+typedef FakeSigninManagerBase FakeSigninManagerForTesting;
+#else
+typedef FakeSigninManager FakeSigninManagerForTesting;
+#endif
 
 #endif  // CHROME_BROWSER_SIGNIN_FAKE_SIGNIN_MANAGER_H_

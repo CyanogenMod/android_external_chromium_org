@@ -241,7 +241,7 @@
     ['mac_breakpad_compiled_in==1', {
       'dependencies': [
         '../breakpad/breakpad.gyp:breakpad',
-        'app/policy/cloud_policy_codegen.gyp:policy',
+        '../components/components.gyp:policy',
       ],
       'copies': [
         {
@@ -307,6 +307,11 @@
           '<(PRODUCT_DIR)/libpeerconnection.so',
         ],
       }],
+    }],
+    ['icu_use_data_file_flag==1', {
+      'mac_bundle_resources': [
+        '<(PRODUCT_DIR)/icudtl.dat',
+      ],
     }],
   ],  # conditions
 }

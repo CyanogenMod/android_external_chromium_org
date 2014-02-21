@@ -22,14 +22,14 @@ BluetoothPairingUI::BluetoothPairingUI(content::WebUI* web_ui)
     : WebDialogUI(web_ui),
       core_handler_(new options::CoreChromeOSOptionsHandler()),
       bluetooth_handler_(new options::BluetoothOptionsHandler()) {
-  DictionaryValue localized_strings;
+  base::DictionaryValue localized_strings;
 
+  web_ui->AddMessageHandler(core_handler_);
   core_handler_->set_handlers_host(this);
   core_handler_->GetLocalizedValues(&localized_strings);
-  web_ui->AddMessageHandler(core_handler_);
 
-  bluetooth_handler_->GetLocalizedValues(&localized_strings);
   web_ui->AddMessageHandler(bluetooth_handler_);
+  bluetooth_handler_->GetLocalizedValues(&localized_strings);
 
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIBluetoothPairingHost);

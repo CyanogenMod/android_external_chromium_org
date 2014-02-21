@@ -196,33 +196,6 @@ test.util.sync.getFileList = function(contentWindow) {
 };
 
 /**
- * Checkes if the given label and path of the volume are selected.
- * @param {Window} contentWindow Window to be tested.
- * @param {string} label Correct label the selected volume should have.
- * @param {string} path Correct path the selected volume should have.
- * @return {boolean} True for success.
- */
-test.util.sync.checkSelectedVolume = function(contentWindow, label, path) {
-  var list = contentWindow.document.querySelector('#navigation-list');
-  var rows = list.querySelectorAll('li');
-  var selected = [];
-  for (var i = 0; i < rows.length; ++i) {
-    if (rows[i].hasAttribute('selected'))
-      selected.push(rows[i]);
-  }
-  // Selected item must be one.
-  if (selected.length !== 1)
-    return false;
-
-  if (selected[0].modelItem.path !== path ||
-      selected[0].querySelector('.root-label').textContent !== label) {
-    return false;
-  }
-
-  return true;
-};
-
-/**
  * Waits until the window is set to the specified dimensions.
  *
  * @param {Window} contentWindow Window to be tested.
@@ -259,17 +232,32 @@ test.util.async.waitForElement = function(
     var doc = test.util.sync.getDocument_(contentWindow, iframeQuery);
     if (!doc)
       return false;
+
     var element = doc.querySelector(targetQuery);
-    if (!element)
-      return !!opt_inverse;
-    var attributes = {};
-    for (var i = 0; i < element.attributes.length; i++) {
-      attributes[element.attributes[i].nodeName] =
-          element.attributes[i].nodeValue;
+
+    if (opt_inverse) {
+      // Inversed condition: Success when the element dose NOT exist.
+      if (!element) {
+        callback({});
+        return true;
+      } else {
+        return false;
+      }
     }
-    var text = element.textContent;
-    callback({attributes: attributes, text: text});
-    return !opt_inverse;
+
+    // Non-inversed condition: Success when the element DOSE exist.
+    if (element) {
+      var attributes = {};
+      for (var i = 0; i < element.attributes.length; i++) {
+        attributes[element.attributes[i].nodeName] =
+            element.attributes[i].nodeValue;
+      }
+      var text = element.textContent;
+      callback({attributes: attributes, text: text});
+      return true;
+    } else {
+      return false;
+    }
   });
 };
 
@@ -566,19 +554,31 @@ test.util.sync.fakeKeyDown = function(
 };
 
 /**
- * Sends a fake mouse click event (left button, single click) to the element
- * specified by |targetQuery|.
+ * Simulates a fake mouse click (left button, single click) on the element
+ * specified by |targetQuery|. This sends 'mouseover', 'mousedown', 'mouseup'
+ * and 'click' events in turns.
  *
  * @param {Window} contentWindow Window to be tested.
  * @param {string} targetQuery Query to specify the element.
  * @param {string=} opt_iframeQuery Optional iframe selector.
- * @return {boolean} True if the event is sent to the target, false otherwise.
+ * @return {boolean} True if the all events are sent to the target, false
+ *     otherwise.
  */
 test.util.sync.fakeMouseClick = function(
     contentWindow, targetQuery, opt_iframeQuery) {
-  var event = new MouseEvent('click', { bubbles: true, detail: 1 });
-  return test.util.sync.sendEvent(
-      contentWindow, targetQuery, event, opt_iframeQuery);
+  var mouseOverEvent = new MouseEvent('mouseover', {bubbles: true, detail: 1});
+  var resultMouseOver = test.util.sync.sendEvent(
+      contentWindow, targetQuery, mouseOverEvent, opt_iframeQuery);
+  var mouseDownEvent = new MouseEvent('mousedown', {bubbles: true, detail: 1});
+  var resultMouseDown = test.util.sync.sendEvent(
+      contentWindow, targetQuery, mouseDownEvent, opt_iframeQuery);
+  var mouseUpEvent = new MouseEvent('mouseup', {bubbles: true, detail: 1});
+  var resultMouseUp = test.util.sync.sendEvent(
+      contentWindow, targetQuery, mouseUpEvent, opt_iframeQuery);
+  var clickEvent = new MouseEvent('click', {bubbles: true, detail: 1});
+  var resultClick = test.util.sync.sendEvent(
+      contentWindow, targetQuery, clickEvent, opt_iframeQuery);
+  return resultMouseOver && resultMouseDown && resultMouseUp && resultClick;
 };
 
 /**
@@ -801,6 +801,65 @@ test.util.async.waitUntilTaskExecutes =
     callback();
     return true;
   });
+};
+
+/**
+ * Invoke chrome.fileBrowserPrivate.visitDesktop(profileId) to cause window
+ * teleportation.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} profileId Destination profile's ID.
+ * @return {boolean} Always return true.
+ */
+test.util.sync.visitDesktop = function(contentWindow, profileId) {
+  contentWindow.chrome.fileBrowserPrivate.visitDesktop(profileId);
+  return true;
+};
+
+/**
+ * Waits for the 'move to profileId' menu to appear (if waitAppear = true) or
+ * to disappear (if waitAppear = false).
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} profileId Destination profile's ID.
+ * @param {boolean} waitAppear Flag for specifying the mode to wait.
+ * @param {function()} callback Callback for notifying the event.
+ */
+test.util.async.waitForVisitDesktopMenu = function(
+    contentWindow, profileId, waitAppear, callback) {
+  test.util.repeatUntilTrue_(function() {
+    var list = contentWindow.document.querySelectorAll('.visit-desktop');
+    for (var i = 0; i < list.length; ++i) {
+      if (list[i].label.indexOf(profileId) != -1) {  // found
+        if (waitAppear)
+          callback();
+        return waitAppear;
+      }
+    }
+    if (!waitAppear)
+      callback();
+    return !waitAppear;
+  });
+};
+
+/**
+ * Runs the 'Move to profileId' menu.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} profileId Destination profile's ID.
+ * @return {boolean} True if the menu is found and run.
+ */
+test.util.sync.runVisitDesktopMenu = function(contentWindow, profileId) {
+  var list = contentWindow.document.querySelectorAll('.visit-desktop');
+  for (var i = 0; i < list.length; ++i) {
+    if (list[i].label.indexOf(profileId) != -1) {
+      var activateEvent = contentWindow.document.createEvent('Event');
+      activateEvent.initEvent('activate');
+      list[i].dispatchEvent(activateEvent);
+      return true;
+    }
+  }
+  return false;
 };
 
 /**

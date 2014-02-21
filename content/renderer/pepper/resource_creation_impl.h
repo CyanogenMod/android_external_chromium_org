@@ -72,13 +72,21 @@ class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
                                           int32_t target_segment,
                                           uint32_t selection_start,
                                           uint32_t selection_end) OVERRIDE;
-  virtual PP_Resource CreateKeyboardInputEvent(
+  virtual PP_Resource CreateKeyboardInputEvent_1_0(
       PP_Instance instance,
       PP_InputEvent_Type type,
       PP_TimeTicks time_stamp,
       uint32_t modifiers,
       uint32_t key_code,
       PP_Var character_text) OVERRIDE;
+  virtual PP_Resource CreateKeyboardInputEvent_1_2(
+      PP_Instance instance,
+      PP_InputEvent_Type type,
+      PP_TimeTicks time_stamp,
+      uint32_t modifiers,
+      uint32_t key_code,
+      PP_Var character_text,
+      PP_Var code) OVERRIDE;
   virtual PP_Resource CreateMouseInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -105,9 +113,6 @@ class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
   virtual PP_Resource CreateNetworkMonitor(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreatePlatformVerificationPrivate(
       PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateResourceArray(PP_Instance instance,
-                                          const PP_Resource elements[],
-                                          uint32_t size) OVERRIDE;
   virtual PP_Resource CreateScrollbar(PP_Instance instance,
                                       PP_Bool vertical) OVERRIDE;
   virtual PP_Resource CreateOutputProtectionPrivate(

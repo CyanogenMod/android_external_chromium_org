@@ -10,12 +10,14 @@ import re
 import subprocess
 import sys
 
+from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
 from telemetry.core.backends.chrome import android_browser_backend
 from telemetry.core.platform import android_platform_backend
+
 
 CHROME_PACKAGE_NAMES = {
   'android-content-shell':
@@ -59,7 +61,8 @@ ALL_BROWSER_TYPES = CHROME_PACKAGE_NAMES.keys()
 class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
   def __init__(self, browser_type, finder_options, backend_settings, apk_name):
-    super(PossibleAndroidBrowser, self).__init__(browser_type, finder_options)
+    super(PossibleAndroidBrowser, self).__init__(browser_type, 'android',
+        finder_options)
     assert browser_type in ALL_BROWSER_TYPES, \
         'Please add %s to ALL_BROWSER_TYPES' % browser_type
     self._backend_settings = backend_settings
@@ -84,16 +87,22 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   def __repr__(self):
     return 'PossibleAndroidBrowser(browser_type=%s)' % self.browser_type
 
-  def Create(self):
-    backend = android_browser_backend.AndroidBrowserBackend(
-        self.finder_options.browser_options, self._backend_settings,
-        self.finder_options.android_rndis,
-        output_profile_path=self.finder_options.output_profile_path,
-        extensions_to_load=self.finder_options.extensions_to_load)
-    platform_backend = android_platform_backend.AndroidPlatformBackend(
+  @property
+  @decorators.Cache
+  def _platform_backend(self):
+    return android_platform_backend.AndroidPlatformBackend(
         self._backend_settings.adb.Adb(),
         self.finder_options.no_performance_mode)
-    b = browser.Browser(backend, platform_backend)
+
+  def Create(self):
+    use_rndis_forwarder = (self.finder_options.android_rndis or
+                           self.finder_options.browser_options.netsim)
+    backend = android_browser_backend.AndroidBrowserBackend(
+        self.finder_options.browser_options, self._backend_settings,
+        use_rndis_forwarder,
+        output_profile_path=self.finder_options.output_profile_path,
+        extensions_to_load=self.finder_options.extensions_to_load)
+    b = browser.Browser(backend, self._platform_backend)
     return b
 
   def SupportsOptions(self, finder_options):
@@ -176,8 +185,9 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
     return []
 
   if len(devices) > 1:
-    logging.warn('Multiple devices attached. ' +
-                 'Please specify a device explicitly.')
+    logging.warn(
+        'Multiple devices attached. Please specify one of the following:\n' +
+        '\n'.join(['  --device=%s' % d for d in devices]))
     return []
 
   device = devices[0]

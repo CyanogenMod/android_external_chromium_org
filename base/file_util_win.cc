@@ -14,6 +14,7 @@
 #include <limits>
 #include <string>
 
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -34,44 +35,6 @@ namespace {
 const DWORD kFileShareAll =
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 
-bool ShellCopy(const FilePath& from_path,
-               const FilePath& to_path,
-               bool recursive) {
-  // WinXP SHFileOperation doesn't like trailing separators.
-  FilePath stripped_from = from_path.StripTrailingSeparators();
-  FilePath stripped_to = to_path.StripTrailingSeparators();
-
-  ThreadRestrictions::AssertIOAllowed();
-
-  // NOTE: I suspect we could support longer paths, but that would involve
-  // analyzing all our usage of files.
-  if (stripped_from.value().length() >= MAX_PATH ||
-      stripped_to.value().length() >= MAX_PATH) {
-    return false;
-  }
-
-  // SHFILEOPSTRUCT wants the path to be terminated with two NULLs,
-  // so we have to use wcscpy because wcscpy_s writes non-NULLs
-  // into the rest of the buffer.
-  wchar_t double_terminated_path_from[MAX_PATH + 1] = {0};
-  wchar_t double_terminated_path_to[MAX_PATH + 1] = {0};
-#pragma warning(suppress:4996)  // don't complain about wcscpy deprecation
-  wcscpy(double_terminated_path_from, stripped_from.value().c_str());
-#pragma warning(suppress:4996)  // don't complain about wcscpy deprecation
-  wcscpy(double_terminated_path_to, stripped_to.value().c_str());
-
-  SHFILEOPSTRUCT file_operation = {0};
-  file_operation.wFunc = FO_COPY;
-  file_operation.pFrom = double_terminated_path_from;
-  file_operation.pTo = double_terminated_path_to;
-  file_operation.fFlags = FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION |
-                          FOF_NOCONFIRMMKDIR;
-  if (!recursive)
-    file_operation.fFlags |= FOF_NORECURSION | FOF_FILESONLY;
-
-  return (SHFileOperation(&file_operation) == 0);
-}
-
 }  // namespace
 
 FilePath MakeAbsoluteFilePath(const FilePath& input) {
@@ -91,7 +54,7 @@ bool DeleteFile(const FilePath& path, bool recursive) {
   if (!recursive) {
     // If not recursing, then first check to see if |path| is a directory.
     // If it is, then remove it with RemoveDirectory.
-    PlatformFileInfo file_info;
+    File::Info file_info;
     if (GetFileInfo(path, &file_info) && file_info.is_directory)
       return RemoveDirectory(path.value().c_str()) != 0;
 
@@ -143,7 +106,7 @@ bool DeleteFileAfterReboot(const FilePath& path) {
 
 bool ReplaceFile(const FilePath& from_path,
                  const FilePath& to_path,
-                 PlatformFileError* error) {
+                 File::Error* error) {
   ThreadRestrictions::AssertIOAllowed();
   // Try a simple move first.  It will only succeed when |to_path| doesn't
   // already exist.
@@ -158,33 +121,99 @@ bool ReplaceFile(const FilePath& from_path,
     return true;
   }
   if (error)
-    *error = LastErrorToPlatformFileError(GetLastError());
+    *error = File::OSErrorToFileError(GetLastError());
   return false;
 }
 
 bool CopyDirectory(const FilePath& from_path, const FilePath& to_path,
                    bool recursive) {
+  // NOTE(maruel): Previous version of this function used to call
+  // SHFileOperation().  This used to copy the file attributes and extended
+  // attributes, OLE structured storage, NTFS file system alternate data
+  // streams, SECURITY_DESCRIPTOR. In practice, this is not what we want, we
+  // want the containing directory to propagate its SECURITY_DESCRIPTOR.
   ThreadRestrictions::AssertIOAllowed();
 
-  if (recursive)
-    return ShellCopy(from_path, to_path, true);
-
-  // The following code assumes that from path is a directory.
-  DCHECK(DirectoryExists(from_path));
-
-  // Instead of creating a new directory, we copy the old one to include the
-  // security information of the folder as part of the copy.
-  if (!PathExists(to_path)) {
-    // Except that Vista fails to do that, and instead do a recursive copy if
-    // the target directory doesn't exist.
-    if (base::win::GetVersion() >= base::win::VERSION_VISTA)
-      CreateDirectory(to_path);
-    else
-      ShellCopy(from_path, to_path, false);
+  // NOTE: I suspect we could support longer paths, but that would involve
+  // analyzing all our usage of files.
+  if (from_path.value().length() >= MAX_PATH ||
+      to_path.value().length() >= MAX_PATH) {
+    return false;
   }
 
-  FilePath directory = from_path.Append(L"*.*");
-  return ShellCopy(directory, to_path, false);
+  // This function does not properly handle destinations within the source.
+  FilePath real_to_path = to_path;
+  if (PathExists(real_to_path)) {
+    real_to_path = MakeAbsoluteFilePath(real_to_path);
+    if (real_to_path.empty())
+      return false;
+  } else {
+    real_to_path = MakeAbsoluteFilePath(real_to_path.DirName());
+    if (real_to_path.empty())
+      return false;
+  }
+  FilePath real_from_path = MakeAbsoluteFilePath(from_path);
+  if (real_from_path.empty())
+    return false;
+  if (real_to_path.value().size() >= real_from_path.value().size() &&
+      real_to_path.value().compare(0, real_from_path.value().size(),
+                                   real_from_path.value()) == 0) {
+    return false;
+  }
+
+  int traverse_type = FileEnumerator::FILES;
+  if (recursive)
+    traverse_type |= FileEnumerator::DIRECTORIES;
+  FileEnumerator traversal(from_path, recursive, traverse_type);
+
+  if (!PathExists(from_path)) {
+    DLOG(ERROR) << "CopyDirectory() couldn't stat source directory: "
+                << from_path.value().c_str();
+    return false;
+  }
+  // TODO(maruel): This is not necessary anymore.
+  DCHECK(recursive || DirectoryExists(from_path));
+
+  FilePath current = from_path;
+  bool from_is_dir = DirectoryExists(from_path);
+  bool success = true;
+  FilePath from_path_base = from_path;
+  if (recursive && DirectoryExists(to_path)) {
+    // If the destination already exists and is a directory, then the
+    // top level of source needs to be copied.
+    from_path_base = from_path.DirName();
+  }
+
+  while (success && !current.empty()) {
+    // current is the source path, including from_path, so append
+    // the suffix after from_path to to_path to create the target_path.
+    FilePath target_path(to_path);
+    if (from_path_base != current) {
+      if (!from_path_base.AppendRelativePath(current, &target_path)) {
+        success = false;
+        break;
+      }
+    }
+
+    if (from_is_dir) {
+      if (!DirectoryExists(target_path) &&
+          !::CreateDirectory(target_path.value().c_str(), NULL)) {
+        DLOG(ERROR) << "CopyDirectory() couldn't create directory: "
+                    << target_path.value().c_str();
+        success = false;
+      }
+    } else if (!internal::CopyFileUnsafe(current, target_path)) {
+      DLOG(ERROR) << "CopyDirectory() couldn't create file: "
+                  << target_path.value().c_str();
+      success = false;
+    }
+
+    current = traversal.Next();
+    if (!current.empty())
+      from_is_dir = traversal.GetInfo().IsDirectory();
+  }
+
+  return success;
 }
 
 bool PathExists(const FilePath& path) {
@@ -328,7 +357,7 @@ bool CreateNewTempDirectory(const FilePath::StringType& prefix,
 }
 
 bool CreateDirectoryAndGetError(const FilePath& full_path,
-                                PlatformFileError* error) {
+                                File::Error* error) {
   ThreadRestrictions::AssertIOAllowed();
 
   // If the path exists, we've succeeded if it's a directory, failed otherwise.
@@ -343,7 +372,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
     DLOG(WARNING) << "CreateDirectory(" << full_path_str << "), "
                   << "conflicts with existing file.";
     if (error) {
-      *error = PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
+      *error = File::FILE_ERROR_NOT_A_DIRECTORY;
     }
     return false;
   }
@@ -356,14 +385,14 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
   FilePath parent_path(full_path.DirName());
   if (parent_path.value() == full_path.value()) {
     if (error) {
-      *error = PLATFORM_FILE_ERROR_NOT_FOUND;
+      *error = File::FILE_ERROR_NOT_FOUND;
     }
     return false;
   }
   if (!CreateDirectoryAndGetError(parent_path, error)) {
     DLOG(WARNING) << "Failed to create one of the parent directories.";
     if (error) {
-      DCHECK(*error != PLATFORM_FILE_OK);
+      DCHECK(*error != File::FILE_OK);
     }
     return false;
   }
@@ -378,7 +407,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
       return true;
     } else {
       if (error)
-        *error = LastErrorToPlatformFileError(error_code);
+        *error = File::OSErrorToFileError(error_code);
       DLOG(WARNING) << "Failed to create directory " << full_path_str
                     << ", last error is " << error_code << ".";
       return false;
@@ -505,7 +534,7 @@ bool IsLink(const FilePath& file_path) {
   return false;
 }
 
-bool GetFileInfo(const FilePath& file_path, PlatformFileInfo* results) {
+bool GetFileInfo(const FilePath& file_path, File::Info* results) {
   ThreadRestrictions::AssertIOAllowed();
 
   WIN32_FILE_ATTRIBUTE_DATA attr;
@@ -728,8 +757,24 @@ bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
       to_path.value().length() >= MAX_PATH) {
     return false;
   }
-  return (::CopyFile(from_path.value().c_str(), to_path.value().c_str(),
-                     false) != 0);
+
+  // Unlike the posix implementation that copies the file manually and discards
+  // the ACL bits, CopyFile() copies the complete SECURITY_DESCRIPTOR and access
+  // bits, which is usually not what we want. We can't do much about the
+  // SECURITY_DESCRIPTOR but at least remove the read only bit.
+  const wchar_t* dest = to_path.value().c_str();
+  if (!::CopyFile(from_path.value().c_str(), dest, false)) {
+    // Copy failed.
+    return false;
+  }
+  DWORD attrs = GetFileAttributes(dest);
+  if (attrs == INVALID_FILE_ATTRIBUTES) {
+    return false;
+  }
+  if (attrs & FILE_ATTRIBUTE_READONLY) {
+    SetFileAttributes(dest, attrs & ~FILE_ATTRIBUTE_READONLY);
+  }
+  return true;
 }
 
 bool CopyAndDeleteDirectory(const FilePath& from_path,

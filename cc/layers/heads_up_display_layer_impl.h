@@ -43,7 +43,7 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
   void UpdateHudTexture(DrawMode draw_mode,
                         ResourceProvider* resource_provider);
 
-  virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void ReleaseResources() OVERRIDE;
 
   virtual bool LayerIsAlwaysDamaged() const OVERRIDE;
 
@@ -70,8 +70,10 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
 
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
+  virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
+
   void UpdateHudContents();
-  void DrawHudContents(SkCanvas* canvas) const;
+  void DrawHudContents(SkCanvas* canvas);
 
   void DrawText(SkCanvas* canvas,
                 SkPaint* paint,
@@ -106,8 +108,7 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                               const PaintTimeCounter* paint_time_counter,
                               int top,
                               int right) const;
-  void DrawDebugRects(SkCanvas* canvas,
-                      DebugRectHistory* debug_rect_history) const;
+  void DrawDebugRects(SkCanvas* canvas, DebugRectHistory* debug_rect_history);
 
   scoped_ptr<ScopedResource> hud_resource_;
   scoped_ptr<SkCanvas> hud_canvas_;
@@ -117,6 +118,7 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
   Graph fps_graph_;
   Graph paint_time_graph_;
   MemoryHistory::Entry memory_entry_;
+  int current_paint_rect_color_;
 
   base::TimeTicks time_of_last_graph_update_;
 

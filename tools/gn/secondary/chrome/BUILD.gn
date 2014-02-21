@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/ui.gni")
 import("//crypto/ssl/flags.gni")
 import("//tools/grit/grit_rule.gni")
 
@@ -51,7 +52,7 @@ executable("chrome") {
 
   # TODO(brettw) this isn't right for all platforms.
   if (!use_aura) {
-    sources -= "app/chrome_exe_main_aura.cc"
+    sources -= [ "app/chrome_exe_main_aura.cc" ]
   }
 
   if (!is_win) {
@@ -66,9 +67,8 @@ static_library("browser") {
   external = true
 
   if (is_linux) {
-    libs = [ "dl" ]
     if (toolkit_uses_gtk) {
-      libs += "gconf-2"
+      libs = [ "gconf-2" ]
     }
   }
   if (is_linux) {
@@ -89,7 +89,7 @@ static_library("common") {
     # common/net uses NSS.
     # TODO(brettw) have a better way to express this without having to do
     # "if (use_nss)" everywhere.
-    configs += "//third_party/nss:nss_linux_config"
+    configs += [ "//third_party/nss:nss_linux_config" ]
   }
   deps = [
   ]
@@ -112,6 +112,8 @@ source_set("debugger") {
     "browser/devtools/browser_list_tabcontents_provider.h",
     "browser/devtools/devtools_adb_bridge.cc",
     "browser/devtools/devtools_adb_bridge.h",
+    "browser/devtools/devtools_contents_resizing_strategy.cc",
+    "browser/devtools/devtools_contents_resizing_strategy.h",
     "browser/devtools/devtools_embedder_message_dispatcher.cc",
     "browser/devtools/devtools_embedder_message_dispatcher.h",
     "browser/devtools/devtools_file_helper.cc",
@@ -152,7 +154,7 @@ source_set("debugger") {
       "browser/devtools/devtools_window.cc",
       "browser/devtools/remote_debugging_server.cc",
     ]
-    deps -= "//third_party/libusb"
+    deps -= [ "//third_party/libusb" ]
   }
 
   # TODO implement debug_devtools

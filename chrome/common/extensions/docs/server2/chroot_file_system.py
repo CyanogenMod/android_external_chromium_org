@@ -11,8 +11,8 @@ from future import Gettable, Future
 
 class ChrootFileSystem(FileSystem):
   '''ChrootFileSystem(fs, path) exposes a FileSystem whose root is |path| inside
-  |fs|, so ChrootFileSystem(fs, '/hello').Read(['/world']) is equivalent to
-  fs.Read(['/hello/world']) with the '/hello' prefix stripped from the result.
+  |fs|, so ChrootFileSystem(fs, 'hello').Read(['world']) is equivalent to
+  fs.Read(['hello/world']) with the 'hello' prefix stripped from the result.
   '''
 
   def __init__(self, file_system, root):
@@ -50,4 +50,5 @@ class ChrootFileSystem(FileSystem):
         '%s/%s' % (self._file_system.GetIdentity(), self._root))
 
   def __repr__(self):
-    return 'ChrootFileSystem of <%s>' % repr(self._file_system)
+    return 'ChrootFileSystem(%s, %s)' % (
+            self._root, repr(self._file_system))

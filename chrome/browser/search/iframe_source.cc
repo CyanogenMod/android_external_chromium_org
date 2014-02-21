@@ -4,13 +4,13 @@
 
 #include "chrome/browser/search/iframe_source.h"
 
-#include "base/json/string_escape.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/search/instant_io_context.h"
 #include "chrome/common/url_constants.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/browser_resources.h"
 #include "net/url_request/url_request.h"
@@ -52,17 +52,20 @@ bool IframeSource::ShouldDenyXFrameOptions() const {
 
 bool IframeSource::GetOrigin(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     std::string* origin) const {
-  content::RenderViewHost* rvh =
-      content::RenderViewHost::FromID(render_process_id, render_view_id);
-  if (rvh == NULL)
-    return false;
+  content::RenderFrameHost* rfh =
+      content::RenderFrameHost::FromID(render_process_id, render_frame_id);
   content::WebContents* contents =
-      content::WebContents::FromRenderViewHost(rvh);
+      content::WebContents::FromRenderFrameHost(rfh);
   if (contents == NULL)
     return false;
-  *origin = contents->GetURL().GetOrigin().spec();
+  const content::NavigationEntry* entry =
+      contents->GetController().GetVisibleEntry();
+  if (entry == NULL)
+    return false;
+
+  *origin = entry->GetURL().GetOrigin().spec();
   // Origin should not include a trailing slash. That is part of the path.
   base::TrimString(*origin, "/", origin);
   return true;
@@ -79,16 +82,14 @@ void IframeSource::SendResource(
 void IframeSource::SendJSWithOrigin(
     int resource_id,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   std::string origin;
-  if (!GetOrigin(render_process_id, render_view_id, &origin)) {
+  if (!GetOrigin(render_process_id, render_frame_id, &origin)) {
     callback.Run(NULL);
     return;
   }
 
-  std::string js_escaped_origin;
-  base::JsonDoubleQuote(origin, false, &js_escaped_origin);
   base::StringPiece template_js =
       ResourceBundle::GetSharedInstance().GetRawDataResource(resource_id);
   std::string response(template_js.as_string());

@@ -30,7 +30,7 @@ namespace {
       "   result[2] = \"http://t.com/t.jpg\";"
       "   return result;"
       " }())";
-}
+}  // namespace
 
 namespace dom_distiller {
 
@@ -48,7 +48,8 @@ class DistillerPageWebContentsTest
     distiller_page_->ExecuteJavaScript(kScript);
   }
 
-  virtual void OnExecuteJavaScriptDone(const base::Value* value) OVERRIDE {
+  virtual void OnExecuteJavaScriptDone(const GURL& page_url,
+                                       const base::Value* value) OVERRIDE {
     value_ = value->DeepCopy();
     quit_closure_.Run();
   }

@@ -70,7 +70,7 @@ scoped_ptr<base::Value> ConvertValue(const base::Value& value,
       if (value.GetAsInteger(&int_value) ||
           (value.GetAsString(&string_value) &&
            base::StringToInt(string_value, &int_value))) {
-        return make_scoped_ptr(Value::CreateBooleanValue(int_value != 0));
+        return make_scoped_ptr(base::Value::CreateBooleanValue(int_value != 0));
       }
       break;
     }
@@ -198,7 +198,7 @@ void RegistryDict::SetValue(const std::string& name,
     return;
   }
 
-  Value*& entry = values_[name];
+  base::Value*& entry = values_[name];
   delete entry;
   entry = dict.release();
 }
@@ -243,13 +243,14 @@ void RegistryDict::ReadRegistry(HKEY hive, const base::string16& root) {
 
   // First, read all the values of the key.
   for (RegistryValueIterator it(hive, root.c_str()); it.Valid(); ++it) {
-    const std::string name = UTF16ToUTF8(it.Name());
+    const std::string name = base::UTF16ToUTF8(it.Name());
     switch (it.Type()) {
       case REG_SZ:
       case REG_EXPAND_SZ:
         SetValue(
             name,
-            make_scoped_ptr(new base::StringValue(UTF16ToUTF8(it.Value()))));
+            make_scoped_ptr(
+                new base::StringValue(base::UTF16ToUTF8(it.Value()))));
         continue;
       case REG_DWORD_LITTLE_ENDIAN:
       case REG_DWORD_BIG_ENDIAN:
@@ -282,7 +283,7 @@ void RegistryDict::ReadRegistry(HKEY hive, const base::string16& root) {
 
   // Recurse for all subkeys.
   for (RegistryKeyIterator it(hive, root.c_str()); it.Valid(); ++it) {
-    std::string name(UTF16ToUTF8(it.Name()));
+    std::string name(base::UTF16ToUTF8(it.Name()));
     scoped_ptr<RegistryDict> subdict(new RegistryDict());
     subdict->ReadRegistry(hive, root + L"\\" + it.Name());
     SetKey(name, subdict.Pass());

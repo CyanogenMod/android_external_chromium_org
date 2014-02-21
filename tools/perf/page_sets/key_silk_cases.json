@@ -4,111 +4,478 @@
   "credentials_path": "data/credentials.json",
   "user_agent_type": "mobile",
   "smoothness": { "action": "scroll" },
+  "navigate_steps" : [
+    { "action": "navigate" },
+    { "action": "wait", "seconds": 2 }
+  ],
   "pages": [
     {
       "url": "http://groupcloned.com/test/plain/list-recycle-transform.html",
       "why": "best case infinite scroll from sencha",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
-      "smoothness": { 
+      "smoothness": {
         "action": "scroll",
-        "scrollable_element_function": "function(callback) { callback(document.getElementById('scrollable')); }" 
+        "scrollable_element_function": "function(callback) { callback(document.getElementById('scrollable')); }"
       }
     },
     {
       "url": "http://groupcloned.com/test/plain/list-animation-simple.html",
       "why": "lots of layers all animating",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
-      "smoothness": { "action": "wait", "seconds": 10 }
+      "smoothness": { "action": "wait", "seconds": 2 }
     },
     {
       "url": "http://www.polymer-project.org/polymer-all/labs/list/static-scroll-display.html",
       "why": "",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
-      "smoothness": { 
+      "smoothness": {
         "action": "scroll",
-        "scrollable_element_function": "function(callback) { callback(document.getElementById('list')); }" 
+        "scrollable_element_function": "function(callback) { callback(document.getElementById('list')); }"
       }
     },
     {
       "url": "http://www.polymer-project.org/polymer-all/labs/list/virtual-scroll-examples.html",
       "why": "",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
-      "smoothness": { 
+      "smoothness": {
         "action": "scroll",
-        "scrollable_element_function": "function(callback) { callback(document.getElementById('list')); }" 
+        "scrollable_element_function": "function(callback) { callback(document.getElementById('list')); }"
       }
     },
     {
       "url": "http://groupcloned.com/test/plain/sticky-using-webkit-backface-visibility.html",
       "why": "",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
-      "smoothness": { 
+      "smoothness": {
         "action": "scroll",
-        "scrollable_element_function": "function(callback) { callback(document.getElementById('container')); }" 
+        "scrollable_element_function": "function(callback) { callback(document.getElementById('container')); }"
       }
     },
     {
       "url": "http://pr.gg/scroll6_even_faster.html",
       "why": "reduced version of ui toolkit static scroll case",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
-      "smoothness": { 
+      "smoothness": {
         "action": "scroll",
-        "scrollable_element_function": "function(callback) { callback(document.getElementsByClassName('container')[0]); }" 
+        "scrollable_element_function": "function(callback) { callback(document.getElementsByClassName('container')[0]); }"
       }
     },
     {
-      "url": "http://staff.tumblr.com/",
-      "why": "long jank at the start of every scroll gesture (due to layout?)",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
+      "url": "http://jsfiddle.net/mdxJ7/3/embedded/result/",
+      "why": "only the green div should repaint",
+      "smoothness": { "action": "wait", "seconds": 3 }
+    },
+    {
+      "url": "http://jsfiddle.net/3yDKh/1/embedded/result",
+      "why": "only the red div should repaint",
+      "smoothness": { "action": "wait", "seconds": 3 }
+    },
+    {
+      "url": "http://jsfiddle.net/3yDKh/3/embedded/result",
+      "why": "margin top animation",
+      "smoothness": { "action": "wait", "seconds": 3 }
+    },
+    {
+      "url": "http://jsfiddle.net/R8DX9/1/embedded/result/",
+      "smoothness": { "action": "wait", "seconds": 3 }
+    },
+    {
+      "url": "http://jsfiddle.net/rF9Gh/1/embedded/result/",
+      "smoothness": { "action": "wait", "seconds": 3 }
+    },
+    {
+      "url": "http://jsfiddle.net/uHqN9/embedded/result/",
+      "smoothness": { "action": "wait", "seconds": 4 }
+    },
+    {
+      "url": "http://jsfiddle.net/humper/yEX8u/3/embedded/result/",
+      "smoothness": { "action": "wait", "seconds": 4 }
+    },
+    {
+      "url": "http://jsfiddle.net/humper/cKB9D/3/embedded/result/",
+      "smoothness": { "action": "wait", "seconds": 4 }
+    },
+    {
+      "url": "http://jsfiddle.net/vBQHH/3/embedded/result/",
+      "smoothness": { "action": "wait", "seconds": 4 }
+    },
+    {
+      "url": "http://www.google.com/nexus/5/#/",
       "smoothness": { "action": "scroll" }
     },
     {
-      "url": "http://jsfiddle.net/mdxJ7/3/show",
-      "why": "only the green div should repaint",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
+      "url": "https://play.google.com/store/devices/details/Nexus_5_16GB_White?id=nexus_5_white_16gb",
+      "smoothness": {
+        "action": "toggle",
+        "repeat": 3
+      },
+      "toggle": [
+        {
+          "action": "click_element",
+          "selector": ".details-info .play-button:not(.selected)"
+        },
+        { "action": "wait", "seconds": 2}
+      ]
+    },
+    {
+      "url": "http://jsfiddle.net/426x6/2/embedded/result",
+      "smoothness": { "action": "wait", "seconds": 2 }
+    },
+    {
+      "url": "http://jsfiddle.net/FtR7p/42/embedded/result/",
       "smoothness": { "action": "wait", "seconds": 5 }
     },
     {
-      "url": "http://jsfiddle.net/3yDKh/1/show",
-      "why": "only the red div should repaint",
-      "navigate_steps" : [
-        { "action": "navigate" },
-        { "action": "wait", "seconds": 2 }
-      ],
+      "url": "http://jsfiddle.net/ugkd4/9/embedded/result/",
       "smoothness": { "action": "wait", "seconds": 5 }
     },
     {
-      "url": "http://jsfiddle.net/3yDKh/3/show",
-      "why": "margin top animation",
+      "url": "file://key_silk_cases/text-mask.html",
+      "smoothness": { "action": "wait", "seconds": 4 }
+    },
+    {
+      "url": "file://key_silk_cases/rectangle_transition.html",
+      "smoothness": { "action": "wait", "seconds": 5 }
+    },
+    {
+      "url": "file://key_silk_cases/font_wipe.html",
+      "smoothness": { "action": "wait", "seconds": 5 }
+    },
+    {
+      "url": "file://key_silk_cases/inbox_app.html?swipe_to_dismiss",
       "navigate_steps" : [
         { "action": "navigate" },
         { "action": "wait", "seconds": 2 }
       ],
-      "smoothness": { "action": "wait", "seconds": 5 }
+      "smoothness": {
+        "action": "swipe_to_dismiss"
+      },
+      "swipe_to_dismiss": [
+        {
+          "action": "swipe",
+          "element_function": "function(callback) { callback(document.getElementsByClassName('message')[2]); }",
+          "distance": 200,
+          "speed": 5000,
+          "direction": "left",
+          "left_start_percentage": 0.8,
+          "top_start_percentage": 0.2,
+          "wait_after": {
+            "javascript": "document.getElementsByClassName('message').length < 18"
+          }
+        }
+      ]
+    },
+    {
+      "url": "file://key_silk_cases/inbox_app.html?stress_hidey_bars",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 2 }
+      ],
+      "smoothness": {
+        "action": "stress_hidey_bars"
+      },
+      "stress_hidey_bars": [
+        {
+          "action": "scroll",
+          "scrollable_element_function": "function(callback) { callback(document.getElementById('messages')); }",
+          "direction": "down",
+          "speed": 200
+        },
+        {
+          "action": "scroll",
+          "scrollable_element_function": "function(callback) { callback(document.getElementById('messages')); }",
+          "direction": "up",
+          "speed": 200
+        },
+        {
+          "action": "scroll",
+          "scrollable_element_function": "function(callback) { callback(document.getElementById('messages')); }",
+          "direction": "down",
+          "speed": 200
+        }
+      ]
+    },
+    {
+      "url": "file://key_silk_cases/inbox_app.html?toggle_drawer",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 2 }
+      ],
+      "smoothness": {
+        "action": "toggle_drawer",
+        "repeat": 6
+      },
+      "toggle_drawer": [
+        {
+          "action": "click_element",
+          "selector": "#menu-button"
+        },
+        { "action": "wait", "seconds": 1 }
+      ]
+    },
+    {
+      "url": "file://key_silk_cases/old_inbox_app.html?slide_drawer",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 2 }
+      ],
+      "smoothness": {
+        "action": "slide_drawer"
+      },
+      "slide_drawer": [
+        {
+          "action": "swipe",
+          "element_function": "function(callback) { callback(document.getElementById('content')); }",
+          "distance": 200,
+          "direction": "left",
+          "left_start_percentage": 0.8,
+          "top_start_percentage": 0.2,
+          "wait_after": {
+            "javascript": "!document.getElementById('nav-drawer').active"
+          }
+        }
+      ]
+    },
+    {
+      "url": "file://key_silk_cases/infinite_scrolling.html",
+      "smoothness": {
+        "action": "scroll",
+        "scrollable_element_function": "function(callback) { callback(document.getElementById('container')); }",
+        "speed": 5000
+      }
+    },
+    {
+      "disabled": "The page isn't scrollable on large screen sizes (e.g. tablets); crbug.com/333923",
+      "url": "http://forecast.io?scroll",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementById('forecast').style['display'] != 'none'" },
+        { "action": "wait", "seconds": 2 }
+      ],
+      "smoothness": {
+        "action": "scroll_timeline"
+      },
+      "scroll_timeline": {
+        "action": "scroll",
+        "direction": "right",
+        "scroll_requires_touch": "true",
+        "scrollable_element_function": "function(callback) { callback(document.getElementsByClassName('scroll')[0]); }"
+      }
+    },
+    {
+      "url": "http://forecast.io?swipe",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementById('forecast').style['display'] != 'none'" },
+        { "action": "wait", "seconds": 2 }
+      ],
+      "smoothness": {
+        "action": "slide_next_7_days"
+      },
+      "slide_next_7_days": {
+        "action": "swipe",
+        "direction": "up",
+        "distance": 200,
+        "wait_after": { "javascript": "document.getElementsByClassName('grippy')[0].getBoundingClientRect().top == 12" }
+      }
+    },
+    {
+      "url": "http://forecast.io?tap",
+      "disabled": "Synthetic swipe not supported on reference builds. Can be re-enabled after reference build roll",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementById('forecast').style['display'] != 'none'" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "slide_next_7_days" }
+      ],
+      "smoothness": {
+        "action": "tap_day"
+      },
+      "slide_next_7_days" : {
+        "action": "swipe",
+        "direction": "up",
+        "distance": 200,
+        "wait_after": { "javascript": "document.getElementsByClassName('grippy')[0].getBoundingClientRect().top == 12" }
+      },
+      "tap_day": {
+        "action": "tap",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('day')[2]); }",
+        "wait_after": { "javascript": "document.getElementById('day_timeline').style['display'] == 'block'" }
+      }
+    },
+    {
+      "url": "http://www.google.com/#q=google",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 3 },
+        { "action": "scroll_knowledge_card_to_top" }
+      ],
+      "smoothness": {
+        "action": "expand_knowledge_card"
+      },
+      "scroll_knowledge_card_to_top": {
+        "action": "scroll",
+        "_comment": "scroll until the knowledge card is at the top",
+        "scroll_distance_function": "function() { return document.getElementById('kno-result').getBoundingClientRect().top - document.body.scrollTop; }"
+      },
+      "expand_knowledge_card": {
+        "action": "tap",
+        "_comment": "expand card",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('vk_arc')[0]); }",
+        "wait_after": { "seconds": 2 }
+      }
+    },
+    {
+      "url": "http://pr.gg/scroll6.html",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 1 }
+      ],
+      "smoothness": {
+        "action": "scroll",
+        "scrollable_element_function": "function(callback) { callback(document.getElementsByClassName('container')[0]); }"
+      }
+    },
+    {
+      "disabled": "Times out on Windows; crbug.com/338838",
+      "url": "http://plus.google.com/app/basic/stream",
+      "credentials": "google",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementsByClassName('fHa').length > 0" },
+        { "action": "wait", "seconds": 2 }
+      ],
+      "smoothness": {
+        "action": "scroll",
+        "scrollable_element_function": "function(callback) { callback(document.getElementById('mainContent')); }"
+      }
+    },
+    {
+      "url": "http://jsbin.com/UVIgUTa/6/quiet",
+      "smoothness": {
+        "action": "scroll",
+        "scroll_requires_touch": true,
+        "direction": "down",
+        "scroll_distance_function": "function() { return window.innerHeight / 2; }",
+        "wait_after": { "seconds": 1 }
+      }
+    },
+    {
+      "url": "http://mobile-news.sandbox.google.com/news/pt1",
+      "why": "Google News: accelerated scrolling version",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 10 }
+      ]
+    },
+    {
+      "url": "http://mobile-news.sandbox.google.com/news/pt0?scroll",
+      "why": "Google News: this iOS version is slower than accelerated scrolling",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementById(':h') != null" },
+        { "action": "wait", "seconds": 1 }
+      ],
+      "smoothness": {
+        "action": "scroll",
+        "scroll_requires_touch": true,
+        "scrollable_element_function": "function(callback) { callback(document.getElementById(':5')); }",
+        "scroll_distance_function": "function() { return 2500; }"
+      }
+    },
+    {
+      "url": "http://mobile-news.sandbox.google.com/news/pt0?swipe",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementById(':h') != null" },
+        { "action": "wait", "seconds": 1 }
+      ],
+      "smoothness": {
+        "action": "swipe",
+        "direction": "left",
+        "distance": 100,
+        "element_function": "function(callback) { callback(document.getElementById(':f')); }",
+        "wait_after": { "seconds": 1 }
+      }
+    },
+    {
+      "url": "http://s.codepen.io/befamous/fullpage/pFsqb?scroll",
+      "why": "famo.us twitter demo",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementsByClassName('tweet').length > 0" },
+        { "action": "wait", "seconds": 1 }
+      ],
+      "smoothness": {
+        "action": "scroll",
+        "scroll_distance_function": "function() { return 5000; }"
+      }
+    },
+    {
+      "disabled": "Android Chrome freezes; crbug.com/335772",
+      "url": "http://s.codepen.io/befamous/fullpage/pFsqb?flip",
+      "why": "famo.us twitter demo",
+      "navigate_steps" : [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "document.getElementsByClassName('tweet').length > 0" }
+      ],
+      "smoothness": {
+        "action": "tap",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('navigation')[2]); }",
+        "wait_after": { "javascript": "document.getElementsByClassName('header')[0].getBoundingClientRect().top == 0" }
+      }
+    },
+    {
+      "disabled": "Android Chrome freezes; crbug.com/335772",
+      "url": "http://s.codepen.io/befamous/fullpage/kbxnH?scroll",
+      "why": "famo.us lightbox demo",
+      "smoothness": {
+        "action": "scroll",
+        "scrollable_element_function": "function(callback) { callback(document.getElementsByClassName('container')[0]); }"
+      }
+    },
+    {
+      "disabled": "Android Chrome freezes; crbug.com/335772",
+      "url": "http://s.codepen.io/befamous/fullpage/kbxnH?select",
+      "why": "famo.us lightbox demo",
+      "smoothness": {
+        "action": "tap",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('surface')[2]); }",
+        "_comment": "The wait_after condition is split into a condition for phones and portrait tablets, and one for landscape tablets",
+        "wait_after": { "javascript": "document.getElementsByClassName('surface')[1].getBoundingClientRect().left == 860 || Math.abs(document.getElementsByClassName('lightbox-title')[0].getBoundingClientRect().left - 907.77) < 0.1" }
+      }
+    },
+    {
+      "url": "http://famo.us?scroll",
+      "disabled": "Times out",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "close_signup_box" }
+      ],
+      "smoothness": {
+        "action": "scroll",
+        "direction": "right",
+        "scroll_distance_function": "function() { return 5000; }"
+      },
+      "close_signup_box": {
+        "action": "tap",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('signup-hide')[0]); }",
+        "wait_after": { "javascript": "document.getElementsByClassName('signup-hide')[0].getBoundingClientRect().left < 0" }
+      }
+    },
+    {
+      "url": "http://famo.us?tap",
+      "disabled": "Times out",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "close_signup_box" }
+      ],
+      "smoothness": {
+        "action": "tap",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('periodic-item')[47]); }",
+        "wait_after": { "seconds": 3 }
+      },
+      "close_signup_box": {
+        "action": "tap",
+        "element_function": "function(callback) { callback(document.getElementsByClassName('signup-hide')[0]); }",
+        "wait_after": { "javascript": "document.getElementsByClassName('signup-hide')[0].getBoundingClientRect().left < 0" }
+      }
     }
   ]
 }

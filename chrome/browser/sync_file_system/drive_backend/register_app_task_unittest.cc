@@ -13,15 +13,17 @@
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
 namespace sync_file_system {
@@ -41,6 +43,7 @@ class RegisterAppTaskTest : public testing::Test,
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
+    in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
     fake_drive_service_.reset(new drive::FakeDriveService);
     ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
@@ -52,7 +55,8 @@ class RegisterAppTaskTest : public testing::Test,
         fake_drive_service_.get(), base::MessageLoopProxy::current()));
 
     fake_drive_service_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_.get(), drive_uploader_.get()));
+        fake_drive_service_.get(), drive_uploader_.get(),
+        kSyncRootFolderTitle));
 
     ASSERT_EQ(google_apis::HTTP_CREATED,
               fake_drive_service_helper_->AddOrphanedFolder(
@@ -89,6 +93,7 @@ class RegisterAppTaskTest : public testing::Test,
     leveldb::DB* db = NULL;
     leveldb::Options options;
     options.create_if_missing = true;
+    options.env = in_memory_env_.get();
     leveldb::Status status =
         leveldb::DB::Open(options, database_dir_.path().AsUTF8Unsafe(), &db);
     EXPECT_TRUE(status.ok());
@@ -122,8 +127,8 @@ class RegisterAppTaskTest : public testing::Test,
     batch.Put(kDatabaseVersionKey,
               base::Int64ToString(kCurrentDatabaseVersion));
     PutServiceMetadataToBatch(service_metadata, &batch);
-    PutFileToBatch(sync_root_metadata, &batch);
-    PutTrackerToBatch(sync_root_tracker, &batch);
+    PutFileMetadataToBatch(sync_root_metadata, &batch);
+    PutFileTrackerToBatch(sync_root_tracker, &batch);
     EXPECT_TRUE(db->Write(leveldb::WriteOptions(), &batch).ok());
   }
 
@@ -165,8 +170,8 @@ class RegisterAppTaskTest : public testing::Test,
     tracker.set_active(true);
 
     leveldb::WriteBatch batch;
-    PutFileToBatch(metadata, &batch);
-    PutTrackerToBatch(tracker, &batch);
+    PutFileMetadataToBatch(metadata, &batch);
+    PutFileTrackerToBatch(tracker, &batch);
     EXPECT_TRUE(db->Write(leveldb::WriteOptions(), &batch).ok());
   }
 
@@ -190,8 +195,8 @@ class RegisterAppTaskTest : public testing::Test,
     tracker.set_active(false);
 
     leveldb::WriteBatch batch;
-    PutFileToBatch(metadata, &batch);
-    PutTrackerToBatch(tracker, &batch);
+    PutFileMetadataToBatch(metadata, &batch);
+    PutFileTrackerToBatch(tracker, &batch);
     EXPECT_TRUE(db->Write(leveldb::WriteOptions(), &batch).ok());
   }
 
@@ -248,6 +253,8 @@ class RegisterAppTaskTest : public testing::Test,
   std::string GenerateFileID() {
     return base::StringPrintf("file_id_%" PRId64, next_file_id_++);
   }
+
+  scoped_ptr<leveldb::Env> in_memory_env_;
 
   std::string sync_root_folder_id_;
 

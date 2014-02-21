@@ -17,7 +17,6 @@
 
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/safe_numerics.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
@@ -122,6 +121,27 @@ static bool CheckBlankPassword(WCHAR* username) {
   return blank_password;
 }
 
+OsPasswordStatus GetOsPasswordStatus() {
+  DWORD username_length = CREDUI_MAX_USERNAME_LENGTH;
+  WCHAR username[CREDUI_MAX_USERNAME_LENGTH+1] = {};
+  OsPasswordStatus retVal = PASSWORD_STATUS_UNKNOWN;
+
+  if (GetUserNameEx(NameUserPrincipal, username, &username_length)) {
+    // If we are on a domain, it is almost certain that the password is not
+    // blank, but we do not actively check any further than this to avoid any
+    // failed login attempts hitting the domain controller.
+    retVal = PASSWORD_STATUS_WIN_DOMAIN;
+  } else {
+    username_length = CREDUI_MAX_USERNAME_LENGTH;
+    if (GetUserName(username, &username_length)) {
+      retVal = CheckBlankPassword(username) ? PASSWORD_STATUS_BLANK :
+          PASSWORD_STATUS_NONBLANK;
+    }
+  }
+
+  return retVal;
+}
+
 bool AuthenticateUser(gfx::NativeWindow window) {
   bool retval = false;
   CREDUI_INFO cui = {};
@@ -130,10 +150,10 @@ bool AuthenticateUser(gfx::NativeWindow window) {
   WCHAR password[CREDUI_MAX_PASSWORD_LENGTH+1] = {};
   DWORD username_length = CREDUI_MAX_USERNAME_LENGTH;
   std::wstring product_name =
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
   std::wstring password_prompt =
-      UTF16ToWide(l10n_util::GetStringUTF16(
-                  IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT));
+      base::UTF16ToWide(l10n_util::GetStringUTF16(
+                            IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT));
   HANDLE handle = INVALID_HANDLE_VALUE;
   int tries = 0;
   bool use_displayname = false;

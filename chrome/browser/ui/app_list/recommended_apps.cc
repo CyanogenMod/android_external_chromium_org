@@ -8,14 +8,19 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/recommended_apps_observer.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 
 namespace app_list {
 
@@ -44,7 +49,7 @@ RecommendedApps::RecommendedApps(Profile* profile) : profile_(profile) {
       extensions::ExtensionSystem::Get(profile_)->extension_service();
   extensions::ExtensionPrefs* prefs = service->extension_prefs();
   pref_change_registrar_.Init(prefs->pref_service());
-  pref_change_registrar_.Add(prefs::kExtensionsPref,
+  pref_change_registrar_.Add(extensions::pref_names::kExtensions,
                              base::Bind(&RecommendedApps::Update,
                                         base::Unretained(this)));
 
@@ -70,8 +75,8 @@ void RecommendedApps::Update() {
   extensions::ExtensionPrefs* prefs = service->extension_prefs();
 
   std::vector<AppSortInfo> sorted_apps;
-  const ExtensionSet* extensions = service->extensions();
-  for (ExtensionSet::const_iterator app = extensions->begin();
+  const extensions::ExtensionSet* extensions = service->extensions();
+  for (extensions::ExtensionSet::const_iterator app = extensions->begin();
        app != extensions->end(); ++app) {
     if (!(*app)->ShouldDisplayInAppLauncher())
       continue;

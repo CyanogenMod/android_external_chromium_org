@@ -109,10 +109,10 @@ DownloadItemModelData::DownloadItemModelData()
       should_prefer_opening_in_browser_(false) {
 }
 
-string16 InterruptReasonStatusMessage(int reason) {
-  int string_id = 0;
+base::string16 InterruptReasonStatusMessage(int reason) {
+  int string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
 
-  switch (reason) {
+  switch (static_cast<content::DownloadInterruptReason>(reason)) {
     case content::DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED:
       string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_ACCESS_DENIED;
       break;
@@ -140,6 +140,7 @@ string16 InterruptReasonStatusMessage(int reason) {
     case content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_SHORT:
       string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_FILE_TOO_SHORT;
       break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST:
     case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
       string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_ERROR;
       break;
@@ -167,19 +168,23 @@ string16 InterruptReasonStatusMessage(int reason) {
     case content::DOWNLOAD_INTERRUPT_REASON_CRASH:
       string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_CRASH;
       break;
-    default:
+    case content::DOWNLOAD_INTERRUPT_REASON_NONE:
+      NOTREACHED();
+      // fallthrough
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE:
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_PRECONDITION:
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED:
       string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
-      break;
   }
 
   return l10n_util::GetStringUTF16(string_id);
 }
 
-string16 InterruptReasonMessage(int reason) {
-  int string_id = 0;
+base::string16 InterruptReasonMessage(int reason) {
+  int string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
   base::string16 status_text;
 
-  switch (reason) {
+  switch (static_cast<content::DownloadInterruptReason>(reason)) {
     case content::DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED:
       string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_ACCESS_DENIED;
       break;
@@ -207,6 +212,7 @@ string16 InterruptReasonMessage(int reason) {
     case content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_SHORT:
       string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_FILE_TOO_SHORT;
       break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST:
     case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
       string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_ERROR;
       break;
@@ -234,9 +240,13 @@ string16 InterruptReasonMessage(int reason) {
     case content::DOWNLOAD_INTERRUPT_REASON_CRASH:
       string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_CRASH;
       break;
-    default:
+    case content::DOWNLOAD_INTERRUPT_REASON_NONE:
+      NOTREACHED();
+      // fallthrough
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE:
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_PRECONDITION:
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED:
       string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
-      break;
   }
 
   status_text = l10n_util::GetStringUTF16(string_id);
@@ -254,7 +264,7 @@ DownloadItemModel::DownloadItemModel(DownloadItem* download)
 
 DownloadItemModel::~DownloadItemModel() {}
 
-string16 DownloadItemModel::GetInterruptReasonText() const {
+base::string16 DownloadItemModel::GetInterruptReasonText() const {
   if (download_->GetState() != DownloadItem::INTERRUPTED ||
       download_->GetLastReason() ==
       content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED) {
@@ -263,7 +273,7 @@ string16 DownloadItemModel::GetInterruptReasonText() const {
   return InterruptReasonMessage(download_->GetLastReason());
 }
 
-string16 DownloadItemModel::GetStatusText() const {
+base::string16 DownloadItemModel::GetStatusText() const {
   base::string16 status_text;
   switch (download_->GetState()) {
     case DownloadItem::IN_PROGRESS:
@@ -298,7 +308,7 @@ string16 DownloadItemModel::GetStatusText() const {
   return status_text;
 }
 
-string16 DownloadItemModel::GetTabProgressStatusText() const {
+base::string16 DownloadItemModel::GetTabProgressStatusText() const {
   int64 total = GetTotalBytes();
   int64 size = download_->GetReceivedBytes();
   base::string16 received_size = ui::FormatBytes(size);
@@ -338,22 +348,22 @@ string16 DownloadItemModel::GetTabProgressStatusText() const {
       IDS_DOWNLOAD_TAB_PROGRESS_STATUS, speed_text, amount, time_remaining);
 }
 
-string16 DownloadItemModel::GetTooltipText(const gfx::FontList& font_list,
-                                           int max_width) const {
+base::string16 DownloadItemModel::GetTooltipText(const gfx::FontList& font_list,
+                                                 int max_width) const {
   base::string16 tooltip = gfx::ElideFilename(
       download_->GetFileNameToReportUser(), font_list, max_width);
   content::DownloadInterruptReason reason = download_->GetLastReason();
   if (download_->GetState() == DownloadItem::INTERRUPTED &&
       reason != content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED) {
-    tooltip += ASCIIToUTF16("\n");
+    tooltip += base::ASCIIToUTF16("\n");
     tooltip += gfx::ElideText(InterruptReasonStatusMessage(reason),
                              font_list, max_width, gfx::ELIDE_AT_END);
   }
   return tooltip;
 }
 
-string16 DownloadItemModel::GetWarningText(const gfx::FontList& font_list,
-                                           int base_width) const {
+base::string16 DownloadItemModel::GetWarningText(const gfx::FontList& font_list,
+                                                 int base_width) const {
   // Should only be called if IsDangerous().
   DCHECK(IsDangerous());
   base::string16 elided_filename =
@@ -396,7 +406,7 @@ string16 DownloadItemModel::GetWarningText(const gfx::FontList& font_list,
   return base::string16();
 }
 
-string16 DownloadItemModel::GetWarningConfirmButtonText() const {
+base::string16 DownloadItemModel::GetWarningConfirmButtonText() const {
   // Should only be called if IsDangerous()
   DCHECK(IsDangerous());
   if (download_->GetDangerType() ==
@@ -562,7 +572,7 @@ void DownloadItemModel::SetShouldPreferOpeningInBrowser(bool preference) {
   data->set_should_prefer_opening_in_browser(preference);
 }
 
-string16 DownloadItemModel::GetProgressSizesString() const {
+base::string16 DownloadItemModel::GetProgressSizesString() const {
   base::string16 size_ratio;
   int64 size = GetCompletedBytes();
   int64 total = GetTotalBytes();
@@ -585,7 +595,7 @@ string16 DownloadItemModel::GetProgressSizesString() const {
   return size_ratio;
 }
 
-string16 DownloadItemModel::GetInProgressStatusString() const {
+base::string16 DownloadItemModel::GetInProgressStatusString() const {
   DCHECK_EQ(DownloadItem::IN_PROGRESS, download_->GetState());
 
   TimeDelta time_remaining;
@@ -617,7 +627,7 @@ string16 DownloadItemModel::GetInProgressStatusString() const {
 
     return l10n_util::GetStringFUTF16(
         IDS_DOWNLOAD_STATUS_OPEN_IN,
-        ui::TimeFormat::TimeRemainingShort(time_remaining));
+        ui::TimeFormat::TimeDurationShort(time_remaining));
   }
 
   // In progress download with known time left: "100/120 MB, 10 secs left"

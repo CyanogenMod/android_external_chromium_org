@@ -96,14 +96,14 @@ void IPCWebSocketStreamHandleBridge::Connect(const GURL& url) {
 
   socket_id_ = all_bridges.Get().Add(this);
   DCHECK_NE(socket_id_, kNoSocketId);
-  int render_view_id = MSG_ROUTING_NONE;
+  int render_frame_id = MSG_ROUTING_NONE;
   const SocketStreamHandleData* data =
       SocketStreamHandleData::ForHandle(handle_);
   if (data)
-    render_view_id = data->render_view_id();
+    render_frame_id = data->render_frame_id();
   AddRef();  // Released in OnClosed().
   ChildThread::current()->Send(
-      new SocketStreamHostMsg_Connect(render_view_id, url, socket_id_));
+      new SocketStreamHostMsg_Connect(render_frame_id, url, socket_id_));
   DVLOG(1) << "Bridge #" << socket_id_ << " sent IPC Connect";
   // TODO(ukai): timeout to OnConnected.
 }
@@ -168,7 +168,7 @@ void IPCWebSocketStreamHandleBridge::OnFailed(int error_code,
   DVLOG(1) << "Bridge #" << socket_id_ << " OnFailed (error_code=" << error_code
            << ")";
   if (delegate_)
-    delegate_->DidFail(handle_, error_code, ASCIIToUTF16(error_msg));
+    delegate_->DidFail(handle_, error_code, base::ASCIIToUTF16(error_msg));
 }
 
 SocketStreamDispatcher::SocketStreamDispatcher() {

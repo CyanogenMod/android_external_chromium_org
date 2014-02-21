@@ -6,6 +6,7 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/file_stream.h"
@@ -34,14 +35,13 @@ ZipReader::EntryInfo::EntryInfo(const std::string& file_name_in_zip,
   // Directory entries in zip files end with "/".
   is_directory_ = EndsWith(file_name_in_zip, "/", false);
 
-  // Check the file name here for directory traversal issues. In the name of
-  // simplicity and security, we might reject a valid file name such as "a..b".
-  is_unsafe_ = file_name_in_zip.find("..") != std::string::npos;
+  // Check the file name here for directory traversal issues.
+  is_unsafe_ = file_path_.ReferencesParent();
 
   // We also consider that the file name is unsafe, if it's invalid UTF-8.
   base::string16 file_name_utf16;
-  if (!UTF8ToUTF16(file_name_in_zip.data(), file_name_in_zip.size(),
-                   &file_name_utf16)) {
+  if (!base::UTF8ToUTF16(file_name_in_zip.data(), file_name_in_zip.size(),
+                         &file_name_utf16)) {
     is_unsafe_ = true;
   }
 
@@ -69,7 +69,8 @@ ZipReader::EntryInfo::EntryInfo(const std::string& file_name_in_zip,
   }
 }
 
-ZipReader::ZipReader() {
+ZipReader::ZipReader()
+    : weak_ptr_factory_(this) {
   Reset();
 }
 
@@ -231,8 +232,74 @@ bool ZipReader::ExtractCurrentEntryToFilePath(
     }
   }
 
+  stream.CloseSync();
   unzCloseCurrentFile(zip_file_);
+
+  if (current_entry_info()->last_modified() != base::Time::UnixEpoch())
+    base::TouchFile(output_file_path,
+                    base::Time::Now(),
+                    current_entry_info()->last_modified());
+
   return success;
+}
+
+void ZipReader::ExtractCurrentEntryToFilePathAsync(
+    const base::FilePath& output_file_path,
+    const SuccessCallback& success_callback,
+    const FailureCallback& failure_callback,
+    const ProgressCallback& progress_callback) {
+  DCHECK(zip_file_);
+  DCHECK(current_entry_info_.get());
+
+  // If this is a directory, just create it and return.
+  if (current_entry_info()->is_directory()) {
+    if (base::CreateDirectory(output_file_path)) {
+      base::MessageLoopProxy::current()->PostTask(FROM_HERE, success_callback);
+    } else {
+      DVLOG(1) << "Unzip failed: unable to create directory.";
+      base::MessageLoopProxy::current()->PostTask(FROM_HERE, failure_callback);
+    }
+    return;
+  }
+
+  if (unzOpenCurrentFile(zip_file_) != UNZ_OK) {
+    DVLOG(1) << "Unzip failed: unable to open current zip entry.";
+    base::MessageLoopProxy::current()->PostTask(FROM_HERE, failure_callback);
+    return;
+  }
+
+  base::FilePath output_dir_path = output_file_path.DirName();
+  if (!base::CreateDirectory(output_dir_path)) {
+    DVLOG(1) << "Unzip failed: unable to create containing directory.";
+    base::MessageLoopProxy::current()->PostTask(FROM_HERE, failure_callback);
+    return;
+  }
+
+  const int flags = (base::PLATFORM_FILE_CREATE_ALWAYS |
+                     base::PLATFORM_FILE_WRITE);
+  bool created = false;
+  base::PlatformFileError platform_file_error;
+  base::PlatformFile output_file = CreatePlatformFile(output_file_path,
+                                                      flags,
+                                                      &created,
+                                                      &platform_file_error);
+
+  if (platform_file_error != base::PLATFORM_FILE_OK) {
+    DVLOG(1) << "Unzip failed: unable to create platform file at "
+             << output_file_path.value();
+    base::MessageLoopProxy::current()->PostTask(FROM_HERE, failure_callback);
+    return;
+  }
+
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&ZipReader::ExtractChunk,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 output_file,
+                 success_callback,
+                 failure_callback,
+                 progress_callback,
+                 0 /* initial offset */));
 }
 
 bool ZipReader::ExtractCurrentEntryIntoDirectory(
@@ -306,5 +373,54 @@ void ZipReader::Reset() {
   reached_end_ = false;
   current_entry_info_.reset();
 }
+
+void ZipReader::ExtractChunk(base::PlatformFile output_file,
+                             const SuccessCallback& success_callback,
+                             const FailureCallback& failure_callback,
+                             const ProgressCallback& progress_callback,
+                             const int64 offset) {
+  char buffer[internal::kZipBufSize];
+
+  const int num_bytes_read = unzReadCurrentFile(zip_file_,
+                                                buffer,
+                                                internal::kZipBufSize);
+
+  if (num_bytes_read == 0) {
+    unzCloseCurrentFile(zip_file_);
+    base::ClosePlatformFile(output_file);
+    success_callback.Run();
+  } else if (num_bytes_read < 0) {
+    DVLOG(1) << "Unzip failed: error while reading zipfile "
+             << "(" << num_bytes_read << ")";
+    base::ClosePlatformFile(output_file);
+    failure_callback.Run();
+  } else {
+    if (num_bytes_read != base::WritePlatformFile(output_file,
+                                                  offset,
+                                                  buffer,
+                                                  num_bytes_read)) {
+      DVLOG(1) << "Unzip failed: unable to write all bytes to target.";
+      base::ClosePlatformFile(output_file);
+      failure_callback.Run();
+      return;
+    }
+
+    int64 current_progress = offset + num_bytes_read;
+
+    progress_callback.Run(current_progress);
+
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&ZipReader::ExtractChunk,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   output_file,
+                   success_callback,
+                   failure_callback,
+                   progress_callback,
+                   current_progress));
+
+  }
+}
+
 
 }  // namespace zip

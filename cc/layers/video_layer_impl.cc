@@ -18,9 +18,9 @@
 #include "cc/trees/proxy.h"
 #include "media/base/video_frame.h"
 
-#if defined(GOOGLE_TV)
+#if defined(VIDEO_HOLE)
 #include "cc/quads/solid_color_draw_quad.h"
-#endif
+#endif  // defined(VIDEO_HOLE)
 
 namespace cc {
 
@@ -245,7 +245,7 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
                         append_quads_data);
       break;
     }
-#if defined(GOOGLE_TV)
+#if defined(VIDEO_HOLE)
     // This block and other blocks wrapped around #if defined(GOOGLE_TV) is not
     // maintained by the general compositor team. Please contact the following
     // people instead:
@@ -266,7 +266,7 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
                         append_quads_data);
       break;
     }
-#endif
+#endif  // defined(VIDEO_HOLE)
     case VideoFrameExternalResources::NONE:
       NOTIMPLEMENTED();
       break;
@@ -297,12 +297,12 @@ void VideoLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   provider_client_impl_->ReleaseLock();
 }
 
-void VideoLayerImpl::DidLoseOutputSurface() {
+void VideoLayerImpl::ReleaseResources() {
   updater_.reset();
 }
 
 void VideoLayerImpl::SetNeedsRedraw() {
-  set_update_rect(gfx::UnionRects(update_rect(), gfx::RectF(bounds())));
+  SetUpdateRect(gfx::UnionRects(update_rect(), gfx::RectF(bounds())));
   layer_tree_impl()->SetNeedsRedraw();
 }
 

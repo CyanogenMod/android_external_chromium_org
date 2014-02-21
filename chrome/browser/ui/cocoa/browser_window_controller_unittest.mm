@@ -70,10 +70,6 @@ using ::testing::Return;
   return [findBarCocoaController_ view];
 }
 
-- (NSSplitView*)devToolsView {
-  return static_cast<NSSplitView*>([devToolsController_ view]);
-}
-
 - (BOOL)bookmarkBarVisible {
   return [bookmarkBarController_ isVisible];
 }
@@ -103,7 +99,7 @@ TEST_F(BrowserWindowControllerTest, TestSaveWindowPosition) {
   ASSERT_TRUE(prefs != NULL);
 
   // Check to make sure there is no existing pref for window placement.
-  const DictionaryValue* browser_window_placement =
+  const base::DictionaryValue* browser_window_placement =
       prefs->GetDictionary(prefs::kBrowserWindowPlacement);
   ASSERT_TRUE(browser_window_placement);
   EXPECT_TRUE(browser_window_placement->empty());
@@ -166,14 +162,14 @@ TEST_F(BrowserWindowControllerTest, TestSetBounds) {
   BrowserWindow* browser_window = [controller browserWindow];
   EXPECT_EQ(browser_window, browser->window());
   gfx::Rect bounds = browser_window->GetBounds();
-  EXPECT_EQ(320, bounds.width());
-  EXPECT_EQ(240, bounds.height());
+  EXPECT_EQ(400, bounds.width());
+  EXPECT_EQ(272, bounds.height());
 
   // Try to set the bounds smaller than the minimum.
   browser_window->SetBounds(gfx::Rect(0, 0, 50, 50));
   bounds = browser_window->GetBounds();
-  EXPECT_EQ(320, bounds.width());
-  EXPECT_EQ(240, bounds.height());
+  EXPECT_EQ(400, bounds.width());
+  EXPECT_EQ(272, bounds.height());
 
   [controller close];
 }
@@ -633,24 +629,6 @@ TEST_F(BrowserWindowControllerTest, TestFindBarOnTop) {
   EXPECT_GT(findBar_index, bookmark_index);
 }
 
-// Tests that status bubble's base frame does move when devTools are docked.
-TEST_F(BrowserWindowControllerTest, TestStatusBubblePositioning) {
-  ASSERT_EQ(1U, [[[controller_ devToolsView] subviews] count]);
-
-  NSPoint bubbleOrigin = [controller_ statusBubbleBaseFrame].origin;
-
-  // Add a fake subview to devToolsView to emulate docked devTools.
-  base::scoped_nsobject<NSView> view(
-      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)]);
-  [[controller_ devToolsView] addSubview:view];
-  [[controller_ devToolsView] adjustSubviews];
-
-  NSPoint bubbleOriginWithDevTools = [controller_ statusBubbleBaseFrame].origin;
-
-  // Make sure that status bubble frame is moved.
-  EXPECT_FALSE(NSEqualPoints(bubbleOrigin, bubbleOriginWithDevTools));
-}
-
 TEST_F(BrowserWindowControllerTest, TestSigninMenuItemNoErrors) {
   base::scoped_nsobject<NSMenuItem> syncMenuItem(
       [[NSMenuItem alloc] initWithTitle:@""
@@ -682,7 +660,7 @@ TEST_F(BrowserWindowControllerTest, TestSigninMenuItemNoErrors) {
   std::string username = "foo@example.com";
   NSString* alreadySignedIn =
     l10n_util::GetNSStringFWithFixup(IDS_SYNC_MENU_SYNCED_LABEL,
-                                     UTF8ToUTF16(username));
+                                     base::UTF8ToUTF16(username));
   SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
   signin->SetAuthenticatedUsername(username);
   ProfileSyncService* sync =

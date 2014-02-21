@@ -14,7 +14,7 @@ import sys
 import landmine_utils
 
 
-builder = landmine_utils.platform
+builder = landmine_utils.builder
 distributor = landmine_utils.distributor
 gyp_defines = landmine_utils.gyp_defines
 gyp_msvs_version = landmine_utils.gyp_msvs_version
@@ -37,12 +37,20 @@ def print_landmines(target):
     print 'Builders switching from make to ninja will clobber on this.'
   if platform() == 'mac':
     print 'Switching from bundle to unbundled dylib (issue 14743002).'
+  if platform() in ('win', 'mac'):
+    print ('Improper dependency for create_nmf.py broke in r240802, '
+           'fixed in r240860.')
   if (platform() == 'win' and builder() == 'ninja' and
       gyp_msvs_version() == '2012' and
       gyp_defines().get('target_arch') == 'x64' and
       gyp_defines().get('dcheck_always_on') == '1'):
     print "Switched win x64 trybots from VS2010 to VS2012."
+  if (platform() == 'win' and builder() == 'ninja' and
+      gyp_msvs_version().startswith('2013')):
+    print "Switched win from VS2010 to VS2013."
   print 'Need to clobber everything due to an IDL change in r154579 (blink)'
+  if (platform() != 'ios'):
+    print 'Clobber to get rid of obselete test plugin after r248358'
 
 
 def main():

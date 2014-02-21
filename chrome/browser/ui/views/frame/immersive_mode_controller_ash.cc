@@ -26,12 +26,6 @@ namespace {
 // "pop" as the 3-pixel tall "light bar" style tab strip becomes visible.
 const int kAnimationOffsetY = 3;
 
-// The height of the region in pixels at the top edge of the screen in which to
-// steal touch events targetted at the web contents while in immersive
-// fullscreen. This region is used to allow us to get edge gestures even if the
-// web contents consumes all touch events.
-const int kStealTouchEventsFromWebContentsRegionHeightPx = 8;
-
 // Converts from ImmersiveModeController::AnimateReveal to
 // ash::ImmersiveFullscreenController::AnimateReveal.
 ash::ImmersiveFullscreenController::AnimateReveal
@@ -74,7 +68,11 @@ void ImmersiveModeControllerAsh::SetEnabled(bool enabled) {
     return;
 
   EnableWindowObservers(enabled);
-  controller_->SetEnabled(enabled);
+
+  controller_->SetEnabled(browser_view_->browser()->is_app() ?
+          ash::ImmersiveFullscreenController::WINDOW_TYPE_HOSTED_APP :
+          ash::ImmersiveFullscreenController::WINDOW_TYPE_BROWSER
+      , enabled);
 }
 
 bool ImmersiveModeControllerAsh::IsEnabled() const {
@@ -149,21 +147,6 @@ void ImmersiveModeControllerAsh::LayoutBrowserRootView() {
   widget->GetRootView()->Layout();
 }
 
-void ImmersiveModeControllerAsh::SetRenderWindowTopInsetsForTouch(
-    int top_inset) {
-  content::WebContents* contents = browser_view_->GetActiveWebContents();
-  if (contents) {
-    aura::Window* window = contents->GetView()->GetContentNativeView();
-    // |window| is NULL if the renderer crashed.
-    if (window) {
-      gfx::Insets inset(top_inset, 0, 0, 0);
-      window->SetHitTestBoundsOverrideOuter(
-          window->hit_test_bounds_override_outer_mouse(),
-          inset);
-    }
-  }
-}
-
 bool ImmersiveModeControllerAsh::UpdateTabIndicators() {
   bool has_tabstrip = browser_view_->IsBrowserTypeNormal();
   if (!IsEnabled() || !has_tabstrip) {
@@ -186,7 +169,6 @@ void ImmersiveModeControllerAsh::OnImmersiveRevealStarted() {
   visible_fraction_ = 0;
   browser_view_->top_container()->SetPaintToLayer(true);
   UpdateTabIndicators();
-  SetRenderWindowTopInsetsForTouch(0);
   LayoutBrowserRootView();
   FOR_EACH_OBSERVER(Observer, observers_, OnImmersiveRevealStarted());
 }
@@ -195,15 +177,12 @@ void ImmersiveModeControllerAsh::OnImmersiveRevealEnded() {
   visible_fraction_ = 0;
   browser_view_->top_container()->SetPaintToLayer(false);
   UpdateTabIndicators();
-  SetRenderWindowTopInsetsForTouch(
-      kStealTouchEventsFromWebContentsRegionHeightPx);
   LayoutBrowserRootView();
 }
 
 void ImmersiveModeControllerAsh::OnImmersiveFullscreenExited() {
   browser_view_->top_container()->SetPaintToLayer(false);
   UpdateTabIndicators();
-  SetRenderWindowTopInsetsForTouch(0);
   LayoutBrowserRootView();
 }
 
@@ -233,7 +212,7 @@ ImmersiveModeControllerAsh::GetVisibleBoundsInScreen() const {
   return bounds_in_screen;
 }
 
-void ImmersiveModeControllerAsh::OnWindowShowTypeChanged(
+void ImmersiveModeControllerAsh::OnPostWindowShowTypeChange(
     ash::wm::WindowState* window_state,
     ash::wm::WindowShowType old_type) {
   // Disable immersive fullscreen when the user exits fullscreen without going

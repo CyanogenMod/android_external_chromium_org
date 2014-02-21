@@ -62,7 +62,7 @@ IPC_STRUCT_BEGIN(PluginMsg_FetchURL_Params)
   IPC_STRUCT_MEMBER(GURL, referrer)
   IPC_STRUCT_MEMBER(bool, notify_redirect)
   IPC_STRUCT_MEMBER(bool, is_plugin_src_load)
-  IPC_STRUCT_MEMBER(int, render_view_id)
+  IPC_STRUCT_MEMBER(int, render_frame_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(PluginMsg_UpdateGeometry_Param)
@@ -223,12 +223,6 @@ IPC_MESSAGE_ROUTED2(PluginMsg_WindowFrameChanged,
 
 IPC_MESSAGE_ROUTED1(PluginMsg_ImeCompositionCompleted,
                     base::string16 /* text */)
-
-// This message, used only on 10.6 and later, transmits the "fake"
-// window handle allocated by the browser on behalf of the renderer
-// to the GPU plugin.
-IPC_MESSAGE_ROUTED1(PluginMsg_SetFakeAcceleratedSurfaceWindowHandle,
-                    gfx::PluginWindowHandle /* window */)
 #endif
 
 //-----------------------------------------------------------------------------

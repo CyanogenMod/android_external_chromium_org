@@ -1,33 +1,40 @@
-# Copyright 2013 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import collections
+import itertools
 
 from metrics import Metric
+from telemetry.core.timeline import bounds
+from telemetry.page import page_measurement
 
 TRACING_MODE = 'tracing-mode'
 TIMELINE_MODE = 'timeline-mode'
 
+
+class MissingFramesError(page_measurement.MeasurementFailure):
+  def __init__(self):
+    super(MissingFramesError, self).__init__(
+        'No frames found in trace. Unable to normalize results.')
+
+
 class TimelineMetric(Metric):
   def __init__(self, mode):
-    ''' Initializes a TimelineMetric object.
-
-    mode: TRACING_MODE or TIMELINE_MODE
-    thread_filter: list of thread names to include.
-        Empty list or None includes all threads.
-        In TIMELINE_MODE, only 'thread 0' is available, which is the renderer
-        main thread.
-        In TRACING_MODE, the following renderer process threads are available:
-        'CrRendererMain', 'Chrome_ChildIOThread', and 'Compositor'.
-        CompositorRasterWorker threads are available with impl-side painting
-        enabled.
-    '''
-    assert mode in (TRACING_MODE, TIMELINE_MODE)
+    """ Initializes a TimelineMetric object.
+    """
     super(TimelineMetric, self).__init__()
+    assert mode in (TRACING_MODE, TIMELINE_MODE)
     self._mode = mode
     self._model = None
+    self._renderer_process = None
+    self._actions = []
+    self._action_ranges = []
 
   def Start(self, page, tab):
+    """Starts gathering timeline data.
+
+    mode: TRACING_MODE or TIMELINE_MODE
+    """
     self._model = None
     if self._mode == TRACING_MODE:
       if not tab.browser.supports_tracing:
@@ -41,34 +48,60 @@ class TimelineMetric(Metric):
     if self._mode == TRACING_MODE:
       trace_result = tab.browser.StopTracing()
       self._model = trace_result.AsTimelineModel()
+      self._renderer_process = self._model.GetRendererProcessFromTab(tab)
+      self._action_ranges = [ action.GetActiveRangeOnTimeline(self._model)
+                              for action in self._actions ]
+      # Make sure no action ranges overlap
+      for combo in itertools.combinations(self._action_ranges, 2):
+        assert not combo[0].Intersects(combo[1])
     else:
       tab.StopTimelineRecording()
       self._model = tab.timeline_model
+      self._renderer_process = self._model.GetAllProcesses()[0]
 
-  def GetRendererProcess(self, tab):
-    if self._mode == TRACING_MODE:
-      return self._model.GetRendererProcessFromTab(tab)
-    else:
-      return self._model.GetAllProcesses()[0]
+  def AddActionToIncludeInMetric(self, action):
+    self._actions.append(action)
+
+  @property
+  def model(self):
+    return self._model
+
+  @model.setter
+  def model(self, model):
+    self._model = model
+
+  @property
+  def renderer_process(self):
+    return self._renderer_process
+
+  @renderer_process.setter
+  def renderer_process(self, p):
+    self._renderer_process = p
 
   def AddResults(self, tab, results):
     return
 
 
 class LoadTimesTimelineMetric(TimelineMetric):
-  def __init__(self, mode, thread_filter = None):
+  def __init__(self, mode):
     super(LoadTimesTimelineMetric, self).__init__(mode)
-    self._thread_filter = thread_filter
+    self.report_main_thread_only = True
 
-  def AddResults(self, tab, results):
+  def AddResults(self, _, results):
     assert self._model
+    if self.report_main_thread_only:
+      if self._mode == TRACING_MODE:
+        thread_filter = 'CrRendererMain'
+      else:
+        thread_filter = 'thread 0'
+    else:
+      thread_filter = None
 
-    renderer_process = self.GetRendererProcess(tab)
     events_by_name = collections.defaultdict(list)
 
-    for thread in renderer_process.threads.itervalues():
+    for thread in self.renderer_process.threads.itervalues():
 
-      if self._thread_filter and not thread.name in self._thread_filter:
+      if thread_filter and not thread.name in thread_filter:
         continue
 
       thread_name = thread.name.replace('/','_')
@@ -81,15 +114,24 @@ class LoadTimesTimelineMetric(TimelineMetric):
         times = [event.self_time for event in event_group]
         total = sum(times)
         biggest_jank = max(times)
-        full_name = thread_name + '|' + event_name
+
+        # Results objects cannot contain the '.' character, so remove that here.
+        sanitized_event_name = event_name.replace('.', '_')
+
+        full_name = thread_name + '|' + sanitized_event_name
         results.Add(full_name, 'ms', total)
         results.Add(full_name + '_max', 'ms', biggest_jank)
         results.Add(full_name + '_avg', 'ms', total / len(times))
 
-    for counter_name, counter in renderer_process.counters.iteritems():
+    for counter_name, counter in self.renderer_process.counters.iteritems():
       total = sum(counter.totals)
-      results.Add(counter_name, 'count', total)
-      results.Add(counter_name + '_avg', 'count', total / len(counter.totals))
+
+      # Results objects cannot contain the '.' character, so remove that here.
+      sanitized_counter_name = counter_name.replace('.', '_')
+
+      results.Add(sanitized_counter_name, 'count', total)
+      results.Add(sanitized_counter_name + '_avg', 'count',
+                  total / float(len(counter.totals)))
 
 
 # We want to generate a consistant picture of our thread usage, despite
@@ -98,53 +140,191 @@ class LoadTimesTimelineMetric(TimelineMetric):
 # always sum renderer-process threads' times. We also sum all io-threads
 # for simplicity.
 TimelineThreadCategories =  {
-  # These are matched exactly
   "Chrome_InProcGpuThread": "GPU",
-  "CrGPUMain"             : "GPU",
+  "CrGpuMain"             : "GPU",
   "AsyncTransferThread"   : "GPU_transfer",
-  "CrBrowserMain"         : "browser_main",
-  "Browser Compositor"    : "browser_compositor",
+  "CrBrowserMain"         : "browser",
+  "Browser Compositor"    : "browser",
   "CrRendererMain"        : "renderer_main",
   "Compositor"            : "renderer_compositor",
-  # These are matched by substring
   "IOThread"              : "IO",
-  "CompositorRasterWorker": "raster"
+  "CompositorRasterWorker": "raster",
+  "DummyThreadName1"      : "other",
+  "DummyThreadName2"      : "total_fast_path",
+  "DummyThreadName3"      : "total_all"
 }
+
+_MatchBySubString = ["IOThread", "CompositorRasterWorker"]
+
+AllThreads = TimelineThreadCategories.values()
+NoThreads = []
+FastPathThreads = ["GPU", "renderer_compositor", "browser", "IO"]
+
+ReportMainThreadOnly = ["renderer_main"]
+ReportFastPathResults = AllThreads
+ReportFastPathDetails = NoThreads
+ReportSilkResults = ["renderer_main", "total_all"]
+ReportSilkDetails = ["renderer_main"]
+
+# TODO(epenner): Thread names above are likely fairly stable but trace names
+# could change. We should formalize these traces to keep this robust.
+OverheadTraceCategory = "trace_event_overhead"
+OverheadTraceName = "overhead"
+FrameTraceName = "::SwapBuffers"
+FrameTraceThreadName = "renderer_compositor"
+
+
+def ClockOverheadForEvent(event):
+  if (event.category == OverheadTraceCategory and
+      event.name == OverheadTraceName):
+    return event.duration
+  else:
+    return 0
+
+def CpuOverheadForEvent(event):
+  if (event.category == OverheadTraceCategory and
+      event.thread_duration):
+    return event.thread_duration
+  else:
+    return 0
+
+def ThreadCategoryName(thread_name):
+  thread_category = "other"
+  for substring, category in TimelineThreadCategories.iteritems():
+    if substring in _MatchBySubString and substring in thread_name:
+      thread_category = category
+  if thread_name in TimelineThreadCategories:
+    thread_category = TimelineThreadCategories[thread_name]
+  return thread_category
+
+def ThreadTimeResultName(thread_category):
+  return "thread_" + thread_category + "_clock_time_per_frame"
+
+def ThreadCpuTimeResultName(thread_category):
+  return "thread_" + thread_category + "_cpu_time_per_frame"
+
+def ThreadDetailResultName(thread_category, detail):
+  return "thread_" + thread_category + "|" + detail
+
+
+class ResultsForThread(object):
+  def __init__(self, model, action_ranges, name):
+    self.model = model
+    self.toplevel_slices = []
+    self.all_slices = []
+    self.name = name
+    self.action_ranges = action_ranges
+
+  @property
+  def clock_time(self):
+    clock_duration = sum([x.duration for x in self.toplevel_slices])
+    clock_overhead = sum([ClockOverheadForEvent(x) for x in self.all_slices])
+    return clock_duration - clock_overhead
+
+  @property
+  def cpu_time(self):
+    cpu_duration = 0
+    cpu_overhead = sum([CpuOverheadForEvent(x) for x in self.all_slices])
+    for x in self.toplevel_slices:
+      # Only report thread-duration if we have it for all events.
+      #
+      # A thread_duration of 0 is valid, so this only returns 0 if it is None.
+      if x.thread_duration == None:
+        if not x.duration:
+          continue
+        else:
+          return 0
+      else:
+        cpu_duration += x.thread_duration
+    return cpu_duration - cpu_overhead
+
+  def SlicesInActions(self, slices):
+    slices_in_actions = []
+    for event in slices:
+      for action_range in self.action_ranges:
+        if action_range.Contains(bounds.Bounds.CreateFromEvent(event)):
+          slices_in_actions.append(event)
+          break
+    return slices_in_actions
+
+  def AppendThreadSlices(self, thread):
+    self.all_slices.extend(self.SlicesInActions(thread.all_slices))
+    self.toplevel_slices.extend(self.SlicesInActions(thread.toplevel_slices))
+
+  def AddResults(self, num_frames, results):
+    clock_report_name = ThreadTimeResultName(self.name)
+    cpu_report_name  = ThreadCpuTimeResultName(self.name)
+    clock_per_frame = (float(self.clock_time) / num_frames) if num_frames else 0
+    cpu_per_frame   = (float(self.cpu_time) / num_frames) if num_frames else 0
+    results.Add(clock_report_name, 'ms', clock_per_frame)
+    results.Add(cpu_report_name, 'ms', cpu_per_frame)
+
+  def AddDetailedResults(self, num_frames, results):
+    slices_by_category = collections.defaultdict(list)
+    for s in self.all_slices:
+      slices_by_category[s.category].append(s)
+    all_self_times = []
+    for category, slices_in_category in slices_by_category.iteritems():
+      self_time = sum([x.self_time for x in slices_in_category])
+      all_self_times.append(self_time)
+      self_time_result = (float(self_time) / num_frames) if num_frames else 0
+      results.Add(ThreadDetailResultName(self.name, category),
+                  'ms', self_time_result)
+    all_measured_time = sum(all_self_times)
+    all_action_time = sum([action.bounds for action in self.action_ranges])
+    idle_time = max(0, all_action_time - all_measured_time)
+    idle_time_result = (float(idle_time) / num_frames) if num_frames else 0
+    results.Add(ThreadDetailResultName(self.name, "idle"),
+                'ms', idle_time_result)
+
 
 class ThreadTimesTimelineMetric(TimelineMetric):
   def __init__(self):
     super(ThreadTimesTimelineMetric, self).__init__(TRACING_MODE)
+    self.results_to_report = AllThreads
+    self.details_to_report = NoThreads
+
+  def CountSlices(self, slices, substring):
+    count = 0
+    for event in slices:
+      if substring in event.name:
+        count += 1
+    return count
 
   def AddResults(self, tab, results):
-    # Default each category to zero for consistant results.
-    category_clock_times = collections.defaultdict(float)
-    for category in TimelineThreadCategories.values():
-      category_clock_times[category] = 0
+    # We need at least one action or we won't count any slices.
+    assert len(self._action_ranges) > 0
 
-    # Add up thread time for all threads we care about.
+    # Set up each thread category for consistant results.
+    thread_category_results = {}
+    for name in TimelineThreadCategories.values():
+      thread_category_results[name] = ResultsForThread(self._model,
+                                                       self._action_ranges,
+                                                       name)
+
+    # Group the slices by their thread category.
     for thread in self._model.GetAllThreads():
-      # First determine if we care about this thread.
-      # Check substrings first, followed by exact matches
-      thread_category = None
-      for substring, category in TimelineThreadCategories.iteritems():
-        if substring in thread.name:
-          thread_category = category
-      if thread.name in TimelineThreadCategories:
-        thread_category = TimelineThreadCategories[thread.name]
-      if thread_category == None:
-        thread_category = "other"
+      thread_category = ThreadCategoryName(thread.name)
+      thread_category_results[thread_category].AppendThreadSlices(thread)
 
-      # Sum and add top-level slice durations
-      clock_time = sum([event.duration for event in thread.toplevel_slices])
-      category_clock_times[thread_category] += clock_time
+    # Group all threads.
+    for thread in self._model.GetAllThreads():
+      thread_category_results['total_all'].AppendThreadSlices(thread)
 
-    # Now report each category. We report the percentage of time that
-    # the thread is running rather than absolute time, to represent how
-    # busy the thread is. This needs to be interpretted when throughput
-    # is changed due to scheduling changes (eg. more frames produced
-    # in the same time period). It would be nice if we could correct
-    # for that somehow.
-    for category, category_time in category_clock_times.iteritems():
-      report_name = "thread_time_" + category + "_running_percentage"
-      time_as_percentage = (category_time / self._model.bounds.bounds) * 100
-      results.Add(report_name, '%', time_as_percentage)
+    # Also group fast-path threads.
+    for thread in self._model.GetAllThreads():
+      if ThreadCategoryName(thread.name) in FastPathThreads:
+        thread_category_results['total_fast_path'].AppendThreadSlices(thread)
+
+    # Calculate the number of frames.
+    frame_slices = thread_category_results[FrameTraceThreadName].all_slices
+    num_frames = self.CountSlices(frame_slices, FrameTraceName)
+
+    # Report the desired results and details.
+    for thread_results in thread_category_results.values():
+      if thread_results.name in self.results_to_report:
+        thread_results.AddResults(num_frames, results)
+      # TOOD(nduca): When generic results objects are done, this special case
+      # can be replaced with a generic UI feature.
+      if thread_results.name in self.details_to_report:
+        thread_results.AddDetailedResults(num_frames, results)

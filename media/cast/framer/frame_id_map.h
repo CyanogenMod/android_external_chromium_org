@@ -12,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/rtcp/rtcp_defines.h"
-#include "media/cast/rtp_common/rtp_defines.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
@@ -25,11 +25,9 @@ class FrameInfo {
             bool key_frame);
   ~FrameInfo();
 
-  // Returns true if packet is inserted.
-  bool InsertPacket(uint16 packet_id);
+  PacketType InsertPacket(uint16 packet_id);
   bool Complete() const;
-  void GetMissingPackets(bool newest_frame,
-                         PacketIdSet* missing_packets) const;
+  void GetMissingPackets(bool newest_frame, PacketIdSet* missing_packets) const;
 
   bool is_key_frame() const { return is_key_frame_; }
   uint32 frame_id() const { return frame_id_; }
@@ -53,8 +51,7 @@ class FrameIdMap {
   FrameIdMap();
   ~FrameIdMap();
 
-  // Returns false if not a valid (old) packet, otherwise returns true.
-  bool InsertPacket(const RtpCastHeader& rtp_header, bool* complete);
+  PacketType InsertPacket(const RtpCastHeader& rtp_header);
 
   bool Empty() const;
   bool FrameExists(uint32 frame_id) const;

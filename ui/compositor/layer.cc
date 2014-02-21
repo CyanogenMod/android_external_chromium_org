@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/scoped_ptr_algorithm.h"
@@ -20,7 +21,6 @@
 #include "cc/output/filter_operation.h"
 #include "cc/output/filter_operations.h"
 #include "cc/resources/transferable_resource.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer_animator.h"
@@ -51,12 +51,13 @@ Layer::Layer()
       visible_(true),
       force_render_surface_(false),
       fills_bounds_opaquely_(true),
-      layer_updated_externally_(false),
       background_blur_radius_(0),
       layer_saturation_(0.0f),
       layer_brightness_(0.0f),
       layer_grayscale_(0.0f),
       layer_inverted_(false),
+      layer_mask_(NULL),
+      layer_mask_back_link_(NULL),
       zoom_(1),
       zoom_inset_(0),
       delegate_(NULL),
@@ -73,12 +74,13 @@ Layer::Layer(LayerType type)
       visible_(true),
       force_render_surface_(false),
       fills_bounds_opaquely_(true),
-      layer_updated_externally_(false),
       background_blur_radius_(0),
       layer_saturation_(0.0f),
       layer_brightness_(0.0f),
       layer_grayscale_(0.0f),
       layer_inverted_(false),
+      layer_mask_(NULL),
+      layer_mask_back_link_(NULL),
       zoom_(1),
       zoom_inset_(0),
       delegate_(NULL),
@@ -97,10 +99,12 @@ Layer::~Layer() {
   animator_ = NULL;
   if (compositor_)
     compositor_->SetRootLayer(NULL);
-  if (layer_mask_.get())
-    SetMaskLayer(scoped_ptr<Layer>());
   if (parent_)
     parent_->Remove(this);
+  if (layer_mask_)
+    SetMaskLayer(NULL);
+  if (layer_mask_back_link_)
+    layer_mask_back_link_->SetMaskLayer(NULL);
   for (size_t i = 0; i < children_.size(); ++i)
     children_[i]->parent_ = NULL;
   cc_layer_->RemoveLayerAnimationEventObserver(this);
@@ -275,18 +279,28 @@ void Layer::SetLayerInverted(bool inverted) {
   SetLayerFilters();
 }
 
-void Layer::SetMaskLayer(scoped_ptr<Layer> layer_mask) {
+void Layer::SetMaskLayer(Layer* layer_mask) {
   // The provided mask should not have a layer mask itself.
-  DCHECK(!layer_mask.get() ||
+  DCHECK(!layer_mask ||
          (!layer_mask->layer_mask_layer() &&
-          layer_mask->children().empty()));
-  if (layer_mask_.get() == layer_mask.get())
+          layer_mask->children().empty() &&
+          !layer_mask->layer_mask_back_link_));
+  DCHECK(!layer_mask_back_link_);
+  if (layer_mask_ == layer_mask)
     return;
-  layer_mask_ = layer_mask.Pass();
+  // We need to de-reference the currently linked object so that no problem
+  // arises if the mask layer gets deleted before this object.
+  if (layer_mask_)
+    layer_mask_->layer_mask_back_link_ = NULL;
+  layer_mask_ = layer_mask;
   cc_layer_->SetMaskLayer(
-      layer_mask_.get() ? layer_mask_->cc_layer() : NULL);
-  if (layer_mask_.get())
-    layer_mask_->OnDeviceScaleFactorChanged(device_scale_factor_);
+      layer_mask ? layer_mask->cc_layer() : NULL);
+  // We need to reference the linked object so that it can properly break the
+  // link to us when it gets deleted.
+  if (layer_mask) {
+    layer_mask->layer_mask_back_link_ = this;
+    layer_mask->OnDeviceScaleFactorChanged(device_scale_factor_);
+  }
 }
 
 void Layer::SetBackgroundZoom(float zoom, int inset) {
@@ -469,7 +483,6 @@ void Layer::SetExternalTexture(Texture* texture) {
 
   DCHECK_EQ(type_, LAYER_TEXTURED);
   DCHECK(!solid_color_layer_.get());
-  layer_updated_externally_ = true;
   texture_ = texture;
   if (!texture_layer_.get()) {
     scoped_refptr<cc::TextureLayer> new_layer = cc::TextureLayer::Create(this);
@@ -486,7 +499,6 @@ void Layer::SetTextureMailbox(
     float scale_factor) {
   DCHECK_EQ(type_, LAYER_TEXTURED);
   DCHECK(!solid_color_layer_.get());
-  layer_updated_externally_ = true;
   texture_ = NULL;
   if (!texture_layer_.get() || !texture_layer_->uses_mailbox()) {
     scoped_refptr<cc::TextureLayer> new_layer =
@@ -515,7 +527,6 @@ void Layer::SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
       cc::DelegatedRendererLayer::Create(frame_provider);
   SwitchToLayer(new_layer);
   delegated_renderer_layer_ = new_layer;
-  layer_updated_externally_ = true;
 
   delegated_frame_size_in_dip_ = frame_size_in_dip;
   RecomputeDrawsContentAndUVRect();
@@ -529,7 +540,6 @@ void Layer::SetShowPaintedContent() {
   SwitchToLayer(new_layer);
   content_layer_ = new_layer;
 
-  layer_updated_externally_ = false;
   mailbox_ = cc::TextureMailbox();
   texture_ = NULL;
 
@@ -608,7 +618,7 @@ void Layer::RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request) {
 }
 
 void Layer::PaintContents(SkCanvas* sk_canvas,
-                          gfx::Rect clip,
+                          const gfx::Rect& clip,
                           gfx::RectF* opaque) {
   TRACE_EVENT0("ui", "Layer::PaintContents");
   scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
@@ -647,13 +657,22 @@ void Layer::SetForceRenderSurface(bool force) {
   cc_layer_->SetForceRenderSurface(force_render_surface_);
 }
 
-std::string Layer::DebugName() {
-  return name_;
-}
+class LayerDebugInfo : public base::debug::ConvertableToTraceFormat {
+ public:
+  explicit LayerDebugInfo(std::string name) : name_(name) { }
+  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+    base::DictionaryValue dictionary;
+    dictionary.SetString("layer_name", name_);
+    base::JSONWriter::Write(&dictionary, out);
+  }
+
+ private:
+  virtual ~LayerDebugInfo() { }
+  std::string name_;
+};
 
 scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
-  // TODO: return something useful here.
-  return NULL;
+  return new LayerDebugInfo(name_);
 }
 
 void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {
@@ -704,7 +723,7 @@ bool Layer::ConvertPointFromAncestor(const Layer* ancestor,
   return result;
 }
 
-void Layer::SetBoundsImmediately(const gfx::Rect& bounds) {
+void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds) {
   if (bounds == bounds_)
     return;
 
@@ -731,16 +750,16 @@ void Layer::SetBoundsImmediately(const gfx::Rect& bounds) {
   }
 }
 
-void Layer::SetTransformImmediately(const gfx::Transform& transform) {
+void Layer::SetTransformFromAnimation(const gfx::Transform& transform) {
   RecomputeCCTransformFromTransform(transform);
 }
 
-void Layer::SetOpacityImmediately(float opacity) {
+void Layer::SetOpacityFromAnimation(float opacity) {
   cc_layer_->SetOpacity(opacity);
   ScheduleDraw();
 }
 
-void Layer::SetVisibilityImmediately(bool visible) {
+void Layer::SetVisibilityFromAnimation(bool visible) {
   if (visible_ == visible)
     return;
 
@@ -748,48 +767,20 @@ void Layer::SetVisibilityImmediately(bool visible) {
   cc_layer_->SetHideLayerAndSubtree(!visible_);
 }
 
-void Layer::SetBrightnessImmediately(float brightness) {
+void Layer::SetBrightnessFromAnimation(float brightness) {
   layer_brightness_ = brightness;
   SetLayerFilters();
 }
 
-void Layer::SetGrayscaleImmediately(float grayscale) {
+void Layer::SetGrayscaleFromAnimation(float grayscale) {
   layer_grayscale_ = grayscale;
   SetLayerFilters();
 }
 
-void Layer::SetColorImmediately(SkColor color) {
+void Layer::SetColorFromAnimation(SkColor color) {
   DCHECK_EQ(type_, LAYER_SOLID_COLOR);
   solid_color_layer_->SetBackgroundColor(color);
   SetFillsBoundsOpaquely(SkColorGetA(color) == 0xFF);
-}
-
-void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds) {
-  SetBoundsImmediately(bounds);
-}
-
-void Layer::SetTransformFromAnimation(const gfx::Transform& transform) {
-  SetTransformImmediately(transform);
-}
-
-void Layer::SetOpacityFromAnimation(float opacity) {
-  SetOpacityImmediately(opacity);
-}
-
-void Layer::SetVisibilityFromAnimation(bool visibility) {
-  SetVisibilityImmediately(visibility);
-}
-
-void Layer::SetBrightnessFromAnimation(float brightness) {
-  SetBrightnessImmediately(brightness);
-}
-
-void Layer::SetGrayscaleFromAnimation(float grayscale) {
-  SetGrayscaleImmediately(grayscale);
-}
-
-void Layer::SetColorFromAnimation(SkColor color) {
-  SetColorImmediately(color);
 }
 
 void Layer::ScheduleDrawForAnimation() {

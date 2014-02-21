@@ -112,14 +112,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
   };
 
   // Manages a list of Name entries.
-  class MEDIA_EXPORT Names
-      : public NON_EXPORTED_BASE(std::list<Name>) {
-   public:
-    // Returns NULL if no entry was found by that ID.
-    Name* FindById(const std::string& id);
-
-    // Allow generated copy constructor and assignment.
-  };
+  typedef std::list<Name> Names;
 
   class MEDIA_EXPORT Client {
    public:
@@ -169,10 +162,8 @@ class MEDIA_EXPORT VideoCaptureDevice {
     virtual void OnIncomingCapturedFrame(
         const uint8* data,
         int length,
-        base::Time timestamp,
+        base::TimeTicks timestamp,
         int rotation,  // Clockwise.
-        bool flip_vert,
-        bool flip_horiz,
         const VideoCaptureFormat& frame_format) = 0;
 
     // Captured a new video frame, held in |buffer|.
@@ -185,12 +176,12 @@ class MEDIA_EXPORT VideoCaptureDevice {
     virtual void OnIncomingCapturedBuffer(const scoped_refptr<Buffer>& buffer,
                                           media::VideoFrame::Format format,
                                           const gfx::Size& dimensions,
-                                          base::Time timestamp,
+                                          base::TimeTicks timestamp,
                                           int frame_rate) = 0;
 
     // An error has occurred that cannot be handled and VideoCaptureDevice must
-    // be StopAndDeAllocate()-ed.
-    virtual void OnError() = 0;
+    // be StopAndDeAllocate()-ed. |reason| is a text description of the error.
+    virtual void OnError(const std::string& reason) = 0;
   };
 
   // Creates a VideoCaptureDevice object.
@@ -201,14 +192,14 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // Gets the names of all video capture devices connected to this computer.
   static void GetDeviceNames(Names* device_names);
 
-  // Gets the capabilities of a particular device attached to the system. This
-  // method should be called before allocating or starting a device. In case
-  // format enumeration is not supported, or there was a problem, the formats
-  // array will be empty.
+  // Gets the supported formats of a particular device attached to the system.
+  // This method should be called before allocating or starting a device. In
+  // case format enumeration is not supported, or there was a problem, the
+  // formats array will be empty.
   static void GetDeviceSupportedFormats(const Name& device,
-                                        VideoCaptureCapabilities* formats);
+                                        VideoCaptureFormats* supported_formats);
 
-  // Prepare the camera for use. After this function has been called no other
+  // Prepares the camera for use. After this function has been called no other
   // applications can use the camera. StopAndDeAllocate() must be called before
   // the object is deleted.
   virtual void AllocateAndStart(const VideoCaptureParams& params,

@@ -11,6 +11,7 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
+#include "chromeos/network/shill_property_util.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -31,15 +32,17 @@ void ErrorFunction(const std::string& device_path,
 
 void PostDeviceNotFoundError(
     const ShillDeviceClient::ErrorCallback& error_callback) {
-  std::string error_name("org.chromium.flimflam.Error.Failure");
   std::string error_message("Failed");
   base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(error_callback, error_name, error_message));
+      FROM_HERE,
+      base::Bind(error_callback, shill::kErrorResultNotFound, error_message));
 }
 
 }  // namespace
 
-FakeShillDeviceClient::FakeShillDeviceClient() : weak_ptr_factory_(this) {
+FakeShillDeviceClient::FakeShillDeviceClient()
+    : tdls_busy_count_(0),
+      weak_ptr_factory_(this) {
 }
 
 FakeShillDeviceClient::~FakeShillDeviceClient() {
@@ -201,6 +204,32 @@ void FakeShillDeviceClient::Reset(const dbus::ObjectPath& device_path,
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
+void FakeShillDeviceClient::PerformTDLSOperation(
+    const dbus::ObjectPath& device_path,
+    const std::string& operation,
+    const std::string& peer,
+    const StringCallback& callback,
+    const ErrorCallback& error_callback) {
+  if (!stub_devices_.HasKey(device_path.value())) {
+    PostDeviceNotFoundError(error_callback);
+    return;
+  }
+  if (tdls_busy_count_) {
+    --tdls_busy_count_;
+    std::string error_message("In-Progress");
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(error_callback,
+                   shill::kErrorResultInProgress, error_message));
+    return;
+  }
+  std::string result;
+  if (operation == shill::kTDLSStatusOperation)
+    result = shill::kTDLSConnectedState;
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::Bind(callback, result));
+}
+
 ShillDeviceClient::TestInterface* FakeShillDeviceClient::GetTestInterface() {
   return this;
 }
@@ -214,15 +243,17 @@ void FakeShillDeviceClient::AddDevice(const std::string& device_path,
       AddDevice(device_path);
 
   base::DictionaryValue* properties = GetDeviceProperties(device_path);
+  properties->SetWithoutPathExpansion(shill::kTypeProperty,
+                                      base::Value::CreateStringValue(type));
   properties->SetWithoutPathExpansion(
-      shill::kTypeProperty,
-      base::Value::CreateStringValue(type));
+      shill::kDBusObjectProperty, base::Value::CreateStringValue(object_path));
   properties->SetWithoutPathExpansion(
-      shill::kDBusObjectProperty,
-      base::Value::CreateStringValue(object_path));
-  properties->SetWithoutPathExpansion(
-      shill::kDBusConnectionProperty,
-      base::Value::CreateStringValue("/stub"));
+      shill::kDBusServiceProperty,
+      base::Value::CreateStringValue(modemmanager::kModemManager1));
+  if (NetworkTypePattern::Cellular().MatchesType(type)) {
+    properties->SetWithoutPathExpansion(shill::kCellularAllowRoamingProperty,
+                                        new base::FundamentalValue(false));
+  }
 }
 
 void FakeShillDeviceClient::RemoveDevice(const std::string& device_path) {

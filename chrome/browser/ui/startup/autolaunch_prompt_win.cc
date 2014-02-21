@@ -102,11 +102,11 @@ int AutolaunchInfoBarDelegate::GetIconID() const {
   return IDR_PRODUCT_LOGO_32;
 }
 
-string16 AutolaunchInfoBarDelegate::GetMessageText() const {
+base::string16 AutolaunchInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_AUTO_LAUNCH_INFOBAR_TEXT);
 }
 
-string16 AutolaunchInfoBarDelegate::GetButtonLabel(
+base::string16 AutolaunchInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_AUTO_LAUNCH_OK : IDS_AUTO_LAUNCH_REVERT);
@@ -143,7 +143,7 @@ bool ShowAutolaunchPrompt(Browser* browser) {
   // Only supported on the main profile for now.
   Profile* profile = browser->profile();
   if (profile->GetPath().BaseName() !=
-      base::FilePath(ASCIIToUTF16(chrome::kInitialProfile))) {
+      base::FilePath(base::ASCIIToUTF16(chrome::kInitialProfile))) {
     return false;
   }
 
@@ -154,9 +154,6 @@ bool ShowAutolaunchPrompt(Browser* browser) {
     return false;
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kChromeFrame))
-    return false;
-
   if (!command_line.HasSwitch(switches::kAutoLaunchAtStartup) &&
       !first_run::IsChromeFirstRun()) {
     return false;

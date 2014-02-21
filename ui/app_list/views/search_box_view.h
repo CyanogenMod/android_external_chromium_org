@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ui/app_list/search_box_model_observer.h"
+#include "ui/app_list/speech_ui_model_observer.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
@@ -31,11 +32,12 @@ class SearchBoxViewDelegate;
 // model that controls what icon to display, what placeholder text to use for
 // Textfield. The text and selection model part could be set to change the
 // contents and selection model of the Textfield.
-class SearchBoxView : public views::View,
-                      public views::TextfieldController,
-                      public views::ButtonListener,
-                      public views::MenuButtonListener,
-                      public SearchBoxModelObserver {
+class APP_LIST_EXPORT SearchBoxView : public views::View,
+                                      public views::TextfieldController,
+                                      public views::ButtonListener,
+                                      public views::MenuButtonListener,
+                                      public SearchBoxModelObserver,
+                                      public SpeechUIModelObserver {
  public:
   SearchBoxView(SearchBoxViewDelegate* delegate,
                 AppListViewDelegate* view_delegate);
@@ -48,7 +50,7 @@ class SearchBoxView : public views::View,
 
   views::Textfield* search_box() { return search_box_; }
 
-  void set_contents_view(View* contents_view) {
+  void set_contents_view(views::View* contents_view) {
     contents_view_ = contents_view;
   }
 
@@ -84,6 +86,10 @@ class SearchBoxView : public views::View,
   virtual void HintTextChanged() OVERRIDE;
   virtual void SelectionModelChanged() OVERRIDE;
   virtual void TextChanged() OVERRIDE;
+
+  // Overridden from SpeechUIModelObserver:
+  virtual void OnSpeechRecognitionStateChanged(
+      SpeechRecognitionState new_state) OVERRIDE;
 
   SearchBoxViewDelegate* delegate_;  // Not owned.
   AppListViewDelegate* view_delegate_;  // Not owned.

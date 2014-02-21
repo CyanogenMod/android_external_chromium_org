@@ -46,6 +46,7 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   virtual void Launch(
 #if defined(OS_WIN)
       SandboxedProcessLauncherDelegate* delegate,
+      bool run_elevated,
 #elif defined(OS_POSIX)
       bool use_zygote,
       const base::EnvironmentMap& environ,
@@ -76,6 +77,9 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // they need to call this method so that the process handle is associated with
   // this object.
   virtual void SetHandle(base::ProcessHandle handle) = 0;
+
+  // Set the nacl debug stub port of the process.
+  virtual void SetNaClDebugStubPort(int port) = 0;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Returns a PortProvider used to get process metrics for child processes.

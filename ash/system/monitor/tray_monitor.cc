@@ -4,12 +4,13 @@
 
 #include "ash/system/monitor/tray_monitor.h"
 
+#include "ash/gpu_support.h"
+#include "ash/shell.h"
 #include "ash/system/tray/tray_item_view.h"
 #include "base/process/memory.h"
 #include "base/process/process_metrics.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/public/browser/gpu_data_manager.h"
 #include "ui/base/text/bytes_formatting.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/label.h"
@@ -44,7 +45,7 @@ views::View* TrayMonitor::CreateTrayView(user::LoginStatus status) {
                           SkColorSetARGB(64, 0, 0, 0));
   label_->SetShadowOffset(0, 1);
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  label_->SetFont(label_->font().DeriveFont(-2));
+  label_->SetFontList(label_->font_list().DeriveWithSizeDelta(-2));
   return view;
 }
 
@@ -53,10 +54,10 @@ void TrayMonitor::DestroyTrayView() {
 }
 
 void TrayMonitor::OnTimer() {
-  content::GpuDataManager::GetGpuProcessHandlesCallback callback =
+  GPUSupport::GetGpuProcessHandlesCallback callback =
       base::Bind(&TrayMonitor::OnGotHandles, base::Unretained(this));
   refresh_timer_.Stop();
-  content::GpuDataManager::GetInstance()->GetGpuProcessHandles(callback);
+  Shell::GetInstance()->gpu_support()->GetGpuProcessHandles(callback);
 }
 
 void TrayMonitor::OnGotHandles(const std::list<base::ProcessHandle>& handles) {
@@ -65,11 +66,13 @@ void TrayMonitor::OnGotHandles(const std::list<base::ProcessHandle>& handles) {
   std::string output;
   base::string16 free_bytes =
       ui::FormatBytes(static_cast<int64>(mem_info.free) * 1024);
-  output = base::StringPrintf("free: %s", UTF16ToUTF8(free_bytes).c_str());
+  output = base::StringPrintf("free: %s",
+                              base::UTF16ToUTF8(free_bytes).c_str());
 #if defined(OS_CHROMEOS)
   if (mem_info.gem_size != -1) {
     base::string16 gem_size = ui::FormatBytes(mem_info.gem_size);
-    output += base::StringPrintf("  gmem: %s", UTF16ToUTF8(gem_size).c_str());
+    output += base::StringPrintf("  gmem: %s",
+                                 base::UTF16ToUTF8(gem_size).c_str());
     if (mem_info.gem_objects != -1)
       output += base::StringPrintf("  gobjects: %d", mem_info.gem_objects);
   }
@@ -88,9 +91,9 @@ void TrayMonitor::OnGotHandles(const std::list<base::ProcessHandle>& handles) {
   base::string16 shared_size = ui::FormatBytes(total_shared_bytes);
 
   output += base::StringPrintf("\nGPU private: %s  shared: %s",
-                               UTF16ToUTF8(private_size).c_str(),
-                               UTF16ToUTF8(shared_size).c_str());
-  label_->SetText(UTF8ToUTF16(output));
+                               base::UTF16ToUTF8(private_size).c_str(),
+                               base::UTF16ToUTF8(shared_size).c_str());
+  label_->SetText(base::UTF8ToUTF16(output));
   refresh_timer_.Start(FROM_HERE,
       base::TimeDelta::FromMilliseconds(kRefreshTimeoutMs),
       this, &TrayMonitor::OnTimer);

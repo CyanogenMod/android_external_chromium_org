@@ -90,7 +90,8 @@ void RenderParamsFromPrintSettings(const printing::PrintSettings& settings,
 
 PrintingMessageFilter::PrintingMessageFilter(int render_process_id,
                                              Profile* profile)
-    : profile_io_data_(ProfileIOData::FromResourceContext(
+    : BrowserMessageFilter(PrintMsgStart),
+      profile_io_data_(ProfileIOData::FromResourceContext(
           profile->GetResourceContext())),
       render_process_id_(render_process_id),
       queue_(g_browser_process->print_job_manager()->queue()) {
@@ -427,7 +428,7 @@ void PrintingMessageFilter::UpdateFileDescriptor(int render_view_id, int fd) {
 #endif
 
 void PrintingMessageFilter::OnUpdatePrintSettings(
-    int document_cookie, const DictionaryValue& job_settings,
+    int document_cookie, const base::DictionaryValue& job_settings,
     IPC::Message* reply_msg) {
   scoped_refptr<printing::PrinterQuery> printer_query;
   if (!profile_io_data_->printing_enabled()->GetValue()) {

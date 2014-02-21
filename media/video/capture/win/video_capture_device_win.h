@@ -46,6 +46,8 @@ class VideoCaptureDeviceWin
   virtual void StopAndDeAllocate() OVERRIDE;
 
   static void GetDeviceNames(Names* device_names);
+  static void GetDeviceSupportedFormats(const Name& device,
+                                        VideoCaptureFormats* formats);
 
  private:
   enum InternalState {
@@ -59,7 +61,7 @@ class VideoCaptureDeviceWin
   virtual void FrameReceived(const uint8* buffer, int length);
 
   bool CreateCapabilityMap();
-  void SetErrorState(const char* reason);
+  void SetErrorState(const std::string& reason);
 
   Name device_name_;
   InternalState state_;

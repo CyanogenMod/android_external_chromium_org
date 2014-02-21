@@ -6,6 +6,7 @@
 
 #include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/drive/fake_drive_service.h"
@@ -54,6 +55,7 @@ TEST_F(EntryRevertPerformerTest, RevertEntry) {
   error = FILE_ERROR_FAILED;
   performer_->RevertEntry(
       src_entry.local_id(),
+      ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
@@ -95,6 +97,7 @@ TEST_F(EntryRevertPerformerTest, RevertEntry_NotFoundOnServer) {
   error = FILE_ERROR_FAILED;
   performer_->RevertEntry(
       local_id,
+      ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
@@ -107,18 +110,17 @@ TEST_F(EntryRevertPerformerTest, RevertEntry_NotFoundOnServer) {
       util::GetDriveMyDriveRootPath()));
 }
 
-TEST_F(EntryRevertPerformerTest, RevertEntry_DeletedOnServer) {
+TEST_F(EntryRevertPerformerTest, RevertEntry_TrashedOnServer) {
   base::FilePath path(
       FILE_PATH_LITERAL("drive/root/Directory 1/SubDirectory File 1.txt"));
 
   ResourceEntry entry;
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(path, &entry));
 
-  // Delete the entry on the server.
+  // Trash the entry on the server.
   google_apis::GDataErrorCode gdata_error = google_apis::GDATA_OTHER_ERROR;
-  fake_service()->DeleteResource(
+  fake_service()->TrashResource(
       entry.resource_id(),
-      std::string(),  // etag
       google_apis::test_util::CreateCopyResultCallback(&gdata_error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, gdata_error);
@@ -127,6 +129,7 @@ TEST_F(EntryRevertPerformerTest, RevertEntry_DeletedOnServer) {
   FileError error = FILE_ERROR_FAILED;
   performer_->RevertEntry(
       entry.local_id(),
+      ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);

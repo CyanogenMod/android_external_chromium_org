@@ -139,13 +139,13 @@ void StackedPanelCollection::RefreshLayoutWithTopPanelStartingAt(
     secondary_stack_window_->EndBatchUpdatePanelBounds();
 }
 
-string16 StackedPanelCollection::GetTitle() const {
+base::string16 StackedPanelCollection::GetTitle() const {
   if (panels_.empty())
     return base::string16();
 
   Panel* panel = panels_.front();
   const extensions::Extension* extension = panel->GetExtension();
-  return UTF8ToUTF16(extension && !extension->name().empty() ?
+  return base::UTF8ToUTF16(extension && !extension->name().empty() ?
       extension->name() : panel->app_name());
 }
 

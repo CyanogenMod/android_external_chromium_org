@@ -48,6 +48,7 @@ class CopyOrMoveOperationDelegate
     StreamCopyHelper(
         scoped_ptr<webkit_blob::FileStreamReader> reader,
         scoped_ptr<FileStreamWriter> writer,
+        bool need_flush,
         int buffer_size,
         const FileSystemOperation::CopyFileProgressCallback&
             file_progress_callback,
@@ -71,11 +72,17 @@ class CopyOrMoveOperationDelegate
     void DidWrite(const StatusCallback& callback,
                   scoped_refptr<net::DrainableIOBuffer> buffer, int result);
 
+    // Flushes the written content in |writer_|.
+    void Flush(const StatusCallback& callback, bool is_eof);
+    void DidFlush(const StatusCallback& callback, bool is_eof, int result);
+
     scoped_ptr<webkit_blob::FileStreamReader> reader_;
     scoped_ptr<FileStreamWriter> writer_;
+    const bool need_flush_;
     FileSystemOperation::CopyFileProgressCallback file_progress_callback_;
     scoped_refptr<net::IOBufferWithSize> io_buffer_;
     int64 num_copied_bytes_;
+    int64 previous_flush_offset_;
     base::Time last_progress_callback_invocation_time_;
     base::TimeDelta min_progress_callback_invocation_span_;
     bool cancel_requested_;
@@ -112,26 +119,26 @@ class CopyOrMoveOperationDelegate
                          const FileSystemURL& dest_url,
                          const StatusCallback& callback,
                          CopyOrMoveImpl* impl,
-                         base::PlatformFileError error);
+                         base::File::Error error);
   void DidTryRemoveDestRoot(const StatusCallback& callback,
-                            base::PlatformFileError error);
+                            base::File::Error error);
   void ProcessDirectoryInternal(const FileSystemURL& src_url,
                                 const FileSystemURL& dest_url,
                                 const StatusCallback& callback);
   void DidCreateDirectory(const FileSystemURL& src_url,
                           const FileSystemURL& dest_url,
                           const StatusCallback& callback,
-                          base::PlatformFileError error);
+                          base::File::Error error);
   void PostProcessDirectoryAfterGetMetadata(
       const FileSystemURL& src_url,
       const StatusCallback& callback,
-      base::PlatformFileError error,
-      const base::PlatformFileInfo& file_info);
+      base::File::Error error,
+      const base::File::Info& file_info);
   void PostProcessDirectoryAfterTouchFile(const FileSystemURL& src_url,
                                           const StatusCallback& callback,
-                                          base::PlatformFileError error);
+                                          base::File::Error error);
   void DidRemoveSourceForMove(const StatusCallback& callback,
-                              base::PlatformFileError error);
+                              base::File::Error error);
 
   void OnCopyFileProgress(const FileSystemURL& src_url, int64 size);
   FileSystemURL CreateDestURL(const FileSystemURL& src_url) const;

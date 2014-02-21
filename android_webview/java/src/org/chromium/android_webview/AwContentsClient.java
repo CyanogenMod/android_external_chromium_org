@@ -58,28 +58,40 @@ public abstract class AwContentsClient {
 
         @Override
         public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
-            if (isMainFrame)
+            if (isMainFrame) {
                 AwContentsClient.this.onPageFinished(validatedUrl);
+            }
         }
 
         @Override
         public void didFailLoad(boolean isProvisionalLoad,
                 boolean isMainFrame, int errorCode, String description, String failingUrl) {
-            if (errorCode == NetError.ERR_ABORTED) {
-                // This error code is generated for the following reasons:
-                // - WebView.stopLoading is called,
-                // - the navigation is intercepted by the embedder via shouldOverrideNavigation.
-                //
-                // The Android WebView does not notify the embedder of these situations using this
-                // error code with the WebViewClient.onReceivedError callback.
-                return;
+            if (isMainFrame) {
+                if (errorCode != NetError.ERR_ABORTED) {
+                    // This error code is generated for the following reasons:
+                    // - WebView.stopLoading is called,
+                    // - the navigation is intercepted by the embedder via shouldOverrideNavigation.
+                    //
+                    // The Android WebView does not notify the embedder of these situations using
+                    // this error code with the WebViewClient.onReceivedError callback.
+                    AwContentsClient.this.onReceivedError(
+                            ErrorCodeConversionHelper.convertErrorCode(errorCode), description,
+                                    failingUrl);
+                }
+                // Need to call onPageFinished after onReceivedError (if there is an error) for
+                // backwards compatibility with the classic webview.
+                AwContentsClient.this.onPageFinished(failingUrl);
             }
-            if (!isMainFrame) {
-                // The Android WebView does not notify the embedder of sub-frame failures.
-                return;
+        }
+
+        @Override
+        public void didNavigateMainFrame(String url, String baseUrl,
+                boolean isNavigationToDifferentPage, boolean isNavigationInPage) {
+            // This is here to emulate the Classic WebView firing onPageFinished for main frame
+            // navigations where only the hash fragment changes.
+            if (isNavigationInPage) {
+                AwContentsClient.this.onPageFinished(url);
             }
-            AwContentsClient.this.onReceivedError(
-                    ErrorCodeConversionHelper.convertErrorCode(errorCode), description, failingUrl);
         }
 
         @Override
@@ -119,6 +131,9 @@ public abstract class AwContentsClient {
     //             WebView specific methods that map directly to WebViewClient / WebChromeClient
     //--------------------------------------------------------------------------------------------
 
+    /**
+     * Parameters for the {@link AwContentsClient#showFileChooser} method.
+     */
     public static class FileChooserParams {
         public int mode;
         public String acceptTypes;

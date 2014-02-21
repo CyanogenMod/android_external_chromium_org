@@ -37,7 +37,7 @@ struct RtcpFieldReceiverReport {
 struct RtcpFieldSenderReport {
   // RFC 3550.
   uint32 sender_ssrc;
-  uint8  number_of_report_blocks;
+  uint8 number_of_report_blocks;
   uint32 ntp_most_significant;
   uint32 ntp_least_significant;
   uint32 rtp_timestamp;
@@ -48,7 +48,7 @@ struct RtcpFieldSenderReport {
 struct RtcpFieldReportBlockItem {
   // RFC 3550.
   uint32 ssrc;
-  uint8  fraction_lost;
+  uint8 fraction_lost;
   uint32 cumulative_number_of_packets_lost;
   uint32 extended_highest_sequence_number;
   uint32 jitter;
@@ -101,9 +101,9 @@ struct RtcpFieldPayloadSpecificRpsi {
   // RFC 4585.
   uint32 sender_ssrc;
   uint32 media_ssrc;
-  uint8  payload_type;
+  uint8 payload_type;
   uint16 number_of_valid_bits;
-  uint8  native_bit_string[kRtcpRpsiDataSize];
+  uint8 native_bit_string[kRtcpRpsiDataSize];
 };
 
 struct RtcpFieldXr {
@@ -162,27 +162,27 @@ struct RtcpFieldApplicationSpecificCastSenderLogItem {
 };
 
 union RtcpField {
-  RtcpFieldReceiverReport               receiver_report;
-  RtcpFieldSenderReport                 sender_report;
-  RtcpFieldReportBlockItem              report_block_item;
-  RtcpFieldSdesCName                    c_name;
-  RtcpFieldBye                          bye;
+  RtcpFieldReceiverReport receiver_report;
+  RtcpFieldSenderReport sender_report;
+  RtcpFieldReportBlockItem report_block_item;
+  RtcpFieldSdesCName c_name;
+  RtcpFieldBye bye;
 
-  RtcpFieldXr                           extended_report;
-  RtcpFieldXrRrtr                       rrtr;
-  RtcpFieldXrDlrr                       dlrr;
+  RtcpFieldXr extended_report;
+  RtcpFieldXrRrtr rrtr;
+  RtcpFieldXrDlrr dlrr;
 
-  RtcpFieldGenericRtpFeedbackNack       nack;
-  RtcpFieldGenericRtpFeedbackNackItem   nack_item;
+  RtcpFieldGenericRtpFeedbackNack nack;
+  RtcpFieldGenericRtpFeedbackNackItem nack_item;
 
-  RtcpFieldPayloadSpecificPli           pli;
-  RtcpFieldPayloadSpecificRpsi          rpsi;
-  RtcpFieldPayloadSpecificFir           fir;
-  RtcpFieldPayloadSpecificFirItem       fir_item;
-  RtcpFieldPayloadSpecificApplication   application_specific;
-  RtcpFieldPayloadSpecificRembItem      remb_item;
-  RtcpFieldPayloadSpecificCastItem      cast_item;
-  RtcpFieldPayloadSpecificCastNackItem  cast_nack_item;
+  RtcpFieldPayloadSpecificPli pli;
+  RtcpFieldPayloadSpecificRpsi rpsi;
+  RtcpFieldPayloadSpecificFir fir;
+  RtcpFieldPayloadSpecificFirItem fir_item;
+  RtcpFieldPayloadSpecificApplication application_specific;
+  RtcpFieldPayloadSpecificRembItem remb_item;
+  RtcpFieldPayloadSpecificCastItem cast_item;
+  RtcpFieldPayloadSpecificCastNackItem cast_nack_item;
 
   RtcpFieldApplicationSpecificCastReceiverLogItem cast_receiver_log;
   RtcpFieldApplicationSpecificCastSenderLogItem cast_sender_log;
@@ -195,7 +195,6 @@ enum RtcpFieldTypes {
   kRtcpRrCode,
   kRtcpSrCode,
   kRtcpReportBlockItemCode,
-
   kRtcpSdesCode,
   kRtcpSdesChunkCode,
   kRtcpByeCode,
@@ -209,7 +208,6 @@ enum RtcpFieldTypes {
   // RFC 4585.
   kRtcpGenericRtpFeedbackNackCode,
   kRtcpGenericRtpFeedbackNackItemCode,
-
   kRtcpPayloadSpecificPliCode,
   kRtcpPayloadSpecificRpsiCode,
   kRtcpPayloadSpecificAppCode,
@@ -233,25 +231,11 @@ enum RtcpFieldTypes {
 };
 
 struct RtcpCommonHeader {
-  uint8  V;   // Version.
-  bool   P;   // Padding.
-  uint8  IC;  // Item count / subtype.
-  uint8  PT;  // Packet Type.
+  uint8 V;   // Version.
+  bool P;    // Padding.
+  uint8 IC;  // Item count / subtype.
+  uint8 PT;  // Packet Type.
   uint16 length_in_octets;
-};
-
-enum RtcpPacketTypes {
-  kPacketTypeLow = 194,  // SMPTE time-code mapping.
-  kPacketTypeInterArrivalJitterReport = 195,
-  kPacketTypeSenderReport = 200,
-  kPacketTypeReceiverReport = 201,
-  kPacketTypeSdes = 202,
-  kPacketTypeBye = 203,
-  kPacketTypeApplicationDefined = 204,
-  kPacketTypeGenericRtpFeedback = 205,
-  kPacketTypePayloadSpecific = 206,
-  kPacketTypeXr = 207,
-  kPacketTypeHigh = 210,  // Port Mapping.
 };
 
 class RtcpParser {

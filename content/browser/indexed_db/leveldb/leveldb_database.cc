@@ -34,14 +34,16 @@ namespace content {
 // data hit disk, but drastically impacts throughput when the filesystem is
 // busy with background compactions. Not syncing trades off reliability for
 // performance. Note that background compactions which move data from the
-// log to SSTs are still done with reliable writes.
+// log to SSTs are always done with reliable writes.
 //
 // Sync writes are necessary on Windows for quota calculations; POSIX
 // calculates file sizes correctly even when not synced to disk.
 #if defined(OS_WIN)
 static const bool kSyncWrites = true;
 #else
-static const bool kSyncWrites = false;
+// TODO(dgrogan): Either remove the #if block or change this back to false.
+// See http://crbug.com/338385.
+static const bool kSyncWrites = true;
 #endif
 
 static leveldb::Slice MakeSlice(const StringPiece& s) {
@@ -454,6 +456,13 @@ scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
 
 const LevelDBComparator* LevelDBDatabase::Comparator() const {
   return comparator_;
+}
+
+void LevelDBDatabase::Compact(const base::StringPiece& start,
+                              const base::StringPiece& stop) {
+  const leveldb::Slice start_slice = MakeSlice(start);
+  const leveldb::Slice stop_slice = MakeSlice(stop);
+  db_->CompactRange(&start_slice, &stop_slice);
 }
 
 }  // namespace content

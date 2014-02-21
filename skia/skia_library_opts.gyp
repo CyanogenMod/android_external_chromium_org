@@ -32,6 +32,7 @@
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
+        '../third_party/skia/include/effects',
         '../third_party/skia/src/core',
         '../third_party/skia/src/opts',
       ],
@@ -118,7 +119,9 @@
             '../third_party/skia/src/opts/SkBlitMask_opts_arm.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.h',
-            '../third_party/skia/src/opts/opts_check_arm.cpp',
+            '../third_party/skia/src/opts/SkBlurImage_opts_arm.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_arm.cpp',
+            '../third_party/skia/src/opts/SkUtils_opts_arm.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
           ],
         }],
@@ -150,6 +153,7 @@
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
+        '../third_party/skia/include/effects',
         '../third_party/skia/src/core',
       ],
       'conditions': [
@@ -188,6 +192,7 @@
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
+        '../third_party/skia/include/effects',
         '../third_party/skia/src/core',
       ],
       'sources': [
@@ -216,6 +221,7 @@
           ],
           'include_dirs': [
             '../third_party/skia/include/core',
+            '../third_party/skia/include/effects',
             '../third_party/skia/src/core',
             '../third_party/skia/src/opts',
           ],

@@ -13,8 +13,7 @@
 #include "ui/message_center/message_center_export.h"
 #include "url/gurl.h"
 
-FORWARD_DECLARE_TEST(MessageCenterTrayBridgeTest,
-                     StatusItemOnlyAfterFirstNotification);
+class MessageCenterTrayBridgeTest;
 
 namespace ash {
 class WebNotificationTrayTest;
@@ -51,6 +50,8 @@ struct MESSAGE_CENTER_EXPORT NotifierId {
   explicit NotifierId(const GURL& url);
 
   bool operator==(const NotifierId& other) const;
+  // Allows NotifierId to be used as a key in std::map.
+  bool operator<(const NotifierId& other) const;
 
   NotifierType type;
 
@@ -65,14 +66,13 @@ struct MESSAGE_CENTER_EXPORT NotifierId {
   std::string profile_id;
 
  private:
+  friend class ::MessageCenterTrayBridgeTest;
   friend class MessageCenterTrayTest;
   friend class test::MessagePopupCollectionTest;
   friend class NotificationControllerTest;
   friend class PopupCollectionTest;
   friend class TrayViewControllerTest;
   friend class ash::WebNotificationTrayTest;
-  FRIEND_TEST_ALL_PREFIXES(::MessageCenterTrayBridgeTest,
-                           StatusItemOnlyAfterFirstNotification);
   FRIEND_TEST_ALL_PREFIXES(PopupControllerTest, Creation);
   FRIEND_TEST_ALL_PREFIXES(NotificationListTest, UnreadCountNoNegative);
   FRIEND_TEST_ALL_PREFIXES(NotificationListTest, TestHasNotificationOfType);
@@ -84,14 +84,16 @@ struct MESSAGE_CENTER_EXPORT NotifierId {
 // The struct to hold the information of notifiers. The information will be
 // used by NotifierSettingsView.
 struct MESSAGE_CENTER_EXPORT Notifier {
-  Notifier(const NotifierId& notifier_id, const string16& name, bool enabled);
+  Notifier(const NotifierId& notifier_id,
+           const base::string16& name,
+           bool enabled);
   ~Notifier();
 
   NotifierId notifier_id;
 
   // The human-readable name of the notifier such like the extension name.
   // It can be empty.
-  string16 name;
+  base::string16 name;
 
   // True if the source is allowed to send notifications. True is default.
   bool enabled;
@@ -105,8 +107,8 @@ struct MESSAGE_CENTER_EXPORT Notifier {
 
 struct MESSAGE_CENTER_EXPORT NotifierGroup {
   NotifierGroup(const gfx::Image& icon,
-                const string16& name,
-                const string16& login_info,
+                const base::string16& name,
+                const base::string16& login_info,
                 size_t index);
   ~NotifierGroup();
 
@@ -114,10 +116,10 @@ struct MESSAGE_CENTER_EXPORT NotifierGroup {
   const gfx::Image icon;
 
   // Display name of a notifier group.
-  const string16 name;
+  const base::string16 name;
 
   // More display information about the notifier group.
-  string16 login_info;
+  base::string16 login_info;
 
   // Unique identifier for the notifier group so that they can be selected in
   // the UI.

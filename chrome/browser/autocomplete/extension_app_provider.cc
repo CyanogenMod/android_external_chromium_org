@@ -11,7 +11,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -21,7 +20,9 @@
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "ui/base/l10n/l10n_util.h"
 
 ExtensionAppProvider::ExtensionAppProvider(
@@ -45,8 +46,7 @@ void ExtensionAppProvider::LaunchAppFromOmnibox(
     Profile* profile,
     WindowOpenDisposition disposition) {
   ExtensionService* service =
-      extensions::ExtensionSystemFactory::GetForProfile(profile)->
-      extension_service();
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   const extensions::Extension* extension =
       service->GetInstalledApp(match.destination_url);
   // While the Omnibox popup is open, the extension can be updated, changing
@@ -117,7 +117,7 @@ void ExtensionAppProvider::Start(const AutocompleteInput& input,
     base::string16::const_iterator name_iter =
         std::search(name.begin(), name.end(),
                     input.text().begin(), input.text().end(),
-                    base::CaseInsensitiveCompare<char16>());
+                    base::CaseInsensitiveCompare<base::char16>());
     bool matches_name = name_iter != name.end();
     size_t name_match_index = matches_name ?
         static_cast<size_t>(name_iter - name.begin()) : base::string16::npos;
@@ -129,7 +129,7 @@ void ExtensionAppProvider::Start(const AutocompleteInput& input,
       base::string16::const_iterator url_iter =
           std::search(url.begin(), url.end(),
                       input.text().begin(), input.text().end(),
-                      base::CaseInsensitiveCompare<char16>());
+                      base::CaseInsensitiveCompare<base::char16>());
       matches_url = url_iter != url.end() &&
           input.type() != AutocompleteInput::FORCED_QUERY;
       url_match_index = matches_url ?
@@ -149,13 +149,12 @@ ExtensionAppProvider::~ExtensionAppProvider() {
 
 void ExtensionAppProvider::RefreshAppList() {
   ExtensionService* extension_service =
-      extensions::ExtensionSystemFactory::GetForProfile(profile_)->
-      extension_service();
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (!extension_service)
     return;  // During testing, there is no extension service.
-  const ExtensionSet* extensions = extension_service->extensions();
+  const extensions::ExtensionSet* extensions = extension_service->extensions();
   extension_apps_.clear();
-  for (ExtensionSet::const_iterator iter = extensions->begin();
+  for (extensions::ExtensionSet::const_iterator iter = extensions->begin();
        iter != extensions->end(); ++iter) {
     const extensions::Extension* app = iter->get();
     if (!app->ShouldDisplayInAppLauncher())
@@ -164,7 +163,7 @@ void ExtensionAppProvider::RefreshAppList() {
     // provider is currently only used in the app launcher.
 
     if (profile_->IsOffTheRecord() &&
-        !extension_util::CanLoadInIncognito(app, extension_service))
+        !extensions::util::CanLoadInIncognito(app, profile_))
       continue;
 
     GURL launch_url = app->is_platform_app() ?
@@ -172,8 +171,8 @@ void ExtensionAppProvider::RefreshAppList() {
     DCHECK(launch_url.is_valid());
 
     ExtensionApp extension_app = {
-        UTF8ToUTF16(app->name()),
-        UTF8ToUTF16(launch_url.spec()),
+        base::UTF8ToUTF16(app->name()),
+        base::UTF8ToUTF16(launch_url.spec()),
         // Only hosted apps have recognizable URLs that users might type in,
         // packaged apps and hosted apps use chrome-extension:// URLs that are
         // normally not shown to users.

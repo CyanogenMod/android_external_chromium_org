@@ -20,6 +20,7 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/common/chrome_constants.h"
@@ -58,7 +59,6 @@ namespace policy {
 namespace {
 
 const char kOAuthTokenCookie[] = "oauth_token=1234";
-const char kTestAccountId[] = "user@gmail.com";
 
 const char kOAuth2TokenPairData[] =
     "{"
@@ -93,10 +93,10 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     TestingProfile::TestingFactories factories;
     factories.push_back(
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                       FakeProfileOAuth2TokenService::Build));
+                       FakeProfileOAuth2TokenServiceWrapper::Build));
     profile_ = profile_manager_->CreateTestingProfile(
         chrome::kInitialProfile, scoped_ptr<PrefServiceSyncable>(),
-        UTF8ToUTF16("testing_profile"), 0, std::string(), factories);
+        base::UTF8ToUTF16("testing_profile"), 0, std::string(), factories);
     signin_profile_ = profile_manager_->CreateTestingProfile(kSigninProfile);
     signin_profile_->ForceIncognito(true);
     // Usually the signin Profile and the main Profile are separate, but since
@@ -250,6 +250,8 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
       EXPECT_TRUE(token_service);
       OAuth2TokenService::ScopeSet scopes;
       scopes.insert(GaiaConstants::kDeviceManagementServiceOAuth);
+      scopes.insert(
+          GaiaUrls::GetInstance()->oauth_wrap_bridge_user_info_scope());
       token_service->IssueTokenForScope(
           scopes, "5678",
           base::Time::Now() + base::TimeDelta::FromSeconds(3600));
@@ -533,9 +535,10 @@ TEST_F(UserCloudPolicyManagerChromeOSTest, NonBlockingFirstFetch) {
     static_cast<FakeProfileOAuth2TokenService*>(
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_));
   ASSERT_TRUE(token_service);
-  EXPECT_FALSE(token_service->RefreshTokenIsAvailable(kTestAccountId));
-  token_service->IssueRefreshToken(kTestAccountId);
-  EXPECT_TRUE(token_service->RefreshTokenIsAvailable(kTestAccountId));
+  const std::string account_id = token_service->GetPrimaryAccountId();
+  EXPECT_FALSE(token_service->RefreshTokenIsAvailable(account_id));
+  token_service->UpdateCredentials(account_id, "refresh_token");
+  EXPECT_TRUE(token_service->RefreshTokenIsAvailable(account_id));
 
   // That should have notified the manager, which now issues the request for the
   // policy oauth token.

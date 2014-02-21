@@ -48,6 +48,7 @@ import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageTransitionTypes;
 import org.chromium.content.common.CleanupReference;
+import org.chromium.content_public.browser.GestureStateListener;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
@@ -181,12 +182,11 @@ public class AwContents {
     private boolean mContainerViewFocused;
     private boolean mWindowFocused;
 
-    private boolean mClearViewActive;
-    private boolean mPictureListenerEnabled;
-
-    // These come from the compositor and are updated immediately (in contrast to the values in
+    // These come from the compositor and are updated synchronously (in contrast to the values in
     // ContentViewCore, which are updated at end of every frame).
     private float mPageScaleFactor = 1.0f;
+    private float mMinPageScaleFactor = 1.0f;
+    private float mMaxPageScaleFactor = 1.0f;
     private float mContentWidthDip;
     private float mContentHeightDip;
 
@@ -382,9 +382,9 @@ public class AwContents {
     }
 
     //--------------------------------------------------------------------------------------------
-    private class AwGestureStateListener implements ContentViewCore.GestureStateListener {
+    private class AwGestureStateListener extends GestureStateListener {
         @Override
-        public void onPinchGestureStart() {
+        public void onPinchStarted() {
             // While it's possible to re-layout the view during a pinch gesture, the effect is very
             // janky (especially that the page scale update notification comes from the renderer
             // main thread, not from the impl thread, so it's usually out of sync with what's on
@@ -395,13 +395,8 @@ public class AwContents {
         }
 
         @Override
-        public void onPinchGestureEnd() {
+        public void onPinchEnded() {
             mLayoutSizer.unfreezeLayoutRequests();
-        }
-
-        @Override
-        public void onFlingStartGesture(int velocityX, int velocityY) {
-            mScrollOffsetManager.onFlingStartGesture(velocityX, velocityY);
         }
 
         @Override
@@ -410,8 +405,8 @@ public class AwContents {
         }
 
         @Override
-        public void onUnhandledFlingStartEvent() {
-            mScrollOffsetManager.onUnhandledFlingStartEvent();
+        public void onUnhandledFlingStartEvent(int velocityX, int velocityY) {
+            mScrollOffsetManager.onUnhandledFlingStartEvent(velocityX, velocityY);
         }
 
         @Override
@@ -489,9 +484,10 @@ public class AwContents {
         AwSettings.ZoomSupportChangeListener zoomListener =
                 new AwSettings.ZoomSupportChangeListener() {
                     @Override
-                    public void onGestureZoomSupportChanged(boolean supportsGestureZoom) {
-                        mContentViewCore.updateMultiTouchZoomSupport(supportsGestureZoom);
-                        mContentViewCore.updateDoubleTapSupport(supportsGestureZoom);
+                    public void onGestureZoomSupportChanged(
+                            boolean supportsDoubleTapZoom, boolean supportsMultiTouchZoom) {
+                        mContentViewCore.updateDoubleTapSupport(supportsDoubleTapZoom);
+                        mContentViewCore.updateMultiTouchZoomSupport(supportsMultiTouchZoom);
                     }
 
                 };
@@ -516,7 +512,7 @@ public class AwContents {
 
     private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
             InternalAccessDelegate internalDispatcher, int nativeWebContents,
-            ContentViewCore.GestureStateListener pinchGestureStateListener,
+            GestureStateListener gestureStateListener,
             ContentViewClient contentViewClient,
             ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
         Context context = containerView.getContext();
@@ -525,7 +521,7 @@ public class AwContents {
                 context instanceof Activity ?
                         new ActivityWindowAndroid((Activity) context) :
                         new WindowAndroid(context.getApplicationContext()));
-        contentViewCore.setGestureStateListener(pinchGestureStateListener);
+        contentViewCore.addGestureStateListener(gestureStateListener);
         contentViewCore.setContentViewClient(contentViewClient);
         contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
         return contentViewCore;
@@ -745,13 +741,12 @@ public class AwContents {
         mScrollOffsetManager.syncScrollOffsetFromOnDraw();
         canvas.getClipBounds(mClipBoundsTemporary);
 
-        if (mClearViewActive) {
-            canvas.drawColor(getEffectiveBackgroundColor());
-        } else if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
+        if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
                 mContainerView.getScrollX(), mContainerView.getScrollY(),
                 mClipBoundsTemporary.left, mClipBoundsTemporary.top,
                 mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
-            Log.w(TAG, "nativeOnDraw failed; clearing to background color.");
+            // Can happen during initialization when compositor is not set up. Or when clearView
+            // is in effect. Just draw background color instead.
             canvas.drawColor(getEffectiveBackgroundColor());
         }
 
@@ -782,9 +777,8 @@ public class AwContents {
     }
 
     public void clearView() {
-        mClearViewActive = true;
-        syncOnNewPictureStateToNative();
-        mContainerView.invalidate();
+        if (mNativeAwContents == 0) return;
+        nativeClearView(mNativeAwContents);
     }
 
     /**
@@ -804,13 +798,7 @@ public class AwContents {
                 }
             };
         }
-        mPictureListenerEnabled = enabled;
-        syncOnNewPictureStateToNative();
-    }
-
-    private void syncOnNewPictureStateToNative() {
-        if (mNativeAwContents == 0) return;
-        nativeEnableOnNewPicture(mNativeAwContents, mPictureListenerEnabled || mClearViewActive);
+        nativeEnableOnNewPicture(mNativeAwContents, enabled);
     }
 
     public void findAllAsync(String searchString) {
@@ -945,7 +933,7 @@ public class AwContents {
     }
 
     public boolean isMultiTouchZoomSupported() {
-        return mSettings.supportsGestureZoom();
+        return mSettings.supportsMultiTouchZoom();
     }
 
     public View getZoomControlsForTest() {
@@ -1350,7 +1338,7 @@ public class AwContents {
         // In order to maintain compatibility with the old WebView's implementation,
         // the absolute (full) url is passed in the |url| field, not only the href attribute.
         // Note: HitTestData could be cleaned up at this point. See http://crbug.com/290992.
-        data.putString("url", mPossiblyStaleHitTestData.hitTestResultExtraData);
+        data.putString("url", mPossiblyStaleHitTestData.href);
         data.putString("title", mPossiblyStaleHitTestData.anchorText);
         data.putString("src", mPossiblyStaleHitTestData.imgSrc);
         msg.setData(data);
@@ -1412,8 +1400,7 @@ public class AwContents {
     // This method uses the term 'zoom' for legacy reasons, but relates
     // to what chrome calls the 'page scale factor'.
     public boolean canZoomIn() {
-        final float zoomInExtent = mContentViewCore.getRenderCoordinates().getMaxPageScaleFactor()
-                - mPageScaleFactor;
+        final float zoomInExtent = mMaxPageScaleFactor - mPageScaleFactor;
         return zoomInExtent > ZOOM_CONTROLS_EPSILON;
     }
 
@@ -1423,8 +1410,7 @@ public class AwContents {
     // This method uses the term 'zoom' for legacy reasons, but relates
     // to what chrome calls the 'page scale factor'.
     public boolean canZoomOut() {
-        final float zoomOutExtent = mPageScaleFactor
-                - mContentViewCore.getRenderCoordinates().getMinPageScaleFactor();
+        final float zoomOutExtent = mPageScaleFactor - mMinPageScaleFactor;
         return zoomOutExtent > ZOOM_CONTROLS_EPSILON;
     }
 
@@ -1550,6 +1536,8 @@ public class AwContents {
         mContentViewCore.onAttachedToWindow();
         nativeOnAttachedToWindow(mNativeAwContents, mContainerView.getWidth(),
                 mContainerView.getHeight());
+        mSettings.setEnableSupportedHardwareAcceleratedFeatures(
+            mContainerView.isHardwareAccelerated());
 
         if (mComponentCallbacks != null) return;
         mComponentCallbacks = new AwComponentCallbacks();
@@ -1567,6 +1555,8 @@ public class AwContents {
         }
 
         mContentViewCore.onDetachedFromWindow();
+
+        mSettings.setEnableSupportedHardwareAcceleratedFeatures(false);
 
         if (mComponentCallbacks != null) {
             mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
@@ -1834,13 +1824,6 @@ public class AwContents {
 
     @CalledByNative
     public void onNewPicture() {
-        // Clear up any results from a previous clearView call
-        if (mClearViewActive) {
-            mClearViewActive = false;
-            mContainerView.invalidate();
-            syncOnNewPictureStateToNative();
-        }
-
         // Don't call capturePicture() here but instead defer it until the posted task runs within
         // the callback helper, to avoid doubling back into the renderer compositor in the middle
         // of the notification it is sending up to here.
@@ -1916,13 +1899,21 @@ public class AwContents {
     }
 
     @CalledByNative
-    private void setPageScaleFactor(float pageScaleFactor) {
-        if (mPageScaleFactor == pageScaleFactor)
+    private void setPageScaleFactorAndLimits(
+            float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor) {
+        if (mPageScaleFactor == pageScaleFactor &&
+            mMinPageScaleFactor == minPageScaleFactor &&
+            mMaxPageScaleFactor == maxPageScaleFactor)
             return;
-        float oldPageScaleFactor = mPageScaleFactor;
-        mPageScaleFactor = pageScaleFactor;
-        mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
-                (float) (oldPageScaleFactor * mDIPScale), (float) (mPageScaleFactor * mDIPScale));
+        mMinPageScaleFactor = minPageScaleFactor;
+        mMaxPageScaleFactor = maxPageScaleFactor;
+        if (mPageScaleFactor != pageScaleFactor) {
+          float oldPageScaleFactor = mPageScaleFactor;
+          mPageScaleFactor = pageScaleFactor;
+          mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
+              (float)(oldPageScaleFactor * mDIPScale),
+              (float)(mPageScaleFactor * mDIPScale));
+        }
     }
 
     @CalledByNative
@@ -1995,6 +1986,14 @@ public class AwContents {
         return null;
     }
 
+    public void extractSmartClipData(int x, int y, int width, int height) {
+        mContentViewCore.extractSmartClipData(x, y, width, height);
+    }
+
+    public void setSmartClipDataListener(ContentViewCore.SmartClipDataListener listener) {
+        mContentViewCore.setSmartClipDataListener(listener);
+    }
+
     //--------------------------------------------------------------------------------------------
     //  Native methods
     //--------------------------------------------------------------------------------------------
@@ -2057,6 +2056,7 @@ public class AwContents {
     private native int nativeGetAwDrawGLViewContext(long nativeAwContents);
     private native long nativeCapturePicture(long nativeAwContents, int width, int height);
     private native void nativeEnableOnNewPicture(long nativeAwContents, boolean enabled);
+    private native void nativeClearView(long nativeAwContents);
     private native void nativeSetExtraHeadersForUrl(long nativeAwContents,
             String url, String extraHeaders);
 

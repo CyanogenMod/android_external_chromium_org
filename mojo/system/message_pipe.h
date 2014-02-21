@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "mojo/public/system/core.h"
+#include "mojo/system/dispatcher.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/system_impl_export.h"
 
@@ -20,7 +20,6 @@ namespace mojo {
 namespace system {
 
 class Channel;
-class Dispatcher;
 class MessagePipeEndpoint;
 class Waiter;
 
@@ -31,8 +30,8 @@ class Waiter;
 class MOJO_SYSTEM_IMPL_EXPORT MessagePipe :
     public base::RefCountedThreadSafe<MessagePipe> {
  public:
-  MessagePipe(scoped_ptr<MessagePipeEndpoint> endpoint_0,
-              scoped_ptr<MessagePipeEndpoint> endpoint_1);
+  MessagePipe(scoped_ptr<MessagePipeEndpoint> endpoint0,
+              scoped_ptr<MessagePipeEndpoint> endpoint1);
 
   // Convenience constructor that constructs a |MessagePipe| with two new
   // |LocalMessagePipeEndpoint|s.
@@ -48,13 +47,15 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipe :
   // Unlike |MessagePipeDispatcher::WriteMessage()|, this does not validate its
   // arguments.
   MojoResult WriteMessage(unsigned port,
-                          const void* bytes, uint32_t num_bytes,
-                          const std::vector<Dispatcher*>* dispatchers,
+                          const void* bytes,
+                          uint32_t num_bytes,
+                          std::vector<DispatcherTransport>* transports,
                           MojoWriteMessageFlags flags);
   // Unlike |MessagePipeDispatcher::ReadMessage()|, this does not validate its
   // arguments.
   MojoResult ReadMessage(unsigned port,
-                         void* bytes, uint32_t* num_bytes,
+                         void* bytes,
+                         uint32_t* num_bytes,
                          std::vector<scoped_refptr<Dispatcher> >* dispatchers,
                          uint32_t* num_dispatchers,
                          MojoReadMessageFlags flags);
@@ -67,10 +68,10 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipe :
   // This is used internally by |WriteMessage()| and by |Channel| to enqueue
   // messages (typically to a |LocalMessagePipeEndpoint|). Unlike
   // |WriteMessage()|, |port| is the *destination* port. Takes ownership of
-  // |message|.
+  // |message|. |dispatchers| should be non-null only if it's nonempty.
   MojoResult EnqueueMessage(unsigned port,
                             MessageInTransit* message,
-                            const std::vector<Dispatcher*>* dispatchers);
+                            std::vector<DispatcherTransport>* transports);
 
   // These are used by |Channel|.
   void Attach(unsigned port,

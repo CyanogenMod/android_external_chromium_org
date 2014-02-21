@@ -4,7 +4,6 @@
 
 #include "chrome/browser/signin/signin_promo.h"
 
-#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -22,9 +21,9 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/options/core_options_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/url_data_source.h"
@@ -181,9 +180,7 @@ GURL GetPromoURL(Source source, bool auto_close) {
 GURL GetPromoURL(Source source, bool auto_close, bool is_constrained) {
   DCHECK_NE(SOURCE_UNKNOWN, source);
 
-  bool enable_inline = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableInlineSignin);
-  if (enable_inline) {
+  if (!switches::IsEnableWebBasedSignin()) {
     std::string url(chrome::kChromeUIChromeSigninURL);
     base::StringAppendF(&url, "?%s=%d", kSignInPromoQueryKeySource, source);
     if (auto_close)
@@ -221,6 +218,26 @@ GURL GetPromoURL(Source source, bool auto_close, bool is_constrained) {
   return GaiaUrls::GetInstance()->service_login_url().Resolve(query_string);
 }
 
+GURL GetReauthURL(Profile* profile, const std::string& account_id) {
+  if (switches::IsEnableWebBasedSignin()) {
+    return net::AppendQueryParameter(
+        signin::GetPromoURL(signin::SOURCE_SETTINGS, true),
+        "Email",
+        account_id);
+  }
+
+  const std::string primary_account_id =
+    SigninManagerFactory::GetForProfile(profile)->
+        GetAuthenticatedAccountId();
+  signin::Source source = account_id == primary_account_id ?
+      signin::SOURCE_SETTINGS : signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT;
+
+  GURL url = signin::GetPromoURL(source, true);
+  url = net::AppendQueryParameter(url, "email", account_id);
+  url = net::AppendQueryParameter(url, "validateEmail", "1");
+  return net::AppendQueryParameter(url, "readOnlyEmail", "1");
+}
+
 GURL GetNextPageURLForPromoURL(const GURL& url) {
   std::string value;
   if (net::GetValueForKeyInQuery(url, kSignInPromoQueryKeyContinue, &value))
@@ -255,8 +272,15 @@ bool IsContinueUrlForWebBasedSigninFlow(const GURL& url) {
   GURL::Replacements replacements;
   replacements.ClearQuery();
   const std::string& locale = g_browser_process->GetApplicationLocale();
-  return url.ReplaceComponents(replacements) ==
+  GURL continue_url =
       GURL(base::StringPrintf(kSignInLandingUrlPrefix, locale.c_str()));
+  return (
+      google_util::IsGoogleDomainUrl(
+          url,
+          google_util::ALLOW_SUBDOMAIN,
+          google_util::DISALLOW_NON_STANDARD_PORTS) &&
+      url.ReplaceComponents(replacements).path() ==
+        continue_url.ReplaceComponents(replacements).path());
 }
 
 void ForceWebBasedSigninFlowForTesting(bool force) {

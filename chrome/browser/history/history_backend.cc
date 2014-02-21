@@ -934,7 +934,7 @@ void HistoryBackend::AddPageNoVisitForBookmark(const GURL& url,
   if (!title.empty()) {
     url_info.set_title(title);
   } else {
-    url_info.set_title(UTF8ToUTF16(url.spec()));
+    url_info.set_title(base::UTF8ToUTF16(url.spec()));
   }
 
   url_info.set_last_visit(Time::Now());
@@ -1085,47 +1085,6 @@ void HistoryBackend::QuerySegmentUsage(
   request->ForwardResult(request->handle(), &request->value.get());
 }
 
-void HistoryBackend::IncreaseSegmentDuration(const GURL& url,
-                                             base::Time time,
-                                             base::TimeDelta delta) {
-  if (!db_)
-    return;
-
-  const std::string segment_name(VisitSegmentDatabase::ComputeSegmentName(url));
-  SegmentID segment_id = db_->GetSegmentNamed(segment_name);
-  if (!segment_id) {
-    URLID url_id = db_->GetRowForURL(url, NULL);
-    if (!url_id)
-      return;
-    segment_id = db_->CreateSegment(url_id, segment_name);
-    if (!segment_id)
-      return;
-  }
-  SegmentDurationID duration_id;
-  base::TimeDelta total_delta;
-  if (!db_->GetSegmentDuration(segment_id, time, &duration_id,
-                               &total_delta)) {
-    db_->CreateSegmentDuration(segment_id, time, delta);
-    return;
-  }
-  total_delta += delta;
-  db_->SetSegmentDuration(duration_id, total_delta);
-}
-
-void HistoryBackend::QuerySegmentDuration(
-    scoped_refptr<QuerySegmentUsageRequest> request,
-    const base::Time from_time,
-    int max_result_count) {
-  if (request->canceled())
-    return;
-
-  if (db_) {
-    db_->QuerySegmentDuration(from_time, max_result_count,
-                              &request->value.get());
-  }
-  request->ForwardResult(request->handle(), &request->value.get());
-}
-
 // Keyword visits --------------------------------------------------------------
 
 void HistoryBackend::SetKeywordSearchTermsForURL(const GURL& url,
@@ -1188,6 +1147,24 @@ void HistoryBackend::DeleteKeywordSearchTermForURL(const GURL& url) {
       chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_DELETED,
       new KeywordSearchDeletedDetails(url));
   ScheduleCommit();
+}
+
+void HistoryBackend::DeleteMatchingURLsForKeyword(TemplateURLID keyword_id,
+                                                  const base::string16& term) {
+  if (!db_)
+    return;
+
+  std::vector<KeywordSearchTermRow> rows;
+  if (db_->GetKeywordSearchTermRows(term, &rows)) {
+    std::vector<GURL> items_to_delete;
+    URLRow row;
+    for (std::vector<KeywordSearchTermRow>::iterator it = rows.begin();
+         it != rows.end(); ++it) {
+      if ((it->keyword_id == keyword_id) && db_->GetURLRow(it->url_id, &row))
+        items_to_delete.push_back(row.url());
+    }
+    DeleteURLs(items_to_delete);
+  }
 }
 
 // Downloads -------------------------------------------------------------------

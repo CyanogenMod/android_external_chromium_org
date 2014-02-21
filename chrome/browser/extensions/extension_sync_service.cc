@@ -11,17 +11,18 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/app_sync_data.h"
 #include "chrome/browser/extensions/extension_error_ui.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sync_data.h"
 #include "chrome/browser/extensions/extension_sync_service_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/extensions/sync_helper.h"
-#include "content/public/browser/browser_thread.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
@@ -30,6 +31,7 @@
 
 using extensions::Extension;
 using extensions::ExtensionPrefs;
+using extensions::ExtensionRegistry;
 using extensions::FeatureSwitch;
 
 ExtensionSyncService::ExtensionSyncService(Profile* profile,
@@ -229,7 +231,7 @@ extensions::ExtensionSyncData ExtensionSyncService::GetExtensionSyncData(
   return extensions::ExtensionSyncData(
       extension,
       extension_service_->IsExtensionEnabled(extension.id()),
-      extension_util::IsIncognitoEnabled(extension.id(), extension_service_));
+      extensions::util::IsIncognitoEnabled(extension.id(), profile_));
 }
 
 extensions::AppSyncData ExtensionSyncService::GetAppSyncData(
@@ -237,20 +239,22 @@ extensions::AppSyncData ExtensionSyncService::GetAppSyncData(
   return extensions::AppSyncData(
       extension,
       extension_service_->IsExtensionEnabled(extension.id()),
-      extension_util::IsIncognitoEnabled(extension.id(), extension_service_),
+      extensions::util::IsIncognitoEnabled(extension.id(), profile_),
       extension_prefs_->app_sorting()->GetAppLaunchOrdinal(extension.id()),
-      extension_prefs_->app_sorting()->GetPageOrdinal(extension.id()));
+      extension_prefs_->app_sorting()->GetPageOrdinal(extension.id()),
+      extensions::GetLaunchTypePrefValue(extension_prefs_, extension.id()));
 }
 
 std::vector<extensions::ExtensionSyncData>
   ExtensionSyncService::GetExtensionSyncDataList() const {
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
   std::vector<extensions::ExtensionSyncData> extension_sync_list;
   extension_sync_bundle_.GetExtensionSyncDataListHelper(
-      extension_service_->extensions(), &extension_sync_list);
+      registry->enabled_extensions(), &extension_sync_list);
   extension_sync_bundle_.GetExtensionSyncDataListHelper(
-      extension_service_->disabled_extensions(), &extension_sync_list);
+      registry->disabled_extensions(), &extension_sync_list);
   extension_sync_bundle_.GetExtensionSyncDataListHelper(
-      extension_service_->terminated_extensions(), &extension_sync_list);
+      registry->terminated_extensions(), &extension_sync_list);
 
   std::vector<extensions::ExtensionSyncData> pending_extensions =
       extension_sync_bundle_.GetPendingData();
@@ -263,13 +267,14 @@ std::vector<extensions::ExtensionSyncData>
 
 std::vector<extensions::AppSyncData> ExtensionSyncService::GetAppSyncDataList()
     const {
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
   std::vector<extensions::AppSyncData> app_sync_list;
   app_sync_bundle_.GetAppSyncDataListHelper(
-      extension_service_->extensions(), &app_sync_list);
+      registry->enabled_extensions(), &app_sync_list);
   app_sync_bundle_.GetAppSyncDataListHelper(
-      extension_service_->disabled_extensions(), &app_sync_list);
+      registry->disabled_extensions(), &app_sync_list);
   app_sync_bundle_.GetAppSyncDataListHelper(
-      extension_service_->terminated_extensions(), &app_sync_list);
+      registry->terminated_extensions(), &app_sync_list);
 
   std::vector<extensions::AppSyncData> pending_apps =
       app_sync_bundle_.GetPendingData();
@@ -305,6 +310,14 @@ bool ExtensionSyncService::ProcessAppSyncData(
     extension_prefs_->app_sorting()->SetPageOrdinal(
         id,
         app_sync_data.page_ordinal());
+  }
+
+  // The corresponding validation of this value during AppSyncData population
+  // is in AppSyncData::PopulateAppSpecifics.
+  if (app_sync_data.launch_type() >= extensions::LAUNCH_TYPE_FIRST &&
+      app_sync_data.launch_type() < extensions::NUM_LAUNCH_TYPES) {
+    extensions::SetLaunchType(extension_service_, id,
+                              app_sync_data.launch_type());
   }
 
   if (!ProcessExtensionSyncDataHelper(app_sync_data.extension_sync_data(),
@@ -397,8 +410,8 @@ bool ExtensionSyncService::ProcessExtensionSyncDataHelper(
   bool extension_installed = (extension != NULL);
   int result = extension ?
       extension->version()->CompareTo(extension_sync_data.version()) : 0;
-  extension_util::SetIsIncognitoEnabled(
-      id, extension_service_, extension_sync_data.incognito_enabled());
+  extensions::util::SetIsIncognitoEnabled(
+      id, profile_, extension_sync_data.incognito_enabled());
   extension = NULL;  // No longer safe to use.
 
   if (extension_installed) {

@@ -14,8 +14,6 @@ import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.browser.test.util.Criteria;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 
 import java.util.concurrent.Callable;
 
@@ -23,9 +21,6 @@ import java.util.concurrent.Callable;
  * A test suite for zooming-related methods and settings.
  */
 public class AwZoomTest extends AwTestBase {
-    private static final long TEST_TIMEOUT_MS = 20000L;
-    private static final int CHECK_INTERVAL_MS = 100;
-
     private TestAwContentsClient mContentsClient;
     private AwContents mAwContents;
 
@@ -38,10 +33,14 @@ public class AwZoomTest extends AwTestBase {
         mAwContents = testContainerView.getAwContents();
     }
 
-    private String getZoomableHtml() {
-        return "<html><head><meta name=\"viewport\" content=\"" +
-                "width=device-width, minimum-scale=0.5, maximum-scale=2.0, initial-scale=0.5" +
-                "\"/></head><body>Zoomable</body></html>";
+    private String getZoomableHtml(float scale) {
+        final int divWidthPercent = (int)(100.0f / scale);
+        return String.format("<html><head><meta name=\"viewport\" content=\"" +
+                "width=device-width, minimum-scale=%f, maximum-scale=2.0, initial-scale=%f" +
+                "\"/></head><body style='margin:0'>" +
+                "<div style='width:%d%%;height:100px;border:1px solid black'>Zoomable</div>" +
+                "</body></html>",
+                scale, scale, divWidthPercent);
     }
 
     private String getNonZoomableHtml() {
@@ -90,94 +89,75 @@ public class AwZoomTest extends AwTestBase {
         });
     }
 
-    private boolean zoomInOnUiThreadAndWait() throws Throwable {
+    private void zoomInOnUiThreadAndWait() throws Throwable {
         final float previousScale = getPixelScaleOnUiThread(mAwContents);
-        if (!runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
+        assertTrue(runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
                 return mAwContents.zoomIn();
             }
-        }))
-            return false;
+        }));
         // The zoom level is updated asynchronously.
-        return waitForScaleChange(previousScale);
+        waitForScaleChange(previousScale);
     }
 
-    private boolean zoomOutOnUiThreadAndWait() throws Throwable {
+    private void zoomOutOnUiThreadAndWait() throws Throwable {
         final float previousScale = getPixelScaleOnUiThread(mAwContents);
-        if (!runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
+        assertTrue(runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
                 return mAwContents.zoomOut();
             }
-        }))
-            return false;
+        }));
         // The zoom level is updated asynchronously.
-        return waitForScaleChange(previousScale);
+        waitForScaleChange(previousScale);
     }
 
-    private boolean waitForScaleChange(final float previousScale) throws Throwable {
-        return CriteriaHelper.pollForCriteria(new Criteria() {
-                @Override
-                public boolean isSatisfied() {
-                    try {
-                        return previousScale != getPixelScaleOnUiThread(mAwContents);
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                        fail("Failed to getPixelScaleOnUiThread: " + t.toString());
-                        return false;
-                    }
-                }
-            }, TEST_TIMEOUT_MS, CHECK_INTERVAL_MS);
+    private void waitForScaleChange(final float previousScale) throws Throwable {
+        poll(new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return previousScale != getPixelScaleOnUiThread(mAwContents);
+            }
+        });
     }
 
-    private boolean waitUntilCanZoomIn() throws Throwable {
-        return CriteriaHelper.pollForCriteria(new Criteria() {
-                @Override
-                public boolean isSatisfied() {
-                    try {
-                        return canZoomInOnUiThread(mAwContents);
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                        fail("Failed to query canZoomIn: " + t.toString());
-                        return false;
-                    }
-                }
-            }, TEST_TIMEOUT_MS, CHECK_INTERVAL_MS);
+    private void waitForScaleToBecome(final float expectedScale) throws Throwable {
+        poll(new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return expectedScale == getScaleOnUiThread(mAwContents);
+            }
+        });
     }
 
-    private boolean waitUntilCanNotZoom() throws Throwable {
-        return CriteriaHelper.pollForCriteria(new Criteria() {
-                @Override
-                public boolean isSatisfied() {
-                    try {
-                        return !canZoomInOnUiThread(mAwContents) &&
-                                !canZoomOutOnUiThread(mAwContents);
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                        fail("Failed to query canZoomIn/Out: " + t.toString());
-                        return false;
-                    }
-                }
-            }, TEST_TIMEOUT_MS, CHECK_INTERVAL_MS);
+    private void waitUntilCanNotZoom() throws Throwable {
+        poll(new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return !canZoomInOnUiThread(mAwContents) &&
+                        !canZoomOutOnUiThread(mAwContents);
+            }
+        });
     }
 
     private void runMagnificationTest() throws Throwable {
         getAwSettingsOnUiThread(mAwContents).setUseWideViewPort(true);
         assertFalse("Should not be able to zoom in", canZoomInOnUiThread(mAwContents));
+        final float pageMinimumScale = 0.5f;
         loadDataSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
-                getZoomableHtml(), "text/html", false);
-        waitUntilCanZoomIn();
+                getZoomableHtml(pageMinimumScale), "text/html", false);
+        waitForScaleToBecome(pageMinimumScale);
         assertTrue("Should be able to zoom in", canZoomInOnUiThread(mAwContents));
         assertFalse("Should not be able to zoom out", canZoomOutOnUiThread(mAwContents));
 
         while (canZoomInOnUiThread(mAwContents)) {
-            assertTrue(zoomInOnUiThreadAndWait());
+            zoomInOnUiThreadAndWait();
         }
         assertTrue("Should be able to zoom out", canZoomOutOnUiThread(mAwContents));
 
         while (canZoomOutOnUiThread(mAwContents)) {
-            assertTrue(zoomOutOnUiThreadAndWait());
+            zoomOutOnUiThreadAndWait();
         }
         assertTrue("Should be able to zoom in", canZoomInOnUiThread(mAwContents));
     }
@@ -203,7 +183,7 @@ public class AwZoomTest extends AwTestBase {
     public void testZoomUsingMultiTouch() throws Throwable {
         AwSettings webSettings = getAwSettingsOnUiThread(mAwContents);
         loadDataSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
-                getZoomableHtml(), "text/html", false);
+                getZoomableHtml(0.5f), "text/html", false);
 
         assertTrue(webSettings.supportZoom());
         assertFalse(webSettings.getBuiltInZoomControls());
@@ -222,9 +202,10 @@ public class AwZoomTest extends AwTestBase {
         AwSettings webSettings = getAwSettingsOnUiThread(mAwContents);
         webSettings.setUseWideViewPort(true);
         assertFalse("Should not be able to zoom in", canZoomInOnUiThread(mAwContents));
+        final float pageMinimumScale = 0.5f;
         loadDataSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
-                getZoomableHtml(), "text/html", false);
-        waitUntilCanZoomIn();
+                getZoomableHtml(pageMinimumScale), "text/html", false);
+        waitForScaleToBecome(pageMinimumScale);
         // It must be possible to zoom in (or zoom out) for zoom controls to be shown
         assertTrue("Should be able to zoom in", canZoomInOnUiThread(mAwContents));
 
@@ -269,7 +250,7 @@ public class AwZoomTest extends AwTestBase {
     public void testZoomControlsOnOrientationChange() throws Throwable {
         AwSettings webSettings = getAwSettingsOnUiThread(mAwContents);
         loadDataSync(mAwContents, mContentsClient.getOnPageFinishedHelper(),
-                getZoomableHtml(), "text/html", false);
+                getZoomableHtml(0.5f), "text/html", false);
 
         assertTrue(webSettings.supportZoom());
         webSettings.setBuiltInZoomControls(true);

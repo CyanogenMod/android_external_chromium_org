@@ -15,7 +15,7 @@ ScopedSd ConvertSddlToSd(const std::string& sddl) {
   PSECURITY_DESCRIPTOR raw_sd = NULL;
   ULONG length = 0;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptor(
-          UTF8ToUTF16(sddl).c_str(), SDDL_REVISION_1, &raw_sd, &length)) {
+          base::UTF8ToUTF16(sddl).c_str(), SDDL_REVISION_1, &raw_sd, &length)) {
     return ScopedSd();
   }
 
@@ -28,13 +28,13 @@ ScopedSd ConvertSddlToSd(const std::string& sddl) {
 
 // Converts a SID into a text string.
 std::string ConvertSidToString(SID* sid) {
-  char16* c_sid_string = NULL;
+  base::char16* c_sid_string = NULL;
   if (!ConvertSidToStringSid(sid, &c_sid_string))
     return std::string();
 
-  string16 sid_string(c_sid_string);
+  base::string16 sid_string(c_sid_string);
   LocalFree(c_sid_string);
-  return UTF16ToUTF8(sid_string);
+  return base::UTF16ToUTF8(sid_string);
 }
 
 // Returns the logon SID of a token. Returns NULL if the token does not specify

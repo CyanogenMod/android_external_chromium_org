@@ -47,7 +47,7 @@ SearchResultListView* GetSearchResultListView(views::ViewModel* model) {
 ContentsView::ContentsView(AppListMainView* app_list_main_view,
                            PaginationModel* pagination_model,
                            AppListModel* model,
-                           content::WebContents* start_page_contents)
+                           AppListViewDelegate* view_delegate)
     : show_state_(SHOW_APPS),
       pagination_model_(pagination_model),
       view_model_(new views::ViewModel),
@@ -57,13 +57,15 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view,
       kPageTransitionDurationInMs,
       kOverscrollPageTransitionDurationMs);
 
+  content::WebContents* start_page_contents =
+      view_delegate ? view_delegate->GetStartPageContents() : NULL;
   apps_container_view_ = new AppsContainerView(
       app_list_main_view, pagination_model, model, start_page_contents);
   AddChildView(apps_container_view_);
   view_model_->Add(apps_container_view_, kIndexAppsContainer);
 
   SearchResultListView* search_results_view = new SearchResultListView(
-      app_list_main_view);
+      app_list_main_view, view_delegate);
   AddChildView(search_results_view);
   view_model_->Add(search_results_view, kIndexSearchResults);
 
@@ -80,8 +82,7 @@ void ContentsView::CancelDrag() {
 
 void ContentsView::SetDragAndDropHostOfCurrentAppList(
     ApplicationDragAndDropHost* drag_and_drop_host) {
-  apps_container_view_->apps_grid_view()->
-      SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
+  apps_container_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
 }
 
 void ContentsView::SetShowState(ShowState show_state) {
@@ -93,13 +94,12 @@ void ContentsView::SetShowState(ShowState show_state) {
 }
 
 void ContentsView::ShowStateChanged() {
-  if (show_state_ == SHOW_SEARCH_RESULTS) {
-    // TODO(xiyuan): Highlight default match instead of the first.
-    SearchResultListView* results_view =
-        GetSearchResultListView(view_model_.get());
-    if (results_view->visible())
-      results_view->SetSelectedIndex(0);
-  }
+  SearchResultListView* results_view =
+      GetSearchResultListView(view_model_.get());
+  // TODO(xiyuan): Highlight default match instead of the first.
+  if (show_state_ == SHOW_SEARCH_RESULTS && results_view->visible())
+    results_view->SetSelectedIndex(0);
+  results_view->UpdateAutoLaunchState();
 
   AnimateToIdealBounds();
 }

@@ -13,7 +13,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/managed_mode/managed_user_theme.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
@@ -24,6 +23,9 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "ui/base/layout.h"
@@ -34,8 +36,8 @@
 #include "ui/base/win/shell.h"
 #endif
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 using extensions::Extension;
 using extensions::UnloadedExtensionInfo;
 using ui::ResourceBundle;
@@ -334,10 +336,10 @@ void ThemeService::RemoveUnusedThemes(bool ignore_infobars) {
     return;
   std::string current_theme = GetThemeID();
   std::vector<std::string> remove_list;
-  scoped_ptr<const ExtensionSet> extensions(
+  scoped_ptr<const extensions::ExtensionSet> extensions(
       service->GenerateInstalledExtensionsSet());
   extensions::ExtensionPrefs* prefs = service->extension_prefs();
-  for (ExtensionSet::const_iterator it = extensions->begin();
+  for (extensions::ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     const extensions::Extension* extension = *it;
     if (extension->is_theme() &&

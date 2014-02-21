@@ -5,8 +5,10 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -15,6 +17,8 @@
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/layer.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/test/pixel_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,6 +27,7 @@
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/compositor/test/test_compositor_host.h"
 #include "ui/compositor/test/test_layers.h"
 #include "ui/gfx/canvas.h"
@@ -126,8 +131,34 @@ class LayerWithRealCompositorTest : public testing::Test {
   }
 
   bool ReadPixels(SkBitmap* bitmap) {
-    return GetCompositor()->ReadPixels(bitmap,
-                                       gfx::Rect(GetCompositor()->size()));
+    return ReadPixels(bitmap, gfx::Rect(GetCompositor()->size()));
+  }
+
+  bool ReadPixels(SkBitmap* bitmap, gfx::Rect source_rect) {
+    scoped_refptr<ReadbackHolder> holder(new ReadbackHolder);
+    scoped_ptr<cc::CopyOutputRequest> request =
+        cc::CopyOutputRequest::CreateBitmapRequest(
+            base::Bind(&ReadbackHolder::OutputRequestCallback, holder));
+    request->set_area(source_rect);
+
+    GetCompositor()->root_layer()->RequestCopyOfOutput(request.Pass());
+
+    // Wait for copy response.  This needs to wait as the compositor could
+    // be in the middle of a draw right now, and the commit with the
+    // copy output request may not be done on the first draw.
+    for (int i = 0; i < 2; i++) {
+      GetCompositor()->ScheduleDraw();
+      WaitForDraw();
+    }
+
+    if (holder->completed()) {
+      *bitmap = holder->result();
+      return true;
+    }
+
+    // Callback never called.
+    NOTREACHED();
+    return false;
   }
 
   void WaitForDraw() {
@@ -149,6 +180,29 @@ class LayerWithRealCompositorTest : public testing::Test {
   }
 
  private:
+  class ReadbackHolder : public base::RefCountedThreadSafe<ReadbackHolder> {
+   public:
+    ReadbackHolder() : completed_(false) {}
+
+    void OutputRequestCallback(scoped_ptr<cc::CopyOutputResult> result) {
+      DCHECK(!completed_);
+      result_ = result->TakeBitmap();
+      completed_ = true;
+    }
+    bool completed() const {
+      return completed_;
+    };
+    const SkBitmap& result() const { return *result_; }
+
+   private:
+    friend class base::RefCountedThreadSafe<ReadbackHolder>;
+
+    virtual ~ReadbackHolder() {}
+
+    scoped_ptr<SkBitmap> result_;
+    bool completed_;
+  };
+
   scoped_ptr<TestCompositorHost> window_;
 
   // The root directory for test files.
@@ -298,11 +352,6 @@ class TestCompositorObserver : public CompositorObserver {
   }
 
   virtual void OnCompositingLockStateChanged(Compositor* compositor) OVERRIDE {
-  }
-
-  virtual void OnUpdateVSyncParameters(Compositor* compositor,
-                                       base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE {
   }
 
   bool committed_;
@@ -599,13 +648,30 @@ class FakeTexture : public Texture {
       : Texture(flipped, size, device_scale_factor) {}
 
   virtual unsigned int PrepareTexture() OVERRIDE { return 0; }
-  virtual blink::WebGraphicsContext3D* HostContext3D() OVERRIDE {
-    return NULL;
-  }
 
  protected:
   virtual ~FakeTexture() {}
 };
+
+TEST_F(LayerWithNullDelegateTest, EscapedDebugNames) {
+  scoped_ptr<Layer> layer(CreateLayer(LAYER_NOT_DRAWN));
+  std::string name = "\"\'\\/\b\f\n\r\t\n";
+  layer->set_name(name);
+  scoped_refptr<base::debug::ConvertableToTraceFormat> debug_info =
+    layer->TakeDebugInfo();
+  EXPECT_TRUE(!!debug_info);
+  std::string json;
+  debug_info->AppendAsTraceFormat(&json);
+  base::JSONReader json_reader;
+  scoped_ptr<base::Value> debug_info_value(json_reader.ReadToValue(json));
+  EXPECT_TRUE(!!debug_info_value);
+  EXPECT_TRUE(debug_info_value->IsType(base::Value::TYPE_DICTIONARY));
+  base::DictionaryValue* dictionary = 0;
+  EXPECT_TRUE(debug_info_value->GetAsDictionary(&dictionary));
+  std::string roundtrip;
+  EXPECT_TRUE(dictionary->GetString("layer_name", &roundtrip));
+  EXPECT_EQ(name, roundtrip);
+}
 
 TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
   scoped_ptr<Layer> l1(CreateColorLayer(SK_ColorRED,
@@ -786,7 +852,7 @@ TEST_F(LayerWithRealCompositorTest, DrawPixels) {
   DrawTree(layer.get());
 
   SkBitmap bitmap;
-  ASSERT_TRUE(GetCompositor()->ReadPixels(&bitmap, gfx::Rect(viewport_size)));
+  ASSERT_TRUE(ReadPixels(&bitmap, gfx::Rect(viewport_size)));
   ASSERT_FALSE(bitmap.empty());
 
   SkAutoLockPixels lock(bitmap);

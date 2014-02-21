@@ -16,14 +16,14 @@ class TimeoutException(Exception):
 def GetBaseDir():
   main_module = sys.modules['__main__']
   if hasattr(main_module, '__file__'):
-    return os.path.dirname(os.path.abspath(main_module.__file__))
+    return os.path.dirname(os.path.realpath(main_module.__file__))
   else:
     return os.getcwd()
 
 
 def GetTelemetryDir():
   return os.path.normpath(os.path.join(
-      __file__, os.pardir, os.pardir, os.pardir))
+      os.path.realpath(__file__), os.pardir, os.pardir, os.pardir))
 
 
 def GetUnittestDataDir():
@@ -102,12 +102,6 @@ def FindElementAndPerformAction(tab, text, callback_code):
         return callback_function(_element);
       })();"""
   return tab.EvaluateJavaScript(code)
-
-
-class PortPair(object):
-  def __init__(self, local_port, remote_port):
-    self.local_port = local_port
-    self.remote_port = remote_port
 
 
 def GetUnreservedAvailableLocalPort():

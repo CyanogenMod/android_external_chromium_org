@@ -48,7 +48,7 @@ class TrayPopupItemContainer : public views::View {
         change_background_(change_background) {
     set_notify_enter_exit_on_child(true);
     if (draw_border) {
-      set_border(
+      SetBorder(
           views::Border::CreateSolidSidedBorder(0, 0, 1, 0, kBorderLightColor));
     }
     views::BoxLayout* layout = new views::BoxLayout(
@@ -340,11 +340,11 @@ bool SystemTrayBubble::IsVisible() {
   return bubble_view() && bubble_view()->GetWidget()->IsVisible();
 }
 
-bool SystemTrayBubble::ShouldShowLauncher() const {
+bool SystemTrayBubble::ShouldShowShelf() const {
   for (std::vector<ash::SystemTrayItem*>::const_iterator it = items_.begin();
        it != items_.end();
        ++it) {
-    if ((*it)->ShouldShowLauncher())
+    if ((*it)->ShouldShowShelf())
       return true;
   }
   return false;

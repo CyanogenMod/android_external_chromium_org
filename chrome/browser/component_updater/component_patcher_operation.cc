@@ -24,6 +24,8 @@
 
 using crypto::SecureHash;
 
+namespace component_updater {
+
 namespace {
 
 const char kInput[] = "input";
@@ -220,3 +222,4 @@ ComponentUnpacker::Error DeltaUpdateOpPatchCourgette::DoRun(
                         error);
 }
 
+}  // namespace component_updater

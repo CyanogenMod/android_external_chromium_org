@@ -21,7 +21,7 @@ const char kTestPageBResponse[] = { 'a', 'b', 'c' };
 
 
 class DistillerURLFetcherTest : public testing::Test {
-public:
+ public:
   void FetcherCallback(const std::string& response) {
      response_ = response;
   }
@@ -45,7 +45,7 @@ public:
 
   void Fetch(const std::string& url,
              const std::string& expected_response) {
-    base::MessageLoop loop(base::MessageLoop::TYPE_UI);
+    base::MessageLoopForUI loop;
     url_fetcher_->FetchURL(
         url,
         base::Bind(&DistillerURLFetcherTest::FetcherCallback,

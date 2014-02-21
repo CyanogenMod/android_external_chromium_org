@@ -209,6 +209,15 @@ void TestGLES2Interface::TexStorage2DEXT(GLenum target,
   test_context_->texStorage2DEXT(target, levels, internalformat, width, height);
 }
 
+void TestGLES2Interface::TexImageIOSurface2DCHROMIUM(GLenum target,
+                                                     GLsizei width,
+                                                     GLsizei height,
+                                                     GLuint io_surface_id,
+                                                     GLuint plane) {
+  test_context_->texImageIOSurface2DCHROMIUM(
+      target, width, height, io_surface_id, plane);
+}
+
 void TestGLES2Interface::TexParameteri(GLenum target,
                                        GLenum pname,
                                        GLint param) {
@@ -352,6 +361,16 @@ void TestGLES2Interface::ProduceTextureCHROMIUM(GLenum target,
 void TestGLES2Interface::ConsumeTextureCHROMIUM(GLenum target,
                                                 const GLbyte* mailbox) {
   test_context_->consumeTextureCHROMIUM(target, mailbox);
+}
+
+void TestGLES2Interface::ResizeCHROMIUM(GLuint width,
+                                        GLuint height,
+                                        float device_scale) {
+  test_context_->reshapeWithScaleFactor(width, height, device_scale);
+}
+
+void TestGLES2Interface::LoseContextCHROMIUM(GLenum current, GLenum other) {
+  test_context_->loseContextCHROMIUM(current, other);
 }
 
 }  // namespace cc

@@ -35,12 +35,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_internals_util.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 
 class CookieSettings;
 class ProfileIOData;
 class PrefService;
 
 // Details for the Notification type GOOGLE_SIGNIN_SUCCESSFUL.
+// TODO(blundell): Eliminate this struct once crbug.com/333997 is fixed.
 // A listener might use this to make note of a username / password
 // pair for encryption keys.
 struct GoogleServiceSigninSuccessDetails {
@@ -53,6 +55,7 @@ struct GoogleServiceSigninSuccessDetails {
 };
 
 // Details for the Notification type NOTIFICATION_GOOGLE_SIGNED_OUT.
+// TODO(blundell): Eliminate this struct once crbug.com/333997 is fixed.
 struct GoogleServiceSignoutDetails {
   explicit GoogleServiceSignoutDetails(const std::string& in_username)
       : username(in_username) {}
@@ -61,6 +64,22 @@ struct GoogleServiceSignoutDetails {
 
 class SigninManagerBase : public BrowserContextKeyedService {
  public:
+  class Observer {
+   public:
+    // Called when a user fails to sign into Google services such as sync.
+    virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) {}
+
+    // Called when a user signs into Google services such as sync.
+    virtual void GoogleSigninSucceeded(const std::string& username,
+                                       const std::string& password) {}
+
+    // Called when the currently signed-in user for a user has been signed out.
+    virtual void GoogleSignedOut(const std::string& username) {}
+
+   protected:
+    virtual ~Observer() {}
+  };
+
   SigninManagerBase();
   virtual ~SigninManagerBase();
 
@@ -76,10 +95,26 @@ class SigninManagerBase : public BrowserContextKeyedService {
   // and the other half using SigninManager.
   virtual bool IsSigninAllowed() const;
 
-  // If a user has previously established a username and SignOut has not been
-  // called, this will return the username.
-  // Otherwise, it will return an empty string.
+  // If a user has previously signed in (and has not signed out), this returns
+  // the normalized email address of the account. Otherwise, it returns an empty
+  // string.
   const std::string& GetAuthenticatedUsername() const;
+
+  // If a user has previously signed in (and has not signed out), this returns
+  // the account id. Otherwise, it returns an empty string.  This id can be used
+  // to uniquely identify an account, so for example can be used as a key to
+  // map accounts to data.
+  //
+  // TODO(rogerta): eventually the account id should be an obfuscated gaia id.
+  // For now though, this function returns the same value as
+  // GetAuthenticatedUsername() since lots of code assumes the unique id for an
+  // account is the username.  For code that needs a unique id to represent the
+  // connected account, call this method. Example: the AccountInfoMap type
+  // in MutableProfileOAuth2TokenService.  For code that needs to know the
+  // normalized email address of the connected account, use
+  // GetAuthenticatedUsername().  Example: to show the string "Signed in as XXX"
+  // in the hotdog menu.
+  const std::string& GetAuthenticatedAccountId() const;
 
   // Sets the user name.  Note: |username| should be already authenticated as
   // this is a sticky operation (in contrast to StartSignIn).
@@ -93,11 +128,17 @@ class SigninManagerBase : public BrowserContextKeyedService {
   // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-    // Methods to register or remove SigninDiagnosticObservers
+  // Methods to register or remove observers of signin.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
+  // Methods to register or remove SigninDiagnosticObservers.
   void AddSigninDiagnosticsObserver(
       signin_internals_util::SigninDiagnosticsObserver* observer);
   void RemoveSigninDiagnosticsObserver(
       signin_internals_util::SigninDiagnosticsObserver* observer);
+
+  Profile* profile() { return profile_; }
 
  protected:
   // Used by subclass to clear authenticated_username_ instead of using
@@ -108,6 +149,10 @@ class SigninManagerBase : public BrowserContextKeyedService {
   // Pointer to parent profile (protected so FakeSigninManager can access
   // it).
   Profile* profile_;
+
+  // List of observers to notify on signin events.
+  // Makes sure list is empty on destruction.
+  ObserverList<Observer, true> observer_list_;
 
   // Helper methods to notify all registered diagnostics observers with.
   void NotifyDiagnosticsObservers(

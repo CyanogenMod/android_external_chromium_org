@@ -9,7 +9,7 @@
 #include "base/timer/timer.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/backing_store.h"
-#include "content/browser/renderer_host/input/gesture_event_filter.h"
+#include "content/browser/renderer_host/input/gesture_event_queue.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/input/tap_suppression_controller.h"
 #include "content/browser/renderer_host/input/tap_suppression_controller_client.h"
@@ -21,11 +21,6 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_port.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/test/test_render_view_host.h"
@@ -35,9 +30,11 @@
 #include "ui/gfx/screen.h"
 
 #if defined(USE_AURA)
+#include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/test_screen.h"
+#include "ui/compositor/test/test_context_factory.h"
 #endif
 
 #if defined(OS_WIN) || defined(USE_AURA)
@@ -203,7 +200,6 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   // Allow poking at a few private members.
-  using RenderWidgetHostImpl::OnPaintAtSizeAck;
   using RenderWidgetHostImpl::OnUpdateRect;
   using RenderWidgetHostImpl::RendererExited;
   using RenderWidgetHostImpl::last_requested_size_;
@@ -220,36 +216,36 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   unsigned GestureEventLastQueueEventSize() const {
-    return gesture_event_filter()->coalesced_gesture_events_.size();
+    return gesture_event_queue()->coalesced_gesture_events_.size();
   }
 
   WebGestureEvent GestureEventSecondFromLastQueueEvent() const {
-    return gesture_event_filter()->coalesced_gesture_events_.at(
+    return gesture_event_queue()->coalesced_gesture_events_.at(
       GestureEventLastQueueEventSize() - 2).event;
   }
 
   WebGestureEvent GestureEventLastQueueEvent() const {
-    return gesture_event_filter()->coalesced_gesture_events_.back().event;
+    return gesture_event_queue()->coalesced_gesture_events_.back().event;
   }
 
   unsigned GestureEventDebouncingQueueSize() const {
-    return gesture_event_filter()->debouncing_deferral_queue_.size();
+    return gesture_event_queue()->debouncing_deferral_queue_.size();
   }
 
   WebGestureEvent GestureEventQueueEventAt(int i) const {
-    return gesture_event_filter()->coalesced_gesture_events_.at(i).event;
+    return gesture_event_queue()->coalesced_gesture_events_.at(i).event;
   }
 
   bool ScrollingInProgress() const {
-    return gesture_event_filter()->scrolling_in_progress_;
+    return gesture_event_queue()->scrolling_in_progress_;
   }
 
   bool FlingInProgress() const {
-    return gesture_event_filter()->fling_in_progress_;
+    return gesture_event_queue()->fling_in_progress_;
   }
 
   bool WillIgnoreNextACK() const {
-    return gesture_event_filter()->ignore_next_ack_;
+    return gesture_event_queue()->ignore_next_ack_;
   }
 
   void SetupForOverscrollControllerTest() {
@@ -259,11 +255,11 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   void DisableGestureDebounce() {
-    gesture_event_filter()->set_debounce_enabled_for_testing(false);
+    gesture_event_queue()->set_debounce_enabled_for_testing(false);
   }
 
   void set_debounce_interval_time_ms(int delay_ms) {
-    gesture_event_filter()->
+    gesture_event_queue()->
         set_debounce_interval_time_ms_for_testing(delay_ms);
   }
 
@@ -321,12 +317,12 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     return input_router_impl_->touch_event_queue_.get();
   }
 
-  const GestureEventFilter* gesture_event_filter() const {
-    return input_router_impl_->gesture_event_filter_.get();
+  const GestureEventQueue* gesture_event_queue() const {
+    return input_router_impl_->gesture_event_queue_.get();
   }
 
-  GestureEventFilter* gesture_event_filter() {
-    return input_router_impl_->gesture_event_filter_.get();
+  GestureEventQueue* gesture_event_queue() {
+    return input_router_impl_->gesture_event_queue_.get();
   }
 
  private:
@@ -475,9 +471,9 @@ class TestView : public TestRenderWidgetHostView {
   virtual void UnhandledWheelEvent(const WebMouseWheelEvent& event) OVERRIDE {
     unhandled_wheel_event_ = event;
   }
-  virtual void GestureEventAck(int gesture_event_type,
+  virtual void GestureEventAck(const WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE {
-    gesture_event_type_ = gesture_event_type;
+    gesture_event_type_ = event.type;
     ack_result_ = ack_result;
   }
   virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE {
@@ -557,41 +553,6 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
   WebInputEvent::Type unhandled_keyboard_event_type_;
 };
 
-// MockPaintingObserver --------------------------------------------------------
-
-class MockPaintingObserver : public NotificationObserver {
- public:
-  void WidgetDidReceivePaintAtSizeAck(RenderWidgetHostImpl* host,
-                                      int tag,
-                                      const gfx::Size& size) {
-    host_ = reinterpret_cast<MockRenderWidgetHost*>(host);
-    tag_ = tag;
-    size_ = size;
-  }
-
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE {
-    if (type == NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK) {
-      std::pair<int, gfx::Size>* size_ack_details =
-          Details<std::pair<int, gfx::Size> >(details).ptr();
-      WidgetDidReceivePaintAtSizeAck(
-          RenderWidgetHostImpl::From(Source<RenderWidgetHost>(source).ptr()),
-          size_ack_details->first,
-          size_ack_details->second);
-    }
-  }
-
-  MockRenderWidgetHost* host() const { return host_; }
-  int tag() const { return tag_; }
-  gfx::Size size() const { return size_; }
-
- private:
-  MockRenderWidgetHost* host_;
-  int tag_;
-  gfx::Size size_;
-};
-
 // RenderWidgetHostTest --------------------------------------------------------
 
 class RenderWidgetHostTest : public testing::Test {
@@ -618,6 +579,8 @@ class RenderWidgetHostTest : public testing::Test {
     delegate_.reset(new MockRenderWidgetHostDelegate());
     process_ = new RenderWidgetHostProcess(browser_context_.get());
 #if defined(USE_AURA)
+    ImageTransportFactory::InitializeForUnitTests(
+        scoped_ptr<ui::ContextFactory>(new ui::TestContextFactory));
     aura::Env::CreateInstance();
     screen_.reset(aura::TestScreen::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
@@ -638,10 +601,15 @@ class RenderWidgetHostTest : public testing::Test {
 #if defined(USE_AURA)
     aura::Env::DeleteInstance();
     screen_.reset();
+    ImageTransportFactory::Terminate();
 #endif
 
     // Process all pending tasks to avoid leaks.
     base::MessageLoop::current()->RunUntilIdle();
+  }
+
+  int64 GetLatencyComponentId() {
+    return host_->GetLatencyComponentId();
   }
 
   void SendInputEventACK(WebInputEvent::Type type,
@@ -663,9 +631,26 @@ class RenderWidgetHostTest : public testing::Test {
     host_->ForwardMouseEvent(SyntheticWebMouseEventBuilder::Build(type));
   }
 
+  void SimulateMouseEventWithLatencyInfo(WebInputEvent::Type type,
+                                         const ui::LatencyInfo& ui_latency) {
+    host_->ForwardMouseEventWithLatencyInfo(
+        SyntheticWebMouseEventBuilder::Build(type),
+        ui_latency);
+  }
+
   void SimulateWheelEvent(float dX, float dY, int modifiers, bool precise) {
     host_->ForwardWheelEvent(
         SyntheticWebMouseWheelEventBuilder::Build(dX, dY, modifiers, precise));
+  }
+
+  void SimulateWheelEventWithLatencyInfo(float dX,
+                                         float dY,
+                                         int modifiers,
+                                         bool precise,
+                                         const ui::LatencyInfo& ui_latency) {
+    host_->ForwardWheelEventWithLatencyInfo(
+        SyntheticWebMouseWheelEventBuilder::Build(dX, dY, modifiers, precise),
+        ui_latency);
   }
 
   void SimulateMouseMove(int x, int y, int modifiers) {
@@ -685,11 +670,26 @@ class RenderWidgetHostTest : public testing::Test {
     host_->ForwardGestureEvent(gesture_event);
   }
 
+  void SimulateGestureEventCoreWithLatencyInfo(
+      const WebGestureEvent& gesture_event,
+      const ui::LatencyInfo& ui_latency) {
+    host_->ForwardGestureEventWithLatencyInfo(gesture_event, ui_latency);
+  }
+
   // Inject simple synthetic WebGestureEvent instances.
   void SimulateGestureEvent(WebInputEvent::Type type,
                             WebGestureEvent::SourceDevice sourceDevice) {
     SimulateGestureEventCore(
         SyntheticWebGestureEventBuilder::Build(type, sourceDevice));
+  }
+
+  void SimulateGestureEventWithLatencyInfo(
+      WebInputEvent::Type type,
+      WebGestureEvent::SourceDevice sourceDevice,
+      const ui::LatencyInfo& ui_latency) {
+    SimulateGestureEventCoreWithLatencyInfo(
+        SyntheticWebGestureEventBuilder::Build(type, sourceDevice),
+        ui_latency);
   }
 
   void SimulateGestureScrollUpdateEvent(float dX, float dY, int modifiers) {
@@ -1075,27 +1075,6 @@ TEST_F(RenderWidgetHostTest, HiddenPaint) {
   Tuple1<bool> needs_repaint;
   ViewMsg_WasShown::Read(restored, &needs_repaint);
   EXPECT_TRUE(needs_repaint.a);
-}
-
-TEST_F(RenderWidgetHostTest, PaintAtSize) {
-  const int kPaintAtSizeTag = 42;
-  host_->PaintAtSize(TransportDIB::GetFakeHandleForTest(), kPaintAtSizeTag,
-                     gfx::Size(40, 60), gfx::Size(20, 30));
-  EXPECT_TRUE(
-      process_->sink().GetUniqueMessageMatching(ViewMsg_PaintAtSize::ID));
-
-  NotificationRegistrar registrar;
-  MockPaintingObserver observer;
-  registrar.Add(
-      &observer,
-      NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK,
-      Source<RenderWidgetHost>(host_.get()));
-
-  host_->OnPaintAtSizeAck(kPaintAtSizeTag, gfx::Size(20, 30));
-  EXPECT_EQ(host_.get(), observer.host());
-  EXPECT_EQ(kPaintAtSizeTag, observer.tag());
-  EXPECT_EQ(20, observer.size().width());
-  EXPECT_EQ(30, observer.size().height());
 }
 
 TEST_F(RenderWidgetHostTest, IgnoreKeyEventsHandledByRenderer) {
@@ -2502,6 +2481,83 @@ TEST_F(RenderWidgetHostTest, InputRouterReceivesHasTouchEventHandlers) {
   host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, true));
 
   EXPECT_TRUE(host_->mock_input_router()->message_received_);
+}
+
+
+void CheckLatencyInfoComponentInMessage(RenderWidgetHostProcess* process,
+                                        int64 component_id,
+                                        WebInputEvent::Type input_type) {
+  const WebInputEvent* event = NULL;
+  ui::LatencyInfo latency_info;
+  bool is_keyboard_shortcut;
+  const IPC::Message* message = process->sink().GetUniqueMessageMatching(
+      InputMsg_HandleInputEvent::ID);
+  ASSERT_TRUE(message);
+  EXPECT_TRUE(InputMsg_HandleInputEvent::Read(
+      message, &event, &latency_info, &is_keyboard_shortcut));
+  EXPECT_TRUE(latency_info.FindLatency(
+      ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
+      component_id,
+      NULL));
+  process->sink().ClearMessages();
+}
+
+// Tests that after input event passes through RWHI through ForwardXXXEvent()
+// or ForwardXXXEventWithLatencyInfo(), LatencyInfo component
+// ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT will always present in the
+// event's LatencyInfo.
+TEST_F(RenderWidgetHostTest, InputEventRWHLatencyComponent) {
+  host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, true));
+  process_->sink().ClearMessages();
+
+  // Tests RWHI::ForwardWheelEvent().
+  SimulateWheelEvent(-5, 0, 0, true);
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::MouseWheel);
+  SendInputEventACK(WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  // Tests RWHI::ForwardWheelEventWithLatencyInfo().
+  SimulateWheelEventWithLatencyInfo(-5, 0, 0, true, ui::LatencyInfo());
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::MouseWheel);
+  SendInputEventACK(WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  // Tests RWHI::ForwardMouseEvent().
+  SimulateMouseEvent(WebInputEvent::MouseMove);
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::MouseMove);
+  SendInputEventACK(WebInputEvent::MouseMove, INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  // Tests RWHI::ForwardMouseEventWithLatencyInfo().
+  SimulateMouseEventWithLatencyInfo(WebInputEvent::MouseMove,
+                                    ui::LatencyInfo());
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::MouseMove);
+  SendInputEventACK(WebInputEvent::MouseMove, INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  // Tests RWHI::ForwardGestureEvent().
+  SimulateGestureEvent(WebInputEvent::GestureScrollUpdate,
+                       WebGestureEvent::Touchscreen);
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::GestureScrollUpdate);
+  SendInputEventACK(WebInputEvent::GestureScrollUpdate,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  // Tests RWHI::ForwardGestureEventWithLatencyInfo().
+  SimulateGestureEventWithLatencyInfo(WebInputEvent::GestureScrollUpdate,
+                                      WebGestureEvent::Touchscreen,
+                                      ui::LatencyInfo());
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::GestureScrollUpdate);
+  SendInputEventACK(WebInputEvent::GestureScrollUpdate,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  // Tests RWHI::ForwardTouchEventWithLatencyInfo().
+  PressTouchPoint(0, 1);
+  SendTouchEvent();
+  CheckLatencyInfoComponentInMessage(
+      process_, GetLatencyComponentId(), WebInputEvent::TouchStart);
+  SendInputEventACK(WebInputEvent::TouchStart, INPUT_EVENT_ACK_STATE_CONSUMED);
 }
 
 }  // namespace content

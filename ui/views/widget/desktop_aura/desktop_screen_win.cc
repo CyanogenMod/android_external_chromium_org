@@ -9,8 +9,8 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/gfx/display.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 
 namespace {
 
@@ -60,7 +60,7 @@ HWND DesktopScreenWin::GetHWNDFromNativeView(gfx::NativeView window) const {
 
 gfx::NativeWindow DesktopScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
   return (::IsWindow(hwnd)) ?
-      DesktopRootWindowHostWin::GetContentWindowForHWND(hwnd) : NULL;
+      DesktopWindowTreeHostWin::GetContentWindowForHWND(hwnd) : NULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

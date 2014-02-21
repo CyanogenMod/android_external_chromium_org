@@ -10,6 +10,7 @@
 
 #include "content/public/common/console_message_level.h"
 #include "content/public/common/page_transition_types.h"
+#include "content/public/common/referrer.h"
 #include "content/public/common/security_style.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/webplugininfo.h"
@@ -26,13 +27,19 @@
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
-IPC_ENUM_TRAITS(content::ConsoleMessageLevel)
-IPC_ENUM_TRAITS(content::PageTransition)
-IPC_ENUM_TRAITS(content::SecurityStyle)
-IPC_ENUM_TRAITS(blink::WebReferrerPolicy)
-IPC_ENUM_TRAITS(WindowOpenDisposition)
-IPC_ENUM_TRAITS(webkit_glue::EditingBehavior)
-IPC_ENUM_TRAITS(net::RequestPriority)
+IPC_ENUM_TRAITS(content::PageTransition)  // Bitmask.
+
+IPC_ENUM_TRAITS_MAX_VALUE(content::ConsoleMessageLevel,
+                          content::CONSOLE_MESSAGE_LEVEL_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::SecurityStyle,
+                          content::SECURITY_STYLE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebReferrerPolicy,
+                          blink::WebReferrerPolicyLast)
+IPC_ENUM_TRAITS_MAX_VALUE(webkit_glue::EditingBehavior,
+                          webkit_glue::EDITING_BEHAVIOR_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
+                          WINDOW_OPEN_DISPOSITION_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(net::RequestPriority, net::MAXIMUM_PRIORITY)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebPoint)
   IPC_STRUCT_TRAITS_MEMBER(x)
@@ -44,6 +51,11 @@ IPC_STRUCT_TRAITS_BEGIN(blink::WebRect)
   IPC_STRUCT_TRAITS_MEMBER(y)
   IPC_STRUCT_TRAITS_MEMBER(width)
   IPC_STRUCT_TRAITS_MEMBER(height)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::Referrer)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(policy)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SSLStatus)
@@ -114,8 +126,10 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(allow_file_access_from_file_urls)
   IPC_STRUCT_TRAITS_MEMBER(webaudio_enabled)
   IPC_STRUCT_TRAITS_MEMBER(experimental_webgl_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(pepper_3d_enabled)
   IPC_STRUCT_TRAITS_MEMBER(experimental_websocket_enabled)
   IPC_STRUCT_TRAITS_MEMBER(pinch_virtual_viewport_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(pinch_overlay_scrollbar_thickness)
   IPC_STRUCT_TRAITS_MEMBER(use_solid_color_scrollbars)
   IPC_STRUCT_TRAITS_MEMBER(flash_3d_enabled)
   IPC_STRUCT_TRAITS_MEMBER(flash_stage3d_enabled)
@@ -140,6 +154,7 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(antialiased_2d_canvas_disabled)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_2d_canvas_msaa_sample_count)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_filters_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(deferred_filters_enabled)
   IPC_STRUCT_TRAITS_MEMBER(gesture_tap_highlight_enabled)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_compositing_for_plugins_enabled)
   IPC_STRUCT_TRAITS_MEMBER(accelerated_compositing_for_3d_transforms_enabled)
@@ -152,6 +167,7 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(enable_scroll_animator)
   IPC_STRUCT_TRAITS_MEMBER(visual_word_movement_enabled)
   IPC_STRUCT_TRAITS_MEMBER(password_echo_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(should_clear_document_background)
   IPC_STRUCT_TRAITS_MEMBER(lazy_layout_enabled)
   IPC_STRUCT_TRAITS_MEMBER(region_based_columns_enabled)
   IPC_STRUCT_TRAITS_MEMBER(touch_enabled)

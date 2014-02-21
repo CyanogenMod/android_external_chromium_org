@@ -5,16 +5,29 @@
 #ifndef CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_GENERATION_MANAGER_H_
 #define CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_GENERATION_MANAGER_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_user_data.h"
+#include "base/memory/weak_ptr.h"
+#include "ui/gfx/rect.h"
+
+class PasswordManager;
+class PasswordManagerClient;
+class PasswordManagerDriver;
 
 namespace autofill {
 struct FormData;
 class FormStructure;
 class PasswordGenerator;
+class PasswordGenerationPopupControllerImpl;
+class PasswordGenerationPopupObserver;
 struct PasswordForm;
+}
+
+namespace content {
+class RenderViewHost;
+class WebContents;
 }
 
 namespace user_prefs {
@@ -25,7 +38,6 @@ class PrefRegistrySyncable;
 //
 // -  Password manager is enabled
 // -  Password sync is enabled
-// -  Password generation pref is enabled
 //
 // NOTE: At the moment, the creation of the renderer PasswordGenerationManager
 // is controlled by a switch (--enable-password-generation) so this feature will
@@ -35,11 +47,10 @@ class PrefRegistrySyncable;
 // This class is used to determine what forms we should offer to generate
 // passwords for and manages the popup which is created if the user chooses to
 // generate a password.
-class PasswordGenerationManager
-    : public content::WebContentsObserver,
-      public content::WebContentsUserData<PasswordGenerationManager> {
+class PasswordGenerationManager {
  public:
-  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+  PasswordGenerationManager(content::WebContents* contents,
+                            PasswordManagerClient* client);
   virtual ~PasswordGenerationManager();
 
   // Detect account creation forms from forms with autofill type annotated.
@@ -48,15 +59,28 @@ class PasswordGenerationManager
   void DetectAccountCreationForms(
       const std::vector<autofill::FormStructure*>& forms);
 
- protected:
-  explicit PasswordGenerationManager(content::WebContents* contents);
+  // Hide any visible password generation related popups.
+  void HidePopup();
+
+  // Observer for PasswordGenerationPopup events. Used for testing.
+  void SetTestObserver(autofill::PasswordGenerationPopupObserver* observer);
+
+  // Causes the password generation UI to be shown for the specified form.
+  // The popup will be anchored at |element_bounds|. The generated password
+  // will be no longer than |max_length|.
+  void OnShowPasswordGenerationPopup(const gfx::RectF& element_bounds,
+                                     int max_length,
+                                     const autofill::PasswordForm& form);
+
+  // Causes the password editing UI to be shown anchored at |element_bounds|.
+  void OnShowPasswordEditingPopup(const gfx::RectF& element_bounds,
+                                  const autofill::PasswordForm& form);
+
+  // Hides any visible UI.
+  void OnHidePasswordGenerationPopup();
 
  private:
-  friend class content::WebContentsUserData<PasswordGenerationManager>;
   friend class PasswordGenerationManagerTest;
-
-  // WebContentsObserver:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Determines current state of password generation
   bool IsGenerationEnabled() const;
@@ -67,15 +91,33 @@ class PasswordGenerationManager
       content::RenderViewHost* host,
       const std::vector<autofill::FormData>& forms);
 
-  // Causes the password generation bubble UI to be shown for the specified
-  // form. The popup will be anchored at |icon_bounds|. The generated
-  // password will be no longer than |max_length|.
-  void OnShowPasswordGenerationPopup(const gfx::Rect& icon_bounds,
-                                     int max_length,
-                                     const autofill::PasswordForm& form);
+  // Given |bounds| in the renderers coordinate system, return the same bounds
+  // in the screens coordinate system.
+  gfx::RectF GetBoundsInScreenSpace(const gfx::RectF& bounds);
+
+  // The WebContents instance associated with this instance. Scoped to the
+  // lifetime of this class, as this class is indirectly a WCUD via
+  // ChromePasswordManagerClient.
+  // TODO(blundell): Eliminate this ivar. crbug.com/340675
+  content::WebContents* web_contents_;
+
+  // Observer for password generation popup.
+  autofill::PasswordGenerationPopupObserver* observer_;
 
   // Controls how passwords are generated.
   scoped_ptr<autofill::PasswordGenerator> password_generator_;
+
+  // Controls the popup
+  base::WeakPtr<
+    autofill::PasswordGenerationPopupControllerImpl> popup_controller_;
+
+  // The PasswordManagerClient instance associated with this instance. Must
+  // outlive this instance.
+  PasswordManagerClient* client_;
+
+  // The PasswordManagerDriver instance associated with this instance. Must
+  // outlive this instance.
+  PasswordManagerDriver* driver_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordGenerationManager);
 };

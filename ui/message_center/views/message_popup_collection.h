@@ -18,6 +18,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/message_center_observer.h"
+#include "ui/message_center/views/message_center_controller.h"
 #include "ui/message_center/views/toast_contents_view.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -41,6 +42,7 @@ class MessagePopupCollectionTest;
 
 class MessageCenter;
 class MessageCenterTray;
+class MessageViewContextMenuController;
 
 enum PopupAlignment {
   POPUP_ALIGNMENT_TOP = 1 << 0,
@@ -55,7 +57,8 @@ enum PopupAlignment {
 // contents of each toast are for the message center and layout strategy would
 // be slightly different.
 class MESSAGE_CENTER_EXPORT MessagePopupCollection
-    : public MessageCenterObserver,
+    : public MessageCenterController,
+      public MessageCenterObserver,
       public gfx::DisplayObserver {
  public:
   // |parent| specifies the parent widget of the toast windows. The default
@@ -67,6 +70,17 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
                          MessageCenterTray* tray,
                          bool first_item_has_no_margin);
   virtual ~MessagePopupCollection();
+
+  // Overridden from MessageCenterController:
+  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
+  virtual void RemoveNotification(const std::string& notification_id,
+                                  bool by_user) OVERRIDE;
+  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) OVERRIDE;
+  virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
+  virtual void ClickOnNotificationButton(const std::string& notification_id,
+                                         int button_index) OVERRIDE;
 
   void MarkAllPopupsShown();
 
@@ -197,6 +211,8 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
 
   // True if the first item should not have spacing against the tray.
   bool first_item_has_no_margin_;
+
+  scoped_ptr<MessageViewContextMenuController> context_menu_controller_;
 
   // Gives out weak pointers to toast contents views which have an unrelated
   // lifetime.  Must remain the last member variable.

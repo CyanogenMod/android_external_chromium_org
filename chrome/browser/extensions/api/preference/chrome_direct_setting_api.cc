@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/api/preference/preference_api_constants.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 namespace chromedirectsetting {
@@ -87,7 +88,7 @@ void ChromeDirectSettingAPI::Shutdown() {}
 // ProfileKeyedAPI implementation.
 ProfileKeyedAPIFactory<ChromeDirectSettingAPI>*
     ChromeDirectSettingAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 // EventRouter::Observer implementation.
@@ -127,7 +128,7 @@ void ChromeDirectSettingAPI::OnPrefChanged(
         profile_->GetPrefs()->FindPreference(pref_key.c_str());
     const base::Value* value = preference->GetValue();
 
-    scoped_ptr<DictionaryValue> result(new DictionaryValue);
+    scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue);
     result->Set(preference_api_constants::kValue, value->DeepCopy());
     base::ListValue args;
     args.Append(result.release());
@@ -151,4 +152,3 @@ void ChromeDirectSettingAPI::OnPrefChanged(
 
 }  // namespace chromedirectsetting
 }  // namespace extensions
-

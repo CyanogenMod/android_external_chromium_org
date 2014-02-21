@@ -29,7 +29,8 @@ class ChromiumSocketFactoryTest : public testing::Test,
 
   void OnPacket(talk_base::AsyncPacketSocket* socket,
                 const char* data, size_t size,
-                const talk_base::SocketAddress& address) {
+                const talk_base::SocketAddress& address,
+                const talk_base::PacketTime& packet_time) {
     EXPECT_EQ(socket, socket_.get());
     last_packet_.assign(data, data + size);
     last_address_ = address;
@@ -64,10 +65,10 @@ TEST_F(ChromiumSocketFactoryTest, SendAndReceive) {
 
   std::string test_packet("TEST PACKET");
   int attempts = 0;
+  talk_base::PacketOptions options;
   while (last_packet_.empty() && attempts++ < kMaxAttempts) {
     sending_socket->SendTo(test_packet.data(), test_packet.size(),
-                           socket_->GetLocalAddress(),
-                           talk_base::DSCP_NO_CHANGE);
+                           socket_->GetLocalAddress(), options);
     message_loop_.PostDelayedTask(FROM_HERE, run_loop_.QuitClosure(),
                                   kAttemptPeriod);
     run_loop_.Run();

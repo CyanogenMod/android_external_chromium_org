@@ -128,8 +128,6 @@ component("wtf") {
     "PageAllocator.cpp",
     "PageAllocator.h",
     "ParallelJobs.h",
-    "ParallelJobsGeneric.cpp",
-    "ParallelJobsGeneric.h",
     "ParallelJobsLibdispatch.h",
     "PartitionAlloc.cpp",
     "PartitionAlloc.h",
@@ -258,6 +256,7 @@ component("wtf") {
   #  # Disable c4267 warnings until we fix size_t to int truncations.
 # 'msvs_disabled_warnings': [4127, 4355, 4510, 4512, 4610, 4706, 4068, 4267],
 
+  ldflags = []
   if (is_android) {
     ldflags += [ "-llog" ]
   }
@@ -313,13 +312,13 @@ static_library("run_all_tests") {
   ]
 
   deps = [
-    "//base:test_support_base",
-    "//testing:gmock",
-    "//testing:gtest",
+    "//base/test:test_support_base",
+    "//testing/gmock",
+    "//testing/gtest",
     ":wtf",
   ]
 
-  direct_dependent_configs = [ "//testing:gtest_config" ]
+  direct_dependent_configs = [ "//testing/gtest:gtest_config" ]
 }
 
 executable("wtf_unittests") {
@@ -333,7 +332,6 @@ executable("wtf_unittests") {
     "PartitionAllocTest.cpp",
     "SHA1Test.cpp",
     "SaturatedArithmeticTest.cpp",
-    "SpinLockTest.cpp",
     "StringExtrasTest.cpp",
     "StringHasherTest.cpp",
     "TemporaryChangeTest.cpp",

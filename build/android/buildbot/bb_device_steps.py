@@ -402,7 +402,7 @@ def ProvisionDevices(options):
     adb.RestartAdbServer()
     RunCmd(['sleep', '1'])
 
-  if options.reboot:
+  if not options.no_reboot:
     RebootDevices()
   provision_cmd = ['build/android/provision_devices.py', '-t', options.target]
   if options.auto_reconnect:
@@ -435,7 +435,7 @@ def RunInstrumentationTests(options):
 
 
 def RunWebkitTests(options):
-  RunTestSuites(options, ['webkit_unit_tests'])
+  RunTestSuites(options, ['webkit_unit_tests', 'blink_heap_unittests'])
   RunWebkitLint(options.target)
 
 
@@ -451,8 +451,21 @@ def RunGPUTests(options):
   InstallApk(options, INSTRUMENTATION_TESTS['ContentShell'], False)
 
   bb_annotations.PrintNamedStep('gpu_tests')
+  revision = _GetRevision(options)
   RunCmd(['content/test/gpu/run_gpu_test',
-          '--browser=android-content-shell', 'pixel'])
+          'pixel',
+          '--browser',
+          'android-content-shell',
+          '--build-revision',
+          str(revision),
+          '--upload-refimg-to-cloud-storage',
+          '--refimg-cloud-storage-bucket',
+          'chromium-gpu-archive/reference-images',
+          '--os-type',
+          'android',
+          '--test-machine-name',
+          EscapeBuilderName(
+              options.build_properties.get('buildername', 'noname'))])
 
   bb_annotations.PrintNamedStep('webgl_conformance_tests')
   RunCmd(['content/test/gpu/run_gpu_test',
@@ -517,6 +530,23 @@ def LogcatDump(options):
   RunCmd(['cat', logcat_file])
 
 
+def RunStackToolSteps(options):
+  """Run stack tool steps.
+
+  Stack tool is run for logcat dump, optionally for ASAN.
+  """
+  bb_annotations.PrintNamedStep('Run stack tool with logcat dump')
+  logcat_file = os.path.join(CHROME_OUT_DIR, options.target, 'full_log')
+  RunCmd([os.path.join(CHROME_SRC_DIR, 'third_party', 'android_platform',
+          'development', 'scripts', 'stack'),
+          '--more-info', logcat_file])
+  if options.asan_symbolize:
+    bb_annotations.PrintNamedStep('Run stack tool for ASAN')
+    RunCmd([
+        os.path.join(CHROME_SRC_DIR, 'build', 'android', 'asan_symbolize.py'),
+        '-l', logcat_file])
+
+
 def GenerateTestReport(options):
   bb_annotations.PrintNamedStep('test_report')
   for report in glob.glob(
@@ -545,6 +575,7 @@ def MainTestWrapper(options):
       coverage_html = GenerateJavaCoverageReport(options)
       UploadHTML(options, '%s/java' % options.coverage_bucket, coverage_html,
                  'Coverage Report')
+      shutil.rmtree(coverage_html, ignore_errors=True)
 
     if options.experimental:
       RunTestSuites(options, gtest_config.EXPERIMENTAL_TEST_SUITES)
@@ -552,6 +583,8 @@ def MainTestWrapper(options):
   finally:
     # Run all post test steps
     LogcatDump(options)
+    if not options.disable_stack_tool:
+      RunStackToolSteps(options)
     GenerateTestReport(options)
     # KillHostHeartbeat() has logic to check if heartbeat process is running,
     # and kills only if it finds the process is running on the host.
@@ -571,8 +604,8 @@ def GetDeviceStepsOptParser():
   parser.add_option('--asan', action='store_true', help='Run tests with asan.')
   parser.add_option('--install', metavar='<apk name>',
                     help='Install an apk by name')
-  parser.add_option('--reboot', action='store_true',
-                    help='Reboot devices before running tests')
+  parser.add_option('--no-reboot', action='store_true',
+                    help='Do not reboot devices during provisioning.')
   parser.add_option('--coverage-bucket',
                     help=('Bucket name to store coverage results. Coverage is '
                           'only run if this is set.'))
@@ -588,7 +621,10 @@ def GetDeviceStepsOptParser():
   parser.add_option(
       '--logcat-dump-output',
       help='The logcat dump output will be "tee"-ed into this file')
-
+  parser.add_option('--disable-stack-tool',  action='store_true',
+      help='Do not run stack tool.')
+  parser.add_option('--asan-symbolize',  action='store_true',
+      help='Run stack tool for ASAN')
   return parser
 
 

@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "apps/shell_window.h"
+#include "apps/app_window.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
@@ -17,7 +17,7 @@
 class GURL;
 
 namespace content {
-class RenderViewHost;
+class BrowserContext;
 }
 
 namespace extensions {
@@ -26,19 +26,20 @@ struct DraggableRegion;
 
 namespace apps {
 
-// ShellWindowContents class specific to app windows. It maintains a
+// AppWindowContents class specific to app windows. It maintains a
 // WebContents instance and observes it for the purpose of passing
 // messages to the extensions system.
-class AppWindowContents : public ShellWindowContents,
-                          public content::NotificationObserver,
-                          public content::WebContentsObserver,
-                          public ExtensionFunctionDispatcher::Delegate {
+class AppWindowContentsImpl : public AppWindowContents,
+                              public content::NotificationObserver,
+                              public content::WebContentsObserver,
+                              public ExtensionFunctionDispatcher::Delegate {
  public:
-  explicit AppWindowContents(ShellWindow* host);
-  virtual ~AppWindowContents();
+  explicit AppWindowContentsImpl(AppWindow* host);
+  virtual ~AppWindowContentsImpl();
 
-  // ShellWindowContents
-  virtual void Initialize(Profile* profile, const GURL& url) OVERRIDE;
+  // AppWindowContents
+  virtual void Initialize(content::BrowserContext* context,
+                          const GURL& url) OVERRIDE;
   virtual void LoadContents(int32 creator_process_id) OVERRIDE;
   virtual void NativeWindowChanged(NativeAppWindow* native_app_window) OVERRIDE;
   virtual void NativeWindowClosed() OVERRIDE;
@@ -63,13 +64,13 @@ class AppWindowContents : public ShellWindowContents,
       const std::vector<extensions::DraggableRegion>& regions);
   void SuspendRenderViewHost(content::RenderViewHost* rvh);
 
-  ShellWindow* host_;  // This class is owned by |host_|
+  AppWindow* host_;  // This class is owned by |host_|
   GURL url_;
   content::NotificationRegistrar registrar_;
   scoped_ptr<content::WebContents> web_contents_;
   scoped_ptr<ExtensionFunctionDispatcher> extension_function_dispatcher_;
 
-  DISALLOW_COPY_AND_ASSIGN(AppWindowContents);
+  DISALLOW_COPY_AND_ASSIGN(AppWindowContentsImpl);
 };
 
 }  // namespace apps

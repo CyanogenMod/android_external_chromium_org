@@ -5,7 +5,7 @@
 #include "chrome/browser/apps/app_browsertest_util.h"
 
 #include "apps/app_window_contents.h"
-#include "apps/shell_window_registry.h"
+#include "apps/app_window_registry.h"
 #include "apps/ui/native_app_window.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
@@ -19,8 +19,8 @@
 #include "content/public/test/test_utils.h"
 #include "extensions/common/switches.h"
 
-using apps::ShellWindow;
-using apps::ShellWindowRegistry;
+using apps::AppWindow;
+using apps::AppWindowRegistry;
 using content::WebContents;
 
 namespace utils = extension_function_test_utils;
@@ -41,15 +41,14 @@ void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
 }
 
 // static
-ShellWindow* PlatformAppBrowserTest::GetFirstShellWindowForBrowser(
+AppWindow* PlatformAppBrowserTest::GetFirstAppWindowForBrowser(
     Browser* browser) {
-  ShellWindowRegistry* app_registry =
-      ShellWindowRegistry::Get(browser->profile());
-  const ShellWindowRegistry::ShellWindowList& shell_windows =
-      app_registry->shell_windows();
+  AppWindowRegistry* app_registry = AppWindowRegistry::Get(browser->profile());
+  const AppWindowRegistry::AppWindowList& app_windows =
+      app_registry->app_windows();
 
-  ShellWindowRegistry::const_iterator iter = shell_windows.begin();
-  if (iter != shell_windows.end())
+  AppWindowRegistry::const_iterator iter = app_windows.begin();
+  if (iter != app_windows.end())
     return *iter;
 
   return NULL;
@@ -65,8 +64,7 @@ const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name));
   EXPECT_TRUE(extension);
 
-  OpenApplication(AppLaunchParams(
-      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+  LaunchPlatformApp(extension);
 
   app_loaded_observer.Wait();
 
@@ -90,24 +88,42 @@ const Extension* PlatformAppBrowserTest::InstallAndLaunchPlatformApp(
 
   const Extension* extension = InstallPlatformApp(name);
 
-  OpenApplication(AppLaunchParams(
-      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+  LaunchPlatformApp(extension);
 
   app_loaded_observer.Wait();
 
   return extension;
 }
 
-WebContents* PlatformAppBrowserTest::GetFirstShellWindowWebContents() {
-  ShellWindow* window = GetFirstShellWindow();
+void PlatformAppBrowserTest::LaunchPlatformApp(const Extension* extension) {
+  OpenApplication(AppLaunchParams(
+      browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+}
+
+WebContents* PlatformAppBrowserTest::GetFirstAppWindowWebContents() {
+  AppWindow* window = GetFirstAppWindow();
   if (window)
     return window->web_contents();
 
   return NULL;
 }
 
-ShellWindow* PlatformAppBrowserTest::GetFirstShellWindow() {
-  return GetFirstShellWindowForBrowser(browser());
+AppWindow* PlatformAppBrowserTest::GetFirstAppWindow() {
+  return GetFirstAppWindowForBrowser(browser());
+}
+
+apps::AppWindow* PlatformAppBrowserTest::GetFirstAppWindowForApp(
+    const std::string& app_id) {
+  AppWindowRegistry* app_registry =
+      AppWindowRegistry::Get(browser()->profile());
+  const AppWindowRegistry::AppWindowList& app_windows =
+      app_registry->GetAppWindowsForApp(app_id);
+
+  AppWindowRegistry::const_iterator iter = app_windows.begin();
+  if (iter != app_windows.end())
+    return *iter;
+
+  return NULL;
 }
 
 size_t PlatformAppBrowserTest::RunGetWindowsFunctionForExtension(
@@ -134,9 +150,15 @@ bool PlatformAppBrowserTest::RunGetWindowFunctionForExtension(
   return function->GetResultList() != NULL;
 }
 
-size_t PlatformAppBrowserTest::GetShellWindowCount() {
-  return ShellWindowRegistry::Get(browser()->profile())->
-      shell_windows().size();
+size_t PlatformAppBrowserTest::GetAppWindowCount() {
+  return AppWindowRegistry::Get(browser()->profile())->app_windows().size();
+}
+
+size_t PlatformAppBrowserTest::GetAppWindowCountForApp(
+    const std::string& app_id) {
+  return AppWindowRegistry::Get(browser()->profile())
+      ->GetAppWindowsForApp(app_id)
+      .size();
 }
 
 void PlatformAppBrowserTest::ClearCommandLineArgs() {
@@ -156,31 +178,29 @@ void PlatformAppBrowserTest::SetCommandLineArg(const std::string& test_file) {
   command_line->AppendArgPath(test_doc);
 }
 
-ShellWindow* PlatformAppBrowserTest::CreateShellWindow(
-    const Extension* extension) {
-  return CreateShellWindowFromParams(extension, ShellWindow::CreateParams());
+AppWindow* PlatformAppBrowserTest::CreateAppWindow(const Extension* extension) {
+  return CreateAppWindowFromParams(extension, AppWindow::CreateParams());
 }
 
-ShellWindow* PlatformAppBrowserTest::CreateShellWindowFromParams(
-    const Extension* extension, const ShellWindow::CreateParams& params) {
-  ShellWindow* window = new ShellWindow(browser()->profile(),
-                                        new ChromeShellWindowDelegate(),
-                                        extension);
-  window->Init(GURL(std::string()),
-               new apps::AppWindowContents(window),
-               params);
+AppWindow* PlatformAppBrowserTest::CreateAppWindowFromParams(
+    const Extension* extension,
+    const AppWindow::CreateParams& params) {
+  AppWindow* window = new AppWindow(
+      browser()->profile(), new ChromeShellWindowDelegate(), extension);
+  window->Init(
+      GURL(std::string()), new apps::AppWindowContentsImpl(window), params);
   return window;
 }
 
-void PlatformAppBrowserTest::CloseShellWindow(ShellWindow* window) {
+void PlatformAppBrowserTest::CloseAppWindow(AppWindow* window) {
   content::WebContentsDestroyedWatcher destroyed_watcher(
       window->web_contents());
   window->GetBaseWindow()->Close();
   destroyed_watcher.Wait();
 }
 
-void PlatformAppBrowserTest::CallAdjustBoundsToBeVisibleOnScreenForShellWindow(
-    ShellWindow* window,
+void PlatformAppBrowserTest::CallAdjustBoundsToBeVisibleOnScreenForAppWindow(
+    AppWindow* window,
     const gfx::Rect& cached_bounds,
     const gfx::Rect& cached_screen_bounds,
     const gfx::Rect& current_screen_bounds,

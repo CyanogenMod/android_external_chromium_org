@@ -6,7 +6,7 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/display/display_layout_store.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/display_manager_test_api.h"
@@ -20,6 +20,8 @@
 #include "ui/aura/window_observer.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
+#include "ui/gfx/screen_type_delegate.h"
 
 namespace ash {
 namespace internal {
@@ -273,7 +275,7 @@ TEST_F(DisplayManagerTest, OverscanInsetsTest) {
   EXPECT_EQ("13,12,11,10",
             updated_display_info2.overscan_insets_in_dip().ToString());
   EXPECT_EQ("500,0 378x376",
-            ScreenAsh::GetSecondaryDisplay().bounds().ToString());
+            ScreenUtil::GetSecondaryDisplay().bounds().ToString());
 
   // Make sure that SetOverscanInsets() is idempotent.
   display_manager()->SetOverscanInsets(display_info1.id(), gfx::Insets());
@@ -340,11 +342,11 @@ TEST_F(DisplayManagerTest, OverscanInsetsTest) {
 
   // Make sure switching primary display applies the overscan offset only once.
   ash::Shell::GetInstance()->display_controller()->SetPrimaryDisplay(
-      ScreenAsh::GetSecondaryDisplay());
+      ScreenUtil::GetSecondaryDisplay());
   EXPECT_EQ("-500,0 500x500",
-            ScreenAsh::GetSecondaryDisplay().bounds().ToString());
+            ScreenUtil::GetSecondaryDisplay().bounds().ToString());
   EXPECT_EQ("0,0 500x500",
-            GetDisplayInfo(ScreenAsh::GetSecondaryDisplay()).
+            GetDisplayInfo(ScreenUtil::GetSecondaryDisplay()).
             bounds_in_native().ToString());
   EXPECT_EQ("0,501 400x400",
             GetDisplayInfo(Shell::GetScreen()->GetPrimaryDisplay()).
@@ -384,11 +386,11 @@ TEST_F(DisplayManagerTest, TestDeviceScaleOnlyChange) {
   UpdateDisplay("1000x600");
   aura::WindowEventDispatcher* dispatcher =
       Shell::GetPrimaryRootWindow()->GetDispatcher();
-  EXPECT_EQ(1, dispatcher->compositor()->device_scale_factor());
+  EXPECT_EQ(1, dispatcher->host()->compositor()->device_scale_factor());
   EXPECT_EQ("1000x600",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
   UpdateDisplay("1000x600*2");
-  EXPECT_EQ(2, dispatcher->compositor()->device_scale_factor());
+  EXPECT_EQ(2, dispatcher->host()->compositor()->device_scale_factor());
   EXPECT_EQ("500x300",
             Shell::GetPrimaryRootWindow()->bounds().size().ToString());
 }
@@ -655,7 +657,7 @@ TEST_F(DisplayManagerTest, MAYBE_EnsurePointerInDisplays_2ndOnLeft) {
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();
 
   EXPECT_EQ("-300,0 300x300",
-            ScreenAsh::GetSecondaryDisplay().bounds().ToString());
+            ScreenUtil::GetSecondaryDisplay().bounds().ToString());
 
   aura::Env* env = aura::Env::GetInstance();
 
@@ -717,36 +719,99 @@ TEST_F(DisplayManagerTest, DontRememberBestResolution) {
   int display_id = 1000;
   DisplayInfo native_display_info =
       CreateDisplayInfo(display_id, gfx::Rect(0, 0, 1000, 500));
-  std::vector<Resolution> resolutions;
-  resolutions.push_back(Resolution(gfx::Size(1000, 500), false));
-  resolutions.push_back(Resolution(gfx::Size(800, 300), false));
-  resolutions.push_back(Resolution(gfx::Size(400, 500), false));
+  std::vector<DisplayMode> display_modes;
+  display_modes.push_back(
+      DisplayMode(gfx::Size(1000, 500), 58.0f, false, true));
+  display_modes.push_back(
+      DisplayMode(gfx::Size(800, 300), 59.0f, false, false));
+  display_modes.push_back(
+      DisplayMode(gfx::Size(400, 500), 60.0f, false, false));
 
-  native_display_info.set_resolutions(resolutions);
+  native_display_info.set_display_modes(display_modes);
 
   std::vector<DisplayInfo> display_info_list;
   display_info_list.push_back(native_display_info);
   display_manager()->OnNativeDisplaysChanged(display_info_list);
 
-  gfx::Size selected;
-  EXPECT_FALSE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
+  DisplayMode mode;
+  EXPECT_FALSE(
+      display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
 
   // Unsupported resolution.
   display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 4000));
-  EXPECT_FALSE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
+  EXPECT_FALSE(
+      display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
 
   // Supported resolution.
   display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 300));
-  EXPECT_TRUE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
-  EXPECT_EQ("800x300", selected.ToString());
+  EXPECT_TRUE(
+      display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
+  EXPECT_EQ("800x300", mode.size.ToString());
+  EXPECT_EQ(59.0f, mode.refresh_rate);
+  EXPECT_FALSE(mode.native);
 
   // Best resolution.
   display_manager()->SetDisplayResolution(display_id, gfx::Size(1000, 500));
-  EXPECT_FALSE(display_manager()->GetSelectedResolutionForDisplayId(
-      display_id, &selected));
+  EXPECT_TRUE(
+      display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
+  EXPECT_EQ("1000x500", mode.size.ToString());
+  EXPECT_EQ(58.0f, mode.refresh_rate);
+  EXPECT_TRUE(mode.native);
+}
+
+TEST_F(DisplayManagerTest, ResolutionFallback) {
+  int display_id = 1000;
+  DisplayInfo native_display_info =
+      CreateDisplayInfo(display_id, gfx::Rect(0, 0, 1000, 500));
+  std::vector<DisplayMode> display_modes;
+  display_modes.push_back(
+      DisplayMode(gfx::Size(1000, 500), 58.0f, false, true));
+  display_modes.push_back(
+      DisplayMode(gfx::Size(800, 300), 59.0f, false, false));
+  display_modes.push_back(
+      DisplayMode(gfx::Size(400, 500), 60.0f, false, false));
+
+  std::vector<DisplayMode> copy = display_modes;
+  native_display_info.set_display_modes(copy);
+
+  std::vector<DisplayInfo> display_info_list;
+  display_info_list.push_back(native_display_info);
+  display_manager()->OnNativeDisplaysChanged(display_info_list);
+  {
+    display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 300));
+    DisplayInfo new_native_display_info =
+        CreateDisplayInfo(display_id, gfx::Rect(0, 0, 400, 500));
+    copy = display_modes;
+    new_native_display_info.set_display_modes(copy);
+    std::vector<DisplayInfo> new_display_info_list;
+    new_display_info_list.push_back(new_native_display_info);
+    display_manager()->OnNativeDisplaysChanged(new_display_info_list);
+
+    DisplayMode mode;
+    EXPECT_TRUE(
+        display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
+    EXPECT_EQ("400x500", mode.size.ToString());
+    EXPECT_EQ(60.0f, mode.refresh_rate);
+    EXPECT_FALSE(mode.native);
+  }
+  {
+    // Best resolution should find itself on the resolutions list.
+    display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 300));
+    DisplayInfo new_native_display_info =
+        CreateDisplayInfo(display_id, gfx::Rect(0, 0, 1000, 500));
+    std::vector<DisplayMode> copy = display_modes;
+    new_native_display_info.set_display_modes(copy);
+    std::vector<DisplayInfo> new_display_info_list;
+    new_display_info_list.push_back(new_native_display_info);
+    display_manager()->OnNativeDisplaysChanged(new_display_info_list);
+
+    DisplayMode mode;
+    EXPECT_TRUE(
+        display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
+    EXPECT_EQ("1000x500", mode.size.ToString());
+    EXPECT_EQ(58.0f, mode.refresh_rate);
+    EXPECT_TRUE(mode.native);
+  }
 }
 
 TEST_F(DisplayManagerTest, Rotate) {
@@ -1132,6 +1197,39 @@ TEST_F(DisplayManagerTest, MAYBE_UpdateDisplayWithHostOrigin) {
   EXPECT_EQ("100x200", dispatcher0->host()->GetBounds().size().ToString());
   EXPECT_EQ("300,500", dispatcher1->host()->GetBounds().origin().ToString());
   EXPECT_EQ("200x300", dispatcher1->host()->GetBounds().size().ToString());
+}
+
+
+class ScreenShutdownTest : public test::AshTestBase {
+ public:
+  ScreenShutdownTest() {
+  }
+  virtual ~ScreenShutdownTest() {}
+
+  virtual void TearDown() OVERRIDE {
+    gfx::Screen* orig_screen =
+        gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_ALTERNATE);
+    AshTestBase::TearDown();
+    if (!SupportsMultipleDisplays())
+      return;
+    gfx::Screen* screen =
+        gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_ALTERNATE);
+    EXPECT_NE(orig_screen, screen);
+    EXPECT_EQ(2, screen->GetNumDisplays());
+    EXPECT_EQ("500x300", screen->GetPrimaryDisplay().size().ToString());
+    std::vector<gfx::Display> all = screen->GetAllDisplays();
+    EXPECT_EQ("500x300", all[0].size().ToString());
+    EXPECT_EQ("800x400", all[1].size().ToString());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScreenShutdownTest);
+};
+
+TEST_F(ScreenShutdownTest, ScreenAfterShutdown) {
+  if (!SupportsMultipleDisplays())
+    return;
+  UpdateDisplay("500x300,800x400");
 }
 
 }  // namespace internal

@@ -8,10 +8,12 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/data_type_manager_impl.h"
 #include "chrome/browser/sync/glue/sync_backend_host_mock.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
@@ -92,8 +94,9 @@ class ProfileSyncServiceTest : public ::testing::Test {
   virtual void SetUp() OVERRIDE {
     TestingProfile::Builder builder;
 
-    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeOAuth2TokenService::BuildTokenService);
+    builder.AddTestingFactory(
+        ProfileOAuth2TokenServiceFactory::GetInstance(),
+        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     invalidation::InvalidationServiceFactory::GetInstance()->
         SetBuildOnlyFakeInvalidatorsForTest(true);
 
@@ -124,7 +127,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
     service_.reset(new ProfileSyncService(
         components_factory_,
         profile_.get(),
-        signin,
+        new ManagedUserSigninManagerWrapper(signin),
         oauth2_token_service,
         behavior));
   }
@@ -189,7 +192,7 @@ TEST_F(ProfileSyncServiceTest, InitialState) {
 TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
   profile()->GetTestingPrefService()->SetManagedPref(
       prefs::kSyncManaged,
-      Value::CreateBooleanValue(false));
+      base::Value::CreateBooleanValue(false));
   IssueTestTokens();
   CreateService(ProfileSyncService::AUTO_START);
   ExpectDataTypeManagerCreation();
@@ -221,7 +224,7 @@ TEST_F(ProfileSyncServiceTest, SetupInProgress) {
 TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
   profile()->GetTestingPrefService()->SetManagedPref(
       prefs::kSyncManaged,
-      Value::CreateBooleanValue(true));
+      base::Value::CreateBooleanValue(true));
   IssueTestTokens();
   CreateService(ProfileSyncService::AUTO_START);
   Initialize();
@@ -243,7 +246,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
 
   profile()->GetTestingPrefService()->SetManagedPref(
       prefs::kSyncManaged,
-      Value::CreateBooleanValue(true));
+      base::Value::CreateBooleanValue(true));
 
   EXPECT_TRUE(service()->IsManaged());
   EXPECT_FALSE(service()->sync_initialized());

@@ -20,11 +20,6 @@ namespace extensions {
 
 class ActivityLog;
 
-// The ID of the trusted/whitelisted ActivityLog extension.
-extern const char kActivityLogExtensionId[];
-extern const char kActivityLogTestExtensionId[];
-extern const char kActivityLogObsoleteExtensionId[];
-
 // Handles interactions between the Activity Log API and implementation.
 class ActivityLogAPI : public ProfileKeyedAPI,
                        public extensions::ActivityLog::Observer,
@@ -80,6 +75,20 @@ class ActivityLogPrivateGetExtensionActivitiesFunction
  private:
   void OnLookupCompleted(
       scoped_ptr<std::vector<scoped_refptr<Action> > > activities);
+};
+
+// The implementation of activityLogPrivate.deleteActivities
+class ActivityLogPrivateDeleteActivitiesFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("activityLogPrivate.deleteActivities",
+                             ACTIVITYLOGPRIVATE_DELETEACTIVITIES)
+
+ protected:
+  virtual ~ActivityLogPrivateDeleteActivitiesFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
 };
 
 // The implementation of activityLogPrivate.deleteDatabase

@@ -29,6 +29,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/search_ipc_router_policy_impl.h"
+#include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_utils.h"
 #include "chrome/browser/ui/webui/ntp/ntp_user_data_logger.h"
@@ -44,6 +45,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "grit/generated_resources.h"
+#include "net/base/net_errors.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -68,8 +70,7 @@ void RecordCacheableNTPLoadHistogram(bool succeeded) {
 bool IsCacheableNTP(const content::WebContents* contents) {
   const content::NavigationEntry* entry =
       contents->GetController().GetLastCommittedEntry();
-  return chrome::ShouldUseCacheableNTP() &&
-      chrome::NavEntryIsInstantNTP(contents, entry) &&
+  return chrome::NavEntryIsInstantNTP(contents, entry) &&
       entry->GetURL() != GURL(chrome::kChromeSearchLocalNtpUrl);
 }
 
@@ -121,6 +122,19 @@ void UpdateLocationBar(content::WebContents* contents) {
     return;
   browser->OnWebContentsInstantSupportDisabled(contents);
 #endif
+}
+
+// Called when an NTP finishes loading. If the load start time was noted,
+// calculates and logs the total load time.
+void RecordNewTabLoadTime(content::WebContents* contents) {
+  CoreTabHelper* core_tab_helper = CoreTabHelper::FromWebContents(contents);
+  if (core_tab_helper->new_tab_start_time().is_null())
+    return;
+
+  base::TimeDelta duration =
+      base::TimeTicks::Now() - core_tab_helper->new_tab_start_time();
+  UMA_HISTOGRAM_TIMES("Tab.NewTabOnload", duration);
+  core_tab_helper->set_new_tab_start_time(base::TimeTicks());
 }
 
 }  // namespace
@@ -273,11 +287,13 @@ void SearchTabHelper::DidFailProvisionalLoad(
     const base::string16& /* frame_unique_name */,
     bool is_main_frame,
     const GURL& validated_url,
-    int /* error_code */,
+    int error_code,
     const base::string16& /* error_description */,
     content::RenderViewHost* /* render_view_host */) {
+  // If error_code is ERR_ABORTED means that the user has canceled this
+  // navigation so it shouldn't be redirected.
   if (is_main_frame &&
-      chrome::ShouldUseCacheableNTP() &&
+      error_code != net::ERR_ABORTED &&
       validated_url != GURL(chrome::kChromeSearchLocalNtpUrl) &&
       chrome::IsNTPURL(validated_url, profile())) {
     RedirectToLocalNTP();
@@ -290,8 +306,12 @@ void SearchTabHelper::DidFinishLoad(
     const GURL&  /* validated_url */,
     bool is_main_frame,
     content::RenderViewHost* /* render_view_host */) {
-  if (is_main_frame)
+  if (is_main_frame) {
+    if (chrome::IsInstantNTP(web_contents_))
+      RecordNewTabLoadTime(web_contents_);
+
     DetermineIfPageSupportsInstant();
+  }
 }
 
 void SearchTabHelper::NavigationEntryCommitted(
@@ -302,10 +322,11 @@ void SearchTabHelper::NavigationEntryCommitted(
   if (!load_details.is_main_frame)
     return;
 
-  // TODO(kmadhusu): Set the page initial states (such as omnibox margin, etc)
-  // from here. Please refer to crbug.com/247517 for more details.
   if (chrome::ShouldAssignURLToInstantRenderer(web_contents_->GetURL(),
                                                profile())) {
+    InstantService* instant_service =
+        InstantServiceFactory::GetForProfile(profile());
+    ipc_router_.SetOmniboxStartMargin(instant_service->omnibox_start_margin());
     ipc_router_.SetDisplayInstantResults();
   }
 
@@ -362,6 +383,10 @@ void SearchTabHelper::MostVisitedItemsChanged(
   std::vector<InstantMostVisitedItem> items_copy(items);
   MaybeRemoveMostVisitedItems(&items_copy);
   ipc_router_.SendMostVisitedItems(items_copy);
+}
+
+void SearchTabHelper::OmniboxStartMarginChanged(int omnibox_start_margin) {
+  ipc_router_.SetOmniboxStartMargin(omnibox_start_margin);
 }
 
 void SearchTabHelper::MaybeRemoveMostVisitedItems(
@@ -425,6 +450,7 @@ void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
       // visual cue to users who really understand selection state about what
       // will happen if they start typing.
       omnibox->SelectAll(false);
+      omnibox->ShowImeIfNeeded();
       break;
     case OMNIBOX_FOCUS_NONE:
       // Remove focus only if the popup is closed. This will prevent someone
@@ -453,7 +479,7 @@ void SearchTabHelper::NavigateToURL(const GURL& url,
 
   if (is_most_visited_item_url) {
     content::RecordAction(
-        content::UserMetricsAction("InstantExtended.MostVisitedClicked"));
+        base::UserMetricsAction("InstantExtended.MostVisitedClicked"));
   }
 
   chrome::NavigateParams params(browser, url,
@@ -485,10 +511,14 @@ void SearchTabHelper::OnUndoAllMostVisitedDeletions() {
 }
 
 void SearchTabHelper::OnLogEvent(NTPLoggingEventType event) {
-  NTPUserDataLogger* data =
-      NTPUserDataLogger::GetOrCreateFromWebContents(web_contents());
-  if (data)
-    data->LogEvent(event);
+  NTPUserDataLogger::GetOrCreateFromWebContents(
+      web_contents())->LogEvent(event);
+}
+
+void SearchTabHelper::OnLogImpression(int position,
+                                      const base::string16& provider) {
+  NTPUserDataLogger::GetOrCreateFromWebContents(
+      web_contents())->LogImpression(position, provider);
 }
 
 void SearchTabHelper::PasteIntoOmnibox(const base::string16& text) {
@@ -523,7 +553,7 @@ void SearchTabHelper::OnChromeIdentityCheck(const base::string16& identity) {
   SigninManagerBase* manager = SigninManagerFactory::GetForProfile(profile());
   if (manager) {
     const base::string16 username =
-        UTF8ToUTF16(manager->GetAuthenticatedUsername());
+        base::UTF8ToUTF16(manager->GetAuthenticatedUsername());
     ipc_router_.SendChromeIdentityCheckResult(identity,
                                               identity == username);
   }

@@ -63,16 +63,17 @@
 #include "ui/base/clipboard/clipboard.h"
 
 #if defined(USE_AURA)
-#include "content/browser/aura/image_transport_factory.h"
+#include "content/browser/compositor/image_transport_factory.h"
 #endif
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
 #include "content/browser/android/browser_startup_controller.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
+#include "ui/gl/gl_surface.h"
 #endif
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "content/browser/theme_helper_mac.h"
 #endif
 
@@ -81,7 +82,6 @@
 #include <commctrl.h>
 #include <shellapi.h>
 
-#include "base/win/text_services_message_filter.h"
 #include "content/browser/system_message_window_win.h"
 #include "content/common/sandbox_win.h"
 #include "net/base/winsock_init.h"
@@ -115,6 +115,10 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_platform.h"
 #endif
 
 // One of the linux specific headers defines this as a macro.
@@ -230,6 +234,8 @@ static void GLibLogHandler(const gchar* log_domain,
   } else if (strstr(message, "Attempting to store changes into") ||
              strstr(message, "Attempting to set the permissions of")) {
     LOG(ERROR) << message << " (http://bugs.chromium.org/161366)";
+  } else if (strstr(message, "drawable is not a native X11 window")) {
+    LOG(ERROR) << message << " (http://bugs.chromium.org/329991)";
   } else {
     LOG(DFATAL) << log_domain << ": " << message;
   }
@@ -322,7 +328,8 @@ BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
       created_threads_(false),
       // ContentMainRunner should have enabled tracing of the browser process
       // when kTraceStartup is in the command line.
-      is_tracing_startup_(base::debug::TraceLog::GetInstance()->IsEnabled()) {
+      is_tracing_startup_(
+          parameters.command_line.HasSwitch(switches::kTraceStartup)) {
   DCHECK(!g_current_browser_main_loop);
   g_current_browser_main_loop = this;
 }
@@ -396,9 +403,6 @@ void BrowserMainLoop::EarlyInitialization() {
   crypto::EnsureNSPRInit();
 #endif  // !defined(USE_OPENSSL)
 
-  if (parsed_command_line_.HasSwitch(switches::kEnableSSLCachedInfo))
-    net::SSLConfigService::EnableCachedInfo();
-
 #if !defined(OS_IOS)
   if (parsed_command_line_.HasSwitch(switches::kRendererProcessLimit)) {
     std::string limit_string = parsed_command_line_.GetSwitchValueASCII(
@@ -433,7 +437,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
 
   // Create a MessageLoop if one does not already exist for the current thread.
   if (!base::MessageLoop::current())
-    main_message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_UI));
+    main_message_loop_.reset(new base::MessageLoopForUI);
 
   InitializeMainThread();
 
@@ -467,8 +471,8 @@ void BrowserMainLoop::MainMessageLoopStart() {
         MediaInternals::GetInstance()));
   }
   {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MIDIManager")
-    midi_manager_.reset(media::MIDIManager::Create());
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MidiManager")
+    midi_manager_.reset(media::MidiManager::Create());
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:ContentWebUIController")
@@ -500,17 +504,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
 
 #if defined(OS_WIN)
   system_message_window_.reset(new SystemMessageWindowWin);
-
-  if (base::win::IsTSFAwareRequired()) {
-    // Create a TSF message filter for the message loop. MessageLoop takes
-    // ownership of the filter.
-    scoped_ptr<base::win::TextServicesMessageFilter> tsf_message_filter(
-      new base::win::TextServicesMessageFilter);
-    if (tsf_message_filter->Init()) {
-      base::MessageLoopForUI::current()->SetMessageFilter(
-        tsf_message_filter.PassAs<base::MessageLoopForUI::MessageFilter>());
-    }
-  }
 #endif
 
   if (parts_)
@@ -784,6 +777,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   }
 #endif
 
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  ZygoteHostImpl::GetInstance()->TearDownAfterLastChild();
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+
   // The device monitors are using |system_monitor_| as dependency, so delete
   // them before |system_monitor_| goes away.
   // On Mac and windows, the monitor needs to be destroyed on the same thread
@@ -944,6 +941,13 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #if !defined(OS_IOS)
   HistogramSynchronizer::GetInstance();
 
+#if defined(OS_ANDROID)
+  // On Android, GLSurface::InitializeOneOff() must be called before initalizing
+  // the GpuDataManagerImpl as it uses the GL bindings. crbug.com/326295
+  if (!gfx::GLSurface::InitializeOneOff())
+    LOG(FATAL) << "GLSurface::InitializeOneOff failed";
+#endif
+
   // Initialize the GpuDataManager before we set up the MessageLoops because
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
   GpuDataManagerImpl::GetInstance()->Initialize();
@@ -970,6 +974,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   device_monitor_linux_.reset(new DeviceMonitorLinux());
 #elif defined(OS_MACOSX)
   device_monitor_mac_.reset(new DeviceMonitorMac());
+#endif
+
+#if defined(USE_OZONE)
+  ui::OzonePlatform::Initialize();
+  ui::EventFactoryOzone::GetInstance()->SetFileTaskRunner(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
 #endif
 
   // RDH needs the IO thread to be created
@@ -1030,11 +1040,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
             GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
             CAUSE_FOR_GPU_LAUNCH_BROWSER_STARTUP));
   }
-#endif  // !defined(OS_IOS)
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
 #endif
+#endif  // !defined(OS_IOS)
+
   return result_code_;
 }
 
@@ -1071,7 +1082,7 @@ void BrowserMainLoop::MainMessageLoopRun() {
   // Android's main message loop is the Java message loop.
   NOTREACHED();
 #else
-  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+  DCHECK(base::MessageLoopForUI::IsCurrent());
   if (parameters_.ui_task)
     base::MessageLoopForUI::current()->PostTask(FROM_HERE,
                                                 *parameters_.ui_task);

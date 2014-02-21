@@ -48,6 +48,21 @@ enum DisplaySearchButtonConditions {
   DISPLAY_SEARCH_BUTTON_NUM_VALUES,
 };
 
+enum OriginChipPosition {
+  ORIGIN_CHIP_DISABLED,
+  ORIGIN_CHIP_LEADING_LOCATION_BAR,
+  ORIGIN_CHIP_TRAILING_LOCATION_BAR,
+  ORIGIN_CHIP_LEADING_MENU_BUTTON,
+  ORIGIN_CHIP_NUM_VALUES,
+};
+
+enum OriginChipV2HideTrigger {
+  ORIGIN_CHIP_V2_DISABLED,
+  ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE,
+  ORIGIN_CHIP_V2_HIDE_ON_USER_INPUT,
+  ORIGIN_CHIP_V2_NUM_VALUES,
+};
+
 // Use this value for "start margin" to prevent the "es_sm" parameter from
 // being used.
 extern const int kDisableStartMargin;
@@ -63,21 +78,43 @@ bool IsSuggestPrefEnabled(Profile* profile);
 // the Instant Extended API is not enabled.
 uint64 EmbeddedSearchPageVersion();
 
+// Returns a string indicating whether InstantExtended is enabled, suitable
+// for adding as a query string param to the homepage or search requests.
+// Returns an empty string otherwise.
+//
+// |for_search| should be set to true for search requests, in which case this
+// returns a non-empty string only if query extraction is enabled.
+std::string InstantExtendedEnabledParam(bool for_search);
+
+// Returns a string that will cause the search results page to update
+// incrementally. Currently, Instant Extended passes a different param to
+// search results pages that also has this effect, so by default this function
+// returns the empty string when Instant Extended is enabled. However, when
+// doing instant search result prerendering, we still need to pass this param,
+// as Instant Extended does not cause incremental updates by default for the
+// prerender page. Callers should set |for_prerender| in this case to force
+// the returned string to be non-empty.
+std::string ForceInstantResultsParam(bool for_prerender);
+
 // Returns whether query extraction is enabled.
 bool IsQueryExtractionEnabled();
 
-// Extracts and returns search terms from |url|. Returns empty string if the URL
-// is not secure or doesn't have a search term replacement key.  Does not
-// consider IsQueryExtractionEnabled() and Instant support state of the page and
-// does not check for a privileged process, so most callers should use
+// Extracts and returns search terms from |url|. Does not consider
+// IsQueryExtractionEnabled() and Instant support state of the page and does
+// not check for a privileged process, so most callers should use
 // GetSearchTerms() below instead.
-string16 GetSearchTermsFromURL(Profile* profile, const GURL& url);
+base::string16 ExtractSearchTermsFromURL(Profile* profile, const GURL& url);
+
+// Returns true if it is okay to extract search terms from |url|. |url| must
+// have a secure scheme and must contain the search terms replacement key for
+// the default search provider.
+bool IsQueryExtractionAllowedForURL(Profile* profile, const GURL& url);
 
 // Returns the search terms attached to a specific NavigationEntry, or empty
 // string otherwise. Does not consider IsQueryExtractionEnabled() and does not
 // check Instant support, so most callers should use GetSearchTerms() below
 // instead.
-string16 GetSearchTermsFromNavigationEntry(
+base::string16 GetSearchTermsFromNavigationEntry(
     const content::NavigationEntry* entry);
 
 // Returns search terms if this WebContents is a search results page. It looks
@@ -87,7 +124,7 @@ string16 GetSearchTermsFromNavigationEntry(
 // Returns a blank string if search terms were not found, or if search terms
 // extraction is disabled for this WebContents or profile, or if |contents|
 // does not support Instant.
-string16 GetSearchTerms(const content::WebContents* contents);
+base::string16 GetSearchTerms(const content::WebContents* contents);
 
 // Returns true if |url| should be rendered in the Instant renderer process.
 bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile);
@@ -137,6 +174,10 @@ GURL GetSearchResultPrefetchBaseURL(Profile* profile);
 // prefetch high-confidence search suggestions.
 bool ShouldPrefetchSearchResults();
 
+// Returns true if 'reuse_instant_search_base_page' flag is set to true in field
+// trials to reuse the prerendered page to commit any search query.
+bool ShouldReuseInstantSearchBasePage();
+
 // Returns the Local Instant URL of the New Tab Page.
 // TODO(kmadhusu): Remove this function and update the call sites.
 GURL GetLocalInstantURL(Profile* profile);
@@ -146,22 +187,34 @@ GURL GetLocalInstantURL(Profile* profile);
 // match.  See comments on ShouldHideTopMatch in autocomplete_result.h.
 bool ShouldHideTopVerbatimMatch();
 
-// Returns true if the cacheable NTP should be shown and false if not.
-// Exposed for testing.
-bool ShouldUseCacheableNTP();
-
-// Returns true if the Instant NTP should be shown and false if not.
-bool ShouldShowInstantNTP();
-
 // Returns when we should show a search button in the omnibox.  This may be any
 // of several values, some of which depend on whether the underlying state of
 // the page would normally be to perform search term replacement; see also
 // ToolbarModel::WouldPerformSearchTermReplacement().
 DisplaySearchButtonConditions GetDisplaySearchButtonConditions();
 
-// Returns true if the origin chip should be shown next to the omnibox. This
-// also includes the related changes to the omnibox.
+// Returns true if the origin chip should be shown in the toolbar. This
+// also includes the related changes to the omnibox. Always returns false if
+// ShouldDisplayOriginChipV2() returns true.
 bool ShouldDisplayOriginChip();
+
+// Returns a value indicating where the origin chip should be positioned on the
+// toolbar.
+OriginChipPosition GetOriginChipPosition();
+
+// Returns true if version 2 of the origin chip should be shown.  This version
+// places the origin chip inside the location bar instead of the toolbar and
+// adds show/hide behavior and animations to make the relationship between the
+// chip and the text in the Omnibox clearer.
+bool ShouldDisplayOriginChipV2();
+
+// Returns a value indicating what event should trigger hiding the origin chip
+// in the location bar.
+OriginChipV2HideTrigger GetOriginChipV2HideTrigger();
+
+// Returns true if the local new tab page should show a Google logo and search
+// box for users whose default search provider is Google, or false if not.
+bool ShouldShowGoogleLocalNTP();
 
 // Transforms the input |url| into its "effective URL". The returned URL
 // facilitates grouping process-per-site. The |url| is transformed, for
@@ -181,13 +234,6 @@ bool ShouldDisplayOriginChip();
 // This forces the NTP and search results pages to have different SiteIntances,
 // and hence different processes.
 GURL GetEffectiveURLForInstant(const GURL& url, Profile* profile);
-
-// Returns the staleness timeout (in seconds) that should be used to refresh the
-// InstantLoader.
-int GetInstantLoaderStalenessTimeoutSec();
-
-// Returns true if |contents| corresponds to a preloaded instant extended NTP.
-bool IsPreloadedInstantExtendedNTP(const content::WebContents* contents);
 
 // Rewrites |url| if
 //   1. |url| is kChromeUINewTabURL,

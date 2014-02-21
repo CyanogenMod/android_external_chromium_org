@@ -16,6 +16,7 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/signin/chrome_signin_manager_delegate.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -27,7 +28,6 @@
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/public/test/test_notification_tracker.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/cookies/cookie_monster.h"
@@ -62,6 +62,36 @@ BrowserContextKeyedService* SigninManagerBuild(
   return service;
 }
 
+class TestSigninManagerObserver : public SigninManagerBase::Observer {
+ public:
+  TestSigninManagerObserver() : num_failed_signins_(0),
+                                num_successful_signins_(0),
+                                num_signouts_(0) {
+  }
+
+  virtual ~TestSigninManagerObserver() {}
+
+  int num_failed_signins_;
+  int num_successful_signins_;
+  int num_signouts_;
+
+ private:
+  // SigninManagerBase::Observer:
+  virtual void GoogleSigninFailed(
+      const GoogleServiceAuthError& error) OVERRIDE {
+    num_failed_signins_++;
+  }
+
+  virtual void GoogleSigninSucceeded(
+      const std::string& username, const std::string& password) OVERRIDE {
+    num_successful_signins_++;
+  }
+
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE {
+    num_signouts_++;
+  }
+};
+
 }  // namespace
 
 
@@ -78,16 +108,14 @@ class SigninManagerTest : public testing::Test {
         prefs_.get());
     TestingProfile::Builder builder;
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenService::Build);
+                              FakeProfileOAuth2TokenServiceWrapper::Build);
     profile_ = builder.Build();
-    google_login_success_.ListenFor(
-        chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-        content::Source<Profile>(profile()));
-    google_login_failure_.ListenFor(chrome::NOTIFICATION_GOOGLE_SIGNIN_FAILED,
-                                    content::Source<Profile>(profile()));
   }
 
   virtual void TearDown() OVERRIDE {
+    if (manager_)
+      manager_->RemoveObserver(&test_observer_);
+
     // Destroy the SigninManager here, because it relies on profile() which is
     // freed in the base class.
     if (naked_manager_) {
@@ -99,8 +127,8 @@ class SigninManagerTest : public testing::Test {
     // Manually destroy PrefService and Profile so that they are shutdown
     // in the correct order.  Both need to be destroyed before the
     // |thread_bundle_| member.
-    prefs_.reset();
     profile_.reset();
+    prefs_.reset();  // LocalState needs to outlive the profile.
   }
 
   TestingProfile* profile() { return profile_.get(); }
@@ -113,6 +141,7 @@ class SigninManagerTest : public testing::Test {
     manager_ = static_cast<SigninManager*>(
         SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
             profile(), SigninManagerBuild));
+    manager_->AddObserver(&test_observer_);
   }
 
   // Create a naked signin manager if integration with PKSs is not needed.
@@ -123,6 +152,17 @@ class SigninManagerTest : public testing::Test {
             new ChromeSigninManagerDelegate(profile()))));
 
     manager_ = naked_manager_.get();
+    manager_->AddObserver(&test_observer_);
+  }
+
+  // Shuts down |manager_|.
+  void ShutDownManager() {
+    DCHECK(manager_);
+    manager_->RemoveObserver(&test_observer_);
+    manager_->Shutdown();
+    if (naked_manager_)
+      naked_manager_.reset(NULL);
+    manager_ = NULL;
   }
 
   void SetupFetcherAndComplete(const GURL& url,
@@ -206,8 +246,8 @@ class SigninManagerTest : public testing::Test {
         manager_->GetAuthenticatedUsername()));
 
     // Should go into token service and stop.
-    EXPECT_EQ(1U, google_login_success_.size());
-    EXPECT_EQ(0U, google_login_failure_.size());
+    EXPECT_EQ(1, test_observer_.num_successful_signins_);
+    EXPECT_EQ(0, test_observer_.num_failed_signins_);
   }
 
   // Helper method that wraps the logic when signin with credentials
@@ -226,8 +266,8 @@ class SigninManagerTest : public testing::Test {
         manager_->GetAuthenticatedUsername()));
 
     // Should go into token service and stop.
-    EXPECT_EQ(0U, google_login_success_.size());
-    EXPECT_EQ(1U, google_login_failure_.size());
+    EXPECT_EQ(0, test_observer_.num_successful_signins_);
+    EXPECT_EQ(1, test_observer_.num_failed_signins_);
   }
 
   void CompleteSigninCallback(const std::string& oauth_token) {
@@ -244,9 +284,8 @@ class SigninManagerTest : public testing::Test {
   net::TestURLFetcherFactory factory_;
   scoped_ptr<SigninManager> naked_manager_;
   SigninManager* manager_;
+  TestSigninManagerObserver test_observer_;
   scoped_ptr<TestingProfile> profile_;
-  content::TestNotificationTracker google_login_success_;
-  content::TestNotificationTracker google_login_failure_;
   std::vector<std::string> oauth_tokens_fetched_;
   scoped_ptr<TestingPrefServiceSimple> prefs_;
   std::vector<std::string> cookies_;
@@ -265,8 +304,7 @@ TEST_F(SigninManagerTest, SignInWithCredentials) {
   ExpectSignInWithCredentialsSuccess();
 
   // Should persist across resets.
-  manager_->Shutdown();
-  manager_ = NULL;
+  ShutDownManager();
   CreateNakedSigninManager();
   manager_->Initialize(profile(), NULL);
   EXPECT_EQ("user@gmail.com", manager_->GetAuthenticatedUsername());
@@ -422,8 +460,7 @@ TEST_F(SigninManagerTest, SignOut) {
   manager_->SignOut();
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
   // Should not be persisted anymore
-  manager_->Shutdown();
-  manager_ = NULL;
+  ShutDownManager();
   CreateNakedSigninManager();
   manager_->Initialize(profile(), NULL);
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
@@ -436,8 +473,8 @@ TEST_F(SigninManagerTest, SignOutMidConnect) {
                                        dummy);
 
   manager_->SignOut();
-  EXPECT_EQ(0U, google_login_success_.size());
-  EXPECT_EQ(1U, google_login_failure_.size());
+  EXPECT_EQ(0, test_observer_.num_successful_signins_);
+  EXPECT_EQ(1, test_observer_.num_failed_signins_);
 
   EXPECT_TRUE(manager_->GetAuthenticatedUsername().empty());
   EXPECT_TRUE(manager_->GetUsernameForAuthInProgress().empty());
@@ -528,11 +565,11 @@ TEST_F(SigninManagerTest, ExternalSignIn) {
   EXPECT_EQ("",
             profile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
   EXPECT_EQ("", manager_->GetAuthenticatedUsername());
-  EXPECT_EQ(0u, google_login_success_.size());
+  EXPECT_EQ(0, test_observer_.num_successful_signins_);
 
   manager_->OnExternalSigninCompleted("external@example.com");
-  EXPECT_EQ(1u, google_login_success_.size());
-  EXPECT_EQ(0u, google_login_failure_.size());
+  EXPECT_EQ(1, test_observer_.num_successful_signins_);
+  EXPECT_EQ(0, test_observer_.num_failed_signins_);
   EXPECT_EQ("external@example.com",
             profile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
   EXPECT_EQ("external@example.com", manager_->GetAuthenticatedUsername());

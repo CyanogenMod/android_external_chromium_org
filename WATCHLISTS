@@ -64,7 +64,8 @@
     'aura_compositor': {
       'filepath':
         'ui/compositor/' \
-       	'|content/browser/aura/' \
+        '|content/browser/compositor/' \
+        '|content/browser/renderer_host/compositor_resize_lock_aura' \
         '|content/browser/renderer_host/render_widget_host_view_aura' \
         '|content/browser/renderer_host/render_widget_host_view_browsertest' \
         '|content/common/gpu/client/' \
@@ -147,8 +148,8 @@
                   'webkit/renderer/compositor_bindings/|'\
                   'content/common/cc_messages'
     },
-    'chrome_frame': {
-      'filepath': 'chrome_frame/',
+    'chrome_elf': {
+      'filepath': 'chrome_elf',
     },
     'chrome_views': {
       'filepath': 'chrome/browser/ui/views',
@@ -330,6 +331,9 @@
     'ipc': {
       'filepath': 'ipc/ipc',
     },
+    'libwebp': {
+      'filepath': 'third_party/libwebp'
+    },
     'layout_tests': {
       'filepath': 'webkit/(tools|data)/(layout_tests|test_shell)/',
     },
@@ -369,7 +373,6 @@
       'filepath': 'base/metrics/'\
                   '|chrome/browser/metrics/'\
                   '|chrome/common/metrics/'\
-                  '|chrome_frame/metrics'\
                   '|chrome/browser/chromeos/external_metrics'\
                   '|chrome/browser/extensions/api/metrics/metrics'\
                   '|chrome/browser/ui/webui/metrics_handler'\
@@ -447,7 +450,7 @@
         'chrome/common/plugin|webkit/glue/webplugin|webkit/glue/plugins/',
     },
     'policy_templates': {
-      'filepath': 'chrome/app/policy/policy_templates.json',
+      'filepath': 'components/policy/resources/policy_templates.json',
     },
     'predictors': {
       'filepath': 'predictors',
@@ -468,6 +471,9 @@
     },
     'sessions': {
       'filepath': 'chrome/browser/sessions/',
+    },
+    'service_worker': {
+      'filepath': 'content/(browser|renderer|child)/service_worker/',
     },
     'shell_window': {
       'filepath': 'chrome/browser/ui/(views/|gtk/|cocoa/|)'\
@@ -588,6 +594,9 @@
     'valgrind': {
       'filepath': 'valgrind',
     },
+    'version_assembly': {
+      'filepath': 'chrome/app/version_assembly',
+    },
     'views': {
       # Applies to all files and subdirs within this directory.
       'filepath': '^ui/views/',
@@ -639,7 +648,6 @@
                       'dtseng+watch@chromium.org',
                       'plundblad+watch@chromium.org',
                       'aboxhall+watch@chromium.org',
-                      'yoshiki+watch@chromium.org',
                       'yuzo+watch@chromium.org'],
     'activity_log': ['felt@chromium.org'],
     'android_infra': ['bulach+watch@chromium.org',
@@ -684,12 +692,17 @@
     'browser_resources': ['arv+watch@chromium.org'],
     'browsing_data': ['markusheintz@chromium.org'],
     'bubble': ['alicet@chromium.org', 'msw+watch@chromium.org'],
-    'cast': ['miu+watch@chromium.org'],
+    'cast': ['hclam+watch@chromium.org',
+             'hguihot+watch@chromium.org',
+             'hubbe+watch@chromium.org',
+             'jasonroberts+watch@google.com',
+             'mikhal+watch@chromium.org',
+             'miu+watch@chromium.org',
+             'pwestin+watch@google.com'],
     'cc': ['cc-bugs@chromium.org'],
-    'chrome_frame': ['amit@chromium.org', 'grt+watch@chromium.org',
-                     'robertshield@chromium.org'],
+    'chrome_elf': ['caitkp+watch@chromium.org',],
     'chrome_views': ['tfarina@chromium.org'],
-    'chromedriver': ['chrisgao@chromium.org', 'frankf@chromium.org'],
+    'chromedriver': ['frankf@chromium.org', 'stgao@chromium.org'],
     'chromeos' : ['oshima+watch@chromium.org',
                   'stevenjb+watch@chromium.org'],
     'chromeos_attestation' : ['dkrahn+watch@chromium.org'],
@@ -726,7 +739,8 @@
     'fileapi': ['kinuko+watch@chromium.org',
                 'nhiroki@chromium.org',
                 'tzik@chromium.org'],
-    'filebrowse': ['rginda+watch@chromium.org'],
+    'filebrowse': ['rginda+watch@chromium.org',
+                   'yoshiki+watch@chromium.org'],
     'filesapp': ['mtomasz+watch@chromium.org'],
     'ftp': ['phajdan.jr@chromium.org'],
     'geolocation': ['mvanouwerkerk@chromium.org'],
@@ -747,6 +761,8 @@
                 'jfweitz+watch@chromium.org', 'skanuj+watch@chromium.org',
                 'donnd+watch@chromium.org'],
     'ipc': ['jam@chromium.org', 'darin-cc@chromium.org'],
+    'libwebp': ['urvang@google.com', 'jzern@chromium.org',
+                'skal@google.com', 'vikasa@google.com'],
     'linux_fonts': ['derat+watch@chromium.org'],
     'linux_sandboxing': ['agl@chromium.org', 'jln+watch@chromium.org'],
     'linux_seccomp_bpf': ['jln+watch@chromium.org'],
@@ -782,7 +798,8 @@
                    'ihf+watch@chromium.org', 'yzshen+watch@chromium.org',
                    'yusukes+watch@chromium.org', 'raymes+watch@chromium.org',
                    'noelallen@chromium.org', 'binji@chromium.org',
-                   'nfullagar@chromium.org', 'teravest+watch@chromium.org'],
+                   'nfullagar@chromium.org', 'teravest+watch@chromium.org',
+                   'tzik@chromium.org'],
     'perf': ['chrome-speed-team+watch@google.com'],
     'plugin': ['jam@chromium.org',
                'stuartmorgan+watch@chromium.org'],
@@ -794,19 +811,12 @@
     'pyauto': ['anantha@chromium.org',
                'dyu@chromium.org',
                'dennisjeffrey@chromium.org'],
-    'remoting': ['alexeypa+watch@chromium.org',
-                 'dcaiafa+watch@chromium.org',
-                 'garykac+watch@chromium.org',
-                 'hclam+watch@chromium.org',
-                 'jamiewalch+watch@chromium.org',
-                 'lambroslambrou+watch@chromium.org',
-                 'rmsousa+watch@chromium.org',
-                 'sergeyu+watch@chromium.org',
-                 'weitaosu+watch@chromium.org',
-                 'wez+watch@chromium.org',
-                 'amit@chromium.org',
-                 'sanjeevr@chromium.org'],
+    'remoting': ['chromoting-reviews@chromium.org'],
     'sessions': ['marja+watch@chromium.org'],
+    'service_worker': ['tzik@chromium.org',
+                       'kinuko+watch@chromium.org',
+                       'nhiroki@chromium.org',
+                       'horo+watch@chromium.org'],
     'shell_window': ['jeremya+watch@chromium.org'],
     'site_instance': ['creis+watch@chromium.org', 'ajwong+watch@chromium.org'],
     'spellcheck': ['groby+spellwatch@chromium.org',
@@ -814,7 +824,6 @@
                    'rouslan+spellwatch@chromium.org'],
     'streams': ['zork+watch@chromium.org'],
     'sync': ['haitaol+watch@chromium.org',
-             'rsimha+watch@chromium.org',
              'tim+watch@chromium.org',
              'maniscalco+watch@chromium.org'],
     'syncfs': ['kinuko+watch@chromium.org',
@@ -824,7 +833,6 @@
     'tab_capture': ['miu+watch@chromium.org'],
     'tab_contents': ['avi@chromium.org',
                      'creis+watch@chromium.org', 'ajwong+watch@chromium.org'],
-    'task_manager': ['yoshiki+watch@chromium.org'],
     'tcmalloc': ['dmikurube+memory@chromium.org'],
     'telemetry': ['telemetry+watch@chromium.org'],
     'tests': [],
@@ -844,6 +852,8 @@
     'valgrind': ['bruening+watch@chromium.org',
                  'glider+watch@chromium.org',
                  'timurrrr+watch@chromium.org'],
+    'version_assembly': ['caitkp+watch@chromium.org',
+                         'gab+watch@chromium.org'],
     'views': ['tfarina@chromium.org'],
     'views_core': ['ben+views@chromium.org'],
     'views_corewm': ['ben+corewm@chromium.org'],

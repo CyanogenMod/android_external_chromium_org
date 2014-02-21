@@ -15,16 +15,18 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/system_storage/storage_info_provider.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
-#include "chrome/browser/storage_monitor/removable_storage_observer.h"
-#include "chrome/browser/storage_monitor/storage_info.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/common/extensions/api/system_display.h"
 #include "chrome/common/extensions/api/system_storage.h"
+#include "components/storage_monitor/removable_storage_observer.h"
+#include "components/storage_monitor/storage_info.h"
+#include "components/storage_monitor/storage_monitor.h"
+#include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
 #include "ui/gfx/display_observer.h"
 
-#if defined(USE_ASH)
-#include "ash/screen_ash.h"
+#if defined(OS_CHROMEOS)
 #include "ash/shell.h"
+#include "ui/gfx/screen.h"
 #endif
 
 namespace extensions {
@@ -37,8 +39,15 @@ namespace system_storage = api::system_storage;
 
 namespace {
 
+#if defined(OS_CHROMEOS)
 bool IsDisplayChangedEvent(const std::string& event_name) {
   return event_name == system_display::OnDisplayChanged::kEventName;
+}
+#endif
+
+bool IsSystemStorageEvent(const std::string& event_name) {
+  return (event_name == system_storage::OnAttached::kEventName ||
+          event_name == system_storage::OnDetached::kEventName);
 }
 
 // Event router for systemInfo API. It is a singleton instance shared by
@@ -68,7 +77,7 @@ class SystemInfoEventRouter : public gfx::DisplayObserver,
   // Called from any thread to dispatch the systemInfo event to all extension
   // processes cross multiple profiles.
   void DispatchEvent(const std::string& event_name,
-      scoped_ptr<base::ListValue> args);
+                     scoped_ptr<base::ListValue> args);
 
   // Called to dispatch the systemInfo.display.onDisplayChanged event.
   void OnDisplayChanged();
@@ -76,25 +85,29 @@ class SystemInfoEventRouter : public gfx::DisplayObserver,
   // Used to record the event names being watched.
   std::multiset<std::string> watching_event_set_;
 
+  bool has_storage_monitor_observer_;
+
   DISALLOW_COPY_AND_ASSIGN(SystemInfoEventRouter);
 };
 
 static base::LazyInstance<SystemInfoEventRouter>::Leaky
-  g_system_info_event_router = LAZY_INSTANCE_INITIALIZER;
+    g_system_info_event_router = LAZY_INSTANCE_INITIALIZER;
 
 // static
 SystemInfoEventRouter* SystemInfoEventRouter::GetInstance() {
   return g_system_info_event_router.Pointer();
 }
 
-SystemInfoEventRouter::SystemInfoEventRouter() {
-  StorageMonitor::GetInstance()->AddObserver(this);
-  StorageMonitor::GetInstance()->EnsureInitialized(base::Closure());
+SystemInfoEventRouter::SystemInfoEventRouter()
+    : has_storage_monitor_observer_(false) {
 }
 
 SystemInfoEventRouter::~SystemInfoEventRouter() {
-  if (StorageMonitor* storage_monitor = StorageMonitor::GetInstance())
-    storage_monitor->RemoveObserver(this);
+  if (has_storage_monitor_observer_) {
+    StorageMonitor* storage_monitor = StorageMonitor::GetInstance();
+    if (storage_monitor)
+      storage_monitor->RemoveObserver(this);
+  }
 }
 
 void SystemInfoEventRouter::AddEventListener(const std::string& event_name) {
@@ -104,30 +117,46 @@ void SystemInfoEventRouter::AddEventListener(const std::string& event_name) {
   if (watching_event_set_.count(event_name) > 1)
     return;
 
-  // For systemInfo.display event.
-  if (IsDisplayChangedEvent(event_name)) {
-#if defined(USE_ASH)
+  // For system.display event.
+#if defined(OS_CHROMEOS)
+  if (IsDisplayChangedEvent(event_name))
     ash::Shell::GetScreen()->AddObserver(this);
 #endif
+
+  if (IsSystemStorageEvent(event_name)) {
+    if (!has_storage_monitor_observer_) {
+      has_storage_monitor_observer_ = true;
+      DCHECK(StorageMonitor::GetInstance()->IsInitialized());
+      StorageMonitor::GetInstance()->AddObserver(this);
+    }
   }
 }
 
-void SystemInfoEventRouter::RemoveEventListener(
-    const std::string& event_name) {
+void SystemInfoEventRouter::RemoveEventListener(const std::string& event_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   std::multiset<std::string>::iterator it =
       watching_event_set_.find(event_name);
-  if (it != watching_event_set_.end())
+  if (it != watching_event_set_.end()) {
     watching_event_set_.erase(it);
+    if (watching_event_set_.count(event_name) > 0)
+      return;
+  }
 
-  if (watching_event_set_.count(event_name) > 0)
-    return;
-
-  if (IsDisplayChangedEvent(event_name)) {
-#if defined(USE_ASH)
+#if defined(OS_CHROMEOS)
+  if (IsDisplayChangedEvent(event_name))
     ash::Shell::GetScreen()->RemoveObserver(this);
 #endif
+
+  if (IsSystemStorageEvent(event_name)) {
+    const std::string& other_event_name =
+        (event_name == system_storage::OnDetached::kEventName) ?
+            system_storage::OnAttached::kEventName :
+            system_storage::OnDetached::kEventName;
+    if (watching_event_set_.count(other_event_name) == 0) {
+      StorageMonitor::GetInstance()->RemoveObserver(this);
+      has_storage_monitor_observer_ = false;
+    }
   }
 }
 
@@ -143,8 +172,10 @@ void SystemInfoEventRouter::OnRemovableStorageAttached(
 void SystemInfoEventRouter::OnRemovableStorageDetached(
     const StorageInfo& info) {
   scoped_ptr<base::ListValue> args(new base::ListValue);
-  args->Append(new base::StringValue(StorageMonitor::GetInstance()->
-                   GetTransientIdForDeviceId(info.device_id())));
+  std::string transient_id =
+      StorageMonitor::GetInstance()->GetTransientIdForDeviceId(
+          info.device_id());
+  args->AppendString(transient_id);
 
   DispatchEvent(system_storage::OnDetached::kEventName, args.Pass());
 }
@@ -173,6 +204,14 @@ void SystemInfoEventRouter::DispatchEvent(const std::string& event_name,
       BroadcastEventToRenderers(event_name, args.Pass(), GURL());
 }
 
+void AddEventListener(const std::string& event_name) {
+  SystemInfoEventRouter::GetInstance()->AddEventListener(event_name);
+}
+
+void RemoveEventListener(const std::string& event_name) {
+  SystemInfoEventRouter::GetInstance()->RemoveEventListener(event_name);
+}
+
 }  // namespace
 
 static base::LazyInstance<ProfileKeyedAPIFactory<SystemInfoAPI> >
@@ -180,16 +219,14 @@ static base::LazyInstance<ProfileKeyedAPIFactory<SystemInfoAPI> >
 
 // static
 ProfileKeyedAPIFactory<SystemInfoAPI>* SystemInfoAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 SystemInfoAPI::SystemInfoAPI(Profile* profile) : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, system_storage::OnAttached::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, system_storage::OnDetached::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, system_display::OnDisplayChanged::kEventName);
+  EventRouter* router = ExtensionSystem::Get(profile_)->event_router();
+  router->RegisterObserver(this, system_storage::OnAttached::kEventName);
+  router->RegisterObserver(this, system_storage::OnDetached::kEventName);
+  router->RegisterObserver(this, system_display::OnDisplayChanged::kEventName);
 }
 
 SystemInfoAPI::~SystemInfoAPI() {
@@ -200,11 +237,21 @@ void SystemInfoAPI::Shutdown() {
 }
 
 void SystemInfoAPI::OnListenerAdded(const EventListenerInfo& details) {
-  SystemInfoEventRouter::GetInstance()->AddEventListener(details.event_name);
+  if (IsSystemStorageEvent(details.event_name)) {
+    StorageMonitor::GetInstance()->EnsureInitialized(
+        base::Bind(&AddEventListener, details.event_name));
+  } else {
+    AddEventListener(details.event_name);
+  }
 }
 
 void SystemInfoAPI::OnListenerRemoved(const EventListenerInfo& details) {
-  SystemInfoEventRouter::GetInstance()->RemoveEventListener(details.event_name);
+  if (IsSystemStorageEvent(details.event_name)) {
+    StorageMonitor::GetInstance()->EnsureInitialized(
+        base::Bind(&RemoveEventListener, details.event_name));
+  } else {
+    RemoveEventListener(details.event_name);
+  }
 }
 
 }  // namespace extensions

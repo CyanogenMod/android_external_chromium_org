@@ -14,6 +14,7 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_popup_view_mac.h"
@@ -28,7 +29,8 @@
 #include "ui/base/clipboard/clipboard.h"
 #import "ui/base/cocoa/cocoa_event_utils.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
 
 using content::WebContents;
 
@@ -124,7 +126,7 @@ NSRange ComponentToNSRange(const url_parse::Component& component) {
 
 // static
 NSImage* OmniboxViewMac::ImageForResource(int resource_id) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetNativeImageNamed(resource_id).ToNSImage();
 }
 
@@ -203,6 +205,10 @@ void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
 }
 
 void OmniboxViewMac::Update() {
+  if (chrome::ShouldDisplayOriginChipV2()) {
+    [[field_ cell] setPlaceholderString:
+        base::SysUTF16ToNSString(GetHintText())];
+  }
   if (model()->UpdatePermanentText()) {
     // Something visibly changed.  Re-enable URL replacement.
     controller()->GetToolbarModel()->set_url_replacement_enabled(true);
@@ -276,7 +282,7 @@ void OmniboxViewMac::SetForcedQuery() {
   const base::string16 current_text(GetText());
   const size_t start = current_text.find_first_not_of(base::kWhitespaceUTF16);
   if (start == base::string16::npos || (current_text[start] != '?')) {
-    SetUserText(ASCIIToUTF16("?"));
+    SetUserText(base::ASCIIToUTF16("?"));
   } else {
     NSRange range = NSMakeRange(start + 1, current_text.size() - start - 1);
     [[field_ currentEditor] setSelectedRange:range];
@@ -442,7 +448,7 @@ void OmniboxViewMac::ApplyTextAttributes(const base::string16& display_text,
   AutocompleteInput::ParseForEmphasizeComponents(
       display_text, &scheme, &host);
   bool grey_out_url = display_text.substr(scheme.begin, scheme.len) ==
-      UTF8ToUTF16(extensions::kExtensionScheme);
+      base::UTF8ToUTF16(extensions::kExtensionScheme);
   if (model()->CurrentTextIsURL() &&
       (host.is_nonempty() || grey_out_url)) {
     [as addAttribute:NSForegroundColorAttributeName value:BaseTextColor()
@@ -614,10 +620,14 @@ base::string16 OmniboxViewMac::GetGrayTextAutocompletion() const {
   return suggest_text_;
 }
 
-int OmniboxViewMac::TextWidth() const {
+int OmniboxViewMac::GetTextWidth() const {
   // Not used on mac.
   NOTREACHED();
   return 0;
+}
+
+int OmniboxViewMac::GetWidth() const {
+  return ceil([field_ bounds].size.width);
 }
 
 bool OmniboxViewMac::IsImeComposing() const {
@@ -764,12 +774,32 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
 void OmniboxViewMac::OnSetFocus(bool control_down) {
   model()->OnSetFocus(control_down);
   controller()->OnSetFocus();
+
+  // TODO(groby): Not entirely correct, since the chip should only be disabled
+  // after mouseDown: was handled, to allow clicking on the origin chip.
+  if (chrome::ShouldDisplayOriginChipV2()) {
+    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
+    controller()->OnChanged();
+  }
 }
 
 void OmniboxViewMac::OnKillFocus() {
   // Tell the model to reset itself.
   model()->OnWillKillFocus(NULL);
   model()->OnKillFocus();
+
+  // If user input is not in progress, re-enable the origin chip and URL
+  // replacement.  This addresses the case where the URL was shown by a call
+  // to ShowURL().  If the Omnibox achieved focus by other means, the calls to
+  // set_url_replacement_enabled, UpdatePermanentText and RevertAll are not
+  // required (a call to OnChanged would be sufficient) but do no harm.
+  if (chrome::ShouldDisplayOriginChipV2() &&
+      !model()->user_input_in_progress()) {
+    controller()->GetToolbarModel()->set_origin_chip_enabled(true);
+    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
+    model()->UpdatePermanentText();
+    RevertAll();
+  }
 }
 
 void OmniboxViewMac::OnMouseDown(NSInteger button_number) {
@@ -938,8 +968,9 @@ void OmniboxViewMac::FocusLocation(bool select_all) {
 // static
 NSFont* OmniboxViewMac::GetFieldFont() {
   // This value should be kept in sync with InstantPage::InitializeFonts.
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetFont(ResourceBundle::BaseFont).DeriveFont(1).GetNativeFont();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  return rb.GetFontList(ui::ResourceBundle::BaseFont).DeriveWithSizeDelta(1)
+      .GetPrimaryFont().GetNativeFont();
 }
 
 int OmniboxViewMac::GetOmniboxTextLength() const {

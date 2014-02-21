@@ -39,7 +39,11 @@ class ProfileInfoCache : public ProfileInfoInterface,
   virtual ~ProfileInfoCache();
 
   // This |is_managed| refers to local management (formerly "managed mode"),
-  // not enterprise management.
+  // not enterprise management. If the |managed_user_id| is non-empty, the
+  // profile will be marked to be omitted from the avatar-menu list on desktop
+  // versions. This is used while a managed user is in the process of being
+  // registered with the server. Use SetIsOmittedProfileAtIndex() to clear the
+  // flag when the profile is ready to be shown in the menu.
   void AddProfileToCache(const base::FilePath& profile_path,
                          const base::string16& name,
                          const base::string16& username,
@@ -57,6 +61,7 @@ class ProfileInfoCache : public ProfileInfoInterface,
   virtual base::string16 GetShortcutNameOfProfileAtIndex(size_t index)
       const OVERRIDE;
   virtual base::FilePath GetPathOfProfileAtIndex(size_t index) const OVERRIDE;
+  virtual base::Time GetProfileActiveTimeAtIndex(size_t index) const OVERRIDE;
   virtual base::string16 GetUserNameOfProfileAtIndex(
       size_t index) const OVERRIDE;
   virtual const gfx::Image& GetAvatarIconOfProfileAtIndex(
@@ -81,6 +86,7 @@ class ProfileInfoCache : public ProfileInfoInterface,
   virtual bool IsUsingGAIAPictureOfProfileAtIndex(
       size_t index) const OVERRIDE;
   virtual bool ProfileIsManagedAtIndex(size_t index) const OVERRIDE;
+  virtual bool IsOmittedProfileAtIndex(size_t index) const OVERRIDE;
   virtual bool ProfileIsSigninRequiredAtIndex(size_t index) const OVERRIDE;
   virtual std::string GetManagedUserIdOfProfileAtIndex(size_t index) const
       OVERRIDE;
@@ -88,12 +94,14 @@ class ProfileInfoCache : public ProfileInfoInterface,
 
   size_t GetAvatarIconIndexOfProfileAtIndex(size_t index) const;
 
+  void SetProfileActiveTimeAtIndex(size_t index);
   void SetNameOfProfileAtIndex(size_t index, const base::string16& name);
   void SetShortcutNameOfProfileAtIndex(size_t index,
                                        const base::string16& name);
   void SetUserNameOfProfileAtIndex(size_t index,
                                    const base::string16& user_name);
   void SetAvatarIconOfProfileAtIndex(size_t index, size_t icon_index);
+  void SetIsOmittedProfileAtIndex(size_t index, bool is_omitted);
   void SetManagedUserIdOfProfileAtIndex(size_t index, const std::string& id);
   void SetLocalAuthCredentialsOfProfileAtIndex(size_t index,
                                                const std::string& auth);
@@ -145,7 +153,7 @@ class ProfileInfoCache : public ProfileInfoInterface,
   // Because this method will be called during uninstall, before the creation
   // of the ProfileManager, it reads directly from the local state preferences,
   // rather than going through the ProfileInfoCache object.
-  static std::vector<string16> GetProfileNames();
+  static std::vector<base::string16> GetProfileNames();
 
   // Register cache related preferences in Local State.
   static void RegisterPrefs(PrefRegistrySimple* registry);
@@ -158,6 +166,8 @@ class ProfileInfoCache : public ProfileInfoInterface,
   // Saves the profile info to a cache and takes ownership of |info|.
   // Currently the only information that is cached is the profile's name,
   // user name, and avatar icon.
+  void SetInfoQuietlyForProfileAtIndex(size_t index,
+                                       base::DictionaryValue* info);
   void SetInfoForProfileAtIndex(size_t index, base::DictionaryValue* info);
   std::string CacheKeyFromProfilePath(const base::FilePath& profile_path) const;
   std::vector<std::string>::iterator FindPositionForProfile(

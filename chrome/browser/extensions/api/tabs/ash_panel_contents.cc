@@ -15,23 +15,24 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/common/extensions/extension_messages.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
 
-using apps::ShellWindow;
+using apps::AppWindow;
 using apps::NativeAppWindow;
 
 // AshPanelWindowController ----------------------------------------------------
 
-// This class enables a ShellWindow instance to be accessed (to a limited
+// This class enables an AppWindow instance to be accessed (to a limited
 // extent) via the chrome.windows and chrome.tabs API. This is a temporary
-// bridge to support instantiating ShellWindows from v1 apps, specifically
+// bridge to support instantiating AppWindows from v1 apps, specifically
 // for creating Panels in Ash. See crbug.com/160645.
 class AshPanelWindowController : public extensions::WindowController {
  public:
-  AshPanelWindowController(ShellWindow* window, Profile* profile);
+  AshPanelWindowController(AppWindow* window, Profile* profile);
   virtual ~AshPanelWindowController();
 
   void NativeWindowChanged();
@@ -50,17 +51,17 @@ class AshPanelWindowController : public extensions::WindowController {
       const extensions::Extension* extension) const OVERRIDE;
 
  private:
-  ShellWindow* shell_window_;  // Weak pointer; this is owned by shell_window_
+  AppWindow* app_window_;  // Weak pointer; this is owned by app_window_
   bool is_active_;
 
   DISALLOW_COPY_AND_ASSIGN(AshPanelWindowController);
 };
 
-AshPanelWindowController::AshPanelWindowController(
-    ShellWindow* shell_window, Profile* profile)
-    : extensions::WindowController(shell_window->GetBaseWindow(), profile),
-      shell_window_(shell_window),
-      is_active_(shell_window->GetBaseWindow()->IsActive()) {
+AshPanelWindowController::AshPanelWindowController(AppWindow* app_window,
+                                                   Profile* profile)
+    : extensions::WindowController(app_window->GetBaseWindow(), profile),
+      app_window_(app_window),
+      is_active_(app_window->GetBaseWindow()->IsActive()) {
   extensions::WindowControllerList::GetInstance()->AddExtensionWindow(this);
 }
 
@@ -69,7 +70,7 @@ AshPanelWindowController::~AshPanelWindowController() {
 }
 
 int AshPanelWindowController::GetWindowId() const {
-  return static_cast<int>(shell_window_->session_id().id());
+  return static_cast<int>(app_window_->session_id().id());
 }
 
 std::string AshPanelWindowController::GetWindowTypeText() const {
@@ -95,7 +96,7 @@ base::DictionaryValue* AshPanelWindowController::CreateTabValue(
       (tab_index > 0)) {
     return NULL;
   }
-  content::WebContents* web_contents = shell_window_->web_contents();
+  content::WebContents* web_contents = app_window_->web_contents();
   if (!web_contents)
     return NULL;
 
@@ -111,10 +112,9 @@ base::DictionaryValue* AshPanelWindowController::CreateTabValue(
       extensions::tabs_constants::kStatusKey,
       extensions::ExtensionTabUtil::GetTabStatusText(
           web_contents->IsLoading()));
-  tab_value->SetBoolean(
-      extensions::tabs_constants::kActiveKey,
-      shell_window_->GetBaseWindow()->IsActive());
-  // ShellWindow only ever contains one tab, so that tab is always effectively
+  tab_value->SetBoolean(extensions::tabs_constants::kActiveKey,
+                        app_window_->GetBaseWindow()->IsActive());
+  // AppWindow only ever contains one tab, so that tab is always effectively
   // selcted and highlighted (for purposes of the chrome.tabs API).
   tab_value->SetInteger(extensions::tabs_constants::kWindowIdKey, window_id);
   tab_value->SetInteger(extensions::tabs_constants::kIdKey, window_id);
@@ -140,12 +140,12 @@ void AshPanelWindowController::SetFullscreenMode(
 
 bool AshPanelWindowController::IsVisibleToExtension(
     const extensions::Extension* extension) const {
-  return shell_window_->extension() &&
-      extension->id() == shell_window_->extension()->id();
+  return app_window_->extension() &&
+         extension->id() == app_window_->extension()->id();
 }
 
 void AshPanelWindowController::NativeWindowChanged() {
-  bool active = shell_window_->GetBaseWindow()->IsActive();
+  bool active = app_window_->GetBaseWindow()->IsActive();
   if (active == is_active_)
     return;
   is_active_ = active;
@@ -160,22 +160,21 @@ void AshPanelWindowController::NativeWindowChanged() {
 
 // AshPanelContents -----------------------------------------------------
 
-AshPanelContents::AshPanelContents(ShellWindow* host)
-    : host_(host) {
-}
+AshPanelContents::AshPanelContents(AppWindow* host) : host_(host) {}
 
 AshPanelContents::~AshPanelContents() {
 }
 
-void AshPanelContents::Initialize(Profile* profile, const GURL& url) {
+void AshPanelContents::Initialize(content::BrowserContext* context,
+                                  const GURL& url) {
   url_ = url;
 
   extension_function_dispatcher_.reset(
-      new ExtensionFunctionDispatcher(profile, this));
+      new ExtensionFunctionDispatcher(context, this));
 
-  web_contents_.reset(content::WebContents::Create(
-      content::WebContents::CreateParams(
-          profile, content::SiteInstance::CreateForURL(profile, url_))));
+  web_contents_.reset(
+      content::WebContents::Create(content::WebContents::CreateParams(
+          context, content::SiteInstance::CreateForURL(context, url_))));
 
   // Needed to give the web contents a Window ID. Extension APIs expect web
   // contents to have a Window ID. Also required for FaviconTabHelper to
@@ -186,7 +185,7 @@ void AshPanelContents::Initialize(Profile* profile, const GURL& url) {
 
   // Responsible for loading favicons for the Launcher, which uses different
   // logic than the FaviconTabHelper associated with web_contents_
-  // (instantiated in ShellWindow::Init())
+  // (instantiated in AppWindow::Init())
   launcher_favicon_loader_.reset(
       new LauncherFaviconLoader(this, web_contents_.get()));
 
@@ -195,8 +194,8 @@ void AshPanelContents::Initialize(Profile* profile, const GURL& url) {
 
 void AshPanelContents::LoadContents(int32 creator_process_id) {
   // This must be created after the native window has been created.
-  window_controller_.reset(
-      new AshPanelWindowController(host_, host_->profile()));
+  window_controller_.reset(new AshPanelWindowController(
+      host_, Profile::FromBrowserContext(host_->browser_context())));
 
   web_contents_->GetController().LoadURL(
       url_, content::Referrer(), content::PAGE_TRANSITION_LINK,

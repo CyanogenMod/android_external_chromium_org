@@ -23,7 +23,7 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/chrome_paths.h"
@@ -81,7 +81,8 @@ class FaviconChangeObserver : public BookmarkModelObserver {
     wait_for_load_ = false;
     content::RunMessageLoop();
   }
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE {}
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE {}
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
                                  int old_index,
@@ -427,7 +428,7 @@ const BookmarkNode* AddURL(int profile,
     return NULL;
   }
   const BookmarkNode* result = GetBookmarkModel(profile)->
-      AddURL(parent, index, WideToUTF16(title), url);
+      AddURL(parent, index, base::WideToUTF16(title), url);
   if (!result) {
     LOG(ERROR) << "Could not add bookmark " << title << " to Profile "
                << profile;
@@ -437,7 +438,7 @@ const BookmarkNode* AddURL(int profile,
     const BookmarkNode* v_parent = NULL;
     FindNodeInVerifier(GetBookmarkModel(profile), parent, &v_parent);
     const BookmarkNode* v_node = GetVerifierBookmarkModel()->
-        AddURL(v_parent, index, WideToUTF16(title), url);
+        AddURL(v_parent, index, base::WideToUTF16(title), url);
     if (!v_node) {
       LOG(ERROR) << "Could not add bookmark " << title << " to the verifier";
       return NULL;
@@ -467,8 +468,8 @@ const BookmarkNode* AddFolder(int profile,
                << "Profile " << profile;
     return NULL;
   }
-  const BookmarkNode* result =
-      GetBookmarkModel(profile)->AddFolder(parent, index, WideToUTF16(title));
+  const BookmarkNode* result = GetBookmarkModel(profile)->AddFolder(
+      parent, index, base::WideToUTF16(title));
   EXPECT_TRUE(result);
   if (!result) {
     LOG(ERROR) << "Could not add folder " << title << " to Profile "
@@ -479,7 +480,7 @@ const BookmarkNode* AddFolder(int profile,
     const BookmarkNode* v_parent = NULL;
     FindNodeInVerifier(GetBookmarkModel(profile), parent, &v_parent);
     const BookmarkNode* v_node = GetVerifierBookmarkModel()->AddFolder(
-        v_parent, index, WideToUTF16(title));
+        v_parent, index, base::WideToUTF16(title));
     if (!v_node) {
       LOG(ERROR) << "Could not add folder " << title << " to the verifier";
       return NULL;
@@ -498,9 +499,9 @@ void SetTitle(int profile,
   if (test()->use_verifier()) {
     const BookmarkNode* v_node = NULL;
     FindNodeInVerifier(GetBookmarkModel(profile), node, &v_node);
-    GetVerifierBookmarkModel()->SetTitle(v_node, WideToUTF16(new_title));
+    GetVerifierBookmarkModel()->SetTitle(v_node, base::WideToUTF16(new_title));
   }
-  GetBookmarkModel(profile)->SetTitle(node, WideToUTF16(new_title));
+  GetBookmarkModel(profile)->SetTitle(node, base::WideToUTF16(new_title));
 }
 
 void SetFavicon(int profile,
@@ -698,13 +699,13 @@ const BookmarkNode* GetUniqueNodeByURL(int profile, const GURL& url) {
 int CountBookmarksWithTitlesMatching(int profile, const std::wstring& title) {
   return CountNodesWithTitlesMatching(GetBookmarkModel(profile),
                                       BookmarkNode::URL,
-                                      WideToUTF16(title));
+                                      base::WideToUTF16(title));
 }
 
 int CountFoldersWithTitlesMatching(int profile, const std::wstring& title) {
   return CountNodesWithTitlesMatching(GetBookmarkModel(profile),
                                       BookmarkNode::FOLDER,
-                                      WideToUTF16(title));
+                                      base::WideToUTF16(title));
 }
 
 gfx::Image CreateFavicon(SkColor color) {
@@ -741,7 +742,7 @@ gfx::Image Create1xFaviconFromPNGFile(const std::string& path) {
   std::string contents;
   base::ReadFileToString(full_path, &contents);
   return gfx::Image::CreateFrom1xPNGBytes(
-      reinterpret_cast<const unsigned char*>(contents.data()), contents.size());
+      base::RefCountedString::TakeString(&contents));
 }
 
 std::string IndexedURL(int i) {

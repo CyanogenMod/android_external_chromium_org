@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_CHROMEOS_FILE_MANAGER_PATH_UTIL_H_
 #define CHROME_BROWSER_CHROMEOS_FILE_MANAGER_PATH_UTIL_H_
 
+#include <string>
+
 class Profile;
 
 namespace base {
@@ -24,13 +26,12 @@ base::FilePath GetDownloadsFolderForProfile(Profile* profile);
 //
 // Here's the list of relocations we have made so far.
 //
-// M28: crbug.com/229304
+// M27: crbug.com/229304, Migration code for this is removed in M34.
 //   The "Google Drive" folder is moved from /special/drive to
 //   /special/drive/root to stored shared files outside of "My Drive" in
 //   /special/drive/other.
 //
-// [TODO(kinaba) not yet happening at this point crbug/309556]
-// M32: crbug.com/313539
+// M34: crbug.com/313539
 //   The "Downloads" folder is changed from /home/chronos/user/Downloads to
 //   /home/chronos/u-<hash>/Downloads to support multi profiles.
 //
@@ -40,9 +41,16 @@ base::FilePath GetDownloadsFolderForProfile(Profile* profile);
 //   a multi-profile session, the "user" path cannot be used to mean "its own"
 //   Download folder anymore. Thus we are switching to always use "u-<hash>"
 //   that consistently works whether or not multi-profile is enabled.
+//
+// M34: crbug.com/336123
+//   The "Google Drive" folder is changed from /special/drive to
+//   /special/drive-<profile-id> to support multi profiles.
 bool MigratePathFromOldFormat(Profile* profile,
                               const base::FilePath& old_path,
                               base::FilePath* new_path);
+
+// The canonical mount point name for "Downloads" folder.
+std::string GetDownloadsMountPointName(Profile* profile);
 
 }  // namespace util
 }  // namespace file_manager

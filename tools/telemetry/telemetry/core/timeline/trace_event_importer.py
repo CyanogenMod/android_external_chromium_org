@@ -13,6 +13,7 @@ import re
 
 from telemetry.core.timeline import importer
 import telemetry.core.timeline.async_slice as tracing_async_slice
+import telemetry.core.timeline.flow_event as tracing_flow_event
 
 class TraceEventTimelineImporter(importer.TimelineImporter):
   def __init__(self, model, event_data):
@@ -22,6 +23,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
     self._events_were_from_string = False
     self._all_async_events = []
     self._all_object_events = []
+    self._all_flow_events = []
 
     if type(event_data) is str:
       # If the event data begins with a [, then we know it should end with a ].
@@ -216,6 +218,13 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
                      event['ts'] / 1000.0,
                      event.get('args'))
 
+  def _ProcessFlowEvent(self, event):
+    thread = (self._GetOrCreateProcess(event['pid'])
+        .GetOrCreateThread(event['tid']))
+    self._all_flow_events.append({
+        'event': event,
+        'thread': thread})
+
   def ImportEvents(self):
     ''' Walks through the events_ list and outputs the structures discovered to
     model_.
@@ -229,7 +238,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
       elif phase == 'S' or phase == 'F' or phase == 'T':
         self._ProcessAsyncEvent(event)
       # Note, I is historic. The instant event marker got changed, but we
-      # want to support loading load trace files so we have both I and i.
+      # want to support loading old trace files so we have both I and i.
       elif phase == 'I' or phase == 'i':
         self._ProcessInstantEvent(event)
       elif phase == 'P':
@@ -241,8 +250,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
       elif phase == 'N' or phase == 'D' or phase == 'O':
         self._ProcessObjectEvent(event)
       elif phase == 's' or phase == 't' or phase == 'f':
-        # NB: toss until there's proper support
-        pass
+        self._ProcessFlowEvent(event)
       else:
         self._model.import_errors.append('Unrecognized event phase: ' +
             phase + '(' + event['name'] + ')')
@@ -257,6 +265,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
     # We need to reupdate the bounds in case the minimum start time changes
     self._model.UpdateBounds()
     self._CreateAsyncSlices()
+    self._CreateFlowSlices()
     self._CreateExplicitObjects()
     self._CreateImplicitObjects()
 
@@ -291,7 +300,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
           async_event_states_by_name_then_id[name] = {}
         if event_id in async_event_states_by_name_then_id[name]:
           self._model.import_errors.append(
-              'At %d, a slice of the same id %s was alrady open.' % (
+              'At %d, a slice of the same id %s was already open.' % (
                   event['ts'], event_id))
           continue
 
@@ -323,6 +332,10 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
 
           async_slice.start_thread = events[0]['thread']
           async_slice.end_thread = async_event_state['thread']
+          if async_slice.start_thread == async_slice.end_thread:
+            if 'tts' in event and 'tts' in events[0]['event']:
+              async_slice.thread_duration = ((event['tts'] / 1000.0)
+                  - (events[0]['event']['tts'] / 1000.0))
           async_slice.id = event_id
           async_slice.args = events[0]['event']['args']
 
@@ -342,6 +355,13 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
 
             sub_slice.start_thread = events[j - 1]['thread']
             sub_slice.end_thread = events[j]['thread']
+            if sub_slice.start_thread == sub_slice.end_thread:
+              if 'tts' in events[j]['event'] and \
+                  'tts' in events[j - 1]['event']:
+                sub_slice.thread_duration = \
+                    ((events[j]['event']['tts'] / 1000.0)
+                        - (events[j - 1]['event']['tts'] / 1000.0))
+
             sub_slice.id = event_id
             sub_slice.args = events[j - 1]['event']['args']
 
@@ -363,3 +383,53 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
   def _CreateImplicitObjects(self):
     # TODO(tengs): Implement object instance parsing
     pass
+
+  def _CreateFlowSlices(self):
+    if len(self._all_flow_events) == 0:
+      return
+
+    self._all_flow_events.sort(
+        cmp=lambda x, y: int(x['event']['ts'] - y['event']['ts']))
+
+    flow_id_to_event = {}
+    for data in self._all_flow_events:
+      event = data['event']
+      thread = data['thread']
+      if 'name' not in event:
+        self._model.import_errors.append(
+          'Flow events (ph: s, t or f) require a name parameter.')
+        continue
+      if 'id' not in event:
+        self._model.import_errors.append(
+          'Flow events (ph: s, t or f) require an id parameter.')
+        continue
+
+      flow_event = tracing_flow_event.FlowEvent(
+          event['cat'],
+          event['id'],
+          event['name'],
+          event['ts'] / 1000.0,
+          event['args'])
+      thread.AddFlowEvent(flow_event)
+
+      if event['ph'] == 's':
+        if event['id'] in flow_id_to_event:
+          self._model.import_errors.append(
+              'event id %s already seen when encountering start of'
+              'flow event.' % event['id'])
+          continue
+        flow_id_to_event[event['id']] = flow_event
+      elif event['ph'] == 't' or event['ph'] == 'f':
+        if not event['id'] in flow_id_to_event:
+          self._model.import_errors.append(
+            'Found flow phase %s for id: %s but no flow start found.' % (
+                event['ph'], event['id']))
+          continue
+        flow_position = flow_id_to_event[event['id']]
+        self._model.flow_events.append([flow_position, flow_event])
+
+        if event['ph'] == 'f':
+          del flow_id_to_event[event['id']]
+        else:
+          # Make this event the next start event in this flow.
+          flow_id_to_event[event['id']] = flow_event

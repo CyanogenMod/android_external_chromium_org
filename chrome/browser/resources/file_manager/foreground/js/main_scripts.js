@@ -86,7 +86,6 @@
 //<include src="drag_selector.js"/>
 //<include src="drive_banners.js" />
 //<include src="error_dialog.js"/>
-//<include src="file_operation_manager_wrapper.js"/>
 //<include src="file_grid.js"/>
 //<include src="file_manager.js"/>
 //<include src="file_selection.js"/>
@@ -97,6 +96,7 @@
 //<include src="file_watcher.js"/>
 //<include src="folder_shortcuts_data_model.js"/>
 //<include src="navigation_list_model.js"/>
+//<include src="progress_center_item_group.js"/>
 //<include src="scrollbar.js"/>
 //<include src="share_client.js"/>
 //<include src="share_dialog.js"/>
@@ -125,7 +125,6 @@ window.fileManager = fileManager;
 
 // Exports
 window.util = util;
-window.FileOperationManagerWrapper = FileOperationManagerWrapper;
 
 window.unload = unload;
 

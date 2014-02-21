@@ -29,6 +29,7 @@ void ResourceRequestInfo::AllocateForTesting(
     ResourceContext* context,
     int render_process_id,
     int render_view_id,
+    int render_frame_id,
     bool is_async) {
   ResourceRequestInfoImpl* info =
       new ResourceRequestInfoImpl(
@@ -37,7 +38,7 @@ void ResourceRequestInfo::AllocateForTesting(
           render_view_id,                    // route_id
           0,                                 // origin_pid
           0,                                 // request_id
-          MSG_ROUTING_NONE,                  // render_frame_id
+          render_frame_id,                   // render_frame_id
           resource_type == ResourceType::MAIN_FRAME,  // is_main_frame
           0,                                 // frame_id
           false,                             // parent_is_main_frame
@@ -49,7 +50,8 @@ void ResourceRequestInfo::AllocateForTesting(
           false,                             // is_stream
           true,                              // allow_download
           false,                             // has_user_gesture
-          blink::WebReferrerPolicyDefault,  // referrer_policy
+          blink::WebReferrerPolicyDefault,   // referrer_policy
+          blink::WebPageVisibilityStateVisible,  // visibility_state
           context,                           // context
           base::WeakPtr<ResourceMessageFilter>(),  // filter
           is_async);                         // is_async
@@ -57,16 +59,16 @@ void ResourceRequestInfo::AllocateForTesting(
 }
 
 // static
-bool ResourceRequestInfo::GetRenderViewForRequest(
+bool ResourceRequestInfo::GetRenderFrameForRequest(
     const net::URLRequest* request,
     int* render_process_id,
-    int* render_view_id) {
+    int* render_frame_id) {
   URLRequestUserData* user_data = static_cast<URLRequestUserData*>(
       request->GetUserData(URLRequestUserData::kUserDataKey));
   if (!user_data)
     return false;
   *render_process_id = user_data->render_process_id();
-  *render_view_id = user_data->render_view_id();
+  *render_frame_id = user_data->render_frame_id();
   return true;
 }
 
@@ -104,6 +106,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     bool allow_download,
     bool has_user_gesture,
     blink::WebReferrerPolicy referrer_policy,
+    blink::WebPageVisibilityState visibility_state,
     ResourceContext* context,
     base::WeakPtr<ResourceMessageFilter> filter,
     bool is_async)
@@ -129,6 +132,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       transition_type_(transition_type),
       memory_cost_(0),
       referrer_policy_(referrer_policy),
+      visibility_state_(visibility_state),
       context_(context),
       filter_(filter),
       is_async_(is_async) {
@@ -181,8 +185,17 @@ ResourceType::Type ResourceRequestInfoImpl::GetResourceType() const {
   return resource_type_;
 }
 
+int ResourceRequestInfoImpl::GetProcessType() const {
+  return process_type_;
+}
+
 blink::WebReferrerPolicy ResourceRequestInfoImpl::GetReferrerPolicy() const {
   return referrer_policy_;
+}
+
+blink::WebPageVisibilityState
+ResourceRequestInfoImpl::GetVisibilityState() const {
+  return visibility_state_;
 }
 
 PageTransition ResourceRequestInfoImpl::GetPageTransition() const {
@@ -197,26 +210,26 @@ bool ResourceRequestInfoImpl::WasIgnoredByHandler() const {
   return was_ignored_by_handler_;
 }
 
-bool ResourceRequestInfoImpl::GetAssociatedRenderView(
+bool ResourceRequestInfoImpl::GetAssociatedRenderFrame(
     int* render_process_id,
-    int* render_view_id) const {
+    int* render_frame_id) const {
   // If the request is from the worker process, find a content that owns the
   // worker.
   if (process_type_ == PROCESS_TYPE_WORKER) {
     // Need to display some related UI for this network request - pick an
     // arbitrary parent to do so.
     if (!WorkerServiceImpl::GetInstance()->GetRendererForWorker(
-            child_id_, render_process_id, render_view_id)) {
+            child_id_, render_process_id, render_frame_id)) {
       *render_process_id = -1;
-      *render_view_id = -1;
+      *render_frame_id = -1;
       return false;
     }
   } else if (process_type_ == PROCESS_TYPE_PLUGIN) {
     *render_process_id = origin_pid_;
-    *render_view_id = route_id_;
+    *render_frame_id = render_frame_id_;
   } else {
     *render_process_id = child_id_;
-    *render_view_id = route_id_;
+    *render_frame_id = render_frame_id_;
   }
   return true;
 }
@@ -232,11 +245,11 @@ bool ResourceRequestInfoImpl::IsDownload() const {
 void ResourceRequestInfoImpl::AssociateWithRequest(net::URLRequest* request) {
   request->SetUserData(NULL, this);
   int render_process_id;
-  int render_view_id;
-  if (GetAssociatedRenderView(&render_process_id, &render_view_id)) {
+  int render_frame_id;
+  if (GetAssociatedRenderFrame(&render_process_id, &render_frame_id)) {
     request->SetUserData(
         URLRequestUserData::kUserDataKey,
-        new URLRequestUserData(render_process_id, render_view_id));
+        new URLRequestUserData(render_process_id, render_frame_id));
   }
 }
 

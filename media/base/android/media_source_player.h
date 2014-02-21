@@ -21,6 +21,7 @@
 #include "media/base/android/demuxer_android.h"
 #include "media/base/android/media_codec_bridge.h"
 #include "media/base/android/media_decoder_job.h"
+#include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/clock.h"
 #include "media/base/media_export.h"
@@ -44,7 +45,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   virtual ~MediaSourcePlayer();
 
   static bool IsTypeSupported(const std::vector<uint8>& scheme_uuid,
-                              const std::string& security_level,
+                              MediaDrmBridge::SecurityLevel security_level,
                               const std::string& container,
                               const std::vector<std::string>& codecs);
 
@@ -97,7 +98,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // Callback to notify that MediaCrypto is ready in |drm_bridge_|.
   void OnMediaCryptoReady();
 
-  // Handle pending events when all the decoder jobs finished.
+  // Handle pending events if all the decoder jobs are not currently decoding.
   void ProcessPendingEvents();
 
   // Helper method to clear any pending |SURFACE_CHANGE_EVENT_PENDING|
@@ -118,6 +119,11 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // Functions check whether audio/video is present.
   bool HasVideo();
   bool HasAudio();
+
+  // Functions that check whether audio/video stream has reached end of output
+  // or are not present in player configuration.
+  bool AudioFinished();
+  bool VideoFinished();
 
   // Determine seekability based on duration.
   bool Seekable();
@@ -198,8 +204,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   int sampling_rate_;
   // TODO(xhwang/qinmin): Add |video_extra_data_|.
   std::vector<uint8> audio_extra_data_;
-  bool audio_finished_;
-  bool video_finished_;
+  bool reached_audio_eos_;
+  bool reached_video_eos_;
   bool playing_;
   bool is_audio_encrypted_;
   bool is_video_encrypted_;

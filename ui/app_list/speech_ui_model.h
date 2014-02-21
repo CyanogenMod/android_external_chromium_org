@@ -10,13 +10,14 @@
 #include "base/strings/string16.h"
 #include "ui/app_list/app_list_export.h"
 #include "ui/app_list/speech_ui_model_observer.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace app_list {
 
 // SpeechUIModel provides the interface to update the UI for speech recognition.
 class APP_LIST_EXPORT SpeechUIModel {
  public:
-  SpeechUIModel();
+  explicit SpeechUIModel(SpeechRecognitionState initial_state);
   virtual ~SpeechUIModel();
 
   void SetSpeechResult(const base::string16& result, bool is_final);
@@ -30,12 +31,21 @@ class APP_LIST_EXPORT SpeechUIModel {
   bool is_final() const { return is_final_; }
   int16 sound_level() const { return sound_level_; }
   SpeechRecognitionState state() const { return state_; }
+  const gfx::ImageSkia& logo() const { return logo_; }
+  void set_logo(const gfx::ImageSkia& logo) { logo_ = logo; }
 
  private:
   base::string16 result_;
   bool is_final_;
   int16 sound_level_;
   SpeechRecognitionState state_;
+
+  // The logo image which the speech UI will show at the top-left.
+  gfx::ImageSkia logo_;
+
+  // The sound level range to compute visible sound-level.
+  int16 minimum_sound_level_;
+  int16 maximum_sound_level_;
 
   ObserverList<SpeechUIModelObserver> observers_;
 

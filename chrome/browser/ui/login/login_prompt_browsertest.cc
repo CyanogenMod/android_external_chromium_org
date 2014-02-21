@@ -6,6 +6,7 @@
 #include <list>
 #include <map>
 
+#include "base/metrics/field_trial.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prerender/prerender_manager.h"
@@ -73,8 +74,8 @@ void LoginPromptBrowserTest::SetAuthFor(LoginHandler* handler) {
   EXPECT_TRUE(auth_map_.end() != i);
   if (i != auth_map_.end()) {
     const AuthInfo& info = i->second;
-    handler->SetAuth(UTF8ToUTF16(info.username_),
-                     UTF8ToUTF16(info.password_));
+    handler->SetAuth(base::UTF8ToUTF16(info.username_),
+                     base::UTF8ToUTF16(info.password_));
   }
 }
 
@@ -213,10 +214,10 @@ const char kSingleRealmTestPage[] = "files/login/single_realm.html";
 const char* kAuthBasicPage = "auth-basic";
 const char* kAuthDigestPage = "auth-digest";
 
-string16 ExpectedTitleFromAuth(const base::string16& username,
-                               const base::string16& password) {
+base::string16 ExpectedTitleFromAuth(const base::string16& username,
+                                     const base::string16& password) {
   // The TestServer sets the title to username/password on successful login.
-  return username + UTF8ToUTF16("/") + password;
+  return username + base::UTF8ToUTF16("/") + password;
 }
 
 // Confirm that <link rel="prefetch"> targetting an auth required
@@ -235,21 +236,20 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, PrefetchAuthCancels) {
   class SetPrefetchForTest {
    public:
     explicit SetPrefetchForTest(bool prefetch)
-        : old_prefetch_state_(prerender::PrerenderManager::IsPrefetchEnabled()),
-          old_mode_(prerender::PrerenderManager::GetMode()) {
-      prerender::PrerenderManager::SetIsPrefetchEnabled(prefetch);
+        : old_prerender_mode_(prerender::PrerenderManager::GetMode()) {
+      std::string exp_group = prefetch ? "ExperimentYes" : "ExperimentNo";
+      base::FieldTrialList::CreateFieldTrial("Prefetch", exp_group);
       // Disable prerender so this is just a prefetch of the top-level page.
       prerender::PrerenderManager::SetMode(
           prerender::PrerenderManager::PRERENDER_MODE_DISABLED);
     }
 
     ~SetPrefetchForTest() {
-      prerender::PrerenderManager::SetIsPrefetchEnabled(old_prefetch_state_);
-      prerender::PrerenderManager::SetMode(old_mode_);
+      prerender::PrerenderManager::SetMode(old_prerender_mode_);
     }
+
    private:
-    bool old_prefetch_state_;
-    prerender::PrerenderManager::PrerenderManagerMode old_mode_;
+    prerender::PrerenderManager::PrerenderManagerMode old_prerender_mode_;
   } set_prefetch_for_test(true);
 
   content::WebContents* contents =
@@ -296,7 +296,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestBasicAuth) {
     LoginHandler* handler = *observer.handlers_.begin();
 
     ASSERT_TRUE(handler);
-    handler->SetAuth(UTF8ToUTF16(bad_username_), UTF8ToUTF16(bad_password_));
+    handler->SetAuth(base::UTF8ToUTF16(bad_username_),
+                     base::UTF8ToUTF16(bad_password_));
     auth_supplied_waiter.Wait();
 
     // The request should be retried after the incorrect password is
@@ -312,7 +313,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestBasicAuth) {
   auth_supplied_waiter.Wait();
 
   base::string16 expected_title =
-      ExpectedTitleFromAuth(ASCIIToUTF16("basicuser"), ASCIIToUTF16("secret"));
+      ExpectedTitleFromAuth(base::ASCIIToUTF16("basicuser"),
+                            base::ASCIIToUTF16("secret"));
   content::TitleWatcher title_watcher(contents, expected_title);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
@@ -344,7 +346,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestDigestAuth) {
     LoginHandler* handler = *observer.handlers_.begin();
 
     ASSERT_TRUE(handler);
-    handler->SetAuth(UTF8ToUTF16(bad_username_), UTF8ToUTF16(bad_password_));
+    handler->SetAuth(base::UTF8ToUTF16(bad_username_),
+                     base::UTF8ToUTF16(bad_password_));
     auth_supplied_waiter.Wait();
 
     // The request should be retried after the incorrect password is
@@ -357,8 +360,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestDigestAuth) {
   WindowedAuthSuppliedObserver auth_supplied_waiter(controller);
   LoginHandler* handler = *observer.handlers_.begin();
 
-  base::string16 username(UTF8ToUTF16(username_digest_));
-  base::string16 password(UTF8ToUTF16(password_));
+  base::string16 username(base::UTF8ToUTF16(username_digest_));
+  base::string16 password(base::UTF8ToUTF16(password_));
   handler->SetAuth(username, password);
   auth_supplied_waiter.Wait();
 
@@ -412,14 +415,16 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestTwoAuths) {
   LoginHandler* handler2 = *(++(observer.handlers_.begin()));
 
   base::string16 expected_title1 = ExpectedTitleFromAuth(
-      UTF8ToUTF16(username_basic_), UTF8ToUTF16(password_));
+      base::UTF8ToUTF16(username_basic_), base::UTF8ToUTF16(password_));
   base::string16 expected_title2 = ExpectedTitleFromAuth(
-      UTF8ToUTF16(username_digest_), UTF8ToUTF16(password_));
+      base::UTF8ToUTF16(username_digest_), base::UTF8ToUTF16(password_));
   content::TitleWatcher title_watcher1(contents1, expected_title1);
   content::TitleWatcher title_watcher2(contents2, expected_title2);
 
-  handler1->SetAuth(UTF8ToUTF16(username_basic_), UTF8ToUTF16(password_));
-  handler2->SetAuth(UTF8ToUTF16(username_digest_), UTF8ToUTF16(password_));
+  handler1->SetAuth(base::UTF8ToUTF16(username_basic_),
+                    base::UTF8ToUTF16(password_));
+  handler2->SetAuth(base::UTF8ToUTF16(username_digest_),
+                    base::UTF8ToUTF16(password_));
 
   EXPECT_EQ(expected_title1, title_watcher1.WaitAndGetTitle());
   EXPECT_EQ(expected_title2, title_watcher2.WaitAndGetTitle());
@@ -656,8 +661,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, IncorrectConfirmation) {
     LoginHandler* handler = *observer.handlers_.begin();
 
     ASSERT_TRUE(handler);
-    handler->SetAuth(UTF8ToUTF16(bad_username_),
-                     UTF8ToUTF16(bad_password_));
+    handler->SetAuth(base::UTF8ToUTF16(bad_username_),
+                     base::UTF8ToUTF16(bad_password_));
     auth_supplied_waiter.Wait();
 
     // The request should be retried after the incorrect password is
@@ -1068,6 +1073,185 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
   EXPECT_EQ(1, observer_incognito.auth_needed_count_);
   EXPECT_EQ(0, observer_incognito.auth_supplied_count_);
   EXPECT_EQ(0, observer_incognito.auth_cancelled_count_);
+  EXPECT_TRUE(test_server()->Stop());
+}
+
+// If an XMLHttpRequest is made with incorrect credentials, there should be no
+// login prompt; instead the 401 status should be returned to the script.
+IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
+                       NoLoginPromptForXHRWithBadCredentials) {
+  const char* kXHRTestPage = "files/login/xhr_with_credentials.html#incorrect";
+
+  ASSERT_TRUE(test_server()->Start());
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  NavigationController* controller = &contents->GetController();
+  LoginPromptBrowserTestObserver observer;
+
+  observer.Register(content::Source<NavigationController>(controller));
+
+  // Load a page which makes a synchronous XMLHttpRequest for an authenticated
+  // resource with the wrong credentials.  There should be no login prompt.
+  {
+    GURL test_page = test_server()->GetURL(kXHRTestPage);
+    WindowedLoadStopObserver load_stop_waiter(controller, 1);
+    browser()->OpenURL(OpenURLParams(
+        test_page, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED,
+        false));
+    load_stop_waiter.Wait();
+  }
+
+  base::string16 expected_title(base::UTF8ToUTF16("status=401"));
+
+  EXPECT_EQ(expected_title, contents->GetTitle());
+  EXPECT_EQ(0, observer.auth_supplied_count_);
+  EXPECT_EQ(0, observer.auth_needed_count_);
+  EXPECT_EQ(0, observer.auth_cancelled_count_);
+  EXPECT_TRUE(test_server()->Stop());
+}
+
+// If an XMLHttpRequest is made with correct credentials, there should be no
+// login prompt either.
+IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
+                       NoLoginPromptForXHRWithGoodCredentials) {
+  const char* kXHRTestPage = "files/login/xhr_with_credentials.html#secret";
+
+  ASSERT_TRUE(test_server()->Start());
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  NavigationController* controller = &contents->GetController();
+  LoginPromptBrowserTestObserver observer;
+
+  observer.Register(content::Source<NavigationController>(controller));
+
+  // Load a page which makes a synchronous XMLHttpRequest for an authenticated
+  // resource with the wrong credentials.  There should be no login prompt.
+  {
+    GURL test_page = test_server()->GetURL(kXHRTestPage);
+    WindowedLoadStopObserver load_stop_waiter(controller, 1);
+    browser()->OpenURL(OpenURLParams(
+        test_page, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED,
+        false));
+    load_stop_waiter.Wait();
+  }
+
+  base::string16 expected_title(base::UTF8ToUTF16("status=200"));
+
+  EXPECT_EQ(expected_title, contents->GetTitle());
+  EXPECT_EQ(0, observer.auth_supplied_count_);
+  EXPECT_EQ(0, observer.auth_needed_count_);
+  EXPECT_EQ(0, observer.auth_cancelled_count_);
+  EXPECT_TRUE(test_server()->Stop());
+}
+
+// If an XMLHttpRequest is made without credentials, there should be a login
+// prompt.
+IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
+                       LoginPromptForXHRWithoutCredentials) {
+  const char* kXHRTestPage = "files/login/xhr_without_credentials.html";
+
+  ASSERT_TRUE(test_server()->Start());
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  NavigationController* controller = &contents->GetController();
+  LoginPromptBrowserTestObserver observer;
+
+  observer.Register(content::Source<NavigationController>(controller));
+
+  // Load a page which makes a synchronous XMLHttpRequest for an authenticated
+  // resource with the wrong credentials.  There should be no login prompt.
+  {
+    GURL test_page = test_server()->GetURL(kXHRTestPage);
+    WindowedAuthNeededObserver auth_needed_waiter(controller);
+    browser()->OpenURL(OpenURLParams(
+        test_page, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED,
+        false));
+    auth_needed_waiter.Wait();
+  }
+
+  ASSERT_FALSE(observer.handlers_.empty());
+  {
+    WindowedAuthNeededObserver auth_needed_waiter(controller);
+    WindowedAuthSuppliedObserver auth_supplied_waiter(controller);
+    LoginHandler* handler = *observer.handlers_.begin();
+
+    ASSERT_TRUE(handler);
+    handler->SetAuth(base::UTF8ToUTF16(bad_username_),
+                     base::UTF8ToUTF16(bad_password_));
+    auth_supplied_waiter.Wait();
+
+    // The request should be retried after the incorrect password is
+    // supplied.  This should result in a new AUTH_NEEDED notification
+    // for the same realm.
+    auth_needed_waiter.Wait();
+  }
+
+  ASSERT_EQ(1u, observer.handlers_.size());
+  WindowedAuthSuppliedObserver auth_supplied_waiter(controller);
+  LoginHandler* handler = *observer.handlers_.begin();
+
+  base::string16 username(base::UTF8ToUTF16(username_digest_));
+  base::string16 password(base::UTF8ToUTF16(password_));
+  handler->SetAuth(username, password);
+  auth_supplied_waiter.Wait();
+
+  WindowedLoadStopObserver load_stop_waiter(controller, 1);
+  load_stop_waiter.Wait();
+
+  base::string16 expected_title(base::UTF8ToUTF16("status=200"));
+
+  EXPECT_EQ(expected_title, contents->GetTitle());
+  EXPECT_EQ(2, observer.auth_supplied_count_);
+  EXPECT_EQ(2, observer.auth_needed_count_);
+  EXPECT_EQ(0, observer.auth_cancelled_count_);
+  EXPECT_TRUE(test_server()->Stop());
+}
+
+// If an XMLHttpRequest is made without credentials, there should be a login
+// prompt.  If it's cancelled, the script should get a 401 status.
+IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
+                       LoginPromptForXHRWithoutCredentialsCancelled) {
+  const char* kXHRTestPage = "files/login/xhr_without_credentials.html";
+
+  ASSERT_TRUE(test_server()->Start());
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  NavigationController* controller = &contents->GetController();
+  LoginPromptBrowserTestObserver observer;
+
+  observer.Register(content::Source<NavigationController>(controller));
+
+  // Load a page which makes a synchronous XMLHttpRequest for an authenticated
+  // resource with the wrong credentials.  There should be no login prompt.
+  {
+    GURL test_page = test_server()->GetURL(kXHRTestPage);
+    WindowedAuthNeededObserver auth_needed_waiter(controller);
+    browser()->OpenURL(OpenURLParams(
+        test_page, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED,
+        false));
+    auth_needed_waiter.Wait();
+  }
+
+  ASSERT_EQ(1u, observer.handlers_.size());
+  WindowedAuthCancelledObserver auth_cancelled_waiter(controller);
+  LoginHandler* handler = *observer.handlers_.begin();
+
+  handler->CancelAuth();
+  auth_cancelled_waiter.Wait();
+
+  WindowedLoadStopObserver load_stop_waiter(controller, 1);
+  load_stop_waiter.Wait();
+
+  base::string16 expected_title(base::UTF8ToUTF16("status=401"));
+
+  EXPECT_EQ(expected_title, contents->GetTitle());
+  EXPECT_EQ(0, observer.auth_supplied_count_);
+  EXPECT_EQ(1, observer.auth_needed_count_);
+  EXPECT_EQ(1, observer.auth_cancelled_count_);
   EXPECT_TRUE(test_server()->Stop());
 }
 

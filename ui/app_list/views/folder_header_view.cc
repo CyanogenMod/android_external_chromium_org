@@ -37,7 +37,7 @@ const SkColor kHintTextColor = SkColorSetRGB(0xA0, 0xA0, 0xA0);
 class FolderHeaderView::FolderNameView : public views::Textfield {
  public:
   FolderNameView() {
-    set_border(views::Border::CreateEmptyBorder(1, 1, 1, 1));
+    SetBorder(views::Border::CreateEmptyBorder(1, 1, 1, 1));
     const SkColor kFocusBorderColor = SkColorSetRGB(64, 128, 250);
     SetFocusPainter(views::Painter::CreateSolidFocusPainter(
           kFocusBorderColor,
@@ -60,7 +60,8 @@ FolderHeaderView::FolderHeaderView(FolderHeaderViewDelegate* delegate)
     : folder_item_(NULL),
       back_button_(new views::ImageButton(this)),
       folder_name_view_(new FolderNameView),
-      delegate_(delegate) {
+      delegate_(delegate),
+      folder_name_visible_(true) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   back_button_->SetImage(views::ImageButton::STATE_NORMAL,
       rb.GetImageSkiaNamed(IDR_APP_LIST_FOLDER_BACK_NORMAL));
@@ -68,13 +69,14 @@ FolderHeaderView::FolderHeaderView(FolderHeaderViewDelegate* delegate)
       views::ImageButton::ALIGN_MIDDLE);
   AddChildView(back_button_);
 
-  folder_name_view_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  folder_name_view_->SetFontList(
+      rb.GetFontList(ui::ResourceBundle::MediumFont));
   folder_name_view_->set_placeholder_text_color(kHintTextColor);
   folder_name_view_->set_placeholder_text(
       rb.GetLocalizedString(IDS_APP_LIST_FOLDER_NAME_PLACEHOLDER));
-  folder_name_view_->RemoveBorder();
+  folder_name_view_->SetBorder(views::Border::NullBorder());
   folder_name_view_->SetBackgroundColor(kContentsBackgroundColor);
-  folder_name_view_->SetController(this);
+  folder_name_view_->set_controller(this);
   AddChildView(folder_name_view_);
 }
 
@@ -95,11 +97,23 @@ void FolderHeaderView::SetFolderItem(AppListFolderItem* folder_item) {
   Update();
 }
 
+void FolderHeaderView::UpdateFolderNameVisibility(bool visible) {
+  folder_name_visible_ = visible;
+  Update();
+  SchedulePaint();
+}
+
+void FolderHeaderView::OnFolderItemRemoved() {
+  folder_item_ = NULL;
+}
+
 void FolderHeaderView::Update() {
   if (!folder_item_)
     return;
 
-  folder_name_view_->SetText(UTF8ToUTF16(folder_item_->title()));
+  folder_name_view_->SetVisible(folder_name_visible_);
+  if (folder_name_visible_)
+    folder_name_view_->SetText(base::UTF8ToUTF16(folder_item_->title()));
 }
 
 gfx::Size FolderHeaderView::GetPreferredSize() {
@@ -128,7 +142,7 @@ void FolderHeaderView::OnPaint(gfx::Canvas* canvas) {
   views::View::OnPaint(canvas);
 
   gfx::Rect rect(GetContentsBounds());
-  if (rect.IsEmpty())
+  if (rect.IsEmpty() || !folder_name_visible_)
     return;
 
   // Draw bottom separator line.
@@ -146,7 +160,7 @@ void FolderHeaderView::ContentsChanged(views::Textfield* sender,
     return;
 
   folder_item_->RemoveObserver(this);
-  std::string name = UTF16ToUTF8(folder_name_view_->text());
+  std::string name = base::UTF16ToUTF8(folder_name_view_->text());
   folder_item_->SetTitleAndFullName(name, name);
   folder_item_->AddObserver(this);
 }

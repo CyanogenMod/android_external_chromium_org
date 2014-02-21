@@ -75,7 +75,7 @@ struct PrintServerInfoCUPS {
 
 class PrintSystemCUPS : public PrintSystem {
  public:
-  explicit PrintSystemCUPS(const DictionaryValue* print_system_settings);
+  explicit PrintSystemCUPS(const base::DictionaryValue* print_system_settings);
 
   // PrintSystem implementation.
   virtual PrintSystemResult Init() OVERRIDE;
@@ -87,7 +87,8 @@ class PrintSystemCUPS : public PrintSystem {
   virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
   virtual bool ValidatePrintTicket(
       const std::string& printer_name,
-      const std::string& print_ticket_data) OVERRIDE;
+      const std::string& print_ticket_data,
+      const std::string& print_ticket_mime_type) OVERRIDE;
   virtual bool GetJobDetails(const std::string& printer_name,
                              PlatformJobId job_id,
                              PrintJobDetails *job_details) OVERRIDE;
@@ -95,6 +96,7 @@ class PrintSystemCUPS : public PrintSystem {
   virtual PrintSystem::PrinterWatcher* CreatePrinterWatcher(
       const std::string& printer_name) OVERRIDE;
   virtual PrintSystem::JobSpooler* CreateJobSpooler() OVERRIDE;
+  virtual bool UseCddAndCjt() OVERRIDE;
   virtual std::string GetSupportedMimeTypes() OVERRIDE;
 
   // Helper functions.
@@ -139,7 +141,7 @@ class PrintSystemCUPS : public PrintSystem {
                 const char* name, const char* filename,
                 const char* title, int num_options, cups_option_t* options);
 
-  void InitPrintBackends(const DictionaryValue* print_system_settings);
+  void InitPrintBackends(const base::DictionaryValue* print_system_settings);
   void AddPrintServer(const std::string& url);
 
   void UpdatePrinters();
@@ -374,6 +376,7 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
 
   // PrintSystem::JobSpooler implementation.
   virtual bool Spool(const std::string& print_ticket,
+                     const std::string& print_ticket_mime_type,
                      const base::FilePath& print_data_file_path,
                      const std::string& print_data_mime_type,
                      const std::string& printer_name,
@@ -408,7 +411,8 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
   DISALLOW_COPY_AND_ASSIGN(JobSpoolerCUPS);
 };
 
-PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
+PrintSystemCUPS::PrintSystemCUPS(
+    const base::DictionaryValue* print_system_settings)
     : update_timeout_(base::TimeDelta::FromMinutes(
         kCheckForPrinterUpdatesMinutes)),
       initialized_(false),
@@ -439,8 +443,8 @@ PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
 }
 
 void PrintSystemCUPS::InitPrintBackends(
-    const DictionaryValue* print_system_settings) {
-  const ListValue* url_list;
+    const base::DictionaryValue* print_system_settings) {
+  const base::ListValue* url_list;
   if (print_system_settings &&
       print_system_settings->GetList(kCUPSPrintServerURLs, &url_list)) {
     for (size_t i = 0; i < url_list->GetSize(); i++) {
@@ -460,7 +464,7 @@ void PrintSystemCUPS::AddPrintServer(const std::string& url) {
     LOG(WARNING) << "No print server specified. Using default print server.";
 
   // Get Print backend for the specific print server.
-  DictionaryValue backend_settings;
+  base::DictionaryValue backend_settings;
   backend_settings.SetString(kCUPSPrintServerURL, url);
 
   // Make CUPS requests non-blocking.
@@ -541,11 +545,15 @@ bool PrintSystemCUPS::IsValidPrinter(const std::string& printer_name) {
   return GetPrinterInfo(printer_name, NULL);
 }
 
-bool PrintSystemCUPS::ValidatePrintTicket(const std::string& printer_name,
-                                        const std::string& print_ticket_data) {
+bool PrintSystemCUPS::ValidatePrintTicket(
+    const std::string& printer_name,
+    const std::string& print_ticket_data,
+    const std::string& print_ticket_mime_type) {
   DCHECK(initialized_);
-  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket_data));
-  return ticket_value != NULL && ticket_value->IsType(Value::TYPE_DICTIONARY);
+  scoped_ptr<base::Value> ticket_value(
+      base::JSONReader::Read(print_ticket_data));
+  return ticket_value != NULL &&
+         ticket_value->IsType(base::Value::TYPE_DICTIONARY);
 }
 
 // Print ticket on linux is a JSON string containing only one dictionary.
@@ -553,14 +561,16 @@ bool PrintSystemCUPS::ParsePrintTicket(
     const std::string& print_ticket,
     std::map<std::string, std::string>* options) {
   DCHECK(options);
-  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket));
-  if (ticket_value == NULL || !ticket_value->IsType(Value::TYPE_DICTIONARY))
+  scoped_ptr<base::Value> ticket_value(base::JSONReader::Read(print_ticket));
+  if (ticket_value == NULL ||
+      !ticket_value->IsType(base::Value::TYPE_DICTIONARY)) {
     return false;
+  }
 
   options->clear();
-  DictionaryValue* ticket_dict =
-      static_cast<DictionaryValue*>(ticket_value.get());
-  for (DictionaryValue::Iterator it(*ticket_dict); !it.IsAtEnd();
+  base::DictionaryValue* ticket_dict =
+      static_cast<base::DictionaryValue*>(ticket_value.get());
+  for (base::DictionaryValue::Iterator it(*ticket_dict); !it.IsAtEnd();
        it.Advance()) {
     std::string value;
     if (it.value().GetAsString(&value))
@@ -719,12 +729,16 @@ PrintSystem::JobSpooler* PrintSystemCUPS::CreateJobSpooler() {
   return new JobSpoolerCUPS(this);
 }
 
+bool PrintSystemCUPS::UseCddAndCjt() {
+  return false;
+}
+
 std::string PrintSystemCUPS::GetSupportedMimeTypes() {
   return supported_mime_types_;
 }
 
 scoped_refptr<PrintSystem> PrintSystem::CreateInstance(
-    const DictionaryValue* print_system_settings) {
+    const base::DictionaryValue* print_system_settings) {
   return new PrintSystemCUPS(print_system_settings);
 }
 

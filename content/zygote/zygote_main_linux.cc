@@ -19,6 +19,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/linux_util.h"
 #include "base/native_library.h"
 #include "base/pickle.h"
@@ -29,7 +30,7 @@
 #include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/font_config_ipc_linux.h"
 #include "content/common/pepper_plugin_list.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
@@ -195,7 +196,11 @@ struct tm* localtime_override(const time_t* timep) {
   } else {
     CHECK_EQ(0, pthread_once(&g_libc_localtime_funcs_guard,
                              InitLibcLocaltimeFunctions));
-    return g_libc_localtime(timep);
+    struct tm* res = g_libc_localtime(timep);
+#if defined(MEMORY_SANITIZER)
+    if (res) __msan_unpoison(res, sizeof(*res));
+#endif
+    return res;
   }
 }
 
@@ -214,7 +219,11 @@ struct tm* localtime64_override(const time_t* timep) {
   } else {
     CHECK_EQ(0, pthread_once(&g_libc_localtime_funcs_guard,
                              InitLibcLocaltimeFunctions));
-    return g_libc_localtime64(timep);
+    struct tm* res = g_libc_localtime64(timep);
+#if defined(MEMORY_SANITIZER)
+    if (res) __msan_unpoison(res, sizeof(*res));
+#endif
+    return res;
   }
 }
 
@@ -230,7 +239,11 @@ struct tm* localtime_r_override(const time_t* timep, struct tm* result) {
   } else {
     CHECK_EQ(0, pthread_once(&g_libc_localtime_funcs_guard,
                              InitLibcLocaltimeFunctions));
-    return g_libc_localtime_r(timep, result);
+    struct tm* res = g_libc_localtime_r(timep, result);
+#if defined(MEMORY_SANITIZER)
+    if (res) __msan_unpoison(res, sizeof(*res));
+#endif
+    return res;
   }
 }
 
@@ -246,7 +259,11 @@ struct tm* localtime64_r_override(const time_t* timep, struct tm* result) {
   } else {
     CHECK_EQ(0, pthread_once(&g_libc_localtime_funcs_guard,
                              InitLibcLocaltimeFunctions));
-    return g_libc_localtime64_r(timep, result);
+    struct tm* res = g_libc_localtime64_r(timep, result);
+#if defined(MEMORY_SANITIZER)
+    if (res) __msan_unpoison(res, sizeof(*res));
+#endif
+    return res;
   }
 }
 
@@ -332,7 +349,9 @@ static bool EnterSuidSandbox(LinuxSandbox* linux_sandbox,
   PreSandboxInit();
 
   // Check that the pre-sandbox initialization didn't spawn threads.
+#if !defined(THREAD_SANITIZER)
   DCHECK(linux_sandbox->IsSingleThreaded());
+#endif
 
   if (setuid_sandbox->IsSuidSandboxChild()) {
     // Use the SUID sandbox.  This still allows the seccomp sandbox to

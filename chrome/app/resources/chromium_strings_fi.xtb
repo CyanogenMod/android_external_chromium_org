@@ -2,6 +2,7 @@
 <!DOCTYPE translationbundle>
 <translationbundle lang="fi">
 <translation id="6676384891291319759">Käytä internetiä</translation>
+<translation id="8586442755830160949">Copyright <ph name="YEAR"/> The Chromium Authors. Kaikki oikeudet pidätetään.</translation>
 <translation id="6373523479360886564">Haluatko varmasti poistaa Chromiumin asennuksen?</translation>
 <translation id="5065199687811594072">Haluatko Chromiumin tallentavan nämä luottokortin tiedot verkkolomakkeiden täydentämistä varten?</translation>
 <translation id="6510925080656968729">Poista Chromium</translation>
@@ -26,7 +27,6 @@
 <translation id="3549345495227188780">Aloita Chromium-käyttöjärjestelmän käyttö</translation>
 <translation id="4330297532943865716">Tietokoneella havaittiin ristiriitainen Chromiumin tai Chromium-kehyksen asennus. Poista se ja yritä uudelleen.</translation>
 <translation id="6953661834318318668">Chromium-työkalupalkki</translation>
-<translation id="2245147136185581459">Chromiumin Captive Portal -havaitsin</translation>
 <translation id="4285930937574705105">Asennus epäonnistui tuntemattoman virheen takia. Jos Chromium on tällä hetkellä käynnissä, sulje se ja yritä uudelleen.</translation>
 <translation id="1396446129537741364">Chromium yrittää näyttää salasanat.</translation>
 <translation id="3555616473548901994">Poistaminen valmis.</translation>
@@ -60,7 +60,6 @@
 <translation id="7771626876550251690">Tässä tapauksessa varmenteessa annettu osoite ei vastannut sivustoa, johon selaimesi yritti siirtyä. On mahdollista, että hyökkääjä on kaapannut yhteyden ja esittää nyt selaimellesi eri sivuston varmenteen, mikä aiheuttaa ristiriidan. Saattaa myös olla, että palvelin on määritetty palauttamaan sama varmenne useilla sivustoilla, vaikka se ei ole voimassa kaikilla kyseisillä sivustoilla. Chromium voi vahvistaa, että saavuit sivustoon &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mutta se ei voi taata, että se on sama sivusto kuin &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, johon yritit siirtyä. Jos jatkat, Chromium ei tarkista muita nimiristiriitoja.</translation>
 <translation id="4330585738697551178">Tämän moduulin tiedetään aiheuttavan ristiriitoja Chromiumin kanssa.</translation>
 <translation id="3190315855212034486">Hups! Chromium kaatui. Käynnistetäänkö uudelleen?</translation>
-<translation id="3590194807845837023">Poista profiilin lukitus ja käynnistä uudelleen</translation>
 <translation id="6714487516757221107">Päivitettävää Chromiumin tai Chromium-kehyksen asennusta ei löydy.</translation>
 <translation id="3197823471738295152">Laite on ajan tasalla.</translation>
 <translation id="8551886023433311834">Melkein ajan tasalla! Viimeistele päivitys käynnistämällä laite uudelleen.</translation>
@@ -107,7 +106,6 @@
 <translation id="5358375970380395591">Olet kirjautumassa sisään hallinnoidulla tilillä ja antamassa tilin järjestelmänvalvojalle oikeuden hallita Chromium-profiiliasi. Chromium-tietosi, kuten sovelluksesi, kirjanmerkkisi, historiasi, salasanasi ja muut asetuksesi, yhdistetään pysyvästi käyttäjätiliin <ph name="USER_NAME"/>. Voit poistaa nämä tiedot Google-tilien Hallintapaneelissa, mutta et voi liittää tietoja toiseen tiliin. <ph name="LEARN_MORE"/></translation>
 <translation id="263863604136125912">Käynnistä Chromium</translation>
 <translation id="9036189287518468038">Chromium-sovellusten käynnistysohjelma</translation>
-<translation id="4886158514168859177">Tälle tietokoneelle on jo asennettu Chromium-kehyksen uudempi versio. Jos Chromium-kehys ei toimi, poista sen asennus ja yritä uudelleen.</translation>
 <translation id="911206726377975832">Poistetaanko myös selailutiedot?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> edellyttää, että luet ja hyväksyt seuraavat käyttöehdot ennen tämän laitteen käyttöä. Nämä ehdot eivät laajenna, muokkaa tai rajoita Chromium-käyttöliittymän ehtoja.</translation>
 <translation id="5603085937604338780">chromium</translation>
@@ -153,6 +151,7 @@
 <translation id="6717134281241384636">Profiiliasi ei voi käyttää, sillä se on peräisin Chromiumin uudemmasta versiosta.
 
 Kaikki ominaisuudet eivät ehkä ole käytettävissä. Määritä jokin muu profiilihakemisto tai käytä Chromiumin uudempaa versiota.</translation>
+<translation id="8907580949721785412">Chromium yrittää näyttää salasanat. Salli tämä kirjoittamalla Windows-salasanasi.</translation>
 <translation id="9013087743919948559">Lisää Chromiumiin</translation>
 <translation id="6212496753309875659">Tälle tietokoneelle on jo asennettu Chromiumin uudempi versio. Jos Chromium ei toimi, poista sen asennus ja yritä uudelleen.</translation>
 <translation id="1298199220304005244">Hanki apua Chromium-käyttöjärjestelmän käytössä</translation>
@@ -170,7 +169,6 @@ Kaikki ominaisuudet eivät ehkä ole käytettävissä. Määritä jokin muu prof
 <translation id="1902135785017821799"><ph name="FILE_NAME"/> tekee joidenkin haittaohjelmien tavoin muutoksia asetuksiin, joten Chromium on estänyt sen.</translation>
 <translation id="3155163173539279776">Käynnistä Chromium uudelleen</translation>
 <translation id="2966088006374919794">Chromiumin täytyy käynnistää ulkopuolinen sovellus <ph name="SCHEME"/>-linkkien käsittelyä varten. Pyyntöön liittyvä linkki on <ph name="PROTOLINK"/>.</translation>
-<translation id="6287463253129672858">Chromium-kehyksestä ei voi asentaa versiota, joka on tällä hetkellä käynnissä. Sulje Chromium-kehys ja yritä uudelleen.</translation>
 <translation id="2558235863893655150">Haluatko, että Chromium tallentaa salasanasi?</translation>
 <translation id="1231416733874080281">Näytä Chromium-valikko</translation>
 <translation id="5772805321386874569">(vaatii Chromiumin <ph name="BEGIN_BUTTON"/>uudelleenkäynnistyksen<ph name="END_BUTTON"/>)</translation>
@@ -195,7 +193,6 @@ Kaikki ominaisuudet eivät ehkä ole käytettävissä. Määritä jokin muu prof
 <translation id="805745970029938373">Täällä näet kaikki ilmoituksesi Chromium-sovelluksista, laajennuksista ja verkkosivustoista.</translation>
 <translation id="2119636228670142020">Tietoja &amp;Chromium-käyttöjärjestelmästä</translation>
 <translation id="1708666629004767631">Chromiumista on saatavilla uusi, turvallisempi versio.</translation>
-<translation id="1539981464052805551">Copyright 2013 The Chromium Authors. Kaikki oikeudet pidätetään.</translation>
 <translation id="378917192836375108">Chromiumin avulla voit soittaa Skypellä puhelinnumeroon klikkaamalla sitä verkossa!</translation>
 <translation id="8724049448828509830">Lataus on käynnissä. Haluatko sulkea Chromiumin ja peruuttaa latauksen?</translation>
 <translation id="3360567213983886831">Chromium Binaries</translation>
@@ -209,7 +206,6 @@ Jos kirjaudut silti sisään, Chromium-tiedot, kuten kirjanmerkit, historia ja a
 <translation id="374481098568514319">Tietokoneessa on jo uudempi Chromium-komponenttien versio. Käytä uudempaa asennusohjelmaa.</translation>
 <translation id="6240281849816458190">Yritit siirtyä osoitteeseen &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mutta palvelin palautti varmenteen, joka ei ole vielä voimassa. Emme voi selvittää, onko varmenne luotettava. Chromium ei voi taata, että olet yhteydessä sivustoon &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; etkä hyökkäyssivustoon. Tietokoneesi kellon asetus on <ph name="CURRENT_TIME"/>. Jos aika on väärä, korjaa se ja päivitä tämä sivu.</translation>
 <translation id="5862307444128926510">Tervetuloa Chromiumiin</translation>
-<translation id="1622565934590470080">Tälle tietokoneelle on jo asennettu Chromiumin ja Chromium-kehyksen uudempi versio. Jos Chromium ja Chromium-kehys eivät toimi, poista niiden asennus ja yritä uudelleen.</translation>
 <translation id="7318036098707714271">Asetustiedostosi on virheellinen.
 
 Chromium ei voi palauttaa asetuksiasi.</translation>

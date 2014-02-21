@@ -16,11 +16,11 @@
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission.h"
@@ -73,17 +73,17 @@ static scoped_refptr<Extension> CreateExtensionBase(
     const std::string& name,
     bool background_permission,
     PushMessagingOption push_messaging) {
-  DictionaryValue manifest;
+  base::DictionaryValue manifest;
   manifest.SetString(extensions::manifest_keys::kVersion, "1.0.0.0");
   manifest.SetString(extensions::manifest_keys::kName, name);
-  ListValue* permissions = new ListValue();
+  base::ListValue* permissions = new base::ListValue();
   manifest.Set(extensions::manifest_keys::kPermissions, permissions);
   if (background_permission) {
-    permissions->Append(Value::CreateStringValue("background"));
+    permissions->Append(base::Value::CreateStringValue("background"));
   }
   if (push_messaging == PUSH_MESSAGING_PERMISSION ||
       push_messaging == PUSH_MESSAGING_BUT_NOT_BACKGROUND) {
-    permissions->Append(Value::CreateStringValue("pushMessaging"));
+    permissions->Append(base::Value::CreateStringValue("pushMessaging"));
   }
 
   std::string error;

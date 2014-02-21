@@ -8,8 +8,8 @@
 #include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_icon_decoration.h"
 #include "grit/theme_resources.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/text_elider.h"
-#include "ui/gfx/font.h"
 
 namespace {
 
@@ -84,10 +84,11 @@ CGFloat EVBubbleDecoration::GetWidthForSpace(CGFloat width) {
 
   // Middle-elide the label to fit |width_left|.  This leaves the
   // prefix and the trailing country code in place.
-  gfx::Font font(GetFont());
   NSString* elided_label = base::SysUTF16ToNSString(
-      gfx::ElideText(base::SysNSStringToUTF16(full_label_), font, width_left,
-                    gfx::ELIDE_IN_MIDDLE));
+      gfx::ElideText(base::SysNSStringToUTF16(full_label_),
+                     gfx::FontList(gfx::Font(GetFont())),
+                     width_left,
+                     gfx::ELIDE_IN_MIDDLE));
 
   // Use the elided label.
   SetLabel(elided_label);
@@ -120,15 +121,5 @@ bool EVBubbleDecoration::AcceptsMousePress() {
 }
 
 ui::NinePartImageIds EVBubbleDecoration::GetBubbleImageIds() {
-  return {
-    IDR_OMNIBOX_EV_BUBBLE_TOP_LEFT,
-    IDR_OMNIBOX_EV_BUBBLE_TOP,
-    IDR_OMNIBOX_EV_BUBBLE_TOP_RIGHT,
-    IDR_OMNIBOX_EV_BUBBLE_LEFT,
-    IDR_OMNIBOX_EV_BUBBLE_CENTER,
-    IDR_OMNIBOX_EV_BUBBLE_RIGHT,
-    IDR_OMNIBOX_EV_BUBBLE_BOTTOM_LEFT,
-    IDR_OMNIBOX_EV_BUBBLE_BOTTOM,
-    IDR_OMNIBOX_EV_BUBBLE_BOTTOM_RIGHT
-  };
+  return IMAGE_GRID(IDR_OMNIBOX_EV_BUBBLE);
 }

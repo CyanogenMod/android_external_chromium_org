@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -127,8 +128,8 @@ class IMEDetailedView : public TrayDetailsView,
           property_list[i].name,
           property_list[i].selected ? gfx::Font::BOLD : gfx::Font::NORMAL);
       if (i == 0)
-        container->set_border(views::Border::CreateSolidSidedBorder(1, 0, 0, 0,
-        kBorderLightColor));
+        container->SetBorder(views::Border::CreateSolidSidedBorder(
+            1, 0, 0, 0, kBorderLightColor));
       scroll_content()->AddChildView(container);
       property_map_[container] = property_list[i].key;
     }
@@ -149,11 +150,15 @@ class IMEDetailedView : public TrayDetailsView,
     if (sender == footer()->content()) {
       TransitionToDefaultView();
     } else if (sender == settings_) {
+      Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+          ash::UMA_STATUS_AREA_IME_SHOW_DETAILED);
       delegate->ShowIMESettings();
     } else {
       std::map<views::View*, std::string>::const_iterator ime_find;
       ime_find = ime_map_.find(sender);
       if (ime_find != ime_map_.end()) {
+        Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+            ash::UMA_STATUS_AREA_IME_SWITCH_MODE);
         std::string ime_id = ime_find->second;
         delegate->SwitchIME(ime_id);
         GetWidget()->Close();
@@ -185,7 +190,8 @@ TrayIME::TrayIME(SystemTray* system_tray)
       tray_label_(NULL),
       default_(NULL),
       detailed_(NULL),
-      message_shown_(false) {
+      message_shown_(false),
+      weak_factory_(this) {
   Shell::GetInstance()->system_tray_notifier()->AddIMEObserver(this);
 }
 
@@ -197,12 +203,17 @@ TrayIME::~TrayIME() {
 
 void TrayIME::UpdateTrayLabel(const IMEInfo& current, size_t count) {
   if (tray_label_) {
+    bool visible = count > 1;
+    tray_label_->SetVisible(visible);
+    // Do not change label before hiding because this change is noticeable.
+    if (!visible)
+      return;
     if (current.third_party) {
-      tray_label_->label()->SetText(current.short_name + UTF8ToUTF16("*"));
+      tray_label_->label()->SetText(
+          current.short_name + base::UTF8ToUTF16("*"));
     } else {
       tray_label_->label()->SetText(current.short_name);
     }
-    tray_label_->SetVisible(count > 1);
     SetTrayLabelItemBorder(tray_label_, system_tray()->shelf_alignment());
     tray_label_->Layout();
   }
@@ -237,7 +248,7 @@ void TrayIME::UpdateOrCreateNotification() {
       message_center::RichNotificationData(),
       new message_center::HandleNotificationClickedDelegate(
           base::Bind(&TrayIME::PopupDetailedView,
-                     base::Unretained(this), 0, true))));
+                     weak_factory_.GetWeakPtr(), 0, true))));
   message_center->AddNotification(notification.Pass());
   message_shown_ = true;
 }

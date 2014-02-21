@@ -77,7 +77,7 @@ CSPHandler::CSPHandler(bool is_platform_app)
 CSPHandler::~CSPHandler() {
 }
 
-bool CSPHandler::Parse(Extension* extension, string16* error) {
+bool CSPHandler::Parse(Extension* extension, base::string16* error) {
   const std::string key = Keys()[0];
   if (!extension->manifest()->HasPath(key)) {
     if (extension->manifest_version() >= 2) {
@@ -97,17 +97,17 @@ bool CSPHandler::Parse(Extension* extension, string16* error) {
 
   std::string content_security_policy;
   if (!extension->manifest()->GetString(key, &content_security_policy)) {
-    *error = ASCIIToUTF16(errors::kInvalidContentSecurityPolicy);
+    *error = base::ASCIIToUTF16(errors::kInvalidContentSecurityPolicy);
     return false;
   }
   if (!ContentSecurityPolicyIsLegal(content_security_policy)) {
-    *error = ASCIIToUTF16(errors::kInvalidContentSecurityPolicy);
+    *error = base::ASCIIToUTF16(errors::kInvalidContentSecurityPolicy);
     return false;
   }
   if (extension->manifest_version() >= 2 &&
       !ContentSecurityPolicyIsSecure(content_security_policy,
                                      extension->GetType())) {
-    *error = ASCIIToUTF16(errors::kInsecureContentSecurityPolicy);
+    *error = base::ASCIIToUTF16(errors::kInsecureContentSecurityPolicy);
     return false;
   }
 

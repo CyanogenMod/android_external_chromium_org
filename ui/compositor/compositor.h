@@ -28,10 +28,6 @@ class MessageLoopProxy;
 class RunLoop;
 }
 
-namespace blink {
-class WebGraphicsContext3D;
-}
-
 namespace cc {
 class ContextProvider;
 class Layer;
@@ -44,9 +40,14 @@ class Rect;
 class Size;
 }
 
+namespace gpu {
+struct Mailbox;
+}
+
 namespace ui {
 
 class Compositor;
+class CompositorVSyncManager;
 class Layer;
 class PostedSwapQueue;
 class Reflector;
@@ -113,15 +114,14 @@ class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
   float device_scale_factor() const { return device_scale_factor_; }
 
   virtual unsigned int PrepareTexture() = 0;
-  virtual blink::WebGraphicsContext3D* HostContext3D() = 0;
 
   // Replaces the texture with the texture from the specified mailbox.
-  virtual void Consume(const std::string& mailbox_name,
+  virtual void Consume(const gpu::Mailbox& mailbox,
                        const gfx::Size& new_size) {}
 
   // Moves the texture into the mailbox and returns the mailbox name.
   // The texture must have been previously consumed from a mailbox.
-  virtual std::string Produce();
+  virtual gpu::Mailbox Produce();
 
  protected:
   virtual ~Texture();
@@ -161,43 +161,6 @@ class COMPOSITOR_EXPORT CompositorLock
   DISALLOW_COPY_AND_ASSIGN(CompositorLock);
 };
 
-// This is only to be used for test. It allows execution of other tasks on
-// the current message loop before the current task finishs (there is a
-// potential for re-entrancy).
-class COMPOSITOR_EXPORT DrawWaiterForTest : public CompositorObserver {
- public:
-  // Waits for a draw to be issued by the compositor. If the test times out
-  // here, there may be a logic error in the compositor code causing it
-  // not to draw.
-  static void Wait(Compositor* compositor);
-
-  // Waits for a commit instead of a draw.
-  static void WaitForCommit(Compositor* compositor);
-
- private:
-  DrawWaiterForTest();
-  virtual ~DrawWaiterForTest();
-
-  void WaitImpl(Compositor* compositor);
-
-  // CompositorObserver implementation.
-  virtual void OnCompositingDidCommit(Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingStarted(Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE;
-  virtual void OnCompositingEnded(Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingAborted(Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingLockStateChanged(Compositor* compositor) OVERRIDE;
-  virtual void OnUpdateVSyncParameters(Compositor* compositor,
-                                       base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE;
-
-  scoped_ptr<base::RunLoop> wait_run_loop_;
-
-  bool wait_for_commit_;
-
-  DISALLOW_COPY_AND_ASSIGN(DrawWaiterForTest);
-};
-
 // Compositor object to take care of GPU painting.
 // A Browser compositor object is responsible for generating the final
 // displayable form of pixels comprising a single widget's contents. It draws an
@@ -205,8 +168,7 @@ class COMPOSITOR_EXPORT DrawWaiterForTest : public CompositorObserver {
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
-      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient),
-      public base::SupportsWeakPtr<Compositor> {
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
  public:
   explicit Compositor(gfx::AcceleratedWidget widget);
   virtual ~Compositor();
@@ -251,11 +213,6 @@ class COMPOSITOR_EXPORT Compositor
 
   void SetLatencyInfo(const LatencyInfo& latency_info);
 
-  // Reads the region |bounds_in_pixel| of the contents of the last rendered
-  // frame into the given bitmap.
-  // Returns false if the pixels could not be read.
-  bool ReadPixels(SkBitmap* bitmap, const gfx::Rect& bounds_in_pixel);
-
   // Sets the compositor's device scale factor and size.
   void SetScaleAndSize(float scale, const gfx::Size& size_in_pixel);
 
@@ -268,6 +225,9 @@ class COMPOSITOR_EXPORT Compositor
 
   // Returns the widget for this compositor.
   gfx::AcceleratedWidget widget() const { return widget_; }
+
+  // Returns the vsync manager for this compositor.
+  scoped_refptr<CompositorVSyncManager> vsync_manager() const;
 
   // Compositor does not own observers. It is the responsibility of the
   // observer to remove itself when it is done observing.
@@ -291,15 +251,12 @@ class COMPOSITOR_EXPORT Compositor
   // Signals swap has aborted (e.g. lost context).
   void OnSwapBuffersAborted();
 
-  void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                               base::TimeDelta interval);
-
   // LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
   virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void Animate(double frame_begin_time) OVERRIDE {}
+  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
   virtual void Layout() OVERRIDE;
-  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
+  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) OVERRIDE {}
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE;
@@ -348,6 +305,9 @@ class COMPOSITOR_EXPORT Compositor
   gfx::AcceleratedWidget widget_;
   scoped_refptr<cc::Layer> root_web_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
+
+  // The manager of vsync parameters for this compositor.
+  scoped_refptr<CompositorVSyncManager> vsync_manager_;
 
   // Used to verify that we have at most one draw swap in flight.
   scoped_ptr<PostedSwapQueue> posted_swaps_;

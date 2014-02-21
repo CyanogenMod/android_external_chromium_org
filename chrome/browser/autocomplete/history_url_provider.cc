@@ -14,8 +14,10 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -101,7 +103,7 @@ GURL ConvertToHostOnly(const history::HistoryMatch& match,
   if ((host.spec().length() < (match.input_location + input.length())))
     return GURL();  // User typing is longer than this host suggestion.
 
-  const base::string16 spec = UTF8ToUTF16(host.spec());
+  const base::string16 spec = base::UTF8ToUTF16(host.spec());
   if (spec.compare(match.input_location, input.length(), input))
     return GURL();  // User typing is no longer a prefix.
 
@@ -187,6 +189,37 @@ void RecordAdditionalInfoFromUrlRow(const history::URLRow& info,
   match->RecordAdditionalInfo("last visit", info.last_visit());
 }
 
+// Calculates a new relevance score applying half-life time decaying to |count|
+// using |time_since_last_visit| and |score_buckets|.
+// This function will never return a score higher than |undecayed_relevance|.
+// In other words, it can only demote the old score.
+double CalculateRelevanceUsingScoreBuckets(
+    const HUPScoringParams::ScoreBuckets& score_buckets,
+    const base::TimeDelta& time_since_last_visit,
+    int undecayed_relevance,
+    int count) {
+  // Back off if above relevance cap.
+  if ((score_buckets.relevance_cap() != -1) &&
+      (undecayed_relevance >= score_buckets.relevance_cap()))
+    return undecayed_relevance;
+
+  // Time based decay using half-life time.
+  double decayed_count = count;
+  if (decayed_count > 0)
+    decayed_count *= score_buckets.HalfLifeTimeDecay(time_since_last_visit);
+
+  // Find a threshold where decayed_count >= bucket.
+  const HUPScoringParams::ScoreBuckets::CountMaxRelevance* score_bucket = NULL;
+  for (size_t i = 0; i < score_buckets.buckets().size(); ++i) {
+    score_bucket = &score_buckets.buckets()[i];
+    if (decayed_count >= score_bucket->first)
+      break;  // Buckets are in descending order, so we can ignore the rest.
+  }
+
+  return (score_bucket && (undecayed_relevance > score_bucket->second)) ?
+      score_bucket->second : undecayed_relevance;
+}
+
 }  // namespace
 
 // -----------------------------------------------------------------
@@ -206,9 +239,6 @@ class SearchTermsDataSnapshot : public SearchTermsData {
   virtual std::string GetApplicationLocale() const OVERRIDE;
   virtual base::string16 GetRlzParameterValue() const OVERRIDE;
   virtual std::string GetSearchClient() const OVERRIDE;
-  virtual std::string ForceInstantResultsParam(
-      bool for_prerender) const OVERRIDE;
-  virtual std::string InstantExtendedEnabledParam() const OVERRIDE;
   virtual std::string NTPIsThemedParam() const OVERRIDE;
 
  private:
@@ -216,8 +246,6 @@ class SearchTermsDataSnapshot : public SearchTermsData {
   std::string application_locale_;
   base::string16 rlz_parameter_value_;
   std::string search_client_;
-  std::string force_instant_results_param_;
-  std::string instant_extended_enabled_param_;
   std::string ntp_is_themed_param_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchTermsDataSnapshot);
@@ -229,10 +257,6 @@ SearchTermsDataSnapshot::SearchTermsDataSnapshot(
       application_locale_(search_terms_data.GetApplicationLocale()),
       rlz_parameter_value_(search_terms_data.GetRlzParameterValue()),
       search_client_(search_terms_data.GetSearchClient()),
-      force_instant_results_param_(
-          search_terms_data.ForceInstantResultsParam(false)),
-      instant_extended_enabled_param_(
-          search_terms_data.InstantExtendedEnabledParam()),
       ntp_is_themed_param_(search_terms_data.NTPIsThemedParam()) {}
 
 SearchTermsDataSnapshot::~SearchTermsDataSnapshot() {
@@ -252,15 +276,6 @@ base::string16 SearchTermsDataSnapshot::GetRlzParameterValue() const {
 
 std::string SearchTermsDataSnapshot::GetSearchClient() const {
   return search_client_;
-}
-
-std::string SearchTermsDataSnapshot::ForceInstantResultsParam(
-    bool for_prerender) const {
-  return force_instant_results_param_;
-}
-
-std::string SearchTermsDataSnapshot::InstantExtendedEnabledParam() const {
-  return instant_extended_enabled_param_;
 }
 
 std::string SearchTermsDataSnapshot::NTPIsThemedParam() const {
@@ -372,6 +387,8 @@ HistoryURLProvider::HistoryURLProvider(AutocompleteProviderListener* listener,
           !OmniboxFieldTrial::
               InHUPCreateShorterMatchFieldTrialExperimentGroup()),
       search_url_database_(true) {
+  // Initialize HUP scoring params based on the current experiment.
+  OmniboxFieldTrial::GetExperimentalHUPScoringParams(&scoring_params_);
 }
 
 void HistoryURLProvider::Start(const AutocompleteInput& input,
@@ -430,8 +447,8 @@ AutocompleteMatch HistoryURLProvider::SuggestExactInput(
     // This relies on match.destination_url being the non-prefix-trimmed version
     // of match.contents.
     match.contents = display_string;
-    const URLPrefix* best_prefix =
-        URLPrefix::BestURLPrefix(UTF8ToUTF16(destination_url.spec()), text);
+    const URLPrefix* best_prefix = URLPrefix::BestURLPrefix(
+        base::UTF8ToUTF16(destination_url.spec()), text);
     // It's possible for match.destination_url to not contain the user's input
     // at all (so |best_prefix| is NULL), for example if the input is
     // "view-source:x" and |destination_url| has an inserted "http://" in the
@@ -521,14 +538,14 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
       // to work with.  CullRedirects() will then reduce the list to
       // the best kMaxMatches results.
       db->AutocompleteForPrefix(
-          UTF16ToUTF8(i->prefix + params->input.text()),
+          base::UTF16ToUTF8(i->prefix + params->input.text()),
           kMaxMatches * 2,
           (backend == NULL),
           &url_matches);
       for (history::URLRows::const_iterator j(url_matches.begin());
            j != url_matches.end(); ++j) {
         const URLPrefix* best_prefix =
-            URLPrefix::BestURLPrefix(UTF8ToUTF16(j->url().spec()),
+            URLPrefix::BestURLPrefix(base::UTF8ToUTF16(j->url().spec()),
                                      base::string16());
         DCHECK(best_prefix != NULL);
         history_matches.push_back(history::HistoryMatch(*j, i->prefix.length(),
@@ -606,6 +623,11 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
        CalculateRelevance(NORMAL, history_matches.size() - 1 - i);
     AutocompleteMatch ac_match = HistoryMatchToACMatch(*params, match,
         NORMAL, relevance);
+    // The experimental scoring must not change the top result's score.
+    if (!params->matches.empty()) {
+      relevance = CalculateRelevanceScoreUsingScoringParams(match, relevance);
+      ac_match.relevance = relevance;
+    }
     params->matches.push_back(ac_match);
   }
 }
@@ -843,7 +865,7 @@ bool HistoryURLProvider::CanFindIntranetURL(
       !LowerCaseEqualsASCII(input.scheme(), content::kHttpScheme) ||
       !input.parts().host.is_nonempty())
     return false;
-  const std::string host(UTF16ToUTF8(
+  const std::string host(base::UTF16ToUTF8(
       input.text().substr(input.parts().host.begin, input.parts().host.len)));
   const size_t registry_length =
       net::registry_controlled_domains::GetRegistryLength(
@@ -877,8 +899,10 @@ bool HistoryURLProvider::PromoteMatchForInlineAutocomplete(
   // future pass from suggesting the exact input as a better match.
   if (params) {
     params->dont_suggest_exact_input = true;
-    params->matches.push_back(HistoryMatchToACMatch(*params, match,
-        INLINE_AUTOCOMPLETE, CalculateRelevance(INLINE_AUTOCOMPLETE, 0)));
+    AutocompleteMatch ac_match = HistoryMatchToACMatch(
+        *params, match, INLINE_AUTOCOMPLETE,
+        CalculateRelevance(INLINE_AUTOCOMPLETE, 0));
+    params->matches.push_back(ac_match);
   }
   return true;
 }
@@ -1095,11 +1119,37 @@ AutocompleteMatch HistoryURLProvider::HistoryMatchToACMatch(
   return match;
 }
 
+int HistoryURLProvider::CalculateRelevanceScoreUsingScoringParams(
+    const history::HistoryMatch& match,
+    int old_relevance) const {
+  if (!scoring_params_.experimental_scoring_enabled)
+    return old_relevance;
+
+  const base::TimeDelta time_since_last_visit =
+      base::Time::Now() - match.url_info.last_visit();
+
+  int relevance = CalculateRelevanceUsingScoreBuckets(
+      scoring_params_.typed_count_buckets, time_since_last_visit, old_relevance,
+      match.url_info.typed_count());
+
+  // Additional demotion (on top of typed_count demotion) of URLs that were
+  // never typed.
+  if (match.url_info.typed_count() == 0) {
+    relevance = CalculateRelevanceUsingScoreBuckets(
+        scoring_params_.visited_count_buckets, time_since_last_visit, relevance,
+        match.url_info.visit_count());
+  }
+
+  DCHECK_LE(relevance, old_relevance);
+  return relevance;
+}
+
 // static
 ACMatchClassifications HistoryURLProvider::ClassifyDescription(
     const base::string16& input_text,
     const base::string16& description) {
-  base::string16 clean_description = history::CleanUpTitleForMatching(description);
+  base::string16 clean_description = history::CleanUpTitleForMatching(
+      description);
   history::TermMatches description_matches(SortAndDeoverlapMatches(
       history::MatchTermInString(input_text, clean_description, 0)));
   history::WordStarts description_word_starts;
@@ -1107,7 +1157,7 @@ ACMatchClassifications HistoryURLProvider::ClassifyDescription(
       clean_description, false, &description_word_starts);
   description_matches =
       history::ScoredHistoryMatch::FilterTermMatchesByWordStarts(
-          description_matches, description_word_starts, 0);
+          description_matches, description_word_starts, 0, std::string::npos);
   return SpansFromTermMatch(
       description_matches, clean_description.length(), false);
 }

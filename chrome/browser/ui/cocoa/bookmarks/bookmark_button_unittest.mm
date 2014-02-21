@@ -12,7 +12,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#import "ui/base/test/cocoa_test_event_utils.h"
+#import "ui/events/test/cocoa_test_event_utils.h"
 
 // Fake BookmarkButton delegate to get a pong on mouse entered/exited
 @interface FakeButtonDelegate : NSObject<BookmarkButtonDelegate> {
@@ -95,7 +95,7 @@ TEST_F(BookmarkButtonTest, FolderAndEmptyOrNot) {
   EXPECT_TRUE([button isFolder]);
   EXPECT_EQ([button bookmarkNode], node);
 
-  node = model->AddURL(node, 0, ASCIIToUTF16("hi mom"),
+  node = model->AddURL(node, 0, base::ASCIIToUTF16("hi mom"),
                        GURL("http://www.google.com"));
   [cell setBookmarkNode:node];
   EXPECT_FALSE([button isEmpty]);
@@ -143,7 +143,8 @@ TEST_F(BookmarkButtonTest, DragToTrash) {
   // Add a deletable bookmark to the button.
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* barNode = model->bookmark_bar_node();
-  const BookmarkNode* node = model->AddURL(barNode, 0, ASCIIToUTF16("hi mom"),
+  const BookmarkNode* node = model->AddURL(barNode, 0,
+                                           base::ASCIIToUTF16("hi mom"),
                                            GURL("http://www.google.com"));
   [cell setBookmarkNode:node];
 

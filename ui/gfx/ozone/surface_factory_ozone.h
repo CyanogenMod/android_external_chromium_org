@@ -6,11 +6,14 @@
 #define UI_GFX_OZONE_SURFACE_LNUX_FACTORY_OZONE_H_
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/native_library.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 
+class SkBitmap;
 class SkCanvas;
 
 namespace gfx {
@@ -63,10 +66,6 @@ class GFX_EXPORT SurfaceFactoryOzone {
 
   // Returns the instance
   static SurfaceFactoryOzone* GetInstance();
-
-  // Returns a display spec as in |CreateDisplayFromSpec| for the default
-  // native surface.
-  virtual const char* DefaultDisplaySpec();
 
   // Sets the implementation delegate. Ownership is retained by the caller.
   static void SetInstance(SurfaceFactoryOzone* impl);
@@ -125,8 +124,9 @@ class GFX_EXPORT SurfaceFactoryOzone {
   // that this may be called after we have entered the sandbox so if there are
   // operations (e.g. opening a file descriptor providing vsync events) that
   // must be done outside of the sandbox, they must have been completed
-  // in InitializeHardware. Returns NULL on error.
-  virtual gfx::VSyncProvider* GetVSyncProvider(gfx::AcceleratedWidget w) = 0;
+  // in InitializeHardware. Returns an empty scoped_ptr on error.
+  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider(
+      gfx::AcceleratedWidget w) = 0;
 
   // Returns an array of EGL properties, which can be used in any EGL function
   // used to select a display configuration. Note that all properties should be
@@ -135,8 +135,11 @@ class GFX_EXPORT SurfaceFactoryOzone {
   // caller. desired_list contains list of desired EGL properties and values.
   virtual const int32* GetEGLSurfaceProperties(const int32* desired_list);
 
-  // Create a default SufaceFactoryOzone implementation useful for tests.
-  static SurfaceFactoryOzone* CreateTestHelper();
+  // Sets the cursor image to |image|.
+  virtual void SetCursorImage(const SkBitmap& image);
+
+  // Sets the cursor position to |location|.
+  virtual void MoveCursorTo(const gfx::Point& location);
 
  private:
   static SurfaceFactoryOzone* impl_; // not owned

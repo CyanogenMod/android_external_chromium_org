@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/extensions/extension_prefs_unittest.h"
+#include "chrome/browser/extensions/./extension_prefs_unittest.h"
 
 #include "base/basictypes.h"
 #include "base/files/scoped_temp_dir.h"
@@ -14,14 +14,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_pref_value_map.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/chrome_paths.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/mock_notification_observer.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -200,8 +200,7 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
       value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
       value->Append(new base::StringValue("udp-bind::8080"));
       value->Append(new base::StringValue("udp-send-to::8888"));
-      if (!permission->FromValue(value.get()))
-        NOTREACHED();
+      ASSERT_TRUE(permission->FromValue(value.get(), NULL));
     }
     api_perm_set1_.insert(permission.release());
 
@@ -473,7 +472,7 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
  public:
   // Sets idle install information for one test extension.
   void SetIdleInfo(std::string id, int num) {
-    DictionaryValue manifest;
+    base::DictionaryValue manifest;
     manifest.SetString(manifest_keys::kName, "test");
     manifest.SetString(manifest_keys::kVersion, "1." + base::IntToString(num));
     base::FilePath path =
@@ -584,7 +583,7 @@ TEST_F(ExtensionPrefsDelayedInstallInfo, DelayedInstallInfo) {}
 class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
  public:
   virtual void Initialize() OVERRIDE {
-    DictionaryValue dictionary;
+    base::DictionaryValue dictionary;
     dictionary.SetString(manifest_keys::kName, "test");
     dictionary.SetString(manifest_keys::kVersion, "0.1");
     dictionary.SetString(manifest_keys::kBackgroundPage, "background.html");
@@ -594,10 +593,10 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
 
 
     // Set idle info
-    DictionaryValue manifest;
+    base::DictionaryValue manifest;
     manifest.SetString(manifest_keys::kName, "test");
     manifest.SetString(manifest_keys::kVersion, "0.2");
-    scoped_ptr<ListValue> scripts(new ListValue);
+    scoped_ptr<base::ListValue> scripts(new base::ListValue);
     scripts->AppendString("test.js");
     manifest.Set(manifest_keys::kBackgroundScripts, scripts.release());
     base::FilePath path =
@@ -620,7 +619,7 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
   virtual void Verify() OVERRIDE {
     EXPECT_FALSE(prefs()->GetDelayedInstallInfo(id_));
 
-    const DictionaryValue* manifest;
+    const base::DictionaryValue* manifest;
     ASSERT_TRUE(prefs()->ReadPrefAsDictionary(id_, "manifest", &manifest));
     ASSERT_TRUE(manifest);
     std::string value;
@@ -629,7 +628,7 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
     EXPECT_TRUE(manifest->GetString(manifest_keys::kVersion, &value));
     EXPECT_EQ("0.2", value);
     EXPECT_FALSE(manifest->GetString(manifest_keys::kBackgroundPage, &value));
-    const ListValue* scripts;
+    const base::ListValue* scripts;
     ASSERT_TRUE(manifest->GetList(manifest_keys::kBackgroundScripts, &scripts));
     EXPECT_EQ(1u, scripts->GetSize());
   }
@@ -735,7 +734,7 @@ TEST_F(ExtensionPrefsFlags, ExtensionPrefsFlags) {}
 
 PrefsPrepopulatedTestBase::PrefsPrepopulatedTestBase()
     : ExtensionPrefsTest() {
-  DictionaryValue simple_dict;
+  base::DictionaryValue simple_dict;
   std::string error;
 
   simple_dict.SetString(manifest_keys::kVersion, "1.0.0.0");
@@ -851,5 +850,49 @@ class ExtensionPrefsBlacklistedExtensions : public ExtensionPrefsTest {
 };
 TEST_F(ExtensionPrefsBlacklistedExtensions,
        ExtensionPrefsBlacklistedExtensions) {}
+
+// Tests the blacklist state. Old "blacklist" preference should take precedence
+// over new "blacklist_state".
+class ExtensionPrefsBlacklistState : public ExtensionPrefsTest {
+ public:
+  virtual ~ExtensionPrefsBlacklistState() {}
+
+  virtual void Initialize() OVERRIDE {
+    extension_a_ = prefs_.AddExtension("a");
+  }
+
+  virtual void Verify() OVERRIDE {
+    ExtensionIdSet empty_ids;
+    EXPECT_EQ(empty_ids, prefs()->GetBlacklistedExtensions());
+
+    prefs()->SetExtensionBlacklisted(extension_a_->id(), true);
+    EXPECT_EQ(BLACKLISTED_MALWARE,
+              prefs()->GetExtensionBlacklistState(extension_a_->id()));
+
+    prefs()->SetExtensionBlacklistState(extension_a_->id(),
+                                        BLACKLISTED_POTENTIALLY_UNWANTED);
+    EXPECT_EQ(BLACKLISTED_POTENTIALLY_UNWANTED,
+              prefs()->GetExtensionBlacklistState(extension_a_->id()));
+    EXPECT_FALSE(prefs()->IsExtensionBlacklisted(extension_a_->id()));
+    EXPECT_EQ(empty_ids, prefs()->GetBlacklistedExtensions());
+
+    prefs()->SetExtensionBlacklisted(extension_a_->id(), true);
+    EXPECT_TRUE(prefs()->IsExtensionBlacklisted(extension_a_->id()));
+    EXPECT_EQ(BLACKLISTED_MALWARE,
+              prefs()->GetExtensionBlacklistState(extension_a_->id()));
+    EXPECT_EQ(1u, prefs()->GetBlacklistedExtensions().size());
+
+    prefs()->SetExtensionBlacklistState(extension_a_->id(),
+                                        NOT_BLACKLISTED);
+    EXPECT_EQ(NOT_BLACKLISTED,
+              prefs()->GetExtensionBlacklistState(extension_a_->id()));
+    EXPECT_FALSE(prefs()->IsExtensionBlacklisted(extension_a_->id()));
+    EXPECT_EQ(empty_ids, prefs()->GetBlacklistedExtensions());
+  }
+
+ private:
+  scoped_refptr<const Extension> extension_a_;
+};
+TEST_F(ExtensionPrefsBlacklistState, ExtensionPrefsBlacklistState) {}
 
 }  // namespace extensions

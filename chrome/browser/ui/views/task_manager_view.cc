@@ -28,6 +28,8 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/models/table_model.h"
 #include "ui/base/models/table_model_observer.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/label_button.h"
@@ -43,6 +45,8 @@
 
 #if defined(USE_ASH)
 #include "ash/wm/window_util.h"
+#include "chrome/browser/ui/ash/launcher/launcher_item_util.h"
+#include "grit/ash_resources.h"
 #endif
 
 #if defined(OS_WIN)
@@ -101,7 +105,7 @@ int TaskManagerTableModel::RowCount() {
   return model_->ResourceCount();
 }
 
-string16 TaskManagerTableModel::GetText(int row, int col_id) {
+base::string16 TaskManagerTableModel::GetText(int row, int col_id) {
   return model_->GetResourceById(row, col_id);
 }
 
@@ -162,6 +166,7 @@ class TaskManagerView : public views::ButtonListener,
   // views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
 
@@ -213,9 +218,6 @@ class TaskManagerView : public views::ButtonListener,
 
   // Activates the tab associated with the focused row.
   void ActivateFocusedTab();
-
-  // Adds an always on top item to the window's system menu.
-  void AddAlwaysOnTopSystemMenuItem();
 
   // Restores saved always on top state from a previous session.
   bool GetSavedAlwaysOnTopState(bool* always_on_top) const;
@@ -331,6 +333,10 @@ void TaskManagerView::Init() {
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
+  columns_.push_back(ui::TableColumn(
+        IDS_TASK_MANAGER_NACL_DEBUG_STUB_PORT_COLUMN,
+        ui::TableColumn::RIGHT, -1, 0));
+  columns_.back().sortable = true;
   columns_.push_back(
       ui::TableColumn(IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN,
                       ui::TableColumn::RIGHT, -1, 0));
@@ -370,17 +376,20 @@ void TaskManagerView::Init() {
       switches::kPurgeMemoryButton)) {
     purge_memory_button_ = new views::LabelButton(this,
         l10n_util::GetStringUTF16(IDS_TASK_MANAGER_PURGE_MEMORY));
-    purge_memory_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+    purge_memory_button_->SetStyle(views::Button::STYLE_BUTTON);
   }
   kill_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_TASK_MANAGER_KILL));
-  kill_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  kill_button_->SetStyle(views::Button::STYLE_BUTTON);
   about_memory_link_ = new views::Link(
       l10n_util::GetStringUTF16(IDS_TASK_MANAGER_ABOUT_MEMORY_LINK));
   about_memory_link_->set_listener(this);
 
   // Makes sure our state is consistent.
   OnSelectionChanged();
+
+  ui::Accelerator ctrl_w(ui::VKEY_W, ui::EF_CONTROL_DOWN);
+  AddAccelerator(ctrl_w);
 }
 
 void TaskManagerView::UpdateStatsCounters() {
@@ -396,7 +405,7 @@ void TaskManagerView::UpdateStatsCounters() {
         // stat names not in the string table would be filtered out.
         ui::TableColumn col;
         col.id = i;
-        col.title = ASCIIToUTF16(row);
+        col.title = base::ASCIIToUTF16(row);
         col.alignment = ui::TableColumn::RIGHT;
         // TODO(erikkay): Width is hard-coded right now, so many column
         // names are clipped.
@@ -467,6 +476,13 @@ gfx::Size TaskManagerView::GetPreferredSize() {
   return gfx::Size(460, 270);
 }
 
+bool TaskManagerView::AcceleratorPressed(const ui::Accelerator& accelerator) {
+  DCHECK_EQ(ui::VKEY_W, accelerator.key_code());
+  DCHECK_EQ(ui::EF_CONTROL_DOWN, accelerator.modifiers());
+  GetWidget()->Close();
+  return true;
+}
+
 // static
 void TaskManagerView::Show(Browser* browser) {
 #if defined(OS_WIN)
@@ -510,6 +526,11 @@ void TaskManagerView::Show(Browser* browser) {
   views::FocusManager* focus_manager = instance_->GetFocusManager();
   if (focus_manager)
     focus_manager->SetFocusedView(instance_->tab_table_);
+
+#if defined(USE_ASH)
+  CreateShelfItemForDialog(IDR_AURA_LAUNCHER_ICON_TASK_MANAGER,
+                           instance_->GetWidget()->GetNativeWindow());
+#endif
 }
 
 // ButtonListener implementation.
@@ -539,40 +560,10 @@ bool TaskManagerView::CanMaximize() const {
 }
 
 bool TaskManagerView::ExecuteWindowsCommand(int command_id) {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  if (command_id == IDC_ALWAYS_ON_TOP) {
-    is_always_on_top_ = !is_always_on_top_;
-
-    // Change the menu check state.
-    HMENU system_menu = GetSystemMenu(GetWidget()->GetNativeWindow(), FALSE);
-    MENUITEMINFO menu_info;
-    memset(&menu_info, 0, sizeof(MENUITEMINFO));
-    menu_info.cbSize = sizeof(MENUITEMINFO);
-    BOOL r = GetMenuItemInfo(system_menu, IDC_ALWAYS_ON_TOP,
-                             FALSE, &menu_info);
-    DCHECK(r);
-    menu_info.fMask = MIIM_STATE;
-    if (is_always_on_top_)
-      menu_info.fState = MFS_CHECKED;
-    r = SetMenuItemInfo(system_menu, IDC_ALWAYS_ON_TOP, FALSE, &menu_info);
-
-    // Now change the actual window's behavior.
-    GetWidget()->SetAlwaysOnTop(is_always_on_top_);
-
-    // Save the state.
-    if (g_browser_process->local_state()) {
-      DictionaryPrefUpdate update(g_browser_process->local_state(),
-                                  GetWindowName().c_str());
-      DictionaryValue* window_preferences = update.Get();
-      window_preferences->SetBoolean("always_on_top", is_always_on_top_);
-    }
-    return true;
-  }
-#endif
   return false;
 }
 
-string16 TaskManagerView::GetWindowTitle() const {
+base::string16 TaskManagerView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_TITLE);
 }
 
@@ -665,7 +656,6 @@ void TaskManagerView::InitAlwaysOnTopState() {
   is_always_on_top_ = false;
   if (GetSavedAlwaysOnTopState(&is_always_on_top_))
     GetWidget()->SetAlwaysOnTop(is_always_on_top_);
-  AddAlwaysOnTopSystemMenuItem();
 }
 
 void TaskManagerView::ActivateFocusedTab() {
@@ -674,44 +664,11 @@ void TaskManagerView::ActivateFocusedTab() {
     task_manager_->ActivateProcess(active_row);
 }
 
-void TaskManagerView::AddAlwaysOnTopSystemMenuItem() {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // The Win32 API requires that we own the text.
-  always_on_top_menu_text_ = l10n_util::GetStringUTF16(IDS_ALWAYS_ON_TOP);
-
-  // Let's insert a menu to the window.
-  HMENU system_menu = ::GetSystemMenu(GetWidget()->GetNativeWindow(), FALSE);
-  int index = ::GetMenuItemCount(system_menu) - 1;
-  if (index < 0) {
-    // Paranoia check.
-    NOTREACHED();
-    index = 0;
-  }
-  // First we add the separator.
-  MENUITEMINFO menu_info;
-  memset(&menu_info, 0, sizeof(MENUITEMINFO));
-  menu_info.cbSize = sizeof(MENUITEMINFO);
-  menu_info.fMask = MIIM_FTYPE;
-  menu_info.fType = MFT_SEPARATOR;
-  ::InsertMenuItem(system_menu, index, TRUE, &menu_info);
-
-  // Then the actual menu.
-  menu_info.fMask = MIIM_FTYPE | MIIM_ID | MIIM_STRING | MIIM_STATE;
-  menu_info.fType = MFT_STRING;
-  menu_info.fState = MFS_ENABLED;
-  if (is_always_on_top_)
-    menu_info.fState |= MFS_CHECKED;
-  menu_info.wID = IDC_ALWAYS_ON_TOP;
-  menu_info.dwTypeData = const_cast<wchar_t*>(always_on_top_menu_text_.c_str());
-  ::InsertMenuItem(system_menu, index, TRUE, &menu_info);
-#endif
-}
-
 bool TaskManagerView::GetSavedAlwaysOnTopState(bool* always_on_top) const {
   if (!g_browser_process->local_state())
     return false;
 
-  const DictionaryValue* dictionary =
+  const base::DictionaryValue* dictionary =
       g_browser_process->local_state()->GetDictionary(GetWindowName().c_str());
   return dictionary &&
       dictionary->GetBoolean("always_on_top", always_on_top) && always_on_top;

@@ -32,6 +32,10 @@ class AppListTestViewDelegate : public AppListViewDelegate {
     users_ = users;
   }
 
+  void set_auto_launch_timeout(const base::TimeDelta& timeout) {
+    auto_launch_timeout_ = timeout;
+  }
+
   // Sets the signin status of the signin delegate, creating one if there isn't
   // one already.
   void SetSignedIn(bool signed_in);
@@ -48,10 +52,14 @@ class AppListTestViewDelegate : public AppListViewDelegate {
   virtual void StartSearch() OVERRIDE {}
   virtual void StopSearch() OVERRIDE {}
   virtual void OpenSearchResult(SearchResult* result,
+                                bool auto_launch,
                                 int event_flags) OVERRIDE;
   virtual void InvokeSearchResultAction(SearchResult* result,
                                         int action_index,
                                         int event_flags) OVERRIDE {}
+  virtual base::TimeDelta GetAutoLaunchTimeout() OVERRIDE;
+  virtual void AutoLaunchCanceled() OVERRIDE;
+  virtual void ViewInitialized() OVERRIDE {}
   virtual void Dismiss() OVERRIDE;
   virtual void ViewClosing() OVERRIDE {}
   virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
@@ -62,6 +70,7 @@ class AppListTestViewDelegate : public AppListViewDelegate {
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE {}
   virtual content::WebContents* GetStartPageContents() OVERRIDE;
+  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
   virtual void AddObserver(AppListViewDelegateObserver* observer) OVERRIDE;
   virtual void RemoveObserver(AppListViewDelegateObserver* observer) OVERRIDE;
@@ -80,6 +89,7 @@ class AppListTestViewDelegate : public AppListViewDelegate {
   scoped_ptr<AppListTestModel> model_;
   ObserverList<AppListViewDelegateObserver> observers_;
   SpeechUIModel speech_ui_;
+  base::TimeDelta auto_launch_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListTestViewDelegate);
 };

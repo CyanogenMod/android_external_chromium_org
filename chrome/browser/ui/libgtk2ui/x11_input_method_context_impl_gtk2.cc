@@ -197,23 +197,6 @@ void X11InputMethodContextImplGtk2::Reset() {
   gtk_im_context_focus_out(gtk_multicontext_);
 }
 
-base::i18n::TextDirection X11InputMethodContextImplGtk2::GetInputTextDirection()
-    const {
-  switch (gdk_keymap_get_direction(gdk_keymap_get_default())) {
-    case PANGO_DIRECTION_LTR:
-    case PANGO_DIRECTION_TTB_LTR:
-    case PANGO_DIRECTION_WEAK_LTR:
-      return base::i18n::LEFT_TO_RIGHT;
-    case PANGO_DIRECTION_RTL:
-    case PANGO_DIRECTION_TTB_RTL:
-    case PANGO_DIRECTION_WEAK_RTL:
-      return base::i18n::RIGHT_TO_LEFT;
-    case PANGO_DIRECTION_NEUTRAL:
-    default:
-      return base::i18n::UNKNOWN_DIRECTION;
-  }
-}
-
 void X11InputMethodContextImplGtk2::OnTextInputTypeChanged(
     ui::TextInputType text_input_type) {
   switch (text_input_type) {
@@ -251,7 +234,7 @@ void X11InputMethodContextImplGtk2::OnCommit(GtkIMContext* context,
   if (context != gtk_context_)
     return;
 
-  const base::string16& text_in_utf16 = UTF8ToUTF16(text);
+  const base::string16& text_in_utf16 = base::UTF8ToUTF16(text);
   // If an underlying IME is emitting the "commit" signal to insert a character
   // for a direct input key event, ignores the insertion of the character at
   // this point, because we have to call DispatchKeyEventPostIME() for direct

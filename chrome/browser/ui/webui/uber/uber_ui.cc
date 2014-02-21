@@ -12,7 +12,6 @@
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/browser/ui/webui/extensions/extensions_ui.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
@@ -21,10 +20,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/common/extension_set.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 
+using base::ASCIIToUTF16;
 using content::NavigationController;
 using content::NavigationEntry;
 using content::RenderViewHost;
@@ -68,10 +69,10 @@ content::WebUIDataSource* CreateUberHTMLSource() {
 
 // Determines whether the user has an active extension of the given type.
 bool HasExtensionType(Profile* profile, const char* extensionType) {
-  const ExtensionSet* extensionSet =
+  const extensions::ExtensionSet* extensionSet =
       profile->GetExtensionService()->extensions();
 
-  for (ExtensionSet::const_iterator iter = extensionSet->begin();
+  for (extensions::ExtensionSet::const_iterator iter = extensionSet->begin();
        iter != extensionSet->end(); ++iter) {
     extensions::URLOverrides::URLOverrideMap map =
         extensions::URLOverrides::GetChromeURLOverrides(iter->get());
@@ -165,7 +166,7 @@ void UberUI::RenderViewReused(RenderViewHost* render_view_host) {
 
 bool UberUI::OverrideHandleWebUIMessage(const GURL& source_url,
                                         const std::string& message,
-                                        const ListValue& args) {
+                                        const base::ListValue& args) {
   // Find the appropriate subpage and forward the message.
   SubpageMap::iterator subpage = sub_uis_.find(source_url.GetOrigin().spec());
   if (subpage == sub_uis_.end()) {

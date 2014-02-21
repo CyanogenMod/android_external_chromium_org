@@ -23,137 +23,112 @@ GoogleChromeDistribution::GoogleChromeDistribution()
 void GoogleChromeDistribution::DoPostUninstallOperations(
     const Version& version,
     const base::FilePath& local_data_path,
-    const string16& distribution_data) {
+    const base::string16& distribution_data) {
 }
 
-string16 GoogleChromeDistribution::GetActiveSetupGuid() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetActiveSetupGuid() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetAppGuid() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetAppGuid() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetBaseAppName() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetBaseAppName() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetShortcutName(ShortcutType shortcut_type) {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetShortcutName(
+    ShortcutType shortcut_type) {
+  return base::string16();
 }
 
 int GoogleChromeDistribution::GetIconIndex(ShortcutType shortcut_type) {
-  NOTREACHED();
   return 0;
 }
 
-string16 GoogleChromeDistribution::GetBaseAppId() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetBaseAppId() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetBrowserProgIdPrefix() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetBrowserProgIdPrefix() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetBrowserProgIdDesc() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetBrowserProgIdDesc() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetInstallSubDir() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetInstallSubDir() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetPublisherName() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetPublisherName() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetAppDescription() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetAppDescription() {
+  return base::string16();
 }
 
 std::string GoogleChromeDistribution::GetSafeBrowsingName() {
-  NOTREACHED();
   return std::string();
 }
 
-string16 GoogleChromeDistribution::GetStateKey() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetStateKey() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetStateMediumKey() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetStateMediumKey() {
+  return base::string16();
 }
 
 std::string GoogleChromeDistribution::GetNetworkStatsServer() const {
-  NOTREACHED();
   return std::string();
 }
 
 std::string GoogleChromeDistribution::GetHttpPipeliningTestServer() const {
-  NOTREACHED();
   return std::string();
 }
 
-string16 GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetUninstallLinkName() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetUninstallLinkName() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetUninstallRegPath() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetUninstallRegPath() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetVersionKey() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetVersionKey() {
+  return base::string16();
 }
 
-string16 GoogleChromeDistribution::GetIconFilename() {
-  NOTREACHED();
-  return string16();
+base::string16 GoogleChromeDistribution::GetIconFilename() {
+  return base::string16();
 }
 
 bool GoogleChromeDistribution::GetCommandExecuteImplClsid(
-    string16* handler_class_uuid) {
-  NOTREACHED();
+    base::string16* handler_class_uuid) {
   return false;
 }
 
 bool GoogleChromeDistribution::AppHostIsSupported() {
-  NOTREACHED();
   return false;
 }
 
 void GoogleChromeDistribution::UpdateInstallStatus(bool system_install,
     installer::ArchiveType archive_type,
     installer::InstallStatus install_status) {
-  NOTREACHED();
 }
 
 bool GoogleChromeDistribution::ShouldSetExperimentLabels() {
-  NOTREACHED();
   return false;
 }
 
 bool GoogleChromeDistribution::HasUserExperiments() {
-  NOTREACHED();
   return false;
 }

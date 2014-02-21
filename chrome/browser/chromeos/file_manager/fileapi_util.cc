@@ -5,13 +5,13 @@
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 
 #include "base/files/file_path.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/browser/extension_system.h"
 #include "net/base/escape.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -19,6 +19,20 @@
 
 namespace file_manager {
 namespace util {
+
+namespace {
+
+GURL ConvertRelativeFilePathToFileSystemUrl(const base::FilePath& relative_path,
+                                            const std::string& extension_id) {
+  GURL base_url = fileapi::GetFileSystemRootURI(
+      extensions::Extension::GetBaseURLFromExtensionId(extension_id),
+      fileapi::kFileSystemTypeExternal);
+  return GURL(base_url.spec() +
+              net::EscapeUrlEncodedData(relative_path.AsUTF8Unsafe(),
+                                        false));  // Space to %20 instead of +.
+}
+
+}  // namespace
 
 fileapi::FileSystemContext* GetFileSystemContextForExtensionId(
     Profile* profile,
@@ -37,27 +51,43 @@ fileapi::FileSystemContext* GetFileSystemContextForRenderViewHost(
       GetFileSystemContext();
 }
 
-GURL ConvertRelativeFilePathToFileSystemUrl(const base::FilePath& relative_path,
-                                            const std::string& extension_id) {
-  GURL base_url = fileapi::GetFileSystemRootURI(
-      extensions::Extension::GetBaseURLFromExtensionId(extension_id),
-      fileapi::kFileSystemTypeExternal);
-  return GURL(base_url.spec() +
-              net::EscapeUrlEncodedData(relative_path.AsUTF8Unsafe(),
-                                        false));  // Space to %20 instead of +.
+base::FilePath ConvertDrivePathToRelativeFileSystemPath(
+    Profile* profile,
+    const std::string& extension_id,
+    const base::FilePath& drive_path) {
+  // "/special/drive-xxx"
+  base::FilePath path = drive::util::GetDriveMountPointPath(profile);
+  // appended with (|drive_path| - "drive").
+  drive::util::GetDriveGrandRootPath().AppendRelativePath(drive_path, &path);
+
+  base::FilePath relative_path;
+  ConvertAbsoluteFilePathToRelativeFileSystemPath(profile,
+                                                  extension_id,
+                                                  path,
+                                                  &relative_path);
+  return relative_path;
 }
 
-bool ConvertAbsoluteFilePathToFileSystemUrl(
-    Profile* profile,
-    const base::FilePath& absolute_path,
-    const std::string& extension_id,
-    GURL* url) {
+GURL ConvertDrivePathToFileSystemUrl(Profile* profile,
+                                     const base::FilePath& drive_path,
+                                     const std::string& extension_id) {
+  const base::FilePath relative_path =
+      ConvertDrivePathToRelativeFileSystemPath(profile, extension_id,
+                                               drive_path);
+  if (relative_path.empty())
+    return GURL();
+  return ConvertRelativeFilePathToFileSystemUrl(relative_path, extension_id);
+}
+
+bool ConvertAbsoluteFilePathToFileSystemUrl(Profile* profile,
+                                            const base::FilePath& absolute_path,
+                                            const std::string& extension_id,
+                                            GURL* url) {
   base::FilePath relative_path;
-  if (!ConvertAbsoluteFilePathToRelativeFileSystemPath(
-          profile,
-          extension_id,
-          absolute_path,
-          &relative_path)) {
+  if (!ConvertAbsoluteFilePathToRelativeFileSystemPath(profile,
+                                                       extension_id,
+                                                       absolute_path,
+                                                       &relative_path)) {
     return false;
   }
   *url = ConvertRelativeFilePathToFileSystemUrl(relative_path, extension_id);

@@ -86,7 +86,7 @@ int32_t MessageLoopResource::AttachToCurrentThread() {
   AddRef();
   slot->Set(this);
 
-  loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_DEFAULT));
+  loop_.reset(new base::MessageLoop);
   loop_proxy_ = base::MessageLoopProxy::current();
 
   // Post all pending work to the message loop.
@@ -187,6 +187,10 @@ void MessageLoopResource::PostClosure(
     info.delay_ms = delay_ms;
     pending_tasks_.push_back(info);
   }
+}
+
+base::MessageLoopProxy* MessageLoopResource::GetMessageLoopProxy() {
+  return loop_proxy_.get();
 }
 
 // static

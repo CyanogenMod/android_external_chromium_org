@@ -112,7 +112,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
                                                 int64 timestamp);
 
   FFmpegDemuxer* demuxer_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   AVStream* stream_;
   AudioDecoderConfig audio_config_;
   VideoDecoderConfig video_config_;
@@ -135,7 +135,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
 class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
  public:
-  FFmpegDemuxer(const scoped_refptr<base::MessageLoopProxy>& message_loop,
+  FFmpegDemuxer(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
                 DataSource* data_source,
                 const NeedKeyCB& need_key_cb,
                 const scoped_refptr<MediaLog>& media_log);
@@ -198,7 +198,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
 
   DemuxerHost* host_;
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;
   base::WeakPtr<FFmpegDemuxer> weak_this_;
 
@@ -253,7 +253,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   bool duration_known_;
 
   // FFmpegURLProtocol implementation and corresponding glue bits.
-  BlockingUrlProtocol url_protocol_;
+  scoped_ptr<BlockingUrlProtocol> url_protocol_;
   scoped_ptr<FFmpegGlue> glue_;
 
   const NeedKeyCB need_key_cb_;

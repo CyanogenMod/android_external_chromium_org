@@ -7,10 +7,11 @@
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "base/win/metro.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/upgrade_util.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/browser_thread.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -22,7 +23,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/aura/remote_root_window_host_win.h"
+#include "ui/aura/remote_window_tree_host_win.h"
 #endif
 
 namespace chrome {
@@ -62,12 +63,6 @@ void AttemptRestartWithModeSwitch() {
 }
 
 #if defined(USE_AURA)
-void ActivateDesktopHelperReply() {
-  AttemptRestart();
-}
-
-void ActivateDesktopIgnore() {}
-
 void ActivateDesktopHelper(AshExecutionStatus ash_execution_status) {
   scoped_ptr<base::Environment> env(base::Environment::Create());
   std::string version_str;
@@ -90,15 +85,10 @@ void ActivateDesktopHelper(AshExecutionStatus ash_execution_status) {
 
   path = path.Append(installer::kDelegateExecuteExe);
 
-  bool ash_exit = ash_execution_status == ASH_TERMINATE;
   // Actually launching the process needs to happen in the metro viewer,
   // otherwise it won't automatically transition to desktop.  So we have
   // to send an IPC to the viewer to do the ShellExecute.
-  aura::HandleActivateDesktop(
-      path,
-      ash_exit,
-      ash_exit ? base::Bind(ActivateDesktopHelperReply) :
-          base::Bind(ActivateDesktopIgnore));
+  aura::HandleActivateDesktop(path, ash_execution_status == ASH_TERMINATE);
 }
 #endif
 
@@ -107,16 +97,7 @@ void AttemptRestartToDesktopMode() {
   prefs->SetString(prefs::kRelaunchMode,
                    upgrade_util::kRelaunchModeDesktop);
 
-#if defined(USE_AURA)
-
-  // We need to PostTask as there is some IO involved.
-  content::BrowserThread::PostTask(
-      content::BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-      base::Bind(&ActivateDesktopHelper, ASH_TERMINATE));
-
-#else
   AttemptRestart();
-#endif
 }
 
 void AttemptRestartToMetroMode() {

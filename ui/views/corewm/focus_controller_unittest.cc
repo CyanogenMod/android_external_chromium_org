@@ -20,6 +20,7 @@
 #include "ui/aura/window_tracker.h"
 #include "ui/events/event_handler.h"
 #include "ui/views/corewm/base_focus_rules.h"
+#include "ui/views/corewm/wm_state.h"
 
 namespace views {
 namespace corewm {
@@ -76,6 +77,140 @@ class FocusNotificationObserver : public aura::client::ActivationChangeObserver,
   aura::Window* reactivation_actual_window_;
 
   DISALLOW_COPY_AND_ASSIGN(FocusNotificationObserver);
+};
+
+class WindowDeleter {
+ public:
+  virtual aura::Window* GetDeletedWindow() = 0;
+
+ protected:
+  virtual ~WindowDeleter() {}
+};
+
+// ActivationChangeObserver and FocusChangeObserver that keeps track of whether
+// it was notified about activation changes or focus changes with a deleted
+// window.
+class RecordingActivationAndFocusChangeObserver
+    : public aura::client::ActivationChangeObserver,
+      public aura::client::FocusChangeObserver {
+ public:
+  RecordingActivationAndFocusChangeObserver(aura::Window* root,
+                                            WindowDeleter* deleter)
+      : root_(root),
+        deleter_(deleter),
+        was_notified_with_deleted_window_(false) {
+    aura::client::GetActivationClient(root_)->AddObserver(this);
+    aura::client::GetFocusClient(root_)->AddObserver(this);
+  }
+  virtual ~RecordingActivationAndFocusChangeObserver() {
+    aura::client::GetActivationClient(root_)->RemoveObserver(this);
+    aura::client::GetFocusClient(root_)->RemoveObserver(this);
+  }
+
+  bool was_notified_with_deleted_window() const {
+    return was_notified_with_deleted_window_;
+  }
+
+  // Overridden from aura::client::ActivationChangeObserver:
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE {
+    if (lost_active && lost_active == deleter_->GetDeletedWindow())
+      was_notified_with_deleted_window_ = true;
+  }
+
+  // Overridden from aura::client::FocusChangeObserver:
+  virtual void OnWindowFocused(aura::Window* gained_focus,
+                               aura::Window* lost_focus) OVERRIDE {
+    if (lost_focus && lost_focus == deleter_->GetDeletedWindow())
+      was_notified_with_deleted_window_ = true;
+  }
+
+ private:
+  aura::Window* root_;
+
+  // Not owned.
+  WindowDeleter* deleter_;
+
+  // Whether the observer was notified about the loss of activation or the
+  // loss of focus with a window already deleted by |deleter_| as the
+  // |lost_active| or |lost_focus| parameter.
+  bool was_notified_with_deleted_window_;
+
+  DISALLOW_COPY_AND_ASSIGN(RecordingActivationAndFocusChangeObserver);
+};
+
+// ActivationChangeObserver that deletes the window losing activation.
+class DeleteOnLoseActivationChangeObserver :
+    public aura::client::ActivationChangeObserver,
+    public WindowDeleter {
+ public:
+  explicit DeleteOnLoseActivationChangeObserver(aura::Window* window)
+      : root_(window->GetRootWindow()),
+        window_(window),
+        did_delete_(false) {
+    aura::client::GetActivationClient(root_)->AddObserver(this);
+  }
+  virtual ~DeleteOnLoseActivationChangeObserver() {
+    aura::client::GetActivationClient(root_)->RemoveObserver(this);
+  }
+
+  // Overridden from aura::client::ActivationChangeObserver:
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE {
+    if (window_ && lost_active == window_) {
+      delete lost_active;
+      did_delete_ = true;
+    }
+  }
+
+  // Overridden from WindowDeleter:
+  virtual aura::Window* GetDeletedWindow() OVERRIDE {
+    return did_delete_ ? window_ : NULL;
+  }
+
+ private:
+  aura::Window* root_;
+  aura::Window* window_;
+  bool did_delete_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeleteOnLoseActivationChangeObserver);
+};
+
+// FocusChangeObserver that deletes the window losing focus.
+class DeleteOnLoseFocusChangeObserver
+    : public aura::client::FocusChangeObserver,
+      public WindowDeleter {
+ public:
+  explicit DeleteOnLoseFocusChangeObserver(aura::Window* window)
+      : root_(window->GetRootWindow()),
+        window_(window),
+        did_delete_(false) {
+    aura::client::GetFocusClient(root_)->AddObserver(this);
+  }
+  virtual ~DeleteOnLoseFocusChangeObserver() {
+    aura::client::GetFocusClient(root_)->RemoveObserver(this);
+  }
+
+  // Overridden from aura::client::FocusChangeObserver:
+  virtual void OnWindowFocused(aura::Window* gained_focus,
+                               aura::Window* lost_focus) OVERRIDE {
+    if (window_ && lost_focus == window_) {
+      delete lost_focus;
+      did_delete_ = true;
+    }
+  }
+
+  // Overridden from WindowDeleter:
+  virtual aura::Window* GetDeletedWindow() OVERRIDE {
+    return did_delete_ ? window_ : NULL;
+  }
+
+ private:
+  aura::Window* root_;
+  aura::Window* window_;
+  bool did_delete_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeleteOnLoseFocusChangeObserver);
 };
 
 class ScopedFocusNotificationObserver : public FocusNotificationObserver {
@@ -213,6 +348,7 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
 
   // Overridden from aura::test::AuraTestBase:
   virtual void SetUp() OVERRIDE {
+    wm_state_.reset(new views::corewm::WMState);
     // FocusController registers itself as an Env observer so it can catch all
     // window initializations, including the root_window()'s, so we create it
     // before allowing the base setup.
@@ -259,6 +395,7 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
     aura::test::AuraTestBase::TearDown();
     test_focus_rules_ = NULL;  // Owned by FocusController.
     focus_controller_.reset();
+    wm_state_.reset();
   }
 
   void FocusWindow(aura::Window* window) {
@@ -305,10 +442,12 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
   virtual void NoShiftActiveOnActivation() {}
   virtual void NoFocusChangeOnClickOnCaptureWindow() {}
   virtual void ChangeFocusWhenNothingFocusedAndCaptured() {}
+  virtual void DontPassDeletedWindow() {}
 
  private:
   scoped_ptr<FocusController> focus_controller_;
   TestFocusRules* test_focus_rules_;
+  scoped_ptr<views::corewm::WMState> wm_state_;
 
   DISALLOW_COPY_AND_ASSIGN(FocusControllerTestBase);
 };
@@ -616,6 +755,45 @@ class FocusControllerDirectTestBase : public FocusControllerTestBase {
     EXPECT_EQ(1, GetFocusedWindowId());
 
     aura::client::GetCaptureClient(root_window())->ReleaseCapture(w1);
+  }
+
+  // Verifies if a window that loses activation or focus is deleted during
+  // observer notification we don't pass the deleted window to other observers.
+  virtual void DontPassDeletedWindow() OVERRIDE {
+    FocusWindowById(1);
+
+    EXPECT_EQ(1, GetActiveWindowId());
+    EXPECT_EQ(1, GetFocusedWindowId());
+
+    {
+      aura::Window* to_delete = root_window()->GetChildById(1);
+      DeleteOnLoseActivationChangeObserver observer1(to_delete);
+      RecordingActivationAndFocusChangeObserver observer2(root_window(),
+                                                          &observer1);
+
+      FocusWindowById(2);
+
+      EXPECT_EQ(2, GetActiveWindowId());
+      EXPECT_EQ(2, GetFocusedWindowId());
+
+      EXPECT_EQ(to_delete, observer1.GetDeletedWindow());
+      EXPECT_FALSE(observer2.was_notified_with_deleted_window());
+    }
+
+    {
+      aura::Window* to_delete = root_window()->GetChildById(2);
+      DeleteOnLoseFocusChangeObserver observer1(to_delete);
+      RecordingActivationAndFocusChangeObserver observer2(root_window(),
+                                                          &observer1);
+
+      FocusWindowById(3);
+
+      EXPECT_EQ(3, GetActiveWindowId());
+      EXPECT_EQ(3, GetFocusedWindowId());
+
+      EXPECT_EQ(to_delete, observer1.GetDeletedWindow());
+      EXPECT_FALSE(observer2.was_notified_with_deleted_window());
+    }
   }
 
  private:
@@ -1018,6 +1196,9 @@ DIRECT_FOCUS_CHANGE_TESTS(NoFocusChangeOnClickOnCaptureWindow);
 
 FOCUS_CONTROLLER_TEST(FocusControllerApiTest,
                       ChangeFocusWhenNothingFocusedAndCaptured);
+
+// See description above DontPassDeletedWindow() for details.
+FOCUS_CONTROLLER_TEST(FocusControllerApiTest, DontPassDeletedWindow);
 
 }  // namespace corewm
 }  // namespace views

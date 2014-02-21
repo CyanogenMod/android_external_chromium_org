@@ -21,6 +21,7 @@
 
 #else
 
+#include <set>
 #include <string>
 
 #include "base/compiler_specific.h"
@@ -34,10 +35,10 @@
 #include "chrome/browser/signin/signin_internals_util.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/render_process_host_observer.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "google_apis/gaia/merge_session_helper.h"
 #include "net/cookies/canonical_cookie.h"
 
 class CookieSettings;
@@ -50,7 +51,7 @@ class SigninManagerDelegate;
 
 class SigninManager : public SigninManagerBase,
                       public GaiaAuthConsumer,
-                      public content::NotificationObserver {
+                      public content::RenderProcessHostObserver {
  public:
   // The callback invoked once the OAuth token has been fetched during signin,
   // but before the profile transitions to the "signed-in" state. This allows
@@ -155,10 +156,9 @@ class SigninManager : public SigninManagerBase,
   virtual void OnGetUserInfoFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
 
-  // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // content::RenderProcessHostObserver
+  virtual void RenderProcessHostDestroyed(
+      content::RenderProcessHost* host) OVERRIDE;
 
   // Tells the SigninManager whether to prohibit signout for this profile.
   // If |prohibit_signout| is true, then signout will be prohibited.
@@ -174,14 +174,20 @@ class SigninManager : public SigninManagerBase,
   static bool IsSigninAllowedOnIOThread(ProfileIOData* io_data);
 
   // Allows the SigninManager to track the privileged signin process
-  // identified by |process_id| so that we can later ask (via IsSigninProcess)
+  // identified by |host_id| so that we can later ask (via IsSigninProcess)
   // if it is safe to sign the user in from the current context (see
   // OneClickSigninHelper).  All of this tracking state is reset once the
   // renderer process terminates.
-  void SetSigninProcess(int process_id);
+  //
+  // N.B. This is the id returned by RenderProcessHost::GetID().
+  void SetSigninProcess(int host_id);
   void ClearSigninProcess();
-  bool IsSigninProcess(int process_id) const;
+  bool IsSigninProcess(int host_id) const;
   bool HasSigninProcess() const;
+
+  // Add or remove observers for the merge session notification.
+  void AddMergeSessionObserver(MergeSessionHelper::Observer* observer);
+  void RemoveMergeSessionObserver(MergeSessionHelper::Observer* observer);
 
  protected:
   // Flag saying whether signing out is allowed.
@@ -251,9 +257,6 @@ class SigninManager : public SigninManagerBase,
   // Actual client login handler.
   scoped_ptr<GaiaAuthFetcher> client_login_;
 
-  // Registrar for notifications from the TokenService.
-  content::NotificationRegistrar registrar_;
-
   // OAuth revocation fetcher for sign outs.
   scoped_ptr<GaiaAuthFetcher> revoke_token_fetcher_;
 
@@ -274,7 +277,10 @@ class SigninManager : public SigninManagerBase,
 
   // See SetSigninProcess.  Tracks the currently active signin process
   // by ID, if there is one.
-  int signin_process_id_;
+  int signin_host_id_;
+
+  // The RenderProcessHosts being observed.
+  std::set<content::RenderProcessHost*> signin_hosts_observed_;
 
   // Callback invoked during signin after an OAuth token has been fetched
   // but before signin is complete.
@@ -288,6 +294,9 @@ class SigninManager : public SigninManagerBase,
 
   // Helper object to listen for changes to the signin allowed preference.
   BooleanPrefMember signin_allowed_;
+
+  // Helper to merge signed in account into the content area.
+  scoped_ptr<MergeSessionHelper> merge_session_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninManager);
 };

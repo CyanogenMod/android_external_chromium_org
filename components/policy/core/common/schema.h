@@ -22,6 +22,26 @@ struct POLICY_EXPORT PropertiesNode;
 
 }  // namespace internal
 
+// Option flags passed to Schema::Validate() and Schema::Normalize(), describing
+// the strategy to handle unknown properties or invalid values for dict type.
+// Note that in Schema::Normalize() allowed errors will be dropped and thus
+// ignored.
+enum SchemaOnErrorStrategy {
+  // No errors will be allowed.
+  SCHEMA_STRICT = 0,
+  // Unknown properties in the top-level dictionary will be ignored.
+  SCHEMA_ALLOW_UNKNOWN_TOPLEVEL,
+  // Unknown properties in any dictionary will be ignored.
+  SCHEMA_ALLOW_UNKNOWN,
+  // Mismatched values will be ignored at the toplevel.
+  SCHEMA_ALLOW_INVALID_TOPLEVEL,
+  // Mismatched values will be ignored at the top-level value.
+  // Unknown properties in any dictionary will be ignored.
+  SCHEMA_ALLOW_INVALID_TOPLEVEL_AND_ALLOW_UNKNOWN,
+  // Mismatched values will be ignored.
+  SCHEMA_ALLOW_INVALID,
+};
+
 // Describes the expected type of one policy. Also recursively describes the
 // types of inner elements, for structured types.
 // Objects of this class refer to external, immutable data and are cheap to
@@ -57,8 +77,24 @@ class POLICY_EXPORT Schema {
 
   base::Value::Type type() const;
 
-  // Returns true if |value| conforms to this Schema.
-  bool Validate(const base::Value& value) const;
+  // Validate |value| against current schema, |strategy| is the strategy to
+  // handle unknown properties or invalid values. Allowed errors will be
+  // ignored. |error_path| and |error| will contain the last error location and
+  // detailed message if |value| doesn't strictly conform to the schema. If
+  // |value| doesn't conform to the schema even within the allowance of
+  // |strategy|, false will be returned and |error_path| and |error| will
+  // contain the corresponding error that caused the failure. |error_path| can
+  // be NULL and in that case no error path will be returned.
+  bool Validate(const base::Value& value,
+                SchemaOnErrorStrategy strategy,
+                std::string* error_path,
+                std::string* error) const;
+
+  // Same as Validate() but drop values with errors instead of ignoring them.
+  bool Normalize(base::Value* value,
+                 SchemaOnErrorStrategy strategy,
+                 std::string* error_path,
+                 std::string* error) const;
 
   // Used to iterate over the known properties of TYPE_DICTIONARY schemas.
   class POLICY_EXPORT Iterator {
@@ -117,6 +153,9 @@ class POLICY_EXPORT Schema {
   // rooted at |node|.
   Schema(const scoped_refptr<const InternalStorage>& storage,
          const internal::SchemaNode* node);
+
+  bool ValidateIntegerRestriction(int index, int value) const;
+  bool ValidateStringRestriction(int index, const char* str) const;
 
   scoped_refptr<const InternalStorage> storage_;
   const internal::SchemaNode* node_;

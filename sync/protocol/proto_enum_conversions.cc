@@ -20,6 +20,20 @@ namespace syncer {
 #define ENUM_CASE(enum_parent, enum_value)              \
   case enum_parent::enum_value: return #enum_value
 
+const char* GetAppListItemTypeString(
+    sync_pb::AppListSpecifics::AppListItemType item_type) {
+  ASSERT_ENUM_BOUNDS(sync_pb::AppListSpecifics, AppListItemType,
+                     TYPE_APP, TYPE_URL);
+  switch (item_type) {
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_APP);
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_REMOVE_DEFAULT_APP);
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_FOLDER);
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_URL);
+  }
+  NOTREACHED();
+  return "";
+}
+
 const char* GetBrowserTypeString(
     sync_pb::SessionWindow::BrowserType browser_type) {
   ASSERT_ENUM_BOUNDS(sync_pb::SessionWindow, BrowserType,
@@ -69,7 +83,7 @@ const char* GetPageTransitionRedirectTypeString(
 const char* GetUpdatesSourceString(
     sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source) {
   ASSERT_ENUM_BOUNDS(sync_pb::GetUpdatesCallerInfo, GetUpdatesSource,
-                     UNKNOWN, DATATYPE_REFRESH);
+                     UNKNOWN, RETRY);
   switch (updates_source) {
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, UNKNOWN);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, FIRST_UPDATE);
@@ -82,6 +96,7 @@ const char* GetUpdatesSourceString(
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, NEW_CLIENT);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, RECONFIGURATION);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, DATATYPE_REFRESH);
+    ENUM_CASE(sync_pb::GetUpdatesCallerInfo, RETRY);
   }
   NOTREACHED();
   return "";
@@ -90,7 +105,7 @@ const char* GetUpdatesSourceString(
 const char* GetUpdatesOriginString(
     sync_pb::SyncEnums::GetUpdatesOrigin origin) {
   ASSERT_ENUM_BOUNDS(sync_pb::SyncEnums, GetUpdatesOrigin,
-                     UNKNOWN_ORIGIN, GU_TRIGGER);
+                     UNKNOWN_ORIGIN, RETRY);
   switch (origin) {
     ENUM_CASE(sync_pb::SyncEnums, UNKNOWN_ORIGIN);
     ENUM_CASE(sync_pb::SyncEnums, PERIODIC);
@@ -99,6 +114,7 @@ const char* GetUpdatesOriginString(
     ENUM_CASE(sync_pb::SyncEnums, NEW_CLIENT);
     ENUM_CASE(sync_pb::SyncEnums, RECONFIGURATION);
     ENUM_CASE(sync_pb::SyncEnums, GU_TRIGGER);
+    ENUM_CASE(sync_pb::SyncEnums, RETRY);
   }
   NOTREACHED();
   return "";
@@ -154,6 +170,18 @@ const char* GetActionString(sync_pb::SyncEnums::Action action) {
   NOTREACHED();
   return "";
 
+}
+
+const char* GetLaunchTypeString(sync_pb::AppSpecifics::LaunchType launch_type) {
+  ASSERT_ENUM_BOUNDS(sync_pb::AppSpecifics, LaunchType, PINNED, WINDOW);
+  switch (launch_type) {
+    ENUM_CASE(sync_pb::AppSpecifics, PINNED);
+    ENUM_CASE(sync_pb::AppSpecifics, REGULAR);
+    ENUM_CASE(sync_pb::AppSpecifics, FULLSCREEN);
+    ENUM_CASE(sync_pb::AppSpecifics, WINDOW);
+  }
+  NOTREACHED();
+  return "";
 }
 
 const char* GetDeviceTypeString(

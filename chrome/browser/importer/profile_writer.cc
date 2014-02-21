@@ -20,7 +20,6 @@
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
@@ -30,15 +29,16 @@
 #include "chrome/common/importer/imported_bookmark_entry.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/pref_names.h"
+#include "components/password_manager/core/browser/password_store.h"
 
 namespace {
 
 // Generates a unique folder name. If |folder_name| is not unique, then this
 // repeatedly tests for '|folder_name| + (i)' until a unique name is found.
-string16 GenerateUniqueFolderName(BookmarkModel* model,
-                                  const base::string16& folder_name) {
+base::string16 GenerateUniqueFolderName(BookmarkModel* model,
+                                        const base::string16& folder_name) {
   // Build a set containing the bookmark bar folder names.
-  std::set<string16> existing_folder_names;
+  std::set<base::string16> existing_folder_names;
   const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
   for (int i = 0; i < bookmark_bar->child_count(); ++i) {
     const BookmarkNode* node = bookmark_bar->GetChild(i);
@@ -52,8 +52,8 @@ string16 GenerateUniqueFolderName(BookmarkModel* model,
 
   // Otherwise iterate until we find a unique name.
   for (size_t i = 1; i <= existing_folder_names.size(); ++i) {
-    base::string16 name = folder_name + ASCIIToUTF16(" (") +
-        base::IntToString16(i) + ASCIIToUTF16(")");
+    base::string16 name = folder_name + base::ASCIIToUTF16(" (") +
+        base::IntToString16(i) + base::ASCIIToUTF16(")");
     if (existing_folder_names.find(name) == existing_folder_names.end())
       return name;
   }
@@ -173,7 +173,7 @@ void ProfileWriter::AddBookmarks(
     // Ensure any enclosing folders are present in the model.  The bookmark's
     // enclosing folder structure should be
     //   path[0] > path[1] > ... > path[size() - 1]
-    for (std::vector<string16>::const_iterator folder_name =
+    for (std::vector<base::string16>::const_iterator folder_name =
              bookmark->path.begin();
          folder_name != bookmark->path.end(); ++folder_name) {
       if (bookmark->in_toolbar && parent == bookmark_bar &&
@@ -256,7 +256,7 @@ static std::string BuildHostPathKey(const TemplateURL* t_url,
   if (t_url->url_ref().SupportsReplacement()) {
     return HostPathKeyForURL(GURL(
         t_url->url_ref().ReplaceSearchTerms(
-            TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("x")))));
+            TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")))));
   }
   return std::string();
 }

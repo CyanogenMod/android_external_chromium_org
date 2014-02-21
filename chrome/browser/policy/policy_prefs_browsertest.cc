@@ -24,13 +24,13 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/external_data_manager.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
@@ -433,8 +433,8 @@ void VerifyControlledSettingIndicators(Browser* browser,
 TEST(PolicyPrefsTestCoverageTest, AllPoliciesHaveATestCase) {
   // Verifies that all known policies have a test case in the JSON file.
   // This test fails when a policy is added to
-  // chrome/app/policy/policy_templates.json but a test case is not added to
-  // chrome/test/data/policy/policy_test_cases.json.
+  // components/policy/resources/policy_templates.json but a test case is not
+  // added to chrome/test/data/policy/policy_test_cases.json.
   Schema chrome_schema = Schema::Wrap(GetChromeSchemaData());
   ASSERT_TRUE(chrome_schema.valid());
 
@@ -460,6 +460,10 @@ class PolicyPrefsTest : public InProcessBrowserTest {
         TemplateURLServiceFactory::GetForProfile(browser()->profile()));
   }
 
+  virtual void TearDownOnMainThread() OVERRIDE {
+    ClearProviderPolicy();
+  }
+
   void ClearProviderPolicy() {
     provider_.UpdateChromePolicy(PolicyMap());
     base::RunLoop().RunUntilIdle();
@@ -468,7 +472,8 @@ class PolicyPrefsTest : public InProcessBrowserTest {
   void SetProviderPolicy(const base::DictionaryValue& policies,
                          PolicyLevel level) {
     PolicyMap policy_map;
-    for (DictionaryValue::Iterator it(policies); !it.IsAtEnd(); it.Advance()) {
+    for (base::DictionaryValue::Iterator it(policies);
+         !it.IsAtEnd(); it.Advance()) {
       const PolicyDetails* policy_details = GetChromePolicyDetails(it.key());
       ASSERT_TRUE(policy_details);
       policy_map.Set(

@@ -6,6 +6,7 @@
 
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
@@ -51,6 +52,7 @@ RemovePerformer::RemovePerformer(
     JobScheduler* scheduler,
     ResourceMetadata* metadata)
     : blocking_task_runner_(blocking_task_runner),
+      observer_(observer),
       scheduler_(scheduler),
       metadata_(metadata),
       entry_revert_performer_(new EntryRevertPerformer(blocking_task_runner,
@@ -65,7 +67,19 @@ RemovePerformer::~RemovePerformer() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
+// Returns |entry| corresponding to |local_id|.
+// Adding to that, removes the entry when it does not exist on the server.
+FileError TryToRemoveLocally(ResourceMetadata* metadata,
+                             const std::string& local_id,
+                             ResourceEntry* entry) {
+  FileError error = metadata->GetResourceEntryById(local_id, entry);
+  if (error != FILE_ERROR_OK || !entry->resource_id().empty())
+    return error;
+  return metadata->RemoveEntry(local_id);
+}
+
 void RemovePerformer::Remove(const std::string& local_id,
+                             const ClientContext& context,
                              const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -74,24 +88,23 @@ void RemovePerformer::Remove(const std::string& local_id,
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&ResourceMetadata::GetResourceEntryById,
-                 base::Unretained(metadata_),
-                 local_id,
-                 entry),
+      base::Bind(&TryToRemoveLocally, metadata_, local_id, entry),
       base::Bind(&RemovePerformer::RemoveAfterGetResourceEntry,
                  weak_ptr_factory_.GetWeakPtr(),
+                 context,
                  callback,
                  base::Owned(entry)));
 }
 
 void RemovePerformer::RemoveAfterGetResourceEntry(
+    const ClientContext& context,
     const FileOperationCallback& callback,
     const ResourceEntry* entry,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != FILE_ERROR_OK) {
+  if (error != FILE_ERROR_OK || entry->resource_id().empty()) {
     callback.Run(error);
     return;
   }
@@ -104,27 +117,30 @@ void RemovePerformer::RemoveAfterGetResourceEntry(
   // or not the current account is an owner of the file. The code below is
   // written under the assumption that |shared_with_me| coincides with that.
   if (entry->shared_with_me()) {
-    UnparentResource(callback, entry->resource_id(), entry->local_id());
+    UnparentResource(context, callback, entry->resource_id(),
+                     entry->local_id());
   } else {
     // Otherwise try sending the entry to trash.
-    DeleteResource(callback, entry->resource_id(), entry->local_id());
+    TrashResource(context, callback, entry->resource_id(), entry->local_id());
   }
 }
 
-void RemovePerformer::DeleteResource(const FileOperationCallback& callback,
-                                     const std::string& resource_id,
-                                     const std::string& local_id) {
+void RemovePerformer::TrashResource(const ClientContext& context,
+                                    const FileOperationCallback& callback,
+                                    const std::string& resource_id,
+                                    const std::string& local_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  scheduler_->DeleteResource(
+  scheduler_->TrashResource(
       resource_id,
-      ClientContext(BACKGROUND),
-      base::Bind(&RemovePerformer::DeleteResourceAfterUpdateRemoteState,
-                 weak_ptr_factory_.GetWeakPtr(), callback, local_id));
+      context,
+      base::Bind(&RemovePerformer::TrashResourceAfterUpdateRemoteState,
+                 weak_ptr_factory_.GetWeakPtr(), context, callback, local_id));
 }
 
-void RemovePerformer::DeleteResourceAfterUpdateRemoteState(
+void RemovePerformer::TrashResourceAfterUpdateRemoteState(
+    const ClientContext& context,
     const FileOperationCallback& callback,
     const std::string& local_id,
     google_apis::GDataErrorCode status) {
@@ -133,7 +149,9 @@ void RemovePerformer::DeleteResourceAfterUpdateRemoteState(
 
   if (status == google_apis::HTTP_FORBIDDEN) {
     // Editing this entry is not allowed, revert local changes.
-    entry_revert_performer_->RevertEntry(local_id, callback);
+    entry_revert_performer_->RevertEntry(local_id, context, callback);
+    observer_->OnDriveSyncError(
+        file_system::DRIVE_SYNC_ERROR_DELETE_WITHOUT_PERMISSION, local_id);
     return;
   }
 
@@ -144,26 +162,27 @@ void RemovePerformer::DeleteResourceAfterUpdateRemoteState(
     return;
   }
 
-  // Now we're done. If the entry is deleted on the server, it'll be also
+  // Now we're done. If the entry is trashed on the server, it'll be also
   // deleted locally on the next update.
   callback.Run(error);
 }
 
-void RemovePerformer::UnparentResource(
-    const FileOperationCallback& callback,
-    const std::string& resource_id,
-    const std::string& local_id) {
+void RemovePerformer::UnparentResource(const ClientContext& context,
+                                       const FileOperationCallback& callback,
+                                       const std::string& resource_id,
+                                       const std::string& local_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   scheduler_->GetResourceEntry(
       resource_id,
-      ClientContext(BACKGROUND),
+      context,
       base::Bind(&RemovePerformer::UnparentResourceAfterGetResourceEntry,
-                 weak_ptr_factory_.GetWeakPtr(), callback, local_id));
+                 weak_ptr_factory_.GetWeakPtr(), context, callback, local_id));
 }
 
 void RemovePerformer::UnparentResourceAfterGetResourceEntry(
+    const ClientContext& context,
     const FileOperationCallback& callback,
     const std::string& local_id,
     google_apis::GDataErrorCode status,
@@ -197,7 +216,7 @@ void RemovePerformer::UnparentResourceAfterGetResourceEntry(
     return;
   }
 
-  if (parent_resource_id == util::kDriveOtherDirLocalId) {
+  if (parent_resource_id.empty()) {
     // This entry is unparented already.
     UnparentResourceAfterUpdateRemoteState(callback, local_id,
                                            google_apis::HTTP_NO_CONTENT);
@@ -207,7 +226,7 @@ void RemovePerformer::UnparentResourceAfterGetResourceEntry(
   scheduler_->RemoveResourceFromDirectory(
       parent_resource_id,
       entry.resource_id(),
-      ClientContext(BACKGROUND),
+      context,
       base::Bind(&RemovePerformer::UnparentResourceAfterUpdateRemoteState,
                  weak_ptr_factory_.GetWeakPtr(), callback, local_id));
 }

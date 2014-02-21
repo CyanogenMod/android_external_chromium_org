@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/scheduler/draw_swap_readback_result.h"
 #include "cc/scheduler/scheduler_settings.h"
 
 namespace base {
@@ -180,7 +181,7 @@ class CC_EXPORT SchedulerStateMachine {
   void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
 
   // Indicates whether ACTION_DRAW_AND_SWAP_IF_POSSIBLE drew to the screen.
-  void DidDrawIfPossibleCompleted(bool success);
+  void DidDrawIfPossibleCompleted(DrawSwapReadbackResult::DrawResult result);
 
   // Indicates that a new commit flow needs to be performed, either to pull
   // updates from the main thread to the impl, or to push deltas from the impl
@@ -254,6 +255,7 @@ class CC_EXPORT SchedulerStateMachine {
   bool ShouldCommit() const;
   bool ShouldManageTiles() const;
 
+  void AdvanceCurrentFrameNumber();
   bool HasSentBeginMainFrameThisFrame() const;
   bool HasScheduledManageTilesThisFrame() const;
   bool HasUpdatedVisibleTilesThisFrame() const;
@@ -280,9 +282,13 @@ class CC_EXPORT SchedulerStateMachine {
   int last_frame_number_swap_performed_;
   int last_frame_number_begin_main_frame_sent_;
   int last_frame_number_update_visible_tiles_was_called_;
-  int last_frame_number_manage_tiles_called_;
 
-  int consecutive_failed_draws_;
+  // manage_tiles_funnel_ is "filled" each time ManageTiles is called
+  // and "drained" on each BeginImplFrame. If the funnel gets too full,
+  // we start throttling ACTION_MANAGE_TILES such that we average one
+  // ManageTile per BeginImplFrame.
+  int manage_tiles_funnel_;
+  int consecutive_checkerboard_animations_;
   bool needs_redraw_;
   bool needs_manage_tiles_;
   bool swap_used_incomplete_tile_;

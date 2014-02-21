@@ -23,6 +23,10 @@
   margin-top: 5px;
 }
 
+#create-profile-name-input-container {
+  margin-bottom: 5px;
+}
+
 #create-profile-name,
 #manage-profile-name {
   margin-left: 10px;
@@ -43,9 +47,19 @@
   margin-right: auto;
   max-height: 50px;
   overflow: hidden;
-  padding: 1px 10px;
+  padding: 10px 10px;
   text-align: center;
   width: 80%;
+}
+
+html[dir='ltr'] #create-profile-error-bubble {
+  margin-left: 20px;
+  width: 90%;
+}
+
+html[dir='rtl'] #create-profile-error-bubble {
+  margin-right: 20px;
+  width: 90%;
 }
 
 #create-profile-error-bubble[hidden],
@@ -95,18 +109,19 @@
   -webkit-margin-end: 10px;
 }
 
-#delete-profile-message,
 #delete-managed-profile-addendum {
   -webkit-padding-start: 48px;
-  background-repeat: no-repeat;
-}
-
-#delete-managed-profile-addendum {
   margin-top: 10px;
 }
 
-html[dir='rtl'] #delete-profile-message {
-  background-position: right;
+html[dir='ltr'] #delete-profile-icon {
+  float: left;
+  margin-right: 10px;
+}
+
+html[dir='rtl'] #delete-profile-icon {
+  float: right;
+  margin-left: 10px;
 }
 
 #create-profile-managed-not-signed-in {
@@ -120,10 +135,15 @@ html[dir='rtl'] #delete-profile-message {
 }
 
 #create-profile-managed-content-area {
-  padding-top: 0;
+  padding-top: 5px;
 }
 
 #import-existing-managed-user-link {
   left: 17px;
   position: absolute;
+}
+
+#supervised-user-import {
+  margin: 0;
+  padding: 0;
 }

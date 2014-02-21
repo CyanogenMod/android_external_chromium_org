@@ -27,6 +27,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_switches.h"
+#include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/frame_time.h"
@@ -40,7 +41,6 @@ const double kTestRefreshRate = 200.0;
 
 enum SwapType {
   DRAW_SWAP,
-  READPIXELS_SWAP,
 };
 
 bool g_compositor_initialized = false;
@@ -92,8 +92,8 @@ Texture::Texture(bool flipped, const gfx::Size& size, float device_scale_factor)
 Texture::~Texture() {
 }
 
-std::string Texture::Produce() {
-  return std::string();
+gpu::Mailbox Texture::Produce() {
+  return gpu::Mailbox();
 }
 
 CompositorLock::CompositorLock(Compositor* compositor)
@@ -113,58 +113,6 @@ void CompositorLock::CancelLock() {
     return;
   compositor_->UnlockCompositor();
   compositor_ = NULL;
-}
-
-// static
-void DrawWaiterForTest::Wait(Compositor* compositor) {
-  DrawWaiterForTest waiter;
-  waiter.wait_for_commit_ = false;
-  waiter.WaitImpl(compositor);
-}
-
-// static
-void DrawWaiterForTest::WaitForCommit(Compositor* compositor) {
-  DrawWaiterForTest waiter;
-  waiter.wait_for_commit_ = true;
-  waiter.WaitImpl(compositor);
-}
-
-DrawWaiterForTest::DrawWaiterForTest() {
-}
-
-DrawWaiterForTest::~DrawWaiterForTest() {
-}
-
-void DrawWaiterForTest::WaitImpl(Compositor* compositor) {
-  compositor->AddObserver(this);
-  wait_run_loop_.reset(new base::RunLoop());
-  wait_run_loop_->Run();
-  compositor->RemoveObserver(this);
-}
-
-void DrawWaiterForTest::OnCompositingDidCommit(Compositor* compositor) {
-  if (wait_for_commit_)
-    wait_run_loop_->Quit();
-}
-
-void DrawWaiterForTest::OnCompositingStarted(Compositor* compositor,
-                                             base::TimeTicks start_time) {
-}
-
-void DrawWaiterForTest::OnCompositingEnded(Compositor* compositor) {
-  if (!wait_for_commit_)
-    wait_run_loop_->Quit();
-}
-
-void DrawWaiterForTest::OnCompositingAborted(Compositor* compositor) {
-}
-
-void DrawWaiterForTest::OnCompositingLockStateChanged(Compositor* compositor) {
-}
-
-void DrawWaiterForTest::OnUpdateVSyncParameters(Compositor* compositor,
-                                                base::TimeTicks timebase,
-                                                base::TimeDelta interval) {
 }
 
 class PostedSwapQueue {
@@ -236,6 +184,7 @@ namespace ui {
 Compositor::Compositor(gfx::AcceleratedWidget widget)
     : root_layer_(NULL),
       widget_(widget),
+      vsync_manager_(new CompositorVSyncManager()),
       posted_swaps_(new PostedSwapQueue()),
       device_scale_factor_(0.0f),
       last_started_frame_(0),
@@ -289,6 +238,9 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
   settings.initial_debug_state.show_non_occluding_rects =
       command_line->HasSwitch(cc::switches::kUIShowNonOccludingRects);
 
+  settings.initial_debug_state.SetRecordRenderingStats(
+      command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
+
   base::TimeTicks before_create = base::TimeTicks::Now();
   if (!!g_compositor_thread) {
     host_ = cc::LayerTreeHost::CreateThreaded(
@@ -326,11 +278,7 @@ void Compositor::Initialize() {
   bool use_thread = !CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kUIDisableThreadedCompositing);
 #else
-  bool use_thread =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUIEnableThreadedCompositing) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUIDisableThreadedCompositing);
+  bool use_thread = false;
 #endif
   if (use_thread) {
     g_compositor_thread = new base::Thread("Browser Compositor");
@@ -449,21 +397,6 @@ void Compositor::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
   host_->QueueSwapPromise(swap_promise.Pass());
 }
 
-bool Compositor::ReadPixels(SkBitmap* bitmap,
-                            const gfx::Rect& bounds_in_pixel) {
-  if (bounds_in_pixel.right() > size().width() ||
-      bounds_in_pixel.bottom() > size().height())
-    return false;
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    bounds_in_pixel.width(), bounds_in_pixel.height());
-  bitmap->allocPixels();
-  SkAutoLockPixels lock_image(*bitmap);
-  unsigned char* pixels = static_cast<unsigned char*>(bitmap->getPixels());
-  CancelCompositorLock();
-  PendingSwap pending_swap(READPIXELS_SWAP, posted_swaps_.get());
-  return host_->CompositeAndReadback(pixels, bounds_in_pixel);
-}
-
 void Compositor::SetScaleAndSize(float scale, const gfx::Size& size_in_pixel) {
   DCHECK_GT(scale, 0);
   if (!size_in_pixel.IsEmpty()) {
@@ -485,6 +418,10 @@ void Compositor::SetBackgroundColor(SkColor color) {
   ScheduleDraw();
 }
 
+scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {
+  return vsync_manager_;
+}
+
 void Compositor::AddObserver(CompositorObserver* observer) {
   observer_list_.AddObserver(observer);
 }
@@ -495,13 +432,6 @@ void Compositor::RemoveObserver(CompositorObserver* observer) {
 
 bool Compositor::HasObserver(CompositorObserver* observer) {
   return observer_list_.HasObserver(observer);
-}
-
-void Compositor::OnUpdateVSyncParameters(base::TimeTicks timebase,
-                                         base::TimeDelta interval) {
-  FOR_EACH_OBSERVER(CompositorObserver,
-                    observer_list_,
-                    OnUpdateVSyncParameters(this, timebase, interval));
 }
 
 void Compositor::Layout() {

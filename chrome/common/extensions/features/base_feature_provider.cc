@@ -188,25 +188,28 @@ FeatureProvider* BaseFeatureProvider::GetByName(
   return g_static.Get().GetFeatures(name);
 }
 
-const std::vector<std::string>& BaseFeatureProvider::GetAllFeatureNames() {
+const std::vector<std::string>& BaseFeatureProvider::GetAllFeatureNames()
+    const {
   if (feature_names_.empty()) {
     for (FeatureMap::const_iterator iter = features_.begin();
          iter != features_.end(); ++iter) {
       feature_names_.push_back(iter->first);
     }
+    // A std::map is sorted by its keys, so we don't need to sort feature_names_
+    // now.
   }
   return feature_names_;
 }
 
-Feature* BaseFeatureProvider::GetFeature(const std::string& name) {
-  FeatureMap::iterator iter = features_.find(name);
+Feature* BaseFeatureProvider::GetFeature(const std::string& name) const {
+  FeatureMap::const_iterator iter = features_.find(name);
   if (iter != features_.end())
     return iter->second.get();
   else
     return NULL;
 }
 
-Feature* BaseFeatureProvider::GetParent(Feature* feature) {
+Feature* BaseFeatureProvider::GetParent(Feature* feature) const {
   CHECK(feature);
   if (feature->no_parent())
     return NULL;
@@ -217,6 +220,27 @@ Feature* BaseFeatureProvider::GetParent(Feature* feature) {
     return NULL;
   split.pop_back();
   return GetFeature(JoinString(split, '.'));
+}
+
+// Children of a given API are named starting with parent.name()+".", which
+// means they'll be contiguous in the features_ std::map.
+std::vector<Feature*> BaseFeatureProvider::GetChildren(const Feature& parent)
+    const {
+  std::string prefix = parent.name() + ".";
+  const FeatureMap::const_iterator first_child = features_.lower_bound(prefix);
+
+  // All children have names before (parent.name() + ('.'+1)).
+  ++prefix[prefix.size() - 1];
+  const FeatureMap::const_iterator after_children =
+      features_.lower_bound(prefix);
+
+  std::vector<Feature*> result;
+  result.reserve(std::distance(first_child, after_children));
+  for (FeatureMap::const_iterator it = first_child; it != after_children;
+       ++it) {
+    result.push_back(it->second.get());
+  }
+  return result;
 }
 
 } // namespace extensions

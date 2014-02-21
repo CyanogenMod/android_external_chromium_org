@@ -30,6 +30,7 @@ class QuotaManagerProxy;
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerJobCoordinator;
 class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerStorage;
@@ -43,10 +44,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
     : NON_EXPORTED_BASE(
           public base::SupportsWeakPtr<ServiceWorkerContextCore>) {
  public:
-  typedef base::Callback<void(ServiceWorkerRegistrationStatus status,
+  typedef base::Callback<void(ServiceWorkerStatusCode status,
                               int64 registration_id)> RegistrationCallback;
   typedef base::Callback<
-      void(ServiceWorkerRegistrationStatus status)> UnregistrationCallback;
+      void(ServiceWorkerStatusCode status)> UnregistrationCallback;
 
   // This is owned by the StoragePartition, which will supply it with
   // the local path on disk. Given an empty |user_data_directory|,
@@ -69,14 +70,20 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // The callback will be called on the IO thread.
   void RegisterServiceWorker(const GURL& pattern,
                              const GURL& script_url,
+                             int source_process_id,
                              const RegistrationCallback& callback);
 
   // The callback will be called on the IO thread.
   void UnregisterServiceWorker(const GURL& pattern,
+                               int source_process_id,
                                const UnregistrationCallback& callback);
 
   EmbeddedWorkerRegistry* embedded_worker_registry() {
     return embedded_worker_registry_.get();
+  }
+
+  ServiceWorkerJobCoordinator* job_coordinator() {
+    return job_coordinator_.get();
   }
 
  private:
@@ -89,14 +96,13 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   void RegistrationComplete(
       const RegistrationCallback& callback,
-      ServiceWorkerRegistrationStatus status,
+      ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
-  void UnregistrationComplete(const UnregistrationCallback& callback,
-                              ServiceWorkerRegistrationStatus status);
 
   ProcessToProviderMap providers_;
   scoped_ptr<ServiceWorkerStorage> storage_;
   scoped_refptr<EmbeddedWorkerRegistry> embedded_worker_registry_;
+  scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerContextCore);
 };

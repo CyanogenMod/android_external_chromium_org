@@ -8,40 +8,41 @@
 // Note: This header should be compilable as C.
 
 #include <stdint.h>
+#include <GLES2/gl2.h>
 
-#if defined(COMPONENT_BUILD)
-
-#if defined(WIN32)
-
-#if defined(MOJO_GLES2_IMPLEMENTATION)
-#define MOJO_GLES2_EXPORT __declspec(dllexport)
-#else
-#define MOJO_GLES2_EXPORT __declspec(dllimport)
-#endif
-
-#else  // !defined(WIN32)
-
-#if defined(MOJO_GLES2_IMPLEMENTATION)
-#define MOJO_GLES2_EXPORT __attribute__((visibility("default")))
-#else
-#define MOJO_GLES2_EXPORT
-#endif
-
-#endif  // defined(WIN32)
-
-#else  // !defined(COMPONENT_BUILD)
-#define MOJO_GLES2_EXPORT
-#endif
+#include "mojo/public/gles2/gles2_export.h"
+#include "mojo/public/gles2/gles2_types.h"
+#include "mojo/public/system/async_waiter.h"
+#include "mojo/public/system/core.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-MOJO_GLES2_EXPORT void MojoGLES2Initialize();
+MOJO_GLES2_EXPORT void MojoGLES2Initialize(MojoAsyncWaiter* async_waiter);
 MOJO_GLES2_EXPORT void MojoGLES2Terminate();
-// TODO(abarth): MojoGLES2MakeCurrent should take a MojoHandle.
-MOJO_GLES2_EXPORT void MojoGLES2MakeCurrent(uint64_t encoded);
+MOJO_GLES2_EXPORT MojoGLES2Context MojoGLES2CreateContext(
+    MojoHandle handle,
+    MojoGLES2ContextLost lost_callback,
+    MojoGLES2DrawAnimationFrame animation_callback,
+    void* closure);
+MOJO_GLES2_EXPORT void MojoGLES2DestroyContext(MojoGLES2Context context);
+MOJO_GLES2_EXPORT void MojoGLES2MakeCurrent(MojoGLES2Context context);
 MOJO_GLES2_EXPORT void MojoGLES2SwapBuffers();
+// TODO(piman): this doesn't belong here.
+MOJO_GLES2_EXPORT void MojoGLES2RequestAnimationFrames(
+    MojoGLES2Context context);
+MOJO_GLES2_EXPORT void MojoGLES2CancelAnimationFrames(MojoGLES2Context context);
+
+// TODO(piman): We shouldn't have to leak those 2 interfaces, especially in a
+// type-unsafe way.
+MOJO_GLES2_EXPORT void* MojoGLES2GetGLES2Interface(MojoGLES2Context context);
+MOJO_GLES2_EXPORT void* MojoGLES2GetContextSupport(MojoGLES2Context context);
+
+#define VISIT_GL_CALL(Function, ReturnType, PARAMETERS, ARGUMENTS) \
+  MOJO_GLES2_EXPORT ReturnType GL_APIENTRY gl##Function PARAMETERS;
+#include "mojo/public/gles2/gles2_call_visitor_autogen.h"
+#undef VISIT_GL_CALL
 
 #ifdef __cplusplus
 }  // extern "C"

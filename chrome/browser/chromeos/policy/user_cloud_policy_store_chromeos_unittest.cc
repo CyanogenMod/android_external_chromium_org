@@ -41,7 +41,8 @@ namespace {
 
 const char kLegacyDeviceId[] = "legacy-device-id";
 const char kLegacyToken[] = "legacy-token";
-const char kSanitizedUsername[] = "0123456789ABCDEF0123456789ABCDEF012345678";
+const char kSanitizedUsername[] =
+    "0123456789ABCDEF0123456789ABCDEF012345678@example.com";
 const char kDefaultHomepage[] = "http://chromium.org";
 
 ACTION_P2(SendSanitizedUsername, call_status, sanitized_username) {
@@ -51,8 +52,7 @@ ACTION_P2(SendSanitizedUsername, call_status, sanitized_username) {
 
 class UserCloudPolicyStoreChromeOSTest : public testing::Test {
  protected:
-  UserCloudPolicyStoreChromeOSTest()
-      : loop_(base::MessageLoop::TYPE_UI) {}
+  UserCloudPolicyStoreChromeOSTest() {}
 
   virtual void SetUp() OVERRIDE {
     EXPECT_CALL(cryptohome_client_,
@@ -220,7 +220,7 @@ class UserCloudPolicyStoreChromeOSTest : public testing::Test {
     return tmp_dir_.path().AppendASCII("policy");
   }
 
-  base::MessageLoop loop_;
+  base::MessageLoopForUI loop_;
   chromeos::MockCryptohomeClient cryptohome_client_;
   chromeos::MockSessionManagerClient session_manager_client_;
   UserPolicyBuilder policy_;
@@ -600,7 +600,7 @@ TEST_F(UserCloudPolicyStoreChromeOSTest, LoadImmediatelyNoUserPolicyKey) {
       .WillOnce(Return(policy_.GetBlob()));
   EXPECT_CALL(cryptohome_client_,
               BlockingGetSanitizedUsername(PolicyBuilder::kFakeUsername))
-      .WillOnce(Return("wrong"));
+      .WillOnce(Return("wrong@example.com"));
 
   EXPECT_FALSE(store_->policy());
   store_->LoadImmediately();

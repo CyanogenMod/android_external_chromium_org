@@ -10,16 +10,14 @@ var remoting = remoting || {};
 /** @constructor */
 remoting.HostController = function() {
   /** @return {remoting.HostPlugin} */
-  var createNpapiPlugin = function() {
-    var plugin = remoting.HostSession.createPlugin();
+  var createPluginForMe2Me = function() {
     /** @type {HTMLElement} @private */
     var container = document.getElementById('daemon-plugin-container');
-    container.appendChild(plugin);
-    return plugin;
+    return remoting.createNpapiPlugin(container);
   };
 
   /** @type {remoting.HostDispatcher} @private */
-  this.hostDispatcher_ = new remoting.HostDispatcher(createNpapiPlugin);
+  this.hostDispatcher_ = new remoting.HostDispatcher(createPluginForMe2Me);
 
   /** @param {string} version */
   var printVersion = function(version) {
@@ -49,6 +47,17 @@ remoting.HostController.State = {
   UNKNOWN: 6
 };
 
+/**
+ * @param {string} state The host controller state name.
+ * @return {remoting.HostController.State} The state enum value.
+ */
+remoting.HostController.State.fromString = function(state) {
+  if (!remoting.HostController.State.hasOwnProperty(state)) {
+    throw "Invalid HostController.State: " + state;
+  }
+  return remoting.HostController.State[state];
+}
+
 /** @enum {number} */
 remoting.HostController.AsyncResult = {
   OK: 0,
@@ -56,6 +65,17 @@ remoting.HostController.AsyncResult = {
   CANCELLED: 2,
   FAILED_DIRECTORY: 3
 };
+
+/**
+ * @param {string} result The async result name.
+ * @return {remoting.HostController.AsyncResult} The result enum value.
+ */
+remoting.HostController.AsyncResult.fromString = function(result) {
+  if (!remoting.HostController.AsyncResult.hasOwnProperty(result)) {
+    throw "Invalid HostController.AsyncResult: " + result;
+  }
+  return remoting.HostController.AsyncResult[result];
+}
 
 /**
  * Set of features for which hasFeature() can be used to test.
@@ -209,7 +229,7 @@ remoting.HostController.prototype.start = function(hostPin, consent, onDone,
             newHostId, hostPin, startHostWithHash.bind(
                 null, hostName, publicKey, privateKey,
                 remoting.identity.getCachedEmail(),
-                remoting.oauth2.exportRefreshToken()),
+                remoting.oauth2.getRefreshToken()),
           onError);
       }
     } else {
@@ -408,8 +428,10 @@ remoting.HostController.prototype.updatePin = function(newPin, onDone,
  *     callback.
  */
 remoting.HostController.prototype.getLocalHostState = function(onDone) {
-  this.hostDispatcher_.getDaemonState(onDone, function() {
-    onDone(remoting.HostController.State.NOT_IMPLEMENTED);
+  this.hostDispatcher_.getDaemonState(onDone, function(error) {
+    onDone(remoting.isMe2MeInstallable()
+               ? remoting.HostController.State.NOT_INSTALLED
+               : remoting.HostController.State.NOT_IMPLEMENTED);
   });
 };
 
@@ -471,6 +493,14 @@ remoting.HostController.prototype.clearPairedClients = function(
     onDone, onError) {
   this.hostDispatcher_.clearPairedClients(onDone, onError);
 };
+
+/**
+ * Returns true if the NPAPI plugin is being used.
+ * @return {boolean}
+ */
+remoting.HostController.prototype.usingNpapiPlugin = function() {
+  return this.hostDispatcher_.usingNpapiPlugin();
+}
 
 /** @type {remoting.HostController} */
 remoting.hostController = null;

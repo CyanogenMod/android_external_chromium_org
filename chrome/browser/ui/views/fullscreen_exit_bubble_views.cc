@@ -65,13 +65,13 @@ ButtonView::ButtonView(views::ButtonListener* listener,
     : accept_button_(NULL),
       deny_button_(NULL) {
   accept_button_ = new views::LabelButton(listener, base::string16());
-  accept_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
-  accept_button_->set_focusable(false);
+  accept_button_->SetStyle(views::Button::STYLE_BUTTON);
+  accept_button_->SetFocusable(false);
   AddChildView(accept_button_);
 
   deny_button_ = new views::LabelButton(listener, base::string16());
-  deny_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
-  deny_button_->set_focusable(false);
+  deny_button_->SetStyle(views::Button::STYLE_BUTTON);
+  deny_button_->SetFocusable(false);
   AddChildView(deny_button_);
 
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0,
@@ -133,32 +133,32 @@ FullscreenExitBubbleViews::FullscreenExitView::FullscreenExitView(
       message_label_(NULL),
       button_view_(NULL),
       browser_fullscreen_exit_accelerator_(accelerator) {
-  views::BubbleBorder* bubble_border = new views::BubbleBorder(
-      views::BubbleBorder::NONE, views::BubbleBorder::BIG_SHADOW,
-      SK_ColorWHITE);
-  set_background(new views::BubbleBackground(bubble_border));
-  set_border(bubble_border);
-  set_focusable(false);
+  scoped_ptr<views::BubbleBorder> bubble_border(
+      new views::BubbleBorder(views::BubbleBorder::NONE,
+                              views::BubbleBorder::BIG_SHADOW,
+                              SK_ColorWHITE));
+  set_background(new views::BubbleBackground(bubble_border.get()));
+  SetBorder(bubble_border.PassAs<views::Border>());
+  SetFocusable(false);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  message_label_ = new views::Label();
-  message_label_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  const gfx::FontList& medium_font_list =
+      rb.GetFontList(ui::ResourceBundle::MediumFont);
+  message_label_ = new views::Label(base::string16(), medium_font_list);
 
-  mouse_lock_exit_instruction_ = new views::Label();
+  mouse_lock_exit_instruction_ =
+      new views::Label(bubble_->GetInstructionText(), medium_font_list);
   mouse_lock_exit_instruction_->set_collapse_when_hidden(true);
-  mouse_lock_exit_instruction_->SetText(bubble_->GetInstructionText());
-  mouse_lock_exit_instruction_->SetFont(
-      rb.GetFont(ui::ResourceBundle::MediumFont));
 
   link_ = new views::Link();
   link_->set_collapse_when_hidden(true);
-  link_->set_focusable(false);
+  link_->SetFocusable(false);
 #if defined(OS_CHROMEOS)
   // On CrOS, the link text doesn't change, since it doesn't show the shortcut.
   link_->SetText(l10n_util::GetStringUTF16(IDS_EXIT_FULLSCREEN_MODE));
 #endif
   link_->set_listener(this);
-  link_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  link_->SetFontList(medium_font_list);
   link_->SetPressedColor(message_label_->enabled_color());
   link_->SetEnabledColor(message_label_->enabled_color());
   link_->SetVisible(false);
@@ -241,7 +241,7 @@ void FullscreenExitBubbleViews::FullscreenExitView::UpdateContent(
     if (link_visible) {
       link_->SetText(
           l10n_util::GetStringUTF16(IDS_EXIT_FULLSCREEN_MODE) +
-          UTF8ToUTF16(" ") +
+          base::UTF8ToUTF16(" ") +
           l10n_util::GetStringFUTF16(IDS_EXIT_FULLSCREEN_MODE_ACCELERATOR,
               accelerator));
     }
@@ -294,7 +294,7 @@ FullscreenExitBubbleViews::FullscreenExitBubbleViews(
   // that it is sliding off the top of the screen.
   popup_->GetRootView()->SetLayoutManager(NULL);
   view_->SetBounds(0, 0, size.width(), size.height());
-  popup_->Show();  // This does not activate the popup.
+  popup_->ShowInactive();  // This does not activate the popup.
 
   popup_->AddObserver(this);
 

@@ -4,19 +4,26 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_value_map.h"
-#include "chrome/browser/policy/url_blacklist_policy_handler.h"
-#include "chrome/common/pref_names.h"
+#include "base/values.h"
 #include "components/policy/core/browser/policy_error_map.h"
+#include "components/policy/core/browser/url_blacklist_policy_handler.h"
 #include "components/policy/core/common/policy_map.h"
-#include "grit/generated_resources.h"
+#include "components/policy/core/common/policy_pref_names.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+// Note: this file should move to components/policy/core/browser, but the
+// components_unittests runner does not load the ResourceBundle as
+// ChromeTestSuite::Initialize does, which leads to failures using
+// PolicyErrorMap.
 
 namespace policy {
 
 namespace {
+
 const char kTestDisabledScheme[] = "kTestDisabledScheme";
 const char kTestBlacklistValue[] = "kTestBlacklistValue";
+
 }  // namespace
 
 class URLBlacklistPolicyHandlerTest : public testing::Test {
@@ -74,7 +81,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
 
 TEST_F(URLBlacklistPolicyHandlerTest, ApplyPolicySettings_NothingSpecified) {
   ApplyPolicies();
-  EXPECT_FALSE(prefs_.GetValue(prefs::kUrlBlacklist, NULL));
+  EXPECT_FALSE(prefs_.GetValue(policy_prefs::kUrlBlacklist, NULL));
 }
 
 TEST_F(URLBlacklistPolicyHandlerTest,
@@ -82,7 +89,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
   // The policy expects a list. Give it a boolean.
   SetPolicy(key::kDisabledSchemes, base::Value::CreateBooleanValue(false));
   ApplyPolicies();
-  EXPECT_FALSE(prefs_.GetValue(prefs::kUrlBlacklist, NULL));
+  EXPECT_FALSE(prefs_.GetValue(policy_prefs::kUrlBlacklist, NULL));
 }
 
 TEST_F(URLBlacklistPolicyHandlerTest,
@@ -90,7 +97,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
   // The policy expects a list. Give it a boolean.
   SetPolicy(key::kURLBlacklist, base::Value::CreateBooleanValue(false));
   ApplyPolicies();
-  EXPECT_FALSE(prefs_.GetValue(prefs::kUrlBlacklist, NULL));
+  EXPECT_FALSE(prefs_.GetValue(policy_prefs::kUrlBlacklist, NULL));
 }
 
 TEST_F(URLBlacklistPolicyHandlerTest,
@@ -98,7 +105,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
   SetPolicy(key::kDisabledSchemes, new base::ListValue);
   ApplyPolicies();
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(0U, out_list->GetSize());
@@ -109,7 +116,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
   SetPolicy(key::kURLBlacklist, new base::ListValue);
   ApplyPolicies();
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(0U, out_list->GetSize());
@@ -125,7 +132,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
 
   // The element should be skipped.
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(0U, out_list->GetSize());
@@ -141,7 +148,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
 
   // The element should be skipped.
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(0U, out_list->GetSize());
@@ -155,7 +162,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
   ApplyPolicies();
 
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(1U, out_list->GetSize());
@@ -173,7 +180,7 @@ TEST_F(URLBlacklistPolicyHandlerTest,
   ApplyPolicies();
 
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(1U, out_list->GetSize());
@@ -195,7 +202,7 @@ TEST_F(URLBlacklistPolicyHandlerTest, ApplyPolicySettings_MergeSuccessful) {
   ApplyPolicies();
 
   base::Value* out;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kUrlBlacklist, &out));
+  EXPECT_TRUE(prefs_.GetValue(policy_prefs::kUrlBlacklist, &out));
   base::ListValue* out_list;
   EXPECT_TRUE(out->GetAsList(&out_list));
   EXPECT_EQ(2U, out_list->GetSize());

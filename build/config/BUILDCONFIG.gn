@@ -33,16 +33,6 @@ declare_args() {
   # to configure warnings.
   is_clang = false
 
-  # ASH is enabled.
-  # TODO(brettw) this should be moved out of the main build config file.
-  use_ash = false
-  # Aura is enabled.
-  # TODO(brettw) this should be moved out of the main build config file.
-  use_aura = false
-  # Ozone is enabled.
-  # TODO(brettw) this should be moved out of the main build config file.
-  use_ozone = false
-
   # Forces a 64-bit build on Windows. Does nothing on other platforms. Normally
   # we build 32-bit on Windows regardless of the current host OS bit depth.
   # Setting this flag will override this logic and generate 64-bit toolchains.
@@ -55,6 +45,35 @@ declare_args() {
   # Set to true on the command line when invoked by GYP. Build files can key
   # off of this to make any GYP-output-specific changes to the build.
   is_gyp = false
+
+  # Selects the desired build flavor. Official builds get additional
+  # processing to prepare for release. Normally you will want to develop and
+  # test with this flag off.
+  is_official_build = false
+
+  # Select the desired branding flavor. False means normal Chromium branding,
+  # true means official Google Chrome branding (requires extra Google-internal
+  # resources).
+  is_chrome_branded = false
+
+  # Compile for Address Sanitizer to find memory bugs.
+  is_asan = false
+
+  # Compile for Leak Sanitizer to find leaks.
+  is_lsan = false
+
+  # Compile for Memory Sanitizer to find uninitialized reads.
+  is_msan = false
+
+  # Compile for Thread Sanitizer to find threading bugs.
+  is_tsan = false
+
+  # When running in gyp-generating mode, this is the root of the build tree.
+  gyp_output_dir = "out"
+
+  # When running in gyp-generating mode, this flag indicates if the current GYP
+  # generator is xcode. Can only be true when building for iOS).
+  is_gyp_xcode_generator = false
 }
 
 # =============================================================================
@@ -68,7 +87,8 @@ declare_args() {
 # - is_mac is set only for desktop Mac. It is not set on iOS.
 # - is_posix is true for mac and any Unix-like system (basically everything
 #   except Windows).
-# - is_linux is true for any Linux variant including Android and ChromeOS.
+# - is_linux is true for desktop Linux and ChromeOS, but not Android (which is
+#   generally too different despite being based on the Linux kernel).
 #
 # Do not add more is_* variants here for random lesser-used Unix systems like
 # aix or one of the BSDs. If you need to check these, just check the os value
@@ -92,12 +112,14 @@ if (os == "win") {
   is_nacl = false
   is_posix = true
   is_win = false
-  is_clang = true  # Always use clang on Mac.
+  if (!is_clang) {
+    is_clang = true  # Always use clang on Mac.
+  }
 } else if (os == "android") {
-  is_android = false
+  is_android = true
   is_chromeos = false
   is_ios = false
-  is_linux = true
+  is_linux = false
   is_mac = false
   is_nacl = false
   is_posix = true
@@ -131,6 +153,10 @@ if (os == "win") {
   is_nacl = false
   is_posix = true
   is_win = false
+  if (!is_gyp_xcode_generator) {
+    # Always use clang on iOS when using ninja
+    is_clang = true
+  }
 } else if (os == "linux") {
   is_android = false
   is_chromeos = false
@@ -268,7 +294,11 @@ if (is_component_build) {
   component_mode = "static_library"
 }
 
-toolkit_uses_gtk = is_linux
+# These Sanitizers all imply using the Clang compiler. On Windows they either
+# don't work or work differently.
+if (!is_clang && (is_asan || is_lsan || is_tsan || is_msan)) {
+  is_clang = true
+}
 
 # =============================================================================
 # TARGET DEFAULTS
@@ -282,7 +312,7 @@ toolkit_uses_gtk = is_linux
 # Holds all configs used for making native executables and libraries, to avoid
 # duplication in each target below.
 native_compiler_configs = [
-  "//build/config:my_msvs",  # TODO(brettw) eraseme
+  "//build/config:feature_flags",
 
   "//build/config/compiler:compiler",
   "//build/config/compiler:chromium_code",
@@ -291,22 +321,27 @@ native_compiler_configs = [
   "//build/config/compiler:runtime_library",
 ]
 if (is_win) {
-  native_compiler_configs += [
-    "//build/config/win:sdk",
-  ]
-} else if (is_clang) {
-  native_compiler_configs += "//build/config/clang:find_bad_constructs"
+  native_compiler_configs += [ "//build/config/win:sdk", ]
+} else if (is_linux) {
+  native_compiler_configs += [ "//build/config/linux:sdk", ]
+} else if (is_mac) {
+  native_compiler_configs += [ "//build/config/mac:sdk", ]
+} else if (is_ios) {
+  native_compiler_configs += [ "//build/config/ios:sdk", ]
+}
+if (is_clang) {
+  native_compiler_configs += [ "//build/config/clang:find_bad_constructs" ]
 }
 
 # Optimizations and debug checking.
 if (is_debug) {
-  native_compiler_configs += "//build/config:debug"
+  native_compiler_configs += [ "//build/config:debug" ]
   default_optimization_config = "//build/config/compiler:no_optimize"
 } else {
-  native_compiler_configs += "//build/config:release"
+  native_compiler_configs += [ "//build/config:release" ]
   default_optimization_config = "//build/config/compiler:optimize"
 }
-native_compiler_configs += default_optimization_config
+native_compiler_configs += [ default_optimization_config ]
 
 # Symbol setup.
 if (is_clang && (is_linux || is_android)) {
@@ -324,7 +359,7 @@ if (is_clang && (is_linux || is_android)) {
 } else {
   assert(false, "Bad value for symbol_level.")
 }
-native_compiler_configs += default_symbols_config
+native_compiler_configs += [ default_symbols_config ]
 
 # Windows linker setup for EXEs and DLLs.
 if (is_win) {
@@ -346,13 +381,15 @@ if (is_win) {
 }
 
 set_defaults("executable") {
-  configs = native_compiler_configs
+  configs = native_compiler_configs + [
+    "//build/config:default_libs",
+  ]
   if (is_win) {
     configs += windows_linker_configs
   } else if (is_mac) {
-    configs += "//build/config/mac:mac_dynamic_flags"
-  } else if (is_linux) {
-    configs += "//build/config/linux:executable_ldconfig"
+    configs += [ "//build/config/mac:mac_dynamic_flags" ]
+  } else if (is_linux || is_android) {
+    configs += [ "//build/config/linux:executable_ldconfig" ]
   }
 }
 
@@ -361,11 +398,13 @@ set_defaults("static_library") {
 }
 
 set_defaults("shared_library") {
-  configs = native_compiler_configs
+  configs = native_compiler_configs + [
+    "//build/config:default_libs",
+  ]
   if (is_win) {
     configs += windows_linker_configs
   } else if (is_mac) {
-    configs += "//build/config/mac:mac_dynamic_flags"
+    configs += [ "//build/config/mac:mac_dynamic_flags" ]
   }
 }
 
@@ -383,6 +422,8 @@ set_defaults("source_set") {
 # default toolchain.
 
 if (is_win) {
+  # TODO(brettw) name the toolchains the same as cpu_arch as with Linux below
+  # to eliminate these conditionals.
   if (build_cpu_arch == "x64") {
     host_toolchain = "//build/toolchain/win:64"
   } else if (build_cpu_arch == "x86") {
@@ -394,23 +435,16 @@ if (is_win) {
   } else if (cpu_arch == "x86") {
     set_default_toolchain("//build/toolchain/win:32")
   }
+} else if (is_android) {
+  host_toolchain = "//build/toolchain/linux:$build_cpu_arch"
+  set_default_toolchain("//build/toolchain/android:$cpu_arch")
 } else if (is_linux) {
-  if (build_cpu_arch == "arm") {
-    host_toolchain = "//build/toolchain/linux:arm"
-  } else if (build_cpu_arch == "x86") {
-    host_toolchain = "//build/toolchain/linux:32"
-  } else if (build_cpu_arch == "x64") {
-    host_toolchain = "//build/toolchain/linux:64"
-  }
-
-  if (build_cpu_arch == "arm") {
-    set_default_toolchain("//build/toolchain/linux:arm")
-  } else if (build_cpu_arch == "x86") {
-    set_default_toolchain("//build/toolchain/linux:32")
-  } else if (build_cpu_arch == "x64") {
-    set_default_toolchain("//build/toolchain/linux:64")
-  }
+  host_toolchain = "//build/toolchain/linux:$build_cpu_arch"
+  set_default_toolchain("//build/toolchain/linux:$cpu_arch")
 } else if (is_mac) {
   host_toolchain = "//build/toolchain/mac:clang"
   set_default_toolchain(host_toolchain)
+} else if (is_ios) {
+  host_toolchain = "//build/toolchain/mac:host_clang"
+  set_default_toolchain("//build/toolchain/mac:clang")
 }

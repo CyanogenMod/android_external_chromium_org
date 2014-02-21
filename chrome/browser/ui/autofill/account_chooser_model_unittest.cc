@@ -11,6 +11,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+
 namespace autofill {
 
 namespace {
@@ -149,7 +151,7 @@ TEST_F(AccountChooserModelTest, HandlesSigninError) {
   ASSERT_TRUE(model()->WalletIsSelected());
   ASSERT_FALSE(model()->HasAccountsToChoose());
   ASSERT_EQ(3, model()->GetItemCount());
-  EXPECT_EQ(string16(), model()->GetActiveWalletAccountName());
+  EXPECT_EQ(base::string16(), model()->GetActiveWalletAccountName());
 
   // 1. "Known" wallet account (e.g. after active/passive/automatic sign-in).
   // Calls UpdateAccountChooserView.
@@ -175,7 +177,7 @@ TEST_F(AccountChooserModelTest, HandlesSigninError) {
   EXPECT_FALSE(model()->WalletIsSelected());
   EXPECT_FALSE(model()->HasAccountsToChoose());
   EXPECT_EQ(2, model()->GetItemCount());
-  EXPECT_EQ(string16(), model()->GetActiveWalletAccountName());
+  EXPECT_EQ(base::string16(), model()->GetActiveWalletAccountName());
 }
 
 TEST_F(AccountChooserModelTest, RespectsUserChoice) {

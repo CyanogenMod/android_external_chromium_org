@@ -9,6 +9,7 @@
 #include "ui/views/layout/layout_manager.h"
 #include "ui/views/window/frame_buttons.h"
 
+class AvatarLabel;
 class AvatarMenuButton;
 class NewAvatarButton;
 class OpaqueBrowserFrameViewLayoutDelegate;
@@ -92,6 +93,12 @@ class OpaqueBrowserFrameViewLayout : public views::LayoutManager {
 
   const gfx::Rect& client_view_bounds() const { return client_view_bounds_; }
 
+  // Determines whether the title bar is condensed vertically, as when the
+  // window is maximized. If true, the title bar is just the height of a tab,
+  // rather than having extra vertical space above the tabs. This also removes
+  // the thick frame border and rounded corners.
+  bool IsTitleBarCondensed() const;
+
  private:
   // Whether a specific button should be inserted on the leading or trailing
   // side.
@@ -103,6 +110,10 @@ class OpaqueBrowserFrameViewLayout : public views::LayoutManager {
   // Determines whether the avatar should be shown on the right side of the tab
   // strip (instead of the usual left).
   bool ShouldAvatarBeOnRight() const;
+
+  // Determines the amount of spacing between the New Tab button and the element
+  // to its immediate right.
+  int NewTabCaptionSpacing() const;
 
   // Layout various sub-components of this view.
   void LayoutWindowControls(views::View* host);
@@ -174,7 +185,7 @@ class OpaqueBrowserFrameViewLayout : public views::LayoutManager {
   views::View* window_icon_;
   views::Label* window_title_;
 
-  views::View* avatar_label_;
+  AvatarLabel* avatar_label_;
   AvatarMenuButton* avatar_button_;
   views::View* new_avatar_button_;
 

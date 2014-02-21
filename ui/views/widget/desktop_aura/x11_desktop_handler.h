@@ -9,7 +9,9 @@
 // Get rid of a macro from Xlib.h that conflicts with Aura's RootWindow class.
 #undef RootWindow
 
-#include "base/message_loop/message_loop.h"
+#include <vector>
+
+#include "base/message_loop/message_pump_dispatcher.h"
 #include "ui/aura/env_observer.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/gfx/x/x11_types.h"
@@ -22,14 +24,19 @@ namespace views {
 // A singleton that owns global objects related to the desktop and listens for
 // X11 events on the X11 root window. Destroys itself when aura::Env is
 // deleted.
-class VIEWS_EXPORT X11DesktopHandler : public base::MessageLoop::Dispatcher,
+class VIEWS_EXPORT X11DesktopHandler : public base::MessagePumpDispatcher,
                                        public aura::EnvObserver {
  public:
   // Returns the singleton handler.
   static X11DesktopHandler* get();
 
   // Sends a request to the window manager to activate |window|.
+  // This method should only be called if the window is already mapped.
   void ActivateWindow(::Window window);
+
+  // Deactivates the |window| and activates the window just below it in z-order.
+  // |window| must be active.
+  void DeactivateWindow(::Window window);
 
   // Checks if the current active window is |window|.
   bool IsActiveWindow(::Window window) const;
@@ -39,12 +46,18 @@ class VIEWS_EXPORT X11DesktopHandler : public base::MessageLoop::Dispatcher,
   // dispatcher. The window dispatcher sends these events to here.
   void ProcessXEvent(const base::NativeEvent& event);
 
-  // Overridden from MessageLoop::Dispatcher:
-  virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE;
+  // Overridden from MessagePumpDispatcher:
+  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
 
   // Overridden from aura::EnvObserver:
   virtual void OnWindowInitialized(aura::Window* window) OVERRIDE;
   virtual void OnWillDestroyEnv() OVERRIDE;
+
+  // Allows to override wm_supports_active_window_ value for tests. If the WM
+  // supports _NET_ACTIVE_WINDOW, activation is async otherwise it is sync.
+  void SetWMSupportsActiveWindowForTests(bool value) {
+    wm_supports_active_window_ = value;
+  }
 
  private:
   explicit X11DesktopHandler();
@@ -52,6 +65,11 @@ class VIEWS_EXPORT X11DesktopHandler : public base::MessageLoop::Dispatcher,
 
   // Handles changes in activation.
   void OnActiveWindowChanged(::Window window);
+
+  // Return the next window to activate based on the current list of windows.
+  // This should only be called if there is an active window. In other words, if
+  // current_window_ is different from None.
+  ::Window GetNextToActivateInStack(const std::vector< ::Window >& windows);
 
   // The display and the native X window hosting the root window.
   XDisplay* xdisplay_;

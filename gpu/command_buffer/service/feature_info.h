@@ -26,6 +26,8 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   struct FeatureFlags {
     FeatureFlags();
 
+    bool chromium_color_buffer_float_rgba;
+    bool chromium_color_buffer_float_rgb;
     bool chromium_framebuffer_multisample;
     // Use glBlitFramebuffer() and glRenderbufferStorageMultisample() with
     // GL_EXT_framebuffer_multisample-style semantics, since they are exposed
@@ -42,7 +44,6 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool npot_ok;
     bool enable_texture_float_linear;
     bool enable_texture_half_float_linear;
-    bool chromium_stream_texture;
     bool angle_translated_shader_source;
     bool angle_pack_reverse_row_order;
     bool arb_texture_rectangle;

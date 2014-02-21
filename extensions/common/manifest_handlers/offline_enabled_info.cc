@@ -35,7 +35,7 @@ OfflineEnabledHandler::OfflineEnabledHandler() {
 OfflineEnabledHandler::~OfflineEnabledHandler() {
 }
 
-bool OfflineEnabledHandler::Parse(Extension* extension, string16* error) {
+bool OfflineEnabledHandler::Parse(Extension* extension, base::string16* error) {
   if (!extension->manifest()->HasKey(keys::kOfflineEnabled)) {
     // Only platform apps default to being enabled offline, and we should only
     // attempt parsing without a key present if it is a platform app.
@@ -49,7 +49,7 @@ bool OfflineEnabledHandler::Parse(Extension* extension, string16* error) {
 
   if (!extension->manifest()->GetBoolean(keys::kOfflineEnabled,
                                          &offline_enabled)) {
-    *error = ASCIIToUTF16(manifest_errors::kInvalidOfflineEnabled);
+    *error = base::ASCIIToUTF16(manifest_errors::kInvalidOfflineEnabled);
     return false;
   }
 

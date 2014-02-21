@@ -187,7 +187,8 @@ void SpellingRequest::OnLocalCheckCompleted(
 
 
 SpellCheckMessageFilterMac::SpellCheckMessageFilterMac(int render_process_id)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(SpellCheckMsgStart),
+      render_process_id_(render_process_id),
       client_(new SpellingServiceClient) {
 }
 
@@ -253,7 +254,7 @@ void SpellCheckMessageFilterMac::OnCheckSpelling(const base::string16& word,
 
 void SpellCheckMessageFilterMac::OnFillSuggestionList(
     const base::string16& word,
-    std::vector<string16>* suggestions) {
+    std::vector<base::string16>* suggestions) {
   spellcheck_mac::FillSuggestionList(word, suggestions);
 }
 

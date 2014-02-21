@@ -10,7 +10,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/resource_provider.h"
@@ -18,10 +17,12 @@
 #include "chrome/browser/task_manager/task_manager_util.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
@@ -87,7 +88,7 @@ ExtensionProcessResource::ExtensionProcessResource(
   process_handle_ = render_view_host_->GetProcess()->GetHandle();
   unique_process_id_ = render_view_host->GetProcess()->GetID();
   pid_ = base::GetProcId(process_handle_);
-  base::string16 extension_name = UTF8ToUTF16(GetExtension()->name());
+  base::string16 extension_name = base::UTF8ToUTF16(GetExtension()->name());
   DCHECK(!extension_name.empty());
 
   Profile* profile = Profile::FromBrowserContext(
@@ -97,7 +98,6 @@ ExtensionProcessResource::ExtensionProcessResource(
       true,  // is_extension
       profile->IsOffTheRecord(),
       false,  // is_prerender
-      false,  // is_instant_overlay
       IsBackground());
   title_ = l10n_util::GetStringFUTF16(message_id, extension_name);
 }
@@ -105,11 +105,11 @@ ExtensionProcessResource::ExtensionProcessResource(
 ExtensionProcessResource::~ExtensionProcessResource() {
 }
 
-string16 ExtensionProcessResource::GetTitle() const {
+base::string16 ExtensionProcessResource::GetTitle() const {
   return title_;
 }
 
-string16 ExtensionProcessResource::GetProfileName() const {
+base::string16 ExtensionProcessResource::GetProfileName() const {
   return util::GetProfileNameFromInfoCache(
       Profile::FromBrowserContext(
           render_view_host_->GetProcess()->GetBrowserContext()));
@@ -177,18 +177,23 @@ ExtensionProcessResourceProvider::~ExtensionProcessResourceProvider() {
 
 Resource* ExtensionProcessResourceProvider::GetResource(
     int origin_pid,
-    int render_process_host_id,
-    int routing_id) {
+    int child_id,
+    int route_id) {
   // If an origin PID was specified, the request is from a plugin, not the
   // render view host process
   if (origin_pid)
     return NULL;
 
+  content::RenderFrameHost* rfh =
+      content::RenderFrameHost::FromID(child_id, route_id);
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderFrameHost(rfh);
+
   for (ExtensionRenderViewHostMap::iterator i = resources_.begin();
        i != resources_.end(); i++) {
-    if (i->first->GetSiteInstance()->GetProcess()->GetID() ==
-            render_process_host_id &&
-        i->first->GetRoutingID() == routing_id)
+    content::WebContents* view_contents =
+        content::WebContents::FromRenderViewHost(i->first);
+    if (web_contents == view_contents)
       return i->second;
   }
 
@@ -315,7 +320,8 @@ void ExtensionProcessResourceProvider::AddToTaskManager(
 
   ExtensionProcessResource* resource =
       new ExtensionProcessResource(render_view_host);
-  DCHECK(resources_.find(render_view_host) == resources_.end());
+  if (resources_.find(render_view_host) != resources_.end())
+    return;
   resources_[render_view_host] = resource;
   task_manager_->AddResource(resource);
 }

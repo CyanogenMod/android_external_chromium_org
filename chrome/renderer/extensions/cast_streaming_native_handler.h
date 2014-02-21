@@ -34,7 +34,7 @@ class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
       const v8::FunctionCallbackInfo<v8::Value>& args);
   void CreateParamsCastRtpStream(
       const v8::FunctionCallbackInfo<v8::Value>& args);
-  void GetCapsCastRtpStream(
+  void GetSupportedParamsCastRtpStream(
       const v8::FunctionCallbackInfo<v8::Value>& args);
   void StartCastRtpStream(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -43,7 +43,7 @@ class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
 
   void DestroyCastUdpTransport(
       const v8::FunctionCallbackInfo<v8::Value>& args);
-  void StartCastUdpTransport(
+  void SetDestinationCastUdpTransport(
       const v8::FunctionCallbackInfo<v8::Value>& args);
   void StopCastUdpTransport(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -53,6 +53,10 @@ class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
   void CallCreateCallback(scoped_ptr<CastRtpStream> stream1,
                           scoped_ptr<CastRtpStream> stream2,
                           scoped_ptr<CastUdpTransport> udp_transport);
+
+  void CallStartCallback(int stream_id);
+  void CallStopCallback(int stream_id);
+  void CallErrorCallback(int stream_id, const std::string& message);
 
   // Gets the RTP stream or UDP transport indexed by an ID.
   // If not found, returns NULL and throws a V8 exception.

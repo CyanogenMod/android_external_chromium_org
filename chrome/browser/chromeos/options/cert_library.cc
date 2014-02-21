@@ -36,16 +36,17 @@ namespace {
 // Root CA certificates that are built into Chrome use this token name.
 const char kRootCertificateTokenName[] = "Builtin Object Token";
 
-base::string16 GetDisplayString(net::X509Certificate* cert, bool hardware_backed) {
+base::string16 GetDisplayString(net::X509Certificate* cert,
+                                bool hardware_backed) {
   std::string org;
   if (!cert->subject().organization_names.empty())
     org = cert->subject().organization_names[0];
   if (org.empty())
     org = cert->subject().GetDisplayName();
-  base::string16 issued_by = UTF8ToUTF16(
+  base::string16 issued_by = base::UTF8ToUTF16(
       x509_certificate_model::GetIssuerCommonName(cert->os_cert_handle(),
                                                   org));  // alternative text
-  base::string16 issued_to = UTF8ToUTF16(
+  base::string16 issued_to = base::UTF8ToUTF16(
       x509_certificate_model::GetCertNameOrNickname(cert->os_cert_handle()));
 
   if (hardware_backed) {
@@ -153,7 +154,8 @@ int CertLibrary::NumCertificates(CertType type) const {
   return static_cast<int>(cert_list.size());
 }
 
-string16 CertLibrary::GetCertDisplayStringAt(CertType type, int index) const {
+base::string16 CertLibrary::GetCertDisplayStringAt(CertType type,
+                                                   int index) const {
   net::X509Certificate* cert = GetCertificateAt(type, index);
   bool hardware_backed = IsCertHardwareBackedAt(type, index);
   return GetDisplayString(cert, hardware_backed);
@@ -169,13 +171,8 @@ std::string CertLibrary::GetCertPkcs11IdAt(CertType type, int index) const {
 }
 
 bool CertLibrary::IsCertHardwareBackedAt(CertType type, int index) const {
-  if (!CertLoader::Get()->IsHardwareBacked())
-    return false;
   net::X509Certificate* cert = GetCertificateAt(type, index);
-  std::string cert_token_name =
-      x509_certificate_model::GetTokenName(cert->os_cert_handle());
-  return cert_token_name ==
-      CertLoader::Get()->tpm_token_name();
+  return CertLoader::Get()->IsCertificateHardwareBacked(cert);
 }
 
 int CertLibrary::GetCertIndexByPEM(CertType type,

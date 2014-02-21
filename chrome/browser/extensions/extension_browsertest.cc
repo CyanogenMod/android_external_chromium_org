@@ -23,9 +23,9 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
+#include "chrome/browser/extensions/updater/extension_cache_fake.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -34,7 +34,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -42,7 +41,9 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_set.h"
 #include "sync/api/string_ordinal.h"
 
 #if defined(OS_CHROMEOS)
@@ -57,6 +58,9 @@ using extensions::Manifest;
 ExtensionBrowserTest::ExtensionBrowserTest()
     : loaded_(false),
       installed_(false),
+#if defined(OS_CHROMEOS)
+      set_chromeos_user_(true),
+#endif
       current_channel_(chrome::VersionInfo::CHANNEL_DEV),
       override_prompt_for_external_extensions_(
           FeatureSwitch::prompt_for_external_extensions(),
@@ -73,17 +77,17 @@ Profile* ExtensionBrowserTest::profile() {
     if (browser())
       profile_ = browser()->profile();
     else
-      profile_ = ProfileManager::GetDefaultProfile();
+      profile_ = ProfileManager::GetActiveUserProfile();
   }
   return profile_;
 }
 
 // static
 const Extension* ExtensionBrowserTest::GetExtensionByPath(
-    const ExtensionSet* extensions, const base::FilePath& path) {
+    const extensions::ExtensionSet* extensions, const base::FilePath& path) {
   base::FilePath extension_path = base::MakeAbsoluteFilePath(path);
   EXPECT_TRUE(!extension_path.empty());
-  for (ExtensionSet::const_iterator iter = extensions->begin();
+  for (extensions::ExtensionSet::const_iterator iter = extensions->begin();
        iter != extensions->end(); ++iter) {
     if ((*iter)->path() == extension_path) {
       return iter->get();
@@ -92,18 +96,25 @@ const Extension* ExtensionBrowserTest::GetExtensionByPath(
   return NULL;
 }
 
+void ExtensionBrowserTest::SetUp() {
+  test_extension_cache_.reset(new extensions::ExtensionCacheFake());
+  InProcessBrowserTest::SetUp();
+}
+
 void ExtensionBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_);
   test_data_dir_ = test_data_dir_.AppendASCII("extensions");
   observer_.reset(new ExtensionTestNotificationObserver(browser()));
 
 #if defined(OS_CHROMEOS)
-  // This makes sure that we create the Default profile first, with no
-  // ExtensionService and then the real profile with one, as we do when
-  // running on chromeos.
-  command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
-                                  "TestUser@gmail.com");
-  command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
+  if (set_chromeos_user_) {
+    // This makes sure that we create the Default profile first, with no
+    // ExtensionService and then the real profile with one, as we do when
+    // running on chromeos.
+    command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
+                                    "TestUser@gmail.com");
+    command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
+  }
 #endif
 }
 
@@ -173,11 +184,11 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
     content::WindowedNotificationObserver load_signal(
         chrome::NOTIFICATION_EXTENSION_LOADED,
         content::Source<Profile>(profile()));
-    CHECK(!extension_util::IsIncognitoEnabled(extension_id, service) ||
+    CHECK(!extensions::util::IsIncognitoEnabled(extension_id, profile()) ||
           extension->force_incognito_enabled());
 
     if (flags & kFlagEnableIncognito) {
-      extension_util::SetIsIncognitoEnabled(extension_id, service, true);
+      extensions::util::SetIsIncognitoEnabled(extension_id, profile(), true);
       load_signal.Wait();
       extension = service->GetExtensionById(extension_id, false);
       CHECK(extension) << extension_id << " not found after reloading.";
@@ -188,9 +199,9 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
     content::WindowedNotificationObserver load_signal(
         chrome::NOTIFICATION_EXTENSION_LOADED,
         content::Source<Profile>(profile()));
-    CHECK(extension_util::AllowFileAccess(extension, service));
+    CHECK(extensions::util::AllowFileAccess(extension_id, profile()));
     if (!(flags & kFlagEnableFileAccess)) {
-      extension_util::SetAllowFileAccess(extension, service, false);
+      extensions::util::SetAllowFileAccess(extension_id, profile(), false);
       load_signal.Wait();
       extension = service->GetExtensionById(extension_id, false);
       CHECK(extension) << extension_id << " not found after reloading.";
@@ -453,14 +464,15 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
             << " num after: " << base::IntToString(num_after)
             << " Installed extensions follow:";
 
-    for (ExtensionSet::const_iterator it = service->extensions()->begin();
+    for (extensions::ExtensionSet::const_iterator it =
+             service->extensions()->begin();
          it != service->extensions()->end(); ++it)
       VLOG(1) << "  " << (*it)->id();
 
     VLOG(1) << "Errors follow:";
-    const std::vector<string16>* errors =
+    const std::vector<base::string16>* errors =
         ExtensionErrorReporter::GetInstance()->GetErrors();
-    for (std::vector<string16>::const_iterator iter = errors->begin();
+    for (std::vector<base::string16>::const_iterator iter = errors->begin();
          iter != errors->end(); ++iter)
       VLOG(1) << *iter;
 

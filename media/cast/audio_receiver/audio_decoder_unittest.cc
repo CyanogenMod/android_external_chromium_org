@@ -5,7 +5,7 @@
 #include "base/test/simple_test_tick_clock.h"
 #include "media/cast/audio_receiver/audio_decoder.h"
 #include "media/cast/cast_environment.h"
-#include "media/cast/test/fake_task_runner.h"
+#include "media/cast/test/fake_single_thread_task_runner.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace media {
@@ -27,11 +27,18 @@ class TestRtpPayloadFeedback : public RtpPayloadFeedback {
 class AudioDecoderTest : public ::testing::Test {
  protected:
   AudioDecoderTest() {
-    testing_clock_.Advance(base::TimeDelta::FromMilliseconds(1234));
-    task_runner_ = new test::FakeTaskRunner(&testing_clock_);
-    cast_environment_ = new CastEnvironment(&testing_clock_, task_runner_,
-        task_runner_, task_runner_, task_runner_, task_runner_,
-        GetDefaultCastLoggingConfig());
+    testing_clock_ = new base::SimpleTestTickClock();
+    testing_clock_->Advance(base::TimeDelta::FromMilliseconds(1234));
+    task_runner_ = new test::FakeSingleThreadTaskRunner(testing_clock_);
+    cast_environment_ =
+        new CastEnvironment(scoped_ptr<base::TickClock>(testing_clock_).Pass(),
+                            task_runner_,
+                            task_runner_,
+                            task_runner_,
+                            task_runner_,
+                            task_runner_,
+                            task_runner_,
+                            GetDefaultCastReceiverLoggingConfig());
   }
   virtual ~AudioDecoderTest() {}
 
@@ -41,10 +48,13 @@ class AudioDecoderTest : public ::testing::Test {
   }
 
   TestRtpPayloadFeedback cast_feedback_;
-  base::SimpleTestTickClock testing_clock_;
-  scoped_refptr<test::FakeTaskRunner> task_runner_;
+  // Owned by CastEnvironment.
+  base::SimpleTestTickClock* testing_clock_;
+  scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   scoped_refptr<CastEnvironment> cast_environment_;
   scoped_ptr<AudioDecoder> audio_decoder_;
+
+  DISALLOW_COPY_AND_ASSIGN(AudioDecoderTest);
 };
 
 TEST_F(AudioDecoderTest, Pcm16MonoNoResampleOnePacket) {
@@ -52,7 +62,7 @@ TEST_F(AudioDecoderTest, Pcm16MonoNoResampleOnePacket) {
   audio_config.rtp_payload_type = 127;
   audio_config.frequency = 16000;
   audio_config.channels = 1;
-  audio_config.codec = kPcm16;
+  audio_config.codec = transport::kPcm16;
   audio_config.use_external_decoder = false;
   Configure(audio_config);
 
@@ -72,21 +82,17 @@ TEST_F(AudioDecoderTest, Pcm16MonoNoResampleOnePacket) {
   PcmAudioFrame audio_frame;
   uint32 rtp_timestamp;
 
-  EXPECT_FALSE(audio_decoder_->GetRawAudioFrame(number_of_10ms_blocks,
-                                                desired_frequency,
-                                                &audio_frame,
-                                                &rtp_timestamp));
+  EXPECT_FALSE(audio_decoder_->GetRawAudioFrame(
+      number_of_10ms_blocks, desired_frequency, &audio_frame, &rtp_timestamp));
 
   uint8* payload_data = reinterpret_cast<uint8*>(&payload[0]);
   size_t payload_size = payload.size() * sizeof(int16);
 
-  audio_decoder_->IncomingParsedRtpPacket(payload_data,
-      payload_size, rtp_header);
+  audio_decoder_->IncomingParsedRtpPacket(
+      payload_data, payload_size, rtp_header);
 
-  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(number_of_10ms_blocks,
-                                               desired_frequency,
-                                               &audio_frame,
-                                               &rtp_timestamp));
+  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(
+      number_of_10ms_blocks, desired_frequency, &audio_frame, &rtp_timestamp));
   EXPECT_EQ(1, audio_frame.channels);
   EXPECT_EQ(16000, audio_frame.frequency);
   EXPECT_EQ(640ul, audio_frame.samples.size());
@@ -101,7 +107,7 @@ TEST_F(AudioDecoderTest, Pcm16StereoNoResampleTwoPackets) {
   audio_config.rtp_payload_type = 127;
   audio_config.frequency = 16000;
   audio_config.channels = 2;
-  audio_config.codec = kPcm16;
+  audio_config.codec = transport::kPcm16;
   audio_config.use_external_decoder = false;
   Configure(audio_config);
 
@@ -122,24 +128,22 @@ TEST_F(AudioDecoderTest, Pcm16StereoNoResampleTwoPackets) {
   uint8* payload_data = reinterpret_cast<uint8*>(&payload[0]);
   size_t payload_size = payload.size() * sizeof(int16);
 
-  audio_decoder_->IncomingParsedRtpPacket(payload_data,
-      payload_size, rtp_header);
+  audio_decoder_->IncomingParsedRtpPacket(
+      payload_data, payload_size, rtp_header);
 
   int number_of_10ms_blocks = 2;
   int desired_frequency = 16000;
   PcmAudioFrame audio_frame;
   uint32 rtp_timestamp;
 
-  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(number_of_10ms_blocks,
-                                               desired_frequency,
-                                               &audio_frame,
-                                               &rtp_timestamp));
+  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(
+      number_of_10ms_blocks, desired_frequency, &audio_frame, &rtp_timestamp));
   EXPECT_EQ(2, audio_frame.channels);
   EXPECT_EQ(16000, audio_frame.frequency);
   EXPECT_EQ(640ul, audio_frame.samples.size());
   // First 10 samples per channel are 0 from NetEq.
   for (size_t i = 10 * audio_config.channels; i < audio_frame.samples.size();
-      ++i) {
+       ++i) {
     EXPECT_EQ(0x3412, audio_frame.samples[i]);
   }
 
@@ -147,13 +151,11 @@ TEST_F(AudioDecoderTest, Pcm16StereoNoResampleTwoPackets) {
   rtp_header.webrtc.header.sequenceNumber++;
   rtp_header.webrtc.header.timestamp += (audio_config.frequency / 100) * 2 * 2;
 
-  audio_decoder_->IncomingParsedRtpPacket(payload_data,
-      payload_size, rtp_header);
+  audio_decoder_->IncomingParsedRtpPacket(
+      payload_data, payload_size, rtp_header);
 
-  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(number_of_10ms_blocks,
-                                               desired_frequency,
-                                               &audio_frame,
-                                               &rtp_timestamp));
+  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(
+      number_of_10ms_blocks, desired_frequency, &audio_frame, &rtp_timestamp));
   EXPECT_EQ(2, audio_frame.channels);
   EXPECT_EQ(16000, audio_frame.frequency);
   EXPECT_EQ(640ul, audio_frame.samples.size());
@@ -162,7 +164,7 @@ TEST_F(AudioDecoderTest, Pcm16StereoNoResampleTwoPackets) {
   }
   // Test cast callback.
   audio_decoder_->SendCastMessage();
-  testing_clock_.Advance(base::TimeDelta::FromMilliseconds(33));
+  testing_clock_->Advance(base::TimeDelta::FromMilliseconds(33));
   audio_decoder_->SendCastMessage();
 }
 
@@ -171,7 +173,7 @@ TEST_F(AudioDecoderTest, Pcm16Resample) {
   audio_config.rtp_payload_type = 127;
   audio_config.frequency = 16000;
   audio_config.channels = 2;
-  audio_config.codec = kPcm16;
+  audio_config.codec = transport::kPcm16;
   audio_config.use_external_decoder = false;
   Configure(audio_config);
 
@@ -191,18 +193,16 @@ TEST_F(AudioDecoderTest, Pcm16Resample) {
   uint8* payload_data = reinterpret_cast<uint8*>(&payload[0]);
   size_t payload_size = payload.size() * sizeof(int16);
 
-  audio_decoder_->IncomingParsedRtpPacket(payload_data,
-      payload_size, rtp_header);
+  audio_decoder_->IncomingParsedRtpPacket(
+      payload_data, payload_size, rtp_header);
 
   int number_of_10ms_blocks = 2;
   int desired_frequency = 48000;
   PcmAudioFrame audio_frame;
   uint32 rtp_timestamp;
 
-  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(number_of_10ms_blocks,
-                                               desired_frequency,
-                                               &audio_frame,
-                                               &rtp_timestamp));
+  EXPECT_TRUE(audio_decoder_->GetRawAudioFrame(
+      number_of_10ms_blocks, desired_frequency, &audio_frame, &rtp_timestamp));
 
   EXPECT_EQ(2, audio_frame.channels);
   EXPECT_EQ(48000, audio_frame.frequency);
@@ -210,9 +210,10 @@ TEST_F(AudioDecoderTest, Pcm16Resample) {
   int count = 0;
   // Resampling makes the variance worse.
   for (size_t i = 100 * audio_config.channels; i < audio_frame.samples.size();
-      ++i) {
+       ++i) {
     EXPECT_NEAR(0x3412, audio_frame.samples[i], 400);
-    if (0x3412 == audio_frame.samples[i])  count++;
+    if (0x3412 == audio_frame.samples[i])
+      count++;
   }
 }
 

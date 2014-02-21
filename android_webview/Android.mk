@@ -23,11 +23,14 @@ LOCAL_SRC_FILES += \
 # contentview and its dependencies
 LOCAL_AIDL_INCLUDES := \
     $(LOCAL_PATH)/../content/public/android/java/src \
+    $(LOCAL_PATH)/../net/android/java/src \
     $(LOCAL_PATH)/../third_party/eyesfree/src/android/java/src
 LOCAL_SRC_FILES += \
     $(call all-java-files-under, ../content/public/android/java/src) \
     ../content/public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl \
     ../content/public/android/java/src/org/chromium/content/common/IChildProcessService.aidl \
+    ../net/android/java/src/org/chromium/net/IRemoteAndroidKeyStoreCallbacks.aidl \
+    ../net/android/java/src/org/chromium/net/IRemoteAndroidKeyStore.aidl \
     $(call all-java-files-under, ../base/android/java/src) \
     $(call all-java-files-under, ../media/base/android/java/src) \
     $(call all-java-files-under, ../net/android/java/src) \
@@ -53,13 +56,14 @@ LOCAL_SRC_FILES += \
 LOCAL_GENERATED_SOURCES := \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/base/ActivityState.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/base/MemoryPressureLevelList.java \
+$(call intermediates-dir-for,GYP,shared)/templates/org/chromium/content/browser/GestureEventType.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/content/browser/PageTransitionTypes.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/content/browser/SpeechRecognitionError.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/content/browser/input/PopupItemType.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/content/common/ResultCodes.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/media/ImageFormat.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/net/CertificateMimeType.java \
-$(call intermediates-dir-for,GYP,shared)/templates/org/chromium/net/CertVerifyResultAndroid.java \
+$(call intermediates-dir-for,GYP,shared)/templates/org/chromium/net/CertVerifyStatusAndroid.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/net/NetError.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/net/PrivateKeyType.java \
 $(call intermediates-dir-for,GYP,shared)/templates/org/chromium/ui/WindowOpenDisposition.java \

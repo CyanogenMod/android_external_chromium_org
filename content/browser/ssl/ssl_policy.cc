@@ -53,6 +53,7 @@ void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
     case net::ERR_CERT_AUTHORITY_INVALID:
     case net::ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
     case net::ERR_CERT_WEAK_KEY:
+    case net::ERR_CERT_NAME_CONSTRAINT_VIOLATION:
       OnCertErrorInternal(handler, !handler->fatal(), handler->fatal());
       break;
     case net::ERR_CERT_NO_REVOCATION_MECHANISM:
@@ -186,7 +187,7 @@ void SSLPolicy::OnCertErrorInternal(SSLCertErrorHandler* handler,
       CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE;
   GetContentClient()->browser()->AllowCertificateError(
       handler->render_process_id(),
-      handler->render_view_id(),
+      handler->render_frame_id(),
       handler->cert_error(),
       handler->ssl_info(),
       handler->request_url(),

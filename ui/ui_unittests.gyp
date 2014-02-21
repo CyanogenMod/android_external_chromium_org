@@ -14,12 +14,9 @@
         '../skia/skia.gyp:skia',
         '../testing/gtest.gyp:gtest',
         'gfx/gfx.gyp:gfx',
+        'gfx/gfx.gyp:gfx_geometry',
       ],
       'sources': [
-        'base/test/cocoa_test_event_utils.h',
-        'base/test/cocoa_test_event_utils.mm',
-        'base/test/ui_cocoa_test_helper.h',
-        'base/test/ui_cocoa_test_helper.mm',
         'base/test/ui_controls.h',
         'base/test/ui_controls_aura.cc',
         'base/test/ui_controls_gtk.cc',
@@ -27,8 +24,6 @@
         'base/test/ui_controls_internal_win.h',
         'base/test/ui_controls_mac.mm',
         'base/test/ui_controls_win.cc',
-        'gfx/test/color_util.cc',
-        'gfx/test/color_util.h',
       ],
       'include_dirs': [
         '../',
@@ -55,23 +50,10 @@
         }],
         ['use_aura==1', {
           'sources!': [
+            'base/test/ui_controls_mac.mm',
             'base/test/ui_controls_win.cc',
           ],
         }],
-      ],
-    },
-    {
-      'target_name': 'run_ui_unittests',
-      'type': 'static_library',
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../base/base.gyp:test_support_base',
-        'ui.gyp:ui',
-      ],
-      'sources': [
-        'test/test_suite.cc',
-        'test/test_suite.h',
-        'test/run_all_unittests.cc',
       ],
     },
     {
@@ -80,6 +62,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../chrome/chrome_resources.gyp:packed_resources',
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -89,9 +72,9 @@
         '../url/url.gyp:url_lib',
         'base/strings/ui_strings.gyp:ui_strings',
         'events/events.gyp:events_base',
+        'gfx/gfx.gyp:gfx_geometry_unittests',
+        'gfx/gfx.gyp:gfx_test_support',
         'resources/ui_resources.gyp:ui_resources',
-        'run_ui_unittests',
-        'shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         'ui.gyp:ui',
         'ui_test_support',
       ],
@@ -107,11 +90,11 @@
         'base/resource/data_pack_literal.cc',
         'base/resource/data_pack_unittest.cc',
         'base/resource/resource_bundle_unittest.cc',
+        'base/test/run_all_unittests.cc',
         'gfx/animation/animation_container_unittest.cc',
         'gfx/animation/animation_unittest.cc',
         'gfx/animation/multi_animation_unittest.cc',
         'gfx/animation/slide_animation_unittest.cc',
-        'gfx/box_unittest.cc',
         'gfx/codec/png_codec_unittest.cc',
         'gfx/color_utils_unittest.cc',
         'gfx/display_unittest.cc',
@@ -123,24 +106,15 @@
         'gfx/image/image_unittest_util.h',
         'gfx/image/image_unittest_util_ios.mm',
         'gfx/image/image_unittest_util_mac.mm',
-        'gfx/insets_unittest.cc',
-        'gfx/matrix3_unittest.cc',
-        'gfx/point_unittest.cc',
-        'gfx/point3_unittest.cc',
-        'gfx/quad_unittest.cc',
         'gfx/range/range_mac_unittest.mm',
         'gfx/range/range_unittest.cc',
         'gfx/range/range_win_unittest.cc',
-        'gfx/rect_unittest.cc',
-        'gfx/safe_integer_conversions_unittest.cc',
         'gfx/screen_unittest.cc',
         'gfx/shadow_value_unittest.cc',
-        'gfx/size_unittest.cc',
         'gfx/skbitmap_operations_unittest.cc',
+        'gfx/skrect_conversion_unittest.cc',
         'gfx/text_elider_unittest.cc',
         'gfx/text_utils_unittest.cc',
-        'gfx/vector2d_unittest.cc',
-        'gfx/vector3d_unittest.cc',
       ],
       'all_sources': [
         '<@(_common_sources)',
@@ -187,7 +161,6 @@
         'gfx/sequential_id_generator_unittest.cc',
         'gfx/transform_util_unittest.cc',
         'gfx/utf16_indexing_unittest.cc',
-        'shell_dialogs/select_file_dialog_win_unittest.cc',
       ],
       'include_dirs': [
         '../',
@@ -211,11 +184,11 @@
         }],
         ['OS == "win"', {
           'sources': [
-            'test/ui_unittests.rc',
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'base/win/hwnd_subclass_unittest.cc',
             'gfx/font_fallback_win_unittest.cc',
             'gfx/icon_util_unittest.cc',
+            'gfx/icon_util_unittests.rc',
             'gfx/platform_font_win_unittest.cc',
           ],
           'include_dirs': [
@@ -273,11 +246,6 @@
                  '../base/allocator/allocator.gyp:allocator',
                ],
             }],
-            ['toolkit_views==1', {
-              'sources!': [
-                'browser/ui/gtk/gtk_expanded_container_unittest.cc',
-              ],
-            }],
           ],
         }],
         ['use_x11==1', {
@@ -308,6 +276,12 @@
             'base/cursor/cursor_loader_x11_unittest.cc',
           ],
         }],
+        ['OS=="mac"',  {
+          'dependencies': [
+            'events/events.gyp:events_test_support',
+            'gfx/gfx.gyp:gfx_test_support',
+          ],
+        }],
         ['use_aura==1 or toolkit_views==1',  {
           'sources': [
             'base/dragdrop/os_exchange_data_unittest.cc',
@@ -320,7 +294,6 @@
         }],
         ['use_aura==1', {
           'sources!': [
-            'base/dialogs/select_file_dialog_win_unittest.cc',
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'gfx/screen_unittest.cc',
           ],

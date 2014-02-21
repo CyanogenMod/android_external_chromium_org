@@ -14,7 +14,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
@@ -46,6 +45,7 @@ LOCAL_SRC_FILES := \
 	cc/base/latency_info_swap_promise_monitor.cc \
 	cc/base/math_util.cc \
 	cc/base/region.cc \
+	cc/base/rolling_time_delta_history.cc \
 	cc/base/swap_promise_monitor.cc \
 	cc/base/switches.cc \
 	cc/base/tiling_data.cc \
@@ -84,9 +84,9 @@ LOCAL_SRC_FILES := \
 	cc/layers/io_surface_layer_impl.cc \
 	cc/layers/layer.cc \
 	cc/layers/layer_impl.cc \
-	cc/layers/layer_iterator.cc \
 	cc/layers/layer_lists.cc \
 	cc/layers/layer_position_constraint.cc \
+	cc/layers/layer_utils.cc \
 	cc/layers/nine_patch_layer.cc \
 	cc/layers/nine_patch_layer_impl.cc \
 	cc/layers/painted_scrollbar_layer.cc \
@@ -102,6 +102,8 @@ LOCAL_SRC_FILES := \
 	cc/layers/solid_color_layer_impl.cc \
 	cc/layers/solid_color_scrollbar_layer.cc \
 	cc/layers/solid_color_scrollbar_layer_impl.cc \
+	cc/layers/surface_layer.cc \
+	cc/layers/surface_layer_impl.cc \
 	cc/layers/texture_layer.cc \
 	cc/layers/texture_layer_impl.cc \
 	cc/layers/tiled_layer.cc \
@@ -147,14 +149,14 @@ LOCAL_SRC_FILES := \
 	cc/quads/shared_quad_state.cc \
 	cc/quads/solid_color_draw_quad.cc \
 	cc/quads/stream_video_draw_quad.cc \
+	cc/quads/surface_draw_quad.cc \
 	cc/quads/texture_draw_quad.cc \
 	cc/quads/tile_draw_quad.cc \
 	cc/quads/yuv_video_draw_quad.cc \
 	cc/resources/bitmap_content_layer_updater.cc \
 	cc/resources/bitmap_skpicture_content_layer_updater.cc \
-	cc/resources/caching_bitmap_content_layer_updater.cc \
 	cc/resources/content_layer_updater.cc \
-	cc/resources/etc1_pixel_ref.cc \
+	cc/resources/direct_raster_worker_pool.cc \
 	cc/resources/image_layer_updater.cc \
 	cc/resources/image_raster_worker_pool.cc \
 	cc/resources/layer_quad.cc \
@@ -175,6 +177,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/priority_calculator.cc \
 	cc/resources/raster_mode.cc \
 	cc/resources/raster_worker_pool.cc \
+	cc/resources/raster_worker_pool_delegate.cc \
 	cc/resources/resource.cc \
 	cc/resources/resource_format.cc \
 	cc/resources/resource_pool.cc \
@@ -187,24 +190,22 @@ LOCAL_SRC_FILES := \
 	cc/resources/shared_bitmap.cc \
 	cc/resources/single_release_callback.cc \
 	cc/resources/skpicture_content_layer_updater.cc \
+	cc/resources/task_graph_runner.cc \
 	cc/resources/texture_mailbox.cc \
 	cc/resources/texture_mailbox_deleter.cc \
+	cc/resources/texture_uploader.cc \
 	cc/resources/tile.cc \
-	cc/resources/tile_bundle.cc \
 	cc/resources/tile_manager.cc \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
 	cc/resources/ui_resource_bitmap.cc \
 	cc/resources/ui_resource_request.cc \
 	cc/resources/video_resource_updater.cc \
-	cc/resources/worker_pool.cc \
 	cc/scheduler/delay_based_time_source.cc \
 	cc/scheduler/frame_rate_controller.cc \
-	cc/scheduler/rolling_time_delta_history.cc \
 	cc/scheduler/scheduler.cc \
 	cc/scheduler/scheduler_settings.cc \
 	cc/scheduler/scheduler_state_machine.cc \
-	cc/scheduler/texture_uploader.cc \
 	cc/trees/blocking_task_runner.cc \
 	cc/trees/damage_tracker.cc \
 	cc/trees/layer_sorter.cc \
@@ -215,6 +216,7 @@ LOCAL_SRC_FILES := \
 	cc/trees/layer_tree_settings.cc \
 	cc/trees/occlusion_tracker.cc \
 	cc/trees/proxy.cc \
+	cc/trees/proxy_timing_history.cc \
 	cc/trees/quad_culler.cc \
 	cc/trees/single_thread_proxy.cc \
 	cc/trees/thread_proxy.cc \
@@ -248,14 +250,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -266,7 +269,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -279,8 +281,9 @@ MY_DEFS_Debug := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -307,7 +310,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -335,7 +337,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -367,14 +368,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -385,7 +387,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -398,8 +399,9 @@ MY_DEFS_Release := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -427,7 +429,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -455,7 +456,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

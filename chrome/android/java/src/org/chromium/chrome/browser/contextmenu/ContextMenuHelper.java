@@ -58,13 +58,19 @@ public class ContextMenuHelper implements OnCreateContextMenuListener, OnMenuIte
      */
     @CalledByNative
     private void showContextMenu(ContentViewCore contentViewCore, ContextMenuParams params) {
-        if (!shouldShowMenu(params)) return;
+        final View view = contentViewCore.getContainerView();
+
+        if (!shouldShowMenu(params)
+                || view == null
+                || view.getVisibility() != View.VISIBLE
+                || view.getParent() == null) {
+            return;
+        }
 
         mCurrentContextMenuParams = params;
 
-        View view = contentViewCore.getContainerView();
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-        if (view instanceof ContentView) ((ContentView) view).setIgnoreRemainingTouchEvents();
+        contentViewCore.setIgnoreRemainingTouchEvents();
         view.setOnCreateContextMenuListener(this);
         view.showContextMenu();
     }

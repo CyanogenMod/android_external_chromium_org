@@ -11,13 +11,11 @@
 namespace views {
 
 DesktopNativeCursorManager::DesktopNativeCursorManager(
-    aura::RootWindow* window,
     scoped_ptr<DesktopCursorLoaderUpdater> cursor_loader_updater)
-    : root_window_(window),
-      cursor_loader_updater_(cursor_loader_updater.Pass()),
+    : cursor_loader_updater_(cursor_loader_updater.Pass()),
       cursor_loader_(ui::CursorLoader::Create()) {
   if (cursor_loader_updater_.get())
-    cursor_loader_updater_->OnCreate(root_window_, cursor_loader_.get());
+    cursor_loader_updater_->OnCreate(1.0f, cursor_loader_.get());
 }
 
 DesktopNativeCursorManager::~DesktopNativeCursorManager() {
@@ -29,6 +27,15 @@ gfx::NativeCursor DesktopNativeCursorManager::GetInitializedCursor(int type) {
   return cursor;
 }
 
+void DesktopNativeCursorManager::AddRootWindow(aura::RootWindow* root_window) {
+  root_windows_.insert(root_window);
+}
+
+void DesktopNativeCursorManager::RemoveRootWindow(
+    aura::RootWindow* root_window) {
+  root_windows_.erase(root_window);
+}
+
 void DesktopNativeCursorManager::SetDisplay(
     const gfx::Display& display,
     views::corewm::NativeCursorManagerDelegate* delegate) {
@@ -38,7 +45,7 @@ void DesktopNativeCursorManager::SetDisplay(
   if (cursor_loader_updater_.get())
     cursor_loader_updater_->OnDisplayUpdated(display, cursor_loader_.get());
 
-  SetCursor(delegate->GetCurrentCursor(), delegate);
+  SetCursor(delegate->GetCursor(), delegate);
 }
 
 void DesktopNativeCursorManager::SetCursor(
@@ -48,8 +55,13 @@ void DesktopNativeCursorManager::SetCursor(
   cursor_loader_->SetPlatformCursor(&new_cursor);
   delegate->CommitCursor(new_cursor);
 
-  if (delegate->GetCurrentVisibility())
-    root_window_->SetCursor(new_cursor);
+  if (delegate->IsCursorVisible()) {
+    for (RootWindows::const_iterator i = root_windows_.begin();
+         i != root_windows_.end();
+         ++i) {
+      (*i)->host()->SetCursor(new_cursor);
+    }
+  }
 }
 
 void DesktopNativeCursorManager::SetVisibility(
@@ -58,14 +70,22 @@ void DesktopNativeCursorManager::SetVisibility(
   delegate->CommitVisibility(visible);
 
   if (visible) {
-    SetCursor(delegate->GetCurrentCursor(), delegate);
+    SetCursor(delegate->GetCursor(), delegate);
   } else {
     gfx::NativeCursor invisible_cursor(ui::kCursorNone);
     cursor_loader_->SetPlatformCursor(&invisible_cursor);
-    root_window_->SetCursor(invisible_cursor);
+    for (RootWindows::const_iterator i = root_windows_.begin();
+         i != root_windows_.end();
+         ++i) {
+      (*i)->host()->SetCursor(invisible_cursor);
+    }
   }
 
-  root_window_->OnCursorVisibilityChanged(visible);
+  for (RootWindows::const_iterator i = root_windows_.begin();
+       i != root_windows_.end();
+       ++i) {
+    (*i)->host()->OnCursorVisibilityChanged(visible);
+  }
 }
 
 void DesktopNativeCursorManager::SetCursorSet(
@@ -88,9 +108,13 @@ void DesktopNativeCursorManager::SetMouseEventsEnabled(
   // TODO(erg): In the ash version, we set the last mouse location on Env. I'm
   // not sure this concept makes sense on the desktop.
 
-  SetVisibility(delegate->GetCurrentVisibility(), delegate);
+  SetVisibility(delegate->IsCursorVisible(), delegate);
 
-  root_window_->OnMouseEventsEnableStateChanged(enabled);
+  for (RootWindows::const_iterator i = root_windows_.begin();
+       i != root_windows_.end();
+       ++i) {
+    (*i)->OnMouseEventsEnableStateChanged(enabled);
+  }
 }
 
 }  // namespace views

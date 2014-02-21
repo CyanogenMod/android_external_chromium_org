@@ -15,6 +15,7 @@
 #include "content/public/common/context_menu_params.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
+#include "gin/object_template_builder.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -24,8 +25,7 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/re2/re2/re2.h"
 
-using content::RenderThread;
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 using blink::WebElement;
 using blink::WebFrame;
 using blink::WebMouseEvent;
@@ -35,10 +35,11 @@ using blink::WebPluginContainer;
 using blink::WebPluginParams;
 using blink::WebScriptSource;
 using blink::WebURLRequest;
-using webkit_glue::CppArgumentList;
-using webkit_glue::CppVariant;
+using content::RenderThread;
 
 namespace plugins {
+
+gin::WrapperInfo PluginPlaceholder::kWrapperInfo = {gin::kEmbedderNativeGin};
 
 PluginPlaceholder::PluginPlaceholder(content::RenderFrame* render_frame,
                                      WebFrame* frame,
@@ -59,17 +60,13 @@ PluginPlaceholder::PluginPlaceholder(content::RenderFrame* render_frame,
 
 PluginPlaceholder::~PluginPlaceholder() {}
 
-void PluginPlaceholder::BindWebFrame(WebFrame* frame) {
-  BindToJavascript(frame, "plugin");
-  BindCallback(
-      "load",
-      base::Bind(&PluginPlaceholder::LoadCallback, base::Unretained(this)));
-  BindCallback(
-      "hide",
-      base::Bind(&PluginPlaceholder::HideCallback, base::Unretained(this)));
-  BindCallback("didFinishLoading",
-               base::Bind(&PluginPlaceholder::DidFinishLoadingCallback,
-                          base::Unretained(this)));
+gin::ObjectTemplateBuilder PluginPlaceholder::GetObjectTemplateBuilder(
+    v8::Isolate* isolate) {
+  return gin::Wrappable<PluginPlaceholder>::GetObjectTemplateBuilder(isolate)
+      .SetMethod("load", &PluginPlaceholder::LoadCallback)
+      .SetMethod("hide", &PluginPlaceholder::HideCallback)
+      .SetMethod("didFinishLoading",
+                 &PluginPlaceholder::DidFinishLoadingCallback);
 }
 
 void PluginPlaceholder::ReplacePlugin(WebPlugin* new_plugin) {
@@ -87,8 +84,8 @@ void PluginPlaceholder::ReplacePlugin(WebPlugin* new_plugin) {
     return;
   }
 
-  // The plug-in has been removed from the page. Destroy the old plug-in
-  // (which will destroy us).
+  // The plug-in has been removed from the page. Destroy the old plug-in. We
+  // will be destroyed as soon as V8 garbage collects us.
   if (!element.pluginContainer()) {
     plugin_->destroy();
     return;
@@ -108,6 +105,8 @@ void PluginPlaceholder::ReplacePlugin(WebPlugin* new_plugin) {
 
 void PluginPlaceholder::HidePlugin() {
   hidden_ = true;
+  if (!plugin_)
+    return;
   WebPluginContainer* container = plugin_->container();
   WebElement element = container->element();
   element.setAttribute("style", "display: none;");
@@ -152,8 +151,6 @@ void PluginPlaceholder::HidePlugin() {
   }
 }
 
-void PluginPlaceholder::WillDestroyPlugin() { delete this; }
-
 void PluginPlaceholder::SetMessage(const base::string16& message) {
   message_ = message;
   if (finished_loading_)
@@ -161,16 +158,26 @@ void PluginPlaceholder::SetMessage(const base::string16& message) {
 }
 
 void PluginPlaceholder::UpdateMessage() {
+  if (!plugin_)
+    return;
   std::string script =
-      "window.setMessage(" + base::GetDoubleQuotedJson(message_) + ")";
+      "window.setMessage(" + base::GetQuotedJSONString(message_) + ")";
   plugin_->web_view()->mainFrame()->executeScript(
-      WebScriptSource(ASCIIToUTF16(script)));
+      WebScriptSource(base::ASCIIToUTF16(script)));
 }
 
 void PluginPlaceholder::ShowContextMenu(const WebMouseEvent& event) {
   // Does nothing by default. Will be overridden if a specific browser wants
   // a context menu.
   return;
+}
+
+void PluginPlaceholder::PluginDestroyed() {
+  plugin_ = NULL;
+}
+
+void PluginPlaceholder::OnDestruct() {
+  frame_ = NULL;
 }
 
 void PluginPlaceholder::OnLoadBlockedPlugins(const std::string& identifier) {
@@ -194,6 +201,8 @@ void PluginPlaceholder::LoadPlugin() {
   // event propagation changes between "close" vs. "click-to-play".
   if (hidden_)
     return;
+  if (!plugin_)
+    return;
   if (!allow_loading_) {
     NOTREACHED();
     return;
@@ -207,20 +216,17 @@ void PluginPlaceholder::LoadPlugin() {
   ReplacePlugin(plugin);
 }
 
-void PluginPlaceholder::LoadCallback(const CppArgumentList& args,
-                                     CppVariant* result) {
+void PluginPlaceholder::LoadCallback() {
   RenderThread::Get()->RecordAction(UserMetricsAction("Plugin_Load_Click"));
   LoadPlugin();
 }
 
-void PluginPlaceholder::HideCallback(const CppArgumentList& args,
-                                     CppVariant* result) {
+void PluginPlaceholder::HideCallback() {
   RenderThread::Get()->RecordAction(UserMetricsAction("Plugin_Hide_Click"));
   HidePlugin();
 }
 
-void PluginPlaceholder::DidFinishLoadingCallback(const CppArgumentList& args,
-                                                 CppVariant* result) {
+void PluginPlaceholder::DidFinishLoadingCallback() {
   finished_loading_ = true;
   if (message_.length() > 0)
     UpdateMessage();

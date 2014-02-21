@@ -5,6 +5,7 @@
 #include "gin/modules/module_runner_delegate.h"
 
 #include "gin/modules/module_registry.h"
+#include "gin/object_template_builder.h"
 
 namespace gin {
 
@@ -17,8 +18,8 @@ ModuleRunnerDelegate::~ModuleRunnerDelegate() {
 }
 
 void ModuleRunnerDelegate::AddBuiltinModule(const std::string& id,
-                                            ModuleTemplateGetter templ) {
-  builtin_modules_[id] = templ;
+                                            ModuleGetter getter) {
+  builtin_modules_[id] = getter;
 }
 
 void ModuleRunnerDelegate::AttemptToLoadMoreModules(Runner* runner) {
@@ -30,7 +31,8 @@ void ModuleRunnerDelegate::AttemptToLoadMoreModules(Runner* runner) {
 
 v8::Handle<v8::ObjectTemplate> ModuleRunnerDelegate::GetGlobalTemplate(
     Runner* runner) {
-  v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New();
+  v8::Handle<v8::ObjectTemplate> templ =
+      ObjectTemplateBuilder(runner->isolate()).Build();
   ModuleRegistry::RegisterGlobals(runner->isolate(), templ);
   return templ;
 }

@@ -6,11 +6,16 @@ import logging
 import subprocess
 import tempfile
 
+from telemetry import decorators
 from telemetry.core import bitmap
 from telemetry.core import exceptions
 from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.platform import proc_supporting_platform_backend
+from telemetry.core.platform.power_monitor import android_ds2784_power_monitor
+from telemetry.core.platform.power_monitor import monsoon_power_monitor
+from telemetry.core.platform.power_monitor import power_monitor_controller
+from telemetry.core.platform.profiler import android_prebuilt_profiler_helper
 
 # Get build/android scripts into our path.
 util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
@@ -44,6 +49,10 @@ class AndroidPlatformBackend(
     self._host_platform_backend = platform.CreatePlatformBackendForCurrentOS()
     self._can_access_protected_file_contents = \
         self._adb.CanAccessProtectedFileContents()
+    self._powermonitor = power_monitor_controller.PowerMonitorController([
+        monsoon_power_monitor.MonsoonPowerMonitor(),
+        android_ds2784_power_monitor.DS2784PowerMonitor(adb)
+    ])
     self._video_recorder = None
     self._video_output = None
     if self._no_performance_mode:
@@ -97,6 +106,13 @@ class AndroidPlatformBackend(
         return int(line.split()[2]) * 1024
     return 0
 
+  @decorators.Cache
+  def GetSystemTotalPhysicalMemory(self):
+    for line in self._adb.RunShellCommand('dumpsys meminfo', log_result=False):
+      if line.startswith('Total RAM: '):
+        return int(line.split()[2]) * 1024
+    return 0
+
   def GetCpuStats(self, pid):
     if not self._can_access_protected_file_contents:
       logging.warning('CPU stats cannot be retrieved on non-rooted device.')
@@ -109,8 +125,19 @@ class AndroidPlatformBackend(
       return {}
     return super(AndroidPlatformBackend, self).GetCpuTimestamp()
 
+  def PurgeUnpinnedMemory(self):
+    """Purges the unpinned ashmem memory for the whole system.
+
+    This can be used to make memory measurements more stable in particular.
+    """
+    android_prebuilt_profiler_helper.InstallOnDevice(self._adb, 'purge_ashmem')
+    if self._adb.RunShellCommand(
+        android_prebuilt_profiler_helper.GetDevicePath('purge_ashmem'),
+        log_result=True):
+      return
+    raise Exception('Error while purging ashmem.')
+
   def GetMemoryStats(self, pid):
-    self._adb.PurgeUnpinnedAshmem()
     memory_usage = self._adb.GetMemoryUsageForPid(pid)[0]
     return {'ProportionalSetSize': memory_usage['Pss'] * 1024,
             'SharedDirty': memory_usage['Shared_Dirty'] * 1024,
@@ -142,6 +169,7 @@ class AndroidPlatformBackend(
   def GetOSName(self):
     return 'android'
 
+  @decorators.Cache
   def GetOSVersionName(self):
     return self._adb.GetBuildId()[0]
 
@@ -155,10 +183,14 @@ class AndroidPlatformBackend(
   def FlushSystemCacheForDirectory(self, directory, ignoring=None):
     raise NotImplementedError()
 
-  def LaunchApplication(self, application, parameters=None):
+  def LaunchApplication(
+      self, application, parameters=None, elevate_privilege=False):
     if application in _HOST_APPLICATIONS:
-      self._host_platform_backend.LaunchApplication(application, parameters)
+      self._host_platform_backend.LaunchApplication(
+          application, parameters, elevate_privilege=elevate_privilege)
       return
+    if elevate_privilege:
+      raise NotImplementedError("elevate_privilege isn't supported on android.")
     if not parameters:
       parameters = ''
     self._adb.RunShellCommand('am start ' + parameters + ' ' + application)
@@ -180,16 +212,18 @@ class AndroidPlatformBackend(
     raise NotImplementedError(
         'Please teach Telemetry how to install ' + application)
 
+  @decorators.Cache
   def CanCaptureVideo(self):
     return self.GetOSVersionName() >= 'K'
 
   def StartVideoCapture(self, min_bitrate_mbps):
-    assert not self._video_recorder, 'Already started video capture'
     min_bitrate_mbps = max(min_bitrate_mbps, 0.1)
     if min_bitrate_mbps > 100:
       raise ValueError('Android video capture cannot capture at %dmbps. '
                        'Max capture rate is 100mbps.' % min_bitrate_mbps)
     self._video_output = tempfile.mkstemp()[1]
+    if self._video_recorder:
+      self._video_recorder.Stop()
     self._video_recorder = screenshot.VideoRecorder(
         self._adb, self._video_output, megabits_per_second=min_bitrate_mbps)
     self._video_recorder.Start()
@@ -203,19 +237,32 @@ class AndroidPlatformBackend(
     for frame in self._FramesFromMp4(self._video_output):
       yield frame
 
+  def CanMonitorPowerAsync(self):
+    return self._powermonitor.CanMonitorPowerAsync()
+
+  def StartMonitoringPowerAsync(self):
+    self._powermonitor.StartMonitoringPowerAsync()
+
+  def StopMonitoringPowerAsync(self):
+    return self._powermonitor.StopMonitoringPowerAsync()
+
   def _FramesFromMp4(self, mp4_file):
     if not self.CanLaunchApplication('avconv'):
       self.InstallApplication('avconv')
 
     def GetDimensions(video):
       proc = subprocess.Popen(['avconv', '-i', video], stderr=subprocess.PIPE)
+      dimensions = None
+      output = ''
       for line in proc.stderr.readlines():
+        output += line
         if 'Video:' in line:
           dimensions = line.split(',')[2]
           dimensions = map(int, dimensions.split()[0].split('x'))
           break
       proc.wait()
-      assert dimensions, 'Failed to determine video dimensions'
+      assert dimensions, ('Failed to determine video dimensions. output=%s' %
+                          output)
       return dimensions
 
     def GetFrameTimestampMs(stderr):

@@ -22,7 +22,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/certificate_dialogs.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "chrome/browser/ui/crypto_module_password_dialog.h"
+#include "chrome/browser/ui/crypto_module_password_dialog_nss.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -35,10 +35,9 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/user_network_configuration_updater.h"
 #include "chrome/browser/chromeos/policy/user_network_configuration_updater_factory.h"
-#include "chromeos/dbus/cryptohome_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #endif
 
+using base::UTF8ToUTF16;
 using content::BrowserThread;
 
 namespace {
@@ -65,7 +64,7 @@ std::string OrgNameToId(const std::string& org) {
   return "org-" + org;
 }
 
-bool CallbackArgsToBool(const ListValue* args, int index, bool* result) {
+bool CallbackArgsToBool(const base::ListValue* args, int index, bool* result) {
   std::string string_value;
   if (!args->GetString(index, &string_value))
     return false;
@@ -79,12 +78,14 @@ struct DictionaryIdComparator {
       : collator_(collator) {
   }
 
-  bool operator()(const Value* a,
-                  const Value* b) const {
-    DCHECK(a->GetType() == Value::TYPE_DICTIONARY);
-    DCHECK(b->GetType() == Value::TYPE_DICTIONARY);
-    const DictionaryValue* a_dict = reinterpret_cast<const DictionaryValue*>(a);
-    const DictionaryValue* b_dict = reinterpret_cast<const DictionaryValue*>(b);
+  bool operator()(const base::Value* a,
+                  const base::Value* b) const {
+    DCHECK(a->GetType() == base::Value::TYPE_DICTIONARY);
+    DCHECK(b->GetType() == base::Value::TYPE_DICTIONARY);
+    const base::DictionaryValue* a_dict =
+        reinterpret_cast<const base::DictionaryValue*>(a);
+    const base::DictionaryValue* b_dict =
+        reinterpret_cast<const base::DictionaryValue*>(b);
     base::string16 a_str;
     base::string16 b_str;
     a_dict->GetString(kNameId, &a_str);
@@ -175,7 +176,7 @@ net::X509Certificate* CertIdMap::IdToCert(const std::string& id) {
 }
 
 net::X509Certificate* CertIdMap::CallbackArgsToCert(
-    const ListValue* args) {
+    const base::ListValue* args) {
   std::string node_id;
   if (!args->GetString(0, &node_id))
     return NULL;
@@ -204,13 +205,15 @@ class FileAccessProvider
   // parameter is the number of bytes written on success.
   typedef base::Callback<void(const int*, const int*)> WriteCallback;
 
-  CancelableTaskTracker::TaskId StartRead(const base::FilePath& path,
-                                          const ReadCallback& callback,
-                                          CancelableTaskTracker* tracker);
-  CancelableTaskTracker::TaskId StartWrite(const base::FilePath& path,
-                                           const std::string& data,
-                                           const WriteCallback& callback,
-                                           CancelableTaskTracker* tracker);
+  base::CancelableTaskTracker::TaskId StartRead(
+      const base::FilePath& path,
+      const ReadCallback& callback,
+      base::CancelableTaskTracker* tracker);
+  base::CancelableTaskTracker::TaskId StartWrite(
+      const base::FilePath& path,
+      const std::string& data,
+      const WriteCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
  private:
   friend class base::RefCountedThreadSafe<FileAccessProvider>;
@@ -229,10 +232,10 @@ class FileAccessProvider
                int* bytes_written);
 };
 
-CancelableTaskTracker::TaskId FileAccessProvider::StartRead(
+base::CancelableTaskTracker::TaskId FileAccessProvider::StartRead(
     const base::FilePath& path,
     const ReadCallback& callback,
-    CancelableTaskTracker* tracker) {
+    base::CancelableTaskTracker* tracker) {
   // Owned by reply callback posted below.
   int* saved_errno = new int(0);
   std::string* data = new std::string();
@@ -245,11 +248,11 @@ CancelableTaskTracker::TaskId FileAccessProvider::StartRead(
       base::Bind(callback, base::Owned(saved_errno), base::Owned(data)));
 }
 
-CancelableTaskTracker::TaskId FileAccessProvider::StartWrite(
+base::CancelableTaskTracker::TaskId FileAccessProvider::StartWrite(
     const base::FilePath& path,
     const std::string& data,
     const WriteCallback& callback,
-    CancelableTaskTracker* tracker) {
+    base::CancelableTaskTracker* tracker) {
   // Owned by reply callback posted below.
   int* saved_errno = new int(0);
   int* bytes_written = new int(0);
@@ -287,18 +290,17 @@ void FileAccessProvider::DoWrite(const base::FilePath& path,
 //  CertificateManagerHandler
 
 CertificateManagerHandler::CertificateManagerHandler()
-    : use_hardware_backed_(false),
+    : requested_certificate_manager_model_(false),
+      use_hardware_backed_(false),
       file_access_provider_(new FileAccessProvider()),
       cert_id_map_(new CertIdMap),
-      weak_ptr_factory_(this) {
-  certificate_manager_model_.reset(new CertificateManagerModel(this));
-}
+      weak_ptr_factory_(this) {}
 
 CertificateManagerHandler::~CertificateManagerHandler() {
 }
 
 void CertificateManagerHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   RegisterTitle(localized_strings, "certificateManagerPage",
@@ -473,13 +475,6 @@ void CertificateManagerHandler::RegisterMessages() {
       "populateCertificateManager",
       base::Bind(&CertificateManagerHandler::Populate,
                  base::Unretained(this)));
-
-#if defined(OS_CHROMEOS)
-  web_ui()->RegisterMessageCallback(
-      "checkTpmTokenReady",
-      base::Bind(&CertificateManagerHandler::CheckTpmTokenReady,
-                 base::Unretained(this)));
-#endif
 }
 
 void CertificateManagerHandler::CertificatesRefreshed() {
@@ -531,14 +526,14 @@ void CertificateManagerHandler::FileSelectionCanceled(void* params) {
   }
 }
 
-void CertificateManagerHandler::View(const ListValue* args) {
+void CertificateManagerHandler::View(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   if (!cert)
     return;
   ShowCertificateViewer(web_ui()->GetWebContents(), GetParentWindow(), cert);
 }
 
-void CertificateManagerHandler::GetCATrust(const ListValue* args) {
+void CertificateManagerHandler::GetCATrust(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   if (!cert) {
     web_ui()->CallJavascriptFunction("CertificateEditCaTrustOverlay.dismiss");
@@ -558,7 +553,7 @@ void CertificateManagerHandler::GetCATrust(const ListValue* args) {
       ssl_value, email_value, obj_sign_value);
 }
 
-void CertificateManagerHandler::EditCATrust(const ListValue* args) {
+void CertificateManagerHandler::EditCATrust(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   bool fail = !cert;
   bool trust_ssl = false;
@@ -588,11 +583,11 @@ void CertificateManagerHandler::EditCATrust(const ListValue* args) {
   }
 }
 
-void CertificateManagerHandler::EditServer(const ListValue* args) {
+void CertificateManagerHandler::EditServer(const base::ListValue* args) {
   NOTIMPLEMENTED();
 }
 
-void CertificateManagerHandler::ExportPersonal(const ListValue* args) {
+void CertificateManagerHandler::ExportPersonal(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   if (!cert)
     return;
@@ -614,7 +609,7 @@ void CertificateManagerHandler::ExportPersonal(const ListValue* args) {
       reinterpret_cast<void*>(EXPORT_PERSONAL_FILE_SELECTED));
 }
 
-void CertificateManagerHandler::ExportAllPersonal(const ListValue* args) {
+void CertificateManagerHandler::ExportAllPersonal(const base::ListValue* args) {
   NOTIMPLEMENTED();
 }
 
@@ -626,7 +621,7 @@ void CertificateManagerHandler::ExportPersonalFileSelected(
 }
 
 void CertificateManagerHandler::ExportPersonalPasswordSelected(
-    const ListValue* args) {
+    const base::ListValue* args) {
   if (!args->GetString(0, &password_)) {
     web_ui()->CallJavascriptFunction("CertificateRestoreOverlay.dismiss");
     ImportExportCleanup();
@@ -642,7 +637,7 @@ void CertificateManagerHandler::ExportPersonalPasswordSelected(
   chrome::UnlockCertSlotIfNecessary(
       selected_cert_list_[0].get(),
       chrome::kCryptoModulePasswordCertExport,
-      std::string(),  // unused.
+      net::HostPortPair(),  // unused.
       GetParentWindow(),
       base::Bind(&CertificateManagerHandler::ExportPersonalSlotsUnlocked,
                  base::Unretained(this)));
@@ -682,7 +677,8 @@ void CertificateManagerHandler::ExportPersonalFileWritten(
   }
 }
 
-void CertificateManagerHandler::StartImportPersonal(const ListValue* args) {
+void CertificateManagerHandler::StartImportPersonal(
+    const base::ListValue* args) {
   ui::SelectFileDialog::FileTypeInfo file_type_info;
   if (!args->GetBoolean(0, &use_hardware_backed_)) {
     // Unable to retrieve the hardware backed attribute from the args,
@@ -713,7 +709,7 @@ void CertificateManagerHandler::ImportPersonalFileSelected(
 }
 
 void CertificateManagerHandler::ImportPersonalPasswordSelected(
-    const ListValue* args) {
+    const base::ListValue* args) {
   if (!args->GetString(0, &password_)) {
     web_ui()->CallJavascriptFunction("CertificateRestoreOverlay.dismiss");
     ImportExportCleanup();
@@ -751,7 +747,7 @@ void CertificateManagerHandler::ImportPersonalFileRead(
   chrome::UnlockSlotsIfNecessary(
       modules,
       chrome::kCryptoModulePasswordCertImport,
-      std::string(),  // unused.
+      net::HostPortPair(),  // unused.
       GetParentWindow(),
       base::Bind(&CertificateManagerHandler::ImportPersonalSlotUnlocked,
                  base::Unretained(this)));
@@ -795,7 +791,7 @@ void CertificateManagerHandler::ImportPersonalSlotUnlocked() {
 }
 
 void CertificateManagerHandler::CancelImportExportProcess(
-    const ListValue* args) {
+    const base::ListValue* args) {
   ImportExportCleanup();
 }
 
@@ -814,7 +810,7 @@ void CertificateManagerHandler::ImportExportCleanup() {
   select_file_dialog_ = NULL;
 }
 
-void CertificateManagerHandler::ImportServer(const ListValue* args) {
+void CertificateManagerHandler::ImportServer(const base::ListValue* args) {
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   ShowCertSelectFileDialog(
@@ -874,7 +870,7 @@ void CertificateManagerHandler::ImportServerFileRead(const int* read_errno,
   ImportExportCleanup();
 }
 
-void CertificateManagerHandler::ImportCA(const ListValue* args) {
+void CertificateManagerHandler::ImportCA(const base::ListValue* args) {
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   ShowCertSelectFileDialog(select_file_dialog_.get(),
@@ -921,12 +917,13 @@ void CertificateManagerHandler::ImportCAFileRead(const int* read_errno,
 
   // TODO(mattm): check here if root_cert is not a CA cert and show error.
 
-  StringValue cert_name(root_cert->subject().GetDisplayName());
+  base::StringValue cert_name(root_cert->subject().GetDisplayName());
   web_ui()->CallJavascriptFunction("CertificateEditCaTrustOverlay.showImport",
                                    cert_name);
 }
 
-void CertificateManagerHandler::ImportCATrustSelected(const ListValue* args) {
+void CertificateManagerHandler::ImportCATrustSelected(
+    const base::ListValue* args) {
   bool fail = false;
   bool trust_ssl = false;
   bool trust_email = false;
@@ -963,7 +960,7 @@ void CertificateManagerHandler::ImportCATrustSelected(const ListValue* args) {
   ImportExportCleanup();
 }
 
-void CertificateManagerHandler::Export(const ListValue* args) {
+void CertificateManagerHandler::Export(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   if (!cert)
     return;
@@ -971,7 +968,7 @@ void CertificateManagerHandler::Export(const ListValue* args) {
                        cert->os_cert_handle());
 }
 
-void CertificateManagerHandler::Delete(const ListValue* args) {
+void CertificateManagerHandler::Delete(const base::ListValue* args) {
   net::X509Certificate* cert = cert_id_map_->CallbackArgsToCert(args);
   if (!cert)
     return;
@@ -984,8 +981,41 @@ void CertificateManagerHandler::Delete(const ListValue* args) {
   }
 }
 
-void CertificateManagerHandler::Populate(const ListValue* args) {
+void CertificateManagerHandler::OnCertificateManagerModelCreated(
+    scoped_ptr<CertificateManagerModel> model) {
+  certificate_manager_model_ = model.Pass();
+  CertificateManagerModelReady();
+}
+
+void CertificateManagerHandler::CertificateManagerModelReady() {
+  base::FundamentalValue tpm_available_value(
+      certificate_manager_model_->is_tpm_available());
+  web_ui()->CallJavascriptFunction("CertificateManager.onModelReady",
+                                   tpm_available_value);
   certificate_manager_model_->Refresh();
+}
+
+void CertificateManagerHandler::Populate(const base::ListValue* args) {
+  if (certificate_manager_model_) {
+    // Already have a model, the webui must be re-loading.  Just re-run the
+    // webui initialization.
+    CertificateManagerModelReady();
+    return;
+  }
+
+  if (!requested_certificate_manager_model_) {
+    // Request that a model be created.
+    CertificateManagerModel::Create(
+        Profile::FromWebUI(web_ui()),
+        this,
+        base::Bind(&CertificateManagerHandler::OnCertificateManagerModelCreated,
+                   weak_ptr_factory_.GetWeakPtr()));
+    requested_certificate_manager_model_ = true;
+    return;
+  }
+
+  // We are already waiting for a CertificateManagerModel to be created, no need
+  // to do anything.
 }
 
 void CertificateManagerHandler::PopulateTree(
@@ -1008,19 +1038,19 @@ void CertificateManagerHandler::PopulateTree(
   certificate_manager_model_->FilterAndBuildOrgGroupingMap(type, &map);
 
   {
-    ListValue* nodes = new ListValue;
+    base::ListValue* nodes = new base::ListValue;
     for (CertificateManagerModel::OrgGroupingMap::iterator i = map.begin();
          i != map.end(); ++i) {
       // Populate first level (org name).
-      DictionaryValue* dict = new DictionaryValue;
+      base::DictionaryValue* dict = new base::DictionaryValue;
       dict->SetString(kKeyId, OrgNameToId(i->first));
       dict->SetString(kNameId, i->first);
 
       // Populate second level (certs).
-      ListValue* subnodes = new ListValue;
+      base::ListValue* subnodes = new base::ListValue;
       for (net::CertificateList::const_iterator org_cert_it = i->second.begin();
            org_cert_it != i->second.end(); ++org_cert_it) {
-        DictionaryValue* cert_dict = new DictionaryValue;
+        base::DictionaryValue* cert_dict = new base::DictionaryValue;
         net::X509Certificate* cert = org_cert_it->get();
         cert_dict->SetString(kKeyId, cert_id_map_->CertToId(cert));
         cert_dict->SetString(kNameId, certificate_manager_model_->GetColumnText(
@@ -1052,7 +1082,7 @@ void CertificateManagerHandler::PopulateTree(
     }
     std::sort(nodes->begin(), nodes->end(), comparator);
 
-    ListValue args;
+    base::ListValue args;
     args.Append(new base::StringValue(tree_name));
     args.Append(nodes);
     web_ui()->CallJavascriptFunction("CertificateManager.onPopulateTree", args);
@@ -1061,13 +1091,13 @@ void CertificateManagerHandler::PopulateTree(
 
 void CertificateManagerHandler::ShowError(const std::string& title,
                                           const std::string& error) const {
-  ScopedVector<const Value> args;
+  ScopedVector<const base::Value> args;
   args.push_back(new base::StringValue(title));
   args.push_back(new base::StringValue(error));
   args.push_back(new base::StringValue(l10n_util::GetStringUTF8(IDS_OK)));
-  args.push_back(Value::CreateNullValue());  // cancelTitle
-  args.push_back(Value::CreateNullValue());  // okCallback
-  args.push_back(Value::CreateNullValue());  // cancelCallback
+  args.push_back(base::Value::CreateNullValue());  // cancelTitle
+  args.push_back(base::Value::CreateNullValue());  // okCallback
+  args.push_back(base::Value::CreateNullValue());  // cancelCallback
   web_ui()->CallJavascriptFunction("AlertOverlay.show", args.get());
 }
 
@@ -1083,41 +1113,22 @@ void CertificateManagerHandler::ShowImportErrors(
   else
     error = l10n_util::GetStringUTF8(IDS_CERT_MANAGER_IMPORT_SOME_NOT_IMPORTED);
 
-  ListValue cert_error_list;
+  base::ListValue cert_error_list;
   for (size_t i = 0; i < not_imported.size(); ++i) {
     const net::NSSCertDatabase::ImportCertFailure& failure = not_imported[i];
-    DictionaryValue* dict = new DictionaryValue;
+    base::DictionaryValue* dict = new base::DictionaryValue;
     dict->SetString(kNameId, failure.certificate->subject().GetDisplayName());
     dict->SetString(kErrorId, NetErrorToString(failure.net_error));
     cert_error_list.Append(dict);
   }
 
-  StringValue title_value(title);
-  StringValue error_value(error);
+  base::StringValue title_value(title);
+  base::StringValue error_value(error);
   web_ui()->CallJavascriptFunction("CertificateImportErrorOverlay.show",
                                    title_value,
                                    error_value,
                                    cert_error_list);
 }
-
-#if defined(OS_CHROMEOS)
-void CertificateManagerHandler::CheckTpmTokenReady(const ListValue* args) {
-  chromeos::CryptohomeClient* cryptohome_client =
-      chromeos::DBusThreadManager::Get()->GetCryptohomeClient();
-  cryptohome_client->Pkcs11IsTpmTokenReady(
-      base::Bind(&CertificateManagerHandler::CheckTpmTokenReadyInternal,
-                 weak_ptr_factory_.GetWeakPtr()));
-}
-
-void CertificateManagerHandler::CheckTpmTokenReadyInternal(
-    chromeos::DBusMethodCallStatus call_status,
-    bool is_tpm_token_ready) {
-  base::FundamentalValue ready(
-      call_status == chromeos::DBUS_METHOD_CALL_SUCCESS && is_tpm_token_ready);
-  web_ui()->CallJavascriptFunction("CertificateManager.onCheckTpmTokenReady",
-                                   ready);
-}
-#endif
 
 gfx::NativeWindow CertificateManagerHandler::GetParentWindow() const {
   return web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow();

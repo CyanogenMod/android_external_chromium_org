@@ -216,6 +216,14 @@ class MockCookieStore : public CookieStore {
     ADD_FAILURE();
   }
 
+  virtual void DeleteAllCreatedBetweenForHostAsync(
+      const base::Time delete_begin,
+      const base::Time delete_end,
+      const GURL& url,
+      const DeleteCallback& callback) OVERRIDE {
+    ADD_FAILURE();
+  }
+
   virtual void DeleteSessionCookiesAsync(const DeleteCallback&) OVERRIDE {
     ADD_FAILURE();
   }
@@ -278,8 +286,7 @@ class MockHttpTransactionFactory : public HttpTransactionFactory {
 
   virtual int CreateTransaction(
       RequestPriority priority,
-      scoped_ptr<HttpTransaction>* trans,
-      HttpTransactionDelegate* delegate) OVERRIDE {
+      scoped_ptr<HttpTransaction>* trans) OVERRIDE {
     NOTREACHED();
     return ERR_UNEXPECTED;
   }

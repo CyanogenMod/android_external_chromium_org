@@ -9,11 +9,10 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "chrome/browser/password_manager/password_store_default.h"
+#include "components/password_manager/core/browser/password_store_default.h"
 
 class LoginDatabase;
 class PrefService;
-class Profile;
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -54,8 +53,9 @@ class PasswordStoreX : public PasswordStoreDefault {
 
   // Takes ownership of |login_db| and |backend|. |backend| may be NULL in which
   // case this PasswordStoreX will act the same as PasswordStoreDefault.
-  PasswordStoreX(LoginDatabase* login_db,
-                 Profile* profile,
+  PasswordStoreX(scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+                 scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+                 LoginDatabase* login_db,
                  NativeBackend* backend);
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
@@ -77,15 +77,17 @@ class PasswordStoreX : public PasswordStoreDefault {
   virtual ~PasswordStoreX();
 
   // Implements PasswordStore interface.
-  virtual void AddLoginImpl(const autofill::PasswordForm& form) OVERRIDE;
-  virtual void UpdateLoginImpl(
+  virtual PasswordStoreChangeList AddLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginImpl(
+  virtual PasswordStoreChangeList UpdateLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginsCreatedBetweenImpl(
+  virtual PasswordStoreChangeList RemoveLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
       const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
       const autofill::PasswordForm& form,
+      AuthorizationPromptPolicy prompt_policy,
       const ConsumerCallbackRunner& callback_runner) OVERRIDE;
   virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;

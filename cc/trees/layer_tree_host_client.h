@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 
 namespace gfx {
 class Vector2d;
@@ -23,9 +24,9 @@ class LayerTreeHostClient {
   // Marks finishing compositing-related tasks on the main thread. In threaded
   // mode, this corresponds to DidCommit().
   virtual void DidBeginMainFrame() = 0;
-  virtual void Animate(double frame_begin_time) = 0;
+  virtual void Animate(base::TimeTicks frame_begin_time) = 0;
   virtual void Layout() = 0;
-  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
+  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) = 0;
   // Creates an OutputSurface. If fallback is true, it should attempt to
   // create an OutputSurface that is guaranteed to initialize correctly.

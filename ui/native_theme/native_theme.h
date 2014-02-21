@@ -66,6 +66,9 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kScrollbarVerticalTrack,
     kScrollbarHorizontalGripper,
     kScrollbarVerticalGripper,
+    // The corner is drawn when there is both a horizontal and vertical
+    // scrollbar.
+    kScrollbarCorner,
     kSliderTrack,
     kSliderThumb,
     kTabPanelBackground,
@@ -78,11 +81,12 @@ class NATIVE_THEME_EXPORT NativeTheme {
 
   // The state of the part.
   enum State {
-    kDisabled,
-    kHovered,
-    kNormal,
-    kPressed,
-    kMaxState,
+    // IDs defined as specific values for use in arrays.
+    kDisabled = 0,
+    kHovered  = 1,
+    kNormal   = 2,
+    kPressed  = 3,
+    kMaxState = 4,
   };
 
   // Each structure below holds extra information needed when painting a given

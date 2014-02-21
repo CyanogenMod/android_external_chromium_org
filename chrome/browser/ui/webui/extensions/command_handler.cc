@@ -10,11 +10,11 @@
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -74,13 +74,13 @@ void CommandHandler::Observe(
 }
 
 void CommandHandler::UpdateCommandDataOnPage() {
-  DictionaryValue results;
+  base::DictionaryValue results;
   GetAllCommands(&results);
   web_ui()->CallJavascriptFunction(
       "extensions.ExtensionCommandsOverlay.returnExtensionsData", results);
 }
 
-void CommandHandler::HandleRequestExtensionsData(const ListValue* args) {
+void CommandHandler::HandleRequestExtensionsData(const base::ListValue* args) {
   UpdateCommandDataOnPage();
 }
 
@@ -121,14 +121,15 @@ void CommandHandler::HandleSetCommandScope(
     UpdateCommandDataOnPage();
 }
 
-void CommandHandler::HandleSetShortcutHandlingSuspended(const ListValue* args) {
+void CommandHandler::HandleSetShortcutHandlingSuspended(
+    const base::ListValue* args) {
   bool suspended;
   if (args->GetBoolean(0, &suspended))
     ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(suspended);
 }
 
 void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
-  ListValue* results = new ListValue;
+  base::ListValue* results = new base::ListValue;
 
   Profile* profile = Profile::FromWebUI(web_ui());
   CommandService* command_service = CommandService::Get(profile);
@@ -137,12 +138,12 @@ void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
       extension_service()->extensions();
   for (ExtensionSet::const_iterator extension = extensions->begin();
        extension != extensions->end(); ++extension) {
-    scoped_ptr<DictionaryValue> extension_dict(new DictionaryValue);
+    scoped_ptr<base::DictionaryValue> extension_dict(new base::DictionaryValue);
     extension_dict->SetString("name", (*extension)->name());
     extension_dict->SetString("id", (*extension)->id());
 
     // Add the keybindings to a list structure.
-    scoped_ptr<ListValue> extensions_list(new ListValue());
+    scoped_ptr<base::ListValue> extensions_list(new base::ListValue());
 
     bool active = false;
 
@@ -161,14 +162,6 @@ void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
                                               &page_action,
                                               &active)) {
       extensions_list->Append(page_action.ToValue((extension->get()), active));
-    }
-
-    extensions::Command script_badge;
-    if (command_service->GetScriptBadgeCommand((*extension)->id(),
-                                              CommandService::ALL,
-                                              &script_badge,
-                                              &active)) {
-      extensions_list->Append(script_badge.ToValue((extension->get()), active));
     }
 
     extensions::CommandMap named_commands;

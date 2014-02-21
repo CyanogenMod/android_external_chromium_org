@@ -16,22 +16,18 @@
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/l10n_util.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#import "chrome/browser/ui/cocoa/wrench_menu/wrench_menu_controller.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_bubble_view_base.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "grit/generated_resources.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image.h"
 
 namespace {
-
-// The vertical offset of the wrench bubble from the wrench menu button.
-const CGFloat kWrenchBubblePointOffsetY = 6;
-
 const CGFloat kParagraphSpacing = 6;
-
 } // namespace
 
 namespace GlobalErrorBubbleControllerInternal {
@@ -60,8 +56,9 @@ class Bridge : public GlobalErrorBubbleViewBase {
   BrowserWindowController* bwc = [BrowserWindowController
       browserWindowControllerForWindow:parentWindow];
   NSView* wrenchButton = [[bwc toolbarController] wrenchButton];
-  NSPoint offset = NSMakePoint(NSMidX([wrenchButton bounds]),
-                               kWrenchBubblePointOffsetY);
+  NSPoint offset = NSMakePoint(
+      NSMidX([wrenchButton bounds]),
+      wrench_menu_controller::kWrenchBubblePointOffsetY);
 
   // The bubble will be automatically deleted when the window is closed.
   GlobalErrorBubbleController* bubble = [[GlobalErrorBubbleController alloc]
@@ -87,7 +84,7 @@ class Bridge : public GlobalErrorBubbleViewBase {
   [iconView_ setImage:image.ToNSImage()];
 
   [title_ setStringValue:SysUTF16ToNSString(error_->GetBubbleViewTitle())];
-  std::vector<string16> messages = error_->GetBubbleViewMessages();
+  std::vector<base::string16> messages = error_->GetBubbleViewMessages();
   base::string16 message = JoinString(messages, '\n');
 
   base::scoped_nsobject<NSMutableAttributedString> messageValue(

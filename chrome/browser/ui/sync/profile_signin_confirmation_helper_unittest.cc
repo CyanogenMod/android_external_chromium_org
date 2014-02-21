@@ -96,7 +96,7 @@ const base::FilePath::CharType kExtensionFilePath[] =
 static scoped_refptr<extensions::Extension> CreateExtension(
     const std::string& name,
     const std::string& id) {
-  DictionaryValue manifest;
+  base::DictionaryValue manifest;
   manifest.SetString(extensions::manifest_keys::kVersion, "1.0.0.0");
   manifest.SetString(extensions::manifest_keys::kName, name);
   std::string error;
@@ -182,7 +182,8 @@ TEST_F(ProfileSigninConfirmationHelperTest, PromptForNewProfile_Bookmarks) {
 
   // Profile is new but has bookmarks.
   model_->AddURL(model_->bookmark_bar_node(), 0,
-                 base::string16(ASCIIToUTF16("foo")), GURL("http://foo.com"));
+                 base::string16(base::ASCIIToUTF16("foo")),
+                 GURL("http://foo.com"));
   EXPECT_TRUE(
       GetCallbackResult(
           base::Bind(

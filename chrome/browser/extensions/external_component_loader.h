@@ -9,6 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/external_loader.h"
+#include "chrome/browser/profiles/profile.h"
 
 namespace extensions {
 
@@ -20,9 +21,7 @@ namespace extensions {
 // thread and they are expecting public method calls from the UI thread.
 class ExternalComponentLoader : public ExternalLoader {
  public:
-  ExternalComponentLoader();
-
-  static bool IsEnhancedBookmarksExperimentEnabled();
+  explicit ExternalComponentLoader(Profile* profile);
 
  protected:
   virtual void StartLoading() OVERRIDE;
@@ -31,6 +30,9 @@ class ExternalComponentLoader : public ExternalLoader {
   friend class base::RefCountedThreadSafe<ExternalLoader>;
   virtual ~ExternalComponentLoader();
 
+  // The profile that this loader is associated with. It listens for
+  // preference changes for that profile.
+  Profile* profile_;
   DISALLOW_COPY_AND_ASSIGN(ExternalComponentLoader);
 };
 

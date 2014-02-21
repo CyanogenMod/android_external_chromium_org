@@ -43,16 +43,17 @@ class JniFrameConsumer : public FrameConsumer {
   virtual void ApplyBuffer(const webrtc::DesktopSize& view_size,
                            const webrtc::DesktopRect& clip_area,
                            webrtc::DesktopFrame* buffer,
-                           const webrtc::DesktopRegion& region) OVERRIDE;
+                           const webrtc::DesktopRegion& region,
+                           const webrtc::DesktopRegion& shape) OVERRIDE;
   virtual void ReturnBuffer(webrtc::DesktopFrame* buffer) OVERRIDE;
   virtual void SetSourceSize(const webrtc::DesktopSize& source_size,
                              const webrtc::DesktopVector& dpi) OVERRIDE;
   virtual PixelFormat GetPixelFormat() OVERRIDE;
 
  private:
-  // Allocates a new buffer of |view_size_|, informs Java about it, and tells
+  // Allocates a new buffer of |source_size|, informs Java about it, and tells
   // the producer to draw onto it.
-  void AllocateBuffer();
+  void AllocateBuffer(const webrtc::DesktopSize& source_size);
 
   // Frees a frame buffer previously allocated by AllocateBuffer.
   void FreeBuffer(webrtc::DesktopFrame* buffer);
@@ -66,7 +67,6 @@ class JniFrameConsumer : public FrameConsumer {
   scoped_refptr<ChromotingJniInstance> jni_instance_;
 
   FrameProducer* frame_producer_;
-  webrtc::DesktopSize view_size_;
   webrtc::DesktopRect clip_area_;
 
   // List of allocated image buffers.

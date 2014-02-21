@@ -1,15 +1,16 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import logging
 import os
 import unittest
 
+from telemetry import test
 from telemetry.core import browser_finder
 from telemetry.core import util
-from telemetry.unittest import simple_mock
 from telemetry.unittest import options_for_unittests
-from telemetry.unittest import DisabledTest
+from telemetry.unittest import simple_mock
 
 _ = simple_mock.DONT_CARE
 
@@ -27,7 +28,7 @@ class FormBasedCredentialsBackendUnitTestBase(unittest.TestCase):
   def setUp(self):
     self._credentials_type = None
 
-  @DisabledTest
+  @test.Disabled
   def testRealLoginIfPossible(self):
     credentials_path = _GetCredentialsPath()
     if not credentials_path:
@@ -36,14 +37,13 @@ class FormBasedCredentialsBackendUnitTestBase(unittest.TestCase):
 
     options = options_for_unittests.GetCopy()
     with browser_finder.FindBrowser(options).Create() as b:
-      b.Start()
       b.credentials.credentials_path = credentials_path
       if not b.credentials.CanLogin(self._credentials_type):
         return
       ret = b.credentials.LoginNeeded(b.tabs[0], self._credentials_type)
       self.assertTrue(ret)
 
-  @DisabledTest
+  @test.Disabled
   def testRealLoginWithDontOverrideProfileIfPossible(self):
     credentials_path = _GetCredentialsPath()
     if not credentials_path:
@@ -54,7 +54,6 @@ class FormBasedCredentialsBackendUnitTestBase(unittest.TestCase):
 
     # Login once to make sure our default profile is logged in.
     with browser_finder.FindBrowser(options).Create() as b:
-      b.Start()
       b.credentials.credentials_path = credentials_path
 
       if not b.credentials.CanLogin(self._credentials_type):

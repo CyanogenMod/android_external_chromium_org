@@ -7,12 +7,13 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/fake_gcm_profile_service.h"
+#include "chrome/browser/services/gcm/gcm_client_factory.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/test/base/ui_test_utils.h"
 
 namespace {
 
-const char kFunctionsTestExtension[] = "gcm/functions";
 const char kEventsExtension[] = "gcm/events";
 
 }  // namespace
@@ -24,31 +25,30 @@ class GcmApiTest : public ExtensionApiTest {
   GcmApiTest() : fake_gcm_profile_service_(NULL) {}
 
  protected:
-  void SetUpFakeService(bool collect);
+  virtual void SetUpOnMainThread() OVERRIDE;
+
+  void StartCollecting();
 
   const Extension* LoadTestExtension(const std::string& extension_path,
                                      const std::string& page_name);
-
-  void WaitUntilIdle();
-
   gcm::FakeGCMProfileService* service() const;
+  bool ShouldSkipTest() const;
 
+ private:
   gcm::FakeGCMProfileService* fake_gcm_profile_service_;
 };
 
-void GcmApiTest::SetUpFakeService(bool collect) {
+void GcmApiTest::SetUpOnMainThread() {
   gcm::GCMProfileServiceFactory::GetInstance()->SetTestingFactory(
-      profile(), &gcm::FakeGCMProfileService::Build);
-
+      browser()->profile(), &gcm::FakeGCMProfileService::Build);
   fake_gcm_profile_service_ = static_cast<gcm::FakeGCMProfileService*>(
-      gcm::GCMProfileServiceFactory::GetInstance()->GetForProfile(profile()));
-  fake_gcm_profile_service_->set_collect(collect);
+      gcm::GCMProfileServiceFactory::GetInstance()->GetForProfile(
+          browser()->profile()));
   gcm::FakeGCMProfileService::EnableGCMForTesting();
 }
 
-void GcmApiTest::WaitUntilIdle() {
-  base::RunLoop run_loop;
-  run_loop.RunUntilIdle();
+void GcmApiTest::StartCollecting() {
+  service()->set_collect(true);
 }
 
 gcm::FakeGCMProfileService* GcmApiTest::service() const {
@@ -58,6 +58,9 @@ gcm::FakeGCMProfileService* GcmApiTest::service() const {
 const Extension* GcmApiTest::LoadTestExtension(
     const std::string& extension_path,
     const std::string& page_name) {
+  // TODO(jianli): Once the GCM API enters stable, remove |channel|.
+  ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_UNKNOWN);
+
   const Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII(extension_path));
   if (extension) {
@@ -67,33 +70,26 @@ const Extension* GcmApiTest::LoadTestExtension(
   return extension;
 }
 
-// http://crbug.com/177163 and http://crbug.com/324982
-#if defined(OS_WIN)
-#define MAYBE_RegisterValidation DISABLED_RegisterValidation
-#else
-#define MAYBE_RegisterValidation RegisterValidation
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_RegisterValidation) {
-  SetUpFakeService(false);
-  EXPECT_TRUE(RunExtensionSubtest(kFunctionsTestExtension,
-                                  "register_validation.html"));
+bool GcmApiTest::ShouldSkipTest() const {
+  // TODO(jianli): Remove this once the GCM API enters stable.
+  return chrome::VersionInfo::GetChannel() ==
+      chrome::VersionInfo::CHANNEL_STABLE;
 }
 
-// http://crbug.com/177163 and http://crbug.com/324982
-#if defined(OS_WIN)
-#define MAYBE_Register DISABLED_Register
-#else
-#define MAYBE_Register Register
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_Register) {
-  SetUpFakeService(true);
-  const extensions::Extension* extension =
-      LoadTestExtension(kFunctionsTestExtension, "register.html");
-  ASSERT_TRUE(extension);
+IN_PROC_BROWSER_TEST_F(GcmApiTest, RegisterValidation) {
+  if (ShouldSkipTest())
+    return;
 
-  WaitUntilIdle();
+  ASSERT_TRUE(RunExtensionTest("gcm/functions/register_validation"));
+}
 
-  EXPECT_EQ(extension->id(), service()->last_registered_app_id());
+IN_PROC_BROWSER_TEST_F(GcmApiTest, Register) {
+  if (ShouldSkipTest())
+    return;
+
+  StartCollecting();
+  ASSERT_TRUE(RunExtensionTest("gcm/functions/register"));
+
   // SHA1 of the public key provided in manifest.json.
   EXPECT_EQ("26469186F238EE08FA71C38311C6990F61D40DCA",
             service()->last_registered_cert());
@@ -105,30 +101,26 @@ IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_Register) {
                   sender_ids.end());
 }
 
-// http://crbug.com/177163 and http://crbug.com/324982
-#if defined(OS_WIN)
-#define MAYBE_SendValidation DISABLED_SendValidation
-#else
-#define MAYBE_SendValidation SendValidation
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_SendValidation) {
-  SetUpFakeService(false);
-  EXPECT_TRUE(RunExtensionSubtest(kFunctionsTestExtension, "send.html"));
+IN_PROC_BROWSER_TEST_F(GcmApiTest, RegisterWithoutKey) {
+  if (ShouldSkipTest())
+    return;
+
+  ASSERT_TRUE(RunExtensionTest("gcm/functions/register_without_key"));
 }
 
-// http://crbug.com/177163 and http://crbug.com/324982
-#if defined(OS_WIN)
-#define MAYBE_SendMessageData DISABLED_SendMessageData
-#else
-#define MAYBE_SendMessageData SendMessageData
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_SendMessageData) {
-  SetUpFakeService(true);
-  const extensions::Extension* extension =
-      LoadTestExtension(kFunctionsTestExtension, "send_message_data.html");
-  ASSERT_TRUE(extension);
+IN_PROC_BROWSER_TEST_F(GcmApiTest, SendValidation) {
+  if (ShouldSkipTest())
+    return;
 
-  WaitUntilIdle();
+  ASSERT_TRUE(RunExtensionTest("gcm/functions/send"));
+}
+
+IN_PROC_BROWSER_TEST_F(GcmApiTest, SendMessageData) {
+  if (ShouldSkipTest())
+    return;
+
+  StartCollecting();
+  ASSERT_TRUE(RunExtensionTest("gcm/functions/send_message_data"));
 
   EXPECT_EQ("destination-id", service()->last_receiver_id());
   const gcm::GCMClient::OutgoingMessage& message =
@@ -142,13 +134,7 @@ IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_SendMessageData) {
   EXPECT_EQ("value2", iter->second);
 }
 
-// http://crbug.com/177163 and http://crbug/324982
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_OnMessagesDeleted DISABLED_OnMessagesDeleted
-#else
-#define MAYBE_OnMessagesDeleted OnMessagesDeleted
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_OnMessagesDeleted) {
+IN_PROC_BROWSER_TEST_F(GcmApiTest, OnMessagesDeleted) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(profile());
 
@@ -161,13 +147,7 @@ IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_OnMessagesDeleted) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-// http://crbug.com/177163 and http://crbug/324982
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_OnMessage DISABLED_OnMessage
-#else
-#define MAYBE_OnMessage OnMessage
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_OnMessage) {
+IN_PROC_BROWSER_TEST_F(GcmApiTest, OnMessage) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(profile());
 
@@ -185,13 +165,7 @@ IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_OnMessage) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-// http://crbug.com/177163 and http://crbug/324982
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_OnSendError DISABLED_OnSendError
-#else
-#define MAYBE_OnSendError OnSendError
-#endif
-IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_OnSendError) {
+IN_PROC_BROWSER_TEST_F(GcmApiTest, OnSendError) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(profile());
 
@@ -212,6 +186,21 @@ IN_PROC_BROWSER_TEST_F(GcmApiTest, MAYBE_OnSendError) {
       gcm::GCMClient::TTL_EXCEEDED);
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(GcmApiTest, Incognito) {
+  if (ShouldSkipTest())
+    return;
+
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(profile());
+  ResultCatcher incognito_catcher;
+  incognito_catcher.RestrictToProfile(profile()->GetOffTheRecordProfile());
+
+  ASSERT_TRUE(RunExtensionTestIncognito("gcm/functions/incognito"));
+
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+  EXPECT_TRUE(incognito_catcher.GetNextResult()) << incognito_catcher.message();
 }
 
 }  // namespace extensions

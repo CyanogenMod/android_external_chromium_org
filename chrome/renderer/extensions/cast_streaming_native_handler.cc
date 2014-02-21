@@ -6,6 +6,7 @@
 
 #include <functional>
 
+#include "base/base64.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "chrome/common/extensions/api/cast_streaming_rtp_stream.h"
@@ -23,18 +24,19 @@ using content::V8ValueConverter;
 
 // Extension types.
 using extensions::api::cast_streaming_rtp_stream::CodecSpecificParams;
-using extensions::api::cast_streaming_rtp_stream::RtpCaps;
 using extensions::api::cast_streaming_rtp_stream::RtpParams;
 using extensions::api::cast_streaming_rtp_stream::RtpPayloadParams;
-using extensions::api::cast_streaming_udp_transport::UdpParams;
+using extensions::api::cast_streaming_udp_transport::IPEndPoint;
 
 namespace extensions {
 
 namespace {
 const char kRtpStreamNotFound[] = "The RTP stream cannot be found";
 const char kUdpTransportNotFound[] = "The UDP transport cannot be found";
-const char kInvalidUdpParams[] = "Invalid UDP params";
+const char kInvalidDestination[] = "Invalid destination";
 const char kInvalidRtpParams[] = "Invalid value for RTP params";
+const char kInvalidAesKey[] = "Invalid value for AES key";
+const char kInvalidAesIvMask[] = "Invalid value for AES IV mask";
 const char kUnableToConvertArgs[] = "Unable to convert arguments";
 const char kUnableToConvertParams[] = "Unable to convert params";
 
@@ -52,11 +54,14 @@ void FromCastCodecSpecificParams(const CastCodecSpecificParams& cast_params,
   ext_params->value = cast_params.value;
 }
 
-void ToCastRtpPayloadParams(const RtpPayloadParams& ext_params,
-                            CastRtpPayloadParams* cast_params) {
+bool ToCastRtpPayloadParamsOrThrow(v8::Isolate* isolate,
+                                   const RtpPayloadParams& ext_params,
+                                   CastRtpPayloadParams* cast_params) {
   cast_params->payload_type = ext_params.payload_type;
   cast_params->codec_name = ext_params.codec_name;
   cast_params->ssrc = ext_params.ssrc ? *ext_params.ssrc : 0;
+  cast_params->feedback_ssrc =
+      ext_params.feedback_ssrc ? *ext_params.feedback_ssrc : 0;
   cast_params->clock_rate = ext_params.clock_rate ? *ext_params.clock_rate : 0;
   cast_params->min_bitrate =
       ext_params.min_bitrate ? *ext_params.min_bitrate : 0;
@@ -65,12 +70,26 @@ void ToCastRtpPayloadParams(const RtpPayloadParams& ext_params,
   cast_params->channels = ext_params.channels ? *ext_params.channels : 0;
   cast_params->width = ext_params.width ? *ext_params.width : 0;
   cast_params->height = ext_params.height ? *ext_params.height : 0;
+  if (ext_params.aes_key &&
+      !base::Base64Decode(*ext_params.aes_key, &cast_params->aes_key)) {
+    isolate->ThrowException(v8::Exception::Error(
+        v8::String::NewFromUtf8(isolate, kInvalidAesKey)));
+    return false;
+  }
+  if (ext_params.aes_iv_mask &&
+      !base::Base64Decode(*ext_params.aes_iv_mask,
+                          &cast_params->aes_iv_mask)) {
+    isolate->ThrowException(v8::Exception::Error(
+        v8::String::NewFromUtf8(isolate, kInvalidAesIvMask)));
+    return false;
+  }
   for (size_t i = 0; i < ext_params.codec_specific_params.size(); ++i) {
     CastCodecSpecificParams cast_codec_params;
     ToCastCodecSpecificParams(*ext_params.codec_specific_params[i],
                               &cast_codec_params);
     cast_params->codec_specific_params.push_back(cast_codec_params);
   }
+  return true;
 }
 
 void FromCastRtpPayloadParams(const CastRtpPayloadParams& cast_params,
@@ -79,6 +98,8 @@ void FromCastRtpPayloadParams(const CastRtpPayloadParams& cast_params,
   ext_params->codec_name = cast_params.codec_name;
   if (cast_params.ssrc)
     ext_params->ssrc.reset(new int(cast_params.ssrc));
+  if (cast_params.feedback_ssrc)
+    ext_params->feedback_ssrc.reset(new int(cast_params.feedback_ssrc));
   if (cast_params.clock_rate)
     ext_params->clock_rate.reset(new int(cast_params.clock_rate));
   if (cast_params.min_bitrate)
@@ -100,24 +121,24 @@ void FromCastRtpPayloadParams(const CastRtpPayloadParams& cast_params,
   }
 }
 
-void FromCastRtpCaps(const CastRtpCaps& cast_caps, RtpCaps* ext_caps) {
-  std::copy(cast_caps.rtcp_features.begin(), cast_caps.rtcp_features.end(),
-            ext_caps->rtcp_features.begin());
-  for (size_t i = 0; i < cast_caps.payloads.size(); ++i) {
-    linked_ptr<RtpPayloadParams> ext_payload_params(new RtpPayloadParams());
-    FromCastRtpPayloadParams(cast_caps.payloads[i], ext_payload_params.get());
-    ext_caps->payloads.push_back(ext_payload_params);
-  }
+void FromCastRtpParams(const CastRtpParams& cast_params,
+                       RtpParams* ext_params) {
+  std::copy(cast_params.rtcp_features.begin(), cast_params.rtcp_features.end(),
+            ext_params->rtcp_features.begin());
+  FromCastRtpPayloadParams(cast_params.payload, &ext_params->payload);
 }
 
-void ToCastRtpParams(const RtpParams& ext_params, CastRtpParams* cast_params) {
+bool ToCastRtpParamsOrThrow(v8::Isolate* isolate,
+                            const RtpParams& ext_params,
+                            CastRtpParams* cast_params) {
   std::copy(ext_params.rtcp_features.begin(), ext_params.rtcp_features.end(),
             cast_params->rtcp_features.begin());
-  for (size_t i = 0; i < ext_params.payloads.size(); ++i) {
-    CastRtpPayloadParams cast_payload_params;
-    ToCastRtpPayloadParams(*ext_params.payloads[i], &cast_payload_params);
-    cast_params->payloads.push_back(cast_payload_params);
+  if (!ToCastRtpPayloadParamsOrThrow(isolate,
+                                     ext_params.payload,
+                                     &cast_params->payload)) {
+    return false;
   }
+  return true;
 }
 
 }  // namespace
@@ -132,8 +153,8 @@ CastStreamingNativeHandler::CastStreamingNativeHandler(ChromeV8Context* context)
   RouteFunction("DestroyCastRtpStream",
       base::Bind(&CastStreamingNativeHandler::DestroyCastRtpStream,
                  base::Unretained(this)));
-  RouteFunction("GetCapsCastRtpStream",
-      base::Bind(&CastStreamingNativeHandler::GetCapsCastRtpStream,
+  RouteFunction("GetSupportedParamsCastRtpStream",
+      base::Bind(&CastStreamingNativeHandler::GetSupportedParamsCastRtpStream,
                  base::Unretained(this)));
   RouteFunction("StartCastRtpStream",
       base::Bind(&CastStreamingNativeHandler::StartCastRtpStream,
@@ -144,8 +165,8 @@ CastStreamingNativeHandler::CastStreamingNativeHandler(ChromeV8Context* context)
   RouteFunction("DestroyCastUdpTransport",
       base::Bind(&CastStreamingNativeHandler::DestroyCastUdpTransport,
                  base::Unretained(this)));
-  RouteFunction("StartCastUdpTransport",
-      base::Bind(&CastStreamingNativeHandler::StartCastUdpTransport,
+  RouteFunction("SetDestinationCastUdpTransport",
+      base::Bind(&CastStreamingNativeHandler::SetDestinationCastUdpTransport,
                  base::Unretained(this)));
 }
 
@@ -192,7 +213,8 @@ void CastStreamingNativeHandler::CallCreateCallback(
     scoped_ptr<CastRtpStream> stream1,
     scoped_ptr<CastRtpStream> stream2,
     scoped_ptr<CastUdpTransport> udp_transport) {
-  v8::HandleScope handle_scope(context()->isolate());
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(context()->v8_context());
 
   const int stream1_id = last_transport_id_++;
@@ -206,12 +228,44 @@ void CastStreamingNativeHandler::CallCreateCallback(
       linked_ptr<CastUdpTransport>(udp_transport.release());
 
   v8::Handle<v8::Value> callback_args[3];
-  callback_args[0] = v8::Integer::New(stream1_id);
-  callback_args[1] = v8::Integer::New(stream2_id);
-  callback_args[2] = v8::Integer::New(udp_id);
-  context()->CallFunction(create_callback_.NewHandle(context()->isolate()),
+  callback_args[0] = v8::Integer::New(isolate, stream1_id);
+  callback_args[1] = v8::Integer::New(isolate, stream2_id);
+  callback_args[2] = v8::Integer::New(isolate, udp_id);
+  context()->CallFunction(create_callback_.NewHandle(isolate),
                           3, callback_args);
   create_callback_.reset();
+}
+
+void CastStreamingNativeHandler::CallStartCallback(int stream_id) {
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Array> event_args = v8::Array::New(isolate, 1);
+  event_args->Set(0, v8::Integer::New(isolate, stream_id));
+  context()->DispatchEvent("cast.streaming.rtpStream.onStarted", event_args);
+}
+
+void CastStreamingNativeHandler::CallStopCallback(int stream_id) {
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Array> event_args = v8::Array::New(isolate, 1);
+  event_args->Set(0, v8::Integer::New(isolate, stream_id));
+  context()->DispatchEvent("cast.streaming.rtpStream.onStopped", event_args);
+}
+
+void CastStreamingNativeHandler::CallErrorCallback(int stream_id,
+                                                   const std::string& message) {
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Array> event_args = v8::Array::New(isolate, 2);
+  event_args->Set(0, v8::Integer::New(isolate, stream_id));
+  event_args->Set(
+      1,
+      v8::String::NewFromUtf8(
+          isolate, message.data(), v8::String::kNormalString, message.size()));
+  context()->DispatchEvent("cast.streaming.rtpStream.onError", event_args);
 }
 
 void CastStreamingNativeHandler::DestroyCastRtpStream(
@@ -225,7 +279,7 @@ void CastStreamingNativeHandler::DestroyCastRtpStream(
   rtp_stream_map_.erase(transport_id);
 }
 
-void CastStreamingNativeHandler::GetCapsCastRtpStream(
+void CastStreamingNativeHandler::GetSupportedParamsCastRtpStream(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_EQ(1, args.Length());
   CHECK(args[0]->IsInt32());
@@ -235,14 +289,20 @@ void CastStreamingNativeHandler::GetCapsCastRtpStream(
   if (!transport)
     return;
 
-  CastRtpCaps cast_caps = transport->GetCaps();
-  RtpCaps caps;
-  FromCastRtpCaps(cast_caps, &caps);
-
-  scoped_ptr<base::DictionaryValue> caps_value = caps.ToValue();
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
-  args.GetReturnValue().Set(converter->ToV8Value(
-      caps_value.get(), context()->v8_context()));
+  std::vector<CastRtpParams> cast_params = transport->GetSupportedParams();
+  v8::Handle<v8::Array> result =
+      v8::Array::New(args.GetIsolate(),
+                     static_cast<int>(cast_params.size()));
+  for (size_t i = 0; i < cast_params.size(); ++i) {
+    RtpParams params;
+    FromCastRtpParams(cast_params[i], &params);
+    scoped_ptr<base::DictionaryValue> params_value = params.ToValue();
+    result->Set(
+        static_cast<int>(i),
+        converter->ToV8Value(params_value.get(), context()->v8_context()));
+  }
+  args.GetReturnValue().Set(result);
 }
 
 void CastStreamingNativeHandler::StartCastRtpStream(
@@ -257,7 +317,7 @@ void CastStreamingNativeHandler::StartCastRtpStream(
     return;
 
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
-  scoped_ptr<Value> params_value(
+  scoped_ptr<base::Value> params_value(
       converter->FromV8Value(args[1], context()->v8_context()));
   if (!params_value) {
     args.GetIsolate()->ThrowException(v8::Exception::TypeError(
@@ -271,9 +331,24 @@ void CastStreamingNativeHandler::StartCastRtpStream(
     return;
   }
 
-  CastRtpCaps cast_params;
-  ToCastRtpParams(*params, &cast_params);
-  transport->Start(cast_params);
+  CastRtpParams cast_params;
+  v8::Isolate* isolate = context()->v8_context()->GetIsolate();
+  if (!ToCastRtpParamsOrThrow(isolate, *params, &cast_params))
+    return;
+
+  base::Closure start_callback =
+      base::Bind(&CastStreamingNativeHandler::CallStartCallback,
+                 weak_factory_.GetWeakPtr(),
+                 transport_id);
+  base::Closure stop_callback =
+      base::Bind(&CastStreamingNativeHandler::CallStopCallback,
+                 weak_factory_.GetWeakPtr(),
+                 transport_id);
+  CastRtpStream::ErrorCallback error_callback =
+      base::Bind(&CastStreamingNativeHandler::CallErrorCallback,
+                 weak_factory_.GetWeakPtr(),
+                 transport_id);
+  transport->Start(cast_params, start_callback, stop_callback, error_callback);
 }
 
 void CastStreamingNativeHandler::StopCastRtpStream(
@@ -299,7 +374,7 @@ void CastStreamingNativeHandler::DestroyCastUdpTransport(
   udp_transport_map_.erase(transport_id);
 }
 
-void CastStreamingNativeHandler::StartCastUdpTransport(
+void CastStreamingNativeHandler::SetDestinationCastUdpTransport(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_EQ(2, args.Length());
   CHECK(args[0]->IsInt32());
@@ -311,26 +386,27 @@ void CastStreamingNativeHandler::StartCastUdpTransport(
     return;
 
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
-  scoped_ptr<Value> udp_params_value(
+  scoped_ptr<base::Value> destination_value(
       converter->FromV8Value(args[1], context()->v8_context()));
-  if (!udp_params_value) {
+  if (!destination_value) {
     args.GetIsolate()->ThrowException(v8::Exception::TypeError(
         v8::String::NewFromUtf8(args.GetIsolate(), kUnableToConvertArgs)));
     return;
   }
-  scoped_ptr<UdpParams> udp_params = UdpParams::FromValue(*udp_params_value);
-  if (!udp_params) {
+  scoped_ptr<IPEndPoint> destination =
+      IPEndPoint::FromValue(*destination_value);
+  if (!destination) {
     args.GetIsolate()->ThrowException(v8::Exception::TypeError(
-        v8::String::NewFromUtf8(args.GetIsolate(), kInvalidUdpParams)));
+        v8::String::NewFromUtf8(args.GetIsolate(), kInvalidDestination)));
     return;
   }
   net::IPAddressNumber ip;
-  if (!net::ParseIPLiteralToNumber(udp_params->address, &ip)) {
+  if (!net::ParseIPLiteralToNumber(destination->address, &ip)) {
     args.GetIsolate()->ThrowException(v8::Exception::TypeError(
-        v8::String::NewFromUtf8(args.GetIsolate(), kInvalidUdpParams)));
+        v8::String::NewFromUtf8(args.GetIsolate(), kInvalidDestination)));
     return;
   }
-  transport->Start(net::IPEndPoint(ip, udp_params->port));
+  transport->SetDestination(net::IPEndPoint(ip, destination->port));
 }
 
 CastRtpStream* CastStreamingNativeHandler::GetRtpStreamOrThrow(

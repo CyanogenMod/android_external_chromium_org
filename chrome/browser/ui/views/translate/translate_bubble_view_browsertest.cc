@@ -11,9 +11,9 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/translate/core/common/language_detection_details.h"
 #include "content/public/browser/notification_details.h"
 
 class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
@@ -21,9 +21,6 @@ class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
   TranslateBubbleViewBrowserTest() {}
   virtual ~TranslateBubbleViewBrowserTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kEnableTranslateNewUX);
-  }
  private:
   DISALLOW_COPY_AND_ASSIGN(TranslateBubbleViewBrowserTest);
 };

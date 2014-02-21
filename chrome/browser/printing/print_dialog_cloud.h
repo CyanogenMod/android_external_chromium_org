@@ -13,7 +13,9 @@
 #include "base/strings/string16.h"
 #include "ui/gfx/native_widget_types.h"
 
+class Browser;
 class CommandLine;
+class Profile;
 
 namespace base {
 class FilePath;
@@ -57,19 +59,14 @@ void CreatePrintDialogForBytes(content::BrowserContext* browser_context,
                                const std::string& file_type);
 
 // Parse switches from command_line and display the print dialog as appropriate.
-// Uses the default profile.
-bool CreatePrintDialogFromCommandLine(const CommandLine& command_line);
+bool CreatePrintDialogFromCommandLine(Profile* profile,
+                                      const CommandLine& command_line);
 
-// Creates a dialog for signing into cloud print.
-// The dialog will call |callback| when complete.
-// Called on the UI thread. Even though this starts up a modal
-// dialog, it will return immediately. The dialog is handled asynchronously.
-// If non-NULL, |modal_parent| specifies a window that the print dialog is modal
-// to.
-void CreateCloudPrintSigninDialog(content::BrowserContext* browser_context,
-                                  gfx::NativeWindow modal_parent,
-                                  const base::Closure& callback);
+// Creates a tab with Google sinnin page.
+// Calls |callback| when complete.
+void CreateCloudPrintSigninTab(Browser* browser,
+                               const base::Closure& callback);
 
-}  // end namespace
+}  // namespace print_dialog_cloud
 
 #endif  // CHROME_BROWSER_PRINTING_PRINT_DIALOG_CLOUD_H_

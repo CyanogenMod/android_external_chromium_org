@@ -17,9 +17,13 @@ Framer::Framer(base::TickClock* clock,
                bool decoder_faster_than_max_frame_rate,
                int max_unacked_frames)
     : decoder_faster_than_max_frame_rate_(decoder_faster_than_max_frame_rate),
-      cast_msg_builder_(new CastMessageBuilder(clock, incoming_payload_feedback,
-          &frame_id_map_, ssrc, decoder_faster_than_max_frame_rate,
-          max_unacked_frames)) {
+      cast_msg_builder_(
+          new CastMessageBuilder(clock,
+                                 incoming_payload_feedback,
+                                 &frame_id_map_,
+                                 ssrc,
+                                 decoder_faster_than_max_frame_rate,
+                                 max_unacked_frames)) {
   DCHECK(incoming_payload_feedback) << "Invalid argument";
 }
 
@@ -27,9 +31,20 @@ Framer::~Framer() {}
 
 bool Framer::InsertPacket(const uint8* payload_data,
                           size_t payload_size,
-                          const RtpCastHeader& rtp_header) {
-  bool complete = false;
-  if (!frame_id_map_.InsertPacket(rtp_header, &complete)) return false;
+                          const RtpCastHeader& rtp_header,
+                          bool* duplicate) {
+  *duplicate = false;
+  PacketType packet_type = frame_id_map_.InsertPacket(rtp_header);
+  if (packet_type == kTooOldPacket) {
+    return false;
+  }
+  if (packet_type == kDuplicatePacket) {
+    VLOG(3) << "Packet already received, ignored: frame "
+            << static_cast<int>(rtp_header.frame_id) << ", packet "
+            << rtp_header.packet_id;
+    *duplicate = true;
+    return false;
+  }
 
   // Does this packet belong to a new frame?
   FrameList::iterator it = frames_.find(rtp_header.frame_id);
@@ -43,6 +58,7 @@ bool Framer::InsertPacket(const uint8* payload_data,
     it->second->InsertPacket(payload_data, payload_size, rtp_header);
   }
 
+  bool complete = (packet_type == kNewPacketCompletingFrame);
   if (complete) {
     // ACK as soon as possible.
     VLOG(1) << "Complete frame " << static_cast<int>(rtp_header.frame_id);
@@ -53,8 +69,7 @@ bool Framer::InsertPacket(const uint8* payload_data,
 }
 
 // This does not release the frame.
-bool Framer::GetEncodedAudioFrame(EncodedAudioFrame* audio_frame,
-                                  uint32* rtp_timestamp,
+bool Framer::GetEncodedAudioFrame(transport::EncodedAudioFrame* audio_frame,
                                   bool* next_frame) {
   uint32 frame_id;
   // Find frame id.
@@ -70,14 +85,14 @@ bool Framer::GetEncodedAudioFrame(EncodedAudioFrame* audio_frame,
 
   ConstFrameIterator it = frames_.find(frame_id);
   DCHECK(it != frames_.end());
-  if (it == frames_.end()) return false;
+  if (it == frames_.end())
+    return false;
 
-  return it->second->GetEncodedAudioFrame(audio_frame, rtp_timestamp);
+  return it->second->GetEncodedAudioFrame(audio_frame);
 }
 
 // This does not release the frame.
-bool Framer::GetEncodedVideoFrame(EncodedVideoFrame* video_frame,
-                                  uint32* rtp_timestamp,
+bool Framer::GetEncodedVideoFrame(transport::EncodedVideoFrame* video_frame,
                                   bool* next_frame) {
   uint32 frame_id;
   // Find frame id.
@@ -86,7 +101,8 @@ bool Framer::GetEncodedVideoFrame(EncodedVideoFrame* video_frame,
     *next_frame = true;
   } else {
     // Check if we can skip frames when our decoder is too slow.
-    if (!decoder_faster_than_max_frame_rate_) return false;
+    if (!decoder_faster_than_max_frame_rate_)
+      return false;
 
     if (!frame_id_map_.NextVideoFrameAllowingSkippingFrames(&frame_id)) {
       return false;
@@ -96,9 +112,10 @@ bool Framer::GetEncodedVideoFrame(EncodedVideoFrame* video_frame,
 
   ConstFrameIterator it = frames_.find(frame_id);
   DCHECK(it != frames_.end());
-  if (it == frames_.end())  return false;
+  if (it == frames_.end())
+    return false;
 
-  return it->second->GetEncodedVideoFrame(video_frame, rtp_timestamp);
+  return it->second->GetEncodedVideoFrame(video_frame);
 }
 
 void Framer::Reset() {
@@ -114,7 +131,7 @@ void Framer::ReleaseFrame(uint32 frame_id) {
   // We have a frame - remove all frames with lower frame id.
   bool skipped_old_frame = false;
   FrameList::iterator it;
-  for (it = frames_.begin(); it != frames_.end(); ) {
+  for (it = frames_.begin(); it != frames_.end();) {
     if (IsOlderFrameId(it->first, frame_id)) {
       frames_.erase(it++);
       skipped_old_frame = true;
@@ -131,9 +148,7 @@ bool Framer::TimeToSendNextCastMessage(base::TimeTicks* time_to_send) {
   return cast_msg_builder_->TimeToSendNextCastMessage(time_to_send);
 }
 
-void Framer::SendCastMessage() {
-  cast_msg_builder_->UpdateCastMessage();
-}
+void Framer::SendCastMessage() { cast_msg_builder_->UpdateCastMessage(); }
 
 }  // namespace cast
 }  // namespace media

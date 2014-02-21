@@ -17,7 +17,12 @@ bool RenderWidgetHostDelegate::PreHandleWheelEvent(
   return false;
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
+bool RenderWidgetHostDelegate::PreHandleGestureEvent(
+    const blink::WebGestureEvent& event) {
+  return false;
+}
+
+#if defined(OS_WIN)
 gfx::NativeViewAccessible
 RenderWidgetHostDelegate::GetParentNativeViewAccessible() {
   return NULL;

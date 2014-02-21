@@ -24,6 +24,7 @@ namespace content {
 class PepperMediaDeviceManager;
 class PepperVideoCaptureHost;
 class RenderViewImpl;
+class VideoCaptureHandle;
 
 class PepperPlatformVideoCapture
     : public media::VideoCapture,
@@ -46,6 +47,10 @@ class PepperPlatformVideoCapture
   virtual void StopCapture(media::VideoCapture::EventHandler* handler) OVERRIDE;
   virtual bool CaptureStarted() OVERRIDE;
   virtual int CaptureFrameRate() OVERRIDE;
+  virtual void GetDeviceSupportedFormats(
+      const DeviceFormatsCallback& callback) OVERRIDE;
+  virtual void GetDeviceFormatsInUse(
+      const DeviceFormatsInUseCallback& callback) OVERRIDE;
 
   // media::VideoCapture::EventHandler implementation
   virtual void OnStarted(VideoCapture* capture) OVERRIDE;
@@ -80,7 +85,7 @@ class PepperPlatformVideoCapture
 
   PepperVideoCaptureHost* handler_;
 
-  media::VideoCapture* video_capture_;
+  scoped_ptr<VideoCaptureHandle> video_capture_;
 
   // StartCapture() must be balanced by StopCapture(), otherwise this object
   // will leak.

@@ -11,10 +11,9 @@
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_utils.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_event_router.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/bluetooth.h"
-#include "chrome/common/extensions/permissions/bluetooth_permission.h"
+#include "chrome/common/extensions/api/bluetooth/bluetooth_manifest_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
@@ -24,6 +23,7 @@
 #include "device/bluetooth/bluetooth_socket.h"
 #include "device/bluetooth/bluetooth_utils.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "net/base/io_buffer.h"
 
@@ -125,10 +125,9 @@ bool BluetoothAddProfileFunction::RunImpl() {
     return false;
   }
 
-  BluetoothPermission::CheckParam param(params->profile.uuid);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(), APIPermission::kBluetooth, &param)) {
-    SetError(kPermissionDenied);
+  BluetoothPermissionRequest param(params->profile.uuid);
+  if (!BluetoothManifestData::CheckRequest(GetExtension(), param)) {
+    error_ = kPermissionDenied;
     return false;
   }
 
@@ -194,7 +193,8 @@ void BluetoothAddProfileFunction::OnProfileRegistered(
                  base::Unretained(GetEventRouter(GetProfile())),
                  extension_id(),
                  uuid_));
-  GetEventRouter(GetProfile())->AddProfile(uuid_, bluetooth_profile);
+  GetEventRouter(GetProfile())->AddProfile(
+      uuid_, extension_id(), bluetooth_profile);
   SendResponse(true);
 }
 

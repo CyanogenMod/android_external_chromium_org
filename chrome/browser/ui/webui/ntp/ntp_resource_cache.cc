@@ -19,7 +19,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -58,6 +57,7 @@
 #include "ui/gfx/sys_color_change_listener.h"
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chromeos/chromeos_switches.h"
 #endif
 
@@ -81,8 +81,8 @@ const char kLearnMoreIncognitoUrl[] =
 const char kLearnMoreGuestSessionUrl[] =
     "https://www.google.com/support/chromeos/bin/answer.py?answer=1057090";
 
-string16 GetUrlWithLang(const GURL& url) {
-  return ASCIIToUTF16(google_util::AppendGoogleLocaleParam(url).spec());
+base::string16 GetUrlWithLang(const GURL& url) {
+  return base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(url).spec());
 }
 
 std::string SkColorToRGBAString(SkColor color) {
@@ -290,28 +290,29 @@ void NTPResourceCache::OnPreferenceChanged() {
 }
 
 void NTPResourceCache::CreateNewTabIncognitoHTML() {
-  DictionaryValue localized_strings;
+  base::DictionaryValue localized_strings;
   localized_strings.SetString("title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
   int new_tab_message_ids = IDS_NEW_TAB_OTR_MESSAGE;
   int new_tab_html_idr = IDR_INCOGNITO_TAB_HTML;
   const char* new_tab_link = kLearnMoreIncognitoUrl;
+
   // TODO(altimofeev): consider implementation without 'if def' usage.
 #if defined(OS_CHROMEOS)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kGuestSession)) {
+  if (profile_->IsGuestSession()) {
     new_tab_message_ids = IDS_NEW_TAB_GUEST_SESSION_MESSAGE;
     new_tab_html_idr = IDR_GUEST_SESSION_TAB_HTML;
     new_tab_link = kLearnMoreGuestSessionUrl;
 
-    std::string enterprise_domain =
-        g_browser_process->browser_policy_connector()->GetEnterpriseDomain();
+    policy::BrowserPolicyConnectorChromeOS* connector =
+        g_browser_process->platform_part()->browser_policy_connector_chromeos();
+    std::string enterprise_domain = connector->GetEnterpriseDomain();
     if (!enterprise_domain.empty()) {
       // Device is enterprise enrolled.
       localized_strings.SetString("enterpriseInfoVisible", "true");
       base::string16 enterprise_info = l10n_util::GetStringFUTF16(
           IDS_DEVICE_OWNED_BY_NOTICE,
-          UTF8ToUTF16(enterprise_domain));
+          base::UTF8ToUTF16(enterprise_domain));
       localized_strings.SetString("enterpriseInfoMessage", enterprise_info);
       localized_strings.SetString("learnMore",
           l10n_util::GetStringUTF16(IDS_LEARN_MORE));
@@ -322,6 +323,7 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
     }
   }
 #endif
+
   localized_strings.SetString("content",
       l10n_util::GetStringFUTF16(new_tab_message_ids,
                                  GetUrlWithLang(GURL(new_tab_link))));
@@ -329,7 +331,7 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
       l10n_util::GetStringFUTF16(
           IDS_NEW_TAB_OTR_EXTENSIONS_MESSAGE,
           l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
-          ASCIIToUTF16(chrome::kChromeUIExtensionsURL)));
+          base::ASCIIToUTF16(chrome::kChromeUIExtensionsURL)));
   bool bookmark_bar_attached = profile_->GetPrefs()->GetBoolean(
       prefs::kShowBookmarkBar);
   localized_strings.SetBoolean("bookmarkbarattached", bookmark_bar_attached);
@@ -347,7 +349,7 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
 }
 
 void NTPResourceCache::CreateNewTabGuestHTML() {
-  DictionaryValue localized_strings;
+  base::DictionaryValue localized_strings;
   localized_strings.SetString("title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
   const char* new_tab_link = kLearnMoreGuestSessionUrl;
@@ -373,7 +375,7 @@ void NTPResourceCache::CreateNewTabHTML() {
   // Show the profile name in the title and most visited labels if the current
   // profile is not the default.
   PrefService* prefs = profile_->GetPrefs();
-  DictionaryValue load_time_data;
+  base::DictionaryValue load_time_data;
   load_time_data.SetBoolean("bookmarkbarattached",
       prefs->GetBoolean(prefs::kShowBookmarkBar));
   load_time_data.SetBoolean("hasattribution",
@@ -492,7 +494,7 @@ void NTPResourceCache::CreateNewTabHTML() {
 #if defined(OS_MACOSX)
   load_time_data.SetBoolean(
       "disableCreateAppShortcut",
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppShims));
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppShims));
 #endif
 
 #if defined(OS_CHROMEOS)

@@ -48,11 +48,6 @@ int EventButtonFromNative(const base::NativeEvent& native_event) {
   return 0;
 }
 
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 int GetChangedMouseButtonFlagsFromNative(
     const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
@@ -132,15 +127,6 @@ bool IsNaturalScrollEnabled() {
 bool IsTouchpadEvent(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return false;
-}
-
-bool IsNoopEvent(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-base::NativeEvent CreateNoopEvent() {
-  return base::NativeEvent();
 }
 
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {

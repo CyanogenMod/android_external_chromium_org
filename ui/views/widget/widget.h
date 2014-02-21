@@ -12,8 +12,8 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "ui/aura/window_layer_type.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/compositor/layer_type.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/focus/focus_manager.h"
@@ -52,7 +52,7 @@ class ThemeProvider;
 
 namespace views {
 
-class DesktopRootWindowHost;
+class DesktopWindowTreeHost;
 class InputMethod;
 class NativeWidget;
 class NonClientFrameView;
@@ -169,10 +169,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     explicit InitParams(Type type);
     ~InitParams();
 
-    // Will return the first of the following that isn't NULL: the native view,
-    // |parent|, |context|.
-    gfx::NativeView GetContext() const;
-
     Type type;
     // If NULL, a default implementation will be constructed.
     WidgetDelegate* delegate;
@@ -189,9 +185,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     Ownership ownership;
     bool mirror_origin_in_rtl;
     bool has_dropshadow;
-    // Only used by Windows. Specifies that the system default caption and icon
-    // should not be rendered, and that the client area should be equivalent to
-    // the window area.
+    // Specifies that the system default caption and icon should not be
+    // rendered, and that the client area should be equivalent to the window
+    // area. Only used on some platforms (Windows and Linux).
     bool remove_standard_frame;
     // Only used by ShellWindow on Windows. Specifies that the default icon of
     // packaged app should be the system default icon.
@@ -209,18 +205,18 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // When set, this value is used as the Widget's NativeWidget implementation.
     // The Widget will not construct a default one. Default is NULL.
     NativeWidget* native_widget;
-    // Aura-only. Provides a DesktopRootWindowHost implementation to use instead
+    // Aura-only. Provides a DesktopWindowTreeHost implementation to use instead
     // of the default one.
     // TODO(beng): Figure out if there's a better way to expose this, e.g. get
     // rid of NW subclasses and do this all via message handling.
-    DesktopRootWindowHost* desktop_root_window_host;
+    DesktopWindowTreeHost* desktop_window_tree_host;
     // Whether this window is intended to be a toplevel window with no
     // attachment to any other window. (This may be a transient window if
     // |parent| is set.)
     bool top_level;
     // Only used by NativeWidgetAura. Specifies the type of layer for the
-    // aura::Window. Default is LAYER_TEXTURED.
-    ui::LayerType layer_type;
+    // aura::Window. Default is WINDOW_LAYER_TEXTURED.
+    aura::WindowLayerType layer_type;
     // Only used by Aura. Provides a context window whose RootWindow is
     // consulted during widget creation to determine where in the Window
     // hierarchy this widget should be placed. (This is separate from |parent|;
@@ -229,6 +225,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // where it wants your window placed.) NULL is not allowed if you are using
     // aura.
     gfx::NativeView context;
+    // If true, forces the window to be shown in the taskbar, even for window
+    // types that do not appear in the taskbar by default (popup and bubble).
+    bool force_show_in_taskbar;
     // Only used by X11, for root level windows. Specifies the res_name and
     // res_class fields, respectively, of the WM_CLASS window property. Controls
     // window grouping and desktop file matching in Linux window managers.
@@ -268,11 +267,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Creates an undecorated child window Widget parented to |parent|.
   static Widget* CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
                                               gfx::NativeView parent);
-
-  // Enumerates all windows pertaining to us and notifies their
-  // view hierarchies that the locale has changed.
-  // TODO(beng): remove post-Aurafication of ChromeOS.
-  static void NotifyLocaleChanged();
 
   // Closes all Widgets that aren't identified as "secondary widgets". Called
   // during application shutdown when the last non-secondary widget is closed.
@@ -434,8 +428,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // set to true after Close() has been invoked on the NativeWidget.
   bool IsClosed() const;
 
-  // Shows or hides the widget, without changing activation state.
+  // Shows the widget. The widget is activated if during initialization the
+  // can_activate flag in the InitParams structure is set to true.
   virtual void Show();
+  // Hides the widget.
   void Hide();
 
   // Like Show(), but does not activate the window.
@@ -595,6 +591,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Whether we should be using a native frame.
   bool ShouldUseNativeFrame() const;
 
+  // Determines whether the window contents should be rendered transparently
+  // (for example, so that they can overhang onto the window title bar).
+  bool ShouldWindowContentsBeTransparent() const;
+
   // Forces the frame into the alternate frame type (custom or native) depending
   // on its current state.
   void DebugToggleFrameType();
@@ -668,12 +668,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   TooltipManager* GetTooltipManager();
   const TooltipManager* GetTooltipManager() const;
 
-  // Sets-up the focus manager with the view that should have focus when the
-  // window is shown the first time.  Returns true if the initial focus has been
-  // set or the widget should not set the initial focus, or false if the caller
-  // should set the initial focus (if any).
-  bool SetInitialFocus();
-
   void set_focus_on_creation(bool focus_on_creation) {
     focus_on_creation_ = focus_on_creation;
   }
@@ -743,6 +737,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
   virtual Widget* AsWidget() OVERRIDE;
   virtual const Widget* AsWidget() const OVERRIDE;
+  virtual bool SetInitialFocus(ui::WindowShowState show_state) OVERRIDE;
 
   // Overridden from FocusTraversable:
   virtual FocusSearch* GetFocusSearch() OVERRIDE;
@@ -762,7 +757,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
  private:
   friend class ComboboxTest;
-  friend class NativeTextfieldViewsTest;
+  friend class TextfieldTest;
 
   // Sets the value of |disable_inactive_rendering_|. If the value changes,
   // both the NonClientView and WidgetDelegate are notified.

@@ -20,7 +20,6 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/mock_download_manager.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -75,6 +74,8 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
       : ChromeDownloadManagerDelegate(profile) {
   }
 
+  virtual ~TestChromeDownloadManagerDelegate() {}
+
   virtual safe_browsing::DownloadProtectionService*
       GetDownloadProtectionService() OVERRIDE {
     return NULL;
@@ -118,13 +119,10 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
           content::DownloadItem*,
           const base::FilePath&,
           const DownloadTargetDeterminerDelegate::FileSelectedCallback&));
-
- private:
-  ~TestChromeDownloadManagerDelegate() {}
 };
 
-class ChromeDownloadManagerDelegateTest :
-      public ChromeRenderViewHostTestHarness {
+class ChromeDownloadManagerDelegateTest
+    : public ChromeRenderViewHostTestHarness {
  public:
   ChromeDownloadManagerDelegateTest();
 
@@ -164,7 +162,7 @@ class ChromeDownloadManagerDelegateTest :
   TestingPrefServiceSyncable* pref_service_;
   base::ScopedTempDir test_download_dir_;
   scoped_ptr<content::MockDownloadManager> download_manager_;
-  scoped_refptr<TestChromeDownloadManagerDelegate> delegate_;
+  scoped_ptr<TestChromeDownloadManagerDelegate> delegate_;
   MockWebContentsDelegate web_contents_delegate_;
 };
 
@@ -176,7 +174,7 @@ void ChromeDownloadManagerDelegateTest::SetUp() {
   ChromeRenderViewHostTestHarness::SetUp();
 
   CHECK(profile());
-  delegate_ = new TestChromeDownloadManagerDelegate(profile());
+  delegate_.reset(new TestChromeDownloadManagerDelegate(profile()));
   delegate_->SetDownloadManager(download_manager_.get());
   pref_service_ = profile()->GetTestingPrefService();
   web_contents()->SetDelegate(&web_contents_delegate_);

@@ -11,6 +11,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_local.h"
+#include "content/child/blink_glue.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilewriter_impl.h"
@@ -19,11 +20,11 @@
 #include "third_party/WebKit/public/platform/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 #include "url/gurl.h"
 #include "webkit/child/worker_task_runner.h"
 #include "webkit/common/fileapi/directory_entry.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/glue/webkit_glue.h"
 
 using blink::WebFileInfo;
 using blink::WebFileSystemCallbacks;
@@ -56,7 +57,10 @@ class WaitableCallbackResults {
   }
 
   void WaitAndRun() {
-    event_->Wait();
+    {
+      blink::WebHeap::SafePointScope safe_point;
+      event_->Wait();
+    }
     DCHECK(!results_closure_.is_null());
     results_closure_.Run();
   }
@@ -151,7 +155,7 @@ void OpenFileSystemCallbackAdapter(
   CallbackFileSystemCallbacks(
       thread_id, callbacks_id, waitable_results,
       &WebFileSystemCallbacks::didOpenFileSystem,
-      MakeTuple(UTF8ToUTF16(name), root));
+      MakeTuple(base::UTF8ToUTF16(name), root));
 }
 
 void ResolveURLCallbackAdapter(
@@ -164,15 +168,15 @@ void ResolveURLCallbackAdapter(
   CallbackFileSystemCallbacks(
       thread_id, callbacks_id, waitable_results,
       &WebFileSystemCallbacks::didResolveURL,
-      MakeTuple(UTF8ToUTF16(info.name), info.root_url,
+      MakeTuple(base::UTF8ToUTF16(info.name), info.root_url,
                 static_cast<blink::WebFileSystemType>(info.mount_type),
                 normalized_path.AsUTF16Unsafe(), is_directory));
 }
 
 void StatusCallbackAdapter(int thread_id, int callbacks_id,
                            WaitableCallbackResults* waitable_results,
-                           base::PlatformFileError error) {
-  if (error == base::PLATFORM_FILE_OK) {
+                           base::File::Error error) {
+  if (error == base::File::FILE_OK) {
     CallbackFileSystemCallbacks(
         thread_id, callbacks_id, waitable_results,
         &WebFileSystemCallbacks::didSucceed, MakeTuple());
@@ -180,15 +184,15 @@ void StatusCallbackAdapter(int thread_id, int callbacks_id,
     CallbackFileSystemCallbacks(
         thread_id, callbacks_id, waitable_results,
         &WebFileSystemCallbacks::didFail,
-        MakeTuple(fileapi::PlatformFileErrorToWebFileError(error)));
+        MakeTuple(fileapi::FileErrorToWebFileError(error)));
   }
 }
 
 void ReadMetadataCallbackAdapter(int thread_id, int callbacks_id,
                                  WaitableCallbackResults* waitable_results,
-                                 const base::PlatformFileInfo& file_info) {
+                                 const base::File::Info& file_info) {
   WebFileInfo web_file_info;
-  webkit_glue::PlatformFileInfoToWebFileInfo(file_info, &web_file_info);
+  FileInfoToWebFileInfo(file_info, &web_file_info);
   CallbackFileSystemCallbacks(
       thread_id, callbacks_id, waitable_results,
       &WebFileSystemCallbacks::didReadMetadata,
@@ -216,7 +220,7 @@ void DidCreateFileWriter(
     const GURL& path,
     blink::WebFileWriterClient* client,
     base::MessageLoopProxy* main_thread_loop,
-    const base::PlatformFileInfo& file_info) {
+    const base::File::Info& file_info) {
   WebFileSystemImpl* filesystem =
       WebFileSystemImpl::ThreadSpecificInstance(NULL);
   if (!filesystem)
@@ -243,7 +247,7 @@ void CreateFileWriterCallbackAdapter(
     base::MessageLoopProxy* main_thread_loop,
     const GURL& path,
     blink::WebFileWriterClient* client,
-    const base::PlatformFileInfo& file_info) {
+    const base::File::Info& file_info) {
   DispatchResultsClosure(
       thread_id, callbacks_id, waitable_results,
       base::Bind(&DidCreateFileWriter, callbacks_id, path, client,
@@ -253,7 +257,7 @@ void CreateFileWriterCallbackAdapter(
 void DidCreateSnapshotFile(
     int callbacks_id,
     base::MessageLoopProxy* main_thread_loop,
-    const base::PlatformFileInfo& file_info,
+    const base::File::Info& file_info,
     const base::FilePath& platform_path,
     int request_id) {
   WebFileSystemImpl* filesystem =
@@ -265,7 +269,7 @@ void DidCreateSnapshotFile(
       filesystem->GetAndUnregisterCallbacks(callbacks_id);
 
   WebFileInfo web_file_info;
-  webkit_glue::PlatformFileInfoToWebFileInfo(file_info, &web_file_info);
+  FileInfoToWebFileInfo(file_info, &web_file_info);
   web_file_info.platformPath = platform_path.AsUTF16Unsafe();
   callbacks.didCreateSnapshotFile(web_file_info);
 
@@ -279,7 +283,7 @@ void CreateSnapshotFileCallbackAdapter(
     int thread_id, int callbacks_id,
     WaitableCallbackResults* waitable_results,
     base::MessageLoopProxy* main_thread_loop,
-    const base::PlatformFileInfo& file_info,
+    const base::File::Info& file_info,
     const base::FilePath& platform_path,
     int request_id) {
   DispatchResultsClosure(

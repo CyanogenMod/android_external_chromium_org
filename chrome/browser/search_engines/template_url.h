@@ -131,7 +131,7 @@ class TemplateURLRef {
     // If set, ReplaceSearchTerms() will append a param to the TemplateURLRef to
     // update the search results page incrementally even if that is otherwise
     // disabled by google.com preferences. See comments on
-    // SearchTermsData::ForceInstantResultsParam().
+    // chrome::ForceInstantResultsParam().
     bool force_instant_results;
   };
 
@@ -270,6 +270,7 @@ class TemplateURLRef {
     GOOGLE_SEARCH_CLIENT,
     GOOGLE_SEARCH_FIELDTRIAL_GROUP,
     GOOGLE_SUGGEST_CLIENT,
+    GOOGLE_SUGGEST_REQUEST_ID,
     GOOGLE_UNESCAPED_SEARCH_TERMS,
     LANGUAGE,
     SEARCH_TERMS,

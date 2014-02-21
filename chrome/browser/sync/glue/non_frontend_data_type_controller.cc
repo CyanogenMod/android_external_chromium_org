@@ -10,9 +10,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
-#include "chrome/browser/sync/glue/model_associator.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/model_associator.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -51,8 +51,8 @@ class NonFrontendDataTypeController::BackendComponentsContainer {
 NonFrontendDataTypeController::
 BackendComponentsContainer::BackendComponentsContainer(
     NonFrontendDataTypeController* controller)
-     : controller_(controller),
-       type_(controller->type()) {
+    : controller_(controller),
+      type_(controller->type()) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   controller_handle_ =
       syncer::MakeWeakHandle(controller_->weak_ptr_factory_.GetWeakPtr());
@@ -65,7 +65,7 @@ BackendComponentsContainer::~BackendComponentsContainer() {
 }
 
 void NonFrontendDataTypeController::BackendComponentsContainer::Run() {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(controller_->IsOnBackendThread());
   if (CreateComponents())
     Associate();
 }
@@ -157,10 +157,13 @@ NonFrontendDataTypeController::AssociationResult::AssociationResult(
 NonFrontendDataTypeController::AssociationResult::~AssociationResult() {}
 
 NonFrontendDataTypeController::NonFrontendDataTypeController(
+    scoped_refptr<base::MessageLoopProxy> ui_thread,
+    const base::Closure& error_callback,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : state_(NOT_RUNNING),
+    : DataTypeController(ui_thread, error_callback),
+      state_(NOT_RUNNING),
       profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       profile_sync_service_(sync_service),
@@ -240,8 +243,8 @@ void NonFrontendDataTypeController::StartAssociating(
 }
 
 void DestroyComponentsInBackend(
-    NonFrontendDataTypeController::BackendComponentsContainer *containter) {
-  delete containter;
+    NonFrontendDataTypeController::BackendComponentsContainer *container) {
+  delete container;
 }
 
 void NonFrontendDataTypeController::Stop() {
@@ -292,7 +295,7 @@ DataTypeController::State NonFrontendDataTypeController::state() const {
 void NonFrontendDataTypeController::OnSingleDatatypeUnrecoverableError(
     const tracked_objects::Location& from_here,
     const std::string& message) {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(IsOnBackendThread());
   RecordUnrecoverableError(from_here, message);
   BrowserThread::PostTask(BrowserThread::UI, from_here,
       base::Bind(&NonFrontendDataTypeController::DisableImpl,
@@ -302,7 +305,8 @@ void NonFrontendDataTypeController::OnSingleDatatypeUnrecoverableError(
 }
 
 NonFrontendDataTypeController::NonFrontendDataTypeController()
-    : state_(NOT_RUNNING),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+      state_(NOT_RUNNING),
       profile_sync_factory_(NULL),
       profile_(NULL),
       profile_sync_service_(NULL),
@@ -323,6 +327,10 @@ bool NonFrontendDataTypeController::StartModels() {
   // By default, no additional services need to be started before we can proceed
   // with model association, so do nothing.
   return true;
+}
+
+bool NonFrontendDataTypeController::IsOnBackendThread() {
+  return !BrowserThread::CurrentlyOn(BrowserThread::UI);
 }
 
 void NonFrontendDataTypeController::StartDone(

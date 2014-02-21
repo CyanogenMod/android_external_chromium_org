@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef UI_AURA_ROOT_WINDOW_HOST_DELEGATE_H_
-#define UI_AURA_ROOT_WINDOW_HOST_DELEGATE_H_
+#ifndef UI_AURA_WINDOW_TREE_HOST_DELEGATE_H_
+#define UI_AURA_WINDOW_TREE_HOST_DELEGATE_H_
 
 #include "ui/aura/aura_export.h"
 
@@ -26,14 +26,10 @@ namespace aura {
 
 class RootWindow;
 
-// A private interface used by RootWindowHost implementations to communicate
+// A private interface used by WindowTreeHost implementations to communicate
 // with their owning RootWindow.
-class AURA_EXPORT RootWindowHostDelegate {
+class AURA_EXPORT WindowTreeHostDelegate {
  public:
-  virtual bool OnHostKeyEvent(ui::KeyEvent* event) = 0;
-  virtual bool OnHostMouseEvent(ui::MouseEvent* event) = 0;
-  virtual bool OnHostScrollEvent(ui::ScrollEvent* event) = 0;
-  virtual bool OnHostTouchEvent(ui::TouchEvent* event) = 0;
   virtual void OnHostCancelMode() = 0;
 
   // Called when the windowing system activates the window.
@@ -46,12 +42,10 @@ class AURA_EXPORT RootWindowHostDelegate {
   // window move on our behalf, but we should still paint as if we're active.
   virtual void OnHostLostMouseGrab() = 0;
 
-  virtual void OnHostPaint(const gfx::Rect& damage_rect) = 0;
-
   virtual void OnHostMoved(const gfx::Point& origin) = 0;
   virtual void OnHostResized(const gfx::Size& size) = 0;
 
-  virtual float GetDeviceScaleFactor() = 0;
+  virtual void OnCursorMovedToRootLocation(const gfx::Point& root_location) = 0;
 
   virtual RootWindow* AsRootWindow() = 0;
   virtual const RootWindow* AsRootWindow() const = 0;
@@ -59,9 +53,9 @@ class AURA_EXPORT RootWindowHostDelegate {
   virtual ui::EventProcessor* GetEventProcessor() = 0;
 
  protected:
-  virtual ~RootWindowHostDelegate() {}
+  virtual ~WindowTreeHostDelegate() {}
 };
 
 }  // namespace aura
 
-#endif  // UI_AURA_ROOT_WINDOW_HOST_DELEGATE_H_
+#endif  // UI_AURA_WINDOW_TREE_HOST_DELEGATE_H_

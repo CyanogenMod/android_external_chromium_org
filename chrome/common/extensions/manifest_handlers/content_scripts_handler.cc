@@ -151,7 +151,7 @@ bool LoadUserScriptFromDictionary(const base::DictionaryValue* content_script,
 
     // TODO(aboxhall): check for webstore
     if (!PermissionsData::CanExecuteScriptEverywhere(extension) &&
-        pattern.scheme() != chrome::kChromeUIScheme) {
+        pattern.scheme() != content::kChromeUIScheme) {
       // Exclude SCHEME_CHROMEUI unless it's been explicitly requested.
       // If the --extensions-on-chrome-urls flag has not been passed, requesting
       // a chrome:// url will cause a parse failure above, so there's no need to
@@ -160,7 +160,7 @@ bool LoadUserScriptFromDictionary(const base::DictionaryValue* content_script,
           pattern.valid_schemes() & ~URLPattern::SCHEME_CHROMEUI);
     }
 
-    if (pattern.MatchesScheme(chrome::kFileScheme) &&
+    if (pattern.MatchesScheme(content::kFileScheme) &&
         !PermissionsData::CanExecuteScriptEverywhere(extension)) {
       extension->set_wants_file_access(true);
       if (!(extension->creation_flags() & Extension::ALLOW_FILE_ACCESS)) {
@@ -251,7 +251,7 @@ bool LoadUserScriptFromDictionary(const base::DictionaryValue* content_script,
   if (js) {
     for (size_t script_index = 0; script_index < js->GetSize();
          ++script_index) {
-      const Value* value;
+      const base::Value* value;
       std::string relative;
       if (!js->Get(script_index, &value) || !value->GetAsString(&relative)) {
         *error = ErrorUtils::FormatErrorMessageUTF16(
@@ -270,7 +270,7 @@ bool LoadUserScriptFromDictionary(const base::DictionaryValue* content_script,
   if (css) {
     for (size_t script_index = 0; script_index < css->GetSize();
          ++script_index) {
-      const Value* value;
+      const base::Value* value;
       std::string relative;
       if (!css->Get(script_index, &value) || !value->GetAsString(&relative)) {
         *error = ErrorUtils::FormatErrorMessageUTF16(
@@ -384,7 +384,7 @@ bool ContentScriptsHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<ContentScriptsInfo> content_scripts_info(new ContentScriptsInfo);
   const base::ListValue* scripts_list = NULL;
   if (!extension->manifest()->GetList(keys::kContentScripts, &scripts_list)) {
-    *error = ASCIIToUTF16(errors::kInvalidContentScriptsList);
+    *error = base::ASCIIToUTF16(errors::kInvalidContentScriptsList);
     return false;
   }
 

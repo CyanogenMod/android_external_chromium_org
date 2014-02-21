@@ -12,9 +12,10 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/sync/glue/data_type_error_handler.h"
-#include "chrome/browser/sync/glue/model_associator.h"
+#include "components/sync_driver/data_type_error_handler.h"
+#include "components/sync_driver/model_associator.h"
 #include "sync/protocol/password_specifics.pb.h"
 
 class PasswordStore;
@@ -135,6 +136,8 @@ class PasswordModelAssociator
   PasswordToSyncIdMap id_map_;
   SyncIdToPasswordMap id_map_inverse_;
   DataTypeErrorHandler* error_handler_;
+
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordModelAssociator);
 };

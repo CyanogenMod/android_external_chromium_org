@@ -36,13 +36,46 @@ const int kPageTransitionDurationInMs = 180;
 // Duration in milliseconds for over scroll page transition.
 const int kOverscrollPageTransitionDurationMs = 50;
 
+// Duration in milliseconds for fading in the target page when opening
+// or closing a folder, and the duration for the top folder icon animation
+// for flying in or out the folder.
+const int kFolderTransitionInDurationMs = 400;
+
+// Duration in milliseconds for fading out the old page when opening or closing
+// a folder.
+const int kFolderTransitionOutDurationMs = 30;
+
+// Animation curve used for fading in the target page when opening or closing
+// a folder.
+const gfx::Tween::Type kFolderFadeInTweenType = gfx::Tween::EASE_IN_2;
+
+// Animation curve used for fading out the target page when opening or closing
+// a folder.
+const gfx::Tween::Type kFolderFadeOutTweenType = gfx::Tween::EASE_IN_3;
+
 // Preferred number of columns and rows in apps grid.
 const int kPreferredCols = 4;
 const int kPreferredRows = 4;
 const int kPreferredIconDimension = 48;
 
+// Preferred number of columns and rows in the experimental app list apps grid.
+const int kExperimentalPreferredCols = 6;
+const int kExperimentalPreferredRows = 3;
+
+// Number of the top items in a folder, which are shown inside the folder icon
+// and animated when opening and closing a folder.
+const size_t kNumFolderTopItems = 4;
+
 // Font style for app item labels.
 const ui::ResourceBundle::FontStyle kItemTextFontStyle =
     ui::ResourceBundle::SmallBoldFont;
+
+#if defined(OS_LINUX)
+#if defined(GOOGLE_CHROME_BUILD)
+const char kAppListWMClass[] = "chrome_app_list";
+#else  // CHROMIUM_BUILD
+const char kAppListWMClass[] = "chromium_app_list";
+#endif
+#endif
 
 }  // namespace app_list

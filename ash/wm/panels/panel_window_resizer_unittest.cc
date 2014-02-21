@@ -4,8 +4,8 @@
 
 #include "ash/wm/panels/panel_window_resizer.h"
 
-#include "ash/launcher/launcher.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_types.h"
@@ -26,6 +26,7 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -61,11 +62,8 @@ class PanelWindowResizerTest : public test::AshTestBase {
   aura::Window* CreatePanelWindow(const gfx::Point& origin) {
     gfx::Rect bounds(origin, gfx::Size(101, 101));
     aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
-        NULL,
-        aura::client::WINDOW_TYPE_PANEL,
-        0,
-        bounds);
-    shelf_delegate_->AddLauncherItem(window);
+        NULL, ui::wm::WINDOW_TYPE_PANEL, 0, bounds);
+    shelf_delegate_->AddShelfItem(window);
     PanelLayoutManager* manager =
         static_cast<PanelLayoutManager*>(
             Shell::GetContainer(window->GetRootWindow(),
@@ -89,7 +87,7 @@ class PanelWindowResizerTest : public test::AshTestBase {
   }
 
   void DragEnd() {
-    resizer_->CompleteDrag(0);
+    resizer_->CompleteDrag();
     resizer_.reset();
   }
 
@@ -146,7 +144,7 @@ class PanelWindowResizerTest : public test::AshTestBase {
     for (std::vector<aura::Window*>::const_iterator iter =
          window_order.begin(); iter != window_order.end();
          ++iter, ++panel_index) {
-      LauncherID id = GetLauncherIDForWindow(*iter);
+      ShelfID id = GetShelfIDForWindow(*iter);
       EXPECT_EQ(id, model_->items()[panel_index].id);
     }
   }
@@ -225,13 +223,13 @@ class PanelWindowResizerTextDirectionTest
 // transient children of supported types.
 class PanelWindowResizerTransientTest
     : public PanelWindowResizerTest,
-      public testing::WithParamInterface<aura::client::WindowType> {
+      public testing::WithParamInterface<ui::wm::WindowType> {
  public:
   PanelWindowResizerTransientTest() : transient_window_type_(GetParam()) {}
   virtual ~PanelWindowResizerTransientTest() {}
 
  protected:
-  aura::client::WindowType transient_window_type_;
+  ui::wm::WindowType transient_window_type_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PanelWindowResizerTransientTest);
@@ -473,10 +471,10 @@ TEST_P(PanelWindowResizerTransientTest, PanelWithTransientChild) {
   scoped_ptr<aura::Window> window(CreatePanelWindow(gfx::Point(0, 0)));
   scoped_ptr<aura::Window> child(CreateTestWindowInShellWithDelegateAndType(
       NULL, transient_window_type_, 0, gfx::Rect(20, 20, 150, 40)));
-  window->AddTransientChild(child.get());
+  views::corewm::AddTransientChild(window.get(), child.get());
   if (window->parent() != child->parent())
     window->parent()->AddChild(child.get());
-  EXPECT_EQ(window.get(), child->transient_parent());
+  EXPECT_EQ(window.get(), views::corewm::GetTransientParent(child.get()));
 
   // Drag the child to the shelf. Its new position should not be overridden.
   const gfx::Rect attached_bounds(window->GetBoundsInScreen());
@@ -528,10 +526,11 @@ TEST_P(PanelWindowResizerTransientTest, PanelWithTransientChild) {
 
 INSTANTIATE_TEST_CASE_P(LtrRtl, PanelWindowResizerTextDirectionTest,
                         testing::Bool());
-INSTANTIATE_TEST_CASE_P(NormalPanelPopup, PanelWindowResizerTransientTest,
-                        testing::Values(aura::client::WINDOW_TYPE_NORMAL,
-                                        aura::client::WINDOW_TYPE_PANEL,
-                                        aura::client::WINDOW_TYPE_POPUP));
+INSTANTIATE_TEST_CASE_P(NormalPanelPopup,
+                        PanelWindowResizerTransientTest,
+                        testing::Values(ui::wm::WINDOW_TYPE_NORMAL,
+                                        ui::wm::WINDOW_TYPE_PANEL,
+                                        ui::wm::WINDOW_TYPE_POPUP));
 
 }  // namespace internal
 }  // namespace ash

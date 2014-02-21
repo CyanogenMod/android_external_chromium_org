@@ -16,6 +16,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
@@ -397,8 +398,18 @@ class NotificationBridge
 }
 
 - (void)focusLocationBar:(BOOL)selectAll {
-  if (locationBarView_.get())
-    locationBarView_->FocusLocation(selectAll ? true : false);
+  if (locationBarView_.get()) {
+    if (selectAll &&
+        locationBarView_->GetToolbarModel()->WouldOmitURLDueToOriginChip()) {
+      // select_all is true when it's expected that the user may want to copy
+      // the URL to the clipboard. If the origin chip is being displayed (and
+      // thus the URL is not being shown in the Omnibox) show it now to support
+      // the same functionality.
+      locationBarView_->GetOmniboxView()->ShowURL();
+    } else {
+      locationBarView_->FocusLocation(selectAll ? true : false);
+    }
+  }
 }
 
 // Called when the state for a command changes to |enabled|. Update the
@@ -723,7 +734,15 @@ class NotificationBridge
 }
 
 - (NSPoint)bookmarkBubblePoint {
-  return locationBarView_->GetBookmarkBubblePoint();
+  if (locationBarView_->IsStarEnabled())
+    return locationBarView_->GetBookmarkBubblePoint();
+
+  // Grab bottom middle of hotdogs.
+  NSRect frame = wrenchButton_.frame;
+  NSPoint point = NSMakePoint(NSMidX(frame), NSMinY(frame));
+  // Inset to account for the whitespace around the hotdogs.
+  point.y += wrench_menu_controller::kWrenchBubblePointOffsetY;
+  return [self.view convertPoint:point toView:nil];
 }
 
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight {
@@ -776,7 +795,7 @@ class NotificationBridge
 
   if (url.SchemeIs(content::kJavaScriptScheme)) {
     browser_->window()->GetLocationBar()->GetOmniboxView()->SetUserText(
-          OmniboxView::StripJavascriptSchemas(UTF8ToUTF16(url.spec())));
+          OmniboxView::StripJavascriptSchemas(base::UTF8ToUTF16(url.spec())));
   }
   OpenURLParams params(
       url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
@@ -792,7 +811,8 @@ class NotificationBridge
   // If the input is plain text, classify the input and make the URL.
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(browser_->profile())->Classify(
-      base::SysNSStringToUTF16(text), false, false, &match, NULL);
+      base::SysNSStringToUTF16(text), false, false, AutocompleteInput::BLANK,
+      &match, NULL);
   GURL url(match.destination_url);
 
   OpenURLParams params(

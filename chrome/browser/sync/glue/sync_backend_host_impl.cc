@@ -12,9 +12,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
-#include "chrome/browser/sync/glue/sync_frontend.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/sync_driver/sync_frontend.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -91,7 +91,7 @@ void SyncBackendHostImpl::Initialize(
   DCHECK(frontend);
 
   syncer::ModelSafeRoutingInfo routing_info;
-  std::vector<syncer::ModelSafeWorker*> workers;
+  std::vector<scoped_refptr<syncer::ModelSafeWorker> > workers;
   registrar_->GetModelSafeRoutingInfo(&routing_info);
   registrar_->GetWorkers(&workers);
 
@@ -602,11 +602,6 @@ void SyncBackendHostImpl::HandleSyncCycleCompletedOnFrontendLoop(
 
   SDVLOG(1) << "Got snapshot " << snapshot.ToString();
 
-  const syncer::ModelTypeSet to_migrate =
-      snapshot.model_neutral_state().types_needing_local_migration;
-  if (!to_migrate.Empty())
-    frontend_->OnMigrationNeededForTypes(to_migrate);
-
   // Process any changes to the datatypes we're syncing.
   // TODO(sync): add support for removing types.
   if (initialized())
@@ -641,6 +636,14 @@ void SyncBackendHostImpl::HandleActionableErrorEventOnFrontendLoop(
   frontend_->OnActionableError(sync_error);
 }
 
+void SyncBackendHostImpl::HandleMigrationRequestedOnFrontendLoop(
+    syncer::ModelTypeSet types) {
+  if (!frontend_)
+    return;
+  DCHECK_EQ(base::MessageLoop::current(), frontend_loop_);
+  frontend_->OnMigrationNeededForTypes(types);
+}
+
 void SyncBackendHostImpl::OnInvalidatorStateChange(
     syncer::InvalidatorState state) {
   registrar_->sync_thread()->message_loop()->PostTask(
@@ -652,9 +655,6 @@ void SyncBackendHostImpl::OnInvalidatorStateChange(
 
 void SyncBackendHostImpl::OnIncomingInvalidation(
     const syncer::ObjectIdInvalidationMap& invalidation_map) {
-  // TODO(rlarocque): Acknowledge these invalidations only after the syncer has
-  // acted on them and saved the results to disk.
-  invalidation_map.AcknowledgeAll();
   registrar_->sync_thread()->message_loop()->PostTask(
       FROM_HERE,
       base::Bind(&SyncBackendHostCore::DoOnIncomingInvalidation,
@@ -726,12 +726,6 @@ void SyncBackendHostImpl::HandlePassphraseTypeChangedOnFrontendLoop(
            << syncer::PassphraseTypeToString(type);
   cached_passphrase_type_ = type;
   cached_explicit_passphrase_time_ = explicit_passphrase_time;
-}
-
-void SyncBackendHostImpl::HandleStopSyncingPermanentlyOnFrontendLoop() {
-  if (!frontend_)
-    return;
-  frontend_->OnStopSyncingPermanently();
 }
 
 void SyncBackendHostImpl::HandleConnectionStatusChangeOnFrontendLoop(

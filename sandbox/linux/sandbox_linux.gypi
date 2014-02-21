@@ -12,13 +12,6 @@
         'compile_suid_client': 0,
         'compile_credentials': 0,
       }],
-      ['((OS=="linux" or OS=="android") and '
-             '(target_arch=="ia32" or target_arch=="x64" or '
-              'target_arch=="arm"))', {
-        'compile_seccomp_bpf': 1,
-      }, {
-        'compile_seccomp_bpf': 0,
-      }],
       ['OS=="linux" and (target_arch=="ia32" or target_arch=="x64")', {
         'compile_seccomp_bpf_demo': 1,
       }, {
@@ -40,8 +33,8 @@
   'targets': [
     # We have two principal targets: sandbox and sandbox_linux_unittests
     # All other targets are listed as dependencies.
-    # FIXME(jln): for historial reasons, sandbox_linux is the setuid sandbox
-    # and is its own target.
+    # There is one notable exception: for historical reasons, chrome_sandbox is
+    # the setuid sandbox and is its own target.
     {
       'target_name': 'sandbox',
       'type': 'none',
@@ -55,7 +48,7 @@
           ],
         }],
         # Compile seccomp BPF when we support it.
-        [ 'compile_seccomp_bpf==1', {
+        [ 'use_seccomp_bpf==1', {
           'dependencies': [
             'seccomp_bpf',
             'seccomp_bpf_helpers',
@@ -83,11 +76,6 @@
         [ 'OS == "android" and gtest_target_type == "shared_library"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
-          ],
-          'ldflags!': [
-              # Remove warnings about text relocations, to prevent build
-              # failure.
-              '-Wl,--warn-shared-textrel'
           ],
         }],
       ],
@@ -193,6 +181,8 @@
         'services/broker_process.h',
         'services/init_process_reaper.cc',
         'services/init_process_reaper.h',
+        'services/thread_helpers.cc',
+        'services/thread_helpers.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -263,6 +253,21 @@
     },
   ],
   'conditions': [
+    [ 'OS=="android"', {
+      'targets': [
+        {
+        'target_name': 'sandbox_linux_unittests_stripped',
+        'type': 'none',
+        'dependencies': [ 'sandbox_linux_unittests' ],
+        'actions': [{
+          'action_name': 'strip sandbox_linux_unittests',
+          'inputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests' ],
+          'outputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped' ],
+          'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
+          }],
+        }
+      ],
+    }],
     # Strategy copied from base_unittests_apk in base/base.gyp.
     [ 'OS=="android" and gtest_target_type == "shared_library"', {
       'targets': [

@@ -4,8 +4,10 @@
 
 #include "mojo/shell/context.h"
 
+#include "mojo/gles2/gles2_support_impl.h"
+#include "mojo/shell/dynamic_service_loader.h"
 #include "mojo/shell/network_delegate.h"
-#include "mojo/system/core_impl.h"
+#include "mojo/system/embedder/embedder.h"
 
 namespace mojo {
 namespace shell {
@@ -18,12 +20,14 @@ Context::Context()
               task_runners_.cache_runner(),
               scoped_ptr<net::NetworkDelegate>(new NetworkDelegate()),
               storage_.profile_path()) {
-  system::CoreImpl::Init();
-  BindingsSupport::Set(&bindings_support_impl_);
+  embedder::Init();
+  gles2::GLES2SupportImpl::Init();
+  dynamic_service_loader_.reset(new DynamicServiceLoader(this));
+  service_manager_.set_default_loader(dynamic_service_loader_.get());
 }
 
 Context::~Context() {
-  BindingsSupport::Set(NULL);
+  service_manager_.set_default_loader(NULL);
 }
 
 }  // namespace shell

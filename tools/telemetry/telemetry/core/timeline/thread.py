@@ -17,6 +17,7 @@ class Thread(event_container.TimelineEventContainer):
     super(Thread, self).__init__('thread %s' % tid, parent=process)
     self.tid = tid
     self._async_slices = []
+    self._flow_events = []
     self._samples = []
     self._toplevel_slices = []
 
@@ -64,10 +65,20 @@ class Thread(event_container.TimelineEventContainer):
       for sub_slice in async_slice.IterEventsInThisContainerRecrusively():
         yield sub_slice
 
+  def IterAllAsyncSlicesOfName(self, name):
+    for s in self.IterAllAsyncSlices():
+      if s.name == name:
+        yield s
+
+  def IterAllFlowEvents(self):
+    for flow_event in self._flow_events:
+      yield flow_event
+
   def IterEventsInThisContainer(self):
     return itertools.chain(
       iter(self._newly_added_slices),
       self.IterAllAsyncSlices(),
+      self.IterAllFlowEvents(),
       self.IterAllSlices(),
       iter(self._samples)
       )
@@ -82,6 +93,9 @@ class Thread(event_container.TimelineEventContainer):
 
   def AddAsyncSlice(self, async_slice):
     self._async_slices.append(async_slice)
+
+  def AddFlowEvent(self, flow_event):
+    self._flow_events.append(flow_event)
 
   def BeginSlice(self, category, name, timestamp, thread_timestamp=None,
                  args=None):
@@ -232,11 +246,13 @@ class Thread(event_container.TimelineEventContainer):
     of all other slices seen so far, we can just check the last slice
     of each row for bounding.
     '''
-    # Due to inaccuracy of floating-point calculation, the end times of slices
-    # from B/E pair (whose end = start + original_end - start) and an X Event
-    # (whose end = start + duration) at the same time may become not equal.
-    # Tolerate 1ps error for slice.end.
-    if child.start >= root.start and child.end - root.end < 1e-9:
+    # The source trace data is in microseconds but we store it as milliseconds
+    # in floating-point. Since we can't represent micros as millis perfectly,
+    # two end=start+duration combos that should be the same will be slightly
+    # different. Round back to micros to ensure equality below.
+    child_end_micros = round(child.end * 1000)
+    root_end_micros =  round(root.end * 1000)
+    if child.start >= root.start and child_end_micros <= root_end_micros:
       if len(root.sub_slices) > 0:
         if self._AddSliceIfBounds(root.sub_slices[-1], child):
           return True

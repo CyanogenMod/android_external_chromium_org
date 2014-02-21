@@ -8,11 +8,12 @@
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_view_guest.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/drag_messages.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
@@ -217,7 +218,8 @@ void WebContentsViewGuest::GotFocus() {
 void WebContentsViewGuest::TakeFocus(bool reverse) {
 }
 
-void WebContentsViewGuest::ShowContextMenu(const ContextMenuParams& params) {
+void WebContentsViewGuest::ShowContextMenu(RenderFrameHost* render_frame_host,
+                                           const ContextMenuParams& params) {
 #if defined(USE_AURA) || defined(OS_WIN)
   // Context menu uses ScreenPositionClient::ConvertPointToScreen() in aura and
   // windows to calculate popup position. Guest's native view
@@ -234,9 +236,10 @@ void WebContentsViewGuest::ShowContextMenu(const ContextMenuParams& params) {
   ContextMenuParams params_in_embedder = params;
   params_in_embedder.x += offset.x();
   params_in_embedder.y += offset.y();
-  platform_view_delegate_view_->ShowContextMenu(params_in_embedder);
+  platform_view_delegate_view_->ShowContextMenu(
+      render_frame_host, params_in_embedder);
 #else
-  platform_view_delegate_view_->ShowContextMenu(params);
+  platform_view_delegate_view_->ShowContextMenu(render_frame_host, params);
 #endif  // defined(USE_AURA) || defined(OS_WIN)
 }
 
@@ -265,10 +268,12 @@ void WebContentsViewGuest::StartDragging(
   CHECK(embedder_render_view_host);
   RenderViewHostDelegateView* view =
       embedder_render_view_host->GetDelegate()->GetDelegateView();
-  if (view)
+  if (view) {
+    RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.StartDrag"));
     view->StartDragging(drop_data, ops, image, image_offset, event_info);
-  else
+  } else {
     embedder_web_contents->SystemDragEnded();
+  }
 }
 
 }  // namespace content

@@ -6,8 +6,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#if defined(OS_WIN)
+#include "content/browser/accessibility/browser_accessibility_win.h"
+#endif
 #include "content/common/accessibility_messages.h"
-#include "content/common/accessibility_node_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -36,6 +38,15 @@ class CountedBrowserAccessibility : public BrowserAccessibility {
 
   int native_ref_count_;
   static int global_obj_count_;
+
+#if defined(OS_WIN)
+  // Adds some padding to prevent a heap-buffer-overflow when an instance of
+  // this class is casted into a BrowserAccessibilityWin pointer.
+  // http://crbug.com/235508
+  // TODO(dmazzoni): Fix this properly.
+  static const size_t kDataSize = sizeof(int) + sizeof(BrowserAccessibility);
+  uint8 padding_[sizeof(BrowserAccessibilityWin) - kDataSize];
+#endif
 };
 
 int CountedBrowserAccessibility::global_obj_count_ = 0;
@@ -87,31 +98,31 @@ private:
 }  // anonymous namespace
 
 TEST(BrowserAccessibilityManagerTest, TestNoLeaks) {
-  // Create AccessibilityNodeData objects for a simple document tree,
+  // Create ui::AXNodeData objects for a simple document tree,
   // representing the accessibility information used to initialize
   // BrowserAccessibilityManager.
-  AccessibilityNodeData button;
+  ui::AXNodeData button;
   button.id = 2;
   button.SetName("Button");
-  button.role = blink::WebAXRoleButton;
+  button.role = ui::AX_ROLE_BUTTON;
   button.state = 0;
 
-  AccessibilityNodeData checkbox;
+  ui::AXNodeData checkbox;
   checkbox.id = 3;
   checkbox.SetName("Checkbox");
-  checkbox.role = blink::WebAXRoleCheckBox;
+  checkbox.role = ui::AX_ROLE_CHECK_BOX;
   checkbox.state = 0;
 
-  AccessibilityNodeData root;
+  ui::AXNodeData root;
   root.id = 1;
   root.SetName("Document");
-  root.role = blink::WebAXRoleRootWebArea;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
   root.state = 0;
   root.child_ids.push_back(2);
   root.child_ids.push_back(3);
 
   // Construct a BrowserAccessibilityManager with this
-  // AccessibilityNodeData tree and a factory for an instance-counting
+  // ui::AXNodeData tree and a factory for an instance-counting
   // BrowserAccessibility, and ensure that exactly 3 instances were
   // created. Note that the manager takes ownership of the factory.
   CountedBrowserAccessibility::global_obj_count_ = 0;
@@ -169,28 +180,28 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects) {
   //   child2
   //   child3
 
-  AccessibilityNodeData tree1_child1;
+  ui::AXNodeData tree1_child1;
   tree1_child1.id = 2;
   tree1_child1.SetName("Child1");
-  tree1_child1.role = blink::WebAXRoleButton;
+  tree1_child1.role = ui::AX_ROLE_BUTTON;
   tree1_child1.state = 0;
 
-  AccessibilityNodeData tree1_child2;
+  ui::AXNodeData tree1_child2;
   tree1_child2.id = 3;
   tree1_child2.SetName("Child2");
-  tree1_child2.role = blink::WebAXRoleButton;
+  tree1_child2.role = ui::AX_ROLE_BUTTON;
   tree1_child2.state = 0;
 
-  AccessibilityNodeData tree1_child3;
+  ui::AXNodeData tree1_child3;
   tree1_child3.id = 4;
   tree1_child3.SetName("Child3");
-  tree1_child3.role = blink::WebAXRoleButton;
+  tree1_child3.role = ui::AX_ROLE_BUTTON;
   tree1_child3.state = 0;
 
-  AccessibilityNodeData tree1_root;
+  ui::AXNodeData tree1_root;
   tree1_root.id = 1;
   tree1_root.SetName("Document");
-  tree1_root.role = blink::WebAXRoleRootWebArea;
+  tree1_root.role = ui::AX_ROLE_ROOT_WEB_AREA;
   tree1_root.state = 0;
   tree1_root.child_ids.push_back(2);
   tree1_root.child_ids.push_back(3);
@@ -204,16 +215,16 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects) {
   //   child2
   //           <-- child3 deleted
 
-  AccessibilityNodeData tree2_child0;
+  ui::AXNodeData tree2_child0;
   tree2_child0.id = 5;
   tree2_child0.SetName("Child0");
-  tree2_child0.role = blink::WebAXRoleButton;
+  tree2_child0.role = ui::AX_ROLE_BUTTON;
   tree2_child0.state = 0;
 
-  AccessibilityNodeData tree2_root;
+  ui::AXNodeData tree2_root;
   tree2_root.id = 1;
   tree2_root.SetName("DocumentChanged");
-  tree2_root.role = blink::WebAXRoleRootWebArea;
+  tree2_root.role = ui::AX_ROLE_ROOT_WEB_AREA;
   tree2_root.state = 0;
   tree2_root.child_ids.push_back(5);
   tree2_root.child_ids.push_back(2);
@@ -255,7 +266,7 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects) {
   std::vector<AccessibilityHostMsg_EventParams> params;
   params.push_back(AccessibilityHostMsg_EventParams());
   AccessibilityHostMsg_EventParams* msg = &params[0];
-  msg->event_type = blink::WebAXEventChildrenChanged;
+  msg->event_type = ui::AX_EVENT_CHILDREN_CHANGED;
   msg->nodes.push_back(tree2_root);
   msg->nodes.push_back(tree2_child0);
   msg->id = tree2_root.id;
@@ -304,58 +315,58 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects2) {
   //     child3
   //       grandchild3
 
-  AccessibilityNodeData tree1_grandchild1;
+  ui::AXNodeData tree1_grandchild1;
   tree1_grandchild1.id = 4;
   tree1_grandchild1.SetName("GrandChild1");
-  tree1_grandchild1.role = blink::WebAXRoleButton;
+  tree1_grandchild1.role = ui::AX_ROLE_BUTTON;
   tree1_grandchild1.state = 0;
 
-  AccessibilityNodeData tree1_child1;
+  ui::AXNodeData tree1_child1;
   tree1_child1.id = 3;
   tree1_child1.SetName("Child1");
-  tree1_child1.role = blink::WebAXRoleButton;
+  tree1_child1.role = ui::AX_ROLE_BUTTON;
   tree1_child1.state = 0;
   tree1_child1.child_ids.push_back(4);
 
-  AccessibilityNodeData tree1_grandchild2;
+  ui::AXNodeData tree1_grandchild2;
   tree1_grandchild2.id = 6;
   tree1_grandchild2.SetName("GrandChild1");
-  tree1_grandchild2.role = blink::WebAXRoleButton;
+  tree1_grandchild2.role = ui::AX_ROLE_BUTTON;
   tree1_grandchild2.state = 0;
 
-  AccessibilityNodeData tree1_child2;
+  ui::AXNodeData tree1_child2;
   tree1_child2.id = 5;
   tree1_child2.SetName("Child2");
-  tree1_child2.role = blink::WebAXRoleButton;
+  tree1_child2.role = ui::AX_ROLE_BUTTON;
   tree1_child2.state = 0;
   tree1_child2.child_ids.push_back(6);
 
-  AccessibilityNodeData tree1_grandchild3;
+  ui::AXNodeData tree1_grandchild3;
   tree1_grandchild3.id = 8;
   tree1_grandchild3.SetName("GrandChild3");
-  tree1_grandchild3.role = blink::WebAXRoleButton;
+  tree1_grandchild3.role = ui::AX_ROLE_BUTTON;
   tree1_grandchild3.state = 0;
 
-  AccessibilityNodeData tree1_child3;
+  ui::AXNodeData tree1_child3;
   tree1_child3.id = 7;
   tree1_child3.SetName("Child3");
-  tree1_child3.role = blink::WebAXRoleButton;
+  tree1_child3.role = ui::AX_ROLE_BUTTON;
   tree1_child3.state = 0;
   tree1_child3.child_ids.push_back(8);
 
-  AccessibilityNodeData tree1_container;
+  ui::AXNodeData tree1_container;
   tree1_container.id = 2;
   tree1_container.SetName("Container");
-  tree1_container.role = blink::WebAXRoleGroup;
+  tree1_container.role = ui::AX_ROLE_GROUP;
   tree1_container.state = 0;
   tree1_container.child_ids.push_back(3);
   tree1_container.child_ids.push_back(5);
   tree1_container.child_ids.push_back(7);
 
-  AccessibilityNodeData tree1_root;
+  ui::AXNodeData tree1_root;
   tree1_root.id = 1;
   tree1_root.SetName("Document");
-  tree1_root.role = blink::WebAXRoleRootWebArea;
+  tree1_root.role = ui::AX_ROLE_ROOT_WEB_AREA;
   tree1_root.state = 0;
   tree1_root.child_ids.push_back(2);
 
@@ -371,23 +382,23 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects2) {
   //       grandchild2
   //                    <-- child3 (and grandchild3) deleted
 
-  AccessibilityNodeData tree2_grandchild0;
+  ui::AXNodeData tree2_grandchild0;
   tree2_grandchild0.id = 9;
   tree2_grandchild0.SetName("GrandChild0");
-  tree2_grandchild0.role = blink::WebAXRoleButton;
+  tree2_grandchild0.role = ui::AX_ROLE_BUTTON;
   tree2_grandchild0.state = 0;
 
-  AccessibilityNodeData tree2_child0;
+  ui::AXNodeData tree2_child0;
   tree2_child0.id = 10;
   tree2_child0.SetName("Child0");
-  tree2_child0.role = blink::WebAXRoleButton;
+  tree2_child0.role = ui::AX_ROLE_BUTTON;
   tree2_child0.state = 0;
   tree2_child0.child_ids.push_back(9);
 
-  AccessibilityNodeData tree2_container;
+  ui::AXNodeData tree2_container;
   tree2_container.id = 2;
   tree2_container.SetName("Container");
-  tree2_container.role = blink::WebAXRoleGroup;
+  tree2_container.role = ui::AX_ROLE_GROUP;
   tree2_container.state = 0;
   tree2_container.child_ids.push_back(10);
   tree2_container.child_ids.push_back(3);
@@ -432,7 +443,7 @@ TEST(BrowserAccessibilityManagerTest, TestReuseBrowserAccessibilityObjects2) {
   std::vector<AccessibilityHostMsg_EventParams> params;
   params.push_back(AccessibilityHostMsg_EventParams());
   AccessibilityHostMsg_EventParams* msg = &params[0];
-  msg->event_type = blink::WebAXEventChildrenChanged;
+  msg->event_type = ui::AX_EVENT_CHILDREN_CHANGED;
   msg->nodes.push_back(tree2_container);
   msg->nodes.push_back(tree2_child0);
   msg->nodes.push_back(tree2_grandchild0);
@@ -479,22 +490,22 @@ TEST(BrowserAccessibilityManagerTest, TestMoveChildUp) {
   //   3
   //     4
 
-  AccessibilityNodeData tree1_4;
+  ui::AXNodeData tree1_4;
   tree1_4.id = 4;
   tree1_4.state = 0;
 
-  AccessibilityNodeData tree1_3;
+  ui::AXNodeData tree1_3;
   tree1_3.id = 3;
   tree1_3.state = 0;
   tree1_3.child_ids.push_back(4);
 
-  AccessibilityNodeData tree1_2;
+  ui::AXNodeData tree1_2;
   tree1_2.id = 2;
   tree1_2.state = 0;
 
-  AccessibilityNodeData tree1_1;
+  ui::AXNodeData tree1_1;
   tree1_1.id = 1;
-  tree1_1.role = blink::WebAXRoleRootWebArea;
+  tree1_1.role = ui::AX_ROLE_ROOT_WEB_AREA;
   tree1_1.state = 0;
   tree1_1.child_ids.push_back(2);
   tree1_1.child_ids.push_back(3);
@@ -506,20 +517,20 @@ TEST(BrowserAccessibilityManagerTest, TestMoveChildUp) {
   //     6  <-- new
   //   5    <-- new
 
-  AccessibilityNodeData tree2_6;
+  ui::AXNodeData tree2_6;
   tree2_6.id = 6;
   tree2_6.state = 0;
 
-  AccessibilityNodeData tree2_5;
+  ui::AXNodeData tree2_5;
   tree2_5.id = 5;
   tree2_5.state = 0;
 
-  AccessibilityNodeData tree2_4;
+  ui::AXNodeData tree2_4;
   tree2_4.id = 4;
   tree2_4.state = 0;
   tree2_4.child_ids.push_back(6);
 
-  AccessibilityNodeData tree2_1;
+  ui::AXNodeData tree2_1;
   tree2_1.id = 1;
   tree2_1.state = 0;
   tree2_1.child_ids.push_back(4);
@@ -539,7 +550,7 @@ TEST(BrowserAccessibilityManagerTest, TestMoveChildUp) {
   std::vector<AccessibilityHostMsg_EventParams> params;
   params.push_back(AccessibilityHostMsg_EventParams());
   AccessibilityHostMsg_EventParams* msg = &params[0];
-  msg->event_type = blink::WebAXEventChildrenChanged;
+  msg->event_type = ui::AX_EVENT_CHILDREN_CHANGED;
   msg->nodes.push_back(tree2_1);
   msg->nodes.push_back(tree2_4);
   msg->nodes.push_back(tree2_5);
@@ -561,14 +572,14 @@ TEST(BrowserAccessibilityManagerTest, TestMoveChildUp) {
 #else
 #define MAYBE_TestFatalError TestFatalError
 #endif
-TEST(BrowserAccessibilityManagerTest, TestFatalError) {
+TEST(BrowserAccessibilityManagerTest, MAYBE_TestFatalError) {
   // Test that BrowserAccessibilityManager raises a fatal error
   // (which will crash the renderer) if the same id is used in
   // two places in the tree.
 
-  AccessibilityNodeData root;
+  ui::AXNodeData root;
   root.id = 1;
-  root.role = blink::WebAXRoleRootWebArea;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
   root.child_ids.push_back(2);
   root.child_ids.push_back(2);
 
@@ -584,18 +595,18 @@ TEST(BrowserAccessibilityManagerTest, TestFatalError) {
       factory));
   ASSERT_TRUE(delegate->got_fatal_error());
 
-  AccessibilityNodeData root2;
+  ui::AXNodeData root2;
   root2.id = 1;
-  root2.role = blink::WebAXRoleRootWebArea;
+  root2.role = ui::AX_ROLE_ROOT_WEB_AREA;
   root2.child_ids.push_back(2);
   root2.child_ids.push_back(3);
 
-  AccessibilityNodeData child1;
+  ui::AXNodeData child1;
   child1.id = 2;
   child1.child_ids.push_back(4);
   child1.child_ids.push_back(5);
 
-  AccessibilityNodeData child2;
+  ui::AXNodeData child2;
   child2.id = 3;
   child2.child_ids.push_back(6);
   child2.child_ids.push_back(5);  // Duplicate
@@ -612,24 +623,24 @@ TEST(BrowserAccessibilityManagerTest, TestFatalError) {
 }
 
 TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
-  AccessibilityNodeData root;
+  ui::AXNodeData root;
   root.id = 1;
-  root.role = blink::WebAXRoleRootWebArea;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
 
-  AccessibilityNodeData static_text;
+  ui::AXNodeData static_text;
   static_text.id = 2;
   static_text.SetValue("Hello, world.");
-  static_text.role = blink::WebAXRoleStaticText;
+  static_text.role = ui::AX_ROLE_STATIC_TEXT;
   static_text.location = gfx::Rect(100, 100, 29, 18);
   root.child_ids.push_back(2);
 
-  AccessibilityNodeData inline_text1;
+  ui::AXNodeData inline_text1;
   inline_text1.id = 3;
   inline_text1.SetValue("Hello, ");
-  inline_text1.role = blink::WebAXRoleInlineTextBox;
+  inline_text1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text1.location = gfx::Rect(100, 100, 29, 9);
-  inline_text1.AddIntAttribute(AccessibilityNodeData::ATTR_TEXT_DIRECTION,
-                               blink::WebAXTextDirectionLR);
+  inline_text1.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                               ui::AX_TEXT_DIRECTION_LR);
   std::vector<int32> character_offsets1;
   character_offsets1.push_back(6);   // 0
   character_offsets1.push_back(11);  // 1
@@ -639,16 +650,16 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
   character_offsets1.push_back(29);  // 5
   character_offsets1.push_back(29);  // 6 (note that the space has no width)
   inline_text1.AddIntListAttribute(
-      AccessibilityNodeData::ATTR_CHARACTER_OFFSETS, character_offsets1);
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets1);
   static_text.child_ids.push_back(3);
 
-  AccessibilityNodeData inline_text2;
+  ui::AXNodeData inline_text2;
   inline_text2.id = 4;
   inline_text2.SetValue("world.");
-  inline_text2.role = blink::WebAXRoleInlineTextBox;
+  inline_text2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text2.location = gfx::Rect(100, 109, 28, 9);
-  inline_text2.AddIntAttribute(AccessibilityNodeData::ATTR_TEXT_DIRECTION,
-                               blink::WebAXTextDirectionLR);
+  inline_text2.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                               ui::AX_TEXT_DIRECTION_LR);
   std::vector<int32> character_offsets2;
   character_offsets2.push_back(5);
   character_offsets2.push_back(10);
@@ -657,7 +668,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
   character_offsets2.push_back(25);
   character_offsets2.push_back(28);
   inline_text2.AddIntListAttribute(
-      AccessibilityNodeData::ATTR_CHARACTER_OFFSETS, character_offsets2);
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets2);
   static_text.child_ids.push_back(4);
 
   scoped_ptr<BrowserAccessibilityManager> manager(
@@ -692,6 +703,11 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
   // Test range that's beyond the text.
   EXPECT_EQ(gfx::Rect(100, 100, 29, 18).ToString(),
             static_text_accessible->GetLocalBoundsForRange(-1, 999).ToString());
+
+  // Test that we can call bounds for range on the parent element, too,
+  // and it still works.
+  EXPECT_EQ(gfx::Rect(100, 100, 29, 18).ToString(),
+            root_accessible->GetLocalBoundsForRange(0, 13).ToString());
 }
 
 TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
@@ -703,45 +719,45 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
   // tests that if something like that were to occur, GetLocalBoundsForRange
   // returns the correct bounds for different ranges.
 
-  AccessibilityNodeData root;
+  ui::AXNodeData root;
   root.id = 1;
-  root.role = blink::WebAXRoleRootWebArea;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
 
-  AccessibilityNodeData static_text;
+  ui::AXNodeData static_text;
   static_text.id = 2;
   static_text.SetValue("123abc");
-  static_text.role = blink::WebAXRoleStaticText;
+  static_text.role = ui::AX_ROLE_STATIC_TEXT;
   static_text.location = gfx::Rect(100, 100, 60, 20);
   root.child_ids.push_back(2);
 
-  AccessibilityNodeData inline_text1;
+  ui::AXNodeData inline_text1;
   inline_text1.id = 3;
   inline_text1.SetValue("123");
-  inline_text1.role = blink::WebAXRoleInlineTextBox;
+  inline_text1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text1.location = gfx::Rect(100, 100, 30, 20);
-  inline_text1.AddIntAttribute(AccessibilityNodeData::ATTR_TEXT_DIRECTION,
-                               blink::WebAXTextDirectionLR);
+  inline_text1.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                               ui::AX_TEXT_DIRECTION_LR);
   std::vector<int32> character_offsets1;
   character_offsets1.push_back(10);  // 0
   character_offsets1.push_back(20);  // 1
   character_offsets1.push_back(30);  // 2
   inline_text1.AddIntListAttribute(
-      AccessibilityNodeData::ATTR_CHARACTER_OFFSETS, character_offsets1);
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets1);
   static_text.child_ids.push_back(3);
 
-  AccessibilityNodeData inline_text2;
+  ui::AXNodeData inline_text2;
   inline_text2.id = 4;
   inline_text2.SetValue("abc");
-  inline_text2.role = blink::WebAXRoleInlineTextBox;
+  inline_text2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text2.location = gfx::Rect(130, 100, 30, 20);
-  inline_text2.AddIntAttribute(AccessibilityNodeData::ATTR_TEXT_DIRECTION,
-                               blink::WebAXTextDirectionRL);
+  inline_text2.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                               ui::AX_TEXT_DIRECTION_RL);
   std::vector<int32> character_offsets2;
   character_offsets2.push_back(10);
   character_offsets2.push_back(20);
   character_offsets2.push_back(30);
   inline_text2.AddIntListAttribute(
-      AccessibilityNodeData::ATTR_CHARACTER_OFFSETS, character_offsets2);
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets2);
   static_text.child_ids.push_back(4);
 
   scoped_ptr<BrowserAccessibilityManager> manager(
@@ -774,6 +790,100 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
   // the bounds are as wide as four characters.
   EXPECT_EQ(gfx::Rect(120, 100, 40, 20).ToString(),
             static_text_accessible->GetLocalBoundsForRange(2, 2).ToString());
+}
+
+#if defined(OS_WIN)
+#define MAYBE_BoundsForRangeOnParentElement \
+  DISABLED_BoundsForRangeOnParentElement
+#else
+#define MAYBE_BoundsForRangeOnParentElement BoundsForRangeOnParentElement
+#endif
+TEST(BrowserAccessibilityManagerTest, MAYBE_BoundsForRangeOnParentElement) {
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root.child_ids.push_back(2);
+
+  ui::AXNodeData div;
+  div.id = 2;
+  div.role = ui::AX_ROLE_DIV;
+  div.location = gfx::Rect(100, 100, 100, 20);
+  div.child_ids.push_back(3);
+  div.child_ids.push_back(4);
+  div.child_ids.push_back(5);
+
+  ui::AXNodeData static_text1;
+  static_text1.id = 3;
+  static_text1.SetValue("AB");
+  static_text1.role = ui::AX_ROLE_STATIC_TEXT;
+  static_text1.location = gfx::Rect(100, 100, 40, 20);
+  static_text1.child_ids.push_back(6);
+
+  ui::AXNodeData img;
+  img.id = 4;
+  img.role = ui::AX_ROLE_IMAGE;
+  img.location = gfx::Rect(140, 100, 20, 20);
+
+  ui::AXNodeData static_text2;
+  static_text2.id = 5;
+  static_text2.SetValue("CD");
+  static_text2.role = ui::AX_ROLE_STATIC_TEXT;
+  static_text2.location = gfx::Rect(160, 100, 40, 20);
+  static_text2.child_ids.push_back(7);
+
+  ui::AXNodeData inline_text1;
+  inline_text1.id = 6;
+  inline_text1.SetValue("AB");
+  inline_text1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
+  inline_text1.location = gfx::Rect(100, 100, 40, 20);
+  inline_text1.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                               ui::AX_TEXT_DIRECTION_LR);
+  std::vector<int32> character_offsets1;
+  character_offsets1.push_back(20);  // 0
+  character_offsets1.push_back(40);  // 1
+  inline_text1.AddIntListAttribute(
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets1);
+
+  ui::AXNodeData inline_text2;
+  inline_text2.id = 7;
+  inline_text2.SetValue("CD");
+  inline_text2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
+  inline_text2.location = gfx::Rect(160, 100, 40, 20);
+  inline_text2.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                               ui::AX_TEXT_DIRECTION_LR);
+  std::vector<int32> character_offsets2;
+  character_offsets2.push_back(20);  // 0
+  character_offsets2.push_back(40);  // 1
+  inline_text2.AddIntListAttribute(
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets2);
+
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          root,
+          NULL,
+          new CountedBrowserAccessibilityFactory()));
+  manager->UpdateNodesForTesting(
+      div, static_text1, img, static_text2, inline_text1, inline_text2);
+
+  BrowserAccessibility* root_accessible = manager->GetRoot();
+
+  EXPECT_EQ(gfx::Rect(100, 100, 20, 20).ToString(),
+            root_accessible->GetLocalBoundsForRange(0, 1).ToString());
+
+  EXPECT_EQ(gfx::Rect(100, 100, 40, 20).ToString(),
+            root_accessible->GetLocalBoundsForRange(0, 2).ToString());
+
+  EXPECT_EQ(gfx::Rect(100, 100, 80, 20).ToString(),
+            root_accessible->GetLocalBoundsForRange(0, 3).ToString());
+
+  EXPECT_EQ(gfx::Rect(120, 100, 60, 20).ToString(),
+            root_accessible->GetLocalBoundsForRange(1, 2).ToString());
+
+  EXPECT_EQ(gfx::Rect(120, 100, 80, 20).ToString(),
+            root_accessible->GetLocalBoundsForRange(1, 3).ToString());
+
+  EXPECT_EQ(gfx::Rect(100, 100, 100, 20).ToString(),
+            root_accessible->GetLocalBoundsForRange(0, 4).ToString());
 }
 
 }  // namespace content

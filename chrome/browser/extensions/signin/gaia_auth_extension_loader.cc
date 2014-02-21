@@ -4,17 +4,22 @@
 
 #include "chrome/browser/extensions/signin/gaia_auth_extension_loader.h"
 
+#include <string>
+
 #include "base/command_line.h"
+#include "base/files/file_path.h"
+#include "base/logging.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/browser_resources.h"
 
 #if defined(OS_CHROMEOS)
+#include "base/file_util.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
@@ -43,16 +48,27 @@ void LoadGaiaAuthExtension(Profile* profile) {
     return;
   }
 
-  int manifest_resource_id = IDR_GAIA_AUTH_MANIFEST;
-
 #if defined(OS_CHROMEOS)
-  if (chromeos::system::keyboard_settings::ForceKeyboardDrivenUINavigation())
+  if (command_line->HasSwitch(chromeos::switches::kGAIAAuthExtensionManifest)) {
+    const base::FilePath manifest_path = command_line->GetSwitchValuePath(
+        chromeos::switches::kGAIAAuthExtensionManifest);
+    std::string manifest;
+    if (!base::ReadFileToString(manifest_path, &manifest))
+      NOTREACHED();
+    component_loader->Add(manifest,
+                          base::FilePath(FILE_PATH_LITERAL("gaia_auth")));
+    return;
+  }
+
+  int manifest_resource_id = IDR_GAIA_AUTH_MANIFEST;
+  if (chromeos::system::InputDeviceSettings::Get()
+          ->ForceKeyboardDrivenUINavigation()) {
     manifest_resource_id = IDR_GAIA_AUTH_KEYBOARD_MANIFEST;
-  else if (command_line->HasSwitch(chromeos::switches::kEnableSamlSignin))
+  } else if (!command_line->HasSwitch(chromeos::switches::kDisableSamlSignin)) {
     manifest_resource_id = IDR_GAIA_AUTH_SAML_MANIFEST;
+  }
 #else
-  if (command_line->HasSwitch(switches::kEnableInlineSignin))
-    manifest_resource_id = IDR_GAIA_AUTH_INLINE_MANIFEST;
+  int manifest_resource_id = IDR_GAIA_AUTH_DESKTOP_MANIFEST;
 #endif
 
   component_loader->Add(manifest_resource_id,
@@ -74,10 +90,7 @@ GaiaAuthExtensionLoader::GaiaAuthExtensionLoader(Profile* profile)
     : profile_(profile), load_count_(0) {}
 
 GaiaAuthExtensionLoader::~GaiaAuthExtensionLoader() {
-  if (load_count_ > 0) {
-    UnloadGaiaAuthExtension(profile_);
-    load_count_ = 0;
-  }
+  DCHECK_EQ(0, load_count_);
 }
 
 void GaiaAuthExtensionLoader::LoadIfNeeded() {
@@ -92,6 +105,13 @@ void GaiaAuthExtensionLoader::UnloadIfNeeded() {
     UnloadGaiaAuthExtension(profile_);
 }
 
+void GaiaAuthExtensionLoader::Shutdown() {
+  if (load_count_ > 0) {
+    UnloadGaiaAuthExtension(profile_);
+    load_count_ = 0;
+  }
+}
+
 // static
 GaiaAuthExtensionLoader* GaiaAuthExtensionLoader::Get(Profile* profile) {
   return ProfileKeyedAPIFactory<GaiaAuthExtensionLoader>::GetForProfile(
@@ -104,7 +124,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 // static
 ProfileKeyedAPIFactory<GaiaAuthExtensionLoader>*
 GaiaAuthExtensionLoader::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 } // namespace extensions

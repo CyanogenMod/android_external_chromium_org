@@ -17,6 +17,7 @@ class FakeSupervisedUserManager : public SupervisedUserManager {
   FakeSupervisedUserManager();
   virtual ~FakeSupervisedUserManager();
 
+  virtual bool HasSupervisedUsers(const std::string& manager_id) const OVERRIDE;
   virtual const User* CreateUserRecord(
       const std::string& manager_id,
       const std::string& local_user_id,
@@ -38,6 +39,19 @@ class FakeSupervisedUserManager : public SupervisedUserManager {
   virtual void SetCreationTransactionUserId(const std::string& user_id)
       OVERRIDE {}
   virtual void CommitCreationTransaction() OVERRIDE {}
+  virtual SupervisedUserAuthentication* GetAuthentication() OVERRIDE;
+  virtual void GetPasswordInformation(
+      const std::string& user_id,
+      base::DictionaryValue* result) OVERRIDE {}
+  virtual void SetPasswordInformation(
+      const std::string& user_id,
+      const base::DictionaryValue* password_info) OVERRIDE {}
+  virtual void LoadSupervisedUserToken(
+      Profile * profile,
+      const LoadTokenCallback& callback) OVERRIDE;
+  virtual void ConfigureSyncWithToken(
+      Profile* profile,
+      const std::string& token) OVERRIDE {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(FakeSupervisedUserManager);

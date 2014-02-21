@@ -63,7 +63,9 @@
 #include "ash/multi_profile_uma.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_context_menu.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/browser_commands_chromeos.h"
 #endif
 
 using content::NavigationEntry;
@@ -91,13 +93,13 @@ bool HasInternalURL(const NavigationEntry* entry) {
 
   // Check the |virtual_url()| first. This catches regular chrome:// URLs
   // including URLs that were rewritten (such as chrome://bookmarks).
-  if (entry->GetVirtualURL().SchemeIs(chrome::kChromeUIScheme))
+  if (entry->GetVirtualURL().SchemeIs(content::kChromeUIScheme))
     return true;
 
   // If the |virtual_url()| isn't a chrome:// URL, check if it's actually
   // view-source: of a chrome:// URL.
   if (entry->GetVirtualURL().SchemeIs(content::kViewSourceScheme))
-    return entry->GetURL().SchemeIs(chrome::kChromeUIScheme);
+    return entry->GetURL().SchemeIs(content::kChromeUIScheme);
 
   return false;
 }
@@ -288,7 +290,6 @@ bool BrowserCommandController::IsReservedCommandOrKey(
          command_id == IDC_RESTORE_TAB ||
          command_id == IDC_SELECT_NEXT_TAB ||
          command_id == IDC_SELECT_PREVIOUS_TAB ||
-         command_id == IDC_TABPOSE ||
          command_id == IDC_EXIT;
 }
 
@@ -394,27 +395,24 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       NewIncognitoWindow(browser_);
       break;
     case IDC_CLOSE_WINDOW:
-      content::RecordAction(content::UserMetricsAction("CloseWindowByKey"));
+      content::RecordAction(base::UserMetricsAction("CloseWindowByKey"));
       CloseWindow(browser_);
       break;
     case IDC_NEW_TAB:
       NewTab(browser_);
       break;
     case IDC_CLOSE_TAB:
-      content::RecordAction(content::UserMetricsAction("CloseTabByKey"));
+      content::RecordAction(base::UserMetricsAction("CloseTabByKey"));
       CloseTab(browser_);
       break;
     case IDC_SELECT_NEXT_TAB:
-      content::RecordAction(content::UserMetricsAction("Accel_SelectNextTab"));
+      content::RecordAction(base::UserMetricsAction("Accel_SelectNextTab"));
       SelectNextTab(browser_);
       break;
     case IDC_SELECT_PREVIOUS_TAB:
       content::RecordAction(
-          content::UserMetricsAction("Accel_SelectPreviousTab"));
+          base::UserMetricsAction("Accel_SelectPreviousTab"));
       SelectPreviousTab(browser_);
-      break;
-    case IDC_TABPOSE:
-      OpenTabpose(browser_);
       break;
     case IDC_MOVE_TAB_NEXT:
       MoveTabNext(browser_);
@@ -458,7 +456,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_MINIMIZE_WINDOW:
       content::RecordAction(
-          content::UserMetricsAction("Accel_Toggle_Minimized_M"));
+          base::UserMetricsAction("Accel_Toggle_Minimized_M"));
       ash::accelerators::ToggleMinimized();
       break;
     // If Ash needs many more commands here we should implement a general
@@ -467,19 +465,18 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 
 #if defined(OS_CHROMEOS)
     case IDC_VISIT_DESKTOP_OF_LRU_USER_2:
-    case IDC_VISIT_DESKTOP_OF_LRU_USER_3: {
-        ash::MultiProfileUMA::RecordTeleportAction(
-            ash::MultiProfileUMA::TELEPORT_WINDOW_CAPTION_MENU);
-        // When running the multi user mode on Chrome OS, windows can "visit"
-        // another user's desktop.
-        const std::string& user_id =
-            ash::Shell::GetInstance()->session_state_delegate()->GetUserID(
-                IDC_VISIT_DESKTOP_OF_LRU_USER_2 == id ? 1 : 2);
-        chrome::MultiUserWindowManager::GetInstance()->ShowWindowForUser(
-            browser_->window()->GetNativeWindow(),
-            user_id);
-        break;
-      }
+    case IDC_VISIT_DESKTOP_OF_LRU_USER_3:
+      ExecuteVisitDesktopCommand(id, browser_->window()->GetNativeWindow());
+      break;
+#endif
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(TOOLKIT_GTK)
+    case IDC_USE_SYSTEM_TITLE_BAR: {
+      PrefService* prefs = browser_->profile()->GetPrefs();
+      prefs->SetBoolean(prefs::kUseCustomChromeFrame,
+                        !prefs->GetBoolean(prefs::kUseCustomChromeFrame));
+      break;
+    }
 #endif
 
 #if defined(OS_WIN)
@@ -495,7 +492,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
         break;
 
       chrome::AttemptRestartToDesktopMode();
-      content::RecordAction(content::UserMetricsAction("Win8DesktopRestart"));
+      content::RecordAction(base::UserMetricsAction("Win8DesktopRestart"));
       break;
     case IDC_WIN8_METRO_RESTART:
       if (!VerifyMetroSwitchForApps(window()->GetNativeWindow(), id))
@@ -503,7 +500,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 
       // SwitchToMetroUIHandler deletes itself.
       new SwitchToMetroUIHandler;
-      content::RecordAction(content::UserMetricsAction("Win8MetroRestart"));
+      content::RecordAction(base::UserMetricsAction("Win8MetroRestart"));
       break;
 #endif
 
@@ -542,7 +539,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       Print(browser_);
       break;
     case IDC_ADVANCED_PRINT:
-      content::RecordAction(content::UserMetricsAction("Accel_Advanced_Print"));
+      content::RecordAction(base::UserMetricsAction("Accel_Advanced_Print"));
       AdvancedPrint(browser_);
       break;
     case IDC_PRINT_TO_DESTINATION:
@@ -629,15 +626,15 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 
     // Focus various bits of UI
     case IDC_FOCUS_TOOLBAR:
-      content::RecordAction(content::UserMetricsAction("Accel_Focus_Toolbar"));
+      content::RecordAction(base::UserMetricsAction("Accel_Focus_Toolbar"));
       FocusToolbar(browser_);
       break;
     case IDC_FOCUS_LOCATION:
-      content::RecordAction(content::UserMetricsAction("Accel_Focus_Location"));
+      content::RecordAction(base::UserMetricsAction("Accel_Focus_Location"));
       FocusLocationBar(browser_);
       break;
     case IDC_FOCUS_SEARCH:
-      content::RecordAction(content::UserMetricsAction("Accel_Focus_Search"));
+      content::RecordAction(base::UserMetricsAction("Accel_Focus_Search"));
       FocusSearch(browser_);
       break;
     case IDC_FOCUS_MENU_BAR:
@@ -645,7 +642,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_FOCUS_BOOKMARKS:
       content::RecordAction(
-          content::UserMetricsAction("Accel_Focus_Bookmarks"));
+          base::UserMetricsAction("Accel_Focus_Bookmarks"));
       FocusBookmarksToolbar(browser_);
       break;
     case IDC_FOCUS_INFOBARS:
@@ -686,6 +683,11 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_TASK_MANAGER:
       OpenTaskManager(browser_);
       break;
+#if defined(OS_CHROMEOS)
+    case IDC_TAKE_SCREENSHOT:
+      TakeScreenshot();
+      break;
+#endif
 #if defined(GOOGLE_CHROME_BUILD)
     case IDC_FEEDBACK:
       OpenFeedbackDialog(browser_);
@@ -702,7 +704,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       ShowBookmarkManager(browser_);
       break;
     case IDC_SHOW_APP_MENU:
-      content::RecordAction(content::UserMetricsAction("Accel_Show_App_Menu"));
+      content::RecordAction(base::UserMetricsAction("Accel_Show_App_Menu"));
       ShowAppMenu(browser_);
       break;
     case IDC_SHOW_AVATAR_MENU:
@@ -898,9 +900,13 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_VISIT_DESKTOP_OF_LRU_USER_2, true);
   command_updater_.UpdateCommandEnabled(IDC_VISIT_DESKTOP_OF_LRU_USER_3, true);
 #endif
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(TOOLKIT_GTK)
+  command_updater_.UpdateCommandEnabled(IDC_USE_SYSTEM_TITLE_BAR, true);
+#endif
 
   // Page-related commands
   command_updater_.UpdateCommandEnabled(IDC_EMAIL_PAGE_LOCATION, true);
+  command_updater_.UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR, true);
   command_updater_.UpdateCommandEnabled(IDC_ENCODING_AUTO_DETECT, true);
   command_updater_.UpdateCommandEnabled(IDC_ENCODING_UTF8, true);
   command_updater_.UpdateCommandEnabled(IDC_ENCODING_UTF16LE, true);
@@ -961,6 +967,9 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_RECENT_TABS_MENU,
                                         !profile()->IsGuestSession() &&
                                         !profile()->IsOffTheRecord());
+#if defined(OS_CHROMEOS)
+  command_updater_.UpdateCommandEnabled(IDC_TAKE_SCREENSHOT, true);
+#endif
 
   UpdateShowSyncState(true);
 
@@ -968,7 +977,11 @@ void BrowserCommandController::InitCommandState() {
   bool normal_window = browser_->is_type_tabbed();
 
   // Navigation commands
-  command_updater_.UpdateCommandEnabled(IDC_HOME, normal_window);
+  command_updater_.UpdateCommandEnabled(
+      IDC_HOME,
+      normal_window || (CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kEnableStreamlinedHostedApps) &&
+                        browser_->is_app()));
 
   // Window management commands
   command_updater_.UpdateCommandEnabled(IDC_SELECT_NEXT_TAB, normal_window);
@@ -999,7 +1012,6 @@ void BrowserCommandController::InitCommandState() {
       IDC_WIN8_DESKTOP_RESTART : IDC_WIN8_METRO_RESTART;
   command_updater_.UpdateCommandEnabled(restart_mode, normal_window);
 #endif
-  command_updater_.UpdateCommandEnabled(IDC_TABPOSE, normal_window);
 
   // Show various bits of UI
   command_updater_.UpdateCommandEnabled(IDC_CLEAR_BROWSING_DATA, normal_window);
@@ -1095,7 +1107,7 @@ void BrowserCommandController::UpdateCommandsForTabState() {
 
   // Changing the encoding is not possible on Chrome-internal webpages.
   NavigationController& nc = current_web_contents->GetController();
-  bool is_chrome_internal = HasInternalURL(nc.GetLastCommittedEntry()) ||
+  bool is_chrome_internal = HasInternalURL(nc.GetActiveEntry()) ||
       current_web_contents->ShowingInterstitialPage();
   command_updater_.UpdateCommandEnabled(IDC_ENCODING_MENU,
       !is_chrome_internal && current_web_contents->IsSavable());

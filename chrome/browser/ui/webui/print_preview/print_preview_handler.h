@@ -45,7 +45,6 @@ class PrintPreviewHandler
     : public content::WebUIMessageHandler,
 #if defined(ENABLE_MDNS)
       public local_discovery::PrivetLocalPrinterLister::Delegate,
-      public local_discovery::PrivetCapabilitiesOperation::Delegate,
       public local_discovery::PrivetLocalPrintOperation::Delegate,
 #endif
       public ui::SelectFileDialog::Listener,
@@ -91,12 +90,6 @@ class PrintPreviewHandler
   virtual void LocalPrinterRemoved(const std::string& name) OVERRIDE;
   virtual void LocalPrinterCacheFlushed() OVERRIDE;
 
-  // PrivetCapabilitiesOperation::Delegate implementation.
-  virtual void OnPrivetCapabilities(
-      local_discovery::PrivetCapabilitiesOperation* capabilities_operation,
-      int http_error,
-      const base::DictionaryValue* capabilities) OVERRIDE;
-
   // PrivetLocalPrintOperation::Delegate implementation.
   virtual void OnPrivetPrintingDone(
       const local_discovery::PrivetLocalPrintOperation*
@@ -122,6 +115,9 @@ class PrintPreviewHandler
 
   // Starts getting all local privet printers. |arg| is unused.
   void HandleGetPrivetPrinters(const base::ListValue* args);
+
+  // Stops getting all local privet printers. |arg| is unused.
+  void HandleStopGetPrivetPrinters(const base::ListValue* args);
 
   // Asks the initiator renderer to generate a preview.  First element of |args|
   // is a job settings JSON string.
@@ -252,7 +248,9 @@ class PrintPreviewHandler
 #endif
 
 #if defined(ENABLE_MDNS)
-  void StopPrivetPrinterSearch();
+  void OnPrivetCapabilities(const base::DictionaryValue* capabilities);
+
+
   void PrivetCapabilitiesUpdateClient(
       scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
   void PrivetLocalPrintUpdateClient(
@@ -319,7 +317,7 @@ class PrintPreviewHandler
       privet_http_factory_;
   scoped_ptr<local_discovery::PrivetHTTPResolution> privet_http_resolution_;
   scoped_ptr<local_discovery::PrivetHTTPClient> privet_http_client_;
-  scoped_ptr<local_discovery::PrivetCapabilitiesOperation>
+  scoped_ptr<local_discovery::PrivetJSONOperation>
       privet_capabilities_operation_;
   scoped_ptr<local_discovery::PrivetLocalPrintOperation>
       privet_local_print_operation_;

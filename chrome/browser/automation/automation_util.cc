@@ -6,8 +6,6 @@
 
 #include <string>
 
-#include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -18,7 +16,6 @@
 #include "chrome/browser/automation/automation_provider.h"
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -32,6 +29,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
@@ -47,6 +45,7 @@
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #endif
 
@@ -194,13 +193,7 @@ Profile* GetCurrentProfileOnChromeOS(std::string* error_message) {
     }
     return Profile::FromWebUI(web_ui);
   } else {
-    ash::Shell* shell = ash::Shell::GetInstance();
-    if (!shell || !shell->delegate()) {
-      *error_message = "Unable to get shell delegate.";
-      return NULL;
-    }
-    return Profile::FromBrowserContext(
-        shell->delegate()->GetCurrentBrowserContext());
+    return ProfileManager::GetActiveUserProfile();
   }
   return NULL;
 }
@@ -287,7 +280,7 @@ void DeleteCookie(const GURL& url,
 }
 
 void GetCookiesJSON(AutomationProvider* provider,
-                    DictionaryValue* args,
+                    base::DictionaryValue* args,
                     IPC::Message* reply_message) {
   AutomationJSONReply reply(provider, reply_message);
   std::string url;
@@ -311,10 +304,10 @@ void GetCookiesJSON(AutomationProvider* provider,
   }
   event.Wait();
 
-  ListValue* list = new ListValue();
+  base::ListValue* list = new base::ListValue();
   for (size_t i = 0; i < cookie_list.size(); ++i) {
     const net::CanonicalCookie& cookie = cookie_list[i];
-    DictionaryValue* cookie_dict = new DictionaryValue();
+    base::DictionaryValue* cookie_dict = new base::DictionaryValue();
     cookie_dict->SetString("name", cookie.Name());
     cookie_dict->SetString("value", cookie.Value());
     cookie_dict->SetString("path", cookie.Path());
@@ -329,13 +322,13 @@ void GetCookiesJSON(AutomationProvider* provider,
     }
     list->Append(cookie_dict);
   }
-  DictionaryValue dict;
+  base::DictionaryValue dict;
   dict.Set("cookies", list);
   reply.SendSuccess(&dict);
 }
 
 void DeleteCookieJSON(AutomationProvider* provider,
-                      DictionaryValue* args,
+                      base::DictionaryValue* args,
                       IPC::Message* reply_message) {
   AutomationJSONReply reply(provider, reply_message);
   std::string url, name;
@@ -365,7 +358,7 @@ void DeleteCookieJSON(AutomationProvider* provider,
 }
 
 void SetCookieJSON(AutomationProvider* provider,
-                   DictionaryValue* args,
+                   base::DictionaryValue* args,
                    IPC::Message* reply_message) {
   AutomationJSONReply reply(provider, reply_message);
   std::string url;
@@ -373,7 +366,7 @@ void SetCookieJSON(AutomationProvider* provider,
     reply.SendError("'url' missing or invalid");
     return;
   }
-  DictionaryValue* cookie_dict;
+  base::DictionaryValue* cookie_dict;
   if (!args->GetDictionary("cookie", &cookie_dict)) {
     reply.SendError("'cookie' missing or invalid");
     return;

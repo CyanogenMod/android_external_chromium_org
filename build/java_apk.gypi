@@ -48,11 +48,11 @@
 #    strings.xml files, if any.
 #  library_manifest_paths'- Paths to additional AndroidManifest.xml files from
 #    libraries.
-#  use_content_linker - Enable the content dynamic linker that allows sharing the
+#  use_chromium_linker - Enable the content dynamic linker that allows sharing the
 #    RELRO section of the native libraries between the different processes.
-#  enable_content_linker_tests - Enable the content dynamic linker test support
+#  enable_chromium_linker_tests - Enable the content dynamic linker test support
 #    code. This allows a test APK to inject a Linker.TestRunner instance at
-#    runtime. Should only be used by the content_linker_test_apk target!!
+#    runtime. Should only be used by the chromium_linker_test_apk target!!
 #  never_lint - Set to 1 to not run lint on this target.
 {
   'variables': {
@@ -81,10 +81,7 @@
     'compile_input_paths': [],
     'package_input_paths': [],
     'ordered_libraries_file': '<(intermediate_dir)/native_libraries.json',
-    # TODO(cjhopman): build/ shouldn't refer to content/. The libraryloader and
-    # nativelibraries template should be moved out of content/ (to base/?).
-    # http://crbug.com/225101
-    'native_libraries_template': '<(DEPTH)/content/public/android/java/templates/NativeLibraries.template',
+    'native_libraries_template': '<(DEPTH)/base/android/java/templates/NativeLibraries.template',
     'native_libraries_java_dir': '<(intermediate_dir)/native_libraries_java/',
     'native_libraries_java_file': '<(native_libraries_java_dir)/NativeLibraries.java',
     'native_libraries_java_stamp': '<(intermediate_dir)/native_libraries_java.stamp',
@@ -126,8 +123,8 @@
       'variables': {
         'native_lib_target%': '',
         'native_lib_version_name%': '',
-        'use_content_linker%': 0,
-        'enable_content_linker_tests%': 0,
+        'use_chromium_linker%' : 0,
+        'enable_chromium_linker_tests%': 0,
         'is_test_apk%': 0,
       },
       'conditions': [
@@ -150,8 +147,8 @@
     },
     'native_lib_target%': '',
     'native_lib_version_name%': '',
-    'use_content_linker%': 0,
-    'enable_content_linker_tests%': 0,
+    'use_chromium_linker%' : 0,
+    'enable_chromium_linker_tests%': 0,
     'emma_instrument': '<(emma_instrument)',
     'apk_package_native_libs_dir': '<(apk_package_native_libs_dir)',
     'unsigned_standalone_apk_path': '<(unsigned_standalone_apk_path)',
@@ -185,9 +182,9 @@
         '<(DEPTH)/build/android/setup.gyp:copy_system_libraries',
       ],
     }],
-    ['use_content_linker == 1', {
+    ['use_chromium_linker == 1', {
       'dependencies': [
-        '<(DEPTH)/content/content.gyp:content_android_linker',
+        '<(DEPTH)/base/base.gyp:chromium_android_linker',
       ],
     }],
     ['native_lib_target != ""', {
@@ -217,10 +214,10 @@
         {
           'variables': {
             'conditions': [
-              ['use_content_linker == 1', {
+              ['use_chromium_linker == 1', {
                 'variables': {
                   'linker_input_libraries': [
-                    '<(SHARED_LIB_DIR)/libcontent_android_linker.>(android_product_extension)',
+                    '<(SHARED_LIB_DIR)/libchromium_android_linker.>(android_product_extension)',
                   ],
                 }
               }, {
@@ -261,10 +258,10 @@
           'action_name': 'native_libraries_<(_target_name)',
           'variables': {
             'conditions': [
-              ['use_content_linker == 1', {
+              ['use_chromium_linker == 1', {
                 'variables': {
                   'linker_gcc_preprocess_defines': [
-                    '--defines', 'ENABLE_CONTENT_LINKER',
+                    '--defines', 'ENABLE_CHROMIUM_LINKER',
                   ],
                 }
               }, {
@@ -272,10 +269,10 @@
                   'linker_gcc_preprocess_defines': [],
                 },
               }],
-              ['enable_content_linker_tests == 1', {
+              ['enable_chromium_linker_tests == 1', {
                 'variables': {
                   'linker_tests_gcc_preprocess_defines': [
-                    '--defines', 'ENABLE_CONTENT_LINKER_TESTS',
+                    '--defines', 'ENABLE_CHROMIUM_LINKER_TESTS',
                   ],
                 }
               }, {
@@ -289,7 +286,7 @@
               '<@(linker_tests_gcc_preprocess_defines)',
             ],
           },
-          'message': 'Creating NativeLibraries.java for <(_target_name).',
+          'message': 'Creating NativeLibraries.java for <(_target_name)',
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/gcc_preprocess.py',
@@ -340,7 +337,7 @@
             },
             {
               'action_name': 'create device library symlinks',
-              'message': 'Creating links on device for <(_target_name).',
+              'message': 'Creating links on device for <(_target_name)',
               'inputs': [
                 '<(DEPTH)/build/android/gyp/util/build_utils.py',
                 '<(DEPTH)/build/android/gyp/create_device_library_links.py',
@@ -684,7 +681,7 @@
     },
     {
       'action_name': 'ant package resources',
-      'message': 'Packaging resources for <(_target_name) APK.',
+      'message': 'Packaging resources for <(_target_name) APK',
       'inputs': [
         '<(DEPTH)/build/android/ant/apk-package-resources.xml',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
@@ -737,7 +734,7 @@
     },
     {
       'action_name': 'ant_package_<(_target_name)',
-      'message': 'Packaging <(_target_name).',
+      'message': 'Packaging <(_target_name)',
       'inputs': [
         '<(DEPTH)/build/android/ant/apk-package.xml',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',

@@ -26,7 +26,6 @@ process will stop and this list must be updated.
 # If there is a temporary license-related issue with a particular third_party
 # directory, please put it here, with a comment linking to the bug entry.
 KNOWN_ISSUES = [
-  'third_party/accessibility-developer-tools', # crbug.com/165901
 ]
 
 KNOWN_INCOMPATIBLE = {
@@ -36,7 +35,6 @@ KNOWN_INCOMPATIBLE = {
         'breakpad',
         'chrome/installer/mac/third_party/xz',
         'chrome/test/data',
-        'third_party/active_doc',
         'third_party/apple_apsl',
         'third_party/apple_sample_code',
         'third_party/bsdiff',

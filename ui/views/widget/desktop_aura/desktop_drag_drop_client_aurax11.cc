@@ -9,6 +9,7 @@
 #include "base/event_types.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_dispatcher.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/root_window.h"
@@ -137,8 +138,11 @@ void FindWindowFor(const gfx::Point& screen_point,
 
 namespace views {
 
+DesktopDragDropClientAuraX11*
+DesktopDragDropClientAuraX11::g_current_drag_drop_client = NULL;
+
 class DesktopDragDropClientAuraX11::X11DragContext :
-    public base::MessageLoop::Dispatcher {
+    public base::MessagePumpDispatcher {
  public:
   X11DragContext(ui::X11AtomCache* atom_cache,
                  ::Window local_window,
@@ -173,8 +177,8 @@ class DesktopDragDropClientAuraX11::X11DragContext :
   int GetDragOperation() const;
 
  private:
-  // Overridden from MessageLoop::Dispatcher:
-  virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE;
+  // Overridden from MessagePumpDispatcher:
+  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
 
   // The atom cache owned by our parent.
   ui::X11AtomCache* atom_cache_;
@@ -356,13 +360,13 @@ int DesktopDragDropClientAuraX11::X11DragContext::GetDragOperation() const {
   return drag_operation;
 }
 
-bool DesktopDragDropClientAuraX11::X11DragContext::Dispatch(
+uint32_t DesktopDragDropClientAuraX11::X11DragContext::Dispatch(
     const base::NativeEvent& event) {
   if (event->type == PropertyNotify &&
       event->xproperty.atom == atom_cache_->GetAtom("XdndActionList")) {
     ReadActions();
   }
-  return true;
+  return POST_DISPATCH_NONE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -380,7 +384,6 @@ DesktopDragDropClientAuraX11::DesktopDragDropClientAuraX11(
       target_window_(NULL),
       source_provider_(NULL),
       source_current_window_(None),
-      drag_drop_in_progress_(false),
       drag_operation_(0),
       resulting_operation_(0),
       grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorGrabbing)),
@@ -571,7 +574,8 @@ int DesktopDragDropClientAuraX11::StartDragAndDrop(
     int operation,
     ui::DragDropTypes::DragEventSource source) {
   source_current_window_ = None;
-  drag_drop_in_progress_ = true;
+  DCHECK(!g_current_drag_drop_client);
+  g_current_drag_drop_client = this;
   drag_operation_ = operation;
   resulting_operation_ = ui::DragDropTypes::DRAG_NONE;
 
@@ -593,7 +597,7 @@ int DesktopDragDropClientAuraX11::StartDragAndDrop(
   move_loop_.SetDragImage(gfx::ImageSkia(), gfx::Vector2dF());
 
   source_provider_ = NULL;
-  drag_drop_in_progress_ = false;
+  g_current_drag_drop_client = NULL;
   drag_operation_ = 0;
   XDeleteProperty(xdisplay_, xwindow_, atom_cache_.GetAtom("XdndActionList"));
 
@@ -615,7 +619,7 @@ void DesktopDragDropClientAuraX11::DragCancel() {
 }
 
 bool DesktopDragDropClientAuraX11::IsDragDropInProgress() {
-  return drag_drop_in_progress_;
+  return !!g_current_drag_drop_client;
 }
 
 void DesktopDragDropClientAuraX11::OnWindowDestroyed(aura::Window* window) {

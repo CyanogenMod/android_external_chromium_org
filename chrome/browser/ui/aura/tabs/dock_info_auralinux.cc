@@ -13,7 +13,7 @@
 #endif
 
 #if !defined(OS_CHROMEOS) && defined(USE_X11)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 
 namespace {
 
@@ -187,7 +187,7 @@ gfx::NativeView DockInfo::GetLocalProcessWindowAtPoint(
   // is.
   XID xid =
       LocalProcessWindowFinder::GetProcessWindowAtPoint(screen_point, ignore);
-  return views::DesktopRootWindowHostX11::GetContentWindowForXID(xid);
+  return views::DesktopWindowTreeHostX11::GetContentWindowForXID(xid);
 }
 #else
 // static

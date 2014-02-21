@@ -26,7 +26,7 @@ TEST(SyncUIUtilTestAbout, ConstructAboutInformationWithUnrecoverableErrorTest) {
   NiceMock<ProfileSyncServiceMock> service(profile.get());
 
   // Will be released when the dictionary is destroyed
-  base::string16 str(ASCIIToUTF16("none"));
+  base::string16 str(base::ASCIIToUTF16("none"));
 
   browser_sync::SyncBackendHost::Status status;
 
@@ -41,7 +41,8 @@ TEST(SyncUIUtilTestAbout, ConstructAboutInformationWithUnrecoverableErrorTest) {
   EXPECT_CALL(service, GetLastSyncedTimeString())
               .WillOnce(Return(str));
 
-  scoped_ptr<DictionaryValue> strings(ConstructAboutInformation(&service));
+  scoped_ptr<base::DictionaryValue> strings(
+      ConstructAboutInformation(&service));
 
   EXPECT_TRUE(strings->HasKey("unrecoverable_error_detected"));
 }

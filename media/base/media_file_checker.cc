@@ -21,20 +21,17 @@ static void OnError(bool* called) {
   *called = false;
 }
 
-MediaFileChecker::MediaFileChecker(const base::PlatformFile& file)
-    : file_(file),
-      file_closer_(&file_) {
+MediaFileChecker::MediaFileChecker(base::File file) : file_(file.Pass()) {
 }
 
 MediaFileChecker::~MediaFileChecker() {
 }
 
 bool MediaFileChecker::Start(base::TimeDelta check_time) {
-  media::FileDataSource source;
+  media::FileDataSource source(file_.Pass());
   bool read_ok = true;
   media::BlockingUrlProtocol protocol(&source, base::Bind(&OnError, &read_ok));
   media::FFmpegGlue glue(&protocol);
-  source.InitializeFromPlatformFile(file_);
   AVFormatContext* format_context = glue.format_context();
 
   if (!glue.OpenContext())
@@ -60,10 +57,10 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
 
   AVPacket packet;
   scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFreeFrame> frame(
-      avcodec_alloc_frame());
+      av_frame_alloc());
   int result = 0;
 
-  base::Time deadline = base::Time::Now() +
+  const base::TimeTicks deadline = base::TimeTicks::Now() +
       std::min(check_time,
                base::TimeDelta::FromSeconds(kMaxCheckTimeInSeconds));
   do {
@@ -102,7 +99,7 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
                                      &packet);
     }
     av_free_packet(&packet);
-  } while (base::Time::Now() < deadline && read_ok && result >= 0);
+  } while (base::TimeTicks::Now() < deadline && read_ok && result >= 0);
 
   return read_ok && (result == AVERROR_EOF || result >= 0);
 }

@@ -33,8 +33,6 @@
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
 class ChildProcessSecurityPolicyTest;
-class TestAutomationProvider;
-class URLRequestAutomationJob;
 
 namespace base {
 class Value;
@@ -55,21 +53,11 @@ class AppCacheURLRequestJobTest;
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
 namespace content {
-class ResourceDispatcherHostTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace fileapi {
+class BlobURLRequestJobTest;
 class FileSystemDirURLRequestJobTest;
 class FileSystemURLRequestJobTest;
 class FileWriterDelegateTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace webkit_blob {
-class BlobURLRequestJobTest;
+class ResourceDispatcherHostTest;
 }
 
 namespace net {
@@ -177,18 +165,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
    private:
     // TODO(willchan): Kill off these friend declarations.
     friend class ::ChildProcessSecurityPolicyTest;
-    friend class ::TestAutomationProvider;
-    friend class ::URLRequestAutomationJob;
     friend class TestInterceptor;
     friend class URLRequestFilter;
     friend class appcache::AppCacheInterceptor;
     friend class appcache::AppCacheRequestHandlerTest;
     friend class appcache::AppCacheURLRequestJobTest;
+    friend class content::BlobURLRequestJobTest;
+    friend class content::FileSystemDirURLRequestJobTest;
+    friend class content::FileSystemURLRequestJobTest;
+    friend class content::FileWriterDelegateTest;
     friend class content::ResourceDispatcherHostTest;
-    friend class fileapi::FileSystemDirURLRequestJobTest;
-    friend class fileapi::FileSystemURLRequestJobTest;
-    friend class fileapi::FileWriterDelegateTest;
-    friend class webkit_blob::BlobURLRequestJobTest;
 
     // Use URLRequestJobFactory::ProtocolHandler instead.
     static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
@@ -277,6 +263,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     virtual void OnSSLCertificateError(URLRequest* request,
                                        const SSLInfo& ssl_info,
                                        bool fatal);
+
+    // Called to notify that the request must use the network to complete the
+    // request and is about to do so. This is called at most once per
+    // URLRequest, and by default does not defer. If deferred, call
+    // ResumeNetworkStart() to continue or Cancel() to cancel.
+    virtual void OnBeforeNetworkStart(URLRequest* request, bool* defer);
 
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed.  If an error occurred, the
@@ -438,6 +430,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // 2. The OnResponseStarted callback is currently running or has run.
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
+  // Gets the total amount of data received from network after SSL decoding and
+  // proxy handling.
+  int64 GetTotalReceivedBytes() const;
+
   // Returns the current load state for the request. The returned value's
   // |param| field is an optional parameter describing details related to the
   // load state. Not all load states have a parameter.
@@ -502,6 +498,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns true if the URLRequest was delivered through a proxy.
   bool was_fetched_via_proxy() const {
     return response_info_.was_fetched_via_proxy;
+  }
+
+  // Returns true if the URLRequest was delivered over SPDY.
+  bool was_fetched_via_spdy() const {
+    return response_info_.was_fetched_via_spdy;
   }
 
   // Returns the host and port that the content was fetched from.  See
@@ -626,6 +627,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // response to an OnReceivedRedirect call.
   void FollowDeferredRedirect();
 
+  // This method must be called to resume network communications that were
+  // deferred in response to an OnBeforeNetworkStart call.
+  void ResumeNetworkStart();
+
   // One of the following two methods should be called in response to an
   // OnAuthRequired() callback (and only then).
   // SetAuth will reissue the request with the given credentials.
@@ -692,6 +697,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Called by URLRequestJob to allow interception when a redirect occurs.
   void NotifyReceivedRedirect(const GURL& location, bool* defer_redirect);
+
+  // Called by URLRequestHttpJob (note, only HTTP(S) jobs will call this) to
+  // allow deferral of network initialization.
+  void NotifyBeforeNetworkStart(bool* defer);
 
   // Allow an interceptor's URLRequestJob to restart this request.
   // Should only be called if the original job has not started a response.
@@ -882,6 +891,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   LoadTimingInfo load_timing_info_;
 
   scoped_ptr<const base::debug::StackTrace> stack_trace_;
+
+  // Keeps track of whether or not OnBeforeNetworkStart has been called yet.
+  bool notified_before_network_start_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

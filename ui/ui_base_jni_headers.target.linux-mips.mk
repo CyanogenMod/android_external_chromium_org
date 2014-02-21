@@ -15,13 +15,13 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "ui_ui_gyp_ui_base_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/ui/base/Clipboard.java', 'android/java/src/org/chromium/ui/base/LocalizationUtils.java', 'android/java/src/org/chromium/ui/base/SelectFileDialog.java', 'android/java/src/org/chromium/ui/base/ViewAndroid.java', 'android/java/src/org/chromium/ui/base/WindowAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/ui/base/Clipboard.java', 'android/java/src/org/chromium/ui/base/LocalizationUtils.java', 'android/java/src/org/chromium/ui/base/SelectFileDialog.java', 'android/java/src/org/chromium/ui/base/ViewAndroid.java', 'android/java/src/org/chromium/ui/base/WindowAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/base/Clipboard.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/Clipboard.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/Clipboard.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_ui_base_jni_headers_gyp_rule_trigger
 ui_ui_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h
@@ -31,7 +31,7 @@ $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h: gyp_intermediate_
 $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/base/LocalizationUtils.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/LocalizationUtils.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/LocalizationUtils.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_ui_base_jni_headers_gyp_rule_trigger
 ui_ui_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h
@@ -41,7 +41,7 @@ $(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h: gyp_intermediate_d
 $(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/SelectFileDialog.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/SelectFileDialog.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_ui_base_jni_headers_gyp_rule_trigger
 ui_ui_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h
@@ -51,7 +51,7 @@ $(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h: gyp_intermediate_dir :=
 $(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/base/ViewAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/ViewAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/ViewAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_ui_base_jni_headers_gyp_rule_trigger
 ui_ui_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h
@@ -61,7 +61,7 @@ $(gyp_shared_intermediate_dir)/ui/jni/WindowAndroid_jni.h: gyp_intermediate_dir 
 $(gyp_shared_intermediate_dir)/ui/jni/WindowAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/WindowAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/jni/WindowAndroid_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/base/WindowAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/WindowAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/base/WindowAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
 
 .PHONY: ui_ui_base_jni_headers_gyp_rule_trigger
 ui_ui_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/WindowAndroid_jni.h
@@ -117,14 +117,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -135,7 +136,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -167,7 +167,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -198,14 +197,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -216,7 +216,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -249,7 +248,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

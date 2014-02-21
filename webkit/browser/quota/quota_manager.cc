@@ -24,6 +24,7 @@
 #include "base/time/time.h"
 #include "net/base/net_util.h"
 #include "webkit/browser/quota/quota_database.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/browser/quota/quota_temporary_storage_evictor.h"
 #include "webkit/browser/quota/usage_tracker.h"
 #include "webkit/common/quota/quota_types.h"
@@ -43,21 +44,6 @@ const int kMinutesInMilliSeconds = 60 * 1000;
 const int64 kReportHistogramInterval = 60 * 60 * 1000;  // 1 hour
 const double kTemporaryQuotaRatioToAvail = 1.0 / 3.0;  // 33%
 
-void DidGetUsageAndQuota(
-    base::SequencedTaskRunner* original_task_runner,
-    const QuotaManagerProxy::GetUsageAndQuotaCallback& callback,
-    QuotaStatusCode status, int64 usage, int64 quota) {
-  if (!original_task_runner->RunsTasksOnCurrentThread()) {
-    original_task_runner->PostTask(
-        FROM_HERE,
-        base::Bind(&DidGetUsageAndQuota,
-                   make_scoped_refptr(original_task_runner),
-                   callback, status, usage, quota));
-    return;
-  }
-  callback.Run(status, usage, quota);
-}
-
 }  // namespace
 
 // Arbitrary for now, but must be reasonably small so that
@@ -68,6 +54,12 @@ const int64 QuotaManager::kIncognitoDefaultQuotaLimit = 100 * kMBytes;
 const int64 QuotaManager::kNoLimit = kint64max;
 
 const int QuotaManager::kPerHostTemporaryPortion = 5;  // 20%
+
+// Cap size for per-host persistent quota determined by the histogram.
+// This is a bit lax value because the histogram says nothing about per-host
+// persistent storage usage and we determined by global persistent storage
+// usage that is less than 10GB for almost all users.
+const int64 QuotaManager::kPerHostPersistentQuotaLimit = 10 * 1024 * kMBytes;
 
 const char QuotaManager::kDatabaseName[] = "QuotaManager";
 
@@ -199,7 +191,7 @@ bool UpdateModifiedTimeOnDBThread(const GURL& origin,
 
 int64 CallSystemGetAmountOfFreeDiskSpace(const base::FilePath& profile_path) {
   // Ensure the profile path exists.
-  if(!base::CreateDirectory(profile_path)) {
+  if (!base::CreateDirectory(profile_path)) {
     LOG(WARNING) << "Create directory failed for path" << profile_path.value();
     return 0;
   }
@@ -325,7 +317,7 @@ class UsageAndQuotaCallbackDispatcher
     : public QuotaTask,
       public base::SupportsWeakPtr<UsageAndQuotaCallbackDispatcher> {
  public:
-  UsageAndQuotaCallbackDispatcher(QuotaManager* manager)
+  explicit UsageAndQuotaCallbackDispatcher(QuotaManager* manager)
       : QuotaTask(manager),
         has_usage_(false),
         has_global_limited_usage_(false),
@@ -465,9 +457,6 @@ class UsageAndQuotaCallbackDispatcher
 };
 
 class QuotaManager::GetUsageInfoTask : public QuotaTask {
- private:
-  typedef QuotaManager::GetUsageInfoTask self_type;
-
  public:
   GetUsageInfoTask(
       QuotaManager* manager,
@@ -588,6 +577,7 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
     DeleteSoon();
   }
 
+ private:
   void DidDeleteOriginData(QuotaStatusCode status) {
     DCHECK_GT(remaining_clients_, 0);
 
@@ -658,6 +648,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
     DeleteSoon();
   }
 
+ private:
   void DidGetOriginsForHost(const std::set<GURL>& origins) {
     DCHECK_GT(remaining_clients_, 0);
 
@@ -743,8 +734,7 @@ class QuotaManager::DumpQuotaTableHelper {
   bool DumpQuotaTableOnDBThread(QuotaDatabase* database) {
     DCHECK(database);
     return database->DumpQuotaTable(
-        new TableCallback(base::Bind(&DumpQuotaTableHelper::AppendEntry,
-                                     base::Unretained(this))));
+        base::Bind(&DumpQuotaTableHelper::AppendEntry, base::Unretained(this)));
   }
 
   void DidDumpQuotaTable(const base::WeakPtr<QuotaManager>& manager,
@@ -760,8 +750,6 @@ class QuotaManager::DumpQuotaTableHelper {
   }
 
  private:
-  typedef QuotaDatabase::QuotaTableCallback TableCallback;
-
   bool AppendEntry(const QuotaTableEntry& entry) {
     entries_.push_back(entry);
     return true;
@@ -775,8 +763,8 @@ class QuotaManager::DumpOriginInfoTableHelper {
   bool DumpOriginInfoTableOnDBThread(QuotaDatabase* database) {
     DCHECK(database);
     return database->DumpOriginInfoTable(
-        new TableCallback(base::Bind(&DumpOriginInfoTableHelper::AppendEntry,
-                                     base::Unretained(this))));
+        base::Bind(&DumpOriginInfoTableHelper::AppendEntry,
+                   base::Unretained(this)));
   }
 
   void DidDumpOriginInfoTable(const base::WeakPtr<QuotaManager>& manager,
@@ -792,8 +780,6 @@ class QuotaManager::DumpOriginInfoTableHelper {
   }
 
  private:
-  typedef QuotaDatabase::OriginInfoTableCallback TableCallback;
-
   bool AppendEntry(const OriginInfoTableEntry& entry) {
     entries_.push_back(entry);
     return true;
@@ -1007,7 +993,7 @@ void QuotaManager::SetTemporaryGlobalOverrideQuota(
   }
 
   if (db_disabled_) {
-    if (callback.is_null())
+    if (!callback.is_null())
       callback.Run(kQuotaErrorInvalidAccess, -1);
     return;
   }
@@ -1058,9 +1044,15 @@ void QuotaManager::SetPersistentHostQuota(const std::string& host,
     callback.Run(kQuotaErrorNotSupported, 0);
     return;
   }
+
   if (new_quota < 0) {
     callback.Run(kQuotaErrorInvalidModification, -1);
     return;
+  }
+
+  if (kPerHostPersistentQuotaLimit < new_quota) {
+    // Cap the requested size at the per-host quota limit.
+    new_quota = kPerHostPersistentQuotaLimit;
   }
 
   if (db_disabled_) {
@@ -1603,132 +1595,6 @@ void QuotaManager::PostTaskAndReplyWithResultForDBThread(
       from_here,
       base::Bind(task, base::Unretained(database_.get())),
       reply);
-}
-
-// QuotaManagerProxy ----------------------------------------------------------
-
-void QuotaManagerProxy::RegisterClient(QuotaClient* client) {
-  if (!io_thread_->BelongsToCurrentThread() &&
-      io_thread_->PostTask(
-          FROM_HERE,
-          base::Bind(&QuotaManagerProxy::RegisterClient, this, client))) {
-    return;
-  }
-
-  if (manager_)
-    manager_->RegisterClient(client);
-  else
-    client->OnQuotaManagerDestroyed();
-}
-
-void QuotaManagerProxy::NotifyStorageAccessed(
-    QuotaClient::ID client_id,
-    const GURL& origin,
-    StorageType type) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::NotifyStorageAccessed, this, client_id,
-                   origin, type));
-    return;
-  }
-
-  if (manager_)
-    manager_->NotifyStorageAccessed(client_id, origin, type);
-}
-
-void QuotaManagerProxy::NotifyStorageModified(
-    QuotaClient::ID client_id,
-    const GURL& origin,
-    StorageType type,
-    int64 delta) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::NotifyStorageModified, this, client_id,
-                   origin, type, delta));
-    return;
-  }
-
-  if (manager_)
-    manager_->NotifyStorageModified(client_id, origin, type, delta);
-}
-
-void QuotaManagerProxy::NotifyOriginInUse(
-    const GURL& origin) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::NotifyOriginInUse, this, origin));
-    return;
-  }
-
-  if (manager_)
-    manager_->NotifyOriginInUse(origin);
-}
-
-void QuotaManagerProxy::NotifyOriginNoLongerInUse(
-    const GURL& origin) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::NotifyOriginNoLongerInUse, this,
-                   origin));
-    return;
-  }
-  if (manager_)
-    manager_->NotifyOriginNoLongerInUse(origin);
-}
-
-void QuotaManagerProxy::SetUsageCacheEnabled(QuotaClient::ID client_id,
-                                             const GURL& origin,
-                                             StorageType type,
-                                             bool enabled) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::SetUsageCacheEnabled, this,
-                   client_id, origin, type, enabled));
-    return;
-  }
-  if (manager_)
-    manager_->SetUsageCacheEnabled(client_id, origin, type, enabled);
-}
-
-void QuotaManagerProxy::GetUsageAndQuota(
-    base::SequencedTaskRunner* original_task_runner,
-    const GURL& origin,
-    StorageType type,
-    const GetUsageAndQuotaCallback& callback) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::GetUsageAndQuota, this,
-                   make_scoped_refptr(original_task_runner),
-                   origin, type, callback));
-    return;
-  }
-  if (!manager_) {
-    DidGetUsageAndQuota(original_task_runner, callback, kQuotaErrorAbort, 0, 0);
-    return;
-  }
-  manager_->GetUsageAndQuota(
-      origin, type,
-      base::Bind(&DidGetUsageAndQuota,
-                 make_scoped_refptr(original_task_runner), callback));
-}
-
-QuotaManager* QuotaManagerProxy::quota_manager() const {
-  DCHECK(!io_thread_.get() || io_thread_->BelongsToCurrentThread());
-  return manager_;
-}
-
-QuotaManagerProxy::QuotaManagerProxy(
-    QuotaManager* manager, base::SingleThreadTaskRunner* io_thread)
-    : manager_(manager), io_thread_(io_thread) {
-}
-
-QuotaManagerProxy::~QuotaManagerProxy() {
 }
 
 }  // namespace quota

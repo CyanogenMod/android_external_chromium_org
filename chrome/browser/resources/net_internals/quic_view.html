@@ -3,6 +3,7 @@
     <li>QUIC Enabled: <span jscontent="!!quic_enabled"></span></li>
     <li>HTTPS Over QUIC Enabled: <span jscontent="!!quic_enabled_https"></span></li>
     <li>Origin To Force QUIC On: <span jscontent="origin_to_force_quic_on"></span></li>
+    <li>Consistent Port Selection Enabled: <span jscontent="!!enable_quic_port_selection"></span></li>
   </ul>
 
   <h4>QUIC sessions</h4>
@@ -25,9 +26,7 @@
           </thead>
           <tbody>
             <tr jsselect="sessions">
-              <td><span jscontent="host_port_pair"></span>
-                <span jscontent="$this.aliases ? $this.aliases.join(' ') : ''"></span>
-              </td>
+              <td jscontent="$this.aliases ? $this.aliases.join(' ') : ''"></td>
               <td jscontent="version"></td>
               <td jscontent="peer_address"></td>
               <td jscontent="guid"></td>

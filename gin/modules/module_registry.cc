@@ -94,7 +94,7 @@ v8::Handle<String> GetHiddenValueKey(Isolate* isolate) {
 }  // namespace
 
 ModuleRegistry::ModuleRegistry(Isolate* isolate)
-    : modules_(isolate, Object::New()) {
+    : modules_(isolate, Object::New(isolate)) {
 }
 
 ModuleRegistry::~ModuleRegistry() {
@@ -123,11 +123,10 @@ ModuleRegistry* ModuleRegistry::From(v8::Handle<Context> context) {
   return static_cast<ModuleRegistry*>(external->Value());
 }
 
-void ModuleRegistry::AddBuiltinModule(Isolate* isolate,
-                                      const std::string& id,
-                                      v8::Handle<ObjectTemplate> templ) {
+void ModuleRegistry::AddBuiltinModule(Isolate* isolate, const std::string& id,
+                                      v8::Handle<Value> module) {
   DCHECK(!id.empty());
-  RegisterModule(isolate, id, templ->NewInstance());
+  RegisterModule(isolate, id, module);
 }
 
 void ModuleRegistry::AddPendingModule(Isolate* isolate,

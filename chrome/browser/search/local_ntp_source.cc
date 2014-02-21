@@ -81,7 +81,7 @@ void AddString(base::DictionaryValue* dictionary,
 }
 
 // Populates |translated_strings| dictionary for the local NTP.
-scoped_ptr<DictionaryValue> GetTranslatedStrings() {
+scoped_ptr<base::DictionaryValue> GetTranslatedStrings() {
   scoped_ptr<base::DictionaryValue> translated_strings(
       new base::DictionaryValue());
 
@@ -105,7 +105,8 @@ std::string GetConfigData(Profile* profile) {
   base::DictionaryValue config_data;
   config_data.Set("translatedStrings", GetTranslatedStrings().release());
   config_data.SetBoolean("isGooglePage",
-                         DefaultSearchProviderIsGoogle(profile));
+                         DefaultSearchProviderIsGoogle(profile) &&
+                         chrome::ShouldShowGoogleLocalNTP());
 
   // Serialize the dictionary.
   std::string js_text;
@@ -134,7 +135,7 @@ std::string LocalNtpSource::GetSource() const {
 void LocalNtpSource::StartDataRequest(
     const std::string& path,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   const std::string stripped_path = StripParameters(path);
   if (stripped_path == kConfigDataFilename) {

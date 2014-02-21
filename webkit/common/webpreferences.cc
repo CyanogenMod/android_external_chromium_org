@@ -10,6 +10,7 @@
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 
+using base::ASCIIToWide;
 using blink::WebSettings;
 
 WebPreferences::WebPreferences()
@@ -47,6 +48,7 @@ WebPreferences::WebPreferences()
       allow_file_access_from_file_urls(false),
       webaudio_enabled(false),
       experimental_webgl_enabled(false),
+      pepper_3d_enabled(false),
       flash_3d_enabled(true),
       flash_stage3d_enabled(false),
       flash_stage3d_baseline_enabled(false),
@@ -73,6 +75,7 @@ WebPreferences::WebPreferences()
       antialiased_2d_canvas_disabled(false),
       accelerated_2d_canvas_msaa_sample_count(0),
       accelerated_filters_enabled(false),
+      deferred_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
       accelerated_compositing_for_plugins_enabled(false),
       memory_info_enabled(false),
@@ -81,6 +84,7 @@ WebPreferences::WebPreferences()
       allow_running_insecure_content(false),
       password_echo_enabled(false),
       should_print_backgrounds(false),
+      should_clear_document_background(true),
       enable_scroll_animator(false),
       visual_word_movement_enabled(false),
       lazy_layout_enabled(false),
@@ -146,19 +150,19 @@ WebPreferences::WebPreferences()
 #endif
 {
   standard_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
   fixed_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Courier New");
+      base::ASCIIToUTF16("Courier New");
   serif_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
   sans_serif_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Arial");
+      base::ASCIIToUTF16("Arial");
   cursive_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Script");
+      base::ASCIIToUTF16("Script");
   fantasy_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Impact");
+      base::ASCIIToUTF16("Impact");
   pictograph_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
 }
 
 WebPreferences::~WebPreferences() {

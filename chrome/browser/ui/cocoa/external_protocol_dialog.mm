@@ -21,7 +21,9 @@
 // static
 void ExternalProtocolHandler::RunExternalProtocolDialog(
     const GURL& url, int render_process_host_id, int routing_id) {
-  [[ExternalProtocolDialogController alloc] initWithGURL:&url];
+  [[ExternalProtocolDialogController alloc] initWithGURL:&url
+                                     renderProcessHostId:render_process_host_id
+                                               routingId:routing_id];
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -31,17 +33,21 @@ void ExternalProtocolHandler::RunExternalProtocolDialog(
 - (void)alertEnded:(NSAlert *)alert
         returnCode:(int)returnCode
        contextInfo:(void*)contextInfo;
-- (string16)appNameForProtocol;
+- (base::string16)appNameForProtocol;
 @end
 
 @implementation ExternalProtocolDialogController
-- (id)initWithGURL:(const GURL*)url {
-  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+- (id)initWithGURL:(const GURL*)url
+    renderProcessHostId:(int)renderProcessHostId
+    routingId:(int)routingId {
+  DCHECK(base::MessageLoopForUI::IsCurrent());
 
   if (!(self = [super init]))
     return nil;
 
   url_ = *url;
+  render_process_host_id_ = renderProcessHostId;
+  routing_id_ = routingId;
   creation_time_ = base::Time::Now();
 
   base::string16 appName = [self appNameForProtocol];
@@ -65,12 +71,12 @@ void ExternalProtocolHandler::RunExternalProtocolDialog(
 
   const int kMaxUrlWithoutSchemeSize = 256;
   base::string16 elided_url_without_scheme;
-  gfx::ElideString(ASCIIToUTF16(url_.possibly_invalid_spec()),
+  gfx::ElideString(base::ASCIIToUTF16(url_.possibly_invalid_spec()),
                   kMaxUrlWithoutSchemeSize, &elided_url_without_scheme);
 
   NSString* urlString = l10n_util::GetNSStringFWithFixup(
       IDS_EXTERNAL_PROTOCOL_INFORMATION,
-      ASCIIToUTF16(url_.scheme() + ":"),
+      base::ASCIIToUTF16(url_.scheme() + ":"),
       elided_url_without_scheme);
   NSString* appString = l10n_util::GetNSStringFWithFixup(
       IDS_EXTERNAL_PROTOCOL_APPLICATION_TO_LAUNCH,
@@ -127,13 +133,14 @@ void ExternalProtocolHandler::RunExternalProtocolDialog(
     UMA_HISTOGRAM_LONG_TIMES("clickjacking.launch_url",
                              base::Time::Now() - creation_time_);
 
-    ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(url_);
+    ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
+        url_, render_process_host_id_, routing_id_);
   }
 
   [self autorelease];
 }
 
-- (string16)appNameForProtocol {
+- (base::string16)appNameForProtocol {
   NSURL* url = [NSURL URLWithString:
       base::SysUTF8ToNSString(url_.possibly_invalid_spec())];
   CFURLRef openingApp = NULL;

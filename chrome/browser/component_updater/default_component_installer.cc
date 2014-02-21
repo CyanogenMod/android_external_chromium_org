@@ -13,6 +13,8 @@
 #include "chrome/browser/component_updater/default_component_installer.h"
 #include "content/public/browser/browser_thread.h"
 
+namespace component_updater {
+
 namespace {
 // Version "0" corresponds to no installed version. By the server's conventions,
 // we represent it as a dotted quad.
@@ -129,8 +131,14 @@ void DefaultComponentInstaller::StartRegistration(
        !path.value().empty();
        path = file_enumerator.Next()) {
     base::Version version(path.BaseName().MaybeAsASCII());
+    // Ignore folders that don't have valid version names. These folders are not
+    // managed by component installer so do not try to remove them.
     if (!version.IsValid())
       continue;
+    if (!installer_traits_->VerifyInstallation(path)) {
+      older_dirs.push_back(path);
+      continue;
+    }
     if (found) {
       if (version.CompareTo(latest_version) > 0) {
         older_dirs.push_back(latest_dir);
@@ -208,3 +216,6 @@ void DefaultComponentInstaller::FinishRegistration(
         manifest_copy.Pass());
   }
 }
+
+}  // namespace component_updater
+

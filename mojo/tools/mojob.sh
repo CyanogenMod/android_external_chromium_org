@@ -47,16 +47,19 @@ do_build() {
 
 do_unittests() {
   echo "Running unit tests in out/$1 ..."
-  "out/$1/mojo_system_unittests" || exit 1
-  "out/$1/mojo_public_unittests" || exit 1
-  "out/$1/mojo_bindings_unittests" || exit 1
-  "out/$1/mojo_js_unittests" || exit 1
   "out/$1/mojo_common_unittests" || exit 1
+  "out/$1/mojo_js_unittests" || exit 1
+  "out/$1/mojo_public_bindings_unittests" || exit 1
+  "out/$1/mojo_public_environment_unittests" || exit 1
+  "out/$1/mojo_public_system_unittests" || exit 1
+  "out/$1/mojo_public_utility_unittests" || exit 1
+  "out/$1/mojo_shell_unittests" || exit 1
+  "out/$1/mojo_system_unittests" || exit 1
 }
 
 do_perftests() {
   echo "Running perf tests in out/$1 ..."
-  "out/$1/mojo_public_perftests" || exit 1
+  "out/$1/mojo_public_system_perftests" || exit 1
 }
 
 do_gyp() {

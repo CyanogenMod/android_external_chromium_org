@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_ASH_MULTI_USER_MULTI_USER_WINDOW_MANAGER_H_
 
 #include <map>
+#include <set>
 #include <string>
 
 class Browser;
@@ -36,6 +37,22 @@ class MultiUserWindowManagerChromeOS;
 // - All child windows will be owned by the same owner as its parent.
 class MultiUserWindowManager {
  public:
+  // Observer to notify of any window owner changes.
+  class Observer {
+   public:
+    // Invoked when the new window is created and the manager start to track its
+    // owner.
+    virtual void OnOwnerEntryAdded(aura::Window* window) {}
+    // Invoked when the owner of the window tracked by the manager is changed.
+    virtual void OnOwnerEntryChanged(aura::Window* window) {}
+    // Invoked when the window is destroyed and the manager stop to track its
+    // owner.
+    virtual void OnOwnerEntryRemoved(aura::Window* window) {}
+
+   protected:
+    virtual ~Observer() {}
+  };
+
   // The multi profile mode in use.
   enum MultiProfileMode {
     MULTI_PROFILE_MODE_UNINITIALIZED,  // Not initialized yet.
@@ -90,6 +107,9 @@ class MultiUserWindowManager {
   // Returns true when windows are shared among users.
   virtual bool AreWindowsSharedAmongUsers() = 0;
 
+  // Get the owners for the visible windows and set them to |user_ids|.
+  virtual void GetOwnersOfVisibleWindows(std::set<std::string>* user_ids) = 0;
+
   // A query call for a given window to see if it is on the given user's
   // desktop.
   virtual bool IsWindowOnDesktopOfUser(aura::Window* window,
@@ -105,6 +125,10 @@ class MultiUserWindowManager {
   // SessionStateObserver to coordinate the timing of the addition with other
   // modules.
   virtual void AddUser(Profile* profile) = 0;
+
+  // Manages observers.
+  virtual void AddObserver(Observer* observer) = 0;
+  virtual void RemoveObserver(Observer* observer) = 0;
 
  protected:
   virtual ~MultiUserWindowManager() {}

@@ -44,8 +44,7 @@ PicturePileBase::PicturePileBase()
       slow_down_raster_scale_factor_for_debug_(0),
       contents_opaque_(false),
       show_debug_picture_borders_(false),
-      clear_canvas_with_debug_color_(kDefaultClearCanvasSetting),
-      num_raster_threads_(0) {
+      clear_canvas_with_debug_color_(kDefaultClearCanvasSetting) {
   tiling_.SetMaxTextureSize(gfx::Size(kBasePictureSize, kBasePictureSize));
   tile_grid_info_.fTileInterval.setEmpty();
   tile_grid_info_.fMargin.setEmpty();
@@ -63,8 +62,7 @@ PicturePileBase::PicturePileBase(const PicturePileBase* other)
           other->slow_down_raster_scale_factor_for_debug_),
       contents_opaque_(other->contents_opaque_),
       show_debug_picture_borders_(other->show_debug_picture_borders_),
-      clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
-      num_raster_threads_(other->num_raster_threads_) {
+      clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_) {
 }
 
 PicturePileBase::PicturePileBase(
@@ -78,8 +76,7 @@ PicturePileBase::PicturePileBase(
           other->slow_down_raster_scale_factor_for_debug_),
       contents_opaque_(other->contents_opaque_),
       show_debug_picture_borders_(other->show_debug_picture_borders_),
-      clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
-      num_raster_threads_(other->num_raster_threads_) {
+      clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_) {
   for (PictureMap::const_iterator it = other->picture_map_.begin();
        it != other->picture_map_.end();
        ++it) {
@@ -90,7 +87,7 @@ PicturePileBase::PicturePileBase(
 PicturePileBase::~PicturePileBase() {
 }
 
-void PicturePileBase::Resize(gfx::Size new_size) {
+void PicturePileBase::Resize(const gfx::Size& new_size) {
   if (size() == new_size)
     return;
 
@@ -139,7 +136,7 @@ void PicturePileBase::SetMinContentsScale(float min_contents_scale) {
 
 // static
 void PicturePileBase::ComputeTileGridInfo(
-    gfx::Size tile_grid_size,
+    const gfx::Size& tile_grid_size,
     SkTileGridPicture::TileGridInfo* info) {
   DCHECK(info);
   info->fTileInterval.set(tile_grid_size.width() - 2 * kTileGridBorderPixels,
@@ -153,7 +150,7 @@ void PicturePileBase::ComputeTileGridInfo(
   info->fOffset.set(-kTileGridBorderPixels, -kTileGridBorderPixels);
 }
 
-void PicturePileBase::SetTileGridSize(gfx::Size tile_grid_size) {
+void PicturePileBase::SetTileGridSize(const gfx::Size& tile_grid_size) {
   ComputeTileGridInfo(tile_grid_size, &tile_grid_info_);
 }
 
@@ -188,7 +185,8 @@ bool PicturePileBase::HasRecordingAt(int x, int y) {
   return !!found->second.GetPicture();
 }
 
-bool PicturePileBase::CanRaster(float contents_scale, gfx::Rect content_rect) {
+bool PicturePileBase::CanRaster(float contents_scale,
+                                const gfx::Rect& content_rect) {
   if (tiling_.total_size().IsEmpty())
     return false;
   gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
@@ -202,7 +200,7 @@ gfx::Rect PicturePileBase::PaddedRect(const PictureMapKey& key) {
   return PadRect(tile);
 }
 
-gfx::Rect PicturePileBase::PadRect(gfx::Rect rect) {
+gfx::Rect PicturePileBase::PadRect(const gfx::Rect& rect) {
   gfx::Rect padded_rect = rect;
   padded_rect.Inset(
       -buffer_pixels(), -buffer_pixels(), -buffer_pixels(), -buffer_pixels());

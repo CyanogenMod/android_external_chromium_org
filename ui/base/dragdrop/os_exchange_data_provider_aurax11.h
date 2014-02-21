@@ -27,9 +27,10 @@
 namespace ui {
 
 class Clipboard;
+class OSExchangeDataProviderAuraX11Test;
 
 // OSExchangeData::Provider implementation for aura on linux.
-class UI_EXPORT OSExchangeDataProviderAuraX11
+class UI_BASE_EXPORT OSExchangeDataProviderAuraX11
     : public OSExchangeData::Provider,
       public base::MessagePumpDispatcher {
  public:
@@ -65,7 +66,9 @@ class UI_EXPORT OSExchangeDataProviderAuraX11
   virtual void SetPickledData(const OSExchangeData::CustomFormat& format,
                               const Pickle& pickle) OVERRIDE;
   virtual bool GetString(base::string16* data) const OVERRIDE;
-  virtual bool GetURLAndTitle(GURL* url, base::string16* title) const OVERRIDE;
+  virtual bool GetURLAndTitle(OSExchangeData::FilenameToURLPolicy policy,
+                              GURL* url,
+                              base::string16* title) const OVERRIDE;
   virtual bool GetFilename(base::FilePath* path) const OVERRIDE;
   virtual bool GetFilenames(
       std::vector<OSExchangeData::FileInfo>* filenames) const OVERRIDE;
@@ -87,9 +90,10 @@ class UI_EXPORT OSExchangeDataProviderAuraX11
   virtual const gfx::Vector2d& GetDragImageOffset() const OVERRIDE;
 
   // Overridden from base::MessagePumpDispatcher:
-  virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE;
+  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
 
  private:
+  friend class OSExchangeDataProviderAuraX11Test;
   typedef std::map<OSExchangeData::CustomFormat, Pickle>  PickleData;
 
   // Returns true if |formats_| contains a string format and the string can be

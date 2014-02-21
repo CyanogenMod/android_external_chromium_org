@@ -5,13 +5,17 @@
 #include "chrome/browser/sync/test/integration/sync_app_helper.h"
 
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/test/integration/extensions_helper.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_extension_helper.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/id_util.h"
 
 namespace {
@@ -24,11 +28,12 @@ struct AppState {
 
   syncer::StringOrdinal app_launch_ordinal;
   syncer::StringOrdinal page_ordinal;
+  extensions::LaunchType launch_type;
 };
 
 typedef std::map<std::string, AppState> AppStateMap;
 
-AppState::AppState() {}
+AppState::AppState() : launch_type(extensions::LAUNCH_TYPE_INVALID) {}
 
 AppState::~AppState() {}
 
@@ -38,7 +43,8 @@ bool AppState::IsValid() const {
 
 bool AppState::Equals(const AppState& other) const {
   return app_launch_ordinal.Equals(other.app_launch_ordinal) &&
-      page_ordinal.Equals(other.page_ordinal);
+      page_ordinal.Equals(other.page_ordinal) &&
+      launch_type == other.launch_type;
 }
 
 // Load all the app specific values for |id| into |app_state|.
@@ -49,6 +55,9 @@ void LoadApp(ExtensionService* extension_service,
       app_sorting()->GetAppLaunchOrdinal(id);
   app_state->page_ordinal = extension_service->extension_prefs()->
       app_sorting()->GetPageOrdinal(id);
+  app_state->launch_type =
+      extensions::GetLaunchTypePrefValue(extension_service->extension_prefs(),
+                                         id);
 }
 
 // Returns a map from |profile|'s installed extensions to their state.
@@ -57,9 +66,9 @@ AppStateMap GetAppStates(Profile* profile) {
 
   ExtensionService* extension_service = profile->GetExtensionService();
 
-  scoped_ptr<const ExtensionSet> extensions(
+  scoped_ptr<const extensions::ExtensionSet> extensions(
       extension_service->GenerateInstalledExtensionsSet());
-  for (ExtensionSet::const_iterator it = extensions->begin();
+  for (extensions::ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     if (extensions::sync_helper::IsSyncableApp(it->get())) {
       const std::string& id = (*it)->id();

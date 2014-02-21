@@ -110,20 +110,20 @@ class StartupTest : public UIPerfTest {
       return;
 
     const base::FilePath pref_template_path(user_data_dir().
-        AppendASCII("Default").
+        AppendASCII(chrome::kInitialProfile).
         AppendASCII("PreferencesTemplate"));
     const base::FilePath pref_path(user_data_dir().
         AppendASCII(TestingProfile::kTestUserProfileDir).
-        AppendASCII("Preferences"));
+        Append(chrome::kPreferencesFilename));
 
     // Read in preferences template.
     std::string pref_string;
     EXPECT_TRUE(base::ReadFileToString(pref_template_path, &pref_string));
-    string16 format_string = ASCIIToUTF16(pref_string);
+    base::string16 format_string = base::ASCIIToUTF16(pref_string);
 
     // Make sure temp directory has the proper format for writing to prefs file.
 #if defined(OS_POSIX)
-    std::wstring user_data_dir_w(ASCIIToWide(user_data_dir().value()));
+    std::wstring user_data_dir_w(base::ASCIIToWide(user_data_dir().value()));
 #elif defined(OS_WIN)
     std::wstring user_data_dir_w(user_data_dir().value());
     // In Windows, the FilePath will write '\' for the path separators; change
@@ -133,8 +133,8 @@ class StartupTest : public UIPerfTest {
 #endif
 
     // Rewrite prefs file.
-    std::vector<string16> subst;
-    subst.push_back(WideToUTF16(user_data_dir_w));
+    std::vector<base::string16> subst;
+    subst.push_back(base::WideToUTF16(user_data_dir_w));
     const std::string prefs_string =
         UTF16ToASCII(ReplaceStringPlaceholders(format_string, subst, NULL));
     EXPECT_TRUE(file_util::WriteFile(pref_path, prefs_string.c_str(),

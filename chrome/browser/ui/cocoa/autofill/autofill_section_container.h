@@ -19,6 +19,8 @@ class AutofillDialogViewDelegate;
 
 @class AutofillSectionView;
 @class AutofillSuggestionContainer;
+@class AutofillTextField;
+@class AutofillTooltipController;
 @class LayoutView;
 @class MenuButton;
 @class MenuController;
@@ -48,6 +50,14 @@ class AutofillDialogViewDelegate;
 
   // The view for the container.
   base::scoped_nsobject<AutofillSectionView> view_;
+
+  // Some sections need to show an icon with an associated tooltip. This is the
+  // controller for such an icon. There is at most one such icon per section.
+  base::scoped_nsobject<AutofillTooltipController> tooltipController_;
+
+  // The logical superview for the tooltip icon. Weak pointer, owned by
+  // |inputs_|.
+  AutofillTextField* tooltipField_;
 
   // List of weak pointers, which constitute unique field IDs.
   std::vector<const autofill::DetailInput*> detailInputs_;
@@ -82,8 +92,8 @@ class AutofillDialogViewDelegate;
 - (void)update;
 
 // Fills the section with Autofill data that was triggered by a user
-// interaction with the originating |input|.
-- (void)fillForInput:(const autofill::DetailInput&)input;
+// interaction with the originating |type|.
+- (void)fillForType:(const autofill::ServerFieldType)type;
 
 // Validate this section. Validation rules depend on |validationType|.
 - (BOOL)validateFor:(autofill::ValidationType)validationType;
@@ -102,17 +112,17 @@ class AutofillDialogViewDelegate;
 // Retrieve the field associated with the given type.
 - (NSControl<AutofillInputField>*)getField:(autofill::ServerFieldType)type;
 
-// Sets the value for the field matching |input|. Does nothing if the field is
+// Sets the value for the field matching |type|. Does nothing if the field is
 // not part of this section.
 - (void)setFieldValue:(NSString*)text
-             forInput:(const autofill::DetailInput&)input;
+              forType:(autofill::ServerFieldType)type;
 
 // Sets the value for the suggestion text field.
 - (void)setSuggestionFieldValue:(NSString*)text;
 
-// Activates a given input field, determined by |input|. Does nothing if the
+// Activates a given input field, determined by |type|. Does nothing if the
 // field is not part of this section.
-- (void)activateFieldForInput:(const autofill::DetailInput&)input;
+- (void)activateFieldForType:(autofill::ServerFieldType)type;
 
 @end
 

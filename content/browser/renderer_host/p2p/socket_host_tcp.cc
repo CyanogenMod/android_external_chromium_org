@@ -281,7 +281,8 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
     }
   }
 
-  message_sender_->Send(new P2PMsg_OnDataReceived(id_, remote_address_, data));
+  message_sender_->Send(new P2PMsg_OnDataReceived(
+      id_, remote_address_, data, base::TimeTicks::Now()));
 }
 
 // Note: dscp is not actually used on TCP sockets as this point,
@@ -400,6 +401,21 @@ void P2PSocketHostTcpBase::DidCompleteRead(int result) {
   if (pos && pos <= read_buffer_->offset()) {
     memmove(head, head + pos, read_buffer_->offset() - pos);
     read_buffer_->set_offset(read_buffer_->offset() - pos);
+  }
+}
+
+bool P2PSocketHostTcpBase::SetOption(P2PSocketOption option, int value) {
+  DCHECK_EQ(STATE_OPEN, state_);
+  switch (option) {
+    case P2P_SOCKET_OPT_RCVBUF:
+      return socket_->SetReceiveBufferSize(value);
+    case P2P_SOCKET_OPT_SNDBUF:
+      return socket_->SetSendBufferSize(value);
+    case P2P_SOCKET_OPT_DSCP:
+      return false;  // For TCP sockets DSCP setting is not available.
+    default:
+      NOTREACHED();
+      return false;
   }
 }
 

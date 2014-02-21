@@ -27,6 +27,8 @@ template MOJO_SYSTEM_IMPL_EXPORT bool VerifyUserPointerForSize<1>(
     const void*, size_t);
 template MOJO_SYSTEM_IMPL_EXPORT bool VerifyUserPointerForSize<4>(
     const void*, size_t);
+template MOJO_SYSTEM_IMPL_EXPORT bool VerifyUserPointerForSize<8>(
+    const void*, size_t);
 
 }  // namespace system
 }  // namespace mojo

@@ -13,7 +13,6 @@
 #include "third_party/WebKit/public/platform/WebAnimation.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebColor.h"
-#include "third_party/WebKit/public/platform/WebCompositingReasons.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebLayer.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
@@ -52,6 +51,8 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
       scoped_refptr<cc::Layer>);
   virtual ~WebLayerImpl();
 
+  static bool UsingPictureLayer();
+
   WEBKIT_COMPOSITOR_BINDINGS_EXPORT cc::Layer* layer() const;
 
   // WebLayer implementation.
@@ -76,23 +77,25 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   virtual void setReplicaLayer(blink::WebLayer* replica);
   virtual void setOpacity(float opacity);
   virtual float opacity() const;
+  virtual void setBlendMode(blink::WebBlendMode blend_mode);
+  virtual blink::WebBlendMode blendMode() const;
+  virtual void setIsRootForIsolatedGroup(bool root);
+  virtual bool isRootForIsolatedGroup();
   virtual void setOpaque(bool opaque);
   virtual bool opaque() const;
   virtual void setPosition(const blink::WebFloatPoint& position);
   virtual blink::WebFloatPoint position() const;
-  virtual void setSublayerTransform(const SkMatrix44&);
-  virtual SkMatrix44 sublayerTransform() const;
   virtual void setTransform(const SkMatrix44& transform);
   virtual SkMatrix44 transform() const;
   virtual void setDrawsContent(bool draws_content);
   virtual bool drawsContent() const;
-  virtual void setPreserves3D(bool preserves_3d);
+  virtual void setShouldFlattenTransform(bool flatten);
+  virtual void setRenderingContext(int context);
   virtual void setUseParentBackfaceVisibility(bool visible);
   virtual void setBackgroundColor(blink::WebColor color);
   virtual blink::WebColor backgroundColor() const;
   virtual void setFilters(const blink::WebFilterOperations& filters);
   virtual void setBackgroundFilters(const blink::WebFilterOperations& filters);
-  virtual void setCompositingReasons(blink::WebCompositingReasons);
   virtual void setAnimationDelegate(blink::WebAnimationDelegate* delegate);
   virtual bool addAnimation(blink::WebAnimation* animation);
   virtual void removeAnimation(int animation_id);
@@ -103,9 +106,8 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   virtual void setForceRenderSurface(bool force);
   virtual void setScrollPosition(blink::WebPoint position);
   virtual blink::WebPoint scrollPosition() const;
-  virtual void setMaxScrollPosition(blink::WebSize max_position);
   virtual blink::WebSize maxScrollPosition() const;
-  virtual void setScrollable(bool scrollable);
+  virtual void setScrollClipLayer(blink::WebLayer* clip_layer);
   virtual bool scrollable() const;
   virtual void setUserScrollable(bool horizontal, bool vertical);
   virtual bool userScrollableHorizontal() const;
@@ -130,7 +132,6 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   virtual void setWebLayerClient(blink::WebLayerClient* client);
 
   // LayerClient implementation.
-  virtual std::string DebugName() OVERRIDE;
   virtual scoped_refptr<base::debug::ConvertableToTraceFormat>
       TakeDebugInfo() OVERRIDE;
 

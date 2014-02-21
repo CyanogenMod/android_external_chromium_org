@@ -31,8 +31,7 @@ class NET_EXPORT_PRIVATE FixRateSender : public SendAlgorithmInterface {
       QuicTime feedback_receive_time,
       const SentPacketsMap& sent_packets) OVERRIDE;
   virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
-                             QuicByteCount acked_bytes,
-                             QuicTime::Delta rtt) OVERRIDE;
+                             QuicByteCount acked_bytes) OVERRIDE;
   virtual void OnPacketLost(QuicPacketSequenceNumber sequence_number,
                             QuicTime ack_receive_time) OVERRIDE;
   virtual bool OnPacketSent(
@@ -41,7 +40,7 @@ class NET_EXPORT_PRIVATE FixRateSender : public SendAlgorithmInterface {
       QuicByteCount bytes,
       TransmissionType transmission_type,
       HasRetransmittableData has_retransmittable_data) OVERRIDE;
-  virtual void OnRetransmissionTimeout() OVERRIDE;
+  virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
                                  QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
@@ -50,6 +49,7 @@ class NET_EXPORT_PRIVATE FixRateSender : public SendAlgorithmInterface {
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual void UpdateRtt(QuicTime::Delta rtt_sample) OVERRIDE;
   virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
   virtual QuicByteCount GetCongestionWindow() const OVERRIDE;

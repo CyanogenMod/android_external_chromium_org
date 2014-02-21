@@ -19,6 +19,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -62,7 +63,7 @@
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/cocoa/animation_utils.h"
 #import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -71,9 +72,9 @@
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/image/image.h"
 
+using base::UserMetricsAction;
 using content::OpenURLParams;
 using content::Referrer;
-using content::UserMetricsAction;
 using content::WebContents;
 
 namespace {
@@ -469,6 +470,12 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     [self setLeftIndentForControls:[[self class] defaultLeftIndentForControls]];
     [self setRightIndentForControls:0];
 
+    // Add this invisible view first so that it is ordered below other views.
+    dragBlockingView_.reset(
+        [[TabStripControllerDragBlockingView alloc] initWithFrame:NSZeroRect
+                                                       controller:self]);
+    [self addSubviewToPermanentList:dragBlockingView_];
+
     newTabButton_ = [view getNewTabButton];
     [self addSubviewToPermanentList:newTabButton_];
     [newTabButton_ setTarget:self];
@@ -486,11 +493,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
       [newTabTrackingArea_ clearOwnerWhenWindowWillClose:browserWindow];
     [newTabButton_ addTrackingArea:newTabTrackingArea_.get()];
     targetFrames_.reset([[NSMutableDictionary alloc] init]);
-
-    dragBlockingView_.reset(
-        [[TabStripControllerDragBlockingView alloc] initWithFrame:NSZeroRect
-                                                       controller:self]);
-    [self addSubviewToPermanentList:dragBlockingView_];
 
     newTabTargetFrame_ = NSZeroRect;
     availableResizeWidth_ = kUseFullAvailableWidth;
@@ -808,7 +810,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
       tabStripModel_->ExtendSelectionTo(index);
     } else if (modifiers & NSCommandKeyMask) {
       tabStripModel_->ToggleSelectionAt(index);
-    } else if (!tabStripModel_->IsTabSelected(index)) {
+    } else {
       tabStripModel_->ActivateTabAt(index, true);
     }
   }
@@ -1223,8 +1225,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 // Handles setting the title of the tab based on the given |contents|. Uses
 // a canned string if |contents| is NULL.
 - (void)setTabTitle:(TabController*)tab withContents:(WebContents*)contents {
-  // TODO(miu): Rectify inconsistent tooltip behavior.  http://crbug.com/310947
-
   base::string16 title;
   if (contents)
     title = contents->GetTitle();
@@ -1310,8 +1310,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
                         atIndex:(NSInteger)modelIndex
                          reason:(int)reason {
   // Take closing tabs into account.
-  NSInteger activeIndex = [self indexFromModelIndex:modelIndex];
-
   if (oldContents) {
     int oldModelIndex =
         browser_->tab_strip_model()->GetIndexOfWebContents(oldContents);
@@ -1324,21 +1322,13 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     }
   }
 
-  // First get the vector of indices, which is allays sorted in ascending order.
-  ui::ListSelectionModel::SelectedIndices selection(
-      tabStripModel_->selection_model().selected_indices());
-  // Iterate through all of the tabs, selecting each as necessary.
-  ui::ListSelectionModel::SelectedIndices::iterator iter = selection.begin();
-  int i = 0;
-  for (TabController* current in tabArray_.get()) {
-    BOOL selected = iter != selection.end() &&
-        [self indexFromModelIndex:*iter] == i;
-    [current setSelected:selected];
-    [current setActive:i == activeIndex];
-    if (selected)
-      ++iter;
-    ++i;
-  }
+  NSUInteger activeIndex = [self indexFromModelIndex:modelIndex];
+
+  [tabArray_ enumerateObjectsUsingBlock:^(TabController* current,
+                                          NSUInteger index,
+                                          BOOL* stop) {
+      [current setActive:index == activeIndex];
+  }];
 
   // Tell the new tab contents it is about to become the selected tab. Here it
   // can do things like make sure the toolbar is up to date.
@@ -1357,6 +1347,23 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   if (newContents) {
     newContents->WasShown();
     newContents->GetView()->RestoreFocus();
+  }
+}
+
+- (void)tabSelectionChanged {
+  // First get the vector of indices, which is allays sorted in ascending order.
+  ui::ListSelectionModel::SelectedIndices selection(
+      tabStripModel_->selection_model().selected_indices());
+  // Iterate through all of the tabs, selecting each as necessary.
+  ui::ListSelectionModel::SelectedIndices::iterator iter = selection.begin();
+  int i = 0;
+  for (TabController* current in tabArray_.get()) {
+    BOOL selected = iter != selection.end() &&
+        [self indexFromModelIndex:*iter] == i;
+    [current setSelected:selected];
+    if (selected)
+      ++iter;
+    ++i;
   }
 }
 
@@ -2080,7 +2087,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // If the input is plain text, classify the input and make the URL.
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(browser_->profile())->Classify(
-      base::SysNSStringToUTF16(text), false, false, &match, NULL);
+      base::SysNSStringToUTF16(text), false, false, AutocompleteInput::BLANK,
+      &match, NULL);
   GURL url(match.destination_url);
 
   [self openURL:&url inView:view at:point];

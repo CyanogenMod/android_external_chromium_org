@@ -6,6 +6,7 @@
 #define MOJO_PUBLIC_SYSTEM_CORE_CPP_H_
 
 #include <assert.h>
+#include <stddef.h>
 
 #include <limits>
 
@@ -14,6 +15,12 @@
 #include "mojo/public/system/system_export.h"
 
 namespace mojo {
+
+// Standalone functions --------------------------------------------------------
+
+inline MojoTimeTicks GetTimeTicksNow() {
+  return MojoGetTimeTicksNow();
+}
 
 // ScopedHandleBase ------------------------------------------------------------
 
@@ -27,6 +34,11 @@ class ScopedHandleBase {
   ScopedHandleBase() {}
   explicit ScopedHandleBase(HandleType handle) : handle_(handle) {}
   ~ScopedHandleBase() { CloseIfNecessary(); }
+
+  template <class CompatibleHandleType>
+  explicit ScopedHandleBase(ScopedHandleBase<CompatibleHandleType> other)
+      : handle_(other.release()) {
+  }
 
   // Move-only constructor and operator=.
   ScopedHandleBase(RValue other) : handle_(other.object->release()) {}
@@ -178,47 +190,182 @@ MOJO_COMPILE_ASSERT(sizeof(ScopedMessagePipeHandle) ==
                         sizeof(MessagePipeHandle),
                     bad_size_for_cpp_ScopedMessagePipeHandle);
 
-// TODO(vtl): In C++11, we could instead return a pair of
-// |ScopedHandleBase<MessagePipeHandle>|s.
-inline void CreateMessagePipe(ScopedMessagePipeHandle* message_pipe_0,
-                              ScopedMessagePipeHandle* message_pipe_1) {
-  assert(message_pipe_0);
-  assert(message_pipe_1);
-  MessagePipeHandle h_0;
-  MessagePipeHandle h_1;
-  MojoResult result MOJO_ALLOW_UNUSED =
-      MojoCreateMessagePipe(h_0.mutable_value(), h_1.mutable_value());
-  assert(result == MOJO_RESULT_OK);
-  message_pipe_0->reset(h_0);
-  message_pipe_1->reset(h_1);
+inline MojoResult CreateMessagePipe(ScopedMessagePipeHandle* message_pipe0,
+                                    ScopedMessagePipeHandle* message_pipe1) {
+  assert(message_pipe0);
+  assert(message_pipe1);
+  MessagePipeHandle handle0;
+  MessagePipeHandle handle1;
+  MojoResult rv = MojoCreateMessagePipe(handle0.mutable_value(),
+                                        handle1.mutable_value());
+  // Reset even on failure (reduces the chances that a "stale"/incorrect handle
+  // will be used).
+  message_pipe0->reset(handle0);
+  message_pipe1->reset(handle1);
+  return rv;
 }
 
 // These "raw" versions fully expose the underlying API, but don't help with
 // ownership of handles (especially when writing messages).
 // TODO(vtl): Write "baked" versions.
-inline MojoResult WriteMessageRaw(
-    MessagePipeHandle message_pipe,
-    const void* bytes, uint32_t num_bytes,
-    const MojoHandle* handles, uint32_t num_handles,
-    MojoWriteMessageFlags flags) {
-  return MojoWriteMessage(message_pipe.value(),
-                          bytes, num_bytes,
-                          handles, num_handles,
-                          flags);
+inline MojoResult WriteMessageRaw(MessagePipeHandle message_pipe,
+                                  const void* bytes,
+                                  uint32_t num_bytes,
+                                  const MojoHandle* handles,
+                                  uint32_t num_handles,
+                                  MojoWriteMessageFlags flags) {
+  return MojoWriteMessage(message_pipe.value(), bytes, num_bytes, handles,
+                          num_handles, flags);
 }
 
 inline MojoResult ReadMessageRaw(MessagePipeHandle message_pipe,
-                                 void* bytes, uint32_t* num_bytes,
-                                 MojoHandle* handles, uint32_t* num_handles,
+                                 void* bytes,
+                                 uint32_t* num_bytes,
+                                 MojoHandle* handles,
+                                 uint32_t* num_handles,
                                  MojoReadMessageFlags flags) {
-  return MojoReadMessage(message_pipe.value(),
-                         bytes, num_bytes,
-                         handles, num_handles,
-                         flags);
+  return MojoReadMessage(message_pipe.value(), bytes, num_bytes, handles,
+                         num_handles, flags);
 }
 
-inline MojoTimeTicks GetTimeTicksNow() {
-  return MojoGetTimeTicksNow();
+// A wrapper class that automatically creates a message pipe and owns both
+// handles.
+class MessagePipe {
+ public:
+  MessagePipe();
+  ~MessagePipe();
+
+  ScopedMessagePipeHandle handle0;
+  ScopedMessagePipeHandle handle1;
+};
+
+inline MessagePipe::MessagePipe() {
+  MojoResult result MOJO_ALLOW_UNUSED = CreateMessagePipe(&handle0, &handle1);
+  assert(result == MOJO_RESULT_OK);
+}
+
+inline MessagePipe::~MessagePipe() {
+}
+
+// DataPipeProducerHandle and DataPipeConsumerHandle ---------------------------
+
+class DataPipeProducerHandle : public Handle {
+ public:
+  DataPipeProducerHandle() {}
+  explicit DataPipeProducerHandle(MojoHandle value) : Handle(value) {}
+
+  // Copying and assignment allowed.
+};
+
+MOJO_COMPILE_ASSERT(sizeof(DataPipeProducerHandle) == sizeof(Handle),
+                    bad_size_for_cpp_DataPipeProducerHandle);
+
+typedef ScopedHandleBase<DataPipeProducerHandle> ScopedDataPipeProducerHandle;
+MOJO_COMPILE_ASSERT(sizeof(ScopedDataPipeProducerHandle) ==
+                        sizeof(DataPipeProducerHandle),
+                    bad_size_for_cpp_ScopedDataPipeProducerHandle);
+
+class DataPipeConsumerHandle : public Handle {
+ public:
+  DataPipeConsumerHandle() {}
+  explicit DataPipeConsumerHandle(MojoHandle value) : Handle(value) {}
+
+  // Copying and assignment allowed.
+};
+
+MOJO_COMPILE_ASSERT(sizeof(DataPipeConsumerHandle) == sizeof(Handle),
+                    bad_size_for_cpp_DataPipeConsumerHandle);
+
+typedef ScopedHandleBase<DataPipeConsumerHandle> ScopedDataPipeConsumerHandle;
+MOJO_COMPILE_ASSERT(sizeof(ScopedDataPipeConsumerHandle) ==
+                        sizeof(DataPipeConsumerHandle),
+                    bad_size_for_cpp_ScopedDataPipeConsumerHandle);
+
+inline MojoResult CreateDataPipe(
+    const MojoCreateDataPipeOptions* options,
+    ScopedDataPipeProducerHandle* data_pipe_producer,
+    ScopedDataPipeConsumerHandle* data_pipe_consumer) {
+  assert(data_pipe_producer);
+  assert(data_pipe_consumer);
+  DataPipeProducerHandle producer_handle;
+  DataPipeConsumerHandle consumer_handle;
+  MojoResult rv = MojoCreateDataPipe(options,
+                                     producer_handle.mutable_value(),
+                                     consumer_handle.mutable_value());
+  // Reset even on failure (reduces the chances that a "stale"/incorrect handle
+  // will be used).
+  data_pipe_producer->reset(producer_handle);
+  data_pipe_consumer->reset(consumer_handle);
+  return rv;
+}
+
+inline MojoResult WriteDataRaw(DataPipeProducerHandle data_pipe_producer,
+                               const void* elements,
+                               uint32_t* num_bytes,
+                               MojoWriteDataFlags flags) {
+  return MojoWriteData(data_pipe_producer.value(), elements, num_bytes, flags);
+}
+
+inline MojoResult BeginWriteDataRaw(DataPipeProducerHandle data_pipe_producer,
+                                    void** buffer,
+                                    uint32_t* buffer_num_bytes,
+                                    MojoWriteDataFlags flags) {
+  return MojoBeginWriteData(data_pipe_producer.value(), buffer,
+                            buffer_num_bytes, flags);
+}
+
+inline MojoResult EndWriteDataRaw(DataPipeProducerHandle data_pipe_producer,
+                                  uint32_t num_bytes_written) {
+  return MojoEndWriteData(data_pipe_producer.value(), num_bytes_written);
+}
+
+inline MojoResult ReadDataRaw(DataPipeConsumerHandle data_pipe_consumer,
+                              void* elements,
+                              uint32_t* num_bytes,
+                              MojoReadDataFlags flags) {
+  return MojoReadData(data_pipe_consumer.value(), elements, num_bytes, flags);
+}
+
+inline MojoResult BeginReadDataRaw(DataPipeConsumerHandle data_pipe_consumer,
+                                   const void** buffer,
+                                   uint32_t* buffer_num_bytes,
+                                   MojoReadDataFlags flags) {
+  return MojoBeginReadData(data_pipe_consumer.value(), buffer, buffer_num_bytes,
+                           flags);
+}
+
+inline MojoResult EndReadDataRaw(DataPipeConsumerHandle data_pipe_consumer,
+                                 uint32_t num_bytes_read) {
+  return MojoEndReadData(data_pipe_consumer.value(), num_bytes_read);
+}
+
+// A wrapper class that automatically creates a data pipe and owns both handles.
+// TODO(vtl): Make an even more friendly version? (Maybe templatized for a
+// particular type instead of some "element"? Maybe functions that take
+// vectors?)
+class DataPipe {
+ public:
+  DataPipe();
+  explicit DataPipe(const MojoCreateDataPipeOptions& options);
+  ~DataPipe();
+
+  ScopedDataPipeProducerHandle producer_handle;
+  ScopedDataPipeConsumerHandle consumer_handle;
+};
+
+inline DataPipe::DataPipe() {
+  MojoResult result MOJO_ALLOW_UNUSED =
+      CreateDataPipe(NULL, &producer_handle, &consumer_handle);
+  assert(result == MOJO_RESULT_OK);
+}
+
+inline DataPipe::DataPipe(const MojoCreateDataPipeOptions& options) {
+  MojoResult result MOJO_ALLOW_UNUSED =
+      CreateDataPipe(&options, &producer_handle, &consumer_handle);
+  assert(result == MOJO_RESULT_OK);
+}
+
+inline DataPipe::~DataPipe() {
 }
 
 }  // namespace mojo

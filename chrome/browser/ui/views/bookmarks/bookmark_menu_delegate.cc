@@ -30,8 +30,8 @@
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/widget/widget.h"
 
+using base::UserMetricsAction;
 using content::PageNavigator;
-using content::UserMetricsAction;
 using views::MenuItemView;
 
 // Max width of a menu. There does not appear to be an OS value for this, yet
@@ -104,7 +104,7 @@ void BookmarkMenuDelegate::SetActiveMenu(const BookmarkNode* node,
   menu_ = node_to_menu_map_[node];
 }
 
-string16 BookmarkMenuDelegate::GetTooltipText(
+base::string16 BookmarkMenuDelegate::GetTooltipText(
     int id,
     const gfx::Point& screen_loc) const {
   MenuIDToNodeMap::const_iterator i = menu_id_to_node_map_.find(id);

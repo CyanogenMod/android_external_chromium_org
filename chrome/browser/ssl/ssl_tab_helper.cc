@@ -103,7 +103,7 @@ InfoBarDelegate::Type SSLCertResultInfoBarDelegate::GetInfoBarType() const {
   return cert_.get() ? PAGE_ACTION_TYPE : WARNING_TYPE;
 }
 
-string16 SSLCertResultInfoBarDelegate::GetMessageText() const {
+base::string16 SSLCertResultInfoBarDelegate::GetMessageText() const {
   return message_;
 }
 
@@ -111,7 +111,7 @@ int SSLCertResultInfoBarDelegate::GetButtons() const {
   return cert_.get() ? BUTTON_OK : BUTTON_NONE;
 }
 
-string16 SSLCertResultInfoBarDelegate::GetButtonLabel(
+base::string16 SSLCertResultInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_ADD_CERT_SUCCESS_INFOBAR_BUTTON);
@@ -219,7 +219,8 @@ void SSLTabHelper::OnVerifyClientCertificateError(
   GetAddCertData(handler.get())->ShowInfoBar(
       l10n_util::GetStringFUTF16(IDS_ADD_CERT_ERR_INVALID_CERT,
                                  base::IntToString16(-error_code),
-                                 ASCIIToUTF16(net::ErrorToString(error_code))),
+                                 base::ASCIIToUTF16(
+                                     net::ErrorToString(error_code))),
       NULL);
 }
 
@@ -234,7 +235,8 @@ void SSLTabHelper::OnAddClientCertificateSuccess(
   // TODO(evanm): GetDisplayName should return UTF-16.
   GetAddCertData(handler.get())->ShowInfoBar(
       l10n_util::GetStringFUTF16(IDS_ADD_CERT_SUCCESS_INFOBAR_LABEL,
-                                 UTF8ToUTF16(cert->issuer().GetDisplayName())),
+                                 base::UTF8ToUTF16(
+                                     cert->issuer().GetDisplayName())),
       cert);
 }
 
@@ -245,7 +247,8 @@ void SSLTabHelper::OnAddClientCertificateError(
   GetAddCertData(handler.get())->ShowInfoBar(
       l10n_util::GetStringFUTF16(IDS_ADD_CERT_ERR_FAILED,
                                  base::IntToString16(-error_code),
-                                 ASCIIToUTF16(net::ErrorToString(error_code))),
+                                 base::ASCIIToUTF16(
+                                     net::ErrorToString(error_code))),
       NULL);
 }
 

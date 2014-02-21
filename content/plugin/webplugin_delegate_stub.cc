@@ -345,9 +345,7 @@ void WebPluginDelegateStub::OnImeCompositionUpdated(
     int cursor_position) {
   if (delegate_)
     delegate_->ImeCompositionUpdated(text, clauses, target, cursor_position);
-#if defined(OS_WIN) && !defined(USE_AURA)
   webplugin_->UpdateIMEStatus();
-#endif
 }
 
 void WebPluginDelegateStub::OnImeCompositionCompleted(
@@ -444,7 +442,8 @@ void WebPluginDelegateStub::OnFetchURL(
                       params.notify_redirect,
                       params.is_plugin_src_load,
                       channel_->renderer_id(),
-                      params.render_view_id);
+                      params.render_frame_id,
+                      webplugin_->host_render_view_routing_id());
 }
 
 }  // namespace content

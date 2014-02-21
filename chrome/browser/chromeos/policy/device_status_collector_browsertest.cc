@@ -14,11 +14,11 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/stub_enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -149,8 +149,7 @@ namespace policy {
 class DeviceStatusCollectorTest : public testing::Test {
  public:
   DeviceStatusCollectorTest()
-    : message_loop_(base::MessageLoop::TYPE_UI),
-      ui_thread_(content::BrowserThread::UI, &message_loop_),
+    : ui_thread_(content::BrowserThread::UI, &message_loop_),
       file_thread_(content::BrowserThread::FILE, &message_loop_),
       io_thread_(content::BrowserThread::IO, &message_loop_),
       user_manager_(new chromeos::MockUserManager()),
@@ -179,7 +178,7 @@ class DeviceStatusCollectorTest : public testing::Test {
         new StubEnterpriseInstallAttributes();
     attributes->SetDomain("managed.com");
     attributes->SetRegistrationUser("user@managed.com");
-    BrowserPolicyConnector::SetInstallAttributesForTesting(attributes);
+    BrowserPolicyConnectorChromeOS::SetInstallAttributesForTesting(attributes);
 
     RestartStatusCollector();
   }
@@ -257,7 +256,7 @@ class DeviceStatusCollectorTest : public testing::Test {
   // Since this is a unit test running in browser_tests we must do additional
   // unit test setup and make a TestingBrowserProcess. Must be first member.
   TestingBrowserProcessInitializer initializer_;
-  base::MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   content::TestBrowserThread io_thread_;

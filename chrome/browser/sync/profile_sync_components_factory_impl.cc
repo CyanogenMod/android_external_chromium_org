@@ -12,8 +12,6 @@
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/pref_service_flags_storage.h"
@@ -29,15 +27,14 @@
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
 #include "chrome/browser/sync/glue/bookmark_data_type_controller.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
+#include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
 #include "chrome/browser/sync/glue/data_type_manager_impl.h"
-#include "chrome/browser/sync/glue/data_type_manager_observer.h"
 #include "chrome/browser/sync/glue/extension_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_setting_data_type_controller.h"
 #include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/password_change_processor.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
 #include "chrome/browser/sync/glue/password_model_associator.h"
-#include "chrome/browser/sync/glue/proxy_data_type_controller.h"
 #include "chrome/browser/sync/glue/search_engine_data_type_controller.h"
 #include "chrome/browser/sync/glue/session_change_processor.h"
 #include "chrome/browser/sync/glue/session_data_type_controller.h"
@@ -57,19 +54,26 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/themes/theme_syncable_service.h"
+#include "chrome/browser/ui/app_list/app_list_syncable_service.h"
+#include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
-#include "chrome/browser/webdata/autofill_profile_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
+#include "components/sync_driver/data_type_manager_observer.h"
+#include "components/sync_driver/proxy_data_type_controller.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
 #include "sync/api/syncable_service.h"
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_user_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #endif
@@ -89,6 +93,7 @@ using browser_sync::AutofillProfileDataTypeController;
 using browser_sync::BookmarkChangeProcessor;
 using browser_sync::BookmarkDataTypeController;
 using browser_sync::BookmarkModelAssociator;
+using browser_sync::ChromeReportUnrecoverableError;
 using browser_sync::DataTypeController;
 using browser_sync::DataTypeErrorHandler;
 using browser_sync::DataTypeManager;
@@ -119,8 +124,7 @@ ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
     Profile* profile, CommandLine* command_line)
     : profile_(profile),
       command_line_(command_line),
-      extension_system_(
-          extensions::ExtensionSystemFactory::GetForProfile(profile)),
+      extension_system_(extensions::ExtensionSystem::Get(profile)),
       web_data_service_(
           WebDataServiceFactory::GetAutofillWebDataForProfile(
               profile_, Profile::EXPLICIT_ACCESS)) {
@@ -173,14 +177,20 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   if (!command_line_->HasSwitch(switches::kHistoryDisableFullHistorySync)) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(
-            syncer::HISTORY_DELETE_DIRECTIVES, this, profile_, pss));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::HISTORY_DELETE_DIRECTIVES,
+            this,
+            profile_,
+            pss));
   }
 
   // Session sync is enabled by default.  Register unless explicitly disabled.
   if (!command_line_->HasSwitch(switches::kDisableSyncTabs)) {
-      pss->RegisterDataTypeController(
-          new ProxyDataTypeController(syncer::PROXY_TABS));
-    if (!command_line_->HasSwitch(switches::kEnableSyncSessionsV2)) {
+      pss->RegisterDataTypeController(new ProxyDataTypeController(
+         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+         syncer::PROXY_TABS));
+    if (command_line_->HasSwitch(switches::kDisableSyncSessionsV2)) {
       pss->RegisterDataTypeController(
           new SessionDataTypeController(this, profile_, pss));
     } else {
@@ -192,15 +202,21 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   // Favicon sync is enabled by default. Register unless explicitly disabled.
   if (!command_line_->HasSwitch(switches::kDisableSyncFavicons)) {
     pss->RegisterDataTypeController(
-        new UIDataTypeController(syncer::FAVICON_IMAGES,
-                                 this,
-                                 profile_,
-                                 pss));
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::FAVICON_IMAGES,
+            this,
+            profile_,
+            pss));
     pss->RegisterDataTypeController(
-        new UIDataTypeController(syncer::FAVICON_TRACKING,
-                                 this,
-                                 profile_,
-                                 pss));
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::FAVICON_TRACKING,
+            this,
+            profile_,
+            pss));
   }
 
   // Password sync is enabled by default.  Register unless explicitly
@@ -209,22 +225,53 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
     pss->RegisterDataTypeController(
         new PasswordDataTypeController(this, profile_, pss));
   }
+  ExtensionService* extension_service = extension_system_->extension_service();
+  if (extension_service) {
+    if (IsBookmarksExtensionInstalled(
+            extension_service->extensions()->GetIDs())) {
+      OptInIntoBookmarksExperiment();
+    }
+  }
   // Article sync is disabled by default.  Register only if explicitly enabled.
   if (IsEnableSyncArticlesSet()) {
     pss->RegisterDataTypeController(
-        new UIDataTypeController(syncer::ARTICLES, this, profile_, pss));
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::ARTICLES,
+            this,
+            profile_,
+            pss));
   }
 
 #if defined(ENABLE_MANAGED_USERS)
   if (profile_->IsManaged()) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(
-            syncer::MANAGED_USER_SETTINGS, this, profile_, pss));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::MANAGED_USER_SETTINGS,
+            this,
+            profile_,
+            pss));
   } else {
     pss->RegisterDataTypeController(
         new UIDataTypeController(
-            syncer::MANAGED_USERS, this, profile_, pss));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::MANAGED_USERS,
+            this,
+            profile_,
+            pss));
   }
+  pss->RegisterDataTypeController(
+      new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::MANAGED_USER_SHARED_SETTINGS,
+            this,
+            profile_,
+            pss));
 #endif
 }
 
@@ -249,14 +296,25 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   // disabled.
   if (!command_line_->HasSwitch(switches::kDisableSyncPreferences)) {
     pss->RegisterDataTypeController(
-        new UIDataTypeController(syncer::PREFERENCES, this, profile_, pss));
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::PREFERENCES,
+            this,
+            profile_,
+            pss));
 
   }
 
   if (!command_line_->HasSwitch(switches::kDisableSyncPriorityPreferences)) {
     pss->RegisterDataTypeController(
-        new UIDataTypeController(syncer::PRIORITY_PREFERENCES,
-                                 this, profile_, pss));
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::PRIORITY_PREFERENCES,
+            this,
+            profile_,
+            pss));
   }
 
 #if defined(ENABLE_THEMES)
@@ -290,16 +348,43 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
             syncer::APP_SETTINGS, this, profile_, pss));
   }
 
+#if defined(ENABLE_APP_LIST)
+  // App List sync is disabled by default.  Register only if enabled.
+  if (command_line_->HasSwitch(switches::kEnableSyncAppList)) {
+    pss->RegisterDataTypeController(
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::APP_LIST,
+            this,
+            profile_,
+            pss));
+  }
+#endif
+
   // Synced Notifications are enabled by default.
   pss->RegisterDataTypeController(
       new UIDataTypeController(
-          syncer::SYNCED_NOTIFICATIONS, this, profile_, pss));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::SYNCED_NOTIFICATIONS,
+            this,
+            profile_,
+            pss));
+
+  // TODO(petewil): Enable the data type controller once we have a handler.
 
 #if defined(OS_LINUX) || defined(OS_WIN) || defined(OS_CHROMEOS)
   // Dictionary sync is enabled by default.
   if (!command_line_->HasSwitch(switches::kDisableSyncDictionary)) {
     pss->RegisterDataTypeController(
-        new UIDataTypeController(syncer::DICTIONARY, this, profile_, pss));
+        new UIDataTypeController(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            base::Bind(&ChromeReportUnrecoverableError),
+            syncer::DICTIONARY,
+            this,
+            profile_,
+            pss));
   }
 #endif
 }
@@ -366,7 +451,7 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
         return AutocompleteSyncableService::FromWebDataService(
             web_data_service_.get())->AsWeakPtr();
       } else {
-        return AutofillProfileSyncableService::FromWebDataService(
+        return autofill::AutofillProfileSyncableService::FromWebDataService(
             web_data_service_.get())->AsWeakPtr();
       }
     }
@@ -379,6 +464,11 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
     case syncer::EXTENSION_SETTINGS:
       return extension_system_->extension_service()->settings_frontend()->
           GetBackendForSync(type)->AsWeakPtr();
+#if defined(ENABLE_APP_LIST)
+    case syncer::APP_LIST:
+      return app_list::AppListSyncableServiceFactory::GetForProfile(profile_)->
+          AsWeakPtr();
+#endif
 #if defined(ENABLE_THEMES)
     case syncer::THEMES:
       return ThemeServiceFactory::GetForProfile(profile_)->
@@ -419,6 +509,9 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
     case syncer::MANAGED_USERS:
       return ManagedUserSyncServiceFactory::GetForProfile(profile_)->
           AsWeakPtr();
+    case syncer::MANAGED_USER_SHARED_SETTINGS:
+      return ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(
+          profile_)->AsWeakPtr();
 #endif
     case syncer::ARTICLES: {
       dom_distiller::DomDistillerService* service =
@@ -429,7 +522,7 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
       return base::WeakPtr<syncer::SyncableService>();
     }
     case syncer::SESSIONS: {
-      DCHECK(command_line_->HasSwitch(switches::kEnableSyncSessionsV2));
+      DCHECK(!command_line_->HasSwitch(switches::kDisableSyncSessionsV2));
       return ProfileSyncServiceFactory::GetForProfile(profile_)->
           GetSessionsSyncableService()->AsWeakPtr();
     }

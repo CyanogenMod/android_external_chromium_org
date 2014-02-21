@@ -15,6 +15,7 @@
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
+#include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -197,7 +198,6 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
   virtual void SetUp() {
     mock_client_.reset(new NiceMock<MockWebRTCPeerConnectionHandlerClient>());
     mock_dependency_factory_.reset(new MockMediaStreamDependencyFactory());
-    mock_dependency_factory_->EnsurePeerConnectionFactory();
     pc_handler_.reset(
         new RTCPeerConnectionHandlerUnderTest(mock_client_.get(),
                                               mock_dependency_factory_.get()));
@@ -234,26 +234,23 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     video_tracks[0].initialize(video_source.id(), video_source);
 
     blink::WebMediaStream local_stream;
-    local_stream.initialize(UTF8ToUTF16(stream_label), audio_tracks,
+    local_stream.initialize(base::UTF8ToUTF16(stream_label), audio_tracks,
                             video_tracks);
 
     scoped_refptr<webrtc::MediaStreamInterface> native_stream(
         mock_dependency_factory_->CreateLocalMediaStream(stream_label));
 
     local_stream.audioTracks(audio_tracks);
-    const std::string audio_track_id = UTF16ToUTF8(audio_tracks[0].id());
     scoped_refptr<WebRtcAudioCapturer> capturer;
-    RTCMediaConstraints audio_constraints(audio_source.constraints());
     scoped_refptr<webrtc::AudioTrackInterface> audio_track(
         mock_dependency_factory_->CreateLocalAudioTrack(
-            audio_track_id, capturer, NULL, NULL,
-            &audio_constraints));
+            audio_tracks[0], capturer, NULL, NULL));
     MediaStreamDependencyFactory::AddNativeTrackToBlinkTrack(
         audio_track.get(), audio_tracks[0], true);
     native_stream->AddTrack(audio_track.get());
 
     local_stream.videoTracks(video_tracks);
-    const std::string video_track_id = UTF16ToUTF8(video_tracks[0].id());
+    const std::string video_track_id = base::UTF16ToUTF8(video_tracks[0].id());
     webrtc::VideoSourceInterface* source = NULL;
     scoped_refptr<webrtc::VideoTrackInterface> video_track(
         mock_dependency_factory_->CreateLocalVideoTrack(
@@ -285,11 +282,7 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     if (!audio_track_label.empty()) {
       scoped_refptr<WebRtcAudioCapturer> capturer;
       scoped_refptr<webrtc::AudioTrackInterface> audio_track(
-          mock_dependency_factory_->CreateLocalAudioTrack(audio_track_label,
-                                                          capturer,
-                                                          NULL,
-                                                          NULL,
-                                                          NULL));
+          WebRtcLocalAudioTrackAdapter::Create(audio_track_label, NULL));
       stream->AddTrack(audio_track.get());
     }
     mock_peer_connection_->AddRemoteStream(stream.get());
@@ -653,20 +646,20 @@ TEST_F(RTCPeerConnectionHandlerTest, OnAddAndOnRemoveStream) {
   EXPECT_CALL(*mock_tracker_.get(), TrackAddStream(
       pc_handler_.get(),
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label)),
+                        base::UTF8ToUTF16(remote_stream_label)),
       PeerConnectionTracker::SOURCE_REMOTE));
   EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label))));
+                        base::UTF8ToUTF16(remote_stream_label))));
 
   EXPECT_CALL(*mock_tracker_.get(), TrackRemoveStream(
       pc_handler_.get(),
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label)),
+                        base::UTF8ToUTF16(remote_stream_label)),
       PeerConnectionTracker::SOURCE_REMOTE));
   EXPECT_CALL(*mock_client_.get(), didRemoveRemoteStream(
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label))));
+                        base::UTF8ToUTF16(remote_stream_label))));
 
   pc_handler_->OnAddStream(remote_stream.get());
   pc_handler_->OnRemoveStream(remote_stream.get());
@@ -681,7 +674,7 @@ TEST_F(RTCPeerConnectionHandlerTest, RemoteTrackState) {
   testing::InSequence sequence;
   EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label))));
+                        base::UTF8ToUTF16(remote_stream_label))));
   pc_handler_->OnAddStream(remote_stream.get());
   const blink::WebMediaStream& webkit_stream = mock_client_->remote_stream();
 
@@ -713,7 +706,7 @@ TEST_F(RTCPeerConnectionHandlerTest, RemoveAndAddAudioTrackFromRemoteStream) {
 
   EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label))));
+                        base::UTF8ToUTF16(remote_stream_label))));
   pc_handler_->OnAddStream(remote_stream.get());
   const blink::WebMediaStream& webkit_stream = mock_client_->remote_stream();
 
@@ -743,7 +736,7 @@ TEST_F(RTCPeerConnectionHandlerTest, RemoveAndAddVideoTrackFromRemoteStream) {
 
   EXPECT_CALL(*mock_client_.get(), didAddRemoteStream(
       testing::Property(&blink::WebMediaStream::id,
-                        UTF8ToUTF16(remote_stream_label))));
+                        base::UTF8ToUTF16(remote_stream_label))));
   pc_handler_->OnAddStream(remote_stream.get());
   const blink::WebMediaStream& webkit_stream = mock_client_->remote_stream();
 

@@ -16,6 +16,9 @@
 #include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/history/query_parser.h"
+#include "chrome/browser/undo/bookmark_undo_service.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#include "chrome/browser/undo/bookmark_undo_utils.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
@@ -63,7 +66,7 @@ bool MoreRecentlyModified(const BookmarkNode* n1, const BookmarkNode* n2) {
 // Returns true if |text| contains each string in |words|. This is used when
 // searching for bookmarks.
 bool DoesBookmarkTextContainWords(const base::string16& text,
-                                  const std::vector<string16>& words) {
+                                  const std::vector<base::string16>& words) {
   for (size_t i = 0; i < words.size(); ++i) {
     if (!base::i18n::StringSearchIgnoringCaseAndAccents(
             words[i], text, NULL, NULL)) {
@@ -76,11 +79,12 @@ bool DoesBookmarkTextContainWords(const base::string16& text,
 // Returns true if |node|s title or url contains the strings in |words|.
 // |languages| argument is user's accept-language setting to decode IDN.
 bool DoesBookmarkContainWords(const BookmarkNode* node,
-                              const std::vector<string16>& words,
+                              const std::vector<base::string16>& words,
                               const std::string& languages) {
   return
       DoesBookmarkTextContainWords(node->GetTitle(), words) ||
-      DoesBookmarkTextContainWords(UTF8ToUTF16(node->url().spec()), words) ||
+      DoesBookmarkTextContainWords(
+          base::UTF8ToUTF16(node->url().spec()), words) ||
       DoesBookmarkTextContainWords(net::FormatUrl(
           node->url(), languages, net::kFormatUrlOmitNothing,
           net::UnescapeRule::NORMAL, NULL, NULL, NULL), words);
@@ -91,9 +95,27 @@ bool PruneInvisibleFolders(const BookmarkNode* node) {
   return !node->IsVisible();
 }
 
+// This traces parents up to root, determines if node is contained in a
+// selected folder.
+bool HasSelectedAncestor(BookmarkModel* model,
+                         const std::vector<const BookmarkNode*>& selectedNodes,
+                         const BookmarkNode* node) {
+  if (!node || model->is_permanent_node(node))
+    return false;
+
+  for (size_t i = 0; i < selectedNodes.size(); ++i)
+    if (node->id() == selectedNodes[i]->id())
+      return true;
+
+  return HasSelectedAncestor(model, selectedNodes, node->parent());
+}
+
 }  // namespace
 
 namespace bookmark_utils {
+
+QueryFields::QueryFields() {}
+QueryFields::~QueryFields() {}
 
 void CloneBookmarkNode(BookmarkModel* model,
                        const std::vector<BookmarkNodeData::Element>& elements,
@@ -116,13 +138,23 @@ void CopyToClipboard(BookmarkModel* model,
   if (nodes.empty())
     return;
 
-  BookmarkNodeData(nodes).WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
+  // Create array of selected nodes with descendants filtered out.
+  std::vector<const BookmarkNode*> filteredNodes;
+  for (size_t i = 0; i < nodes.size(); ++i)
+    if (!HasSelectedAncestor(model, nodes, nodes[i]->parent()))
+      filteredNodes.push_back(nodes[i]);
+
+  BookmarkNodeData(filteredNodes).
+      WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
 
   if (remove_nodes) {
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      int index = nodes[i]->parent()->GetIndexOf(nodes[i]);
+#if !defined(OS_ANDROID)
+    ScopedGroupBookmarkActions group_cut(model->profile());
+#endif
+    for (size_t i = 0; i < filteredNodes.size(); ++i) {
+      int index = filteredNodes[i]->parent()->GetIndexOf(filteredNodes[i]);
       if (index > -1)
-        model->Remove(nodes[i]->parent(), index);
+        model->Remove(filteredNodes[i]->parent(), index);
     }
   }
 }
@@ -139,6 +171,9 @@ void PasteFromClipboard(BookmarkModel* model,
 
   if (index == -1)
     index = parent->child_count();
+#if !defined(OS_ANDROID)
+  ScopedGroupBookmarkActions group_paste(model->profile());
+#endif
   CloneBookmarkNode(model, bookmark_data.elements, parent, index, true);
 }
 
@@ -216,25 +251,44 @@ bool MoreRecentlyAdded(const BookmarkNode* n1, const BookmarkNode* n2) {
   return n1->date_added() > n2->date_added();
 }
 
-void GetBookmarksContainingText(BookmarkModel* model,
-                                const base::string16& text,
-                                size_t max_count,
-                                const std::string& languages,
-                                std::vector<const BookmarkNode*>* nodes) {
-  std::vector<string16> words;
+void GetBookmarksMatchingProperties(BookmarkModel* model,
+                                    const QueryFields& query,
+                                    size_t max_count,
+                                    const std::string& languages,
+                                    std::vector<const BookmarkNode*>* nodes) {
+  std::vector<base::string16> query_words;
   QueryParser parser;
-  parser.ParseQueryWords(base::i18n::ToLower(text), &words);
-  if (words.empty())
-    return;
+  if (query.word_phrase_query) {
+    parser.ParseQueryWords(base::i18n::ToLower(*query.word_phrase_query),
+                           &query_words);
+    if (query_words.empty())
+      return;
+  }
 
   ui::TreeNodeIterator<const BookmarkNode> iterator(model->root_node());
   while (iterator.has_next()) {
     const BookmarkNode* node = iterator.Next();
-    if (DoesBookmarkContainWords(node, words, languages)) {
-      nodes->push_back(node);
-      if (nodes->size() == max_count)
-        return;
+    if ((!query_words.empty() &&
+        !DoesBookmarkContainWords(node, query_words, languages)) ||
+        model->is_permanent_node(node)) {
+      continue;
     }
+    if (query.url) {
+      // Check against bare url spec and IDN-decoded url.
+      if (!node->is_url() ||
+          !(base::UTF8ToUTF16(node->url().spec()) == *query.url ||
+            net::FormatUrl(
+                node->url(), languages, net::kFormatUrlOmitNothing,
+                net::UnescapeRule::NORMAL, NULL, NULL, NULL) == *query.url)) {
+        continue;
+      }
+    }
+    if (query.title && node->GetTitle() != *query.title)
+      continue;
+
+    nodes->push_back(node);
+    if (nodes->size() == max_count)
+      return;
   }
 }
 
@@ -301,7 +355,7 @@ void AddIfNotBookmarked(BookmarkModel* model,
   if (!bookmarks.empty())
     return;  // Nothing to do, a bookmark with that url already exists.
 
-  content::RecordAction(content::UserMetricsAction("BookmarkAdded"));
+  content::RecordAction(base::UserMetricsAction("BookmarkAdded"));
   const BookmarkNode* parent = model->GetParentForNewNodes();
   model->AddURL(parent, parent->child_count(), title, url);
 }

@@ -6,7 +6,7 @@
 
 #include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -284,11 +284,10 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
       vertical_padding = kPaddingFromEdgeOfShelf;
       horizontal_padding = kPaddingFromEdgeOfShelf;
     }
-    set_border(views::Border::CreateEmptyBorder(
-        vertical_padding,
-        horizontal_padding,
-        vertical_padding,
-        horizontal_padding));
+    SetBorder(views::Border::CreateEmptyBorder(vertical_padding,
+                                               horizontal_padding,
+                                               vertical_padding,
+                                               horizontal_padding));
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0);
@@ -301,11 +300,10 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
       vertical_padding = kPaddingFromEdgeOfShelf;
       horizontal_padding = kPaddingFromEdgeOfShelf;
     }
-    set_border(views::Border::CreateEmptyBorder(
-        vertical_padding,
-        horizontal_padding,
-        vertical_padding,
-        horizontal_padding));
+    SetBorder(views::Border::CreateEmptyBorder(vertical_padding,
+                                               horizontal_padding,
+                                               vertical_padding,
+                                               horizontal_padding));
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0);
@@ -350,7 +348,7 @@ TrayBackgroundView::~TrayBackgroundView() {
 
 void TrayBackgroundView::Initialize() {
   GetWidget()->AddObserver(widget_observer_.get());
-  SetBorder();
+  SetTrayBorder();
 }
 
 const char* TrayBackgroundView::GetClassName() const {
@@ -429,16 +427,16 @@ void TrayBackgroundView::SetContentsBackground() {
 }
 
 ShelfLayoutManager* TrayBackgroundView::GetShelfLayoutManager() {
-  return ShelfLayoutManager::ForLauncher(GetWidget()->GetNativeView());
+  return ShelfLayoutManager::ForShelf(GetWidget()->GetNativeView());
 }
 
 void TrayBackgroundView::SetShelfAlignment(ShelfAlignment alignment) {
   shelf_alignment_ = alignment;
-  SetBorder();
+  SetTrayBorder();
   tray_container_->SetAlignment(alignment);
 }
 
-void TrayBackgroundView::SetBorder() {
+void TrayBackgroundView::SetTrayBorder() {
   views::View* parent = status_area_widget_->status_area_widget_delegate();
   // Tray views are laid out right-to-left or bottom-to-top
   bool on_edge = (this == parent->child_at(0));
@@ -489,7 +487,7 @@ void TrayBackgroundView::SetBorder() {
       right_edge = kPaddingFromOuterEdgeOfLauncherVerticalAlignment;
     }
   }
-  set_border(views::Border::CreateEmptyBorder(
+  SetBorder(views::Border::CreateEmptyBorder(
       top_edge, left_edge, bottom_edge, right_edge));
 }
 
@@ -580,7 +578,7 @@ gfx::Rect TrayBackgroundView::GetBubbleAnchorRect(
         rect.width() - kPaddingFromRightEdgeOfScreenBottomAlignment,
         rect.height() - kPaddingFromBottomOfScreenBottomAlignment,
         0, 0);
-    rect = ScreenAsh::ConvertRectToScreen(target_root, rect);
+    rect = ScreenUtil::ConvertRectToScreen(target_root, rect);
   }
   return rect;
 }
@@ -623,7 +621,7 @@ void TrayBackgroundView::UpdateBubbleViewArrow(
   aura::Window* root_window =
       bubble_view->GetWidget()->GetNativeView()->GetRootWindow();
   ash::internal::ShelfLayoutManager* shelf =
-      ShelfLayoutManager::ForLauncher(root_window);
+      ShelfLayoutManager::ForShelf(root_window);
   bubble_view->SetArrowPaintType(
       (shelf && shelf->IsVisible()) ?
       views::BubbleBorder::PAINT_NORMAL :

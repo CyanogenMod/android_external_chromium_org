@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/path_service.h"
 #include "base/process/process_handle.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -26,24 +27,8 @@
 namespace {
 
 std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
-#if defined(OS_WIN)
-  wchar_t module[MAX_PATH];
-  GetModuleFileName(NULL, module, MAX_PATH);
-  //result = "\"" + WideToUTF8(module) + "\"";
-  base::FilePath executable(module);
-#elif defined(OS_MACOSX)
-  // FIXME(brettw) write this on Mac!
-  base::FilePath executable("../Debug/gn");
-#else
-  base::FilePath executable =
-      base::GetProcessExecutablePath(base::GetCurrentProcessHandle());
-#endif
-
-/*
-  // Append the root path.
-  CommandLine* cmdline = CommandLine::ForCurrentProcess();
-  result += " --root=\"" + FilePathToUTF8(settings->root_path()) + "\"";
-*/
+  base::FilePath executable;
+  PathService::Get(base::FILE_EXE, &executable);
 
   CommandLine cmdline(executable);
   cmdline.AppendSwitchPath("--root", build_settings->root_path());
@@ -70,7 +55,7 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
   }
 
 #if defined(OS_WIN)
-  return WideToUTF8(cmdline.GetCommandLineString());
+  return base::WideToUTF8(cmdline.GetCommandLineString());
 #else
   return cmdline.GetCommandLineString();
 #endif
@@ -138,6 +123,7 @@ void NinjaBuildWriter::WriteNinjaRules() {
 
   // This rule will regenerate the ninja files when any input file has changed.
   out_ << "build build.ninja: gn\n"
+       << "  generator = 1\n"
        << "  depfile = build.ninja.d\n";
 
   // Provide a way to force regenerating ninja files if the user is suspicious

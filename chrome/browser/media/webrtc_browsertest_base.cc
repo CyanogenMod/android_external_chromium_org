@@ -12,6 +12,7 @@
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/media/webrtc_browsertest_common.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
@@ -57,6 +58,8 @@ WebRtcTestBase::WebRtcTestBase(): detect_errors_in_javascript_(false) {
   // set operation is idempotent.
   logging::SetLogMessageHandler(&JavascriptErrorDetectingLogHandler);
   hit_javascript_errors_.Get() = false;
+
+  EnablePixelOutput();
 }
 
 WebRtcTestBase::~WebRtcTestBase() {
@@ -117,21 +120,10 @@ void WebRtcTestBase::GetUserMediaAndDismiss(
 
 void WebRtcTestBase::GetUserMedia(content::WebContents* tab_contents,
                                   const std::string& constraints) const {
-  // TODO(phoglund): temporary debugging measure for crbug.com/281268.
-  std::string javascript =
-      "if (typeof(doGetUserMedia) != typeof(Function)) {\n"
-      "  console.log('hitting weird js load bug: diagnosing...');\n"
-      "  for (var v in window) {\n"
-      "    if (window.hasOwnProperty(v)) console.log(v);\n"
-      "  }\n"
-      "  window.domAutomationController.send('failed!');\n"
-      "}\n"
-      "else\n"
-      "  doGetUserMedia(" + constraints + ");";
   // Request user media: this will launch the media stream info bar.
   std::string result;
   EXPECT_TRUE(content::ExecuteScriptAndExtractString(
-      tab_contents, javascript, &result));
+      tab_contents, "doGetUserMedia(" + constraints + ");", &result));
   EXPECT_EQ("ok-requested", result);
 }
 
@@ -150,6 +142,20 @@ InfoBar* WebRtcTestBase::GetUserMediaAndWaitForInfoBar(
   content::Details<InfoBar::AddedDetails> details(infobar_added.details());
   EXPECT_TRUE(details->delegate()->AsMediaStreamInfoBarDelegate());
   return details.ptr();
+}
+
+content::WebContents* WebRtcTestBase::OpenPageAndGetUserMediaInNewTab(
+      const GURL& url) const {
+  chrome::AddTabAt(browser(), GURL(), -1, true);
+  ui_test_utils::NavigateToURL(browser(), url);
+#if defined (OS_LINUX)
+  // Load the page again on Linux to work around crbug.com/281268.
+  ui_test_utils::NavigateToURL(browser(), url);
+#endif
+  content::WebContents* new_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  GetUserMediaAndAccept(new_tab);
+  return new_tab;
 }
 
 content::WebContents* WebRtcTestBase::OpenPageAndAcceptUserMedia(
@@ -211,4 +217,18 @@ void WebRtcTestBase::ConnectToPeerConnectionServer(
 
 void WebRtcTestBase::DetectErrorsInJavaScript() {
   detect_errors_in_javascript_ = true;
+}
+
+void WebRtcTestBase::StartDetectingVideo(
+    content::WebContents* tab_contents,
+    const std::string& video_element) const {
+  std::string javascript = base::StringPrintf(
+      "startDetection('%s', 320, 240)", video_element.c_str());
+  EXPECT_EQ("ok-started", ExecuteJavascript(javascript, tab_contents));
+}
+
+void WebRtcTestBase::WaitForVideoToPlay(
+    content::WebContents* tab_contents) const {
+  EXPECT_TRUE(PollingWaitUntil("isVideoPlaying()", "video-playing",
+                               tab_contents));
 }

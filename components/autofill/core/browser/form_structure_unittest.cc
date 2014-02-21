@@ -11,10 +11,9 @@
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/web/WebInputElement.h"
 #include "url/gurl.h"
 
-using blink::WebInputElement;
+using base::ASCIIToUTF16;
 
 namespace autofill {
 namespace {
@@ -34,9 +33,9 @@ class TestAutofillMetrics : public AutofillMetrics {
 namespace content {
 
 std::ostream& operator<<(std::ostream& os, const FormData& form) {
-  os << UTF16ToUTF8(form.name)
+  os << base::UTF16ToUTF8(form.name)
      << " "
-     << UTF16ToUTF8(form.method)
+     << base::UTF16ToUTF8(form.method)
      << " "
      << form.origin.spec()
      << " "

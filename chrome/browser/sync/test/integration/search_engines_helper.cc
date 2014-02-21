@@ -14,7 +14,7 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
@@ -107,8 +107,8 @@ bool ServicesMatch(int profile_a, int profile_b) {
 
 // Convenience helper for consistently generating the same keyword for a given
 // seed.
-string16 CreateKeyword(int seed) {
-  return ASCIIToUTF16(base::StringPrintf("test%d", seed));
+base::string16 CreateKeyword(int seed) {
+  return base::ASCIIToUTF16(base::StringPrintf("test%d", seed));
 }
 
 }  // namespace

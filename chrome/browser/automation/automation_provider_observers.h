@@ -34,13 +34,13 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/memory_details.h"
-#include "chrome/browser/password_manager/password_store_change.h"
-#include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/importer/importer_data_types.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_consumer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -51,9 +51,7 @@
 #include "ui/gfx/size.h"
 
 class AutomationProvider;
-class BalloonCollection;
 class Browser;
-class ExtensionService;
 class Notification;
 class Profile;
 class SavePackage;
@@ -77,6 +75,7 @@ class WebContents;
 
 namespace extensions {
 class Extension;
+class ExtensionSystem;
 class ProcessManager;
 }
 
@@ -152,25 +151,6 @@ class OOBEWebuiReadyObserver : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(OOBEWebuiReadyObserver);
 };
 #endif  // defined(OS_CHROMEOS)
-
-// Watches for NewTabUI page loads for performance timing purposes.
-class NewTabUILoadObserver : public content::NotificationObserver {
- public:
-  explicit NewTabUILoadObserver(AutomationProvider* automation,
-                                Profile* profile);
-  virtual ~NewTabUILoadObserver();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-
-  DISALLOW_COPY_AND_ASSIGN(NewTabUILoadObserver);
-};
 
 class NavigationControllerRestoredObserver
     : public content::NotificationObserver {
@@ -347,10 +327,10 @@ class ExtensionReadyNotificationObserver
     : public content::NotificationObserver {
  public:
   // Creates an observer that replies using the JSON automation interface.
-  ExtensionReadyNotificationObserver(extensions::ProcessManager* manager,
-                                     ExtensionService* service,
-                                     AutomationProvider* automation,
-                                     IPC::Message* reply_message);
+  ExtensionReadyNotificationObserver(
+      extensions::ExtensionSystem* extension_system,
+      AutomationProvider* automation,
+      IPC::Message* reply_message);
   virtual ~ExtensionReadyNotificationObserver();
 
   // Overridden from content::NotificationObserver:
@@ -362,8 +342,7 @@ class ExtensionReadyNotificationObserver
   void Init();
 
   content::NotificationRegistrar registrar_;
-  extensions::ProcessManager* manager_;
-  ExtensionService* service_;
+  extensions::ExtensionSystem* extension_system_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
   const extensions::Extension* extension_;
@@ -774,7 +753,8 @@ class AutomationProviderBookmarkModelObserver : public BookmarkModelObserver {
   virtual ~AutomationProviderBookmarkModelObserver();
 
   // BookmarkModelObserver:
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
@@ -872,7 +852,7 @@ class AllDownloadsCompleteObserver
       AutomationProvider* provider,
       IPC::Message* reply_message,
       content::DownloadManager* download_manager,
-      ListValue* pre_download_ids);
+      base::ListValue* pre_download_ids);
   virtual ~AllDownloadsCompleteObserver();
 
   // content::DownloadManager::Observer.
@@ -961,66 +941,12 @@ class AutomationProviderGetPasswordsObserver : public PasswordStoreConsumer {
   virtual ~AutomationProviderGetPasswordsObserver();
 
   // PasswordStoreConsumer implementation.
-  virtual void OnPasswordStoreRequestDone(
-      CancelableRequestProvider::Handle handle,
-      const std::vector<autofill::PasswordForm*>& result) OVERRIDE;
   virtual void OnGetPasswordStoreResults(
       const std::vector<autofill::PasswordForm*>& results) OVERRIDE;
 
  private:
   base::WeakPtr<AutomationProvider> provider_;
   scoped_ptr<IPC::Message> reply_message_;
-};
-
-// Observes when login entries stored in the password store are changed.  The
-// notifications are sent on the DB thread, the thread that interacts with the
-// web database.
-class PasswordStoreLoginsChangedObserver
-    : public base::RefCountedThreadSafe<
-          PasswordStoreLoginsChangedObserver,
-          content::BrowserThread::DeleteOnUIThread>,
-      public content::NotificationObserver {
- public:
-  PasswordStoreLoginsChangedObserver(AutomationProvider* automation,
-                                     IPC::Message* reply_message,
-                                     PasswordStoreChange::Type expected_type,
-                                     const std::string& result_key);
-
-  // Schedules a task on the DB thread to register the appropriate observers.
-  virtual void Init();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  friend struct content::BrowserThread::DeleteOnThread<
-      content::BrowserThread::UI>;
-  ~PasswordStoreLoginsChangedObserver();
-  friend class base::DeleteHelper<PasswordStoreLoginsChangedObserver>;
-
-  // Registers the appropriate observers.  Called on the DB thread.
-  void RegisterObserversTask();
-
-  // Sends the |reply_message_| to |automation_| indicating we're done.  Called
-  // on the UI thread.
-  void IndicateDone();
-
-  // Sends an error reply to |automation_|.  Called on the UI thread.
-  void IndicateError(const std::string& error);
-
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  scoped_ptr<content::NotificationRegistrar> registrar_;
-  PasswordStoreChange::Type expected_type_;
-  std::string result_key_;
-
-  // Used to ensure that the UI thread waits for the DB thread to finish
-  // registering observers before proceeding.
-  base::WaitableEvent done_event_;
-
-  DISALLOW_COPY_AND_ASSIGN(PasswordStoreLoginsChangedObserver);
 };
 
 // Allows automation provider to wait until page load after selecting an item
@@ -1116,85 +1042,6 @@ class AppLaunchObserver : public content::NotificationObserver {
   int new_window_id_;
 
   DISALLOW_COPY_AND_ASSIGN(AppLaunchObserver);
-};
-
-// Allows the automation provider to wait until all the notification
-// processes are ready.
-class GetAllNotificationsObserver : public content::NotificationObserver {
- public:
-  GetAllNotificationsObserver(AutomationProvider* automation,
-                              IPC::Message* reply_message);
-  virtual ~GetAllNotificationsObserver();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  // Sends a message via the |AutomationProvider|. |automation_| must be valid.
-  // Deletes itself after the message is sent.
-  void SendMessage();
-  // Returns a new dictionary describing the given notification.
-  base::DictionaryValue* NotificationToJson(const Notification* note);
-
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
-  DISALLOW_COPY_AND_ASSIGN(GetAllNotificationsObserver);
-};
-
-// Allows the automation provider to wait for a new notification balloon
-// to appear and be ready.
-class NewNotificationBalloonObserver : public content::NotificationObserver {
- public:
-  NewNotificationBalloonObserver(AutomationProvider* provider,
-                                 IPC::Message* reply_message);
-  virtual ~NewNotificationBalloonObserver();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
-  DISALLOW_COPY_AND_ASSIGN(NewNotificationBalloonObserver);
-};
-
-// Allows the automation provider to wait for a given number of
-// notification balloons.
-class OnNotificationBalloonCountObserver
-    : public content::NotificationObserver {
- public:
-  OnNotificationBalloonCountObserver(AutomationProvider* provider,
-                                     IPC::Message* reply_message,
-                                     int count);
-  virtual ~OnNotificationBalloonCountObserver();
-
-  // Sends an automation reply message if |automation_| is still valid and the
-  // number of ready balloons matches the desired count. Deletes itself if the
-  // message is sent or if |automation_| is invalid.
-  void CheckBalloonCount();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
-  BalloonCollection* collection_;
-  int count_;
-
-  DISALLOW_COPY_AND_ASSIGN(OnNotificationBalloonCountObserver);
 };
 
 // Allows the automation provider to wait for a RENDERER_PROCESS_CLOSED

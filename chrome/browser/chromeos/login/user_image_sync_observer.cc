@@ -169,9 +169,9 @@ void UserImageSyncObserver::UpdateSyncedImageFromLocal() {
   if (GetSyncedImageIndex(&synced_index) && (synced_index == local_index))
     return;
   DictionaryPrefUpdate update(prefs_, kUserImageInfo);
-  DictionaryValue* dict = update.Get();
+  base::DictionaryValue* dict = update.Get();
   dict->SetInteger(kImageIndex, local_index);
-  LOG(INFO) << "Saved avatar index " << local_index << " to sync.";
+  VLOG(1) << "Saved avatar index " << local_index << " to sync.";
 }
 
 void UserImageSyncObserver::UpdateLocalImageFromSynced() {
@@ -180,18 +180,19 @@ void UserImageSyncObserver::UpdateLocalImageFromSynced() {
   int local_index = user_->image_index();
   if ((synced_index == local_index) || !IsIndexSupported(synced_index))
     return;
-  UserImageManager* image_manager = UserManager::Get()->GetUserImageManager();
+  UserImageManager* image_manager =
+      UserManager::Get()->GetUserImageManager(user_->email());
   if (synced_index == User::kProfileImageIndex) {
-    image_manager->SaveUserImageFromProfileImage(user_->email());
+    image_manager->SaveUserImageFromProfileImage();
   } else {
-    image_manager->SaveUserDefaultImageIndex(user_->email(), synced_index);
+    image_manager->SaveUserDefaultImageIndex(synced_index);
   }
-  LOG(INFO) << "Loaded avatar index " << synced_index << " from sync.";
+  VLOG(1) << "Loaded avatar index " << synced_index << " from sync.";
 }
 
 bool UserImageSyncObserver::GetSyncedImageIndex(int* index) {
   *index = User::kInvalidImageIndex;
-  const DictionaryValue* dict = prefs_->GetDictionary(kUserImageInfo);
+  const base::DictionaryValue* dict = prefs_->GetDictionary(kUserImageInfo);
   return dict && dict->GetInteger(kImageIndex, index);
 }
 

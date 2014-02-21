@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -35,6 +36,8 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/ssl_status.h"
+#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_validator.h"
+#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/load_rules_delegate.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/ui_base_types.h"
@@ -54,7 +57,6 @@ class AutofillDataModel;
 class AutofillDialogView;
 class AutofillPopupControllerImpl;
 class DataModelWrapper;
-class TestableAutofillDialogView;
 
 namespace risk {
 class Fingerprint;
@@ -66,17 +68,19 @@ class WalletSigninHelper;
 
 // This class drives the dialog that appears when a site uses the imperative
 // autocomplete API to fill out a form.
-class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
-                                     public AutofillDialogController,
-                                     public AutofillPopupDelegate,
-                                     public content::NotificationObserver,
-                                     public content::WebContentsObserver,
-                                     public SuggestionsMenuModelDelegate,
-                                     public wallet::WalletClientDelegate,
-                                     public wallet::WalletSigninHelperDelegate,
-                                     public PersonalDataManagerObserver,
-                                     public AccountChooserModelDelegate,
-                                     public gfx::AnimationDelegate {
+class AutofillDialogControllerImpl
+    : public AutofillDialogViewDelegate,
+      public AutofillDialogController,
+      public AutofillPopupDelegate,
+      public content::NotificationObserver,
+      public content::WebContentsObserver,
+      public SuggestionsMenuModelDelegate,
+      public wallet::WalletClientDelegate,
+      public wallet::WalletSigninHelperDelegate,
+      public PersonalDataManagerObserver,
+      public AccountChooserModelDelegate,
+      public gfx::AnimationDelegate,
+      public ::i18n::addressinput::LoadRulesDelegate {
  public:
   virtual ~AutofillDialogControllerImpl();
 
@@ -90,10 +94,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void TabActivated() OVERRIDE;
-
-  // Returns |view_| as a testable version of itself (if |view_| exists and
-  // actually implements |AutofillDialogView::GetTestableView()|).
-  TestableAutofillDialogView* GetTestableView();
 
   // AutofillDialogViewDelegate implementation.
   virtual base::string16 DialogTitle() const OVERRIDE;
@@ -221,6 +221,10 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
+  // ::i18n::addressinput::LoadRulesDelegate implementation.
+  virtual void OnAddressValidationRulesLoaded(const std::string& country_code,
+                                              bool success) OVERRIDE;
+
  protected:
   enum DialogSignedInState {
     NOT_CHECKED,
@@ -241,12 +245,15 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // Exposed for testing.
   AutofillDialogView* view() { return view_.get(); }
   virtual AutofillDialogView* CreateView();
-  const DetailInput* input_showing_popup() const {
-    return input_showing_popup_;
+  ServerFieldType popup_input_type() const {
+    return popup_input_type_;
   }
 
   // Returns the PersonalDataManager for |profile_|.
   virtual PersonalDataManager* GetManager() const;
+
+  // Returns an address validation helper. May be NULL during tests.
+  virtual ::i18n::addressinput::AddressValidator* GetValidator();
 
   // Returns the WalletClient* this class uses to talk to Online Wallet. Exposed
   // for testing.
@@ -269,6 +276,10 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // Opens the given URL in a new foreground tab.
   virtual void OpenTabWithUrl(const GURL& url);
 
+  // The active billing section for the current state of the dialog (e.g. when
+  // paying for wallet, the combined credit card + billing address section).
+  DialogSection ActiveBillingSection() const;
+
   // Whether |section| was sent into edit mode based on existing data. This
   // happens when a user clicks "Edit" or a suggestion is invalid.
   virtual bool IsEditingExistingData(DialogSection section) const;
@@ -279,10 +290,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // Should be called on the Wallet sign-in error.
   virtual void OnWalletSigninError();
-
-  // Whether the information input in this dialog will be securely transmitted
-  // to the requesting site.
-  virtual bool TransmissionWillBeSecure() const;
 
   // Whether submission is currently waiting for |action| to be handled.
   bool IsSubmitPausedOn(wallet::RequiredAction action) const;
@@ -320,8 +327,8 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   DialogSignedInState SignedInState() const;
 
  private:
-  // Whether or not the current request wants credit info back.
-  bool RequestingCreditCardInfo() const;
+  FRIEND_TEST_ALL_PREFIXES(AutofillDialogControllerI18nTest,
+                           CorrectCountryFromInputs);
 
   // Initializes or updates |suggested_cc_| et al.
   void SuggestionsUpdated();
@@ -404,8 +411,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   void FillOutputForSection(DialogSection section);
   // As above, but uses |compare| to determine whether a DetailInput matches
   // a field. Saves any new Autofill data to the PersonalDataManager.
-  void FillOutputForSectionWithComparator(DialogSection section,
-                                          const InputFieldComparator& compare);
+  void FillOutputForSectionWithComparator(
+      DialogSection section,
+      const FormStructure::InputFieldComparator& compare);
 
   // Returns whether |form_structure|_| has any fields that match the fieldset
   // represented by |section|.
@@ -429,6 +437,16 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   DialogSection SectionForSuggestionsMenuModel(
       const SuggestionsMenuModel& model);
 
+  // Gets the CountryComboboxModel for |section|.
+  CountryComboboxModel* CountryComboboxModelForSection(DialogSection section);
+
+  // Clears and builds the inputs in |section| for |country_name|.
+  // When |should_clobber| is false, and the view's country value matches
+  // |country_name|, the inputs won't be rebuilt.
+  bool RebuildInputsForCountry(DialogSection section,
+                               const base::string16& country_name,
+                               bool should_clobber);
+
   // Suggested text and icons for sections. Suggestion text is used to show an
   // abridged overview of the currently used suggestion. Extra text is used when
   // part of a section is suggested but part must be manually input (e.g. during
@@ -449,12 +467,19 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
       ServerFieldType type,
       const base::string16& field_contents,
       const DetailInputs& inputs,
-      std::vector<string16>* popup_values,
-      std::vector<string16>* popup_labels,
-      std::vector<string16>* popup_icons);
+      std::vector<base::string16>* popup_values,
+      std::vector<base::string16>* popup_labels,
+      std::vector<base::string16>* popup_icons);
 
   // Like RequestedFieldsForSection, but returns a pointer.
   DetailInputs* MutableRequestedFieldsForSection(DialogSection section);
+
+  // Returns just the |type| attributes of RequestedFieldsForSection(section).
+  std::vector<ServerFieldType> RequestedTypesForSection(DialogSection section)
+      const;
+
+  // Returns the country code (e.g. "US") for |section|.
+  std::string CountryCodeForSection(DialogSection section);
 
   // Hides |popup_controller_|'s popup view, if it exists.
   void HidePopup();
@@ -480,6 +505,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // the dialog have valid contents. This validates only by checking "sure"
   // messages - see AllSectionsAreValid.
   bool SectionIsValid(DialogSection section);
+
+  // Whether validation rules for |section| are loaded.
+  bool RulesAreLoaded(DialogSection section);
 
   // Whether the currently active credit card expiration date is valid.
   bool IsCreditCardExpirationValid(const base::string16& year,
@@ -603,6 +631,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // A client to talk to the Online Wallet API.
   wallet::WalletClient wallet_client_;
 
+  // A helper to validate international address input.
+  scoped_ptr< ::i18n::addressinput::AddressValidator> validator_;
+
   // True if |this| has ever called GetWalletItems().
   bool wallet_items_requested_;
 
@@ -656,8 +687,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   MonthComboboxModel cc_exp_month_combobox_model_;
   YearComboboxModel cc_exp_year_combobox_model_;
 
-  // Model for the country input.
-  CountryComboboxModel country_combobox_model_;
+  // Models for country input.
+  CountryComboboxModel billing_country_combobox_model_;
+  CountryComboboxModel shipping_country_combobox_model_;
 
   // Models for the suggestion views.
   SuggestionsMenuModel suggested_cc_;
@@ -667,6 +699,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // |DialogSection|s that are in edit mode that are based on existing data.
   std::set<DialogSection> section_editing_state_;
+
+  // Sections that need to be validated when their validation rules load.
+  std::set<DialogSection> needs_validation_;
 
   // Whether |form_structure_| has asked for any details that would indicate
   // we should show a shipping section.
@@ -679,16 +714,13 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // they're manually filling the dialog).
   base::WeakPtr<AutofillPopupControllerImpl> popup_controller_;
 
-  // The input for which |popup_controller_| is currently showing a popup
-  // (if any).
-  const DetailInput* input_showing_popup_;
+  // The type of the visible Autofill popup input (or UNKNOWN_TYPE if none).
+  ServerFieldType popup_input_type_;
 
   scoped_ptr<AutofillDialogView> view_;
 
   // A NotificationRegistrar for tracking the completion of sign-in.
   content::NotificationRegistrar signin_registrar_;
-
-  base::WeakPtrFactory<AutofillDialogControllerImpl> weak_ptr_factory_;
 
   // Set to true when the user presses the sign in link, until we're ready to
   // show the normal dialog again. This is used to hide the buttons while
@@ -765,6 +797,8 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // A username string we display in the card scrambling/generated overlay.
   base::string16 submitted_cardholder_name_;
+
+  base::WeakPtrFactory<AutofillDialogControllerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDialogControllerImpl);
 };

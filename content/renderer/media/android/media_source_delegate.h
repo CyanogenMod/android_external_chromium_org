@@ -67,12 +67,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const UpdateNetworkStateCB& update_network_state_cb,
       const DurationChangeCB& duration_change_cb);
 
-#if defined(GOOGLE_TV)
-  void InitializeMediaStream(
-      media::Demuxer* demuxer,
-      const UpdateNetworkStateCB& update_network_state_cb);
-#endif
-
   const blink::WebTimeRanges& Buffered();
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
@@ -100,8 +94,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // cached data since last keyframe. See http://crbug.com/304234.
   void Seek(const base::TimeDelta& seek_time, bool is_browser_seek);
 
-  void NotifyKeyAdded(const std::string& key_system);
-
   // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
   void OnReadFromDemuxer(media::DemuxerStream::Type type);
 
@@ -111,12 +103,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Called by the Destroyer to destroy an instance of this object.
   void Destroy();
 
- private:
-  typedef base::Callback<void(scoped_ptr<media::DemuxerData> data)>
-      ReadFromDemuxerAckCB;
-  typedef base::Callback<void(scoped_ptr<media::DemuxerConfigs> configs)>
-      DemuxerReadyCB;
+  // Called on the main thread to check whether the video stream is encrypted.
+  bool IsVideoEncrypted();
 
+ private:
   // This is private to enforce use of the Destroyer.
   virtual ~MediaSourceDelegate();
 
@@ -154,7 +144,11 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void ResetVideoDecryptingDemuxerStream();
   void FinishResettingDecryptingDemuxerStreams();
 
+  // Callback for ChunkDemuxer::Stop() and helper for deleting |this| on the
+  // main thread.
   void OnDemuxerStopDone();
+  void DeleteSelf();
+
   void OnDemuxerOpened();
   void OnNeedKey(const std::string& type,
                  const std::vector<uint8>& init_data);
@@ -177,8 +171,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   // Helper function for calculating duration.
   int GetDurationMs();
-
-  bool HasEncryptedStream();
 
   bool IsSeeking() const;
 
@@ -207,7 +199,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   DurationChangeCB duration_change_cb_;
 
   scoped_ptr<media::ChunkDemuxer> chunk_demuxer_;
-  media::Demuxer* demuxer_;
   bool is_demuxer_ready_;
 
   media::SetDecryptorReadyCB set_decryptor_ready_cb_;
@@ -226,10 +217,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   MediaSourceOpenedCB media_source_opened_cb_;
   media::Demuxer::NeedKeyCB need_key_cb_;
 
-  // The currently selected key system. Empty string means that no key system
-  // has been selected.
-  blink::WebString current_key_system_;
-
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.
   std::string init_data_type_;
@@ -237,6 +224,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Lock used to serialize access for |seeking_|.
   mutable base::Lock seeking_lock_;
   bool seeking_;
+
+  // Lock used to serialize access for |is_video_encrypted_|.
+  mutable base::Lock is_video_encrypted_lock_;
+  bool is_video_encrypted_;
 
   // Track if we are currently performing a browser seek, and track whether or
   // not a regular seek is expected soon. If a regular seek is expected soon,
@@ -246,11 +237,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   bool doing_browser_seek_;
   base::TimeDelta browser_seek_time_;
   bool expecting_regular_seek_;
-
-#if defined(GOOGLE_TV)
-  bool key_added_;
-  std::string key_system_;
-#endif  // defined(GOOGLE_TV)
 
   size_t access_unit_size_;
 

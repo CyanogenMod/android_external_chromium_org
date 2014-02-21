@@ -6,7 +6,7 @@
 
 #include <map>
 
-#include "chrome/browser/extensions/extension_prefs_unittest.h"
+#include "chrome/browser/extensions/./extension_prefs_unittest.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
@@ -623,7 +623,7 @@ TEST_F(ChromeAppSortingPageOrdinalMapping,
 class ChromeAppSortingPreinstalledAppsBase : public PrefsPrepopulatedTestBase {
  public:
   ChromeAppSortingPreinstalledAppsBase() {
-    DictionaryValue simple_dict;
+    base::DictionaryValue simple_dict;
     simple_dict.SetString(keys::kVersion, "1.0.0.0");
     simple_dict.SetString(keys::kName, "unused");
     simple_dict.SetString(keys::kApp, "true");
@@ -802,7 +802,7 @@ class ChromeAppSortingDefaultOrdinalsBase : public ChromeAppSortingTest {
 
  protected:
   scoped_refptr<Extension> CreateApp(const std::string& name) {
-    DictionaryValue simple_dict;
+    base::DictionaryValue simple_dict;
     simple_dict.SetString(keys::kVersion, "1.0.0.0");
     simple_dict.SetString(keys::kName, name);
     simple_dict.SetString(keys::kApp, "true");

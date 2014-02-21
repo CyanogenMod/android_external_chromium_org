@@ -164,7 +164,7 @@ void AwWebContentsDelegate::AddNewContents(WebContents* source,
 void AwWebContentsDelegate::WebContentsCreated(
     WebContents* source_contents,
     int64 source_frame_id,
-    const string16& frame_name,
+    const base::string16& frame_name,
     const GURL& target_url,
     content::WebContents* new_contents) {
   AwContentsIoThreadClientImpl::RegisterPendingContents(new_contents);
@@ -186,13 +186,6 @@ void AwWebContentsDelegate::ActivateContents(WebContents* contents) {
   if (java_delegate.obj()) {
     Java_AwWebContentsDelegate_activateContents(env, java_delegate.obj());
   }
-}
-
-void AwWebContentsDelegate::RequestProtectedMediaIdentifierPermission(
-    const content::WebContents* web_contents,
-    const GURL& frame_url,
-    const base::Callback<void(bool)>& callback) {
-  NOTIMPLEMENTED();
 }
 
 static void FilesSelectedInChooser(

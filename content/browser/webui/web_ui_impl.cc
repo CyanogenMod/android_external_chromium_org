@@ -15,7 +15,6 @@
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -29,18 +28,18 @@ const WebUI::TypeID WebUI::kNoWebUI = NULL;
 // static
 base::string16 WebUI::GetJavascriptCall(
     const std::string& function_name,
-    const std::vector<const Value*>& arg_list) {
+    const std::vector<const base::Value*>& arg_list) {
   base::string16 parameters;
   std::string json;
   for (size_t i = 0; i < arg_list.size(); ++i) {
     if (i > 0)
-      parameters += char16(',');
+      parameters += base::char16(',');
 
     base::JSONWriter::Write(arg_list[i], &json);
-    parameters += UTF8ToUTF16(json);
+    parameters += base::UTF8ToUTF16(json);
   }
-  return ASCIIToUTF16(function_name) +
-      char16('(') + parameters + char16(')') + char16(';');
+  return base::ASCIIToUTF16(function_name) +
+      base::char16('(') + parameters + base::char16(')') + base::char16(';');
 }
 
 WebUIImpl::WebUIImpl(WebContents* contents)
@@ -69,13 +68,11 @@ bool WebUIImpl::OnMessageReceived(const IPC::Message& message) {
 
 void WebUIImpl::OnWebUISend(const GURL& source_url,
                             const std::string& message,
-                            const ListValue& args) {
-  WebContentsDelegate* delegate = web_contents_->GetDelegate();
-  bool data_urls_allowed = delegate && delegate->CanLoadDataURLsInWebUI();
+                            const base::ListValue& args) {
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->
           HasWebUIBindings(web_contents_->GetRenderProcessHost()->GetID()) ||
       !WebUIControllerFactoryRegistry::GetInstance()->IsURLAcceptableForWebUI(
-          web_contents_->GetBrowserContext(), source_url, data_urls_allowed)) {
+          web_contents_->GetBrowserContext(), source_url)) {
     NOTREACHED() << "Blocked unauthorized use of WebUIBindings.";
     return;
   }
@@ -144,23 +141,23 @@ void WebUIImpl::SetController(WebUIController* controller) {
 
 void WebUIImpl::CallJavascriptFunction(const std::string& function_name) {
   DCHECK(IsStringASCII(function_name));
-  base::string16 javascript = ASCIIToUTF16(function_name + "();");
+  base::string16 javascript = base::ASCIIToUTF16(function_name + "();");
   ExecuteJavascript(javascript);
 }
 
 void WebUIImpl::CallJavascriptFunction(const std::string& function_name,
-                                       const Value& arg) {
+                                       const base::Value& arg) {
   DCHECK(IsStringASCII(function_name));
-  std::vector<const Value*> args;
+  std::vector<const base::Value*> args;
   args.push_back(&arg);
   ExecuteJavascript(GetJavascriptCall(function_name, args));
 }
 
 void WebUIImpl::CallJavascriptFunction(
     const std::string& function_name,
-    const Value& arg1, const Value& arg2) {
+    const base::Value& arg1, const base::Value& arg2) {
   DCHECK(IsStringASCII(function_name));
-  std::vector<const Value*> args;
+  std::vector<const base::Value*> args;
   args.push_back(&arg1);
   args.push_back(&arg2);
   ExecuteJavascript(GetJavascriptCall(function_name, args));
@@ -168,9 +165,9 @@ void WebUIImpl::CallJavascriptFunction(
 
 void WebUIImpl::CallJavascriptFunction(
     const std::string& function_name,
-    const Value& arg1, const Value& arg2, const Value& arg3) {
+    const base::Value& arg1, const base::Value& arg2, const base::Value& arg3) {
   DCHECK(IsStringASCII(function_name));
-  std::vector<const Value*> args;
+  std::vector<const base::Value*> args;
   args.push_back(&arg1);
   args.push_back(&arg2);
   args.push_back(&arg3);
@@ -179,12 +176,12 @@ void WebUIImpl::CallJavascriptFunction(
 
 void WebUIImpl::CallJavascriptFunction(
     const std::string& function_name,
-    const Value& arg1,
-    const Value& arg2,
-    const Value& arg3,
-    const Value& arg4) {
+    const base::Value& arg1,
+    const base::Value& arg2,
+    const base::Value& arg3,
+    const base::Value& arg4) {
   DCHECK(IsStringASCII(function_name));
-  std::vector<const Value*> args;
+  std::vector<const base::Value*> args;
   args.push_back(&arg1);
   args.push_back(&arg2);
   args.push_back(&arg3);
@@ -194,7 +191,7 @@ void WebUIImpl::CallJavascriptFunction(
 
 void WebUIImpl::CallJavascriptFunction(
     const std::string& function_name,
-    const std::vector<const Value*>& args) {
+    const std::vector<const base::Value*>& args) {
   DCHECK(IsStringASCII(function_name));
   ExecuteJavascript(GetJavascriptCall(function_name, args));
 }
@@ -233,7 +230,7 @@ void WebUIImpl::AddMessageHandler(WebUIMessageHandler* handler) {
 void WebUIImpl::ExecuteJavascript(const base::string16& javascript) {
   static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost())->ExecuteJavascriptInWebFrame(
-      ASCIIToUTF16(frame_xpath_), javascript);
+      base::ASCIIToUTF16(frame_xpath_), javascript);
 }
 
 }  // namespace content

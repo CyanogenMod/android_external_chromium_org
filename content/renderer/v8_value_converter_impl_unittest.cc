@@ -53,7 +53,7 @@ class V8ValueConverterImplTest : public testing::Test {
  protected:
   virtual void SetUp() {
     v8::HandleScope handle_scope(isolate_);
-    v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New();
+    v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate_);
     context_.Reset(isolate_, v8::Context::New(isolate_, NULL, global));
   }
 
@@ -154,7 +154,7 @@ class V8ValueConverterImplTest : public testing::Test {
       EXPECT_FALSE(raw.get());
     }
 
-    v8::Handle<v8::Object> object(v8::Object::New());
+    v8::Handle<v8::Object> object(v8::Object::New(isolate_));
     object->Set(v8::String::NewFromUtf8(isolate_, "test"), val);
     scoped_ptr<base::DictionaryValue> dictionary(
         static_cast<base::DictionaryValue*>(
@@ -455,7 +455,7 @@ TEST_F(V8ValueConverterImplTest, RecursiveObjects) {
 
   V8ValueConverterImpl converter;
 
-  v8::Handle<v8::Object> object = v8::Object::New().As<v8::Object>();
+  v8::Handle<v8::Object> object = v8::Object::New(isolate_).As<v8::Object>();
   ASSERT_FALSE(object.IsEmpty());
   object->Set(v8::String::NewFromUtf8(isolate_, "foo"),
               v8::String::NewFromUtf8(isolate_, "bar"));
@@ -578,7 +578,7 @@ TEST_F(V8ValueConverterImplTest, UndefinedValueBehavior) {
       base::test::ParseJson("{ \"bar\": null }").get(), actual_object.get()));
 
   // Everything is null because JSON stringification preserves array length.
-  scoped_ptr<Value> actual_array(converter.FromV8Value(array, context));
+  scoped_ptr<base::Value> actual_array(converter.FromV8Value(array, context));
   EXPECT_TRUE(base::Value::Equals(
       base::test::ParseJson("[ null, null, null ]").get(), actual_array.get()));
 }
@@ -636,7 +636,7 @@ TEST_F(V8ValueConverterImplTest, DetectCycles) {
 
   // Now create a recursive object
   const std::string key("key");
-  v8::Handle<v8::Object> recursive_object(v8::Object::New());
+  v8::Handle<v8::Object> recursive_object(v8::Object::New(isolate_));
   v8::TryCatch try_catch;
   recursive_object->Set(
       v8::String::NewFromUtf8(
@@ -666,11 +666,11 @@ TEST_F(V8ValueConverterImplTest, MaxRecursionDepth) {
   int kDepth = 1000;
   const char kKey[] = "key";
 
-  v8::Local<v8::Object> deep_object = v8::Object::New();
+  v8::Local<v8::Object> deep_object = v8::Object::New(isolate_);
 
   v8::Local<v8::Object> leaf = deep_object;
   for (int i = 0; i < kDepth; ++i) {
-    v8::Local<v8::Object> new_object = v8::Object::New();
+    v8::Local<v8::Object> new_object = v8::Object::New(isolate_);
     leaf->Set(v8::String::NewFromUtf8(isolate_, kKey), new_object);
     leaf = new_object;
   }
@@ -691,7 +691,7 @@ TEST_F(V8ValueConverterImplTest, MaxRecursionDepth) {
 
   // The leaf node shouldn't have any properties.
   base::DictionaryValue empty;
-  EXPECT_TRUE(Value::Equals(&empty, current)) << *current;
+  EXPECT_TRUE(base::Value::Equals(&empty, current)) << *current;
 }
 
 }  // namespace content

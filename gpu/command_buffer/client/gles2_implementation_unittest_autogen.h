@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1691,17 +1691,7 @@ TEST_F(GLES2ImplementationTest, ResizeCHROMIUM) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 // TODO: Implement unit test for GetRequestableExtensionsCHROMIUM
-
-TEST_F(GLES2ImplementationTest, DestroyStreamTextureCHROMIUM) {
-  struct Cmds {
-    cmds::DestroyStreamTextureCHROMIUM cmd;
-  };
-  Cmds expected;
-  expected.cmd.Init(1);
-
-  gl_->DestroyStreamTextureCHROMIUM(1);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-}
+// TODO: Implement unit test for CreateStreamTextureCHROMIUM
 // TODO: Implement unit test for GetTranslatedShaderSourceANGLE
 
 TEST_F(GLES2ImplementationTest, TexImageIOSurface2DCHROMIUM) {
@@ -1748,38 +1738,6 @@ TEST_F(GLES2ImplementationTest, VertexAttribDivisorANGLE) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 // TODO: Implement unit test for GenMailboxCHROMIUM
-
-TEST_F(GLES2ImplementationTest, ProduceTextureCHROMIUM) {
-  GLbyte data[64] = {0};
-  struct Cmds {
-    cmds::ProduceTextureCHROMIUMImmediate cmd;
-    GLbyte data[64];
-  };
-
-  for (int jj = 0; jj < 64; ++jj) {
-    data[jj] = static_cast<GLbyte>(jj);
-  }
-  Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, &data[0]);
-  gl_->ProduceTextureCHROMIUM(GL_TEXTURE_2D, &data[0]);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-}
-
-TEST_F(GLES2ImplementationTest, ConsumeTextureCHROMIUM) {
-  GLbyte data[64] = {0};
-  struct Cmds {
-    cmds::ConsumeTextureCHROMIUMImmediate cmd;
-    GLbyte data[64];
-  };
-
-  for (int jj = 0; jj < 64; ++jj) {
-    data[jj] = static_cast<GLbyte>(jj);
-  }
-  Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, &data[0]);
-  gl_->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, &data[0]);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-}
 // TODO: Implement unit test for BindUniformLocationCHROMIUM
 
 TEST_F(GLES2ImplementationTest, BindTexImage2DCHROMIUM) {
@@ -1860,6 +1818,17 @@ TEST_F(GLES2ImplementationTest, DrawBuffersEXT) {
   }
   expected.cmd.Init(1, &data[0][0]);
   gl_->DrawBuffersEXT(1, &data[0][0]);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, DiscardBackbufferCHROMIUM) {
+  struct Cmds {
+    cmds::DiscardBackbufferCHROMIUM cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init();
+
+  gl_->DiscardBackbufferCHROMIUM();
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_UNITTEST_AUTOGEN_H_

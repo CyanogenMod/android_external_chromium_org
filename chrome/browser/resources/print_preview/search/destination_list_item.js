@@ -95,24 +95,10 @@ cr.define('print_preview', function() {
      * @private
      */
     initializeOfflineStatusElement_: function() {
-      if (arrayContains([print_preview.Destination.ConnectionStatus.OFFLINE,
-                         print_preview.Destination.ConnectionStatus.DORMANT],
-                        this.destination_.connectionStatus)) {
+      if (this.destination_.isOffline) {
         this.getElement().classList.add(DestinationListItem.Classes_.STALE);
-        var offlineDurationMs = Date.now() - this.destination_.lastAccessTime;
-        var offlineMessageId;
-        if (offlineDurationMs > 31622400000.0) { // One year.
-          offlineMessageId = 'offlineForYear';
-        } else if (offlineDurationMs > 2678400000.0) { // One month.
-          offlineMessageId = 'offlineForMonth';
-        } else if (offlineDurationMs > 604800000.0) { // One week.
-          offlineMessageId = 'offlineForWeek';
-        } else {
-          offlineMessageId = 'offline';
-        }
-        var offlineStatusEl = this.getElement().querySelector(
-            '.offline-status');
-        offlineStatusEl.textContent = localStrings.getString(offlineMessageId);
+        var offlineStatusEl = this.getChildElement('.offline-status');
+        offlineStatusEl.textContent = this.destination_.offlineStatusText;
         setIsVisible(offlineStatusEl, true);
       }
     },
@@ -123,13 +109,11 @@ cr.define('print_preview', function() {
     initializeRegistrationPromoElement_: function() {
       if (this.destination_.connectionStatus ==
           print_preview.Destination.ConnectionStatus.UNREGISTERED) {
-        var registerBtnEl = this.getElement().querySelector(
-            '.register-promo-button');
+        var registerBtnEl = this.getChildElement('.register-promo-button');
         registerBtnEl.addEventListener('click',
                                        this.onRegisterPromoClicked_.bind(this));
 
-        var registerPromoEl = this.getElement().querySelector(
-            '.register-promo');
+        var registerPromoEl = this.getChildElement('.register-promo');
         setIsVisible(registerPromoEl, true);
       }
     },
@@ -153,7 +137,7 @@ cr.define('print_preview', function() {
         }
         this.fedexTos_.setIsVisible(true);
       } else if (this.destination_.connectionStatus !=
-          print_preview.Destination.ConnectionStatus.UNREGISTERED) {
+                     print_preview.Destination.ConnectionStatus.UNREGISTERED) {
         var selectEvt = new Event(DestinationListItem.EventType.SELECT);
         selectEvt.destination = this.destination_;
         this.eventTarget_.dispatchEvent(selectEvt);

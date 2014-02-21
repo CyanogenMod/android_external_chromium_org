@@ -25,6 +25,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/bindings_policy.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/process_map.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
@@ -152,12 +153,12 @@ std::string MemoryDetails::ToLogString() {
             iter1->process_type, iter1->renderer_type);
     if (!iter1->titles.empty()) {
       log += " [";
-      for (std::vector<string16>::const_iterator iter2 =
+      for (std::vector<base::string16>::const_iterator iter2 =
                iter1->titles.begin();
            iter2 != iter1->titles.end(); ++iter2) {
         if (iter2 != iter1->titles.begin())
           log += "|";
-        log += UTF16ToUTF8(*iter2);
+        log += base::UTF16ToUTF8(*iter2);
       }
       log += "]";
     }
@@ -238,7 +239,7 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
       extensions::ProcessMap* extension_process_map = NULL;
       // No extensions on Android. So extension_service can be NULL.
       if (extension_service)
-          extension_process_map = extension_service->process_map();
+          extension_process_map = extensions::ProcessMap::Get(profile);
 
       // The RenderProcessHost may host multiple WebContentses.  Any
       // of them which contain diagnostics information make the whole
@@ -281,7 +282,7 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
         const Extension* extension =
             extension_service->extensions()->GetByID(url.host());
         if (extension) {
-          base::string16 title = UTF8ToUTF16(extension->name());
+          base::string16 title = base::UTF8ToUTF16(extension->name());
           process.titles.push_back(title);
           process.renderer_type =
               ProcessMemoryInformation::RENDERER_EXTENSION;
@@ -296,14 +297,14 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
       }
 
       if (type == extensions::VIEW_TYPE_BACKGROUND_CONTENTS) {
-        process.titles.push_back(UTF8ToUTF16(url.spec()));
+        process.titles.push_back(base::UTF8ToUTF16(url.spec()));
         process.renderer_type =
             ProcessMemoryInformation::RENDERER_BACKGROUND_APP;
         continue;
       }
 
       if (type == extensions::VIEW_TYPE_NOTIFICATION) {
-        process.titles.push_back(UTF8ToUTF16(url.spec()));
+        process.titles.push_back(base::UTF8ToUTF16(url.spec()));
         process.renderer_type =
             ProcessMemoryInformation::RENDERER_NOTIFICATION;
         continue;

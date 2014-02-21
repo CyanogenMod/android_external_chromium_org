@@ -10,18 +10,17 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
+#include "chrome/browser/ui/autofill/popup_constants.h"
 #include "components/autofill/core/browser/autofill_popup_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
 #include "grit/webkit_resources.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
-#include "ui/gfx/display.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/gfx/vector2d.h"
 
 using base::WeakPtr;
@@ -75,7 +74,7 @@ WeakPtr<AutofillPopupControllerImpl> AutofillPopupControllerImpl::GetOrCreate(
     base::i18n::TextDirection text_direction) {
   DCHECK(!previous.get() || previous->delegate_.get() == delegate.get());
 
-  if (previous.get() && previous->web_contents_ == web_contents &&
+  if (previous.get() && previous->web_contents() == web_contents &&
       previous->container_view() == container_view &&
       previous->element_bounds() == element_bounds) {
     previous->ClearState();
@@ -98,26 +97,25 @@ AutofillPopupControllerImpl::AutofillPopupControllerImpl(
     gfx::NativeView container_view,
     const gfx::RectF& element_bounds,
     base::i18n::TextDirection text_direction)
-    : view_(NULL),
+    : controller_common_(new PopupControllerCommon(element_bounds,
+                                                   container_view,
+                                                   web_contents)),
+      view_(NULL),
       delegate_(delegate),
-      web_contents_(web_contents),
-      container_view_(container_view),
-      element_bounds_(element_bounds),
       text_direction_(text_direction),
-      registered_key_press_event_callback_with_(NULL),
       hide_on_outside_click_(false),
-      key_press_event_callback_(
-          base::Bind(&AutofillPopupControllerImpl::HandleKeyPressEvent,
-                     base::Unretained(this))),
       weak_ptr_factory_(this) {
   ClearState();
+  controller_common_->SetKeyPressCallback(
+      base::Bind(&AutofillPopupControllerImpl::HandleKeyPressEvent,
+                 base::Unretained(this)));
 #if !defined(OS_ANDROID)
-  subtext_font_ = name_font_.DeriveFont(kLabelFontSizeDelta);
+  subtext_font_list_ = name_font_list_.DeriveWithSizeDelta(kLabelFontSizeDelta);
 #if defined(OS_MACOSX)
   // There is no italic version of the system font.
-  warning_font_ = name_font_;
+  warning_font_list_ = name_font_list_;
 #else
-  warning_font_ = name_font_.DeriveFont(0, gfx::Font::ITALIC);
+  warning_font_list_ = name_font_list_.DeriveWithStyle(gfx::Font::ITALIC);
 #endif
 #endif
 }
@@ -125,9 +123,9 @@ AutofillPopupControllerImpl::AutofillPopupControllerImpl(
 AutofillPopupControllerImpl::~AutofillPopupControllerImpl() {}
 
 void AutofillPopupControllerImpl::Show(
-    const std::vector<string16>& names,
-    const std::vector<string16>& subtexts,
-    const std::vector<string16>& icons,
+    const std::vector<base::string16>& names,
+    const std::vector<base::string16>& subtexts,
+    const std::vector<base::string16>& icons,
     const std::vector<int>& identifiers) {
   SetValues(names, subtexts, icons, identifiers);
 
@@ -140,8 +138,8 @@ void AutofillPopupControllerImpl::Show(
   // Elide the name and subtext strings so that the popup fits in the available
   // space.
   for (size_t i = 0; i < names_.size(); ++i) {
-    int name_width = GetNameFontForRow(i).GetStringWidth(names_[i]);
-    int subtext_width = subtext_font().GetStringWidth(subtexts_[i]);
+    int name_width = gfx::GetStringWidth(names_[i], GetNameFontListForRow(i));
+    int subtext_width = gfx::GetStringWidth(subtexts_[i], subtext_font_list());
     int total_text_length = name_width + subtext_width;
 
     // The line can have no strings if it represents a UI element, such as
@@ -154,15 +152,15 @@ void AutofillPopupControllerImpl::Show(
     // Each field recieves space in proportion to its length.
     int name_size = available_width * name_width / total_text_length;
     names_[i] = gfx::ElideText(names_[i],
-                              GetNameFontForRow(i),
-                              name_size,
-                              gfx::ELIDE_AT_END);
+                               GetNameFontListForRow(i),
+                               name_size,
+                               gfx::ELIDE_AT_END);
 
     int subtext_size = available_width * subtext_width / total_text_length;
     subtexts_[i] = gfx::ElideText(subtexts_[i],
-                                 subtext_font(),
-                                 subtext_size,
-                                 gfx::ELIDE_AT_END);
+                                  subtext_font_list(),
+                                  subtext_size,
+                                  gfx::ELIDE_AT_END);
   }
 #endif
 
@@ -182,12 +180,7 @@ void AutofillPopupControllerImpl::Show(
   }
 
   delegate_->OnPopupShown();
-  if (web_contents_ && !registered_key_press_event_callback_with_) {
-    registered_key_press_event_callback_with_ =
-        web_contents_->GetRenderViewHost();
-    registered_key_press_event_callback_with_->AddKeyPressEventCallback(
-        key_press_event_callback_);
-  }
+  controller_common_->RegisterKeyPressCallback();
 }
 
 void AutofillPopupControllerImpl::UpdateDataListValues(
@@ -247,14 +240,7 @@ void AutofillPopupControllerImpl::UpdateDataListValues(
 }
 
 void AutofillPopupControllerImpl::Hide() {
-  if (web_contents_ && (!web_contents_->IsBeingDestroyed()) &&
-      (registered_key_press_event_callback_with_ ==
-          web_contents_->GetRenderViewHost())) {
-    web_contents_->GetRenderViewHost()->RemoveKeyPressEventCallback(
-        key_press_event_callback_);
-  }
-  registered_key_press_event_callback_with_ = NULL;
-
+  controller_common_->RemoveKeyPressCallback();
   if (delegate_.get())
     delegate_->OnPopupHidden();
 
@@ -317,12 +303,13 @@ void AutofillPopupControllerImpl::UpdateBoundsAndRedrawPopup() {
   view_->UpdateBoundsAndRedrawPopup();
 }
 
-void AutofillPopupControllerImpl::LineSelectedAtPoint(int x, int y) {
-  SetSelectedLine(LineFromY(y));
+void AutofillPopupControllerImpl::SetSelectionAtPoint(const gfx::Point& point) {
+  SetSelectedLine(LineFromY(point.y()));
 }
 
-void AutofillPopupControllerImpl::LineAcceptedAtPoint(int x, int y) {
-  LineSelectedAtPoint(x, y);
+void AutofillPopupControllerImpl::AcceptSelectionAtPoint(
+    const gfx::Point& point) {
+  SetSelectionAtPoint(point);
   AcceptSelectedLine();
 }
 
@@ -335,6 +322,10 @@ bool AutofillPopupControllerImpl::ShouldRepostEvent(
   return delegate_->ShouldRepostEvent(event);
 }
 
+bool AutofillPopupControllerImpl::ShouldHideOnOutsideClick() const {
+  return hide_on_outside_click_;
+}
+
 void AutofillPopupControllerImpl::AcceptSuggestion(size_t index) {
   delegate_->DidAcceptSuggestion(full_names_[index], identifiers_[index]);
 }
@@ -342,7 +333,7 @@ void AutofillPopupControllerImpl::AcceptSuggestion(size_t index) {
 int AutofillPopupControllerImpl::GetIconResourceID(
     const base::string16& resource_name) const {
   for (size_t i = 0; i < arraysize(kDataResources); ++i) {
-    if (resource_name == ASCIIToUTF16(kDataResources[i].name))
+    if (resource_name == base::ASCIIToUTF16(kDataResources[i].name))
       return kDataResources[i].id;
   }
 
@@ -363,15 +354,15 @@ bool AutofillPopupControllerImpl::IsWarning(size_t index) const {
 }
 
 gfx::Rect AutofillPopupControllerImpl::GetRowBounds(size_t index) {
-  int top = AutofillPopupView::kBorderThickness;
+  int top = kPopupBorderThickness;
   for (size_t i = 0; i < index; ++i) {
     top += GetRowHeightFromId(identifiers()[i]);
   }
 
   return gfx::Rect(
-      AutofillPopupView::kBorderThickness,
+      kPopupBorderThickness,
       top,
-      popup_bounds_.width() - 2 * AutofillPopupView::kBorderThickness,
+      popup_bounds_.width() - 2 * kPopupBorderThickness,
       GetRowHeightFromId(identifiers()[index]));
 }
 
@@ -384,31 +375,32 @@ const gfx::Rect& AutofillPopupControllerImpl::popup_bounds() const {
   return popup_bounds_;
 }
 
-gfx::NativeView AutofillPopupControllerImpl::container_view() const {
-  return container_view_;
+content::WebContents* AutofillPopupControllerImpl::web_contents() {
+  return controller_common_->web_contents();
+}
+
+gfx::NativeView AutofillPopupControllerImpl::container_view() {
+  return controller_common_->container_view();
 }
 
 const gfx::RectF& AutofillPopupControllerImpl::element_bounds() const {
-  return element_bounds_;
+  return controller_common_->element_bounds();
 }
 
 bool AutofillPopupControllerImpl::IsRTL() const {
   return text_direction_ == base::i18n::RIGHT_TO_LEFT;
 }
 
-bool AutofillPopupControllerImpl::hide_on_outside_click() const {
-  return hide_on_outside_click_;
-}
-
-const std::vector<string16>& AutofillPopupControllerImpl::names() const {
+const std::vector<base::string16>& AutofillPopupControllerImpl::names() const {
   return names_;
 }
 
-const std::vector<string16>& AutofillPopupControllerImpl::subtexts() const {
+const std::vector<base::string16>& AutofillPopupControllerImpl::subtexts()
+    const {
   return subtexts_;
 }
 
-const std::vector<string16>& AutofillPopupControllerImpl::icons() const {
+const std::vector<base::string16>& AutofillPopupControllerImpl::icons() const {
   return icons_;
 }
 
@@ -417,16 +409,16 @@ const std::vector<int>& AutofillPopupControllerImpl::identifiers() const {
 }
 
 #if !defined(OS_ANDROID)
-const gfx::Font& AutofillPopupControllerImpl::GetNameFontForRow(size_t index)
-    const {
+const gfx::FontList& AutofillPopupControllerImpl::GetNameFontListForRow(
+    size_t index) const {
   if (identifiers_[index] == WebAutofillClient::MenuItemIDWarningMessage)
-    return warning_font_;
+    return warning_font_list_;
 
-  return name_font_;
+  return name_font_list_;
 }
 
-const gfx::Font& AutofillPopupControllerImpl::subtext_font() const {
-  return subtext_font_;
+const gfx::FontList& AutofillPopupControllerImpl::subtext_font_list() const {
+  return subtext_font_list_;
 }
 #endif
 
@@ -535,7 +527,7 @@ bool AutofillPopupControllerImpl::RemoveSelectedLine() {
 }
 
 int AutofillPopupControllerImpl::LineFromY(int y) {
-  int current_height = AutofillPopupView::kBorderThickness;
+  int current_height = kPopupBorderThickness;
 
   for (size_t i = 0; i < identifiers().size(); ++i) {
     current_height += GetRowHeightFromId(identifiers()[i]);
@@ -570,9 +562,9 @@ bool AutofillPopupControllerImpl::HasSuggestions() {
 }
 
 void AutofillPopupControllerImpl::SetValues(
-    const std::vector<string16>& names,
-    const std::vector<string16>& subtexts,
-    const std::vector<string16>& icons,
+    const std::vector<base::string16>& names,
+    const std::vector<base::string16>& subtexts,
+    const std::vector<base::string16>& icons,
     const std::vector<int>& identifiers) {
   names_ = names;
   full_names_ = names;
@@ -593,17 +585,12 @@ void AutofillPopupControllerImpl::InvalidateRow(size_t row) {
 
 #if !defined(OS_ANDROID)
 int AutofillPopupControllerImpl::GetDesiredPopupWidth() const {
-  if (!name_font_.platform_font() || !subtext_font_.platform_font()) {
-    // We can't calculate the size of the popup if the fonts
-    // aren't present.
-    return 0;
-  }
-
-  int popup_width = RoundedElementBounds().width();
+  int popup_width = controller_common_->RoundedElementBounds().width();
   DCHECK_EQ(names().size(), subtexts().size());
   for (size_t i = 0; i < names().size(); ++i) {
-    int row_size = name_font_.GetStringWidth(names()[i]) +
-        subtext_font_.GetStringWidth(subtexts()[i]) +
+    int row_size =
+        gfx::GetStringWidth(names()[i], name_font_list_) +
+        gfx::GetStringWidth(subtexts()[i], subtext_font_list_) +
         RowWidthWithoutText(i);
 
     popup_width = std::max(popup_width, row_size);
@@ -613,7 +600,7 @@ int AutofillPopupControllerImpl::GetDesiredPopupWidth() const {
 }
 
 int AutofillPopupControllerImpl::GetDesiredPopupHeight() const {
-  int popup_height = 2 * AutofillPopupView::kBorderThickness;
+  int popup_height = 2 * kPopupBorderThickness;
 
   for (size_t i = 0; i < identifiers().size(); ++i) {
     popup_height += GetRowHeightFromId(identifiers()[i]);
@@ -639,7 +626,7 @@ int AutofillPopupControllerImpl::RowWidthWithoutText(int row) const {
   row_size += kEndPadding;
 
   // Add room for the popup border.
-  row_size += 2 * AutofillPopupView::kBorderThickness;
+  row_size += 2 * kPopupBorderThickness;
 
   return row_size;
 }
@@ -647,34 +634,9 @@ int AutofillPopupControllerImpl::RowWidthWithoutText(int row) const {
 void AutofillPopupControllerImpl::UpdatePopupBounds() {
   int popup_required_width = GetDesiredPopupWidth();
   int popup_height = GetDesiredPopupHeight();
-  // This is the top left point of the popup if the popup is above the element
-  // and grows to the left (since that is the highest and furthest left the
-  // popup go could).
-  gfx::Point top_left_corner_of_popup = RoundedElementBounds().origin() +
-      gfx::Vector2d(RoundedElementBounds().width() - popup_required_width,
-                    -popup_height);
 
-  // This is the bottom right point of the popup if the popup is below the
-  // element and grows to the right (since the is the lowest and furthest right
-  // the popup could go).
-  gfx::Point bottom_right_corner_of_popup = RoundedElementBounds().origin() +
-      gfx::Vector2d(popup_required_width,
-                    RoundedElementBounds().height() + popup_height);
-
-  gfx::Display top_left_display = GetDisplayNearestPoint(
-      top_left_corner_of_popup);
-  gfx::Display bottom_right_display = GetDisplayNearestPoint(
-      bottom_right_corner_of_popup);
-
-  std::pair<int, int> popup_x_and_width = CalculatePopupXAndWidth(
-      top_left_display, bottom_right_display, popup_required_width);
-  std::pair<int, int> popup_y_and_height = CalculatePopupYAndHeight(
-      top_left_display, bottom_right_display, popup_height);
-
-  popup_bounds_ = gfx::Rect(popup_x_and_width.first,
-                            popup_y_and_height.first,
-                            popup_x_and_width.second,
-                            popup_y_and_height.second);
+  popup_bounds_ = controller_common_->GetPopupBounds(popup_height,
+                                                     popup_required_width);
 }
 #endif  // !defined(OS_ANDROID)
 
@@ -695,78 +657,6 @@ void AutofillPopupControllerImpl::ClearState() {
   full_names_.clear();
 
   selected_line_ = kNoSelection;
-}
-
-const gfx::Rect AutofillPopupControllerImpl::RoundedElementBounds() const {
-  return gfx::ToEnclosingRect(element_bounds_);
-}
-
-gfx::Display AutofillPopupControllerImpl::GetDisplayNearestPoint(
-    const gfx::Point& point) const {
-  return gfx::Screen::GetScreenFor(container_view())->GetDisplayNearestPoint(
-      point);
-}
-
-std::pair<int, int> AutofillPopupControllerImpl::CalculatePopupXAndWidth(
-    const gfx::Display& left_display,
-    const gfx::Display& right_display,
-    int popup_required_width) const {
-  int leftmost_display_x = left_display.bounds().x();
-  int rightmost_display_x =
-      right_display.GetSizeInPixel().width() + right_display.bounds().x();
-
-  // Calculate the start coordinates for the popup if it is growing right or
-  // the end position if it is growing to the left, capped to screen space.
-  int right_growth_start = std::max(leftmost_display_x,
-                                    std::min(rightmost_display_x,
-                                             RoundedElementBounds().x()));
-  int left_growth_end = std::max(leftmost_display_x,
-                                   std::min(rightmost_display_x,
-                                            RoundedElementBounds().right()));
-
-  int right_available = rightmost_display_x - right_growth_start;
-  int left_available = left_growth_end - leftmost_display_x;
-
-  int popup_width = std::min(popup_required_width,
-                             std::max(right_available, left_available));
-
-  // If there is enough space for the popup on the right, show it there,
-  // otherwise choose the larger size.
-  if (right_available >= popup_width || right_available >= left_available)
-    return std::make_pair(right_growth_start, popup_width);
-  else
-    return std::make_pair(left_growth_end - popup_width, popup_width);
-}
-
-std::pair<int,int> AutofillPopupControllerImpl::CalculatePopupYAndHeight(
-    const gfx::Display& top_display,
-    const gfx::Display& bottom_display,
-    int popup_required_height) const {
-  int topmost_display_y = top_display.bounds().y();
-  int bottommost_display_y =
-      bottom_display.GetSizeInPixel().height() + bottom_display.bounds().y();
-
-  // Calculate the start coordinates for the popup if it is growing down or
-  // the end position if it is growing up, capped to screen space.
-  int top_growth_end = std::max(topmost_display_y,
-                                std::min(bottommost_display_y,
-                                         RoundedElementBounds().y()));
-  int bottom_growth_start = std::max(topmost_display_y,
-      std::min(bottommost_display_y, RoundedElementBounds().bottom()));
-
-  int top_available = bottom_growth_start - topmost_display_y;
-  int bottom_available = bottommost_display_y - top_growth_end;
-
-  // TODO(csharp): Restrict the popup height to what is available.
-  if (bottom_available >= popup_required_height ||
-      bottom_available >= top_available) {
-    // The popup can appear below the field.
-    return std::make_pair(bottom_growth_start, popup_required_height);
-  } else {
-    // The popup must appear above the field.
-    return std::make_pair(top_growth_end - popup_required_height,
-                          popup_required_height);
-  }
 }
 
 }  // namespace autofill

@@ -12,6 +12,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/core/common/autofill_data_validation.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -20,6 +21,7 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebElementCollection.h"
 #include "third_party/WebKit/public/web/WebExceptionCode.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
@@ -34,6 +36,7 @@
 
 using blink::WebDocument;
 using blink::WebElement;
+using blink::WebElementCollection;
 using blink::WebExceptionCode;
 using blink::WebFormControlElement;
 using blink::WebFormElement;
@@ -50,9 +53,6 @@ using blink::WebVector;
 
 namespace autofill {
 namespace {
-
-// The maximum length allowed for form data.
-const size_t kMaxDataLength = 1024;
 
 // A bit field mask for FillForm functions to not fill some fields.
 enum FieldFilterMask {
@@ -125,7 +125,7 @@ const base::string16 CombineAndCollapseWhitespace(
 
   if (prefix_trailing_whitespace || suffix_leading_whitespace ||
       force_whitespace) {
-    return prefix_trimmed + ASCIIToUTF16(" ") + suffix_trimmed;
+    return prefix_trimmed + base::ASCIIToUTF16(" ") + suffix_trimmed;
   } else {
     return prefix_trimmed + suffix_trimmed;
   }
@@ -572,21 +572,26 @@ void PreviewFormField(const FormFieldData& data,
   if (data.value.empty())
     return;
 
-  // Only preview input fields. Excludes checkboxes and radio buttons, as there
-  // is no provision for setSuggestedCheckedValue in WebInputElement.
+  // Preview input and textarea fields. For input fields, excludes checkboxes
+  // and radio buttons, as there is no provision for setSuggestedCheckedValue
+  // in WebInputElement.
   WebInputElement* input_element = toWebInputElement(field);
-  if (!IsTextInput(input_element))
-    return;
-
-  // If the maxlength attribute contains a negative value, maxLength()
-  // returns the default maxlength value.
-  input_element->setSuggestedValue(
+  if (IsTextInput(input_element)) {
+    // If the maxlength attribute contains a negative value, maxLength()
+    // returns the default maxlength value.
+    input_element->setSuggestedValue(
       data.value.substr(0, input_element->maxLength()));
-  input_element->setAutofilled(true);
-  if (is_initiating_node) {
-    // Select the part of the text that the user didn't type.
-    input_element->setSelectionRange(input_element->value().length(),
-                                     input_element->suggestedValue().length());
+    input_element->setAutofilled(true);
+    if (is_initiating_node) {
+      // Select the part of the text that the user didn't type.
+      input_element->setSelectionRange(
+          input_element->value().length(),
+          input_element->suggestedValue().length());
+    }
+  } else if (IsTextAreaElement(*field)) {
+    WebTextAreaElement textarea = field->to<WebTextAreaElement>();
+    textarea.setSuggestedValue(data.value);
+    field->setAutofilled(true);
   }
 }
 
@@ -753,9 +758,9 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
   // labels for all form control elements are scraped from the DOM and set in
   // WebFormElementToFormData.
   field->name = element.nameForAutofill();
-  field->form_control_type = UTF16ToUTF8(element.formControlType());
+  field->form_control_type = base::UTF16ToUTF8(element.formControlType());
   field->autocomplete_attribute =
-      UTF16ToUTF8(element.getAttribute(kAutocomplete));
+      base::UTF16ToUTF8(element.getAttribute(kAutocomplete));
   if (field->autocomplete_attribute.size() > kMaxDataLength) {
     // Discard overly long attribute values to avoid DOS-ing the browser
     // process.  However, send over a default string to indicate that the
@@ -902,9 +907,11 @@ bool WebFormElementToFormData(
   // element's name as a key into the <name, FormFieldData> map to find the
   // previously created FormFieldData and set the FormFieldData's label to the
   // label.firstChild().nodeValue() of the label element.
-  WebNodeList labels = form_element.getElementsByTagName(kLabel);
-  for (unsigned i = 0; i < labels.length(); ++i) {
-    WebLabelElement label = labels.item(i).to<WebLabelElement>();
+  WebElementCollection labels = form_element.getElementsByTagName(kLabel);
+  DCHECK(!labels.isNull());
+  for (WebElement item = labels.firstItem(); !item.isNull();
+       item = labels.nextItem()) {
+    WebLabelElement label = item.to<WebLabelElement>();
     WebFormControlElement field_element =
         label.correspondingControl().to<WebFormControlElement>();
 
@@ -929,7 +936,7 @@ bool WebFormElementToFormData(
       // Concatenate labels because some sites might have multiple label
       // candidates.
       if (!iter->second->label.empty() && !label_text.empty())
-        iter->second->label += ASCIIToUTF16(" ");
+        iter->second->label += base::ASCIIToUTF16(" ");
       iter->second->label += label_text;
     }
   }
@@ -1049,38 +1056,53 @@ bool ClearPreviewedFormWithElement(const WebInputElement& element,
   ExtractAutofillableElements(form_element, REQUIRE_AUTOCOMPLETE,
                               &control_elements);
   for (size_t i = 0; i < control_elements.size(); ++i) {
-    // Only text input elements can be previewed.
-    WebInputElement* input_element = toWebInputElement(&control_elements[i]);
-    if (!IsTextInput(input_element))
-      continue;
-
-    // If the input element is not auto-filled, we did not preview it, so there
-    // is nothing to reset.
-    if (!input_element->isAutofilled())
-      continue;
-
     // There might be unrelated elements in this form which have already been
     // auto-filled.  For example, the user might have already filled the address
     // part of a form and now be dealing with the credit card section.  We only
     // want to reset the auto-filled status for fields that were previewed.
-    if (input_element->suggestedValue().isEmpty())
+    WebFormControlElement control_element = control_elements[i];
+
+    // Only text input and textarea elements can be previewed.
+    WebInputElement* input_element = toWebInputElement(&control_element);
+    if (!IsTextInput(input_element) && !IsTextAreaElement(control_element))
+      continue;
+
+    // If the element is not auto-filled, we did not preview it,
+    // so there is nothing to reset.
+    if(!control_element.isAutofilled())
+      continue;
+
+    if ((IsTextInput(input_element) &&
+         input_element->suggestedValue().isEmpty()) ||
+        (IsTextAreaElement(control_element) &&
+         control_element.to<WebTextAreaElement>().suggestedValue().isEmpty()))
       continue;
 
     // Clear the suggested value. For the initiating node, also restore the
     // original value.
-    input_element->setSuggestedValue(WebString());
-    bool is_initiating_node = (element == *input_element);
-    if (is_initiating_node)
-      input_element->setAutofilled(was_autofilled);
-    else
-      input_element->setAutofilled(false);
+    if (IsTextInput(input_element)) {
+      input_element->setSuggestedValue(WebString());
+      bool is_initiating_node = (element == *input_element);
+      if (is_initiating_node)
+        input_element->setAutofilled(was_autofilled);
+      else
+        input_element->setAutofilled(false);
 
-    // Clearing the suggested value in the focused node (above) can cause
-    // selection to be lost. We force selection range to restore the text
-    // cursor.
-    if (is_initiating_node) {
-      int length = input_element->value().length();
-      input_element->setSelectionRange(length, length);
+      // Clearing the suggested value in the focused node (above) can cause
+      // selection to be lost. We force selection range to restore the text
+      // cursor.
+      if (is_initiating_node) {
+        int length = input_element->value().length();
+        input_element->setSelectionRange(length, length);
+      }
+    } else if (IsTextAreaElement(control_element)) {
+      WebTextAreaElement text_area = control_element.to<WebTextAreaElement>();
+      text_area.setSuggestedValue(WebString());
+      bool is_initiating_node = (element == text_area);
+      if (is_initiating_node)
+        control_element.setAutofilled(was_autofilled);
+      else
+        control_element.setAutofilled(false);
     }
   }
 
@@ -1155,6 +1177,14 @@ bool IsWebElementEmpty(const blink::WebElement& element) {
       return false;
   }
   return true;
+}
+
+gfx::RectF GetScaledBoundingBox(float scale, WebInputElement* element) {
+  gfx::Rect bounding_box(element->boundsInViewportSpace());
+  return gfx::RectF(bounding_box.x() * scale,
+                    bounding_box.y() * scale,
+                    bounding_box.width() * scale,
+                    bounding_box.height() * scale);
 }
 
 }  // namespace autofill

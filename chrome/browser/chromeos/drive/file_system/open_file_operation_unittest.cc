@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "google_apis/drive/test_util.h"
@@ -58,9 +59,7 @@ TEST_F(OpenFileOperationTest, OpenExistingFile) {
 
   ASSERT_FALSE(close_callback.is_null());
   close_callback.Run();
-  EXPECT_EQ(
-      1U,
-      observer()->upload_needed_local_ids().count(src_entry.local_id()));
+  EXPECT_EQ(1U, observer()->updated_local_ids().count(src_entry.local_id()));
 }
 
 TEST_F(OpenFileOperationTest, OpenNonExistingFile) {
@@ -128,9 +127,8 @@ TEST_F(OpenFileOperationTest, CreateNonExistingFile) {
 
   ASSERT_FALSE(close_callback.is_null());
   close_callback.Run();
-  EXPECT_EQ(
-      1U,
-      observer()->upload_needed_local_ids().count(GetLocalId(file_in_root)));
+  EXPECT_EQ(1U,
+            observer()->updated_local_ids().count(GetLocalId(file_in_root)));
 }
 
 TEST_F(OpenFileOperationTest, OpenOrCreateExistingFile) {
@@ -163,9 +161,7 @@ TEST_F(OpenFileOperationTest, OpenOrCreateExistingFile) {
 
   ASSERT_FALSE(close_callback.is_null());
   close_callback.Run();
-  EXPECT_EQ(
-      1U,
-      observer()->upload_needed_local_ids().count(src_entry.local_id()));
+  EXPECT_EQ(1U, observer()->updated_local_ids().count(src_entry.local_id()));
 
   bool success = false;
   FileCacheEntry cache_entry;
@@ -206,9 +202,8 @@ TEST_F(OpenFileOperationTest, OpenOrCreateNonExistingFile) {
 
   ASSERT_FALSE(close_callback.is_null());
   close_callback.Run();
-  EXPECT_EQ(
-      1U,
-      observer()->upload_needed_local_ids().count(GetLocalId(file_in_root)));
+  EXPECT_EQ(1U,
+            observer()->updated_local_ids().count(GetLocalId(file_in_root)));
 }
 
 TEST_F(OpenFileOperationTest, OpenFileTwice) {
@@ -258,14 +253,12 @@ TEST_F(OpenFileOperationTest, OpenFileTwice) {
 
   // There still remains a client opening the file, so it shouldn't be
   // uploaded yet.
-  EXPECT_TRUE(observer()->upload_needed_local_ids().empty());
+  EXPECT_TRUE(observer()->updated_local_ids().empty());
 
   close_callback2.Run();
 
   // Here, all the clients close the file, so it should be uploaded then.
-  EXPECT_EQ(
-      1U,
-      observer()->upload_needed_local_ids().count(src_entry.local_id()));
+  EXPECT_EQ(1U, observer()->updated_local_ids().count(src_entry.local_id()));
 }
 
 }  // namespace file_system

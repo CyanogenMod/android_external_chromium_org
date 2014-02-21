@@ -4,7 +4,6 @@
 
 {
   'variables': {
-    'jemalloc_dir': '../../third_party/jemalloc/chromium',
     'tcmalloc_dir': '../../third_party/tcmalloc/chromium',
     'use_vtable_verify%': 0,
   },
@@ -198,13 +197,6 @@
         '<(tcmalloc_dir)/src/windows/preamble_patcher.h',
         '<(tcmalloc_dir)/src/windows/preamble_patcher_with_stub.cc',
 
-        # jemalloc files
-        '<(jemalloc_dir)/jemalloc.c',
-        '<(jemalloc_dir)/jemalloc.h',
-        '<(jemalloc_dir)/ql.h',
-        '<(jemalloc_dir)/qr.h',
-        '<(jemalloc_dir)/rb.h',
-
         'allocator_shim.cc',
         'allocator_shim.h',
         'debugallocation_shim.cc',
@@ -253,6 +245,8 @@
         '<(tcmalloc_dir)/src/gperftools/profiler.h',
         '<(tcmalloc_dir)/src/gperftools/stacktrace.h',
         '<(tcmalloc_dir)/src/gperftools/tcmalloc.h',
+        '<(tcmalloc_dir)/src/heap-checker-bcad.cc',
+        '<(tcmalloc_dir)/src/heap-checker.cc',
         '<(tcmalloc_dir)/src/libc_override.h',
         '<(tcmalloc_dir)/src/libc_override_gcc_and_weak.h',
         '<(tcmalloc_dir)/src/libc_override_glibc.h',
@@ -325,6 +319,10 @@
           ],
         },
       },
+      # Disable the heap checker in tcmalloc.
+      'defines': [
+        'NO_HEAP_CHECK',
+      ],
       'conditions': [
         ['OS=="linux" and clang_type_profiler==1', {
           'dependencies': [
@@ -352,7 +350,6 @@
             'libcmt',
           ],
           'include_dirs': [
-            '<(jemalloc_dir)',
             '<(tcmalloc_dir)/src/windows',
           ],
           'sources!': [
@@ -371,11 +368,9 @@
             # included by allocator_shim.cc
             'debugallocation_shim.cc',
 
-            # heap-checker/cpuprofiler
+            # cpuprofiler
             '<(tcmalloc_dir)/src/base/thread_lister.c',
             '<(tcmalloc_dir)/src/base/thread_lister.h',
-            '<(tcmalloc_dir)/src/heap-checker-bcad.cc',
-            '<(tcmalloc_dir)/src/heap-checker.cc',
             '<(tcmalloc_dir)/src/profiledata.cc',
             '<(tcmalloc_dir)/src/profiledata.h',
             '<(tcmalloc_dir)/src/profile-handler.cc',
@@ -391,15 +386,6 @@
 
             # TODO(willchan): Support allocator shim later on.
             'allocator_shim.cc',
-
-            # TODO(willchan): support jemalloc on other platforms
-            # jemalloc files
-            '<(jemalloc_dir)/jemalloc.c',
-            '<(jemalloc_dir)/jemalloc.h',
-            '<(jemalloc_dir)/ql.h',
-            '<(jemalloc_dir)/qr.h',
-            '<(jemalloc_dir)/rb.h',
-
           ],
           # We enable all warnings by default, but upstream disables a few.
           # Keep "-Wno-*" flags in sync with upstream by comparing against:
@@ -431,30 +417,6 @@
           'cflags': [
             '-fvtable-verify=preinit',
           ],
-        }],
-        [ 'linux_keep_shadow_stacks==1', {
-          'sources': [
-            '<(tcmalloc_dir)/src/linux_shadow_stacks.cc',
-            '<(tcmalloc_dir)/src/linux_shadow_stacks.h',
-            '<(tcmalloc_dir)/src/stacktrace_shadow-inl.h',
-          ],
-          'cflags': [
-            '-finstrument-functions',
-          ],
-          'defines': [
-            'KEEP_SHADOW_STACKS',
-          ],
-        }],
-        [ 'linux_use_heapchecker==0', {
-          # Do not compile and link the heapchecker source.
-          'sources!': [
-            '<(tcmalloc_dir)/src/heap-checker-bcad.cc',
-            '<(tcmalloc_dir)/src/heap-checker.cc',
-          ],
-          # Disable the heap checker in tcmalloc.
-          'defines': [
-            'NO_HEAP_CHECK',
-           ],
         }],
         ['order_profiling != 0', {
           'target_conditions' : [
@@ -533,7 +495,7 @@
             '../..',
           ],
           'sources': [
-            'allocator_unittests.cc',
+            'allocator_unittest.cc',
             '../profiler/alternate_timer.cc',
             '../profiler/alternate_timer.h',
           ],
@@ -636,7 +598,7 @@
           'sources': [
             'type_profiler_control.cc',
             'type_profiler_control.h',
-            'type_profiler_unittests.cc',
+            'type_profiler_unittest.cc',
           ],
         },
         {
@@ -658,7 +620,7 @@
             '../..',
           ],
           'sources': [
-            'type_profiler_map_unittests.cc',
+            'type_profiler_map_unittest.cc',
             '<(tcmalloc_dir)/src/gperftools/type_profiler_map.h',
             '<(tcmalloc_dir)/src/type_profiler_map.cc',
           ],

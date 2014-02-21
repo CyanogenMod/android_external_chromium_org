@@ -11,7 +11,6 @@
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "components/navigation_interception/intercept_navigation_resource_throttle.h"
 #include "components/navigation_interception/navigation_params.h"
 #include "content/public/browser/browser_thread.h"
@@ -21,6 +20,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "net/url_request/url_request.h"
 
 using content::BrowserThread;
@@ -35,7 +35,7 @@ namespace {
 bool LaunchAppWithUrl(
     const scoped_refptr<const Extension> app,
     const std::string& handler_id,
-    content::RenderViewHost* source,
+    content::WebContents* source,
     const navigation_interception::NavigationParams& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -50,12 +50,8 @@ bool LaunchAppWithUrl(
   DCHECK(!params.is_post());
   DCHECK(UrlHandlers::CanExtensionHandleUrl(app, params.url()));
 
-  WebContents* web_contents = WebContents::FromRenderViewHost(source);
-  if (!web_contents)
-    return false;
-
   Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+      Profile::FromBrowserContext(source->GetBrowserContext());
 
   DVLOG(1) << "Launching app handler with URL: "
            << params.url().spec() << " -> "
@@ -101,9 +97,9 @@ AppUrlRedirector::MaybeCreateThrottleFor(net::URLRequest* request,
     return NULL;
   }
 
-  const ExtensionSet& extensions =
+  const extensions::ExtensionSet& extensions =
       profile_io_data->GetExtensionInfoMap()->extensions();
-  for (ExtensionSet::const_iterator iter = extensions.begin();
+  for (extensions::ExtensionSet::const_iterator iter = extensions.begin();
        iter != extensions.end();
        ++iter) {
     const UrlHandlerInfo* handler =

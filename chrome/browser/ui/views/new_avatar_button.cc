@@ -14,6 +14,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/views/border.h"
 #include "ui/views/painter.h"
@@ -23,10 +24,11 @@ namespace {
 // Text padding within the button border.
 const int kInset = 10;
 
-views::TextButtonDefaultBorder* CreateBorder(const int normal_image_set[],
-                                             const int hot_image_set[],
-                                             const int pushed_image_set[]) {
-  views::TextButtonDefaultBorder* border = new views::TextButtonDefaultBorder();
+scoped_ptr<views::Border> CreateBorder(const int normal_image_set[],
+                                       const int hot_image_set[],
+                                       const int pushed_image_set[]) {
+  scoped_ptr<views::TextButtonDefaultBorder> border(
+      new views::TextButtonDefaultBorder());
 
   border->SetInsets(gfx::Insets(kInset, kInset, kInset, kInset));
   border->set_normal_painter(
@@ -36,15 +38,14 @@ views::TextButtonDefaultBorder* CreateBorder(const int normal_image_set[],
   border->set_pushed_painter(
       views::Painter::CreateImageGridPainter(pushed_image_set));
 
-  return border;
+  return border.PassAs<views::Border>();
 }
 
-string16 GetElidedText(const base::string16& original_text) {
+base::string16 GetElidedText(const base::string16& original_text) {
   // Maximum characters the button can be before the text will get elided.
   const int kMaxCharactersToDisplay = 15;
 
-  gfx::FontList font_list = ui::ResourceBundle::GetSharedInstance().GetFontList(
-      ui::ResourceBundle::BaseFont);
+  const gfx::FontList font_list;
   return gfx::ElideText(
       original_text,
       font_list,
@@ -64,7 +65,6 @@ NewAvatarButton::NewAvatarButton(
   set_animate_on_state_change(false);
 
   ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-  SetFont(rb->GetFont(ui::ResourceBundle::BaseFont));
 
   bool is_win8 = false;
 #if defined(OS_WIN)
@@ -76,7 +76,7 @@ NewAvatarButton::NewAvatarButton(
     const int kHotImageSet[] = IMAGE_GRID(IDR_AVATAR_THEMED_BUTTON_HOVER);
     const int kPushedImageSet[] = IMAGE_GRID(IDR_AVATAR_THEMED_BUTTON_PRESSED);
 
-    set_border(CreateBorder(kNormalImageSet, kHotImageSet, kPushedImageSet));
+    SetBorder(CreateBorder(kNormalImageSet, kHotImageSet, kPushedImageSet));
     set_menu_marker(
         rb->GetImageNamed(IDR_AVATAR_THEMED_BUTTON_DROPARROW).ToImageSkia());
   } else if (is_win8) {
@@ -84,7 +84,7 @@ NewAvatarButton::NewAvatarButton(
     const int kHotImageSet[] = IMAGE_GRID(IDR_AVATAR_METRO_BUTTON_HOVER);
     const int kPushedImageSet[] = IMAGE_GRID(IDR_AVATAR_METRO_BUTTON_PRESSED);
 
-    set_border(CreateBorder(kNormalImageSet, kHotImageSet, kPushedImageSet));
+    SetBorder(CreateBorder(kNormalImageSet, kHotImageSet, kPushedImageSet));
     set_menu_marker(
         rb->GetImageNamed(IDR_AVATAR_METRO_BUTTON_DROPARROW).ToImageSkia());
   } else {
@@ -92,7 +92,7 @@ NewAvatarButton::NewAvatarButton(
     const int kHotImageSet[] = IMAGE_GRID(IDR_AVATAR_GLASS_BUTTON_HOVER);
     const int kPushedImageSet[] = IMAGE_GRID(IDR_AVATAR_GLASS_BUTTON_PRESSED);
 
-    set_border(CreateBorder(kNormalImageSet, kHotImageSet, kPushedImageSet));
+    SetBorder(CreateBorder(kNormalImageSet, kHotImageSet, kPushedImageSet));
     set_menu_marker(
         rb->GetImageNamed(IDR_AVATAR_GLASS_BUTTON_DROPARROW).ToImageSkia());
   }
@@ -124,8 +124,7 @@ void NewAvatarButton::OnPaint(gfx::Canvas* canvas) {
 
   canvas->DrawStringRectWithHalo(
       text(),
-      ui::ResourceBundle::GetSharedInstance().GetFontList(
-          ui::ResourceBundle::BaseFont),
+      gfx::FontList(),
       SK_ColorWHITE,
       SK_ColorDKGRAY,
       rect,

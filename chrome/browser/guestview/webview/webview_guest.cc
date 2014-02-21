@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
@@ -19,6 +20,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
@@ -28,6 +30,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
 #include "extensions/common/constants.h"
 #include "net/base/net_errors.h"
@@ -36,8 +39,12 @@
 #include "chrome/browser/guestview/webview/plugin_permission_helper.h"
 #endif
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#endif
+
+using base::UserMetricsAction;
 using content::WebContents;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -122,7 +129,9 @@ WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
                                                       &script_observers_)),
       next_permission_request_id_(0),
       is_overriding_user_agent_(false),
-      pending_reload_on_attachment_(false) {
+      pending_reload_on_attachment_(false),
+      main_frame_id_(0),
+      chromevox_injected_(false) {
   notification_registrar_.Add(
       this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
       content::Source<WebContents>(guest_web_contents));
@@ -130,6 +139,12 @@ WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
   notification_registrar_.Add(
       this, content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
       content::Source<WebContents>(guest_web_contents));
+
+#if defined(OS_CHROMEOS)
+  notification_registrar_.Add(this,
+      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
+      content::NotificationService::AllSources());
+#endif
 
   AttachWebViewHelpers(guest_web_contents);
 }
@@ -159,27 +174,27 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
     // have geolocation access on its own.
     switch (info.permission_type) {
       case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.Download"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_GEOLOCATION:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.Geolocation"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.Media"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.PointerLock"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.NewWindow"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionAllow.JSDialog"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
@@ -189,7 +204,7 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
             static_cast<WebViewPermissionType>(info.permission_type);
         switch (webview_permission_type) {
           case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
-            RecordAction(
+            content::RecordAction(
                 UserMetricsAction("WebView.Guest.PermissionAllow.PluginLoad"));
             break;
           default:
@@ -200,27 +215,27 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
   } else {
     switch (info.permission_type) {
       case BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.Download"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_GEOLOCATION:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.Geolocation"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.Media"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.PointerLock"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.NewWindow"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
-        RecordAction(
+        content::RecordAction(
             UserMetricsAction("BrowserPlugin.PermissionDeny.JSDialog"));
         break;
       case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
@@ -230,7 +245,7 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
             static_cast<WebViewPermissionType>(info.permission_type);
         switch (webview_permission_type) {
           case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
-            RecordAction(
+            content::RecordAction(
                 UserMetricsAction("WebView.Guest.PermissionDeny.PluginLoad"));
             break;
           default:
@@ -272,7 +287,7 @@ void WebViewGuest::AddMessageToConsole(int32 level,
                                        const base::string16& message,
                                        int32 line_no,
                                        const base::string16& source_id) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   // Log levels are from base/logging.h: LogSeverity.
   args->SetInteger(webview::kLevel, level);
   args->SetString(webview::kMessage, message);
@@ -283,7 +298,7 @@ void WebViewGuest::AddMessageToConsole(int32 level,
 }
 
 void WebViewGuest::Close() {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   DispatchEvent(new GuestView::Event(webview::kEventClose, args.Pass()));
 }
 
@@ -313,9 +328,9 @@ void WebViewGuest::EmbedderDestroyed() {
 }
 
 void WebViewGuest::GuestProcessGone(base::TerminationStatus status) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(webview::kProcessId,
-                   web_contents()->GetRenderProcessHost()->GetID());
+                   guest_web_contents()->GetRenderProcessHost()->GetID());
   args->SetString(webview::kReason, TerminationStatusToString(status));
   DispatchEvent(
       new GuestView::Event(webview::kEventExit, args.Pass()));
@@ -374,8 +389,8 @@ bool WebViewGuest::IsOverridingUserAgent() const {
 }
 
 void WebViewGuest::LoadProgressed(double progress) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
-  args->SetString(guestview::kUrl, web_contents()->GetURL().spec());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
+  args->SetString(guestview::kUrl, guest_web_contents()->GetURL().spec());
   args->SetDouble(webview::kProgress, progress);
   DispatchEvent(new GuestView::Event(webview::kEventLoadProgress, args.Pass()));
 }
@@ -383,7 +398,7 @@ void WebViewGuest::LoadProgressed(double progress) {
 void WebViewGuest::LoadAbort(bool is_top_level,
                              const GURL& url,
                              const std::string& error_type) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetBoolean(guestview::kIsTopLevel, is_top_level);
   args->SetString(guestview::kUrl, url.possibly_invalid_spec());
   args->SetString(guestview::kReason, error_type);
@@ -393,14 +408,14 @@ void WebViewGuest::LoadAbort(bool is_top_level,
 // TODO(fsamuel): Find a reliable way to test the 'responsive' and
 // 'unresponsive' events.
 void WebViewGuest::RendererResponsive() {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(webview::kProcessId,
       guest_web_contents()->GetRenderProcessHost()->GetID());
   DispatchEvent(new GuestView::Event(webview::kEventResponsive, args.Pass()));
 }
 
 void WebViewGuest::RendererUnresponsive() {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(webview::kProcessId,
       guest_web_contents()->GetRenderProcessHost()->GetID());
   DispatchEvent(new GuestView::Event(webview::kEventUnresponsive, args.Pass()));
@@ -474,10 +489,31 @@ void WebViewGuest::Observe(int type,
                    is_top_level);
       break;
     }
+#if defined(OS_CHROMEOS)
+    case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK:
+      InjectChromeVoxIfNeeded(guest_web_contents()->GetRenderViewHost());
+      break;
+#endif
     default:
       NOTREACHED() << "Unexpected notification sent.";
       break;
   }
+}
+
+void WebViewGuest::SetZoom(double zoom_factor) {
+  double zoom_level = content::ZoomFactorToZoomLevel(zoom_factor);
+  guest_web_contents()->SetZoomLevel(zoom_level);
+
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
+  args->SetDouble(webview::kOldZoomFactor, current_zoom_factor_);
+  args->SetDouble(webview::kNewZoomFactor, zoom_factor);
+  DispatchEvent(new GuestView::Event(webview::kEventZoomChange, args.Pass()));
+
+  current_zoom_factor_ = zoom_factor;
+}
+
+double WebViewGuest::GetZoom() {
+  return current_zoom_factor_;
 }
 
 void WebViewGuest::Go(int relative_index) {
@@ -543,8 +579,8 @@ bool WebViewGuest::ClearData(const base::Time remove_since,
   content::RecordAction(UserMetricsAction("WebView.Guest.ClearData"));
   content::StoragePartition* partition =
       content::BrowserContext::GetStoragePartition(
-          web_contents()->GetBrowserContext(),
-          web_contents()->GetSiteInstance());
+          guest_web_contents()->GetBrowserContext(),
+          guest_web_contents()->GetSiteInstance());
 
   if (!partition)
     return false;
@@ -552,7 +588,7 @@ bool WebViewGuest::ClearData(const base::Time remove_since,
   partition->ClearData(
       removal_mask,
       content::StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
-      NULL,
+      GURL(),
       content::StoragePartition::OriginMatcherFunction(),
       remove_since,
       base::Time::Now(),
@@ -570,16 +606,25 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
     const GURL& url,
     content::PageTransition transition_type,
     content::RenderViewHost* render_view_host) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetString(guestview::kUrl, url.spec());
   args->SetBoolean(guestview::kIsTopLevel, is_main_frame);
   args->SetInteger(webview::kInternalCurrentEntryIndex,
-      web_contents()->GetController().GetCurrentEntryIndex());
+      guest_web_contents()->GetController().GetCurrentEntryIndex());
   args->SetInteger(webview::kInternalEntryCount,
-      web_contents()->GetController().GetEntryCount());
+      guest_web_contents()->GetController().GetEntryCount());
   args->SetInteger(webview::kInternalProcessId,
-      web_contents()->GetRenderProcessHost()->GetID());
+      guest_web_contents()->GetRenderProcessHost()->GetID());
   DispatchEvent(new GuestView::Event(webview::kEventLoadCommit, args.Pass()));
+
+  // Update the current zoom factor for the new page.
+  current_zoom_factor_ = content::ZoomLevelToZoomFactor(
+      guest_web_contents()->GetZoomLevel());
+
+  if (is_main_frame) {
+    chromevox_injected_ = false;
+    main_frame_id_ = frame_id;
+  }
 }
 
 void WebViewGuest::DidFailProvisionalLoad(
@@ -604,14 +649,21 @@ void WebViewGuest::DidStartProvisionalLoadForFrame(
     bool is_error_page,
     bool is_iframe_srcdoc,
     content::RenderViewHost* render_view_host) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetString(guestview::kUrl, validated_url.spec());
   args->SetBoolean(guestview::kIsTopLevel, is_main_frame);
   DispatchEvent(new GuestView::Event(webview::kEventLoadStart, args.Pass()));
 }
 
+void WebViewGuest::DocumentLoadedInFrame(
+    int64 frame_id,
+    content::RenderViewHost* render_view_host) {
+  if (frame_id == main_frame_id_)
+    InjectChromeVoxIfNeeded(render_view_host);
+}
+
 void WebViewGuest::DidStopLoading(content::RenderViewHost* render_view_host) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   DispatchEvent(new GuestView::Event(webview::kEventLoadStop, args.Pass()));
 }
 
@@ -636,28 +688,22 @@ void WebViewGuest::UserAgentOverrideSet(const std::string& user_agent) {
 }
 
 void WebViewGuest::LoadHandlerCalled() {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   DispatchEvent(new GuestView::Event(webview::kEventContentLoad, args.Pass()));
 }
 
 void WebViewGuest::LoadRedirect(const GURL& old_url,
                                 const GURL& new_url,
                                 bool is_top_level) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetBoolean(guestview::kIsTopLevel, is_top_level);
   args->SetString(webview::kNewURL, new_url.spec());
   args->SetString(webview::kOldURL, old_url.spec());
   DispatchEvent(new GuestView::Event(webview::kEventLoadRedirect, args.Pass()));
 }
 
-// static
-bool WebViewGuest::AllowChromeExtensionURLs() {
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  return channel <= chrome::VersionInfo::CHANNEL_DEV;
-}
-
 void WebViewGuest::AddWebViewToExtensionRendererState() {
-  const GURL& site_url = web_contents()->GetSiteInstance()->GetSiteURL();
+  const GURL& site_url = guest_web_contents()->GetSiteInstance()->GetSiteURL();
   std::string partition_domain;
   std::string partition_id;
   bool in_memory;
@@ -673,7 +719,6 @@ void WebViewGuest::AddWebViewToExtensionRendererState() {
   webview_info.instance_id = view_instance_id();
   webview_info.partition_id =  partition_id;
   webview_info.extension_id = extension_id();
-  webview_info.allow_chrome_extension_urls = AllowChromeExtensionURLs();
 
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
@@ -703,10 +748,6 @@ GURL WebViewGuest::ResolveURL(const std::string& src) {
     return GURL(src);
   }
 
-  // Only resolve URL to chrome-extension:// if we support such URLs.
-  if (!AllowChromeExtensionURLs())
-    return GURL(src);
-
   GURL default_url(base::StringPrintf("%s://%s/",
                                       extensions::kExtensionScheme,
                                       extension_id().c_str()));
@@ -715,12 +756,26 @@ GURL WebViewGuest::ResolveURL(const std::string& src) {
 
 void WebViewGuest::SizeChanged(const gfx::Size& old_size,
                                const gfx::Size& new_size) {
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(webview::kOldHeight, old_size.height());
   args->SetInteger(webview::kOldWidth, old_size.width());
   args->SetInteger(webview::kNewHeight, new_size.height());
   args->SetInteger(webview::kNewWidth, new_size.width());
   DispatchEvent(new GuestView::Event(webview::kEventSizeChanged, args.Pass()));
+}
+
+void WebViewGuest::InjectChromeVoxIfNeeded(
+    content::RenderViewHost* render_view_host) {
+#if defined(OS_CHROMEOS)
+  if (!chromevox_injected_) {
+    chromeos::AccessibilityManager* manager =
+        chromeos::AccessibilityManager::Get();
+    if (manager && manager->IsSpokenFeedbackEnabled()) {
+      manager->InjectChromeVox(render_view_host);
+      chromevox_injected_ = true;
+    }
+  }
+#endif
 }
 
 WebViewGuest::PermissionResponseInfo::PermissionResponseInfo()

@@ -6,7 +6,6 @@
 
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/file_change.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
@@ -19,6 +18,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/browser/extension_system.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -96,16 +96,15 @@ void LocalFileSyncService::OriginChangeMap::SetOriginEnabled(
 
 // LocalFileSyncService -------------------------------------------------------
 
-LocalFileSyncService::LocalFileSyncService(Profile* profile)
-    : profile_(profile),
-      sync_context_(new LocalFileSyncContext(
-          profile_->GetPath(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI).get(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)
-              .get())),
-      local_change_processor_(NULL) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  sync_context_->AddOriginChangeObserver(this);
+scoped_ptr<LocalFileSyncService> LocalFileSyncService::Create(
+    Profile* profile) {
+  return make_scoped_ptr(new LocalFileSyncService(profile, NULL));
+}
+
+scoped_ptr<LocalFileSyncService> LocalFileSyncService::CreateForTesting(
+    Profile* profile,
+    leveldb::Env* env) {
+  return make_scoped_ptr(new LocalFileSyncService(profile, env));
 }
 
 LocalFileSyncService::~LocalFileSyncService() {
@@ -184,6 +183,12 @@ void LocalFileSyncService::HasPendingLocalChanges(
       origin_to_contexts_[url.origin()], url, callback);
 }
 
+void LocalFileSyncService::PromoteDemotedChanges() {
+  for (OriginToContext::iterator iter = origin_to_contexts_.begin();
+       iter != origin_to_contexts_.end(); ++iter)
+    sync_context_->PromoteDemotedChanges(iter->first, iter->second);
+}
+
 void LocalFileSyncService::GetLocalFileMetadata(
     const FileSystemURL& url, const SyncFileMetadataCallback& callback) {
   DCHECK(ContainsKey(origin_to_contexts_, url.origin()));
@@ -248,7 +253,7 @@ void LocalFileSyncService::ApplyRemoteChange(
     const SyncStatusCallback& callback) {
   DCHECK(ContainsKey(origin_to_contexts_, url.origin()));
   util::Log(logging::LOG_VERBOSE, FROM_HERE,
-            "[Remote->Local] ApplyRemoteChange: %s on %s",
+            "[Remote -> Local] ApplyRemoteChange: %s on %s",
             change.DebugString().c_str(),
             url.DebugString().c_str());
 
@@ -314,6 +319,20 @@ void LocalFileSyncService::SetOriginEnabled(const GURL& origin, bool enabled) {
   origin_change_map_.SetOriginEnabled(origin, enabled);
 }
 
+LocalFileSyncService::LocalFileSyncService(Profile* profile,
+                                           leveldb::Env* env_override)
+    : profile_(profile),
+      sync_context_(new LocalFileSyncContext(
+          profile_->GetPath(),
+          env_override,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI).get(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)
+              .get())),
+      local_change_processor_(NULL) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  sync_context_->AddOriginChangeObserver(this);
+}
+
 void LocalFileSyncService::DidInitializeFileSystemContext(
     const GURL& app_origin,
     fileapi::FileSystemContext* file_system_context,
@@ -374,7 +393,7 @@ void LocalFileSyncService::DidApplyRemoteChange(
     const SyncStatusCallback& callback,
     SyncStatusCode status) {
   util::Log(logging::LOG_VERBOSE, FROM_HERE,
-            "[Remote->Local] ApplyRemoteChange finished --> %s",
+            "[Remote -> Local] ApplyRemoteChange finished --> %s",
             SyncStatusCodeToString(status));
   callback.Run(status);
 }

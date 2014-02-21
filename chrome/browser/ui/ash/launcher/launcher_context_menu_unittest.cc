@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
 
-#include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf.h"
+#include "ash/shelf/shelf_item_types.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/test/ash_test_base.h"
 #include "base/prefs/pref_service.h"
@@ -49,10 +49,10 @@ class LauncherContextMenuTest : public ash::test::AshTestBase {
   }
 
   LauncherContextMenu* CreateLauncherContextMenu(
-      ash::LauncherItemType launcher_item_type) {
-    ash::LauncherItem item;
+      ash::ShelfItemType shelf_item_type) {
+    ash::ShelfItem item;
     item.id = 1;  // dummy id
-    item.type = launcher_item_type;
+    item.type = shelf_item_type;
     return new LauncherContextMenu(controller_.get(), &item, CurrentContext());
   }
 

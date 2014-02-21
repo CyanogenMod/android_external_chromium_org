@@ -67,6 +67,9 @@ function getFields(node) {
       var version = node['BASE_VERSION'];
       fieldVal = versionToDateString(version);
     } else if ((field == 'SERVER_SPECIFICS' || field == 'SPECIFICS') &&
+            (!$('include-specifics').checked)) {
+      fieldVal = 'REDACTED';
+    } else if ((field == 'SERVER_SPECIFICS' || field == 'SPECIFICS') &&
             $('include-specifics').checked) {
       fieldVal = JSON.stringify(node[field]);
     } else {
@@ -89,7 +92,7 @@ function isSelectedDatatype(node) {
 
 function makeBlobUrl(data) {
   var textBlob = new Blob([data], {type: 'octet/stream'});
-  var blobUrl = window.webkitURL.createObjectURL(textBlob);
+  var blobUrl = window.URL.createObjectURL(textBlob);
   return blobUrl;
 }
 
@@ -161,20 +164,20 @@ function createTypesCheckboxes(types) {
   });
 }
 
-function populateDatatypes(childNodeSummaries) {
-  var types = childNodeSummaries.map(function(n) {
-    return n.type;
-  });
-  types = types.sort();
+function onReceivedListOfTypes(e) {
+  var types = e.details.types;
+  types.sort();
   createTypesCheckboxes(types);
+  chrome.sync.events.removeEventListener(
+      'onReceivedListOfTypes',
+      onReceivedListOfTypes);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  chrome.sync.getRootNodeDetails(function(rootNode) {
-    chrome.sync.getChildNodeIds(rootNode.id, function(childNodeIds) {
-      chrome.sync.getNodeSummariesById(childNodeIds, populateDatatypes);
-    });
-  });
+  chrome.sync.events.addEventListener(
+      'onReceivedListOfTypes',
+      onReceivedListOfTypes);
+  chrome.sync.requestListOfTypes();
 });
 
 var dumpToFileLink = $('dump-to-file');

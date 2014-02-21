@@ -4,28 +4,28 @@
 
 #include "content/child/request_extra_data.h"
 
-using blink::WebReferrerPolicy;
 using blink::WebString;
 
 namespace content {
 
-RequestExtraData::RequestExtraData(WebReferrerPolicy referrer_policy,
-                                   const WebString& custom_user_agent,
-                                   bool was_after_preconnect_request,
-                                   int render_frame_id,
-                                   bool is_main_frame,
-                                   int64 frame_id,
-                                   const GURL& frame_origin,
-                                   bool parent_is_main_frame,
-                                   int64 parent_frame_id,
-                                   bool allow_download,
-                                   PageTransition transition_type,
-                                   bool should_replace_current_entry,
-                                   int transferred_request_child_id,
-                                   int transferred_request_request_id)
-    : webkit_glue::WebURLRequestExtraDataImpl(referrer_policy,
-                                              custom_user_agent,
+RequestExtraData::RequestExtraData(
+    blink::WebPageVisibilityState visibility_state,
+    const WebString& custom_user_agent,
+    bool was_after_preconnect_request,
+    int render_frame_id,
+    bool is_main_frame,
+    int64 frame_id,
+    const GURL& frame_origin,
+    bool parent_is_main_frame,
+    int64 parent_frame_id,
+    bool allow_download,
+    PageTransition transition_type,
+    bool should_replace_current_entry,
+    int transferred_request_child_id,
+    int transferred_request_request_id)
+    : webkit_glue::WebURLRequestExtraDataImpl(custom_user_agent,
                                               was_after_preconnect_request),
+      visibility_state_(visibility_state),
       render_frame_id_(render_frame_id),
       is_main_frame_(is_main_frame),
       frame_id_(frame_id),

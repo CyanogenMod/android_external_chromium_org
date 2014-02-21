@@ -10,7 +10,7 @@
 #include "chrome/browser/ui/cocoa/autofill/autofill_dialog_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 namespace {
 
@@ -60,8 +60,8 @@ TEST_F(DownArrowPopupMenuCellTest, Defaults) {
 
   NSAttributedString* title = [cell attributedTitle];
   NSSize titleSize = [title size];
-  EXPECT_EQ(titleSize.width + [image size].width + autofill::kButtonGap,
+  EXPECT_LE(titleSize.width + [image size].width + autofill::kButtonGap,
             [cell cellSize].width);
-  EXPECT_EQ(std::max(titleSize.height, [image size].height),
+  EXPECT_LE(std::max(titleSize.height, [image size].height),
             [cell cellSize].height);
 }

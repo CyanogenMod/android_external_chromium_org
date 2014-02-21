@@ -58,7 +58,7 @@ extern const char kDotfile_Help[] =
     "      (which would contain a parallel directory hierarchy).\n"
     "\n"
     "      This behavior is intended to be used when BUILD.gn files can't be\n"
-    "      checked in to certain source directories for whaever reason.\n"
+    "      checked in to certain source directories for whatever reason.\n"
     "\n"
     "      The secondary source root must be inside the main source tree.\n"
     "\n"
@@ -125,7 +125,8 @@ CommonSetup::CommonSetup()
     : build_settings_(),
       loader_(new LoaderImpl(&build_settings_)),
       builder_(new Builder(loader_.get())),
-      check_for_bad_items_(true) {
+      check_for_bad_items_(true),
+      check_for_unused_overrides_(true) {
   loader_->set_complete_callback(base::Bind(&DecrementWorkCount));
 }
 
@@ -133,7 +134,8 @@ CommonSetup::CommonSetup(const CommonSetup& other)
     : build_settings_(other.build_settings_),
       loader_(new LoaderImpl(&build_settings_)),
       builder_(new Builder(loader_.get())),
-      check_for_bad_items_(other.check_for_bad_items_) {
+      check_for_bad_items_(other.check_for_bad_items_),
+      check_for_unused_overrides_(other.check_for_unused_overrides_) {
   loader_->set_complete_callback(base::Bind(&DecrementWorkCount));
 }
 
@@ -157,9 +159,13 @@ bool CommonSetup::RunPostMessageLoop() {
     }
   }
 
-  if (!build_settings_.build_args().VerifyAllOverridesUsed(&err)) {
-    err.PrintToStdout();
-    return false;
+  if (check_for_unused_overrides_) {
+    if (!build_settings_.build_args().VerifyAllOverridesUsed(&err)) {
+      // TODO(brettw) implement a system of warnings. Until we have a better
+      // system, print the error but don't return failure.
+      err.PrintToStdout();
+      return true;
+    }
   }
 
   // Write out tracing and timing if requested.
@@ -233,6 +239,10 @@ bool Setup::Run() {
   if (!scheduler_.Run())
     return false;
   return RunPostMessageLoop();
+}
+
+Scheduler* Setup::GetScheduler() {
+  return &scheduler_;
 }
 
 bool Setup::FillArguments(const CommandLine& cmdline) {
@@ -316,7 +326,8 @@ void Setup::FillPythonPath() {
         "just \"python.exe\"");
     python_path = "python.exe";
   }
-  build_settings_.set_python_path(base::FilePath(UTF8ToUTF16(python_path)));
+  build_settings_.set_python_path(
+      base::FilePath(base::UTF8ToUTF16(python_path)));
 #else
   build_settings_.set_python_path(base::FilePath("python"));
 #endif
@@ -399,14 +410,25 @@ bool Setup::FillOtherConfig(const CommandLine& cmdline) {
 
 // DependentSetup --------------------------------------------------------------
 
-DependentSetup::DependentSetup(Setup& main_setup)
-    : CommonSetup(main_setup) {
+DependentSetup::DependentSetup(Setup* derive_from)
+    : CommonSetup(*derive_from),
+      scheduler_(derive_from->GetScheduler()) {
   build_settings_.set_item_defined_callback(
-      base::Bind(&ItemDefinedCallback, main_setup.scheduler().main_loop(),
-                 builder_));
+      base::Bind(&ItemDefinedCallback, scheduler_->main_loop(), builder_));
+}
+
+DependentSetup::DependentSetup(DependentSetup* derive_from)
+    : CommonSetup(*derive_from),
+      scheduler_(derive_from->GetScheduler()) {
+  build_settings_.set_item_defined_callback(
+      base::Bind(&ItemDefinedCallback, scheduler_->main_loop(), builder_));
 }
 
 DependentSetup::~DependentSetup() {
+}
+
+Scheduler* DependentSetup::GetScheduler() {
+  return scheduler_;
 }
 
 void DependentSetup::RunPreMessageLoop() {

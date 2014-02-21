@@ -10,6 +10,11 @@
 #include "gpu/command_buffer/common/types.h"
 #include "gpu/gpu_export.h"
 
+// From gl2/gl2ext.h.
+#ifndef GL_MAILBOX_SIZE_CHROMIUM
+#define GL_MAILBOX_SIZE_CHROMIUM 64
+#endif
+
 namespace gpu {
 
 struct GPU_EXPORT Mailbox {
@@ -17,9 +22,24 @@ struct GPU_EXPORT Mailbox {
   bool IsZero() const;
   void SetZero();
   void SetName(const int8* name);
-  int8 name[64];
+
+  // Generate a unique unguessable mailbox name.
+  static Mailbox Generate();
+
+  // Verify that the mailbox was created through Mailbox::Generate. This only
+  // works in Debug (always returns true in Release). This is not a secure
+  // check, only to catch bugs where clients forgot to call Mailbox::Generate.
+  bool Verify() const;
+
+  int8 name[GL_MAILBOX_SIZE_CHROMIUM];
   bool operator<(const Mailbox& other) const {
     return memcmp(this, &other, sizeof other) < 0;
+  }
+  bool operator==(const Mailbox& other) const {
+    return memcmp(this, &other, sizeof other) == 0;
+  }
+  bool operator!=(const Mailbox& other) const {
+    return !operator==(other);
   }
 };
 

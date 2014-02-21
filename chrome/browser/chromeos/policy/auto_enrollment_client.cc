@@ -17,9 +17,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/cloud/system_policy_request_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -127,10 +127,15 @@ void AutoEnrollmentClient::RegisterPrefs(PrefRegistrySimple* registry) {
 // static
 bool AutoEnrollmentClient::IsDisabled() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(
+  // Do not communicate auto-enrollment data to the server if
+  // 1. we are running integration or perf tests with telemetry.
+  // 2. modulus configuration is not present.
+  return command_line->HasSwitch(
+             chromeos::switches::kOobeSkipPostLogin) ||
+         (!command_line->HasSwitch(
              chromeos::switches::kEnterpriseEnrollmentInitialModulus) &&
          !command_line->HasSwitch(
-             chromeos::switches::kEnterpriseEnrollmentModulusLimit);
+             chromeos::switches::kEnterpriseEnrollmentModulusLimit));
 }
 
 // static

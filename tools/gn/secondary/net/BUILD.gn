@@ -666,8 +666,6 @@ component("net") {
     "quic/congestion_control/leaky_bucket.h",
     "quic/congestion_control/paced_sender.cc",
     "quic/congestion_control/paced_sender.h",
-    "quic/congestion_control/quic_congestion_manager.cc",
-    "quic/congestion_control/quic_congestion_manager.h",
     "quic/congestion_control/quic_max_sized_map.h",
     "quic/congestion_control/receive_algorithm_interface.cc",
     "quic/congestion_control/receive_algorithm_interface.h",
@@ -698,8 +696,6 @@ component("net") {
     "quic/crypto/crypto_protocol.h",
     "quic/crypto/crypto_secret_boxer.cc",
     "quic/crypto/crypto_secret_boxer.h",
-    "quic/crypto/crypto_server_config.cc",
-    "quic/crypto/crypto_server_config.h",
     "quic/crypto/crypto_server_config_protobuf.cc",
     "quic/crypto/crypto_server_config_protobuf.h",
     "quic/crypto/crypto_utils.cc",
@@ -876,10 +872,6 @@ component("net") {
     "spdy/spdy_buffer.h",
     "spdy/spdy_buffer_producer.cc",
     "spdy/spdy_buffer_producer.h",
-    "spdy/spdy_credential_builder.cc",
-    "spdy/spdy_credential_builder.h",
-    "spdy/spdy_credential_state.cc",
-    "spdy/spdy_credential_state.h",
     "spdy/spdy_frame_builder.cc",
     "spdy/spdy_frame_builder.h",
     "spdy/spdy_frame_reader.cc",
@@ -913,10 +905,14 @@ component("net") {
     "spdy/spdy_write_queue.h",
     "spdy/write_blocked_list.h",
     "ssl/client_cert_store.h",
-    "ssl/client_cert_store_impl.h",
-    "ssl/client_cert_store_impl_mac.cc",
-    "ssl/client_cert_store_impl_nss.cc",
-    "ssl/client_cert_store_impl_win.cc",
+    "ssl/client_cert_store_chromeos.cc",
+    "ssl/client_cert_store_chromeos.h",
+    "ssl/client_cert_store_mac.cc",
+    "ssl/client_cert_store_mac.h",
+    "ssl/client_cert_store_nss.cc",
+    "ssl/client_cert_store_nss.h",
+    "ssl/client_cert_store_win.cc",
+    "ssl/client_cert_store_win.h",
     "ssl/default_server_bound_cert_store.cc",
     "ssl/default_server_bound_cert_store.h",
     "ssl/openssl_client_key_store.cc",
@@ -981,6 +977,8 @@ component("net") {
     "url_request/url_fetcher_impl.h",
     "url_request/url_fetcher_response_writer.cc",
     "url_request/url_fetcher_response_writer.h",
+    "url_request/url_range_request_job.cc",
+    "url_request/url_range_request_job.h",
     "url_request/url_request.cc",
     "url_request/url_request.h",
     "url_request/url_request_about_job.cc",
@@ -1077,7 +1075,8 @@ component("net") {
       "http/http_auth_handler_ntlm_portable.cc",
       "socket/tcp_socket_libevent.cc",
       "socket/tcp_socket_libevent.h",
-      "ssl/client_cert_store_impl_nss.cc",
+      "ssl/client_cert_store_nss.cc",
+      "ssl/client_cert_store_nss.h",
       "udp/udp_socket_libevent.cc",
       "udp/udp_socket_libevent.h",
     ]
@@ -1099,7 +1098,8 @@ component("net") {
 
   if (is_mac) {
     sources -= [
-      "ssl/client_cert_store_impl_nss.cc",
+      "ssl/client_cert_store_nss.cc",
+      "ssl/client_cert_store_nss.h",
     ]
     deps += [
       #"//net/third_party/nss:ssl",
@@ -1109,15 +1109,13 @@ component("net") {
   }
 
   if (is_linux && use_nss) {
-    configs += "//third_party/nss:nss_linux_config"
+    configs += [ "//third_party/nss:nss_linux_config" ]
   }
 
   if (is_chromeos) {
     sources -= [
        "base/network_change_notifier_linux.cc",
        "base/network_change_notifier_linux.h",
-       "base/network_change_notifier_netlink_linux.cc",
-       "base/network_change_notifier_netlink_linux.h",
        "proxy/proxy_config_service_linux.cc",
        "proxy/proxy_config_service_linux.h",
     ]
@@ -1151,7 +1149,7 @@ component("net") {
       "socket/ssl_client_socket_nss.h",
       "socket/ssl_server_socket_nss.cc",
       "socket/ssl_server_socket_nss.h",
-      "ssl/client_cert_store_impl_nss.cc",
+      "ssl/client_cert_store_nss.cc",
       "third_party/mozilla_security_manager/nsKeygenHandler.cpp",
       "third_party/mozilla_security_manager/nsKeygenHandler.h",
       "third_party/mozilla_security_manager/nsNSSCertificateDB.cpp",
@@ -1192,9 +1190,9 @@ component("net") {
     posix_avoid_mmap = false  # TODO(brettw) should be true on 32-bit Android.
     if (posix_avoid_mmap) {
       defines = [ "POSIX_AVOID_MMAP" ]
-      sources -= "disk_cache/mapped_file_posix.cc"
+      sources -= [ "disk_cache/mapped_file_posix.cc" ]
     } else {  # !posix_avoid_mmap
-      sources -= "disk_cache/mapped_file_avoid_mmap_posix.cc"
+      sources -= [ "disk_cache/mapped_file_avoid_mmap_posix.cc" ]
     }
   }
 }
@@ -1218,11 +1216,9 @@ static_library("http_server") {
     "server/web_socket.cc",
     "server/web_socket.h",
   ]
+  configs += [ "//build/config/compiler:wexit_time_destructors" ]
   deps = [
     ":net",
     "//base",
   ]
-
-  # TODO(brettw) figure out how to get this:
-  # 'variables': { 'enable_wexit_time_destructors': 1, },
 }

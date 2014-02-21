@@ -23,11 +23,12 @@ namespace chromeos {
 
 // Launches the app at startup. The flow roughly looks like this:
 // First call Initialize():
-// - Checks if the app is installed in user profile (aka app profile);
-// - If the app is installed, launch it and finish the flow;
-// - If not installed, prepare to start install by checking network online
-//   state;
-// - If network gets online, start to install the app from web store;
+// - Attempts to load oauth token file. Stores the loaded tokens in
+//   |auth_params_|.
+// - Initialize token service and inject |auth_params_| if needed.
+// - Initialize network if app is not installed or not offline_enabled.
+// - If network is online, install or update the app as needed.
+// - After the app is installed/updated, launch it and finish the flow;
 // Report OnLauncherInitialized() or OnLaunchFailed() to observers:
 // - If all goes good, launches the app and finish the flow;
 class StartupAppLauncher
@@ -39,6 +40,9 @@ class StartupAppLauncher
     // Invoked to perform actual network initialization work. Note the app
     // launch flow is paused until ContinueWithNetworkReady is called.
     virtual void InitializeNetwork() = 0;
+
+    // Returns true if Internet is online.
+    virtual bool IsNetworkReady() = 0;
 
     virtual void OnLoadingOAuthFile() = 0;
     virtual void OnInitializingTokenService() = 0;
@@ -53,6 +57,7 @@ class StartupAppLauncher
 
   StartupAppLauncher(Profile* profile,
                      const std::string& app_id,
+                     bool diagnostic_mode,
                      Delegate* delegate);
 
   virtual ~StartupAppLauncher();
@@ -74,15 +79,28 @@ class StartupAppLauncher
     std::string client_secret;
   };
 
+  // A class to check if the app has an update. It invokes BeginInstall
+  // if the app is not installed or not up-to-date. Otherwise, it invokes
+  // OnReadyToLaunch.
+  class AppUpdateChecker;
+
   void OnLaunchSuccess();
   void OnLaunchFailure(KioskAppLaunchError::Error error);
+
+  void MaybeInstall();
+
+  // Callbacks from AppUpdateChecker
+  void OnUpdateCheckNotInstalled();
+  void OnUpdateCheckUpdateAvailable();
+  void OnUpdateCheckNoUpdate();
 
   void BeginInstall();
   void InstallCallback(bool success, const std::string& error);
   void OnReadyToLaunch();
+  void UpdateAppData();
 
   void InitializeTokenService();
-  void InitializeNetwork();
+  void MaybeInitializeNetwork();
 
   void StartLoadingOAuthFile();
   static void LoadOAuthFileOnBlockingPool(KioskOAuthParams* auth_params);
@@ -94,12 +112,15 @@ class StartupAppLauncher
 
   Profile* profile_;
   const std::string app_id_;
+  const bool diagnostic_mode_;
   Delegate* delegate_;
   bool install_attempted_;
   bool ready_to_launch_;
 
   scoped_refptr<extensions::WebstoreStandaloneInstaller> installer_;
   KioskOAuthParams auth_params_;
+
+  scoped_ptr<AppUpdateChecker> update_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(StartupAppLauncher);
 };

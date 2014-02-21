@@ -10,8 +10,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/url_data_source.h"
 #include "ui/gfx/favicon_size.h"
 
@@ -75,7 +75,7 @@ class FaviconSource : public content::URLDataSource {
   virtual void StartDataRequest(
       const std::string& path,
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE;
   virtual bool ShouldReplaceExistingSource() const OVERRIDE;
@@ -129,7 +129,7 @@ class FaviconSource : public content::URLDataSource {
   // Sends the default favicon.
   void SendDefaultResponse(const IconRequest& request);
 
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   // Raw PNG representations of favicons of each size to show when the favicon
   // database doesn't have a favicon for a webpage. Indexed by IconSize values.

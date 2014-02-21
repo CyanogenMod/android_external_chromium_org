@@ -9,8 +9,6 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
-#include "base/metrics/field_trial.h"
 #include "base/port.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -30,11 +28,11 @@
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
-#include "components/variations/entropy_provider.h"
 #include "components/variations/metrics_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/webplugininfo.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size.h"
@@ -43,10 +41,7 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/fake_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chromeos/dbus/fake_bluetooth_adapter_client.h"
-#include "chromeos/dbus/fake_bluetooth_device_client.h"
-#include "chromeos/dbus/fake_bluetooth_input_client.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
+#include "chrome/browser/metrics/metrics_log_chromeos.h"
 #endif  // OS_CHROMEOS
 
 using base::TimeDelta;
@@ -83,9 +78,9 @@ content::WebPluginInfo CreateFakePluginInfo(
     const base::FilePath::CharType* path,
     const std::string& version,
     bool is_pepper) {
-  content::WebPluginInfo plugin(UTF8ToUTF16(name),
+  content::WebPluginInfo plugin(base::UTF8ToUTF16(name),
                                 base::FilePath(path),
-                                UTF8ToUTF16(version),
+                                base::UTF8ToUTF16(version),
                                 base::string16());
   if (is_pepper)
     plugin.type = content::WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
@@ -95,12 +90,31 @@ content::WebPluginInfo CreateFakePluginInfo(
 }
 #endif  // defined(ENABLE_PLUGINS)
 
+#if defined(OS_CHROMEOS)
+class TestMetricsLogChromeOS : public MetricsLogChromeOS {
+ public:
+  explicit TestMetricsLogChromeOS(
+      metrics::ChromeUserMetricsExtension* uma_proto)
+      : MetricsLogChromeOS(uma_proto) {
+  }
+
+ protected:
+  // Don't touch bluetooth information, as it won't be correctly initialized.
+  virtual void WriteBluetoothProto() OVERRIDE {
+  }
+};
+#endif  // OS_CHROMEOS
+
 class TestMetricsLog : public MetricsLog {
  public:
   TestMetricsLog(const std::string& client_id, int session_id)
       : MetricsLog(client_id, session_id),
         prefs_(&scoped_prefs_),
         brand_for_testing_(kBrandForTesting) {
+#if defined(OS_CHROMEOS)
+    metrics_log_chromeos_.reset(new TestMetricsLogChromeOS(
+        MetricsLog::uma_proto()));
+#endif  // OS_CHROMEOS
     chrome::RegisterLocalState(scoped_prefs_.registry());
     InitPrefs();
   }
@@ -112,6 +126,10 @@ class TestMetricsLog : public MetricsLog {
       : MetricsLog(client_id, session_id),
         prefs_(prefs),
         brand_for_testing_(kBrandForTesting) {
+#if defined(OS_CHROMEOS)
+    metrics_log_chromeos_.reset(new TestMetricsLogChromeOS(
+        MetricsLog::uma_proto()));
+#endif  // OS_CHROMEOS
     InitPrefs();
   }
   virtual ~TestMetricsLog() {}
@@ -177,42 +195,13 @@ class TestMetricsLog : public MetricsLog {
 
 class MetricsLogTest : public testing::Test {
  public:
-  MetricsLogTest() : message_loop_(base::MessageLoop::TYPE_IO) {}
+  MetricsLogTest() {}
 
  protected:
   virtual void SetUp() OVERRIDE {
 #if defined(OS_CHROMEOS)
-    chromeos::FakeDBusThreadManager* fake_dbus_thread_manager =
-        new chromeos::FakeDBusThreadManager;
-    fake_dbus_thread_manager->SetBluetoothAdapterClient(
-        scoped_ptr<chromeos::BluetoothAdapterClient>(
-            new chromeos::FakeBluetoothAdapterClient));
-    fake_dbus_thread_manager->SetBluetoothDeviceClient(
-        scoped_ptr<chromeos::BluetoothDeviceClient>(
-            new chromeos::FakeBluetoothDeviceClient));
-    fake_dbus_thread_manager->SetBluetoothInputClient(
-        scoped_ptr<chromeos::BluetoothInputClient>(
-            new chromeos::FakeBluetoothInputClient));
-    chromeos::DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager);
-
     // Enable multi-profiles.
     CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
-    field_trial_list_.reset(new base::FieldTrialList(
-        new metrics::SHA1EntropyProvider("42")));
-    base::FieldTrialList::CreateTrialsFromString(
-        "ChromeOSUseMultiProfiles/Enable/",
-        base::FieldTrialList::ACTIVATE_TRIALS);
-#endif  // OS_CHROMEOS
-  }
-
-  virtual void TearDown() OVERRIDE {
-    // Drain the blocking pool from PostTaskAndReply executed by
-    // MetrticsLog.network_observer_.
-    content::BrowserThread::GetBlockingPool()->FlushForTesting();
-    content::RunAllPendingInMessageLoop();
-
-#if defined(OS_CHROMEOS)
-    chromeos::DBusThreadManager::Shutdown();
 #endif  // OS_CHROMEOS
   }
 
@@ -256,13 +245,9 @@ class MetricsLogTest : public testing::Test {
   }
 
  private:
-  // This is necessary because eventually some tests call base::RepeatingTimer
-  // functions and a message loop is required for that.
-  base::MessageLoop message_loop_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
-#if defined(OS_CHROMEOS)
-  scoped_ptr<base::FieldTrialList> field_trial_list_;
-#endif  // OS_CHROMEOS
+  DISALLOW_COPY_AND_ASSIGN(MetricsLogTest);
 };
 
 TEST_F(MetricsLogTest, RecordEnvironment) {
@@ -408,7 +393,7 @@ TEST_F(MetricsLogTest, Plugins) {
   EXPECT_FALSE(system_profile.plugin(1).is_pepper());
 
   // Now set some plugin stability stats for p2 and verify they're recorded.
-  scoped_ptr<base::DictionaryValue> plugin_dict(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> plugin_dict(new base::DictionaryValue);
   plugin_dict->SetString(prefs::kStabilityPluginName, "p2");
   plugin_dict->SetInteger(prefs::kStabilityPluginLaunches, 1);
   plugin_dict->SetInteger(prefs::kStabilityPluginCrashes, 2);
@@ -504,7 +489,7 @@ TEST_F(MetricsLogTest, RecordProfilerData) {
     EXPECT_EQ(GG_UINT64_C(55232426147951219),
               tracked_object->source_function_name_hash());
     EXPECT_EQ(1773, tracked_object->source_line_number());
-    EXPECT_EQ(GG_UINT64_C(15727396632046120663),
+    EXPECT_EQ(GG_UINT64_C(1518842999910132863),
               tracked_object->birth_thread_name_hash());
     EXPECT_EQ(19, tracked_object->exec_count());
     EXPECT_EQ(23, tracked_object->exec_time_total());
@@ -550,14 +535,14 @@ TEST_F(MetricsLogTest, RecordProfilerData) {
     EXPECT_EQ(GG_UINT64_C(5081672290546182009),
               tracked_object->source_function_name_hash());
     EXPECT_EQ(7331, tracked_object->source_line_number());
-    EXPECT_EQ(GG_UINT64_C(8768512930949373716),
+    EXPECT_EQ(GG_UINT64_C(1518842999910132863),
               tracked_object->birth_thread_name_hash());
     EXPECT_EQ(137, tracked_object->exec_count());
     EXPECT_EQ(131, tracked_object->exec_time_total());
     EXPECT_EQ(113, tracked_object->exec_time_sampled());
     EXPECT_EQ(108, tracked_object->queue_time_total());
     EXPECT_EQ(103, tracked_object->queue_time_sampled());
-    EXPECT_EQ(GG_UINT64_C(7246674144371406371),
+    EXPECT_EQ(GG_UINT64_C(2203893603452504755),
               tracked_object->exec_thread_name_hash());
     EXPECT_EQ(1177U, tracked_object->process_id());
     EXPECT_EQ(ProfilerEventProto::TrackedObject::RENDERER,

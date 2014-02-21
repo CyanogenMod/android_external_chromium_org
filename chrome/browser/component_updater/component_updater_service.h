@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,8 @@
 #include "base/version.h"
 #include "url/gurl.h"
 
+class ComponentsUI;
+
 namespace base {
 class DictionaryValue;
 class FilePath;
@@ -21,14 +23,13 @@ class URLRequestContextGetter;
 class URLRequest;
 }
 
-namespace component_updater {
-class OnDemandTester;
-}
-
 namespace content {
 class ResourceThrottle;
 }
 
+namespace component_updater {
+
+class OnDemandTester;
 class ComponentPatcher;
 
 // Component specific installers must derive from this class and implement
@@ -96,6 +97,10 @@ class ComponentObserver {
 // |pk_hash| is the SHA256 hash of the component's public key. If the component
 // is to be installed then version should be "0" or "0.0", else it should be
 // the current version. |observer|, |fingerprint|, and |name| are optional.
+// |allow_background_download| specifies that the component can be background
+// downloaded in some cases. The default for this value is |true| and the value
+// can be overriden at the registration time. This is a temporary change until
+// the issue 340448 is resolved.
 struct CrxComponent {
   std::vector<uint8> pk_hash;
   ComponentInstaller* installer;
@@ -103,12 +108,10 @@ struct CrxComponent {
   Version version;
   std::string fingerprint;
   std::string name;
+  bool allow_background_download;
   CrxComponent();
   ~CrxComponent();
 };
-
-// This convenience function returns component id of given CrxComponent.
-std::string GetCrxComponentID(const CrxComponent& component);
 
 // Convenience structure to use with component listing / enumeration.
 struct CrxComponentInfo {
@@ -168,7 +171,7 @@ class ComponentUpdateService {
     // pings are disabled.
     virtual GURL PingUrl() = 0;
     // Parameters added to each url request. It can be null if none are needed.
-    virtual const char* ExtraRequestParams() = 0;
+    virtual std::string ExtraRequestParams() = 0;
     // How big each update request can be. Don't go above 2000.
     virtual size_t UrlSizeLimit() = 0;
     // The source of contexts for all the url requests.
@@ -208,8 +211,8 @@ class ComponentUpdateService {
 
   virtual ~ComponentUpdateService() {}
 
-  friend class ComponentsUI;
-  friend class component_updater::OnDemandTester;
+  friend class ::ComponentsUI;
+  friend class OnDemandTester;
 
  private:
   // Ask the component updater to do an update check for a previously
@@ -225,5 +228,7 @@ class ComponentUpdateService {
 // the heap which the component updater will own.
 ComponentUpdateService* ComponentUpdateServiceFactory(
     ComponentUpdateService::Configurator* config);
+
+}  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_COMPONENT_UPDATER_SERVICE_H_

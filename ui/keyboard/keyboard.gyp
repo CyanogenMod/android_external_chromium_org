@@ -46,7 +46,9 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         '../ui.gyp:ui',
+        '../wm/wm.gyp:wm_public',
         'keyboard_resources',
       ],
       'defines': [
@@ -86,12 +88,15 @@
         '../aura/aura.gyp:aura',
         '../aura/aura.gyp:aura_test_support',
         '../compositor/compositor.gyp:compositor',
+        '../compositor/compositor.gyp:compositor_test_support',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
+        '../resources/ui_resources.gyp:ui_test_pak',
         '../ui.gyp:ui',
-        '../ui_unittests.gyp:run_ui_unittests',
         'keyboard',
       ],
       'sources': [
+        'test/run_all_unittests.cc',
         'keyboard_controller_unittest.cc',
       ],
       'conditions': [

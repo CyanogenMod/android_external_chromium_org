@@ -4,11 +4,14 @@
 # found in the LICENSE file.
 
 import ast
-import mojom
-import mojom_cpp_generator
-import mojom_data
-import mojom_pack
+import os
 import sys
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(script_dir, os.pardir, "pylib"))
+
+from generate import mojom_data
+import mojom_cpp_generator
 
 def ReadDict(file):
   with open(file, 'r') as f:
@@ -21,6 +24,5 @@ module = mojom_data.ModuleFromData(dict)
 dir = None
 if len(sys.argv) > 2:
   dir = sys.argv[2]
-cpp = mojom_cpp_generator.CPPGenerator(
-    module, "mojo/public/bindings/generators/gen", dir)
+cpp = mojom_cpp_generator.Generator(module, ".", dir)
 cpp.GenerateFiles()

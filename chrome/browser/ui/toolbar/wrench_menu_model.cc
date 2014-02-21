@@ -65,7 +65,6 @@
 #include "chrome/browser/enumerate_modules_model_win.h"
 #include "chrome/browser/ui/metro_pin_tab_helper_win.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "ui/gfx/win/dpi.h"
 #include "win8/util/win8_util.h"
 #endif
 
@@ -73,14 +72,14 @@
 #include "ash/shell.h"
 #endif
 
+using base::UserMetricsAction;
 using content::HostZoomMap;
-using content::UserMetricsAction;
 using content::WebContents;
 
 namespace {
 // Conditionally return the update app menu item title based on upgrade detector
 // state.
-string16 GetUpgradeDialogMenuItemName() {
+base::string16 GetUpgradeDialogMenuItemName() {
   if (UpgradeDetector::GetInstance()->is_outdated_install()) {
     return l10n_util::GetStringFUTF16(
         IDS_UPGRADE_BUBBLE_MENU_ITEM,
@@ -283,7 +282,7 @@ bool WrenchMenuModel::IsItemForCommandIdDynamic(int command_id) const {
          command_id == IDC_SHOW_SIGNIN;
 }
 
-string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
+base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
   switch (command_id) {
     case IDC_ZOOM_PERCENT_DISPLAY:
       return zoom_label_;
@@ -481,14 +480,7 @@ bool WrenchMenuModel::ShouldShowNewIncognitoWindowMenuItem() {
   }
 #endif
 
-#if defined(OS_CHROMEOS)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      chromeos::switches::kGuestSession)) {
-    return false;
-  }
-#endif
-
-  return true;
+  return !browser_->profile()->IsGuestSession();
 }
 
 bool WrenchMenuModel::ShouldShowNewWindowMenuItem() {
@@ -551,10 +543,7 @@ void WrenchMenuModel::Build(bool is_new_menu) {
 
 #if defined(USE_AURA)
  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-     content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor() &&
-     gfx::win::GetUndocumentedDPIScale() == 1.0f &&
-     gfx::GetDPIScale() == 1.0 &&
-     gfx::GetModernUIScale() == 1.0f) {
+     content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) {
     if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH) {
       // Metro mode, add the 'Relaunch Chrome in desktop mode'.
       AddSeparator(ui::NORMAL_SEPARATOR);
@@ -669,7 +658,7 @@ void WrenchMenuModel::Build(bool is_new_menu) {
   }
 
   bool show_exit_menu = browser_defaults::kShowExitMenuItem;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH)
     show_exit_menu = false;
 #endif

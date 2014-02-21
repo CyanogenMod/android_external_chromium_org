@@ -85,7 +85,7 @@ class CC_EXPORT InputHandler {
   // to the client.
   // Should only be called if ScrollBegin() returned ScrollStarted.
   virtual bool ScrollBy(gfx::Point viewport_point,
-                        gfx::Vector2dF scroll_delta) = 0;
+                        const gfx::Vector2dF& scroll_delta) = 0;
 
   virtual bool ScrollVerticallyByPage(
       gfx::Point viewport_point,
@@ -95,7 +95,7 @@ class CC_EXPORT InputHandler {
   // ScrollIgnored if not.
   virtual ScrollStatus FlingScrollBegin() = 0;
 
-  virtual void NotifyCurrentFlingVelocity(gfx::Vector2dF velocity) = 0;
+  virtual void NotifyCurrentFlingVelocity(const gfx::Vector2dF& velocity) = 0;
 
   virtual void MouseMoveAt(gfx::Point mouse_position) = 0;
 
@@ -117,7 +117,7 @@ class CC_EXPORT InputHandler {
   virtual void PinchGestureUpdate(float magnify_delta, gfx::Point anchor) = 0;
   virtual void PinchGestureEnd() = 0;
 
-  virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
+  virtual void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                        bool anchor_point,
                                        float page_scale,
                                        base::TimeDelta duration) = 0;

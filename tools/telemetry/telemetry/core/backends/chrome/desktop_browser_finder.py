@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 
+from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import platform as core_platform
 from telemetry.core import possible_browser
@@ -33,7 +34,9 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
 
   def __init__(self, browser_type, finder_options, executable, flash_path,
                is_content_shell, browser_directory, is_local_build=False):
-    super(PossibleDesktopBrowser, self).__init__(browser_type, finder_options)
+    target_os = sys.platform.lower()
+    super(PossibleDesktopBrowser, self).__init__(browser_type, target_os,
+        finder_options)
     assert browser_type in ALL_BROWSER_TYPES, \
         'Please add %s to ALL_BROWSER_TYPES' % browser_type
     self._local_executable = executable
@@ -46,15 +49,18 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
     return 'PossibleDesktopBrowser(browser_type=%s, executable=%s)' % (
         self.browser_type, self._local_executable)
 
+  @property
+  @decorators.Cache
+  def _platform_backend(self):
+    return core_platform.CreatePlatformBackendForCurrentOS()
+
   def Create(self):
     backend = desktop_browser_backend.DesktopBrowserBackend(
         self.finder_options.browser_options, self._local_executable,
         self._flash_path, self._is_content_shell, self._browser_directory,
         output_profile_path=self.finder_options.output_profile_path,
         extensions_to_load=self.finder_options.extensions_to_load)
-    b = browser.Browser(backend,
-                        core_platform.CreatePlatformBackendForCurrentOS())
-    return b
+    return browser.Browser(backend, self._platform_backend)
 
   def SupportsOptions(self, finder_options):
     if (len(finder_options.extensions_to_load) != 0) and self._is_content_shell:

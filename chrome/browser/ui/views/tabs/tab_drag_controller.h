@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/timer/timer.h"
@@ -31,7 +30,6 @@ namespace views {
 class View;
 }
 class Browser;
-class DraggedTabView;
 class Tab;
 struct TabRendererData;
 class TabStrip;
@@ -45,14 +43,9 @@ class TabStripModel;
 //
 // While dragging within a tab strip TabDragController sets the bounds of the
 // tabs (this is referred to as attached). When the user drags far enough such
-// that the tabs should be moved out of the tab strip two possible things
-// can happen (this state is referred to as detached):
-// . If |detach_into_browser_| is true then a new Browser is created and
-//   RunMoveLoop() is invoked on the Widget to drag the browser around. This is
-//   the default on aura.
-// . If |detach_into_browser_| is false a small representation of the active tab
-//   is created and that is dragged around. This mode does not run a nested
-//   message loop.
+// that the tabs should be moved out of the tab strip a new Browser is created
+// and RunMoveLoop() is invoked on the Widget to drag the browser around. This
+// is the default on aura.
 class TabDragController : public content::WebContentsDelegate,
                           public content::NotificationObserver,
                           public base::MessageLoopForUI::Observer,
@@ -113,10 +106,6 @@ class TabDragController : public content::WebContentsDelegate,
 
   // Returns true if there is a drag underway.
   static bool IsActive();
-
-  // Used to determine whether the tab drag controller detaches dragged tabs
-  // into new browser windows while the drag is in process.
-  static bool ShouldDetachIntoNewBrowser();
 
   // Sets the move behavior. Has no effect if started_drag() is true.
   void SetMoveBehavior(MoveBehavior behavior);
@@ -241,7 +230,6 @@ class TabDragController : public content::WebContentsDelegate,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
-  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
   virtual bool ShouldSuppressDialogs() OVERRIDE;
   virtual content::JavaScriptDialogManager*
       GetJavaScriptDialogManager() OVERRIDE;
@@ -289,8 +277,8 @@ class TabDragController : public content::WebContentsDelegate,
   // required to start a drag.
   bool CanStartDrag(const gfx::Point& point_in_screen) const;
 
-  // Move the DraggedTabView according to the current mouse screen position,
-  // potentially updating the source and other TabStrips.
+  // Invoked once a drag has started to determine the appropriate tabstrip to
+  // drag to (which may be the currently attached one).
   void ContinueDragging(const gfx::Point& point_in_screen);
 
   // Transitions dragging from |attached_tabstrip_| to |target_tabstrip|.
@@ -311,9 +299,6 @@ class TabDragController : public content::WebContentsDelegate,
 
   // Handles dragging tabs while the tabs are attached.
   void MoveAttached(const gfx::Point& point_in_screen);
-
-  // Handles dragging while the tabs are detached.
-  void MoveDetached(const gfx::Point& point_in_screen);
 
   // If necessary starts the |move_stacked_timer_|. The timer is started if
   // close enough to an edge with stacked tabs.
@@ -415,15 +400,17 @@ class TabDragController : public content::WebContentsDelegate,
   // under us).
   void ResetSelection(TabStripModel* model);
 
+  // Restores |initial_selection_model_| to the |source_tabstrip_|.
+  void RestoreInitialSelection();
+
   // Finishes a succesful drag operation.
   void CompleteDrag();
 
+  // Maximizes the attached window.
+  void MaximizeAttachedWindow();
+
   // Resets the delegates of the WebContents.
   void ResetDelegates();
-
-  // Create the DraggedTabView.
-  void CreateDraggedView(const std::vector<TabRendererData>& data,
-                         const std::vector<gfx::Rect>& renderer_bounds);
 
   // Returns the bounds (in screen coordinates) of the specified View.
   gfx::Rect GetViewScreenBounds(views::View* tabstrip) const;
@@ -521,9 +508,6 @@ class TabDragController : public content::WebContentsDelegate,
   // UI elements are NULLd at various points during the lifetime of this
   // object.
   chrome::HostDesktopType host_desktop_type_;
-
-  // The visual representation of the dragged Tab.
-  scoped_ptr<DraggedTabView> view_;
 
   // The position of the mouse (in screen coordinates) at the start of the drag
   // operation. This is used to calculate minimum elasticity before a
@@ -632,6 +616,10 @@ class TabDragController : public content::WebContentsDelegate,
 
   // True if |source_tabstrip_| was in immersive fullscreen before the drag.
   bool was_source_fullscreen_;
+
+  // True if the initial drag resulted in restoring the window (because it was
+  // maximized).
+  bool did_restore_window_;
 
   EndRunLoopBehavior end_run_loop_behavior_;
 

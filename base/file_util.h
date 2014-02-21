@@ -25,9 +25,9 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/strings/string16.h"
 
 #if defined(OS_POSIX)
@@ -93,10 +93,13 @@ BASE_EXPORT bool Move(const FilePath& from_path, const FilePath& to_path);
 // Returns false on failure and sets *error appropriately, if it is non-NULL.
 BASE_EXPORT bool ReplaceFile(const FilePath& from_path,
                              const FilePath& to_path,
-                             PlatformFileError* error);
+                             File::Error* error);
 
 // Copies a single file. Use CopyDirectory to copy directories.
 // This function fails if either path contains traversal components ('..').
+//
+// This function keeps the metadata on Windows. The read only bit on Windows is
+// not kept.
 BASE_EXPORT bool CopyFile(const FilePath& from_path, const FilePath& to_path);
 
 // Copies the given path, and optionally all subdirectories and their contents
@@ -104,6 +107,9 @@ BASE_EXPORT bool CopyFile(const FilePath& from_path, const FilePath& to_path);
 //
 // If there are files existing under to_path, always overwrite. Returns true
 // if successful, false otherwise. Wildcards on the names are not supported.
+//
+// This function calls into CopyFile() so the same behavior w.r.t. metadata
+// applies.
 //
 // If you only need to copy a file use CopyFile, it's faster.
 BASE_EXPORT bool CopyDirectory(const FilePath& from_path,
@@ -133,9 +139,23 @@ BASE_EXPORT bool TextContentsEqual(const FilePath& filename1,
 // Read the file at |path| into |contents|, returning true on success.
 // This function fails if the |path| contains path traversal components ('..').
 // |contents| may be NULL, in which case this function is useful for its
-// side effect of priming the disk cache.
-// Useful for unit tests.
+// side effect of priming the disk cache, which is useful for unit tests.
+// The function replaces rather than append to |contents|, further |contents|
+// could be cleared on error.
 BASE_EXPORT bool ReadFileToString(const FilePath& path, std::string* contents);
+
+// Read the file at |path| into |contents|, returning true on success.
+// This function has an additional check on the maximum size of the file.
+// When the file size is greater than |max_size|, the function reads |max_size|
+// bytes into |contents| and returns false.
+// This function fails if the |path| contains path traversal components ('..').
+// |contents| may be NULL, in which case this function is useful for its
+// side effect of priming the disk cache, which is useful for unit tests.
+// The function replaces rather than append to |contents|, further |contents|
+// could be cleared on error.
+BASE_EXPORT bool ReadFileToString(const FilePath& path,
+                                  std::string* contents,
+                                  size_t max_size);
 
 #if defined(OS_POSIX)
 
@@ -256,7 +276,7 @@ BASE_EXPORT bool CreateTemporaryDirInDir(const FilePath& base_dir,
 // Returns true on success, leaving *error unchanged.
 // Returns false on failure and sets *error appropriately, if it is non-NULL.
 BASE_EXPORT bool CreateDirectoryAndGetError(const FilePath& full_path,
-                                            PlatformFileError* error);
+                                            File::Error* error);
 
 // Backward-compatible convenience method for the above.
 BASE_EXPORT bool CreateDirectory(const FilePath& full_path);
@@ -292,7 +312,7 @@ BASE_EXPORT bool NormalizeToNativeFilePath(const FilePath& path,
 BASE_EXPORT bool IsLink(const FilePath& file_path);
 
 // Returns information about the given file path.
-BASE_EXPORT bool GetFileInfo(const FilePath& file_path, PlatformFileInfo* info);
+BASE_EXPORT bool GetFileInfo(const FilePath& file_path, File::Info* info);
 
 // Sets the time of the last access and the time of the last modification.
 BASE_EXPORT bool TouchFile(const FilePath& path,
@@ -311,7 +331,7 @@ BASE_EXPORT bool TruncateFile(FILE* file);
 
 // Reads the given number of bytes from the file into the buffer.  Returns
 // the number of read bytes, or -1 on error.
-BASE_EXPORT int ReadFile(const base::FilePath& filename, char* data, int size);
+BASE_EXPORT int ReadFile(const FilePath& filename, char* data, int size);
 
 }  // namespace base
 
@@ -385,22 +405,20 @@ BASE_EXPORT bool VerifyPathControlledByAdmin(const base::FilePath& path);
 // the directory |path|, in the number of FilePath::CharType, or -1 on failure.
 BASE_EXPORT int GetMaximumPathComponentLength(const base::FilePath& path);
 
-// A class to handle auto-closing of FILE*'s.
-class ScopedFILEClose {
- public:
+// Functor for |ScopedFILE| (below).
+struct ScopedFILEClose {
   inline void operator()(FILE* x) const {
-    if (x) {
+    if (x)
       fclose(x);
-    }
   }
 };
 
-typedef scoped_ptr_malloc<FILE, ScopedFILEClose> ScopedFILE;
+// Automatically closes |FILE*|s.
+typedef scoped_ptr<FILE, ScopedFILEClose> ScopedFILE;
 
 #if defined(OS_POSIX)
-// A class to handle auto-closing of FDs.
-class ScopedFDClose {
- public:
+// Functor for |ScopedFD| (below).
+struct ScopedFDClose {
   inline void operator()(int* x) const {
     if (x && *x >= 0) {
       if (IGNORE_EINTR(close(*x)) < 0)
@@ -409,7 +427,11 @@ class ScopedFDClose {
   }
 };
 
-typedef scoped_ptr_malloc<int, ScopedFDClose> ScopedFD;
+// Automatically closes FDs (note: doesn't store the FD).
+// TODO(viettrungluu): This is a very odd API, since (unlike |FILE*|s, you'll
+// need to store the FD separately and keep its memory alive). This should
+// probably be called |ScopedFDCloser| or something like that.
+typedef scoped_ptr<int, ScopedFDClose> ScopedFD;
 #endif  // OS_POSIX
 
 #if defined(OS_LINUX)

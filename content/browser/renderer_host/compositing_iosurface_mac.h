@@ -9,17 +9,14 @@
 #include <vector>
 
 #import <Cocoa/Cocoa.h>
-#import <QuartzCore/CVDisplayLink.h>
 #include <QuartzCore/QuartzCore.h>
 
 #include "base/callback.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "media/base/video_frame.h"
-#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
@@ -50,10 +47,11 @@ class CompositingIOSurfaceMac {
   ~CompositingIOSurfaceMac();
 
   // Set IOSurface that will be drawn on the next NSView drawRect.
-  bool SetIOSurface(uint64 io_surface_handle,
-                    const gfx::Size& size,
-                    float scale_factor,
-                    const ui::LatencyInfo& latency_info);
+  bool SetIOSurfaceWithContextCurrent(
+      scoped_refptr<CompositingIOSurfaceContext> current_context,
+      uint64 io_surface_handle,
+      const gfx::Size& size,
+      float scale_factor);
 
   // Get the CGL renderer ID currently associated with this context.
   int GetRendererID();
@@ -62,13 +60,10 @@ class CompositingIOSurfaceMac {
   // with the origin in the lower left corner. If the window rect's size is
   // larger than the IOSurface, the remaining right and bottom edges will be
   // white. |window_scale_factor| is 1 in normal views, 2 in HiDPI views.
-  // |frame_subscriber| listens to this draw event and provides output buffer
-  // for copying this frame into.
   bool DrawIOSurface(
       scoped_refptr<CompositingIOSurfaceContext> drawing_context,
       const gfx::Rect& window_rect,
       float window_scale_factor,
-      RenderWidgetHostViewFrameSubscriber* frame_subscriber,
       bool flush_drawable);
 
   // Copy the data of the "live" OpenGL texture referring to this IOSurfaceRef
@@ -103,24 +98,10 @@ class CompositingIOSurfaceMac {
   const gfx::Size& dip_io_surface_size() const { return dip_io_surface_size_; }
   float scale_factor() const { return scale_factor_; }
 
-  // Get vsync scheduling parameters.
-  // |interval_numerator/interval_denominator| equates to fractional number of
-  // seconds between vsyncs.
-  void GetVSyncParameters(base::TimeTicks* timebase,
-                          uint32* interval_numerator,
-                          uint32* interval_denominator);
-
   // Returns true if asynchronous readback is supported on this system.
   bool IsAsynchronousReadbackSupported();
 
  private:
-  friend CVReturn DisplayLinkCallback(CVDisplayLinkRef,
-                                      const CVTimeStamp*,
-                                      const CVTimeStamp*,
-                                      CVOptionFlags,
-                                      CVOptionFlags*,
-                                      void*);
-
   // Vertex structure for use in glDraw calls.
   struct SurfaceVertex {
     SurfaceVertex() : x_(0.0f), y_(0.0f), tx_(0.0f), ty_(0.0f) { }
@@ -212,8 +193,6 @@ class CompositingIOSurfaceMac {
       IOSurfaceSupport* io_surface_support,
       const scoped_refptr<CompositingIOSurfaceContext>& context);
 
-  void SetupCVDisplayLink();
-
   // If this IOSurface has moved to a different window, use that window's
   // GL context (if multiple visible windows are using the same GL context
   // then call to setView call can stall and prevent reaching 60fps).
@@ -223,24 +202,13 @@ class CompositingIOSurfaceMac {
   bool IsVendorIntel();
 
   // Returns true if IOSurface is ready to render. False otherwise.
-  bool MapIOSurfaceToTexture(uint64 io_surface_handle);
+  bool MapIOSurfaceToTextureWithContextCurrent(
+      const scoped_refptr<CompositingIOSurfaceContext>& current_context,
+      uint64 io_surface_handle);
 
   void UnrefIOSurfaceWithContextCurrent();
 
   void DrawQuad(const SurfaceQuad& quad);
-
-  // Called on display-link thread.
-  void DisplayLinkTick(CVDisplayLinkRef display_link,
-                       const CVTimeStamp* time);
-
-  void CalculateVsyncParametersLockHeld(const CVTimeStamp* time);
-
-  // Prevent from spinning on CGLFlushDrawable when it fails to throttle to
-  // VSync frequency.
-  void RateLimitDraws();
-
-  void StartOrContinueDisplayLink();
-  void StopDisplayLink();
 
   // Copy current frame to |target| video frame. This method must be called
   // within a CGL context. Returns a callback that should be called outside
@@ -328,24 +296,8 @@ class CompositingIOSurfaceMac {
   // Timer for finishing a copy operation.
   base::Timer finish_copy_timer_;
 
-  // CVDisplayLink for querying Vsync timing info and throttling swaps.
-  CVDisplayLinkRef display_link_;
-
-  // Timer for stopping display link after a timeout with no swaps.
-  base::DelayTimer<CompositingIOSurfaceMac> display_link_stop_timer_;
-
-  // Lock for sharing data between UI thread and display-link thread.
-  base::Lock lock_;
-
-  // Vsync timing data.
-  base::TimeTicks vsync_timebase_;
-  uint32 vsync_interval_numerator_;
-  uint32 vsync_interval_denominator_;
-
   // Error saved by GetAndSaveGLError
   GLint gl_error_;
-
-  ui::LatencyInfo latency_info_;
 };
 
 }  // namespace content

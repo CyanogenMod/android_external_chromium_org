@@ -15,6 +15,8 @@
 #ifndef I18N_ADDRESSINPUT_UTIL_JSON_H_
 #define I18N_ADDRESSINPUT_UTIL_JSON_H_
 
+#include <libaddressinput/util/scoped_ptr.h>
+
 #include <string>
 
 namespace i18n {
@@ -22,30 +24,36 @@ namespace addressinput {
 
 // Parses a JSON dictionary of strings. Sample usage:
 //    scoped_ptr<Json> json(Json::Build());
+//    std::string value;
 //    if (json->ParseObject("{'key1':'value1', 'key2':'value2'}") &&
-//        json->HasStringKey("key1")) {
-//      Process(json->GetStringValueForKey("key1"));
+//        json->GetStringValueForKey("key1", &value)) {
+//      Process(value);
 //    }
 class Json {
  public:
   virtual ~Json();
 
-  // Returns a new instanec of |Json| object. The caller owns the result.
-  static Json* Build();
+  // Returns a new instance of |Json| object.
+  static scoped_ptr<Json> Build();
 
   // Parses the |json| string and returns true if |json| is valid and it is an
   // object.
   virtual bool ParseObject(const std::string& json) = 0;
 
-  // Returns true if the parsed JSON contains a string value for |key|. The JSON
-  // object must be parsed successfully in ParseObject() before invoking this
-  // method.
-  virtual bool HasStringValueForKey(const std::string& key) const = 0;
+  // Sets |value| to the string for |key| if it exists and has a string value.
+  // Returns false if the key doesn't exist or doesn't correspond to a string.
+  // The JSON object must be parsed successfully in ParseObject() before
+  // invoking this method.
+  virtual bool GetStringValueForKey(const std::string& key,
+                                    std::string* value) const = 0;
 
-  // Returns the string value for the |key|. The |key| must be present and its
-  // value must be of string type, i.e., HasStringValueForKey(key) must return
-  // true before invoking this method.
-  virtual std::string GetStringValueForKey(const std::string& key) const = 0;
+  // Sets |value| to the dictionary for |key| if it exists and has a dictionary
+  // value. Returns false if the key doesn't exist or doesn't correspond to a
+  // dictionary. The JSON object must be parsed successfully in ParseObject()
+  // before invoking this method. |value| is only guaranteed to be valid as long
+  // as |this| is valid.
+  virtual bool GetJsonValueForKey(const std::string& key,
+                                  scoped_ptr<Json>* value) const = 0;
 
  protected:
   Json();

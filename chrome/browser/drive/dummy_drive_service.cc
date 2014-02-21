@@ -104,6 +104,10 @@ CancelCallback DummyDriveService::DeleteResource(
     const std::string& etag,
     const EntryActionCallback& callback) { return CancelCallback(); }
 
+CancelCallback DummyDriveService::TrashResource(
+    const std::string& resource_id,
+    const EntryActionCallback& callback) { return CancelCallback(); }
+
 CancelCallback DummyDriveService::DownloadFile(
     const base::FilePath& local_cache_path,
     const std::string& resource_id,
@@ -116,11 +120,6 @@ CancelCallback DummyDriveService::CopyResource(
     const std::string& parent_resource_id,
     const std::string& new_title,
     const base::Time& last_modified,
-    const GetResourceEntryCallback& callback) { return CancelCallback(); }
-
-CancelCallback DummyDriveService::CopyHostedDocument(
-    const std::string& resource_id,
-    const std::string& new_title,
     const GetResourceEntryCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::UpdateResource(
@@ -151,6 +150,7 @@ CancelCallback DummyDriveService::RemoveResourceFromDirectory(
 CancelCallback DummyDriveService::AddNewDirectory(
     const std::string& parent_resource_id,
     const std::string& directory_title,
+    const AddNewDirectoryOptions& options,
     const GetResourceEntryCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::InitiateUploadNewFile(
@@ -158,13 +158,14 @@ CancelCallback DummyDriveService::InitiateUploadNewFile(
     int64 content_length,
     const std::string& parent_resource_id,
     const std::string& title,
+    const InitiateUploadNewFileOptions& options,
     const InitiateUploadCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::InitiateUploadExistingFile(
     const std::string& content_type,
     int64 content_length,
     const std::string& resource_id,
-    const std::string& etag,
+    const InitiateUploadExistingFileOptions& options,
     const InitiateUploadCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::ResumeUpload(
@@ -186,6 +187,10 @@ CancelCallback DummyDriveService::AuthorizeApp(
     const std::string& resource_id,
     const std::string& app_id,
     const AuthorizeAppCallback& callback) { return CancelCallback(); }
+
+CancelCallback DummyDriveService::UninstallApp(
+    const std::string& app_id,
+    const EntryActionCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::GetResourceListInDirectoryByWapi(
     const std::string& directory_resource_id,

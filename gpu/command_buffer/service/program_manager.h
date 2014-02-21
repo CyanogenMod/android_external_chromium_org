@@ -20,7 +20,6 @@
 namespace gpu {
 namespace gles2 {
 
-class FeatureInfo;
 class ProgramCache;
 class ProgramManager;
 class Shader;
@@ -33,6 +32,11 @@ class ShaderTranslator;
 class GPU_EXPORT Program : public base::RefCounted<Program> {
  public:
   static const int kMaxAttachedShaders = 2;
+
+  enum VaryingsPackingOption {
+    kCountOnlyStaticallyUsed,
+    kCountAll
+  };
 
   struct UniformInfo {
     UniformInfo();
@@ -157,7 +161,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   bool Link(ShaderManager* manager,
             ShaderTranslator* vertex_translator,
             ShaderTranslator* fragment_shader,
-            FeatureInfo* feature_info,
+            VaryingsPackingOption varyings_packing_option,
             const ShaderCacheCallback& shader_callback);
 
   // Performs glValidateProgram and related activities.
@@ -188,19 +192,20 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
   // Detects if there are uniforms of the same name but different type
   // or precision in vertex/fragment shaders.
-  // Return true if such cases are detected.
-  bool DetectUniformsMismatch() const;
+  // Return true and set the first found conflicting hashed name to
+  // conflicting_name if such cases are detected.
+  bool DetectUniformsMismatch(std::string* conflicting_name) const;
 
   // Return true if a varying is statically used in fragment shader, but it
   // is not declared in vertex shader.
-  bool DetectVaryingsMismatch() const;
+  bool DetectVaryingsMismatch(std::string* conflicting_name) const;
 
   // Return true if an uniform and an attribute share the same name.
-  bool DetectGlobalNameConflicts() const;
+  bool DetectGlobalNameConflicts(std::string* conflicting_name) const;
 
   // Return false if varyings can't be packed into the max available
   // varying registers.
-  bool CheckVaryingsPacking() const;
+  bool CheckVaryingsPacking(VaryingsPackingOption option) const;
 
   // Visible for testing
   const LocationMap& bind_attrib_location_map() const {
@@ -336,6 +341,11 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 // need to be shared by multiple GLES2Decoders.
 class GPU_EXPORT ProgramManager {
  public:
+  enum TranslatedShaderSourceType {
+    kANGLE,
+    kGL,  // GL or GLES
+  };
+
   explicit ProgramManager(ProgramCache* program_cache,
                           uint32 max_varying_vectors);
   ~ProgramManager();
@@ -375,9 +385,10 @@ class GPU_EXPORT ProgramManager {
 
   static int32 MakeFakeLocation(int32 index, int32 element);
 
-  void DoCompileShader(Shader* shader,
-                       ShaderTranslator* translator,
-                       FeatureInfo* feature_info);
+  void DoCompileShader(
+      Shader* shader,
+      ShaderTranslator* translator,
+      TranslatedShaderSourceType translated_shader_source_type);
 
   uint32 max_varying_vectors() const {
     return max_varying_vectors_;
@@ -402,8 +413,6 @@ class GPU_EXPORT ProgramManager {
   unsigned int program_count_;
 
   bool have_context_;
-
-  bool disable_workarounds_;
 
   // Used to clear uniforms.
   std::vector<uint8> zero_;

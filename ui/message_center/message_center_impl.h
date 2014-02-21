@@ -172,7 +172,6 @@ class MessageCenterImpl : public MessageCenter,
                                          const gfx::Image& image) OVERRIDE;
   virtual void DisableNotificationsByNotifier(
       const NotifierId& notifier_id) OVERRIDE;
-  virtual void ExpandNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& id,
                                          int button_index) OVERRIDE;
@@ -198,7 +197,8 @@ class MessageCenterImpl : public MessageCenter,
   struct NotificationCache {
     NotificationCache();
     ~NotificationCache();
-    void Rebuild(const NotificationList::Notifications& notificaitons);
+    void Rebuild(const NotificationList::Notifications& notifications);
+    void RecountUnread();
 
     NotificationList::Notifications visible_notifications;
     size_t unread_count;

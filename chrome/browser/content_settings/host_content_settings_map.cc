@@ -39,8 +39,8 @@
 #include "net/base/static_cookie_policy.h"
 #include "url/gurl.h"
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -254,7 +254,7 @@ void HostContentSettingsMap::SetDefaultContentSetting(
 
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = Value::CreateIntegerValue(setting);
+    value = base::Value::CreateIntegerValue(setting);
   SetWebsiteSetting(
       ContentSettingsPattern::Wildcard(),
       ContentSettingsPattern::Wildcard(),
@@ -297,7 +297,7 @@ void HostContentSettingsMap::SetContentSetting(
   DCHECK(!ContentTypeHasCompoundValue(content_type));
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = Value::CreateIntegerValue(setting);
+    value = base::Value::CreateIntegerValue(setting);
   SetWebsiteSetting(primary_pattern,
                     secondary_pattern,
                     content_type,
@@ -367,6 +367,12 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     return false;
   }
 
+#if defined(OS_ANDROID)
+  // App banners store a dictionary.
+  if (content_type == CONTENT_SETTINGS_TYPE_APP_BANNER)
+    return false;
+#endif
+
   // DEFAULT, ALLOW and BLOCK are always allowed.
   if (setting == CONTENT_SETTING_DEFAULT ||
       setting == CONTENT_SETTING_ALLOW ||
@@ -398,6 +404,11 @@ bool HostContentSettingsMap::ContentTypeHasCompoundValue(
   // Values for content type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE and
   // CONTENT_SETTINGS_TYPE_MEDIASTREAM are of type dictionary/map. Compound
   // types like dictionaries can't be mapped to the type |ContentSetting|.
+#if defined(OS_ANDROID)
+  if (type == CONTENT_SETTINGS_TYPE_APP_BANNER)
+    return true;
+#endif
+
   return (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
           type == CONTENT_SETTINGS_TYPE_MEDIASTREAM);
 }
@@ -476,7 +487,8 @@ void HostContentSettingsMap::MigrateObsoleteClearOnExitPref() {
                       it->secondary_pattern,
                       CONTENT_SETTINGS_TYPE_COOKIES,
                       std::string(),
-                      Value::CreateIntegerValue(CONTENT_SETTING_SESSION_ONLY));
+                      base::Value::CreateIntegerValue(
+                          CONTENT_SETTING_SESSION_ONLY));
   }
 
   prefs_->SetBoolean(prefs::kContentSettingsClearOnExitMigrated, true);
@@ -534,7 +546,7 @@ bool HostContentSettingsMap::ShouldAllowAllContent(
       content_type == CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
     return false;
   }
-  if (secondary_url.SchemeIs(chrome::kChromeUIScheme) &&
+  if (secondary_url.SchemeIs(content::kChromeUIScheme) &&
       content_type == CONTENT_SETTINGS_TYPE_COOKIES &&
       primary_url.SchemeIsSecure()) {
     return true;
@@ -552,9 +564,8 @@ bool HostContentSettingsMap::ShouldAllowAllContent(
         return true;
     }
   }
-  return primary_url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-         primary_url.SchemeIs(chrome::kChromeInternalScheme) ||
-         primary_url.SchemeIs(chrome::kChromeUIScheme);
+  return primary_url.SchemeIs(content::kChromeDevToolsScheme) ||
+         primary_url.SchemeIs(content::kChromeUIScheme);
 }
 
 base::Value* HostContentSettingsMap::GetWebsiteSetting(
@@ -573,7 +584,7 @@ base::Value* HostContentSettingsMap::GetWebsiteSetting(
       info->primary_pattern = ContentSettingsPattern::Wildcard();
       info->secondary_pattern = ContentSettingsPattern::Wildcard();
     }
-    return Value::CreateIntegerValue(CONTENT_SETTING_ALLOW);
+    return base::Value::CreateIntegerValue(CONTENT_SETTING_ALLOW);
   }
 
   ContentSettingsPattern* primary_pattern = NULL;

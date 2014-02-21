@@ -12,6 +12,7 @@ import sys
 import urllib2
 
 from telemetry.core import exceptions
+from telemetry.core import forwarders
 from telemetry.core import user_agent
 from telemetry.core import util
 from telemetry.core import web_contents
@@ -24,6 +25,7 @@ from telemetry.core.backends.chrome import system_info_backend
 from telemetry.core.backends.chrome import tab_list_backend
 from telemetry.core.backends.chrome import tracing_backend
 from telemetry.unittest import options_for_unittests
+
 
 class ChromeBrowserBackend(browser_backend.BrowserBackend):
   """An abstract class for chrome browser backends. Provides basic functionality
@@ -48,11 +50,15 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     self._extensions_to_load = extensions_to_load
 
     if browser_options.netsim:
-      self.wpr_http_port_pair = util.PortPair(80, 80)
-      self.wpr_https_port_pair = util.PortPair(443, 443)
+      self.wpr_port_pairs = forwarders.PortPairs(
+          http=forwarders.PortPair(80, 80),
+          https=forwarders.PortPair(443, 443),
+          dns=forwarders.PortPair(53, 53))
     else:
-      self.wpr_http_port_pair = util.PortPair(0, 0)
-      self.wpr_https_port_pair = util.PortPair(0, 0)
+      self.wpr_port_pairs = forwarders.PortPairs(
+          http=forwarders.PortPair(0, 0),
+          https=forwarders.PortPair(0, 0),
+          dns=None)
 
     if (self.browser_options.dont_override_profile and
         not options_for_unittests.AreSet()):
@@ -87,17 +93,16 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     args = []
     args.extend(self.browser_options.extra_browser_args)
     args.append('--disable-background-networking')
+    args.append('--enable-net-benchmarking')
     args.append('--metrics-recording-only')
-    args.append('--no-first-run')
     args.append('--no-default-browser-check')
+    args.append('--no-first-run')
     args.append('--no-proxy-server')
     if self.browser_options.netsim:
       args.append('--ignore-certificate-errors')
     elif self.browser_options.wpr_mode != wpr_modes.WPR_OFF:
-      args.extend(wpr_server.GetChromeFlags(
-          self.WEBPAGEREPLAY_HOST,
-          self.wpr_http_port_pair.remote_port,
-          self.wpr_https_port_pair.remote_port))
+      args.extend(wpr_server.GetChromeFlags(self.forwarder_factory.host_ip,
+                                            self.wpr_port_pairs))
     args.extend(user_agent.GetChromeUserAgentArgumentFromType(
         self.browser_options.browser_user_agent_type))
 
@@ -123,18 +128,19 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
     return args
 
-  def _WaitForBrowserToComeUp(self, wait_for_extensions=True, timeout=None):
-    def IsBrowserUp():
-      try:
-        self.Request('', timeout=timeout)
-      except (exceptions.BrowserGoneException,
-              exceptions.BrowserConnectionGoneException):
-        return False
-      else:
-        return True
+  def HasBrowserFinishedLaunching(self):
     try:
-      util.WaitFor(IsBrowserUp, timeout=30)
-    except util.TimeoutException:
+      self.Request('')
+    except (exceptions.BrowserGoneException,
+            exceptions.BrowserConnectionGoneException):
+      return False
+    else:
+      return True
+
+  def _WaitForBrowserToComeUp(self, wait_for_extensions=True):
+    try:
+      util.WaitFor(self.HasBrowserFinishedLaunching, timeout=30)
+    except (util.TimeoutException, exceptions.ProcessGoneException) as e:
       raise exceptions.BrowserGoneException(self.GetStackTrace())
 
     def AllExtensionsLoaded():

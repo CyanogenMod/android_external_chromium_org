@@ -7,11 +7,12 @@
 #include <string>
 
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -39,28 +40,26 @@ bool ExtensionSetUpdateUrlDataFunction::RunImpl() {
   std::string data;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &data));
 
+  const Extension* extension = GetExtension();
+
+  if (ManifestURL::UpdatesFromGallery(extension)) {
+    return false;
+  }
+
   ExtensionPrefs::Get(GetProfile())->UpdateExtensionPref(
       extension_id(), extension::kUpdateURLData, new base::StringValue(data));
   return true;
 }
 
 bool ExtensionIsAllowedIncognitoAccessFunction::RunImpl() {
-  ExtensionService* ext_service =
-      ExtensionSystem::Get(GetProfile())->extension_service();
-  const Extension* extension = GetExtension();
-
   SetResult(new base::FundamentalValue(
-      extension_util::IsIncognitoEnabled(extension->id(), ext_service)));
+      util::IsIncognitoEnabled(extension_id(), GetProfile())));
   return true;
 }
 
 bool ExtensionIsAllowedFileSchemeAccessFunction::RunImpl() {
-  ExtensionService* ext_service =
-      ExtensionSystem::Get(GetProfile())->extension_service();
-  const Extension* extension = GetExtension();
-
   SetResult(new base::FundamentalValue(
-      extension_util::AllowFileAccess(extension, ext_service)));
+      util::AllowFileAccess(extension_id(), GetProfile())));
   return true;
 }
 

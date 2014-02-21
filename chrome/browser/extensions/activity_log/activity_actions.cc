@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/format_macros.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -18,7 +19,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/dom_action_types.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "sql/statement.h"
 
@@ -46,14 +46,16 @@ using api::activity_log_private::ExtensionActivity;
 Action::Action(const std::string& extension_id,
                const base::Time& time,
                const ActionType action_type,
-               const std::string& api_name)
+               const std::string& api_name,
+               int64 action_id)
     : extension_id_(extension_id),
       time_(time),
       action_type_(action_type),
       api_name_(api_name),
       page_incognito_(false),
       arg_incognito_(false),
-      count_(0) {}
+      count_(0),
+      action_id_(action_id) {}
 
 Action::~Action() {}
 
@@ -62,7 +64,8 @@ Action::~Action() {}
 // many cases that will prevent this optimization.
 scoped_refptr<Action> Action::Clone() const {
   scoped_refptr<Action> clone(
-      new Action(extension_id(), time(), action_type(), api_name()));
+      new Action(
+          extension_id(), time(), action_type(), api_name(), action_id()));
   if (args())
     clone->set_args(make_scoped_ptr(args()->DeepCopy()));
   clone->set_page_url(page_url());
@@ -75,13 +78,13 @@ scoped_refptr<Action> Action::Clone() const {
   return clone;
 }
 
-void Action::set_args(scoped_ptr<ListValue> args) {
+void Action::set_args(scoped_ptr<base::ListValue> args) {
   args_.reset(args.release());
 }
 
-ListValue* Action::mutable_args() {
+base::ListValue* Action::mutable_args() {
   if (!args_.get()) {
-    args_.reset(new ListValue());
+    args_.reset(new base::ListValue());
   }
   return args_.get();
 }
@@ -94,13 +97,13 @@ void Action::set_arg_url(const GURL& arg_url) {
   arg_url_ = arg_url;
 }
 
-void Action::set_other(scoped_ptr<DictionaryValue> other) {
+void Action::set_other(scoped_ptr<base::DictionaryValue> other) {
   other_.reset(other.release());
 }
 
-DictionaryValue* Action::mutable_other() {
+base::DictionaryValue* Action::mutable_other() {
   if (!other_.get()) {
-    other_.reset(new DictionaryValue());
+    other_.reset(new base::DictionaryValue());
   }
   return other_.get();
 }
@@ -168,6 +171,9 @@ scoped_ptr<ExtensionActivity> Action::ConvertToExtensionActivity() {
   result->count.reset(new double(count()));
   result->api_call.reset(new std::string(api_name()));
   result->args.reset(new std::string(Serialize(args())));
+  if (action_id() != -1)
+    result->activity_id.reset(
+        new std::string(base::StringPrintf("%" PRId64, action_id())));
   if (page_url().is_valid()) {
     if (!page_title().empty())
       result->page_title.reset(new std::string(page_title()));
@@ -184,7 +190,7 @@ scoped_ptr<ExtensionActivity> Action::ConvertToExtensionActivity() {
                                                 &prerender)) {
       other_field->prerender.reset(new bool(prerender));
     }
-    const DictionaryValue* web_request;
+    const base::DictionaryValue* web_request;
     if (other()->GetDictionaryWithoutPathExpansion(constants::kActionWebRequest,
                                                    &web_request)) {
       other_field->web_request.reset(new std::string(
@@ -231,7 +237,8 @@ scoped_ptr<ExtensionActivity> Action::ConvertToExtensionActivity() {
 }
 
 std::string Action::PrintForDebug() const {
-  std::string result = "ID=" + extension_id() + " CATEGORY=";
+  std::string result = base::StringPrintf("ACTION ID=%" PRId64, action_id());
+  result += " EXTENSION ID=" + extension_id() + " CATEGORY=";
   switch (action_type_) {
     case ACTION_API_CALL:
       result += "api_call";
@@ -270,7 +277,7 @@ std::string Action::PrintForDebug() const {
       result += " PAGE_URL=" + page_url_.spec();
   }
   if (!page_title_.empty()) {
-    StringValue title(page_title_);
+    base::StringValue title(page_title_);
     result += " PAGE_TITLE=" + Serialize(&title);
   }
   if (arg_url_.is_valid()) {
@@ -292,11 +299,13 @@ bool ActionComparator::operator()(
     const scoped_refptr<Action>& rhs) const {
   if (lhs->time() != rhs->time())
     return lhs->time() < rhs->time();
+  else if (lhs->action_id() != rhs->action_id())
+    return lhs->action_id() < rhs->action_id();
   else
-    return ActionComparatorExcludingTime()(lhs, rhs);
+    return ActionComparatorExcludingTimeAndActionId()(lhs, rhs);
 }
 
-bool ActionComparatorExcludingTime::operator()(
+bool ActionComparatorExcludingTimeAndActionId::operator()(
     const scoped_refptr<Action>& lhs,
     const scoped_refptr<Action>& rhs) const {
   if (lhs->extension_id() != rhs->extension_id())

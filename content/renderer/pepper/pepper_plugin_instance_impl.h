@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -19,8 +20,8 @@
 #include "cc/layers/texture_layer_client.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
-#include "content/renderer/pepper/ppp_pdf.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
 #include "ppapi/c/dev/ppp_find_dev.h"
 #include "ppapi/c/dev/ppp_printing_dev.h"
@@ -40,6 +41,7 @@
 #include "ppapi/c/ppp_mouse_lock.h"
 #include "ppapi/c/private/ppb_content_decryptor_private.h"
 #include "ppapi/c/private/ppp_instance_private.h"
+#include "ppapi/c/private/ppp_pdf.h"
 #include "ppapi/shared_impl/ppb_instance_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "ppapi/shared_impl/singleton_resource_id.h"
@@ -116,7 +118,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
     : public base::RefCounted<PepperPluginInstanceImpl>,
       public NON_EXPORTED_BASE(PepperPluginInstance),
       public ppapi::PPB_Instance_Shared,
-      public NON_EXPORTED_BASE(cc::TextureLayerClient) {
+      public NON_EXPORTED_BASE(cc::TextureLayerClient),
+      public RenderFrameObserver {
  public:
   // Create and return a PepperPluginInstanceImpl object which supports the most
   // recent version of PPP_Instance possible by querying the given
@@ -370,6 +373,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual int MakePendingFileRefRendererHost(
       const base::FilePath& path) OVERRIDE;
   virtual void SetEmbedProperty(PP_Var key, PP_Var value) OVERRIDE;
+  virtual void SetSelectedText(const base::string16& selected_text) OVERRIDE;
+  virtual void SetLinkUnderCursor(const std::string& url) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -506,6 +511,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
       bool use_shared_memory) OVERRIDE;
 
+  // RenderFrameObserver
+  virtual void OnDestruct() OVERRIDE;
+
   // Update any transforms that should be applied to the texture layer.
   void UpdateLayerTransform();
 
@@ -531,7 +539,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
                                 int data_length,
                                 int encoded_data_length);
     virtual void didFinishLoading(blink::WebURLLoader* loader,
-                                  double finish_time);
+                                  double finish_time,
+                                  int64_t total_encoded_data_length);
     virtual void didFail(blink::WebURLLoader* loader,
                          const blink::WebURLError& error);
 
@@ -656,6 +665,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       const ppapi::URLResponseInfoData& data);
 
   RenderFrameImpl* render_frame_;
+  base::Closure instance_deleted_callback_;
   scoped_refptr<PluginModule> module_;
   scoped_ptr<ppapi::PPP_Instance_Combined> instance_interface_;
   // If this is the NaCl plugin, we create a new module when we switch to the
@@ -750,6 +760,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   std::vector<PP_PrintPageNumberRange_Dev> ranges_;
 
   scoped_refptr<ppapi::Resource> gamepad_impl_;
+  scoped_refptr<ppapi::Resource> uma_private_impl_;
 
   // The plugin print interface.
   const PPP_Printing_Dev* plugin_print_interface_;
@@ -846,6 +857,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // calls and handles PPB_ContentDecryptor_Private calls.
   scoped_ptr<ContentDecryptorDelegate> content_decryptor_delegate_;
 
+  // The link currently under the cursor.
+  base::string16 link_under_cursor_;
+
   // Dummy NPP value used when calling in to WebBindings, to allow the bindings
   // to correctly track NPObjects belonging to this plugin instance.
   scoped_ptr<struct _NPP> npp_;
@@ -857,6 +871,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   scoped_ptr<MouseLockDispatcher::LockTarget> lock_target_;
 
   bool is_deleted_;
+
+  // The text that is currently selected in the plugin.
+  base::string16 selected_text_;
 
   // We use a weak ptr factory for scheduling DidChangeView events so that we
   // can tell whether updates are pending and consolidate them. When there's

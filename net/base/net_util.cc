@@ -157,7 +157,8 @@ static const int kRestrictedPorts[] = {
   6668, // Alternate IRC [Apple addition]
   6669, // Alternate IRC [Apple addition]
   0xFFFF, // Used to block all invalid port numbers (see
-          // third_party/WebKit/Source/WebCore/platform/KURLGoogle.cpp, port())
+          // third_party/WebKit/Source/platform/weborigin/KURL.cpp,
+          // KURL::port())
 };
 
 // FTP overrides the following restricted ports.
@@ -634,7 +635,7 @@ base::string16 FormatViewSourceUrl(const GURL& url,
     base::OffsetAdjuster adjuster(&offsets_into_underlying_url);
     adjuster.Add(base::OffsetAdjuster::Adjustment(0, kViewSourceLength, 0));
   }
-  base::string16 result(ASCIIToUTF16(kViewSource) +
+  base::string16 result(base::ASCIIToUTF16(kViewSource) +
       FormatUrlWithOffsets(GURL(url_str.substr(kViewSourceLength)), languages,
                            format_types, unescape_rules, new_parsed, prefix_end,
                            &offsets_into_underlying_url));
@@ -810,9 +811,9 @@ std::string GetFileNameFromURL(const GURL& url,
                               referrer_charset.c_str(),
                               base::OnStringConversionError::FAIL,
                               &utf16_output)) {
-      decoded_filename = UTF16ToUTF8(utf16_output);
+      decoded_filename = base::UTF16ToUTF8(utf16_output);
     } else {
-      decoded_filename = WideToUTF8(
+      decoded_filename = base::WideToUTF8(
           base::SysNativeMBToWide(unescaped_url_filename));
     }
   }
@@ -857,7 +858,7 @@ bool IsReservedName(const base::FilePath::StringType& filename) {
     "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "clock$"
   };
 #if defined(OS_WIN)
-  std::string filename_lower = StringToLowerASCII(WideToUTF8(filename));
+  std::string filename_lower = StringToLowerASCII(base::WideToUTF8(filename));
 #elif defined(OS_POSIX)
   std::string filename_lower = StringToLowerASCII(filename);
 #endif
@@ -945,11 +946,12 @@ void EnsureSafeExtension(const std::string& mime_type,
 
 bool FilePathToString16(const base::FilePath& path, base::string16* converted) {
 #if defined(OS_WIN)
-  return WideToUTF16(path.value().c_str(), path.value().size(), converted);
+  return base::WideToUTF16(
+      path.value().c_str(), path.value().size(), converted);
 #elif defined(OS_POSIX)
   std::string component8 = path.AsUTF8Unsafe();
   return !component8.empty() &&
-         UTF8ToUTF16(component8.c_str(), component8.size(), converted);
+         base::UTF8ToUTF16(component8.c_str(), component8.size(), converted);
 #endif
 }
 
@@ -996,6 +998,12 @@ GURL FilePathToFileURL(const base::FilePath& path) {
   // "file://///server/path" for UNC. The URL canonicalizer will fix up the
   // latter case to be the canonical UNC form: "file://server/path"
   base::FilePath::StringType url_string(kFileURLPrefix);
+  if (!path.IsAbsolute()) {
+    base::FilePath current_dir;
+    PathService::Get(base::DIR_CURRENT, &current_dir);
+    url_string.append(current_dir.value());
+    url_string.push_back(base::FilePath::kSeparators[0]);
+  }
   url_string.append(path.value());
 
   // Now do replacement of some characters. Since we assume the input is a
@@ -1095,7 +1103,7 @@ std::string GetDirectoryListingHeader(const base::string16& title) {
     result.assign(header.data(), header.size());
 
   result.append("<script>start(");
-  base::JsonDoubleQuote(title, true, &result);
+  base::EscapeJSONString(title, true, &result);
   result.append(");</script>\n");
 
   return result;
@@ -1149,13 +1157,12 @@ std::string GetDirectoryListingEntry(const base::string16& name,
                                      Time modified) {
   std::string result;
   result.append("<script>addRow(");
-  base::JsonDoubleQuote(name, true, &result);
+  base::EscapeJSONString(name, true, &result);
   result.append(",");
   if (raw_bytes.empty()) {
-    base::JsonDoubleQuote(EscapePath(UTF16ToUTF8(name)),
-                                   true, &result);
+    base::EscapeJSONString(EscapePath(base::UTF16ToUTF8(name)), true, &result);
   } else {
-    base::JsonDoubleQuote(EscapePath(raw_bytes), true, &result);
+    base::EscapeJSONString(EscapePath(raw_bytes), true, &result);
   }
   if (is_dir) {
     result.append(",1,");
@@ -1167,7 +1174,7 @@ std::string GetDirectoryListingEntry(const base::string16& name,
   base::string16 size_string;
   if (size >= 0)
     size_string = FormatBytesUnlocalized(size);
-  base::JsonDoubleQuote(size_string, true, &result);
+  base::EscapeJSONString(size_string, true, &result);
 
   result.append(",");
 
@@ -1176,7 +1183,7 @@ std::string GetDirectoryListingEntry(const base::string16& name,
   if (!modified.is_null()) {
     modified_str = base::TimeFormatShortDateAndTime(modified);
   }
-  base::JsonDoubleQuote(modified_str, true, &result);
+  base::EscapeJSONString(modified_str, true, &result);
 
   result.append(");</script>\n");
 
@@ -1184,13 +1191,13 @@ std::string GetDirectoryListingEntry(const base::string16& name,
 }
 
 base::string16 StripWWW(const base::string16& text) {
-  const base::string16 www(ASCIIToUTF16("www."));
+  const base::string16 www(base::ASCIIToUTF16("www."));
   return StartsWith(text, www, true) ? text.substr(www.length()) : text;
 }
 
 base::string16 StripWWWFromHost(const GURL& url) {
   DCHECK(url.is_valid());
-  return StripWWW(ASCIIToUTF16(url.host()));
+  return StripWWW(base::ASCIIToUTF16(url.host()));
 }
 
 bool IsSafePortablePathComponent(const base::FilePath& component) {
@@ -1293,8 +1300,8 @@ base::string16 GetSuggestedFilename(const GURL& url,
   base::FilePath::StringType result_str, default_name_str;
 #if defined(OS_WIN)
   replace_trailing = true;
-  result_str = UTF8ToUTF16(filename);
-  default_name_str = UTF8ToUTF16(default_name);
+  result_str = base::UTF8ToUTF16(filename);
+  default_name_str = base::UTF8ToUTF16(default_name);
 #else
   result_str = filename;
   default_name_str = default_name;
@@ -1338,7 +1345,7 @@ base::FilePath GenerateFileName(const GURL& url,
   base::FilePath generated_name(file_name);
 #else
   base::FilePath generated_name(
-      base::SysWideToNativeMB(UTF16ToWide(file_name)));
+      base::SysWideToNativeMB(base::UTF16ToWide(file_name)));
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -1836,7 +1843,7 @@ base::string16 FormatUrlWithOffsets(
 
   // If we need to strip out http do it after the fact. This way we don't need
   // to worry about how offset_for_adjustment is interpreted.
-  if (omit_http && StartsWith(url_string, ASCIIToUTF16(kHTTP), true)) {
+  if (omit_http && StartsWith(url_string, base::ASCIIToUTF16(kHTTP), true)) {
     const size_t kHTTPSize = arraysize(kHTTP) - 1;
     url_string = url_string.substr(kHTTPSize);
     if (offsets_for_adjustment && !offsets_for_adjustment->empty()) {

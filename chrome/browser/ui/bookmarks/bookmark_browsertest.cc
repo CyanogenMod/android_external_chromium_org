@@ -82,10 +82,17 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, PRE_Persist) {
 
   bookmark_utils::AddIfNotBookmarked(
       bookmark_model, GURL(kPersistBookmarkURL),
-      ASCIIToUTF16(kPersistBookmarkTitle));
+      base::ASCIIToUTF16(kPersistBookmarkTitle));
 }
 
-IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, Persist) {
+#if defined(THREAD_SANITIZER)
+// BookmarkBrowsertest.Persist fails under ThreadSanitizer on Linux, see
+// http://crbug.com/340223.
+#define MAYBE_Persist DISABLED_Persist
+#else
+#define MAYBE_Persist Persist
+#endif
+IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, MAYBE_Persist) {
   BookmarkModel* bookmark_model = WaitForBookmarkModel(browser()->profile());
 
   std::vector<BookmarkService::URLAndTitle> urls;
@@ -93,7 +100,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, Persist) {
 
   ASSERT_EQ(1u, urls.size());
   ASSERT_EQ(GURL(kPersistBookmarkURL), urls[0].url);
-  ASSERT_EQ(ASCIIToUTF16(kPersistBookmarkTitle), urls[0].title);
+  ASSERT_EQ(base::ASCIIToUTF16(kPersistBookmarkTitle), urls[0].title);
 }
 
 #if !defined(OS_CHROMEOS)  // No multi-profile on ChromeOS.
@@ -115,7 +122,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, DISABLED_MultiProfile) {
 
   bookmark_utils::AddIfNotBookmarked(
       bookmark_model1, GURL(kPersistBookmarkURL),
-      ASCIIToUTF16(kPersistBookmarkTitle));
+      base::ASCIIToUTF16(kPersistBookmarkTitle));
   std::vector<BookmarkService::URLAndTitle> urls1, urls2;
   bookmark_model1->GetBookmarks(&urls1);
   bookmark_model2->GetBookmarks(&urls2);

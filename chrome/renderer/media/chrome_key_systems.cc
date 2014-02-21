@@ -66,8 +66,12 @@ static void AddExternalClearKey(
       "org.chromium.externalclearkey";
   static const char kExternalClearKeyDecryptOnlyKeySystem[] =
       "org.chromium.externalclearkey.decryptonly";
+  static const char kExternalClearKeyFileIOTestKeySystem[] =
+      "org.chromium.externalclearkey.fileiotest";
   static const char kExternalClearKeyInitializeFailKeySystem[] =
       "org.chromium.externalclearkey.initializefail";
+  static const char kExternalClearKeyCrashKeySystem[] =
+      "org.chromium.externalclearkey.crash";
   static const char kExternalClearKeyPepperType[] =
       "application/x-ppapi-clearkey-cdm";
 
@@ -91,14 +95,22 @@ static void AddExternalClearKey(
 
   concrete_key_systems->push_back(info);
 
+  // Add support of decrypt-only mode in ClearKeyCdm.
+  info.key_system = kExternalClearKeyDecryptOnlyKeySystem;
+  concrete_key_systems->push_back(info);
+
+  // A key system that triggers FileIO test in ClearKeyCdm.
+  info.key_system = kExternalClearKeyFileIOTestKeySystem;
+  concrete_key_systems->push_back(info);
+
   // A key system that Chrome thinks is supported by ClearKeyCdm, but actually
   // will be refused by ClearKeyCdm. This is to test the CDM initialization
   // failure case.
   info.key_system = kExternalClearKeyInitializeFailKeySystem;
   concrete_key_systems->push_back(info);
 
-  // Add support of decrypt-only mode in ClearKeyCdm.
-  info.key_system = kExternalClearKeyDecryptOnlyKeySystem;
+  // A key system that triggers a crash in ClearKeyCdm.
+  info.key_system = kExternalClearKeyCrashKeySystem;
   concrete_key_systems->push_back(info);
 }
 #endif  // defined(ENABLE_PEPPER_CDMS)
@@ -123,6 +135,7 @@ enum SupportedCodecMasks {
 #if defined(USE_PROPRIETARY_CODECS)
   MP4_AAC = 1 << 1,
   MP4_AVC1 = 1 << 2,
+  MP4_CODECS = (MP4_AAC | MP4_AVC1),
 #endif  // defined(USE_PROPRIETARY_CODECS)
 };
 
@@ -184,12 +197,16 @@ static void AddWidevineWithCodecs(
   }
 
 #if defined(USE_PROPRIETARY_CODECS)
-  if (supported_codecs & MP4_AAC)
-    info.supported_types.push_back(std::make_pair(kAudioMp4, kMp4a));
+  if (supported_codecs & MP4_CODECS) {
+    // MP4 container is supported for audio and video if any codec is supported.
+    bool is_aac_supported = (supported_codecs & MP4_AAC) != NO_CODECS;
+    bool is_avc1_supported = (supported_codecs & MP4_AVC1) != NO_CODECS;
+    const char* video_codecs = is_avc1_supported ?
+                               (is_aac_supported ? kMp4aAvc1Avc3 : kAvc1Avc3) :
+                               "";
+    const char* audio_codecs = is_aac_supported ? kMp4a : "";
 
-  if (supported_codecs & MP4_AVC1) {
-    const char* video_codecs =
-        (supported_codecs & MP4_AAC) ? kMp4aAvc1Avc3 : kAvc1Avc3;
+    info.supported_types.push_back(std::make_pair(kAudioMp4, audio_codecs));
     info.supported_types.push_back(std::make_pair(kVideoMp4, video_codecs));
   }
 #endif  // defined(USE_PROPRIETARY_CODECS)

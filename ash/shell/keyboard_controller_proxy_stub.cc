@@ -19,14 +19,21 @@ KeyboardControllerProxyStub::KeyboardControllerProxyStub() {
 KeyboardControllerProxyStub::~KeyboardControllerProxyStub() {
 }
 
+bool KeyboardControllerProxyStub::HasKeyboardWindow() const {
+  return keyboard_;
+}
+
 aura::Window* KeyboardControllerProxyStub::GetKeyboardWindow() {
-  aura::Window* window = new aura::Window(&delegate_);
-  window->Init(ui::LAYER_NOT_DRAWN);
-  return window;
+  if (!keyboard_) {
+    keyboard_.reset(new aura::Window(&delegate_));
+    keyboard_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  }
+  return keyboard_.get();
 }
 
 BrowserContext* KeyboardControllerProxyStub::GetBrowserContext() {
-  return Shell::GetInstance()->delegate()->GetCurrentBrowserContext();
+  // TODO(oshima): investigate which profile to use.
+  return Shell::GetInstance()->delegate()->GetActiveBrowserContext();
 }
 
 ui::InputMethod* KeyboardControllerProxyStub::GetInputMethod() {

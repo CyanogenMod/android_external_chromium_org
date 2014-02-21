@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "third_party/WebKit/public/platform/WebArrayBuffer.h"
+#include "third_party/WebKit/public/web/WebArrayBufferConverter.h"
 #include "third_party/WebKit/public/web/WebArrayBufferView.h"
 #include "v8/include/v8.h"
 
@@ -119,7 +120,7 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Value(
   return handle_scope.Escape(ToV8ValueImpl(context->GetIsolate(), value));
 }
 
-Value* V8ValueConverterImpl::FromV8Value(
+base::Value* V8ValueConverterImpl::FromV8Value(
     v8::Handle<v8::Value> val,
     v8::Handle<v8::Context> context) const {
   v8::Context::Scope context_scope(context);
@@ -201,7 +202,7 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
 v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Object(
     v8::Isolate* isolate,
     const base::DictionaryValue* val) const {
-  v8::Handle<v8::Object> result(v8::Object::New());
+  v8::Handle<v8::Object> result(v8::Object::New(isolate));
 
   for (base::DictionaryValue::Iterator iter(*val);
        !iter.IsAtEnd(); iter.Advance()) {
@@ -228,10 +229,10 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToArrayBuffer(
   blink::WebArrayBuffer buffer =
       blink::WebArrayBuffer::create(value->GetSize(), 1);
   memcpy(buffer.data(), value->GetBuffer(), value->GetSize());
-  return buffer.toV8Value();
+  return blink::WebArrayBufferConverter::toV8Value(&buffer);
 }
 
-Value* V8ValueConverterImpl::FromV8ValueImpl(
+base::Value* V8ValueConverterImpl::FromV8ValueImpl(
     v8::Handle<v8::Value> val,
     FromV8ValueState* state,
     v8::Isolate* isolate) const {
@@ -321,7 +322,7 @@ base::Value* V8ValueConverterImpl::FromV8Array(
     scope.reset(new v8::Context::Scope(val->CreationContext()));
 
   if (strategy_) {
-    Value* out = NULL;
+    base::Value* out = NULL;
     if (strategy_->FromV8Array(val, &out, isolate))
       return out;
   }
@@ -357,7 +358,7 @@ base::BinaryValue* V8ValueConverterImpl::FromV8Buffer(
   size_t length = 0;
 
   scoped_ptr<blink::WebArrayBuffer> array_buffer(
-      blink::WebArrayBuffer::createFromV8Value(val));
+      blink::WebArrayBufferConverter::createFromV8Value(val));
   scoped_ptr<blink::WebArrayBufferView> view;
   if (array_buffer) {
     data = reinterpret_cast<char*>(array_buffer->data());
@@ -391,7 +392,7 @@ base::Value* V8ValueConverterImpl::FromV8Object(
     scope.reset(new v8::Context::Scope(val->CreationContext()));
 
   if (strategy_) {
-    Value* out = NULL;
+    base::Value* out = NULL;
     if (strategy_->FromV8Object(val, &out, isolate))
       return out;
   }
@@ -406,8 +407,11 @@ base::Value* V8ValueConverterImpl::FromV8Object(
   //
   // NOTE: check this after |strategy_| so that callers have a chance to
   // do something else, such as convert to the node's name rather than NULL.
+  //
+  // ANOTHER NOTE: returning an empty dictionary here to minimise surprise.
+  // See also http://crbug.com/330559.
   if (val->InternalFieldCount())
-    return NULL;
+    return new base::DictionaryValue();
 
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
   v8::Handle<v8::Array> property_names(val->GetOwnPropertyNames());

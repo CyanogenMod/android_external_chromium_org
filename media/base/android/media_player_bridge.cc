@@ -18,7 +18,10 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
 
 // Time update happens every 250ms.
-static const int kTimeUpdateInterval = 250;
+const int kTimeUpdateInterval = 250;
+
+// blob url scheme.
+const char kBlobScheme[] = "blob";
 
 namespace media {
 
@@ -26,14 +29,15 @@ MediaPlayerBridge::MediaPlayerBridge(
     int player_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
+    const std::string& user_agent,
     bool hide_url_log,
     MediaPlayerManager* manager)
-    : MediaPlayerAndroid(player_id,
-                         manager),
+    : MediaPlayerAndroid(player_id, manager),
       prepared_(false),
       pending_play_(false),
       url_(url),
       first_party_for_cookies_(first_party_for_cookies),
+      user_agent_(user_agent),
       hide_url_log_(hide_url_log),
       width_(0),
       height_(0),
@@ -55,17 +59,16 @@ MediaPlayerBridge::~MediaPlayerBridge() {
 }
 
 void MediaPlayerBridge::Initialize() {
+  cookies_.clear();
   if (url_.SchemeIsFile()) {
-    cookies_.clear();
     ExtractMediaMetadata(url_.spec());
     return;
   }
 
   media::MediaResourceGetter* resource_getter =
       manager()->GetMediaResourceGetter();
-  if (url_.SchemeIsFileSystem()) {
-    cookies_.clear();
-    resource_getter->GetPlatformPathFromFileSystemURL(url_, base::Bind(
+  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+    resource_getter->GetPlatformPathFromURL(url_, base::Bind(
         &MediaPlayerBridge::ExtractMediaMetadata, weak_this_.GetWeakPtr()));
     return;
   }
@@ -127,13 +130,14 @@ void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
 void MediaPlayerBridge::Prepare() {
   DCHECK(j_media_player_bridge_.is_null());
   CreateJavaMediaPlayerBridge();
-  if (url_.SchemeIsFileSystem()) {
-    manager()->GetMediaResourceGetter()->GetPlatformPathFromFileSystemURL(
-            url_, base::Bind(&MediaPlayerBridge::SetDataSource,
-                             weak_this_.GetWeakPtr()));
-  } else {
-    SetDataSource(url_.spec());
+  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+    manager()->GetMediaResourceGetter()->GetPlatformPathFromURL(
+        url_, base::Bind(&MediaPlayerBridge::SetDataSource,
+                         weak_this_.GetWeakPtr()));
+    return;
   }
+
+  SetDataSource(url_.spec());
 }
 
 void MediaPlayerBridge::SetDataSource(const std::string& url) {
@@ -147,6 +151,8 @@ void MediaPlayerBridge::SetDataSource(const std::string& url) {
   ScopedJavaLocalRef<jstring> j_url_string = ConvertUTF8ToJavaString(env, url);
   ScopedJavaLocalRef<jstring> j_cookies = ConvertUTF8ToJavaString(
       env, cookies_);
+  ScopedJavaLocalRef<jstring> j_user_agent = ConvertUTF8ToJavaString(
+      env, user_agent_);
 
   jobject j_context = base::android::GetApplicationContext();
   DCHECK(j_context);
@@ -162,7 +168,7 @@ void MediaPlayerBridge::SetDataSource(const std::string& url) {
 
   if (!Java_MediaPlayerBridge_setDataSource(
       env, j_media_player_bridge_.obj(), j_context, j_url_string.obj(),
-      j_cookies.obj(), hide_url_log_)) {
+      j_cookies.obj(), j_user_agent.obj(), hide_url_log_)) {
     OnMediaError(MEDIA_ERROR_FORMAT);
     return;
   }
@@ -191,8 +197,9 @@ void MediaPlayerBridge::OnCookiesRetrieved(const std::string& cookies) {
 
 void MediaPlayerBridge::ExtractMediaMetadata(const std::string& url) {
   manager()->GetMediaResourceGetter()->ExtractMediaMetadata(
-      url, cookies_, base::Bind(&MediaPlayerBridge::OnMediaMetadataExtracted,
-                                weak_this_.GetWeakPtr()));
+      url, cookies_, user_agent_,
+      base::Bind(&MediaPlayerBridge::OnMediaMetadataExtracted,
+                 weak_this_.GetWeakPtr()));
 }
 
 void MediaPlayerBridge::OnMediaMetadataExtracted(

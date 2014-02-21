@@ -39,7 +39,7 @@ void PlatformVerificationDialog::ShowDialog(
 
   PlatformVerificationDialog* dialog = new PlatformVerificationDialog(
       chrome::FindBrowserWithWebContents(web_contents),
-      UTF8ToUTF16(origin),
+      base::UTF8ToUTF16(origin),
       callback);
 
   // Sets up the dialog widget and shows it.
@@ -64,7 +64,7 @@ PlatformVerificationDialog::PlatformVerificationDialog(
       domain_(domain),
       callback_(callback) {
   SetLayoutManager(new views::FillLayout());
-  set_border(views::Border::CreateEmptyBorder(
+  SetBorder(views::Border::CreateEmptyBorder(
       0, views::kButtonHEdgeMarginNew, 0, views::kButtonHEdgeMarginNew));
   const base::string16 learn_more = l10n_util::GetStringUTF16(IDS_LEARN_MORE);
   std::vector<size_t> offsets;
@@ -113,7 +113,7 @@ gfx::Size PlatformVerificationDialog::GetPreferredSize() {
 void PlatformVerificationDialog::StyledLabelLinkClicked(const gfx::Range& range,
                                                         int event_flags) {
   chrome::ShowSingletonTab(browser_, GURL(
-      chrome::kAttestationForContentProtectionLearnMoreURL));
+      chrome::kEnhancedPlaybackNotificationLearnMoreURL));
 }
 
 }  // namespace attestation

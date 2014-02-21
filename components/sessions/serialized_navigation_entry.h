@@ -133,6 +133,10 @@ class SESSIONS_EXPORT SerializedNavigationEntry {
  private:
   friend class SerializedNavigationEntryTestHelper;
 
+  // Sanitizes the data in this class to be more robust against faulty data
+  // written by older versions.
+  void Sanitize();
+
   // Index in the NavigationController.
   int index_;
 
@@ -151,6 +155,7 @@ class SESSIONS_EXPORT SerializedNavigationEntry {
   base::string16 search_terms_;
   GURL favicon_url_;
   int http_status_code_;
+  bool is_restored_;    // Not persisted.
 
   // Additional information.
   BlockedState blocked_state_;

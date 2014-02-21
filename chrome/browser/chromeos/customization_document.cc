@@ -12,12 +12,12 @@
 #include "base/logging.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/system/statistics_provider.h"
@@ -89,16 +89,16 @@ bool CustomizationDocument::LoadManifestFromString(
     const std::string& manifest) {
   int error_code = 0;
   std::string error;
-  scoped_ptr<Value> root(base::JSONReader::ReadAndReturnError(manifest,
+  scoped_ptr<base::Value> root(base::JSONReader::ReadAndReturnError(manifest,
       base::JSON_ALLOW_TRAILING_COMMAS, &error_code, &error));
   if (error_code != base::JSONReader::JSON_NO_ERROR)
     LOG(ERROR) << error;
   DCHECK(root.get() != NULL);
   if (root.get() == NULL)
     return false;
-  DCHECK(root->GetType() == Value::TYPE_DICTIONARY);
-  if (root->GetType() == Value::TYPE_DICTIONARY) {
-    root_.reset(static_cast<DictionaryValue*>(root.release()));
+  DCHECK(root->GetType() == base::Value::TYPE_DICTIONARY);
+  if (root->GetType() == base::Value::TYPE_DICTIONARY) {
+    root_.reset(static_cast<base::DictionaryValue*>(root.release()));
     std::string result;
     if (root_->GetString(kVersionAttr, &result) &&
         result == accepted_version_)
@@ -114,19 +114,19 @@ std::string CustomizationDocument::GetLocaleSpecificString(
     const std::string& locale,
     const std::string& dictionary_name,
     const std::string& entry_name) const {
-  DictionaryValue* dictionary_content = NULL;
+  base::DictionaryValue* dictionary_content = NULL;
   if (!root_.get() ||
       !root_->GetDictionary(dictionary_name, &dictionary_content))
     return std::string();
 
-  DictionaryValue* locale_dictionary = NULL;
+  base::DictionaryValue* locale_dictionary = NULL;
   if (dictionary_content->GetDictionary(locale, &locale_dictionary)) {
     std::string result;
     if (locale_dictionary->GetString(entry_name, &result))
       return result;
   }
 
-  DictionaryValue* default_dictionary = NULL;
+  base::DictionaryValue* default_dictionary = NULL;
   if (dictionary_content->GetDictionary(kDefaultAttr, &default_dictionary)) {
     std::string result;
     if (default_dictionary->GetString(entry_name, &result))
@@ -175,10 +175,10 @@ void StartupCustomizationDocument::Init(
     std::string hwid;
     if (statistics_provider->GetMachineStatistic(
             chromeos::system::kHardwareClassKey, &hwid)) {
-      ListValue* hwid_list = NULL;
+      base::ListValue* hwid_list = NULL;
       if (root_->GetList(kHwidMapAttr, &hwid_list)) {
         for (size_t i = 0; i < hwid_list->GetSize(); ++i) {
-          DictionaryValue* hwid_dictionary = NULL;
+          base::DictionaryValue* hwid_dictionary = NULL;
           std::string hwid_mask;
           if (hwid_list->GetDictionary(i, &hwid_dictionary) &&
               hwid_dictionary->GetString(kHwidMaskAttr, &hwid_mask)) {
@@ -213,6 +213,22 @@ void StartupCustomizationDocument::Init(
                                            &initial_timezone_);
   statistics_provider->GetMachineStatistic(kKeyboardLayoutAttr,
                                            &keyboard_layout_);
+  configured_locales_.resize(0);
+  base::SplitString(initial_locale_, ',', &configured_locales_);
+  // Let's always have configured_locales_.front() a valid entry.
+  if (configured_locales_.size() == 0)
+    configured_locales_.push_back(std::string());
+}
+
+const std::vector<std::string>&
+StartupCustomizationDocument::configured_locales() const {
+  return configured_locales_;
+}
+
+const std::string& StartupCustomizationDocument::initial_locale_default()
+    const {
+  DCHECK(configured_locales_.size() > 0);
+  return configured_locales_.front();
 }
 
 std::string StartupCustomizationDocument::GetHelpPage(
@@ -297,8 +313,7 @@ void ServicesCustomizationDocument::StartFileFetch() {
   DCHECK(url_.is_valid());
   url_fetcher_.reset(net::URLFetcher::Create(
       url_, net::URLFetcher::GET, this));
-  url_fetcher_->SetRequestContext(
-      ProfileManager::GetDefaultProfile()->GetRequestContext());
+  url_fetcher_->SetRequestContext(g_browser_process->system_request_context());
   url_fetcher_->Start();
 }
 

@@ -12,6 +12,10 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 
+#if defined(OS_ANDROID)
+#include "chrome/browser/prerender/prerender_field_trial.h"
+#endif
+
 namespace chrome {
 
 namespace {
@@ -51,23 +55,19 @@ void DataCompressionProxyBaseFieldTrial(
 
 void DataCompressionProxyFieldTrials() {
   // Governs the rollout of the compression proxy for Chrome on mobile
-  // platforms. Always enabled in DEV and BETA channels. For STABLE, the
-  // percentage will be controlled from the server, and is configured to be
-  // 10% = 100 / 1000 until overridden by the server.
+  // platforms. In all channels, the percentage will be controlled from the
+  // server, and is configured to be 100% = 1000 / 1000 until overridden by the
+  // server.
   DataCompressionProxyBaseFieldTrial(
-      "DataCompressionProxyRollout", 100, 1000);
+      "DataCompressionProxyRollout", 1000, 1000);
 
-  if (base::FieldTrialList::FindFullName(
-      "DataCompressionProxyRollout") == "Enabled") {
-
-    // Governs the rollout of the _promo_ for the compression proxy
-    // independently from the rollout of compression proxy. The enabled
-    // percentage is configured to be 100% = 1000 / 1000 until overridden by the
-    // server. When this trial is "Enabled," users get a promo, whereas
-    // otherwise, compression is enabled without a promo.
-    DataCompressionProxyBaseFieldTrial(
-        "DataCompressionProxyPromoVisibility", 1000, 1000);
-  }
+  // Governs the rollout of the _promo_ for the compression proxy
+  // independently from the rollout of compression proxy. The enabled
+  // percentage is configured to be 10% = 100 / 1000 until overridden by the
+  // server. When this trial is "Enabled," users get a promo, whereas
+  // otherwise, compression is available without a promo.
+  DataCompressionProxyBaseFieldTrial(
+      "DataCompressionProxyPromoVisibility", 100, 1000);
 }
 
 }  // namespace
@@ -76,6 +76,9 @@ void SetupMobileFieldTrials(const CommandLine& parsed_command_line,
                             const base::Time& install_time,
                             PrefService* local_state) {
   DataCompressionProxyFieldTrials();
+#if defined(OS_ANDROID)
+  prerender::ConfigurePrerender(parsed_command_line);
+#endif
 }
 
 }  // namespace chrome

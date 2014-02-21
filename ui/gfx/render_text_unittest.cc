@@ -28,6 +28,10 @@
 #include <gtk/gtk.h>
 #endif
 
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
+using base::WideToUTF16;
+
 namespace gfx {
 
 namespace {
@@ -283,10 +287,10 @@ TEST_F(RenderTextTest, ObscuredText) {
   render_text->SetObscured(true);
 
   // Surrogate pairs are counted as one code point.
-  const char16 invalid_surrogates[] = {0xDC00, 0xD800, 0};
+  const base::char16 invalid_surrogates[] = {0xDC00, 0xD800, 0};
   render_text->SetText(invalid_surrogates);
   EXPECT_EQ(ASCIIToUTF16("**"), render_text->GetLayoutText());
-  const char16 valid_surrogates[] = {0xD800, 0xDC00, 0};
+  const base::char16 valid_surrogates[] = {0xD800, 0xDC00, 0};
   render_text->SetText(valid_surrogates);
   EXPECT_EQ(ASCIIToUTF16("*"), render_text->GetLayoutText());
   EXPECT_EQ(0U, render_text->cursor_position());
@@ -370,35 +374,122 @@ TEST_F(RenderTextTest, RevealObscuredText) {
   EXPECT_EQ(ASCIIToUTF16("**********"), render_text->GetLayoutText());
 
   // Text with invalid surrogates.
-  const char16 invalid_surrogates[] = {0xDC00, 0xD800, 'h', 'o', 'p', 0};
+  const base::char16 invalid_surrogates[] = {0xDC00, 0xD800, 'h', 'o', 'p', 0};
   render_text->SetText(invalid_surrogates);
   EXPECT_EQ(ASCIIToUTF16("*****"), render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(0);
-  const char16 invalid_expect_0[] = {0xDC00, '*', '*', '*', '*', 0};
+  const base::char16 invalid_expect_0[] = {0xDC00, '*', '*', '*', '*', 0};
   EXPECT_EQ(invalid_expect_0, render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(1);
-  const char16 invalid_expect_1[] = {'*', 0xD800, '*', '*', '*', 0};
+  const base::char16 invalid_expect_1[] = {'*', 0xD800, '*', '*', '*', 0};
   EXPECT_EQ(invalid_expect_1, render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(2);
   EXPECT_EQ(ASCIIToUTF16("**h**"), render_text->GetLayoutText());
 
   // Text with valid surrogates before and after the reveal index.
-  const char16 valid_surrogates[] =
+  const base::char16 valid_surrogates[] =
       {0xD800, 0xDC00, 'h', 'o', 'p', 0xD800, 0xDC00, 0};
   render_text->SetText(valid_surrogates);
   EXPECT_EQ(ASCIIToUTF16("*****"), render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(0);
-  const char16 valid_expect_0_and_1[] = {0xD800, 0xDC00, '*', '*', '*', '*', 0};
+  const base::char16 valid_expect_0_and_1[] =
+      {0xD800, 0xDC00, '*', '*', '*', '*', 0};
   EXPECT_EQ(valid_expect_0_and_1, render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(1);
   EXPECT_EQ(valid_expect_0_and_1, render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(2);
   EXPECT_EQ(ASCIIToUTF16("*h***"), render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(5);
-  const char16 valid_expect_5_and_6[] = {'*', '*', '*', '*', 0xD800, 0xDC00, 0};
+  const base::char16 valid_expect_5_and_6[] =
+      {'*', '*', '*', '*', 0xD800, 0xDC00, 0};
   EXPECT_EQ(valid_expect_5_and_6, render_text->GetLayoutText());
   render_text->RenderText::SetObscuredRevealIndex(6);
   EXPECT_EQ(valid_expect_5_and_6, render_text->GetLayoutText());
+}
+
+TEST_F(RenderTextTest, ElidedText) {
+  // TODO(skanuj) : Add more test cases for following
+  // - RenderText styles.
+  // - Cross interaction of truncate, elide and obscure.
+  // - ElideText tests from text_elider.cc.
+  struct {
+    const wchar_t* text;
+    const wchar_t* layout_text;
+    const bool elision_expected;
+  } cases[] = {
+    // Strings shorter than the elision width should be laid out in full.
+    { L"",        L""       , false },
+    { kWeak,      kWeak     , false },
+    { kLtr,       kLtr      , false },
+    { kLtrRtl,    kLtrRtl   , false },
+    { kLtrRtlLtr, kLtrRtlLtr, false },
+    { kRtl,       kRtl      , false },
+    { kRtlLtr,    kRtlLtr   , false },
+    { kRtlLtrRtl, kRtlLtrRtl, false },
+    // Strings as long as the elision width should be laid out in full.
+    { L"012ab",   L"012ab"  , false },
+    // Long strings should be elided with an ellipsis appended at the end.
+    { L"012abc",              L"012a\x2026", true },
+    { L"012ab" L"\x5d0\x5d1", L"012a\x2026", true },
+    { L"012a" L"\x5d1" L"b",  L"012a\x2026", true },
+    // No RLM marker added as digits (012) have weak directionality.
+    { L"01" L"\x5d0\x5d1\x5d2", L"01\x5d0\x5d1\x2026", true },
+    // RLM marker added as "ab" have strong LTR directionality.
+    { L"ab" L"\x5d0\x5d1\x5d2", L"ab\x5d0\x5d1\x2026\x200f", true },
+    // Complex script is not handled. In this example, the "\x0915\x093f" is a
+    // compound glyph, but only half of it is elided.
+    { L"0123\x0915\x093f", L"0123\x0915\x2026", true },
+    // Surrogate pairs should be elided reasonably enough.
+    { L"0\x05e9\x05bc\x05c1\x05b8",   L"0\x05e9\x05bc\x05c1\x05b8", false },
+    { L"0\x05e9\x05bc\x05c1\x05b8",   L"0\x05e9\x05bc\x2026"      , true  },
+    { L"01\x05e9\x05bc\x05c1\x05b8",  L"01\x05e9\x2026"           , true  },
+    { L"012\x05e9\x05bc\x05c1\x05b8", L"012\x2026"                , true  },
+    { L"012\xF0\x9D\x84\x9E",         L"012\xF0\x2026"            , true  },
+  };
+
+  scoped_ptr<RenderText> expected_render_text(RenderText::CreateInstance());
+  expected_render_text->SetFontList(FontList("serif, Sans serif, 12px"));
+  expected_render_text->SetDisplayRect(gfx::Rect(0, 0, 9999, 100));
+
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetFontList(FontList("serif, Sans serif, 12px"));
+  render_text->SetElideBehavior(gfx::ELIDE_AT_END);
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
+    // Compute expected width
+    expected_render_text->SetText(WideToUTF16(cases[i].layout_text));
+    int expected_width = expected_render_text->GetContentWidth();
+
+    base::string16 input = WideToUTF16(cases[i].text);
+    // Extend the input text to ensure that it is wider than the layout_text,
+    // and so it will get elided.
+    if (cases[i].elision_expected)
+      input.append(WideToUTF16(L" MMMMMMMMMMM"));
+
+    render_text->SetText(input);
+    render_text->SetDisplayRect(gfx::Rect(0, 0, expected_width, 100));
+    EXPECT_EQ(input, render_text->text());
+    EXPECT_EQ(WideToUTF16(cases[i].layout_text), render_text->GetLayoutText())
+        << "->For case " << i << ": " << cases[i].text << "\n";
+    expected_render_text->SetText(base::string16());
+  }
+}
+
+TEST_F(RenderTextTest, ElidedObscuredText) {
+  scoped_ptr<RenderText> expected_render_text(RenderText::CreateInstance());
+  expected_render_text->SetFontList(FontList("serif, Sans serif, 12px"));
+  expected_render_text->SetDisplayRect(gfx::Rect(0, 0, 9999, 100));
+  expected_render_text->SetText(WideToUTF16(L"**\x2026"));
+
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetFontList(FontList("serif, Sans serif, 12px"));
+  render_text->SetElideBehavior(gfx::ELIDE_AT_END);
+  render_text->SetDisplayRect(
+      gfx::Rect(0, 0, expected_render_text->GetContentWidth(), 100));
+  render_text->SetObscured(true);
+  render_text->SetText(WideToUTF16(L"abcdef"));
+  EXPECT_EQ(WideToUTF16(L"abcdef"), render_text->text());
+  EXPECT_EQ(WideToUTF16(L"**\x2026"), render_text->GetLayoutText());
 }
 
 TEST_F(RenderTextTest, TruncatedText) {
@@ -742,7 +833,7 @@ TEST_F(RenderTextTest, MoveCursorLeftRight_MeiryoUILigatures) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   // Meiryo UI uses single-glyph ligatures for 'ff' and 'ffi', but each letter
   // (code point) has unique bounds, so mid-glyph cursoring should be possible.
-  render_text->SetFont(Font("Meiryo UI", 12));
+  render_text->SetFontList(FontList("Meiryo UI, 12px"));
   render_text->SetText(WideToUTF16(L"ff ffi"));
   EXPECT_EQ(0U, render_text->cursor_position());
   for (size_t i = 0; i < render_text->text().length(); ++i) {
@@ -1210,13 +1301,6 @@ TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   EXPECT_EQ(font_list.GetBaseline(), render_text->GetBaseline());
 }
 
-TEST_F(RenderTextTest, SetFont) {
-  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-  render_text->SetFont(Font("Arial", 12));
-  EXPECT_EQ("Arial", render_text->GetPrimaryFont().GetFontName());
-  EXPECT_EQ(12, render_text->GetPrimaryFont().GetFontSize());
-}
-
 TEST_F(RenderTextTest, SetFontList) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(FontList("Arial,Symbol, 13px"));
@@ -1224,7 +1308,7 @@ TEST_F(RenderTextTest, SetFontList) {
   ASSERT_EQ(2U, fonts.size());
   EXPECT_EQ("Arial", fonts[0].GetFontName());
   EXPECT_EQ("Symbol", fonts[1].GetFontName());
-  EXPECT_EQ(13, render_text->GetPrimaryFont().GetFontSize());
+  EXPECT_EQ(13, render_text->font_list().GetFontSize());
 }
 
 TEST_F(RenderTextTest, StringSizeBoldWidth) {
@@ -1254,20 +1338,20 @@ TEST_F(RenderTextTest, StringSizeHeight) {
     WideToUTF16(L"\x05e0\x05b8"),  // Hebrew
   };
 
-  Font default_font;
-  Font larger_font = default_font.DeriveFont(24, default_font.GetStyle());
-  EXPECT_GT(larger_font.GetHeight(), default_font.GetHeight());
+  const FontList default_font_list;
+  const FontList& larger_font_list = default_font_list.DeriveWithSizeDelta(24);
+  EXPECT_GT(larger_font_list.GetHeight(), default_font_list.GetHeight());
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-    render_text->SetFont(default_font);
+    render_text->SetFontList(default_font_list);
     render_text->SetText(cases[i]);
 
     const int height1 = render_text->GetStringSize().height();
     EXPECT_GT(height1, 0);
 
     // Check that setting the larger font increases the height.
-    render_text->SetFont(larger_font);
+    render_text->SetFontList(larger_font_list);
     const int height2 = render_text->GetStringSize().height();
     EXPECT_GT(height2, height1);
   }
@@ -1364,8 +1448,8 @@ TEST_F(RenderTextTest, GetTextOffsetHorizontalDefaultInRTL) {
 
 TEST_F(RenderTextTest, SameFontForParentheses) {
   struct {
-    const char16 left_char;
-    const char16 right_char;
+    const base::char16 left_char;
+    const base::char16 right_char;
   } punctuation_pairs[] = {
     { '(', ')' },
     { '{', '}' },

@@ -53,9 +53,8 @@ TEST(DriveAPIParserTest, AppListParser) {
   EXPECT_TRUE(app1.supports_import());
   EXPECT_TRUE(app1.is_installed());
   EXPECT_FALSE(app1.is_authorized());
-  EXPECT_EQ("https://chrome.google.com/webstore/detail/"
-            "abcdefghabcdefghabcdefghabcdefgh",
-            app1.product_url().spec());
+  EXPECT_TRUE(app1.is_removable());
+  EXPECT_EQ("abcdefghabcdefghabcdefghabcdefgh", app1.product_id());
 
   ASSERT_EQ(1U, app1.primary_mimetypes().size());
   EXPECT_EQ("application/vnd.google-apps.drive-sdk.123456788192",
@@ -82,6 +81,8 @@ TEST(DriveAPIParserTest, AppListParser) {
   EXPECT_EQ(16, icon6.icon_side_length());
   EXPECT_EQ("http://www.example.com/ds16.png", icon6.icon_url().spec());
 
+  EXPECT_EQ("https://www.example.com/createForApp1", app1.create_url().spec());
+
   // Check Drive app 2
   const AppResource& app2 = *applist->items()[1];
   EXPECT_EQ("876543210000", app2.application_id());
@@ -91,9 +92,8 @@ TEST(DriveAPIParserTest, AppListParser) {
   EXPECT_FALSE(app2.supports_import());
   EXPECT_TRUE(app2.is_installed());
   EXPECT_FALSE(app2.is_authorized());
-  EXPECT_EQ("https://chrome.google.com/webstore/detail/"
-            "hgfedcbahgfedcbahgfedcbahgfedcba",
-            app2.product_url().spec());
+  EXPECT_FALSE(app2.is_removable());
+  EXPECT_EQ("hgfedcbahgfedcbahgfedcbahgfedcba", app2.product_id());
 
   ASSERT_EQ(3U, app2.primary_mimetypes().size());
   EXPECT_EQ("image/jpeg", *app2.primary_mimetypes()[0]);
@@ -110,6 +110,8 @@ TEST(DriveAPIParserTest, AppListParser) {
   EXPECT_EQ(DriveAppIcon::DOCUMENT, icon2.category());
   EXPECT_EQ(10, icon2.icon_side_length());
   EXPECT_EQ("http://www.example.com/d10.png", icon2.icon_url().spec());
+
+  EXPECT_EQ("https://www.example.com/createForApp2", app2.create_url().spec());
 }
 
 // Test file list parsing.

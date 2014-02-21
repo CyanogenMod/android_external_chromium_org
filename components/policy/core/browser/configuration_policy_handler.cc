@@ -13,7 +13,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "components/policy/core/browser/configuration_policy_pref_store.h"
 #include "components/policy/core/browser/policy_error_map.h"
 #include "components/policy/core/common/policy_map.h"
 #include "grit/component_strings.h"
@@ -24,7 +23,8 @@ namespace policy {
 // ConfigurationPolicyHandler implementation -----------------------------------
 
 // static
-std::string ConfigurationPolicyHandler::ValueTypeToString(Value::Type type) {
+std::string ConfigurationPolicyHandler::ValueTypeToString(
+    base::Value::Type type) {
   static const char* strings[] = {
     "null",
     "boolean",
@@ -53,7 +53,7 @@ void ConfigurationPolicyHandler::PrepareForDisplaying(
 
 TypeCheckingPolicyHandler::TypeCheckingPolicyHandler(
     const char* policy_name,
-    Value::Type value_type)
+    base::Value::Type value_type)
     : policy_name_(policy_name),
       value_type_(value_type) {
 }
@@ -67,13 +67,13 @@ const char* TypeCheckingPolicyHandler::policy_name() const {
 
 bool TypeCheckingPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
                                                     PolicyErrorMap* errors) {
-  const Value* value = NULL;
+  const base::Value* value = NULL;
   return CheckAndGetValue(policies, errors, &value);
 }
 
 bool TypeCheckingPolicyHandler::CheckAndGetValue(const PolicyMap& policies,
                                                  PolicyErrorMap* errors,
-                                                 const Value** value) {
+                                                 const base::Value** value) {
   *value = policies.GetValue(policy_name_);
   if (*value && !(*value)->IsType(value_type_)) {
     errors->AddError(policy_name_,
@@ -278,7 +278,7 @@ void IntPercentageToDoublePolicyHandler::ApplyPolicySettings(
 SimplePolicyHandler::SimplePolicyHandler(
     const char* policy_name,
     const char* pref_path,
-    Value::Type value_type)
+    base::Value::Type value_type)
     : TypeCheckingPolicyHandler(policy_name, value_type),
       pref_path_(pref_path) {
 }
@@ -290,9 +290,70 @@ void SimplePolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
                                               PrefValueMap* prefs) {
   if (!pref_path_)
     return;
-  const Value* value = policies.GetValue(policy_name());
+  const base::Value* value = policies.GetValue(policy_name());
   if (value)
     prefs->SetValue(pref_path_, value->DeepCopy());
+}
+
+
+// SchemaValidatingPolicyHandler implementation --------------------------------
+
+SchemaValidatingPolicyHandler::SchemaValidatingPolicyHandler(
+    const char* policy_name,
+    Schema schema,
+    SchemaOnErrorStrategy strategy)
+    : policy_name_(policy_name), schema_(schema), strategy_(strategy) {
+  DCHECK(schema_.valid());
+}
+
+SchemaValidatingPolicyHandler::~SchemaValidatingPolicyHandler() {
+}
+
+const char* SchemaValidatingPolicyHandler::policy_name() const {
+  return policy_name_;
+}
+
+bool SchemaValidatingPolicyHandler::CheckPolicySettings(
+    const PolicyMap& policies,
+    PolicyErrorMap* errors) {
+  const base::Value* value = policies.GetValue(policy_name());
+  if (!value)
+    return true;
+
+  std::string error_path;
+  std::string error;
+  bool result = schema_.Validate(*value, strategy_, &error_path, &error);
+
+  if (errors && !error.empty()) {
+    if (error_path.empty())
+      error_path = "(ROOT)";
+    errors->AddError(policy_name_, error_path, error);
+  }
+
+  return result;
+}
+
+bool SchemaValidatingPolicyHandler::CheckAndGetValue(
+    const PolicyMap& policies,
+    PolicyErrorMap* errors,
+    scoped_ptr<base::Value>* output) {
+  const base::Value* value = policies.GetValue(policy_name());
+  if (!value)
+    return true;
+
+  output->reset(value->DeepCopy());
+  std::string error_path;
+  std::string error;
+  bool result =
+      schema_.Normalize(output->get(), strategy_, &error_path, &error);
+
+  if (errors && !error.empty()) {
+    if (error_path.empty())
+      error_path = "(ROOT)";
+    errors->AddError(policy_name_, error_path, error);
+  }
+
+  return result;
 }
 
 }  // namespace policy

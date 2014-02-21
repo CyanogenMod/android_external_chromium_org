@@ -43,8 +43,7 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
       QuicTime feedback_receive_time,
       const SentPacketsMap& sent_packets) OVERRIDE;
   virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
-                             QuicByteCount acked_bytes,
-                             QuicTime::Delta rtt) OVERRIDE;
+                             QuicByteCount acked_bytes) OVERRIDE;
   virtual void OnPacketLost(QuicPacketSequenceNumber largest_loss,
                             QuicTime ack_receive_time) OVERRIDE;
   virtual bool OnPacketSent(QuicTime sent_time,
@@ -52,7 +51,7 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
                             QuicByteCount bytes,
                             TransmissionType transmission_type,
                             HasRetransmittableData is_retransmittable) OVERRIDE;
-  virtual void OnRetransmissionTimeout() OVERRIDE;
+  virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
                                  QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
@@ -61,6 +60,7 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual void UpdateRtt(QuicTime::Delta rtt_sample) OVERRIDE;
   virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
   virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
@@ -72,9 +72,9 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   QuicByteCount AvailableSendWindow();
   QuicByteCount SendWindow();
   void Reset();
-  void AckAccounting(QuicTime::Delta rtt);
-  void CongestionAvoidance(QuicPacketSequenceNumber ack);
+  void MaybeIncreaseCwnd(QuicPacketSequenceNumber acked_sequence_number);
   bool IsCwndLimited() const;
+  bool InRecovery() const;
   void OnTimeOut();
 
   HybridSlowStart hybrid_slow_start_;
@@ -89,11 +89,16 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   // Receiver side advertised window.
   QuicByteCount receive_window_;
 
-  // Receiver side advertised packet loss.
-  int last_received_accumulated_number_of_lost_packets_;
-
   // Bytes in flight, aka bytes on the wire.
   QuicByteCount bytes_in_flight_;
+
+  // Bytes sent and acked since the last loss event.  Used for PRR.
+  QuicByteCount prr_out_;
+  QuicByteCount prr_delivered_;
+  size_t ack_count_since_loss_;
+
+  // The congestion window before the last loss event.
+  QuicByteCount bytes_in_flight_before_loss_;
 
   // We need to keep track of the end sequence number of each RTT "burst".
   bool update_end_sequence_number_;
@@ -111,7 +116,7 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   // Congestion window in packets.
   QuicTcpCongestionWindow congestion_window_;
 
-  // Slow start congestion window in packets.
+  // Slow start congestion window in packets, aka ssthresh.
   QuicTcpCongestionWindow slowstart_threshold_;
 
   // Maximum number of outstanding packets for tcp.

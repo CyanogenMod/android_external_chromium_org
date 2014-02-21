@@ -73,9 +73,9 @@ class ImageLoaderTest : public testing::Test {
     int error_code = 0;
     std::string error;
     JSONFileValueSerializer serializer(test_file.AppendASCII("app.json"));
-    scoped_ptr<DictionaryValue> valid_value(
-        static_cast<DictionaryValue*>(serializer.Deserialize(&error_code,
-                                                             &error)));
+    scoped_ptr<base::DictionaryValue> valid_value(
+        static_cast<base::DictionaryValue*>(serializer.Deserialize(&error_code,
+                                                                   &error)));
     EXPECT_EQ(0, error_code) << error;
     if (error_code != 0)
       return NULL;
@@ -250,7 +250,7 @@ TEST_F(ImageLoaderTest, IsComponentExtensionResource) {
       extension_misc::EXTENSION_ICON_BITTY,
       ExtensionIconSet::MATCH_EXACTLY);
 
-#if defined(FILE_MANAGER_EXTENSION)
+#if defined(OS_CHROMEOS)
   int resource_id;
   ASSERT_EQ(true,
             ImageLoader::IsComponentExtensionResource(extension->path(),

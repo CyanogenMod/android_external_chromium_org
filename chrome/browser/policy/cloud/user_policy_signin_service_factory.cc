@@ -7,18 +7,20 @@
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "net/url_request/url_request_context_getter.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/policy/cloud/user_policy_signin_service_android.h"
+#elif defined(OS_IOS)
+#include "chrome/browser/policy/cloud/user_policy_signin_service_ios.h"
 #else
 #include "chrome/browser/policy/cloud/user_policy_signin_service.h"
 #endif
@@ -70,12 +72,12 @@ UserPolicySigninServiceFactory::BuildServiceInstanceFor(
   DeviceManagementService* device_management_service =
       g_device_management_service ? g_device_management_service
                                   : connector->device_management_service();
-  // TODO(atwilson): Inject SigninManager here or remove the dependency
-  // entirely. http://crbug.com/276270.
   UserPolicySigninService* service = new UserPolicySigninService(
       profile,
       g_browser_process->local_state(),
       device_management_service,
+      UserCloudPolicyManagerFactory::GetForBrowserContext(context),
+      SigninManagerFactory::GetForProfile(profile),
       g_browser_process->system_request_context(),
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile));
   return service;
@@ -83,9 +85,17 @@ UserPolicySigninServiceFactory::BuildServiceInstanceFor(
 
 bool
 UserPolicySigninServiceFactory::ServiceIsCreatedWithBrowserContext() const {
+#if defined(OS_IOS)
+  // This service isn't required at Profile creation time on iOS.
+  // Creating it at that time also leads to a crash, because the SigninManager
+  // trigger a token fetch too early (this isn't a problem on other platforms,
+  // because the refresh token isn't available that early).
+  return false;
+#else
   // Create this object when the profile is created so it can track any
   // user signin activity.
   return true;
+#endif
 }
 
 void UserPolicySigninServiceFactory::RegisterProfilePrefs(

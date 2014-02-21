@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_DRIVE_FILE_SYSTEM_OBSERVER_H_
 
 #include "chrome/browser/chromeos/drive/file_errors.h"
+#include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 
 namespace base {
 class FilePath;
@@ -22,6 +23,11 @@ class FileSystemObserver {
   // |directory_path| is a virtual directory path (/drive/...) representing
   // changed directory.
   virtual void OnDirectoryChanged(const base::FilePath& directory_path) {}
+
+  // Triggared when a specific drive error occurred.
+  // |type| is a type of the error. |file_name| is a virtual path of the entry.
+  virtual void OnDriveSyncError(file_system::DriveSyncErrorType type,
+                                const base::FilePath& file_path) {}
 
  protected:
   virtual ~FileSystemObserver() {}

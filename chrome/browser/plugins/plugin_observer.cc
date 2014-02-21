@@ -24,6 +24,7 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -64,7 +65,7 @@ class ConfirmInstallDialogDelegate : public TabModalConfirmDialogDelegate,
 
   // TabModalConfirmDialogDelegate methods:
   virtual base::string16 GetTitle() OVERRIDE;
-  virtual base::string16 GetMessage() OVERRIDE;
+  virtual base::string16 GetDialogMessage() OVERRIDE;
   virtual base::string16 GetAcceptButtonTitle() OVERRIDE;
   virtual void OnAccepted() OVERRIDE;
   virtual void OnCanceled() OVERRIDE;
@@ -88,17 +89,17 @@ ConfirmInstallDialogDelegate::ConfirmInstallDialogDelegate(
       plugin_metadata_(plugin_metadata.Pass()) {
 }
 
-string16 ConfirmInstallDialogDelegate::GetTitle() {
+base::string16 ConfirmInstallDialogDelegate::GetTitle() {
   return l10n_util::GetStringFUTF16(
       IDS_PLUGIN_CONFIRM_INSTALL_DIALOG_TITLE, plugin_metadata_->name());
 }
 
-string16 ConfirmInstallDialogDelegate::GetMessage() {
+base::string16 ConfirmInstallDialogDelegate::GetDialogMessage() {
   return l10n_util::GetStringFUTF16(IDS_PLUGIN_CONFIRM_INSTALL_DIALOG_MSG,
                                     plugin_metadata_->name());
 }
 
-string16 ConfirmInstallDialogDelegate::GetAcceptButtonTitle() {
+base::string16 ConfirmInstallDialogDelegate::GetAcceptButtonTitle() {
   return l10n_util::GetStringUTF16(
       IDS_PLUGIN_CONFIRM_INSTALL_DIALOG_ACCEPT_BUTTON);
 }
@@ -182,9 +183,9 @@ PluginObserver::~PluginObserver() {
 #endif
 }
 
-void PluginObserver::RenderViewCreated(
-    content::RenderViewHost* render_view_host) {
-#if defined(USE_AURA) && defined(OS_WIN)
+void PluginObserver::RenderFrameCreated(
+    content::RenderFrameHost* render_frame_host) {
+#if defined(OS_WIN)
   // If the window belongs to the Ash desktop, before we navigate we need
   // to tell the renderview that NPAPI plugins are not supported so it does
   // not try to instantiate them. The final decision is actually done in
@@ -208,8 +209,8 @@ void PluginObserver::RenderViewCreated(
   if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH ||
       chrome::GetHostDesktopTypeForNativeView(window) ==
       chrome::HOST_DESKTOP_TYPE_ASH) {
-    int routing_id = render_view_host->GetRoutingID();
-    render_view_host->Send(new ChromeViewMsg_NPAPINotSupported(routing_id));
+    int routing_id = render_frame_host->GetRoutingID();
+    render_frame_host->Send(new ChromeViewMsg_NPAPINotSupported(routing_id));
   }
 #endif
 }
@@ -303,15 +304,14 @@ void PluginObserver::OnBlockedOutdatedPlugin(int placeholder_id,
   // Find plugin to update.
   PluginInstaller* installer = NULL;
   scoped_ptr<PluginMetadata> plugin;
-  bool ret = finder->FindPluginWithIdentifier(identifier, &installer, &plugin);
-  DCHECK(ret);
-
-  plugin_placeholders_[placeholder_id] =
-      new PluginPlaceholderHost(this, placeholder_id,
-                                plugin->name(), installer);
-  OutdatedPluginInfoBarDelegate::Create(
-      InfoBarService::FromWebContents(web_contents()), installer,
-      plugin.Pass());
+  if (finder->FindPluginWithIdentifier(identifier, &installer, &plugin)) {
+    plugin_placeholders_[placeholder_id] = new PluginPlaceholderHost(
+        this, placeholder_id, plugin->name(), installer);
+    OutdatedPluginInfoBarDelegate::Create(InfoBarService::FromWebContents(
+        web_contents()), installer, plugin.Pass());
+  } else {
+    NOTREACHED();
+  }
 #else
   // If we don't support third-party plug-in installation, we shouldn't have
   // outdated plug-ins.
@@ -371,7 +371,7 @@ void PluginObserver::OnRemovePluginPlaceholderHost(int placeholder_id) {
 
 void PluginObserver::OnOpenAboutPlugins() {
   web_contents()->OpenURL(OpenURLParams(
-      GURL(chrome::kAboutPluginsURL),
+      GURL(chrome::kChromeUIPluginsURL),
       content::Referrer(web_contents()->GetURL(),
                         blink::WebReferrerPolicyDefault),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_AUTO_BOOKMARK, false));

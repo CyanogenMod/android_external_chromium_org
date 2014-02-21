@@ -41,7 +41,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       const content::MainFunctionParams& parameters) OVERRIDE;
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
-  virtual void RenderProcessHostCreated(
+  virtual void RenderProcessWillLaunch(
       content::RenderProcessHost* host) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::BrowserContext* browser_context,
@@ -66,35 +66,35 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
                               const net::CookieList& cookie_list,
                               content::ResourceContext* context,
                               int render_process_id,
-                              int render_view_id) OVERRIDE;
+                              int render_frame_id) OVERRIDE;
   virtual bool AllowSetCookie(const GURL& url,
                               const GURL& first_party,
                               const std::string& cookie_line,
                               content::ResourceContext* context,
                               int render_process_id,
-                              int render_view_id,
+                              int render_frame_id,
                               net::CookieOptions* options) OVERRIDE;
   virtual bool AllowWorkerDatabase(
       const GURL& url,
-      const string16& name,
-      const string16& display_name,
+      const base::string16& name,
+      const base::string16& display_name,
       unsigned long estimated_size,
       content::ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_views) OVERRIDE;
+      const std::vector<std::pair<int, int> >& render_frames) OVERRIDE;
   virtual bool AllowWorkerFileSystem(
       const GURL& url,
       content::ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_views) OVERRIDE;
+      const std::vector<std::pair<int, int> >& render_frames) OVERRIDE;
   virtual bool AllowWorkerIndexedDB(
       const GURL& url,
-      const string16& name,
+      const base::string16& name,
       content::ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_views) OVERRIDE;
+      const std::vector<std::pair<int, int> >& render_frames) OVERRIDE;
   virtual content::QuotaPermissionContext*
       CreateQuotaPermissionContext() OVERRIDE;
   virtual void AllowCertificateError(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
@@ -105,7 +105,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       content::CertificateRequestResultType* result) OVERRIDE;
   virtual void SelectClientCertificate(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) OVERRIDE;

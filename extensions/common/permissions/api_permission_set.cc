@@ -23,7 +23,7 @@ bool CreateAPIPermission(
     const base::Value* permission_value,
     APIPermissionSet::ParseSource source,
     APIPermissionSet* api_permissions,
-    string16* error,
+    base::string16* error,
     std::vector<std::string>* unhandled_permissions) {
 
   const APIPermissionInfo* permission_info =
@@ -41,10 +41,19 @@ bool CreateAPIPermission(
       return false;
     }
 
-    if (!permission->FromValue(permission_value)) {
+    std::string error_details;
+    if (!permission->FromValue(permission_value, &error_details)) {
       if (error) {
-        *error = ErrorUtils::FormatErrorMessageUTF16(
-            errors::kInvalidPermission, permission_info->name());
+        if (error_details.empty()) {
+          *error = ErrorUtils::FormatErrorMessageUTF16(
+              errors::kInvalidPermission,
+              permission_info->name());
+        } else {
+          *error = ErrorUtils::FormatErrorMessageUTF16(
+              errors::kInvalidPermissionWithDetail,
+              permission_info->name(),
+              error_details);
+        }
         return false;
       }
       LOG(WARNING) << "Parse permission failed.";
@@ -66,7 +75,7 @@ bool ParseChildPermissions(const std::string& base_name,
                            const base::Value* permission_value,
                            APIPermissionSet::ParseSource source,
                            APIPermissionSet* api_permissions,
-                           string16* error,
+                           base::string16* error,
                            std::vector<std::string>* unhandled_permissions) {
   if (permission_value) {
     const base::ListValue* permissions;
@@ -112,6 +121,7 @@ bool ParseChildPermissions(const std::string& base_name,
 void APIPermissionSet::insert(APIPermission::ID id) {
   const APIPermissionInfo* permission_info =
       PermissionsInfo::GetInstance()->GetByID(id);
+  DCHECK(permission_info);
   insert(permission_info->CreateAPIPermission());
 }
 
@@ -124,7 +134,7 @@ bool APIPermissionSet::ParseFromJSON(
     const base::ListValue* permissions,
     APIPermissionSet::ParseSource source,
     APIPermissionSet* api_permissions,
-    string16* error,
+    base::string16* error,
     std::vector<std::string>* unhandled_permissions) {
   for (size_t i = 0; i < permissions->GetSize(); ++i) {
     std::string permission_str;

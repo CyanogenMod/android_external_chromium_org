@@ -20,6 +20,7 @@
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "content/public/browser/notification_observer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -52,13 +53,14 @@ class BrowserOptionsHandler
 #if defined(OS_CHROMEOS)
       public chromeos::system::PointerDeviceObserver::Observer,
 #endif
-      public TemplateURLServiceObserver {
+      public TemplateURLServiceObserver,
+      public content::NotificationObserver {
  public:
   BrowserOptionsHandler();
   virtual ~BrowserOptionsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* values) OVERRIDE;
+  virtual void GetLocalizedValues(base::DictionaryValue* values) OVERRIDE;
   virtual void PageLoadStarted() OVERRIDE;
   virtual void InitializeHandler() OVERRIDE;
   virtual void InitializePage() OVERRIDE;
@@ -132,6 +134,12 @@ class BrowserOptionsHandler
   // Returns the string ID for the given default browser state.
   int StatusStringIdForState(ShellIntegration::DefaultWebClientState state);
 
+  // Returns if the "make Chrome default browser" button should be shown.
+  bool ShouldShowSetDefaultBrowser();
+
+  // Returns if profiles list should be shown on settings page.
+  bool ShouldShowMultiProfilesUserList();
+
   // Gets the current default browser state, and asynchronously reports it to
   // the WebUI page.
   void UpdateDefaultBrowserState();
@@ -149,7 +157,7 @@ class BrowserOptionsHandler
   //     filePath: "/path/to/profile/data/on/disk",
   //     isCurrentProfile: false
   //   };
-  scoped_ptr<ListValue> GetProfilesInfoList();
+  scoped_ptr<base::ListValue> GetProfilesInfoList();
 
   // Sends an array of Profile objects to javascript.
   void SendProfilesInfo();
@@ -175,68 +183,68 @@ class BrowserOptionsHandler
 
   // Callback for the "selectDownloadLocation" message. This will prompt the
   // user for a destination folder using platform-specific APIs.
-  void HandleSelectDownloadLocation(const ListValue* args);
+  void HandleSelectDownloadLocation(const base::ListValue* args);
 
   // Callback for the "autoOpenFileTypesResetToDefault" message. This will
   // remove all auto-open file-type settings.
-  void HandleAutoOpenButton(const ListValue* args);
+  void HandleAutoOpenButton(const base::ListValue* args);
 
   // Callback for the "defaultFontSizeAction" message. This is called if the
   // user changes the default font size. |args| is an array that contains
   // one item, the font size as a numeric value.
-  void HandleDefaultFontSize(const ListValue* args);
+  void HandleDefaultFontSize(const base::ListValue* args);
 
   // Callback for the "defaultZoomFactorAction" message. This is called if the
   // user changes the default zoom factor. |args| is an array that contains
   // one item, the zoom factor as a numeric value.
-  void HandleDefaultZoomFactor(const ListValue* args);
+  void HandleDefaultZoomFactor(const base::ListValue* args);
 
   // Callback for the "Use SSL 3.0" checkbox. This is called if the user toggles
   // the "Use SSL 3.0" checkbox.
-  void HandleUseSSL3Checkbox(const ListValue* args);
+  void HandleUseSSL3Checkbox(const base::ListValue* args);
 
   // Callback for the "Use TLS 1.0" checkbox. This is called if the user toggles
   // the "Use TLS 1.0" checkbox.
-  void HandleUseTLS1Checkbox(const ListValue* args);
+  void HandleUseTLS1Checkbox(const base::ListValue* args);
 
   // Callback for the "restartBrowser" message. Restores all tabs on restart.
-  void HandleRestartBrowser(const ListValue* args);
+  void HandleRestartBrowser(const base::ListValue* args);
 
   // Callback for "requestProfilesInfo" message.
-  void HandleRequestProfilesInfo(const ListValue* args);
+  void HandleRequestProfilesInfo(const base::ListValue* args);
 
 #if !defined(OS_CHROMEOS)
   // Callback for the "showNetworkProxySettings" message. This will invoke
   // an appropriate dialog for configuring proxy settings.
-  void ShowNetworkProxySettings(const ListValue* args);
+  void ShowNetworkProxySettings(const base::ListValue* args);
 #endif
 
 #if !defined(USE_NSS)
   // Callback for the "showManageSSLCertificates" message. This will invoke
   // an appropriate certificate management action based on the platform.
-  void ShowManageSSLCertificates(const ListValue* args);
+  void ShowManageSSLCertificates(const base::ListValue* args);
 #endif
 
 #if defined(ENABLE_MDNS)
-  void ShowCloudPrintDevicesPage(const ListValue* args);
+  void ShowCloudPrintDevicesPage(const base::ListValue* args);
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
   // Callback for the Cloud Print manage button. This will open a new
   // tab pointed at the management URL.
-  void ShowCloudPrintManagePage(const ListValue* args);
+  void ShowCloudPrintManagePage(const base::ListValue* args);
 
   // Register localized values used by Cloud Print
-  void RegisterCloudPrintValues(DictionaryValue* values);
+  void RegisterCloudPrintValues(base::DictionaryValue* values);
 
 #if !defined(OS_CHROMEOS)
   // Callback for the Sign in to Cloud Print button. This will start
   // the authentication process.
-  void ShowCloudPrintSetupDialog(const ListValue* args);
+  void ShowCloudPrintSetupDialog(const base::ListValue* args);
 
   // Callback for the Disable Cloud Print button. This will sign out
   // of cloud print.
-  void HandleDisableCloudPrintConnector(const ListValue* args);
+  void HandleDisableCloudPrintConnector(const base::ListValue* args);
 
   // Pings the service to send us it's current notion of the enabled state.
   void RefreshCloudPrintStatusFromService();
@@ -250,6 +258,13 @@ class BrowserOptionsHandler
   void RemoveCloudPrintConnectorSection();
 #endif  // defined(OS_CHROMEOS)
 #endif  // defined(ENABLE_FULL_PRINTING)
+
+  // Check if hotword is available. If it is, tell the javascript to show
+  // the hotword section of the settings page.
+  void SendHotwordAvailable();
+
+  // Callback for "requestHotwordAvailable" message.
+  void HandleRequestHotwordAvailable(const base::ListValue* args);
 
 #if defined(OS_CHROMEOS)
   // Opens the wallpaper manager component extension.
@@ -267,9 +282,6 @@ class BrowserOptionsHandler
 
   // Setup the visibility for the metrics reporting setting.
   void SetupMetricsReportingSettingVisibility();
-
-  // Setup the visibility for the password generation setting.
-  void SetupPasswordGenerationSettingVisibility();
 
   // Setup the font size selector control.
   void SetupFontSizeSelector();
@@ -296,7 +308,7 @@ class BrowserOptionsHandler
 
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
-  scoped_ptr<DictionaryValue> GetSyncStateDictionary();
+  scoped_ptr<base::DictionaryValue> GetSyncStateDictionary();
 
   scoped_refptr<ShellIntegration::DefaultBrowserWorker> default_browser_worker_;
 

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "ash/ash_export.h"
-#include "ash/periodic_metrics_recorder.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/system/user/login_status.h"
 #include "ash/wm/system_modal_container_event_filter_delegate.h"
@@ -83,9 +83,8 @@ class CapsLockDelegate;
 class DesktopBackgroundController;
 class DisplayController;
 class FirstRunHelper;
+class GPUSupport;
 class HighContrastController;
-class Launcher;
-class ShelfDelegate;
 class LockStateController;
 class MagnificationController;
 class MediaDelegate;
@@ -94,17 +93,20 @@ class NestedDispatcherController;
 class NewWindowDelegate;
 class PartialMagnificationController;
 class PowerButtonController;
-class RootWindowHostFactory;
+class WindowTreeHostFactory;
 class ScreenAsh;
 class SessionStateDelegate;
+class Shelf;
+class ShelfDelegate;
 class ShelfItemDelegateManager;
 class ShelfModel;
 class ShellDelegate;
 class ShellObserver;
-class StickyKeys;
+class StickyKeysController;
 class SystemTray;
 class SystemTrayDelegate;
 class SystemTrayNotifier;
+class ToplevelWindowEventHandler;
 class UserActivityDetector;
 class UserWallpaperDelegate;
 class VideoDetector;
@@ -131,6 +133,7 @@ class MouseCursorEventFilter;
 class OutputConfiguratorAnimation;
 class OverlayEventFilter;
 class PowerEventObserver;
+class ProjectingObserver;
 class ResizeShadowController;
 class ResolutionNotificationController;
 class RootWindowController;
@@ -284,15 +287,21 @@ class ASH_EXPORT Shell
   // unlocked.
   void OnLockStateChanged(bool locked);
 
-  // Initializes |launcher_|.  Does nothing if it's already initialized.
-  void CreateLauncher();
+  // Called when a casting session is started or stopped.
+  void OnCastingSessionStartedOrStopped(bool started);
 
-  // Creates virtual keyboard. Deletes the old virtual keyboard if it's already
-  // exist.
+  // Initializes |shelf_|.  Does nothing if it's already initialized.
+  void CreateShelf();
+
+  // Creates a virtual keyboard. Deletes the old virtual keyboard if it already
+  // exists.
   void CreateKeyboard();
 
+  // Deactivates the virtual keyboard.
+  void DeactivateKeyboard();
+
   // Show shelf view if it was created hidden (before session has started).
-  void ShowLauncher();
+  void ShowShelf();
 
   // Adds/removes observer.
   void AddShellObserver(ShellObserver* observer);
@@ -317,9 +326,6 @@ class ASH_EXPORT Shell
   }
   views::corewm::TooltipController* tooltip_controller() {
     return tooltip_controller_.get();
-  }
-  internal::EventRewriterEventFilter* event_rewriter_filter() {
-    return event_rewriter_filter_.get();
   }
   internal::OverlayEventFilter* overlay_filter() {
     return overlay_filter_.get();
@@ -412,8 +418,6 @@ class ASH_EXPORT Shell
     return shelf_item_delegate_manager_.get();
   }
 
-  ScreenAsh* screen() { return screen_; }
-
   // Force the shelf to query for it's current visibility state.
   void UpdateShelfVisibility();
 
@@ -481,7 +485,8 @@ class ASH_EXPORT Shell
   // Starts the animation that occurs on first login.
   void DoInitialWorkspaceAnimation();
 
-#if defined(OS_CHROMEOS) && defined(USE_X11)
+#if defined(OS_CHROMEOS)
+#if defined(USE_X11)
   // TODO(oshima): Move these objects to DisplayController.
   chromeos::OutputConfigurator* output_configurator() {
     return output_configurator_.get();
@@ -492,15 +497,16 @@ class ASH_EXPORT Shell
   internal::DisplayErrorObserver* display_error_observer() {
     return display_error_observer_.get();
   }
-#endif  // defined(OS_CHROMEOS) && defined(USE_X11)
+#endif  // defined(USE_X11)
 
   internal::ResolutionNotificationController*
       resolution_notification_controller() {
     return resolution_notification_controller_.get();
   }
+#endif  // defined(OS_CHROMEOS)
 
-  RootWindowHostFactory* root_window_host_factory() {
-    return root_window_host_factory_.get();
+  WindowTreeHostFactory* window_tree_host_factory() {
+    return window_tree_host_factory_.get();
   }
 
   ShelfModel* shelf_model() {
@@ -514,6 +520,10 @@ class ASH_EXPORT Shell
   // Returns the launcher delegate, creating if necesary.
   ShelfDelegate* GetShelfDelegate();
 
+  UserMetricsRecorder* metrics() {
+    return user_metrics_recorder_.get();
+  }
+
   void SetTouchHudProjectionEnabled(bool enabled);
 
   bool is_touch_hud_projection_enabled() const {
@@ -525,10 +535,16 @@ class ASH_EXPORT Shell
   // returned object.
   ash::FirstRunHelper* CreateFirstRunHelper();
 
-  StickyKeys* sticky_keys() {
-    return sticky_keys_.get();
+  // Toggles cursor compositing on/off. Native cursor is disabled when cursor
+  // compositing is enabled, and vice versa.
+  void SetCursorCompositingEnabled(bool enabled);
+
+  StickyKeysController* sticky_keys_controller() {
+    return sticky_keys_controller_.get();
   }
 #endif  // defined(OS_CHROMEOS)
+
+  GPUSupport* gpu_support() { return gpu_support_.get(); }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtendedDesktopTest, TestCursor);
@@ -573,8 +589,6 @@ class ASH_EXPORT Shell
   // when the screen is initially created.
   static bool initially_hide_cursor_;
 
-  ScreenAsh* screen_;
-
   // When no explicit target display/RootWindow is given, new windows are
   // created on |scoped_target_root_window_| , unless NULL in
   // which case they are created on |target_root_window_|.
@@ -587,7 +601,7 @@ class ASH_EXPORT Shell
 
   std::vector<WindowAndBoundsPair> to_restore_;
 
-  scoped_ptr<PeriodicMetricsRecorder> periodic_metrics_recorder_;
+  scoped_ptr<UserMetricsRecorder> user_metrics_recorder_;
   scoped_ptr<keyboard::KeyboardController> keyboard_controller_;
   scoped_ptr<NestedDispatcherController> nested_dispatcher_controller_;
   scoped_ptr<AcceleratorController> accelerator_controller_;
@@ -639,10 +653,7 @@ class ASH_EXPORT Shell
   scoped_ptr<internal::EventClientImpl> event_client_;
   scoped_ptr<internal::EventTransformationHandler>
       event_transformation_handler_;
-  scoped_ptr<RootWindowHostFactory> root_window_host_factory_;
-
-  // An event filter that rewrites or drops an event.
-  scoped_ptr<internal::EventRewriterEventFilter> event_rewriter_filter_;
+  scoped_ptr<WindowTreeHostFactory> window_tree_host_factory_;
 
   // An event filter that pre-handles key events while the partial
   // screenshot UI or the keyboard overlay is active.
@@ -650,6 +661,9 @@ class ASH_EXPORT Shell
 
   // An event filter for logging keyboard-related metrics.
   scoped_ptr<internal::KeyboardUMAEventFilter> keyboard_metrics_filter_;
+
+  // An event filter which handles moving and resizing windows.
+  scoped_ptr<ToplevelWindowEventHandler> toplevel_window_event_handler_;
 
   // An event filter which handles system level gestures
   scoped_ptr<internal::SystemGestureEventFilter> system_gesture_filter_;
@@ -671,21 +685,24 @@ class ASH_EXPORT Shell
   scoped_ptr<internal::PowerEventObserver> power_event_observer_;
   scoped_ptr<internal::UserActivityNotifier> user_activity_notifier_;
   scoped_ptr<internal::VideoActivityNotifier> video_activity_notifier_;
-  scoped_ptr<StickyKeys> sticky_keys_;
+  scoped_ptr<StickyKeysController> sticky_keys_controller_;
+  scoped_ptr<internal::ResolutionNotificationController>
+      resolution_notification_controller_;
 #if defined(USE_X11)
   // Controls video output device state.
   scoped_ptr<chromeos::OutputConfigurator> output_configurator_;
   scoped_ptr<internal::OutputConfiguratorAnimation>
       output_configurator_animation_;
   scoped_ptr<internal::DisplayErrorObserver> display_error_observer_;
+  scoped_ptr<internal::ProjectingObserver> projecting_observer_;
 
   // Listens for output changes and updates the display manager.
   scoped_ptr<internal::DisplayChangeObserver> display_change_observer_;
+
+  scoped_ptr<ui::EventHandler> magnifier_key_scroll_handler_;
+  scoped_ptr<ui::EventHandler> speech_feedback_handler_;
 #endif  // defined(USE_X11)
 #endif  // defined(OS_CHROMEOS)
-
-  scoped_ptr<internal::ResolutionNotificationController>
-      resolution_notification_controller_;
 
   // |native_cursor_manager_| is owned by |cursor_manager_|, but we keep a
   // pointer to vend to test code.
@@ -698,6 +715,9 @@ class ASH_EXPORT Shell
   bool simulate_modal_window_open_for_testing_;
 
   bool is_touch_hud_projection_enabled_;
+
+  // Injected content::GPUDataManager support.
+  scoped_ptr<GPUSupport> gpu_support_;
 
   DISALLOW_COPY_AND_ASSIGN(Shell);
 };

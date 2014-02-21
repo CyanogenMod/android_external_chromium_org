@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <map>
+#include <queue>
 
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "ui/aura/window_observer.h"
@@ -42,7 +43,7 @@ class CONTENT_EXPORT TouchEditableImplAura
 
   // Overridden from RenderWidgetHostViewAura::TouchEditingClient.
   virtual void StartTouchEditing() OVERRIDE;
-  virtual void EndTouchEditing() OVERRIDE;
+  virtual void EndTouchEditing(bool quick) OVERRIDE;
   virtual void OnSelectionOrCursorChanged(const gfx::Rect& anchor,
                                           const gfx::Rect& focus) OVERRIDE;
   virtual void OnTextInputTypeChanged(ui::TextInputType type) OVERRIDE;
@@ -56,7 +57,7 @@ class CONTENT_EXPORT TouchEditableImplAura
   virtual void MoveCaretTo(const gfx::Point& point) OVERRIDE;
   virtual void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) OVERRIDE;
   virtual gfx::Rect GetBounds() OVERRIDE;
-  virtual gfx::NativeView GetNativeView() OVERRIDE;
+  virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual void ConvertPointToScreen(gfx::Point* point) OVERRIDE;
   virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
   virtual bool DrawsHandles() OVERRIDE;

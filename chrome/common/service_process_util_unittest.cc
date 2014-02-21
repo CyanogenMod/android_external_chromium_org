@@ -10,6 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
+#include "base/strings/string_split.h"
 
 #if !defined(OS_MACOSX)
 #include "base/at_exit.h"
@@ -28,7 +29,6 @@
 #endif
 
 #if defined(OS_POSIX)
-#include <glib.h>
 #include "chrome/common/auto_start_linux.h"
 #endif
 
@@ -126,7 +126,7 @@ TEST_F(ServiceProcessStateTest, AutoRun) {
   std::string value_name = GetServiceProcessScopedName("_service_run");
   base::string16 value;
   EXPECT_TRUE(base::win::ReadCommandFromAutoRun(HKEY_CURRENT_USER,
-                                                UTF8ToWide(value_name),
+                                                base::UTF8ToWide(value_name),
                                                 &value));
   autorun_command_line.reset(new CommandLine(CommandLine::FromString(value)));
 #elif defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -138,16 +138,19 @@ TEST_F(ServiceProcessStateTest, AutoRun) {
   std::string exec_value;
   EXPECT_TRUE(AutoStart::GetAutostartFileValue(
       GetServiceProcessScopedName(base_desktop_name), "Exec", &exec_value));
-  GError *error = NULL;
-  gchar **argv = NULL;
-  gint argc = 0;
-  if (g_shell_parse_argv(exec_value.c_str(), &argc, &argv, &error)) {
-    autorun_command_line.reset(new CommandLine(argc, argv));
-    g_strfreev(argv);
-  } else {
-    ADD_FAILURE();
-    g_error_free(error);
-  }
+
+  // Make sure |exec_value| doesn't contain strings a shell would
+  // treat specially.
+  ASSERT_EQ(std::string::npos, exec_value.find('#'));
+  ASSERT_EQ(std::string::npos, exec_value.find('\n'));
+  ASSERT_EQ(std::string::npos, exec_value.find('"'));
+  ASSERT_EQ(std::string::npos, exec_value.find('\''));
+
+  CommandLine::StringVector argv;
+  base::SplitString(exec_value, ' ', &argv);
+  ASSERT_GE(argv.size(), 2U)
+      << "Expected at least one command-line option in: " << exec_value;
+  autorun_command_line.reset(new CommandLine(argv));
 #endif  // defined(OS_WIN)
   if (autorun_command_line.get()) {
     EXPECT_EQ(autorun_command_line->GetSwitchValueASCII(switches::kProcessType),
@@ -156,7 +159,7 @@ TEST_F(ServiceProcessStateTest, AutoRun) {
   ASSERT_TRUE(state.RemoveFromAutoRun());
 #if defined(OS_WIN)
   EXPECT_FALSE(base::win::ReadCommandFromAutoRun(HKEY_CURRENT_USER,
-                                                 UTF8ToWide(value_name),
+                                                 base::UTF8ToWide(value_name),
                                                  &value));
 #elif defined(OS_POSIX) && !defined(OS_MACOSX)
   EXPECT_FALSE(AutoStart::GetAutostartFileValue(

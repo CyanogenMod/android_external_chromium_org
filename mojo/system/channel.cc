@@ -37,7 +37,7 @@ Channel::Channel()
     : next_local_id_(kBootstrapEndpointId) {
 }
 
-bool Channel::Init(const PlatformChannelHandle& handle) {
+bool Channel::Init(embedder::ScopedPlatformHandle handle) {
   DCHECK(creation_thread_checker_.CalledOnValidThread());
 
   // No need to take |lock_|, since this must be called before this object
@@ -45,7 +45,7 @@ bool Channel::Init(const PlatformChannelHandle& handle) {
   DCHECK(!raw_channel_.get());
 
   raw_channel_.reset(
-      RawChannel::Create(handle, this, base::MessageLoop::current()));
+      RawChannel::Create(handle.Pass(), this, base::MessageLoop::current()));
   if (!raw_channel_->Init()) {
     raw_channel_.reset();
     return false;
@@ -110,7 +110,7 @@ bool Channel::WriteMessage(MessageInTransit* message) {
   if (!raw_channel_.get()) {
     // TODO(vtl): I think this is probably not an error condition, but I should
     // think about it (and the shutdown sequence) more carefully.
-    LOG(INFO) << "WriteMessage() after shutdown";
+    LOG(WARNING) << "WriteMessage() after shutdown";
     return false;
   }
 
@@ -127,6 +127,10 @@ void Channel::DetachMessagePipeEndpoint(MessageInTransit::EndpointId local_id) {
 Channel::~Channel() {
   // The channel should have been shut down first.
   DCHECK(!raw_channel_.get());
+
+  DLOG_IF(WARNING, !local_id_to_endpoint_info_map_.empty())
+      << "Destroying Channel with " << local_id_to_endpoint_info_map_.size()
+      << " endpoints still present";
 }
 
 void Channel::OnReadMessage(const MessageInTransit& message) {
@@ -135,7 +139,7 @@ void Channel::OnReadMessage(const MessageInTransit& message) {
     case MessageInTransit::kTypeMessagePipe:
       OnReadMessageForDownstream(message);
       break;
-    case MessageInTransit::TYPE_CHANNEL:
+    case MessageInTransit::kTypeChannel:
       OnReadMessageForChannel(message);
       break;
     default:
@@ -176,6 +180,11 @@ void Channel::OnReadMessageForDownstream(const MessageInTransit& message) {
       HandleRemoteError(base::StringPrintf(
           "Received a message for nonexistent local destination ID %u",
           static_cast<unsigned>(local_id)));
+      // This is strongly indicative of some problem. However, it's not a fatal
+      // error, since it may indicate a bug (or hostile) remote process. Don't
+      // die even for Debug builds, since handling this properly needs to be
+      // tested (TODO(vtl)).
+      DLOG(ERROR) << "This should not happen under normal operation.";
       return;
     }
     endpoint_info = it->second;
@@ -183,11 +192,18 @@ void Channel::OnReadMessageForDownstream(const MessageInTransit& message) {
 
   // We need to duplicate the message, because |EnqueueMessage()| will take
   // ownership of it.
+  // TODO(vtl): Need to enforce limits on message size and handle count.
   MessageInTransit* own_message = MessageInTransit::Create(
-      message.type(), message.subtype(), message.data(), message.data_size());
+      message.type(), message.subtype(), message.bytes(), message.num_bytes(),
+      message.num_handles());
+  std::vector<DispatcherTransport> transports(message.num_handles());
+  // TODO(vtl): Create dispatchers for handles.
+  // TODO(vtl): It's bad that the current API will create equivalent dispatchers
+  // for the freshly-created ones, which is totally redundant. Make a version of
+  // |EnqueueMessage()| that passes ownership.
   if (endpoint_info.message_pipe->EnqueueMessage(
-          MessagePipe::GetPeerPort(endpoint_info.port), own_message, NULL) !=
-              MOJO_RESULT_OK) {
+          MessagePipe::GetPeerPort(endpoint_info.port), own_message,
+          message.num_handles() ? &transports : NULL) != MOJO_RESULT_OK) {
     HandleLocalError(base::StringPrintf(
         "Failed to enqueue message to local destination ID %u",
         static_cast<unsigned>(local_id)));
@@ -203,7 +219,7 @@ void Channel::OnReadMessageForChannel(const MessageInTransit& message) {
 
 void Channel::HandleRemoteError(const base::StringPiece& error_message) {
   // TODO(vtl): Is this how we really want to handle this?
-  LOG(INFO) << error_message;
+  LOG(WARNING) << error_message;
 }
 
 void Channel::HandleLocalError(const base::StringPiece& error_message) {

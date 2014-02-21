@@ -29,7 +29,7 @@ namespace {
 
 class ScopedCapturer {
  public:
-  explicit ScopedCapturer(aura::RootWindowHost* host)
+  explicit ScopedCapturer(aura::WindowTreeHost* host)
       : host_(host) {
     host_->SetCapture();
   }
@@ -39,7 +39,7 @@ class ScopedCapturer {
   }
 
  private:
-  aura::RootWindowHost* host_;
+  aura::WindowTreeHost* host_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedCapturer);
 };
@@ -50,15 +50,16 @@ X11WholeScreenMoveLoop::X11WholeScreenMoveLoop(
     X11WholeScreenMoveLoopDelegate* delegate)
     : delegate_(delegate),
       in_move_loop_(false),
+      should_reset_mouse_flags_(false),
       grab_input_window_(None) {
 }
 
 X11WholeScreenMoveLoop::~X11WholeScreenMoveLoop() {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostLinux, MessageLoop::Dispatcher implementation:
+// DesktopWindowTreeHostLinux, MessagePumpDispatcher implementation:
 
-bool X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
+uint32_t X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
   XEvent* xev = event;
 
   // Note: the escape key is handled in the tab drag controller, which has
@@ -84,11 +85,11 @@ bool X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
     }
   }
 
-  return true;
+  return POST_DISPATCH_NONE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostLinux, aura::client::WindowMoveClient implementation:
+// DesktopWindowTreeHostLinux, aura::client::WindowMoveClient implementation:
 
 bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
                                          gfx::NativeCursor cursor) {
@@ -113,19 +114,27 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
   // We are handling a mouse drag outside of the aura::RootWindow system. We
   // must manually make aura think that the mouse button is pressed so that we
   // don't draw extraneous tooltips.
-  aura::Env::GetInstance()->set_mouse_button_flags(ui::EF_LEFT_MOUSE_BUTTON);
+  aura::Env* env = aura::Env::GetInstance();
+  if (!env->IsMouseButtonDown()) {
+    env->set_mouse_button_flags(ui::EF_LEFT_MOUSE_BUTTON);
+    should_reset_mouse_flags_ = true;
+  }
 
   base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
   base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
-  base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
+  base::RunLoop run_loop;
   quit_closure_ = run_loop.QuitClosure();
   run_loop.Run();
   return true;
 }
 
 void X11WholeScreenMoveLoop::UpdateCursor(gfx::NativeCursor cursor) {
-  DCHECK(in_move_loop_);
-  GrabPointerWithCursor(cursor);
+  if (in_move_loop_) {
+    // If we're still in the move loop, regrab the pointer with the updated
+    // cursor. Note: we can be called from handling an XdndStatus message after
+    // EndMoveLoop() was called, but before we return from the nested RunLoop.
+    GrabPointerWithCursor(cursor);
+  }
 }
 
 void X11WholeScreenMoveLoop::EndMoveLoop() {
@@ -133,7 +142,10 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
     return;
 
   // We undo our emulated mouse click from RunMoveLoop();
-  aura::Env::GetInstance()->set_mouse_button_flags(0);
+  if (should_reset_mouse_flags_) {
+    aura::Env::GetInstance()->set_mouse_button_flags(0);
+    should_reset_mouse_flags_ = false;
+  }
 
   // TODO(erg): Is this ungrab the cause of having to click to give input focus
   // on drawn out windows? Not ungrabbing here screws the X server until I kill

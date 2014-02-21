@@ -230,7 +230,9 @@ void WebContentsViewMac::TakeFocus(bool reverse) {
   }
 }
 
-void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params) {
+void WebContentsViewMac::ShowContextMenu(
+    content::RenderFrameHost* render_frame_host,
+    const ContextMenuParams& params) {
   // Allow delegates to handle the context menu operation first.
   if (web_contents_->GetDelegate() &&
       web_contents_->GetDelegate()->HandleContextMenu(params)) {
@@ -238,7 +240,7 @@ void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params) {
   }
 
   if (delegate())
-    delegate()->ShowContextMenu(params);
+    delegate()->ShowContextMenu(render_frame_host, params);
   else
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }
@@ -349,9 +351,11 @@ RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
   RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
       RenderWidgetHostView::CreateViewForWidget(render_widget_host));
   if (delegate()) {
-    NSObject<RenderWidgetHostViewMacDelegate>* rw_delegate =
-        delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host);
-    view->SetDelegate(rw_delegate);
+    base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate> >
+        rw_delegate(
+            delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host));
+
+    view->SetDelegate(rw_delegate.get());
   }
   view->SetAllowOverlappingViews(allow_overlapping_views_);
 

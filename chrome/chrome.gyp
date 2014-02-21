@@ -23,8 +23,6 @@
     'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/chrome',
     'protoc_out_dir': '<(SHARED_INTERMEDIATE_DIR)/protoc_out',
     'repack_locales_cmd': ['python', 'tools/build/repack_locales.py'],
-    # TODO: remove this helper when we have loops in GYP
-    'apply_locales_cmd': ['python', '<(DEPTH)/build/apply_locales.py'],
     'conditions': [
       ['OS!="ios"', {
         'chromium_browser_dependencies': [
@@ -81,19 +79,6 @@
         'tweak_info_plist_path': '../build/mac/tweak_info_plist.py',
         'platform_locale_settings_grd':
             'app/resources/locale_settings_mac.grd',
-        'conditions': [
-          ['branding=="Chrome"', {
-            'mac_bundle_id': 'com.google.Chrome',
-            'mac_creator': 'rimZ',
-            # The policy .grd file also needs the bundle id.
-            'grit_defines': ['-D', 'mac_bundle_id=com.google.Chrome'],
-          }, {  # else: branding!="Chrome"
-            'mac_bundle_id': 'org.chromium.Chromium',
-            'mac_creator': 'Cr24',
-            # The policy .grd file also needs the bundle id.
-            'grit_defines': ['-D', 'mac_bundle_id=org.chromium.Chromium'],
-          }],  # branding
-        ],  # conditions
       }],  # OS=="mac"
     ],  # conditions
   },  # variables
@@ -104,6 +89,7 @@
     # on 64-bit Windows only. Targets that end with nacl_win64 should be used
     # by Native Client only.
     # NOTE: Most new includes should go in the OS!="ios" condition below.
+    '../build/chrome_settings.gypi',
     '../build/win_precompile.gypi',
     'chrome_browser.gypi',
     'chrome_browser_ui.gypi',
@@ -115,7 +101,6 @@
   'conditions': [
     ['OS!="ios"', {
       'includes': [
-        'app/policy/policy_templates.gypi',
         'chrome_browser_extensions.gypi',
         'chrome_dll.gypi',
         'chrome_exe.gypi',
@@ -123,6 +108,7 @@
         'chrome_renderer.gypi',
         'chrome_tests.gypi',
         'chrome_tests_unit.gypi',
+        'policy_templates.gypi',
         '../apps/apps.gypi',
       ],
       'targets': [
@@ -182,6 +168,8 @@
             'browser/devtools/browser_list_tabcontents_provider.h',
             'browser/devtools/devtools_adb_bridge.cc',
             'browser/devtools/devtools_adb_bridge.h',
+            'browser/devtools/devtools_contents_resizing_strategy.cc',
+            'browser/devtools/devtools_contents_resizing_strategy.h',
             'browser/devtools/devtools_embedder_message_dispatcher.cc',
             'browser/devtools/devtools_embedder_message_dispatcher.h',
             'browser/devtools/devtools_file_helper.cc',
@@ -269,6 +257,8 @@
           'sources': [
             'utility/chrome_content_utility_client.cc',
             'utility/chrome_content_utility_client.h',
+            'utility/chrome_content_utility_ipc_whitelist.cc',
+            'utility/chrome_content_utility_ipc_whitelist.h',
             'utility/cloud_print/bitmap_image.cc',
             'utility/cloud_print/bitmap_image.h',
             'utility/cloud_print/pwg_encoder.cc',
@@ -285,9 +275,6 @@
             'utility/importer/favicon_reencode.h',
             'utility/importer/firefox_importer.cc',
             'utility/importer/firefox_importer.h',
-            'utility/importer/firefox_importer_unittest_messages_internal.h',
-            'utility/importer/firefox_importer_unittest_utils.h',
-            'utility/importer/firefox_importer_unittest_utils_mac.cc',
             'utility/importer/ie_importer_win.cc',
             'utility/importer/ie_importer_win.h',
             'utility/importer/importer.cc',
@@ -302,6 +289,8 @@
             'utility/importer/nss_decryptor_win.h',
             'utility/importer/safari_importer.h',
             'utility/importer/safari_importer.mm',
+            'utility/media_galleries/ipc_data_source.cc',
+            'utility/media_galleries/ipc_data_source.h',
             'utility/media_galleries/itunes_pref_parser_win.cc',
             'utility/media_galleries/itunes_pref_parser_win.h',
             'utility/media_galleries/media_metadata_parser.cc',
@@ -653,7 +642,6 @@
             ['component=="shared_library"', {
               'dependencies': [
                 '../content/content.gyp:content_plugin',
-                '../webkit/glue/webkit_glue.gyp:glue',
               ],
               'xcode_settings': {
                 'LD_RUNPATH_SEARCH_PATHS': [
@@ -704,6 +692,7 @@
             'chrome_resources.gyp:chrome_strings',
             '../base/base.gyp:base',
             '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/ui.gyp:ui',
           ],
           'include_dirs': [
@@ -779,21 +768,11 @@
           'type': 'none',
           'dependencies': [
             '../base/base.gyp:base_unittests',
-            '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
-            '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../net/net.gyp:net_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
-          ],
-          'conditions': [
-            ['use_aura==1 or target_arch=="x64"', {
-              'dependencies!': [
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
-              ],
-            }],
           ],
         },
         {
@@ -1002,6 +981,7 @@
           'target_name': 'chrome_java',
           'type': 'none',
           'dependencies': [
+            'activity_type_ids_java',
             'chrome_resources.gyp:chrome_strings',
             'profile_sync_service_model_type_selection_java',
             'resource_id_java',
@@ -1036,7 +1016,7 @@
         'chrome_android.gypi',
       ]}, # 'includes'
     ],  # OS=="android"
-    ['configuration_policy==1 and OS!="android"', {
+    ['configuration_policy==1 and OS!="android" and OS!="ios"', {
       'includes': [ 'policy.gypi', ],
     }],
     ['enable_printing==1', {
@@ -1050,6 +1030,7 @@
             'common',
             'common_net',
             '../base/base.gyp:base',
+            '../components/components.gyp:cloud_devices',
             '../google_apis/google_apis.gyp:google_apis',
             '../jingle/jingle.gyp:notifier',
             '../net/net.gyp:net',
@@ -1060,25 +1041,18 @@
           'sources': [
             'service/chrome_service_application_mac.h',
             'service/chrome_service_application_mac.mm',
-            'service/service_ipc_server.cc',
-            'service/service_ipc_server.h',
-            'service/service_main.cc',
-            'service/service_process.cc',
-            'service/service_process.h',
-            'service/service_process_prefs.cc',
-            'service/service_process_prefs.h',
-            'service/service_utility_process_host.cc',
-            'service/service_utility_process_host.h',
+            'service/cloud_print/cdd_conversion_win.cc',
+            'service/cloud_print/cdd_conversion_win.h',
             'service/cloud_print/cloud_print_auth.cc',
             'service/cloud_print/cloud_print_auth.h',
             'service/cloud_print/cloud_print_connector.cc',
             'service/cloud_print/cloud_print_connector.h',
-            'service/cloud_print/cloud_print_service_helpers.cc',
-            'service/cloud_print/cloud_print_service_helpers.h',
             'service/cloud_print/cloud_print_proxy.cc',
             'service/cloud_print/cloud_print_proxy.h',
             'service/cloud_print/cloud_print_proxy_backend.cc',
             'service/cloud_print/cloud_print_proxy_backend.h',
+            'service/cloud_print/cloud_print_service_helpers.cc',
+            'service/cloud_print/cloud_print_service_helpers.h',
             'service/cloud_print/cloud_print_token_store.cc',
             'service/cloud_print/cloud_print_token_store.h',
             'service/cloud_print/cloud_print_url_fetcher.cc',
@@ -1091,24 +1065,27 @@
             'service/cloud_print/job_status_updater.h',
             'service/cloud_print/print_system.cc',
             'service/cloud_print/print_system.h',
+            'service/cloud_print/print_system_win.cc',
             'service/cloud_print/printer_job_handler.cc',
             'service/cloud_print/printer_job_handler.h',
             'service/cloud_print/printer_job_queue_handler.cc',
             'service/cloud_print/printer_job_queue_handler.h',
             'service/net/service_url_request_context.cc',
             'service/net/service_url_request_context.h',
+            'service/service_ipc_server.cc',
+            'service/service_ipc_server.h',
+            'service/service_main.cc',
+            'service/service_process.cc',
+            'service/service_process.h',
+            'service/service_process_prefs.cc',
+            'service/service_process_prefs.h',
+            'service/service_utility_process_host.cc',
+            'service/service_utility_process_host.h',
           ],
           'include_dirs': [
             '..',
           ],
           'conditions': [
-            ['OS=="win"', {
-              'sources': [
-                'service/cloud_print/print_system_win.cc',
-                'service/cloud_print/print_system_win.h',
-                'service/cloud_print/print_system_xps_win.cc',
-              ],
-            }],
             ['toolkit_uses_gtk == 1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',

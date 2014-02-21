@@ -81,7 +81,7 @@ class LoginDisplayHost {
   // Takes ownership of |screen_parameters|, which can also be NULL.
   virtual void StartWizard(
       const std::string& first_screen_name,
-      scoped_ptr<DictionaryValue> screen_parameters) = 0;
+      scoped_ptr<base::DictionaryValue> screen_parameters) = 0;
 
   // Returns current WizardController, if it exists.
   // Result should not be stored.
@@ -109,7 +109,11 @@ class LoginDisplayHost {
   virtual void PrewarmAuthentication() = 0;
 
   // Starts app launch splash screen.
-  virtual void StartAppLaunch(const std::string& app_id) = 0;
+  virtual void StartAppLaunch(const std::string& app_id,
+                              bool diagnostic_mode) = 0;
+
+  // Starts the demo app launch.
+  virtual void StartDemoAppLaunch() = 0;
 };
 
 }  // namespace chromeos

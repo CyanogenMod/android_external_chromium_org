@@ -26,7 +26,11 @@ public class AwScrollOffsetManager {
     // Time for the longest scroll animation.
     private static final int MAX_SCROLL_ANIMATION_DURATION_MILLISEC = 750;
 
-    // The unit of all the values in this delegate are physical pixels.
+    /**
+     * The interface that all users of AwScrollOffsetManager should implement.
+     *
+     * The unit of all the values in this delegate are physical pixels.
+     */
     public interface Delegate {
         // Call View#overScrollBy on the containerView.
         void overScrollContainerViewBy(int deltaX, int deltaY, int scrollX, int scrollY,
@@ -68,10 +72,6 @@ public class AwScrollOffsetManager {
     private boolean mApplyDeferredNativeScroll;
     private int mDeferredNativeScrollX;
     private int mDeferredNativeScrollY;
-
-    // The velocity of the last recorded fling,
-    private int mLastFlingVelocityX;
-    private int mLastFlingVelocityY;
 
     private OverScroller mScroller;
 
@@ -249,12 +249,6 @@ public class AwScrollOffsetManager {
         mDelegate.scrollNativeTo(x, y);
     }
 
-    // Called at the beginning of every fling gesture.
-    public void onFlingStartGesture(int velocityX, int velocityY) {
-        mLastFlingVelocityX = velocityX;
-        mLastFlingVelocityY = velocityY;
-    }
-
     // Called whenever some other touch interaction requires the fling gesture to be canceled.
     public void onFlingCancelGesture() {
         // TODO(mkosiba): Support speeding up a fling by flinging again.
@@ -265,8 +259,8 @@ public class AwScrollOffsetManager {
     // Called when a fling gesture is not handled by the renderer.
     // We explicitly ask the renderer not to handle fling gestures targeted at the root
     // scroll layer.
-    public void onUnhandledFlingStartEvent() {
-        flingScroll(-mLastFlingVelocityX, -mLastFlingVelocityY);
+    public void onUnhandledFlingStartEvent(int velocityX, int velocityY) {
+        flingScroll(-velocityX, -velocityY);
     }
 
     // Starts the fling animation. Called both as a response to a fling gesture and as via the
@@ -279,15 +273,13 @@ public class AwScrollOffsetManager {
 
         mScroller.fling(scrollX, scrollY, velocityX, velocityY,
                 0, scrollRangeX, 0, scrollRangeY);
-        mFlinging = true;
         mDelegate.invalidate();
     }
 
     // Called immediately before the draw to update the scroll offset.
     public void computeScrollAndAbsorbGlow(OverScrollGlow overScrollGlow) {
-        final boolean stillAnimating = mScroller.computeScrollOffset();
-        if (!stillAnimating) {
-            mFlinging = false;
+        mFlinging = mScroller.computeScrollOffset();
+        if (!mFlinging) {
             return;
         }
 

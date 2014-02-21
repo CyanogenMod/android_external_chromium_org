@@ -2,9 +2,6 @@
 <!--User-facing strings for the Android app-->
 <!--TODO(solb) Merge in with localized strings-->
 <resources>
-    <!--Application-wide attributes-->
-    <string name="app_name">Chromoting</string>
-
     <!--Instructional blurbs-->
     <string name="inst_host_list">My computers:</string>
     <string name="inst_empty_list">There are no computers to display</string>
@@ -20,8 +17,10 @@
     <!--Action bar buttons-->
     <string name="actionbar_directoryrefresh">Refresh</string>
     <string name="actionbar_accountswitcher">Accounts</string>
+    <string name="actionbar_disconnect">Disconnect</string>
     <string name="actionbar_hide">Hide</string>
     <string name="actionbar_keyboard">Keyboard</string>
+    <string name="actionbar_send_ctrl_alt_del">Send Ctrl-Alt-Del</string>
 
     <!--Informative messages-->
     <string name="msg_pin_canceled">No PIN was provided, so the connection attempt was canceled</string>

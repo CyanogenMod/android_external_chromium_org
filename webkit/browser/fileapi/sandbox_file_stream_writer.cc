@@ -14,7 +14,7 @@
 #include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace fileapi {
@@ -112,16 +112,16 @@ int SandboxFileStreamWriter::WriteInternal(
 
 void SandboxFileStreamWriter::DidCreateSnapshotFile(
     const net::CompletionCallback& callback,
-    base::PlatformFileError file_error,
-    const base::PlatformFileInfo& file_info,
+    base::File::Error file_error,
+    const base::File::Info& file_info,
     const base::FilePath& platform_path,
     const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
   DCHECK(!file_ref.get());
 
   if (CancelIfRequested())
     return;
-  if (file_error != base::PLATFORM_FILE_OK) {
-    callback.Run(net::PlatformFileErrorToNetError(file_error));
+  if (file_error != base::File::FILE_OK) {
+    callback.Run(net::FileErrorToNetError(file_error));
     return;
   }
   if (file_info.is_directory) {

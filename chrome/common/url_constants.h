@@ -15,11 +15,6 @@
 
 namespace chrome {
 
-// TODO(msw): Resolve chrome_frame dependency on these constants.
-extern const char kAboutComponentsURL[];
-extern const char kAboutPluginsURL[];
-extern const char kAboutVersionURL[];
-
 // chrome: URLs (including schemes). Should be kept in sync with the
 // components below.
 extern const char kChromeUIAboutURL[];
@@ -47,12 +42,14 @@ extern const char kChromeUIFaviconURL[];
 extern const char kChromeUIFeedbackURL[];
 extern const char kChromeUIFlagsURL[];
 extern const char kChromeUIFlashURL[];
+extern const char kChromeUIGCMInternalsURL[];
 extern const char kChromeUIHelpFrameURL[];
 extern const char kChromeUIHistoryURL[];
 extern const char kChromeUIHistoryFrameURL[];
 extern const char kChromeUIIdentityInternalsURL[];
 extern const char kChromeUIInspectURL[];
 extern const char kChromeUIInstantURL[];
+extern const char kChromeUIInvalidationsURL[];
 extern const char kChromeUIIPCURL[];
 extern const char kChromeUIManagedUserPassphrasePageURL[];
 extern const char kChromeUIMemoryRedirectURL[];
@@ -94,6 +91,7 @@ extern const char kChromeUIWelcomeURL[];
 #if defined(OS_CHROMEOS)
 extern const char kChromeUIActivationMessage[];
 extern const char kChromeUIBluetoothPairingURL[];
+extern const char kChromeUIChargerReplacementURL[];
 extern const char kChromeUIChooseMobileNetworkURL[];
 extern const char kChromeUIDiagnosticsURL[];
 extern const char kChromeUIDiscardsURL[];
@@ -104,9 +102,11 @@ extern const char kChromeUIKeyboardOverlayURL[];
 extern const char kChromeUILockScreenURL[];
 extern const char kChromeUIMediaplayerURL[];
 extern const char kChromeUIMobileSetupURL[];
+extern const char kChromeUINfcDebugURL[];
 extern const char kChromeUIOobeURL[];
 extern const char kChromeUIOSCreditsURL[];
 extern const char kChromeUIProxySettingsURL[];
+extern const char kChromeUIScreenlockIconURL[];
 extern const char kChromeUISimUnlockURL[];
 extern const char kChromeUISlideshowURL[];
 extern const char kChromeUISlowURL[];
@@ -166,6 +166,7 @@ extern const char kChromeUIFaviconHost[];
 extern const char kChromeUIFeedbackHost[];
 extern const char kChromeUIFlagsHost[];
 extern const char kChromeUIFlashHost[];
+extern const char kChromeUIGCMInternalsHost[];
 extern const char kChromeUIHelpFrameHost[];
 extern const char kChromeUIHelpHost[];
 extern const char kChromeUIHangHost[];
@@ -174,6 +175,7 @@ extern const char kChromeUIHistoryFrameHost[];
 extern const char kChromeUIIdentityInternalsHost[];
 extern const char kChromeUIInspectHost[];
 extern const char kChromeUIInstantHost[];
+extern const char kChromeUIInvalidationsHost[];
 extern const char kChromeUIIPCHost[];
 extern const char kChromeUIKillHost[];
 extern const char kChromeUIManagedUserPassphrasePageHost[];
@@ -210,6 +212,7 @@ extern const char kChromeUISyncHost[];
 extern const char kChromeUISyncFileSystemInternalsHost[];
 extern const char kChromeUISyncInternalsHost[];
 extern const char kChromeUISyncResourcesHost[];
+extern const char kChromeUISystemInfoHost[];
 extern const char kChromeUITaskManagerHost[];
 extern const char kChromeUITermsHost[];
 extern const char kChromeUIThemeHost[];
@@ -240,6 +243,7 @@ extern const char kChromeUISandboxHost[];
 extern const char kChromeUIActivationMessageHost[];
 extern const char kChromeUIAppLaunchHost[];
 extern const char kChromeUIBluetoothPairingHost[];
+extern const char kChromeUIChargerReplacementHost[];
 extern const char kChromeUIChooseMobileNetworkHost[];
 extern const char kChromeUICryptohomeHost[];
 extern const char kChromeUIDiagnosticsHost[];
@@ -254,15 +258,17 @@ extern const char kChromeUILoginHost[];
 extern const char kChromeUIMediaplayerHost[];
 extern const char kChromeUIMobileSetupHost[];
 extern const char kChromeUINetworkHost[];
+extern const char kChromeUINfcDebugHost[];
 extern const char kChromeUIOobeHost[];
 extern const char kChromeUIOSCreditsHost[];
+extern const char kChromeUIPowerHost[];
 extern const char kChromeUIProxySettingsHost[];
 extern const char kChromeUIRotateHost[];
+extern const char kChromeUIScreenlockIconHost[];
 extern const char kChromeUISimUnlockHost[];
 extern const char kChromeUISlideshowHost[];
 extern const char kChromeUISlowHost[];
 extern const char kChromeUISlowTraceHost[];
-extern const char kChromeUISystemInfoHost[];
 extern const char kChromeUIUserImageHost[];
 
 extern const char kChromeUIMenu[];
@@ -348,6 +354,9 @@ extern const char kChromeEnterpriseSignInLearnMoreURL[];
 // "Learn more" URL for resetting profile preferences.
 extern const char kResetProfileSettingsLearnMoreURL[];
 
+// "Learn more" URL for when profile settings are automatically reset.
+extern const char kAutomaticSettingsResetLearnMoreURL[];
+
 // Management URL for the supervised users.
 extern const char kSupervisedUserManagementURL[];
 
@@ -380,9 +389,13 @@ extern const char kPrivacyLearnMoreURL[];
 extern const char kDoNotTrackLearnMoreURL[];
 
 #if defined(OS_CHROMEOS)
-// "Learn more" URL for the attestation of content protection dialog / setting.
-// This URL is currently ChromeOS only.
+// These URLs are currently ChromeOS only.
+
+// "Learn more" URL for the attestation of content protection setting.
 extern const char kAttestationForContentProtectionLearnMoreURL[];
+
+// "Learn more" URL for the enhanced playback notification dialog.
+extern const char kEnhancedPlaybackNotificationLearnMoreURL[];
 #endif
 
 // The URL for the Chromium project used in the About dialog.
@@ -400,6 +413,9 @@ extern const char kBlockedPluginLearnMoreURL[];
 
 // The URL for the "About Voice Recognition" menu item.
 extern const char kSpeechInputAboutURL[];
+
+// The URL for the "Learn more" page for hotword search voice trigger.
+extern const char kHotwordLearnMoreURL[];
 
 // The URL for the "Learn more" page for register protocol handler infobars.
 extern const char kLearnMoreRegisterProtocolHandlerURL[];
@@ -450,9 +466,6 @@ extern const size_t kNumberOfChromeHostURLs;
 extern const char* const kChromeDebugURLs[];
 extern const int kNumberOfChromeDebugURLs;
 
-// Canonical schemes you can use as input to GURL.SchemeIs().
-extern const char kExtensionResourceScheme[];
-
 // The chrome-native: scheme is used show pages rendered with platform specific
 // widgets instead of using HTML.
 extern const char kChromeNativeScheme[];
@@ -478,7 +491,7 @@ extern const char kChromeSearchScheme[];
 // Pages under chrome-search.
 extern const char kChromeSearchLocalNtpHost[];
 extern const char kChromeSearchLocalNtpUrl[];
-extern const char kChromeSearchOnlineNtpHost[];
+extern const char kChromeSearchRemoteNtpHost[];
 
 // Host and URL for most visited iframes used on the Instant Extended NTP.
 extern const char kChromeSearchMostVisitedHost[];
@@ -488,6 +501,9 @@ extern const char kChromeSearchMostVisitedUrl[];
 extern const char kCrosScheme[];
 extern const char kDriveScheme[];
 #endif
+
+// Scheme for the DOM Distiller component.
+extern const char kDomDistillerScheme[];
 
 // "Learn more" URL for the Cloud Print section under Options.
 extern const char kCloudPrintLearnMoreURL[];
@@ -501,6 +517,14 @@ extern const char kSafeSearchSsuiParameter[];
 
 // The URL for the "Learn more" link in the media access infobar.
 extern const char kMediaAccessLearnMoreUrl[];
+
+// The URL for the "Learn more" link in the language settings.
+extern const char kLanguageSettingsLearnMoreUrl[];
+
+#if defined(OS_MACOSX)
+// The URL for the 32-bit Mac deprecation help center article
+extern const char kMac32BitDeprecationURL[];
+#endif
 
 }  // namespace chrome
 

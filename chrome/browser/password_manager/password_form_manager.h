@@ -11,30 +11,29 @@
 #include "build/build_config.h"
 
 #include "base/stl_util.h"
-#include "chrome/browser/password_manager/password_store_consumer.h"
+#include "chrome/browser/password_manager/password_manager_driver.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_consumer.h"
 
 namespace content {
 class WebContents;
 }  // namespace content
 
 class PasswordManager;
-class PasswordStore;
-class Profile;
+class PasswordManagerClient;
 
 // Per-password-form-{on-page, dialog} class responsible for interactions
 // between a given form, the per-tab PasswordManager, and the PasswordStore.
 class PasswordFormManager : public PasswordStoreConsumer {
  public:
-  // profile contains the link to the PasswordStore and whether we're off
-  //           the record
-  // password_manager owns this object
-  // form_on_page is the form that may be submitted and could need login data.
-  // ssl_valid represents the security of the page containing observed_form,
+  // |password_manager| owns this object
+  // |form_on_page| is the form that may be submitted and could need login data.
+  // |ssl_valid| represents the security of the page containing observed_form,
   //           used to filter login results from database.
-  PasswordFormManager(Profile* profile,
-                      PasswordManager* password_manager,
-                      content::WebContents* web_contents,
+  PasswordFormManager(PasswordManager* password_manager,
+                      PasswordManagerClient* client,
+                      PasswordManagerDriver* driver,
                       const autofill::PasswordForm& observed_form,
                       bool ssl_valid);
   virtual ~PasswordFormManager();
@@ -55,7 +54,11 @@ class PasswordFormManager : public PasswordStoreConsumer {
                   ActionMatch action_match) const;
 
   // Retrieves potential matching logins from the database.
-  void FetchMatchingLoginsFromPasswordStore();
+  // |prompt_policy| indicates whether it's permissible to prompt the user to
+  // authorize access to locked passwords. This argument is only used on
+  // platforms that support prompting the user for access (such as Mac OS).
+  void FetchMatchingLoginsFromPasswordStore(
+      PasswordStore::AuthorizationPromptPolicy prompt_policy);
 
   // Simple state-check to verify whether this object as received a callback
   // from the PasswordStore and completed its matching phase. Note that the
@@ -94,12 +97,9 @@ class PasswordFormManager : public PasswordStoreConsumer {
   void SetHasGeneratedPassword();
 
   // Determines if we need to autofill given the results of the query.
+  // Takes ownership of the elements in |result|.
   void OnRequestDone(const std::vector<autofill::PasswordForm*>& result);
 
-  // PasswordStoreConsumer implementation.
-  virtual void OnPasswordStoreRequestDone(
-      CancelableRequestProvider::Handle handle,
-      const std::vector<autofill::PasswordForm*>& result) OVERRIDE;
   virtual void OnGetPasswordStoreResults(
       const std::vector<autofill::PasswordForm*>& results) OVERRIDE;
 
@@ -107,6 +107,11 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // Blacklist it so that from now on when it is seen we ignore it.
   // TODO: Make this private once we switch to the new UI.
   void PermanentlyBlacklist();
+
+  // Sets whether the password form should use additional password
+  // authentication if available before being used for autofill.
+  void SetUseAdditionalPasswordAuthentication(
+      bool use_additional_authentication);
 
   // If the user has submitted observed_form_, provisionally hold on to
   // the submitted credentials until we are told by PasswordManager whether
@@ -152,10 +157,12 @@ class PasswordFormManager : public PasswordStoreConsumer {
  private:
   friend class PasswordFormManagerTest;
 
-  // ManagerAction - What does the manager do with this form? Either it fills
-  // it, or it doesn't. If it doesn't fill it, that's either because it has no
-  // match or it is blacklisted. Note that if we don't have an exact match, we
-  // still provide candidates that the user may end up choosing.
+  // ManagerAction - What does the manager do with this form? Either it
+  // fills it, or it doesn't. If it doesn't fill it, that's either
+  // because it has no match, or it is blacklisted, or it is disabled
+  // via the AUTOCOMPLETE=off attribute. Note that if we don't have
+  // an exact match, we still provide candidates that the user may
+  // end up choosing.
   enum ManagerAction {
     kManagerActionNone = 0,
     kManagerActionAutofilled,
@@ -191,7 +198,7 @@ class PasswordFormManager : public PasswordStoreConsumer {
   static const int kMaxNumActionsTaken = kManagerActionMax * kUserActionMax *
                                          kSubmitResultMax;
 
-  // Helper for OnPasswordStoreRequestDone to determine whether or not
+  // Helper for OnGetPasswordStoreResults to determine whether or not
   // the given result form is worth scoring.
   bool IgnoreResult(const autofill::PasswordForm& form) const;
 
@@ -201,7 +208,7 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // the previously preferred login from |best_matches_| will be reset.
   void SaveAsNewLogin(bool reset_preferred_login);
 
-  // Helper for OnPasswordStoreRequestDone to score an individual result
+  // Helper for OnGetPasswordStoreResults to score an individual result
   // against the observed_form_.
   int ScoreResult(const autofill::PasswordForm& form) const;
 
@@ -232,11 +239,6 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // Converts the "ActionsTaken" fields into an int so they can be logged to
   // UMA.
   int GetActionsTaken();
-
-  // Informs the renderer that the user has not blacklisted observed_form_ by
-  // choosing "never save passwords for this site". This is used by the password
-  // generation manager to deside whether to show the password generation icon.
-  virtual void SendNotBlacklistedToRenderer();
 
   // Remove possible_usernames that may contains sensitive information and
   // duplicates.
@@ -295,12 +297,11 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // when we actually haven't.
   PasswordFormManagerState state_;
 
-  // The profile from which we get the PasswordStore.
-  Profile* profile_;
+  // The client which implements embedder-specific PasswordManager operations.
+  PasswordManagerClient* client_;
 
-  // Web contents from which we get the RenderViewHost for sending messages to
-  // the corresponding renderer.
-  content::WebContents* web_contents_;
+  // The driver which implements platform-specific PasswordManager operations.
+  PasswordManagerDriver* driver_;
 
   // These three fields record the "ActionsTaken" by the browser and
   // the user with this form, and the result. They are combined and

@@ -5,7 +5,7 @@
 #include "content/test/mock_google_streaming_server.h"
 
 #include "base/bind.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_byteorder.h"
@@ -18,7 +18,7 @@
 #include "net/url_request/url_request_status.h"
 
 using base::HostToNet32;
-using base::checked_numeric_cast;
+using base::checked_cast;
 
 namespace content {
 
@@ -93,7 +93,7 @@ void MockGoogleStreamingServer::SimulateResult(
         proto_result->add_alternative();
     const SpeechRecognitionHypothesis& hypothesis = result.hypotheses[i];
     proto_alternative->set_confidence(hypothesis.confidence);
-    proto_alternative->set_transcript(UTF16ToUTF8(hypothesis.utterance));
+    proto_alternative->set_transcript(base::UTF16ToUTF8(hypothesis.utterance));
   }
 
   std::string msg_string;
@@ -101,7 +101,7 @@ void MockGoogleStreamingServer::SimulateResult(
 
   // Prepend 4 byte prefix length indication to the protobuf message as
   // envisaged by the google streaming recognition webservice protocol.
-  uint32 prefix = HostToNet32(checked_numeric_cast<uint32>(msg_string.size()));
+  uint32 prefix = HostToNet32(checked_cast<uint32>(msg_string.size()));
   msg_string.insert(0, reinterpret_cast<char*>(&prefix), sizeof(prefix));
 
   SimulateServerResponse(true, msg_string);

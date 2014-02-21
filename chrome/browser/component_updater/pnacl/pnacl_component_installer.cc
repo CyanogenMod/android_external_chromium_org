@@ -23,15 +23,17 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/omaha_query_params/omaha_query_params.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/omaha_query_params/omaha_query_params.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/browser_thread.h"
 
 using chrome::OmahaQueryParams;
 using content::BrowserThread;
+
+namespace component_updater {
 
 namespace {
 
@@ -78,7 +80,7 @@ void CheckVersionCompatiblity(const base::Version& current_version) {
 // PNaCl is packaged as a multi-CRX.  This returns the platform-specific
 // subdirectory that is part of that multi-CRX.
 base::FilePath GetPlatformDir(const base::FilePath& base_path) {
-  std::string arch = SanitizeForPath(OmahaQueryParams::getNaclArch());
+  std::string arch = SanitizeForPath(OmahaQueryParams::GetNaclArch());
   return base_path.AppendASCII("_platform_specific").AppendASCII(arch);
 }
 
@@ -190,9 +192,9 @@ bool CheckPnaclComponentManifest(const base::DictionaryValue& manifest,
     LOG(WARNING) << "'pnacl-arch' field is missing from pnacl-manifest!";
     return false;
   }
-  if (arch.compare(OmahaQueryParams::getNaclArch()) != 0) {
-    LOG(WARNING) << "'pnacl-arch' field in manifest is invalid ("
-                 << arch << " vs " << OmahaQueryParams::getNaclArch() << ")";
+  if (arch.compare(OmahaQueryParams::GetNaclArch()) != 0) {
+    LOG(WARNING) << "'pnacl-arch' field in manifest is invalid (" << arch
+                 << " vs " << OmahaQueryParams::GetNaclArch() << ")";
     return false;
   }
 
@@ -455,11 +457,13 @@ void PnaclComponentInstaller::ReRegisterPnacl() {
       base::Bind(&GetProfileInformation, this));
 }
 
+}  // namespace component_updater
 
 namespace pnacl {
 
 bool NeedsOnDemandUpdate() {
-  return base::subtle::NoBarrier_Load(&needs_on_demand_update) != 0;
+  return base::subtle::NoBarrier_Load(
+      &component_updater::needs_on_demand_update) != 0;
 }
 
 }  // namespace pnacl

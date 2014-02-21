@@ -74,6 +74,7 @@
         '../testing/gtest.gyp:gtest',
         '../ui/ui.gyp:ui_base_jni_headers',
         'android_webview_common',
+        'android_webview_unittests_jni',
       ],
       'include_dirs': [
         '..',
@@ -86,7 +87,7 @@
         'browser/net/input_stream_reader_unittest.cc',
         'lib/main/webview_tests.cc',
         'native/input_stream_unittest.cc',
-        'native/state_serializer_unittests.cc',
+        'native/state_serializer_unittest.cc',
       ],
     },
     {
@@ -110,6 +111,7 @@
       ],
       'variables': {
         'jni_gen_package': 'android_webview_unittests',
+        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../build/jni_generator.gypi' ],
     },
@@ -119,7 +121,6 @@
       'dependencies': [
         'android_webview_unittest_java',
         'android_webview_unittests',
-        'android_webview_unittests_jni',
       ],
       'variables': {
         'test_suite_name': 'android_webview_unittests',

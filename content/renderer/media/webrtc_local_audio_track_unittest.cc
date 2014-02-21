@@ -4,7 +4,7 @@
 
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
-#include "content/renderer/media/rtc_media_constraints.h"
+#include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_local_audio_source_provider.h"
@@ -14,6 +14,7 @@
 #include "media/base/audio_capturer_source.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 
 using ::testing::_;
@@ -162,13 +163,13 @@ class WebRtcLocalAudioTrackTest : public ::testing::Test {
   virtual void SetUp() OVERRIDE {
     params_.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
                   media::CHANNEL_LAYOUT_STEREO, 2, 0, 48000, 16, 480);
-    capturer_ = WebRtcAudioCapturer::CreateCapturer();
+    blink::WebMediaConstraints constraints;
+    capturer_ = WebRtcAudioCapturer::CreateCapturer(-1, StreamDeviceInfo(),
+                                                    constraints, NULL);
     capturer_source_ = new MockCapturerSource(capturer_.get());
-    EXPECT_CALL(*capturer_source_.get(), OnInitialize(_, capturer_.get(), 0))
+    EXPECT_CALL(*capturer_source_.get(), OnInitialize(_, capturer_.get(), -1))
         .WillOnce(Return());
-    capturer_->SetCapturerSource(capturer_source_,
-                                 params_.channel_layout(),
-                                 params_.sample_rate());
+    capturer_->SetCapturerSourceForTesting(capturer_source_, params_);
   }
 
   media::AudioParameters params_;
@@ -183,23 +184,23 @@ class WebRtcLocalAudioTrackTest : public ::testing::Test {
 TEST_F(WebRtcLocalAudioTrackTest, ConnectAndDisconnectOneSink) {
   EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*capturer_source_.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-          &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track(
+      new WebRtcLocalAudioTrack(adapter, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track->audio_source_provider())->SetSinkParamsForTesting(params_);
   track->Start();
-  EXPECT_TRUE(track->enabled());
+  EXPECT_TRUE(track->track()->enabled());
 
   // Connect a number of network channels to the audio track.
   static const int kNumberOfNetworkChannels = 4;
   for (int i = 0; i < kNumberOfNetworkChannels; ++i) {
-    static_cast<webrtc::AudioTrackInterface*>(track.get())->
-        GetRenderer()->AddChannel(i);
+    static_cast<webrtc::AudioTrackInterface*>(
+        adapter.get())->GetRenderer()->AddChannel(i);
   }
   scoped_ptr<MockMediaStreamAudioSink> sink(new MockMediaStreamAudioSink());
-  const media::AudioParameters params = capturer_->audio_parameters();
+  const media::AudioParameters params = capturer_->source_audio_parameters();
   base::WaitableEvent event(false, false);
   EXPECT_CALL(*sink, OnSetFormat(_)).WillOnce(Return());
   EXPECT_CALL(*sink,
@@ -209,7 +210,7 @@ TEST_F(WebRtcLocalAudioTrackTest, ConnectAndDisconnectOneSink) {
                   params.sample_rate() / 100,
                   0,
                   0,
-                  false,
+                  true,
                   false)).Times(AtLeast(1))
       .WillRepeatedly(SignalEvent(&event));
   track->AddSink(sink.get());
@@ -230,19 +231,19 @@ TEST_F(WebRtcLocalAudioTrackTest, ConnectAndDisconnectOneSink) {
 TEST_F(WebRtcLocalAudioTrackTest,  DISABLED_DisableEnableAudioTrack) {
   EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*capturer_source_.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track =
-    WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-        &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track(
+      new WebRtcLocalAudioTrack(adapter, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track->audio_source_provider())->SetSinkParamsForTesting(params_);
   track->Start();
-  static_cast<webrtc::AudioTrackInterface*>(track.get())->
-      GetRenderer()->AddChannel(0);
-  EXPECT_TRUE(track->enabled());
-  EXPECT_TRUE(track->set_enabled(false));
+  static_cast<webrtc::AudioTrackInterface*>(
+      adapter.get())->GetRenderer()->AddChannel(0);
+  EXPECT_TRUE(track->track()->enabled());
+  EXPECT_TRUE(track->track()->set_enabled(false));
   scoped_ptr<MockMediaStreamAudioSink> sink(new MockMediaStreamAudioSink());
-  const media::AudioParameters params = capturer_->audio_parameters();
+  const media::AudioParameters params = capturer_->source_audio_parameters();
   base::WaitableEvent event(false, false);
   EXPECT_CALL(*sink, OnSetFormat(_)).Times(1);
   EXPECT_CALL(*sink,
@@ -252,7 +253,7 @@ TEST_F(WebRtcLocalAudioTrackTest,  DISABLED_DisableEnableAudioTrack) {
                           params.sample_rate() / 100,
                           0,
                           0,
-                          false,
+                          true,
                           false)).Times(0);
   track->AddSink(sink.get());
   EXPECT_FALSE(event.TimedWait(TestTimeouts::tiny_timeout()));
@@ -265,16 +266,16 @@ TEST_F(WebRtcLocalAudioTrackTest,  DISABLED_DisableEnableAudioTrack) {
                           params.sample_rate() / 100,
                           0,
                           0,
-                          false,
+                          true,
                           false)).Times(AtLeast(1))
       .WillRepeatedly(SignalEvent(&event));
-  EXPECT_TRUE(track->set_enabled(true));
+  EXPECT_TRUE(track->track()->set_enabled(true));
   EXPECT_TRUE(event.TimedWait(TestTimeouts::tiny_timeout()));
   track->RemoveSink(sink.get());
 
   EXPECT_CALL(*capturer_source_.get(), OnStop()).WillOnce(Return());
   capturer_->Stop();
-  track = NULL;
+  track.reset();
 }
 
 // Create multiple audio tracks and enable/disable them, verify that the audio
@@ -283,18 +284,18 @@ TEST_F(WebRtcLocalAudioTrackTest,  DISABLED_DisableEnableAudioTrack) {
 TEST_F(WebRtcLocalAudioTrackTest, DISABLED_MultipleAudioTracks) {
   EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*capturer_source_.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track_1 =
-    WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-        &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter_1(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track_1(
+    new WebRtcLocalAudioTrack(adapter_1, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track_1->audio_source_provider())->SetSinkParamsForTesting(params_);
   track_1->Start();
-  static_cast<webrtc::AudioTrackInterface*>(track_1.get())->
-      GetRenderer()->AddChannel(0);
-  EXPECT_TRUE(track_1->enabled());
+  static_cast<webrtc::AudioTrackInterface*>(
+      adapter_1.get())->GetRenderer()->AddChannel(0);
+  EXPECT_TRUE(track_1->track()->enabled());
   scoped_ptr<MockMediaStreamAudioSink> sink_1(new MockMediaStreamAudioSink());
-  const media::AudioParameters params = capturer_->audio_parameters();
+  const media::AudioParameters params = capturer_->source_audio_parameters();
   base::WaitableEvent event_1(false, false);
   EXPECT_CALL(*sink_1, OnSetFormat(_)).WillOnce(Return());
   EXPECT_CALL(*sink_1,
@@ -304,21 +305,22 @@ TEST_F(WebRtcLocalAudioTrackTest, DISABLED_MultipleAudioTracks) {
                   params.sample_rate() / 100,
                   0,
                   0,
-                  false,
+                  true,
                   false)).Times(AtLeast(1))
       .WillRepeatedly(SignalEvent(&event_1));
   track_1->AddSink(sink_1.get());
   EXPECT_TRUE(event_1.TimedWait(TestTimeouts::tiny_timeout()));
 
-  scoped_refptr<WebRtcLocalAudioTrack> track_2 =
-    WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-        &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter_2(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track_2(
+    new WebRtcLocalAudioTrack(adapter_2, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track_2->audio_source_provider())->SetSinkParamsForTesting(params_);
   track_2->Start();
-  static_cast<webrtc::AudioTrackInterface*>(track_2.get())->
-      GetRenderer()->AddChannel(1);
-  EXPECT_TRUE(track_2->enabled());
+  static_cast<webrtc::AudioTrackInterface*>(
+      adapter_2.get())->GetRenderer()->AddChannel(1);
+  EXPECT_TRUE(track_2->track()->enabled());
 
   // Verify both |sink_1| and |sink_2| get data.
   event_1.Reset();
@@ -333,7 +335,7 @@ TEST_F(WebRtcLocalAudioTrackTest, DISABLED_MultipleAudioTracks) {
                   params.sample_rate() / 100,
                   0,
                   0,
-                  false,
+                  true,
                   false)).Times(AtLeast(1))
       .WillRepeatedly(SignalEvent(&event_1));
   EXPECT_CALL(*sink_2,
@@ -343,7 +345,7 @@ TEST_F(WebRtcLocalAudioTrackTest, DISABLED_MultipleAudioTracks) {
                   params.sample_rate() / 100,
                   0,
                   0,
-                  false,
+                  true,
                   false)).Times(AtLeast(1))
       .WillRepeatedly(SignalEvent(&event_2));
   track_2->AddSink(sink_2.get());
@@ -352,12 +354,12 @@ TEST_F(WebRtcLocalAudioTrackTest, DISABLED_MultipleAudioTracks) {
 
   track_1->RemoveSink(sink_1.get());
   track_1->Stop();
-  track_1 = NULL;
+  track_1.reset();
 
   EXPECT_CALL(*capturer_source_.get(), OnStop()).WillOnce(Return());
   track_2->RemoveSink(sink_2.get());
   track_2->Stop();
-  track_2 = NULL;
+  track_2.reset();
 
   capturer_->Stop();
 }
@@ -368,10 +370,10 @@ TEST_F(WebRtcLocalAudioTrackTest, DISABLED_MultipleAudioTracks) {
 TEST_F(WebRtcLocalAudioTrackTest, StartOneAudioTrack) {
   EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*capturer_source_.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-          &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track(
+      new WebRtcLocalAudioTrack(adapter, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track->audio_source_provider())->SetSinkParamsForTesting(params_);
   track->Start();
@@ -380,7 +382,7 @@ TEST_F(WebRtcLocalAudioTrackTest, StartOneAudioTrack) {
   // |capturer_source_|.
   EXPECT_CALL(*capturer_source_.get(), OnStop());
   capturer_->Stop();
-  track = NULL;
+  track.reset();
 }
 
 // Start/Stop tracks and verify the capturer is correctly starting/stopping
@@ -390,12 +392,12 @@ TEST_F(WebRtcLocalAudioTrackTest, StartAndStopAudioTracks) {
   base::WaitableEvent event(false, false);
   EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*capturer_source_.get(), OnStart()).WillOnce(SignalEvent(&event));
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track_1 =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-          &constraints);
-  static_cast<webrtc::AudioTrackInterface*>(track_1.get())->
-      GetRenderer()->AddChannel(0);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter_1(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track_1(
+      new WebRtcLocalAudioTrack(adapter_1, capturer_, NULL));
+  static_cast<webrtc::AudioTrackInterface*>(
+      adapter_1.get())->GetRenderer()->AddChannel(0);
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track_1->audio_source_provider())->SetSinkParamsForTesting(params_);
   track_1->Start();
@@ -405,7 +407,7 @@ TEST_F(WebRtcLocalAudioTrackTest, StartAndStopAudioTracks) {
   scoped_ptr<MockMediaStreamAudioSink> sink(new MockMediaStreamAudioSink());
   event.Reset();
   EXPECT_CALL(*sink, OnSetFormat(_)).WillOnce(SignalEvent(&event));
-  EXPECT_CALL(*sink, CaptureData(_, _, _, _, 0, 0, false, false))
+  EXPECT_CALL(*sink, CaptureData(_, _, _, _, 0, 0, true, false))
       .Times(AnyNumber()).WillRepeatedly(Return());
   track_1->AddSink(sink.get());
   EXPECT_TRUE(event.TimedWait(TestTimeouts::tiny_timeout()));
@@ -413,14 +415,15 @@ TEST_F(WebRtcLocalAudioTrackTest, StartAndStopAudioTracks) {
   // Start the second audio track will not start the |capturer_source_|
   // since it has been started.
   EXPECT_CALL(*capturer_source_.get(), OnStart()).Times(0);
-  scoped_refptr<WebRtcLocalAudioTrack> track_2 =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-          &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter_2(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track_2(
+      new WebRtcLocalAudioTrack(adapter_2, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track_2->audio_source_provider())->SetSinkParamsForTesting(params_);
   track_2->Start();
-  static_cast<webrtc::AudioTrackInterface*>(track_2.get())->
-      GetRenderer()->AddChannel(1);
+  static_cast<webrtc::AudioTrackInterface*>(
+      adapter_2.get())->GetRenderer()->AddChannel(1);
 
   // Stop the capturer will clear up the track lists in the capturer.
   EXPECT_CALL(*capturer_source_.get(), OnStop());
@@ -437,45 +440,15 @@ TEST_F(WebRtcLocalAudioTrackTest, StartAndStopAudioTracks) {
   capturer_->Stop();
 }
 
-// Set new source to the existing capturer.
-TEST_F(WebRtcLocalAudioTrackTest, SetNewSourceForCapturerAfterStartTrack) {
-  // Setup the audio track and start the track.
-  EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
-  EXPECT_CALL(*capturer_source_.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-          &constraints);
-  static_cast<WebRtcLocalAudioSourceProvider*>(
-      track->audio_source_provider())->SetSinkParamsForTesting(params_);
-  track->Start();
-
-  // Setting new source to the capturer and the track should still get packets.
-  scoped_refptr<MockCapturerSource> new_source(
-      new MockCapturerSource(capturer_.get()));
-  EXPECT_CALL(*capturer_source_.get(), OnStop());
-  EXPECT_CALL(*new_source.get(), SetAutomaticGainControl(true));
-  EXPECT_CALL(*new_source.get(), OnInitialize(_, capturer_.get(), 0))
-      .WillOnce(Return());
-  EXPECT_CALL(*new_source.get(), OnStart());
-  capturer_->SetCapturerSource(new_source,
-                               params_.channel_layout(),
-                               params_.sample_rate());
-
-  // Stop the track.
-  EXPECT_CALL(*new_source.get(), OnStop());
-  capturer_->Stop();
-}
-
 // Create a new capturer with new source, connect it to a new audio track.
 TEST_F(WebRtcLocalAudioTrackTest, ConnectTracksToDifferentCapturers) {
   // Setup the first audio track and start it.
   EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*capturer_source_.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track_1 =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer_, NULL, NULL,
-          &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter_1(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track_1(
+      new WebRtcLocalAudioTrack(adapter_1, capturer_, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track_1->audio_source_provider())->SetSinkParamsForTesting(params_);
   track_1->Start();
@@ -483,35 +456,39 @@ TEST_F(WebRtcLocalAudioTrackTest, ConnectTracksToDifferentCapturers) {
   // Connect a number of network channels to the |track_1|.
   static const int kNumberOfNetworkChannelsForTrack1 = 2;
   for (int i = 0; i < kNumberOfNetworkChannelsForTrack1; ++i) {
-    static_cast<webrtc::AudioTrackInterface*>(track_1.get())->
-        GetRenderer()->AddChannel(i);
+    static_cast<webrtc::AudioTrackInterface*>(
+        adapter_1.get())->GetRenderer()->AddChannel(i);
   }
   // Verify the data flow by connecting the |sink_1| to |track_1|.
   scoped_ptr<MockMediaStreamAudioSink> sink_1(new MockMediaStreamAudioSink());
   EXPECT_CALL(
       *sink_1.get(),
       CaptureData(
-          kNumberOfNetworkChannelsForTrack1, 48000, 2, _, 0, 0, false, false))
+          kNumberOfNetworkChannelsForTrack1, 48000, 2, _, 0, 0, true, false))
       .Times(AnyNumber()).WillRepeatedly(Return());
   EXPECT_CALL(*sink_1.get(), OnSetFormat(_)).Times(AnyNumber());
   track_1->AddSink(sink_1.get());
 
   // Create a new capturer with new source with different audio format.
+  blink::WebMediaConstraints constraints;
   scoped_refptr<WebRtcAudioCapturer> new_capturer(
-      WebRtcAudioCapturer::CreateCapturer());
+      WebRtcAudioCapturer::CreateCapturer(-1, StreamDeviceInfo(),
+                                          constraints, NULL));
   scoped_refptr<MockCapturerSource> new_source(
       new MockCapturerSource(new_capturer.get()));
-  EXPECT_CALL(*new_source.get(), OnInitialize(_, new_capturer.get(), 0));
-  new_capturer->SetCapturerSource(new_source,
-                                  media::CHANNEL_LAYOUT_MONO,
-                                  44100);
+  EXPECT_CALL(*new_source.get(), OnInitialize(_, new_capturer.get(), -1));
+  media::AudioParameters new_param(
+      media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      media::CHANNEL_LAYOUT_MONO, 44100, 16, 441);
+  new_capturer->SetCapturerSourceForTesting(new_source, new_param);
 
   // Setup the second audio track, connect it to the new capturer and start it.
   EXPECT_CALL(*new_source.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*new_source.get(), OnStart());
-  scoped_refptr<WebRtcLocalAudioTrack> track_2 =
-      WebRtcLocalAudioTrack::Create(std::string(), new_capturer, NULL, NULL,
-          &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter_2(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track_2(
+      new WebRtcLocalAudioTrack(adapter_2, new_capturer, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track_2->audio_source_provider())->SetSinkParamsForTesting(params_);
   track_2->Start();
@@ -519,8 +496,8 @@ TEST_F(WebRtcLocalAudioTrackTest, ConnectTracksToDifferentCapturers) {
   // Connect a number of network channels to the |track_2|.
   static const int kNumberOfNetworkChannelsForTrack2 = 3;
   for (int i = 0; i < kNumberOfNetworkChannelsForTrack2; ++i) {
-    static_cast<webrtc::AudioTrackInterface*>(track_2.get())->
-        GetRenderer()->AddChannel(i);
+    static_cast<webrtc::AudioTrackInterface*>(
+        adapter_2.get())->GetRenderer()->AddChannel(i);
   }
   // Verify the data flow by connecting the |sink_2| to |track_2|.
   scoped_ptr<MockMediaStreamAudioSink> sink_2(new MockMediaStreamAudioSink());
@@ -528,7 +505,8 @@ TEST_F(WebRtcLocalAudioTrackTest, ConnectTracksToDifferentCapturers) {
   EXPECT_CALL(
       *sink_2,
       CaptureData(
-          kNumberOfNetworkChannelsForTrack2, 44100, 1, _, 0, 0, false, false))
+          kNumberOfNetworkChannelsForTrack2, new_param.sample_rate(),
+          new_param.channels(), _, 0, 0, true, false))
       .Times(AnyNumber()).WillRepeatedly(Return());
   EXPECT_CALL(*sink_2, OnSetFormat(_)).WillOnce(SignalEvent(&event));
   track_2->AddSink(sink_2.get());
@@ -555,24 +533,28 @@ TEST_F(WebRtcLocalAudioTrackTest, TrackWorkWithSmallBufferSize) {
                                 media::CHANNEL_LAYOUT_STEREO, 48000, 16, 128);
 
   // Create a capturer with new source which works with the format above.
+  blink::WebMediaConstraints constraints;
   scoped_refptr<WebRtcAudioCapturer> capturer(
-      WebRtcAudioCapturer::CreateCapturer());
+      WebRtcAudioCapturer::CreateCapturer(
+          -1,
+          StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE,
+                           "", "", params.sample_rate(),
+                           params.channel_layout(),
+                           params.frames_per_buffer()),
+          constraints,
+          NULL));
   scoped_refptr<MockCapturerSource> source(
       new MockCapturerSource(capturer.get()));
-  capturer->Initialize(-1, params.channel_layout(), params.sample_rate(),
-                       params.frames_per_buffer(), 0, std::string(), 0, 0);
-
-  EXPECT_CALL(*source.get(), OnInitialize(_, capturer.get(), 0));
-  capturer->SetCapturerSource(source, params.channel_layout(),
-                              params.sample_rate());
+  EXPECT_CALL(*source.get(), OnInitialize(_, capturer.get(), -1));
+  capturer->SetCapturerSourceForTesting(source, params);
 
   // Setup a audio track, connect it to the capturer and start it.
   EXPECT_CALL(*source.get(), SetAutomaticGainControl(true));
   EXPECT_CALL(*source.get(), OnStart());
-  RTCMediaConstraints constraints;
-  scoped_refptr<WebRtcLocalAudioTrack> track =
-      WebRtcLocalAudioTrack::Create(std::string(), capturer, NULL, NULL,
-                                    &constraints);
+  scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
+      WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
+  scoped_ptr<WebRtcLocalAudioTrack> track(
+      new WebRtcLocalAudioTrack(adapter, capturer, NULL));
   static_cast<WebRtcLocalAudioSourceProvider*>(
       track->audio_source_provider())->SetSinkParamsForTesting(params);
   track->Start();
@@ -589,7 +571,7 @@ TEST_F(WebRtcLocalAudioTrackTest, TrackWorkWithSmallBufferSize) {
 #endif
   EXPECT_CALL(*sink, CaptureData(
       0, params.sample_rate(), params.channels(), expected_buffer_size,
-      0, 0, false, false))
+      0, 0, true, false))
       .Times(AtLeast(1)).WillRepeatedly(SignalEvent(&event));
   track->AddSink(sink.get());
   EXPECT_TRUE(event.TimedWait(TestTimeouts::tiny_timeout()));

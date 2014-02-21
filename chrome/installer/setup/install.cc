@@ -15,9 +15,9 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
-#include "base/safe_numerics.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -45,6 +45,8 @@
 // Build-time generated include file.
 #include "registered_dlls.h"  // NOLINT
 
+using base::ASCIIToUTF16;
+using base::UTF16ToUTF8;
 using installer::InstallerState;
 using installer::InstallationState;
 using installer::Product;
@@ -131,7 +133,7 @@ void ExecuteAndLogShortcutOperation(
 }
 
 void AddChromeToMediaPlayerList() {
-  string16 reg_path(installer::kMediaPlayerRegPath);
+  base::string16 reg_path(installer::kMediaPlayerRegPath);
   // registry paths can also be appended like file system path
   reg_path.push_back(base::FilePath::kSeparators[0]);
   reg_path.append(installer::kChromeExe);
@@ -297,7 +299,7 @@ installer::InstallShortcutOperation GetAppLauncherShortcutOperation(
 
 namespace installer {
 
-void EscapeXmlAttributeValueInSingleQuotes(string16* att_value) {
+void EscapeXmlAttributeValueInSingleQuotes(base::string16* att_value) {
   base::ReplaceChars(*att_value, L"&", L"&amp;", att_value);
   base::ReplaceChars(*att_value, L"'", L"&apos;", att_value);
   base::ReplaceChars(*att_value, L"<", L"&lt;", att_value);
@@ -306,7 +308,7 @@ void EscapeXmlAttributeValueInSingleQuotes(string16* att_value) {
 bool CreateVisualElementsManifest(const base::FilePath& src_path,
                                   const Version& version) {
   // Construct the relative path to the versioned VisualElements directory.
-  string16 elements_dir(ASCIIToUTF16(version.GetString()));
+  base::string16 elements_dir(ASCIIToUTF16(version.GetString()));
   elements_dir.push_back(base::FilePath::kSeparators[0]);
   elements_dir.append(installer::kVisualElements);
 
@@ -334,23 +336,22 @@ bool CreateVisualElementsManifest(const base::FilePath& src_path,
         "  </VisualElements>\r\n"
         "</Application>";
 
-    const string16 manifest_template(ASCIIToUTF16(kManifestTemplate));
+    const base::string16 manifest_template(ASCIIToUTF16(kManifestTemplate));
 
     BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
         BrowserDistribution::CHROME_BROWSER);
     // TODO(grt): http://crbug.com/75152 Write a reference to a localized
     // resource for |display_name|.
-    string16 display_name(dist->GetDisplayName());
+    base::string16 display_name(dist->GetDisplayName());
     EscapeXmlAttributeValueInSingleQuotes(&display_name);
 
     // Fill the manifest with the desired values.
-    string16 manifest16(base::StringPrintf(manifest_template.c_str(),
-                                           display_name.c_str(),
-                                           elements_dir.c_str()));
+    base::string16 manifest16(base::StringPrintf(
+        manifest_template.c_str(), display_name.c_str(), elements_dir.c_str()));
 
     // Write the manifest to |src_path|.
     const std::string manifest(UTF16ToUTF8(manifest16));
-    int size = base::checked_numeric_cast<int>(manifest.size());
+    int size = base::checked_cast<int>(manifest.size());
     if (file_util::WriteFile(
         src_path.Append(installer::kVisualElementsManifest),
             manifest.c_str(), size) == size) {
@@ -484,7 +485,7 @@ void RegisterChromeOnMachine(const InstallerState& installer_state,
   // Make Chrome the default browser if desired when possible. Otherwise, only
   // register it with Windows.
   BrowserDistribution* dist = product.distribution();
-  const string16 chrome_exe(
+  const base::string16 chrome_exe(
       installer_state.target_path().Append(installer::kChromeExe).value());
   VLOG(1) << "Registering Chrome as browser: " << chrome_exe;
   if (make_chrome_default && ShellUtil::CanMakeChromeDefaultUnattended()) {
@@ -493,7 +494,7 @@ void RegisterChromeOnMachine(const InstallerState& installer_state,
       level = level | ShellUtil::SYSTEM_LEVEL;
     ShellUtil::MakeChromeDefault(dist, level, chrome_exe, true);
   } else {
-    ShellUtil::RegisterChromeBrowser(dist, chrome_exe, string16(), false);
+    ShellUtil::RegisterChromeBrowser(dist, chrome_exe, base::string16(), false);
   }
 }
 
@@ -507,17 +508,15 @@ InstallStatus InstallOrUpdateProduct(
     const base::FilePath& prefs_path,
     const MasterPreferences& prefs,
     const Version& new_version) {
+  DCHECK(!installer_state.products().empty());
+
   // TODO(robertshield): Removing the pending on-reboot moves should be done
   // elsewhere.
-  // TODO(erikwright): Understand why this is Chrome Frame only and whether
-  // it also applies to App Host. Shouldn't it apply to any multi-install too?
-  const Products& products = installer_state.products();
-  DCHECK(products.size());
-  if (installer_state.FindProduct(BrowserDistribution::CHROME_FRAME)) {
-    // Make sure that we don't end up deleting installed files on next reboot.
-    if (!RemoveFromMovesPendingReboot(installer_state.target_path()))
-      LOG(ERROR) << "Error accessing pending moves value.";
-  }
+  // Remove any scheduled MOVEFILE_DELAY_UNTIL_REBOOT entries in the target of
+  // this installation. These may have been added during a previous uninstall of
+  // the same version.
+  LOG_IF(ERROR, !RemoveFromMovesPendingReboot(installer_state.target_path()))
+      << "Error accessing pending moves value.";
 
   // Create VisualElementManifest.xml in |src_path| (if required) so that it
   // looks as if it had been extracted from the archive when calling

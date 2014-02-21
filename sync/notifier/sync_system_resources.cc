@@ -17,7 +17,11 @@
 #include "google/cacheinvalidation/client_gateway.pb.h"
 #include "google/cacheinvalidation/deps/callback.h"
 #include "google/cacheinvalidation/include/types.h"
+#include "jingle/notifier/listener/push_client.h"
+#include "sync/notifier/gcm_network_channel.h"
+#include "sync/notifier/gcm_network_channel_delegate.h"
 #include "sync/notifier/invalidation_util.h"
+#include "sync/notifier/push_client_channel.h"
 
 namespace syncer {
 
@@ -166,6 +170,21 @@ void SyncNetworkChannel::AddObserver(Observer* observer) {
 
 void SyncNetworkChannel::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
+}
+
+scoped_ptr<SyncNetworkChannel> SyncNetworkChannel::CreatePushClientChannel(
+    const notifier::NotifierOptions& notifier_options) {
+  scoped_ptr<notifier::PushClient> push_client(
+      notifier::PushClient::CreateDefaultOnIOThread(notifier_options));
+  return scoped_ptr<SyncNetworkChannel>(
+      new PushClientChannel(push_client.Pass()));
+}
+
+scoped_ptr<SyncNetworkChannel> SyncNetworkChannel::CreateGCMNetworkChannel(
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+    scoped_ptr<GCMNetworkChannelDelegate> delegate) {
+  return scoped_ptr<SyncNetworkChannel>(new GCMNetworkChannel(
+      request_context_getter, delegate.Pass()));
 }
 
 const std::string& SyncNetworkChannel::GetServiceContextForTest() const {

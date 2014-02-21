@@ -75,11 +75,11 @@ NotificationResource::NotificationResource(BalloonHost* balloon_host)
 NotificationResource::~NotificationResource() {
 }
 
-string16 NotificationResource::GetTitle() const {
+base::string16 NotificationResource::GetTitle() const {
   return title_;
 }
 
-string16 NotificationResource::GetProfileName() const {
+base::string16 NotificationResource::GetProfileName() const {
   return base::string16();
 }
 
@@ -133,8 +133,8 @@ NotificationResourceProvider::~NotificationResourceProvider() {
 
 Resource* NotificationResourceProvider::GetResource(
     int origin_pid,
-    int render_process_host_id,
-    int routing_id) {
+    int child_id,
+    int route_id) {
   // TODO(johnnyg): provide resources by pid if necessary.
   return NULL;
 }

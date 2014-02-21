@@ -194,11 +194,15 @@ void AutocompleteResult::SortAndCull(const AutocompleteInput& input,
   default_match_ = matches_.begin();
 
   if (default_match_ != matches_.end()) {
-    const base::string16 debug_info = ASCIIToUTF16("fill_into_edit=") +
-        default_match_->fill_into_edit + ASCIIToUTF16(", provider=") +
-        ((default_match_->provider != NULL) ?
-         ASCIIToUTF16(default_match_->provider->GetName()) : base::string16()) +
-        ASCIIToUTF16(", input=") + input.text();
+    const base::string16 debug_info =
+        base::ASCIIToUTF16("fill_into_edit=") +
+        default_match_->fill_into_edit +
+        base::ASCIIToUTF16(", provider=") +
+        ((default_match_->provider != NULL)
+            ? base::ASCIIToUTF16(default_match_->provider->GetName())
+            : base::string16()) +
+        base::ASCIIToUTF16(", input=") +
+        input.text();
     DCHECK(default_match_->allowed_to_be_default_match) << debug_info;
     // We shouldn't get query matches for URL inputs, or non-query matches
     // for query inputs.
@@ -258,21 +262,13 @@ AutocompleteMatch* AutocompleteResult::match_at(size_t index) {
 }
 
 bool AutocompleteResult::ShouldHideTopMatch() const {
-  // Gate on our field trial flag.
-  if (!chrome::ShouldHideTopVerbatimMatch())
-    return false;
+  return chrome::ShouldHideTopVerbatimMatch() &&
+      TopMatchIsStandaloneVerbatimMatch();
+}
 
-  // If we don't have a verbatim first match, show everything.
-  if (empty() || !match_at(0).IsVerbatimType())
-    return false;
-
-  // If the verbatim first match is followed by another verbatim match, don't
-  // hide anything, lest we cause user confusion.
-  if ((size() > 1) && match_at(1).IsVerbatimType())
-    return false;
-
-  // Otherwise, it's safe to hide the verbatim first match.
-  return true;
+bool AutocompleteResult::TopMatchIsStandaloneVerbatimMatch() const {
+  return !empty() && match_at(0).IsVerbatimType() &&
+      ((size() == 1) || !match_at(1).IsVerbatimType());
 }
 
 void AutocompleteResult::Reset() {

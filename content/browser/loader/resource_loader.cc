@@ -161,14 +161,10 @@ void ResourceLoader::ReportUploadProgress() {
   }
 }
 
-void ResourceLoader::MarkAsTransferring(const GURL& target_url) {
-  CHECK_EQ(GetRequestInfo()->GetResourceType(), ResourceType::MAIN_FRAME)
-      << "Cannot transfer non-main frame navigations";
+void ResourceLoader::MarkAsTransferring() {
+  CHECK(ResourceType::IsFrame(GetRequestInfo()->GetResourceType()))
+      << "Can only transfer for navigations";
   is_transferring_ = true;
-
-  // When transferring a request to another process, the renderer doesn't get
-  // a chance to update the cookie policy URL. Do it here instead.
-  request()->set_first_party_for_cookies(target_url);
 }
 
 void ResourceLoader::CompleteTransfer() {
@@ -204,7 +200,7 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
 
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
-  if (info->process_type() != PROCESS_TYPE_PLUGIN &&
+  if (info->GetProcessType() != PROCESS_TYPE_PLUGIN &&
       !ChildProcessSecurityPolicyImpl::GetInstance()->
           CanRequestURL(info->GetChildID(), new_url)) {
     VLOG(1) << "Denied unauthorized request for "
@@ -243,11 +239,6 @@ void ResourceLoader::OnAuthRequired(net::URLRequest* unused,
     return;
   }
 
-  if (!delegate_->AcceptAuthRequest(this, auth_info)) {
-    request_->CancelAuth();
-    return;
-  }
-
   // Create a login dialog on the UI thread to get authentication data, or pull
   // from cache and continue on the IO thread.
 
@@ -263,7 +254,7 @@ void ResourceLoader::OnCertificateRequested(
     net::SSLCertRequestInfo* cert_info) {
   DCHECK_EQ(request_.get(), unused);
 
-  if (!delegate_->AcceptSSLClientCertificateRequest(this, cert_info)) {
+  if (request_->load_flags() & net::LOAD_PREFETCH) {
     request_->Cancel();
     return;
   }
@@ -283,8 +274,8 @@ void ResourceLoader::OnSSLCertificateError(net::URLRequest* request,
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
   int render_process_id;
-  int render_view_id;
-  if (!info->GetAssociatedRenderView(&render_process_id, &render_view_id))
+  int render_frame_id;
+  if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_id))
     NOTREACHED();
 
   SSLManager::OnSSLCertificateError(
@@ -293,9 +284,23 @@ void ResourceLoader::OnSSLCertificateError(net::URLRequest* request,
       info->GetResourceType(),
       request_->url(),
       render_process_id,
-      render_view_id,
+      render_frame_id,
       ssl_info,
       fatal);
+}
+
+void ResourceLoader::OnBeforeNetworkStart(net::URLRequest* unused,
+                                          bool* defer) {
+  DCHECK_EQ(request_.get(), unused);
+
+  // Give the handler a chance to delay the URLRequest from using the network.
+  if (!handler_->OnBeforeNetworkStart(
+           GetRequestInfo()->GetRequestID(), request_->url(), defer)) {
+    Cancel();
+    return;
+  } else if (*defer) {
+    deferred_stage_ = DEFERRED_NETWORK_START;
+  }
 }
 
 void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
@@ -400,6 +405,9 @@ void ResourceLoader::Resume() {
     case DEFERRED_START:
       StartRequestInternal();
       break;
+    case DEFERRED_NETWORK_START:
+      request_->ResumeNetworkStart();
+      break;
     case DEFERRED_REDIRECT:
       request_->FollowDeferredRedirect();
       break;
@@ -483,9 +491,9 @@ void ResourceLoader::StoreSignedCertificateTimestamps(
 
   for (net::SignedCertificateTimestampAndStatusList::const_iterator iter =
        sct_list.begin(); iter != sct_list.end(); ++iter) {
-    const int sct_id(sct_store->Store(iter->sct_, process_id));
+    const int sct_id(sct_store->Store(iter->sct, process_id));
     sct_ids->push_back(
-        SignedCertificateTimestampIDAndStatus(sct_id, iter->status_));
+        SignedCertificateTimestampIDAndStatus(sct_id, iter->status));
   }
 }
 

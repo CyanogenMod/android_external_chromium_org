@@ -8,7 +8,6 @@
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
 
@@ -43,6 +42,7 @@ void FolderCreator::Run(const FileIDCallback& callback) {
   drive_service_->AddNewDirectory(
       parent_folder_id_,
       title_,
+      drive::DriveServiceInterface::AddNewDirectoryOptions(),
       base::Bind(&FolderCreator::DidCreateFolder,
                  weak_ptr_factory_.GetWeakPtr(), callback));
 }
@@ -51,9 +51,9 @@ void FolderCreator::DidCreateFolder(
     const FileIDCallback& callback,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceEntry> entry) {
-  if (error != google_apis::HTTP_SUCCESS &&
-      error != google_apis::HTTP_CREATED) {
-    callback.Run(std::string(), GDataErrorCodeToSyncStatusCode(error));
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(std::string(), status);
     return;
   }
 
@@ -69,8 +69,15 @@ void FolderCreator::DidListFolders(
     ScopedVector<google_apis::ResourceEntry> candidates,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceList> resource_list) {
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(std::string(), GDataErrorCodeToSyncStatusCode(error));
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(std::string(), status);
+    return;
+  }
+
+  if (!resource_list) {
+    NOTREACHED();
+    callback.Run(std::string(), SYNC_STATUS_FAILED);
     return;
   }
 
@@ -108,7 +115,26 @@ void FolderCreator::DidListFolders(
   std::string file_id = oldest->resource_id();
 
   metadata_database_->UpdateByFileResourceList(
-      files.Pass(), base::Bind(callback, file_id));
+      files.Pass(), base::Bind(&FolderCreator::DidUpdateDatabase,
+                               weak_ptr_factory_.GetWeakPtr(),
+                               file_id, callback));
+}
+
+void FolderCreator::DidUpdateDatabase(const std::string& file_id,
+                                      const FileIDCallback& callback,
+                                      SyncStatusCode status) {
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(std::string(), status);
+    return;
+  }
+
+  DCHECK(!file_id.empty());
+  if (!metadata_database_->FindFileByFileID(file_id, NULL)) {
+    callback.Run(std::string(), SYNC_FILE_ERROR_NOT_FOUND);
+    return;
+  }
+
+  callback.Run(file_id, status);
 }
 
 }  // namespace drive_backend

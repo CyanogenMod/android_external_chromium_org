@@ -15,13 +15,13 @@
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
@@ -61,12 +61,12 @@ using testing::_;
 namespace base {
 
 // Helper for using EXPECT_EQ() with base::Value.
-bool operator==(const Value& first, const Value& second) {
+bool operator==(const base::Value& first, const base::Value& second) {
   return first.Equals(&second);
 }
 
 // Helper for pretty-printing the contents of base::Value in case of failures.
-void PrintTo(const Value& value, std::ostream* stream) {
+void PrintTo(const base::Value& value, std::ostream* stream) {
   std::string json;
   JSONWriter::Write(&value, &json);
   *stream << json;

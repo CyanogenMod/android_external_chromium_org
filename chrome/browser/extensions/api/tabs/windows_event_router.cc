@@ -7,7 +7,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
@@ -16,6 +15,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 #if defined(TOOLKIT_GTK)
 #include "ui/base/x/active_window_watcher_x.h"
@@ -118,9 +118,7 @@ static void WillDispatchWindowFocusedEvent(BrowserContext* new_active_context,
   // can't see the new focused window across the incognito boundary.
   // See crbug.com/46610.
   if (new_active_context && new_active_context != context &&
-      !extension_util::CanCrossIncognito(extension,
-                                         ExtensionSystem::GetForBrowserContext(
-                                             context)->extension_service())) {
+      !util::CanCrossIncognito(extension, context)) {
     event_args->Clear();
     event_args->Append(new base::FundamentalValue(
         extension_misc::kUnknownWindowId));

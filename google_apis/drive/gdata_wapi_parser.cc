@@ -536,19 +536,25 @@ std::string ResourceEntry::GetHostedDocumentExtension() const {
 }
 
 // static
+DriveEntryKind ResourceEntry::GetEntryKindFromExtension(
+    const std::string& extension) {
+  for (size_t i = 0; i < arraysize(kEntryKindMap); ++i) {
+    const char* document_extension = kEntryKindMap[i].extension;
+    if (document_extension && extension == document_extension)
+      return kEntryKindMap[i].kind;
+  }
+  return ENTRY_KIND_UNKNOWN;
+}
+
+// static
 int ResourceEntry::ClassifyEntryKindByFileExtension(
     const base::FilePath& file_path) {
 #if defined(OS_WIN)
-  std::string file_extension = WideToUTF8(file_path.Extension());
+  std::string file_extension = base::WideToUTF8(file_path.Extension());
 #else
   std::string file_extension = file_path.Extension();
 #endif
-  for (size_t i = 0; i < arraysize(kEntryKindMap); ++i) {
-    const char* document_extension = kEntryKindMap[i].extension;
-    if (document_extension && file_extension == document_extension)
-      return ClassifyEntryKind(kEntryKindMap[i].kind);
-  }
-  return 0;
+  return ClassifyEntryKind(GetEntryKindFromExtension(file_extension));
 }
 
 // static

@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "ash/display/display_controller.h"
-#include "ash/launcher/launcher_types.h"
 #include "ash/shelf/shelf_delegate.h"
 #include "ash/shelf/shelf_item_delegate.h"
+#include "ash/shelf/shelf_item_types.h"
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shelf/shelf_model_observer.h"
 #include "ash/shelf/shelf_types.h"
@@ -101,7 +101,7 @@ class ChromeLauncherController : public ash::ShelfDelegate,
                                  public ExtensionEnableFlowDelegate,
                                  public ash::ShelfLayoutManagerObserver {
  public:
-  // Indicates if a launcher item is incognito or not.
+  // Indicates if a shelf item is incognito or not.
   enum IncognitoState {
     STATE_INCOGNITO,
     STATE_NOT_INCOGNITO,
@@ -147,99 +147,96 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // Returns the single ChromeLauncherController instance.
   static ChromeLauncherController* instance() { return instance_; }
 
-  // Creates a new app item on the launcher for |controller|.
-  ash::LauncherID CreateAppLauncherItem(LauncherItemController* controller,
-                                        const std::string& app_id,
-                                        ash::LauncherItemStatus status);
+  // Creates a new app item on the shelf for |controller|.
+  ash::ShelfID CreateAppLauncherItem(LauncherItemController* controller,
+                                     const std::string& app_id,
+                                     ash::ShelfItemStatus status);
 
   // Updates the running status of an item. It will also update the status of
-  // browsers launcher item if needed.
-  void SetItemStatus(ash::LauncherID id, ash::LauncherItemStatus status);
+  // browsers shelf item if needed.
+  void SetItemStatus(ash::ShelfID id, ash::ShelfItemStatus status);
 
   // Updates the controller associated with id (which should be a shortcut).
   // |controller| remains owned by caller.
-  void SetItemController(ash::LauncherID id,
-                         LauncherItemController* controller);
+  void SetItemController(ash::ShelfID id, LauncherItemController* controller);
 
-  // Closes or unpins the launcher item.
-  void CloseLauncherItem(ash::LauncherID id);
+  // Closes or unpins the shelf item.
+  void CloseLauncherItem(ash::ShelfID id);
 
   // Pins the specified id. Currently only supports platform apps.
-  void Pin(ash::LauncherID id);
+  void Pin(ash::ShelfID id);
 
   // Unpins the specified id, closing if not running.
-  void Unpin(ash::LauncherID id);
+  void Unpin(ash::ShelfID id);
 
   // Returns true if the item identified by |id| is pinned.
-  bool IsPinned(ash::LauncherID id);
+  bool IsPinned(ash::ShelfID id);
 
   // Pins/unpins the specified id.
-  void TogglePinned(ash::LauncherID id);
+  void TogglePinned(ash::ShelfID id);
 
   // Returns true if the specified item can be pinned or unpinned. Only apps can
   // be pinned.
-  bool IsPinnable(ash::LauncherID id) const;
+  bool IsPinnable(ash::ShelfID id) const;
 
-  // If there is no launcher item in the launcher for application |app_id|, one
-  // gets created. The (existing or created) launcher items get then locked
+  // If there is no shelf item in the shelf for application |app_id|, one
+  // gets created. The (existing or created) shelf items get then locked
   // against a users un-pinning removal.
   void LockV1AppWithID(const std::string& app_id);
 
-  // A previously locked launcher item of type |app_id| gets unlocked. If the
+  // A previously locked shelf item of type |app_id| gets unlocked. If the
   // lock count reaches 0 and the item is not pinned it will go away.
   void UnlockV1AppWithID(const std::string& app_id);
 
-  // Requests that the launcher item controller specified by |id| open a new
+  // Requests that the shelf item controller specified by |id| open a new
   // instance of the app.  |event_flags| holds the flags of the event which
   // triggered this command.
-  void Launch(ash::LauncherID id, int event_flags);
+  void Launch(ash::ShelfID id, int event_flags);
 
   // Closes the specified item.
-  void Close(ash::LauncherID id);
+  void Close(ash::ShelfID id);
 
   // Returns true if the specified item is open.
-  bool IsOpen(ash::LauncherID id);
+  bool IsOpen(ash::ShelfID id);
 
   // Returns true if the specified item is for a platform app.
-  bool IsPlatformApp(ash::LauncherID id);
+  bool IsPlatformApp(ash::ShelfID id);
 
   // Opens a new instance of the application identified by |app_id|.
-  // Used by the app-list, and by pinned-app launcher items.
+  // Used by the app-list, and by pinned-app shelf items.
   void LaunchApp(const std::string& app_id,
                  ash::LaunchSource source,
                  int event_flags);
 
   // If |app_id| is running, reactivates the app's most recently active window,
   // otherwise launches and activates the app.
-  // Used by the app-list, and by pinned-app launcher items.
+  // Used by the app-list, and by pinned-app shelf items.
   void ActivateApp(const std::string& app_id,
                    ash::LaunchSource source,
                    int event_flags);
 
   // Returns the launch type of app for the specified id.
-  extensions::LaunchType GetLaunchType(ash::LauncherID id);
+  extensions::LaunchType GetLaunchType(ash::ShelfID id);
 
-  // Set the image for a specific launcher item (e.g. when set by the app).
-  void SetLauncherItemImage(ash::LauncherID launcher_id,
-                            const gfx::ImageSkia& image);
+  // Set the image for a specific shelf item (e.g. when set by the app).
+  void SetLauncherItemImage(ash::ShelfID shelf_id, const gfx::ImageSkia& image);
 
   // Find out if the given application |id| is a windowed app item and not a
-  // pinned item in the launcher.
+  // pinned item in the shelf.
   bool IsWindowedAppInLauncher(const std::string& app_id);
 
   // Updates the launch type of the app for the specified id to |launch_type|.
-  void SetLaunchType(ash::LauncherID id,
-                     extensions::LaunchType launch_type);
+  void SetLaunchType(ash::ShelfID id, extensions::LaunchType launch_type);
 
   // Returns true if the user is currently logged in as a guest.
   // Makes virtual for unittest in LauncherContextMenuTest.
   virtual bool IsLoggedInAsGuest();
 
-  // Invoked when user clicks on button in the launcher and there is no last
+  // Invoked when user clicks on button in the shelf and there is no last
   // used window (or CTRL is held with the click).
   void CreateNewWindow();
 
-  // Invoked when the user clicks on button in the launcher to create a new
+  // Invoked when the user clicks on button in the shelf to create a new
   // incognito window.
   void CreateNewIncognitoWindow();
 
@@ -274,12 +271,12 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // have changed,
   void UpdateAppState(content::WebContents* contents, AppState app_state);
 
-  // Returns LauncherID for |contents|. If |contents| is not an app or is not
+  // Returns ShelfID for |contents|. If |contents| is not an app or is not
   // pinned, returns the id of browser shrotcut.
-  ash::LauncherID GetLauncherIDForWebContents(content::WebContents* contents);
+  ash::ShelfID GetShelfIDForWebContents(content::WebContents* contents);
 
   // Limits application refocusing to urls that match |url| for |id|.
-  void SetRefocusURLPatternForTest(ash::LauncherID id, const GURL& url);
+  void SetRefocusURLPatternForTest(ash::ShelfID id, const GURL& url);
 
   // Returns the extension identified by |app_id|.
   const extensions::Extension* GetExtensionForAppID(
@@ -291,11 +288,10 @@ class ChromeLauncherController : public ash::ShelfDelegate,
                                         bool allow_minimize);
 
   // ash::ShelfDelegate overrides:
-  virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
-  virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
-  virtual ash::LauncherID GetLauncherIDForAppID(
-      const std::string& app_id) OVERRIDE;
-  virtual const std::string& GetAppIDForLauncherID(ash::LauncherID id) OVERRIDE;
+  virtual void OnShelfCreated(ash::Shelf* shelf) OVERRIDE;
+  virtual void OnShelfDestroyed(ash::Shelf* shelf) OVERRIDE;
+  virtual ash::ShelfID GetShelfIDForAppID(const std::string& app_id) OVERRIDE;
+  virtual const std::string& GetAppIDForShelfID(ash::ShelfID id) OVERRIDE;
   virtual void PinAppWithID(const std::string& app_id) OVERRIDE;
   virtual bool IsAppPinned(const std::string& app_id) OVERRIDE;
   virtual bool CanPin() const OVERRIDE;
@@ -303,10 +299,10 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   // ash::ShelfModelObserver overrides:
   virtual void ShelfItemAdded(int index) OVERRIDE;
-  virtual void ShelfItemRemoved(int index, ash::LauncherID id) OVERRIDE;
+  virtual void ShelfItemRemoved(int index, ash::ShelfID id) OVERRIDE;
   virtual void ShelfItemMoved(int start_index, int target_index) OVERRIDE;
   virtual void ShelfItemChanged(int index,
-                                const ash::LauncherItem& old_item) OVERRIDE;
+                                const ash::ShelfItem& old_item) OVERRIDE;
   virtual void ShelfStatusChanged() OVERRIDE;
 
   // content::NotificationObserver overrides:
@@ -349,7 +345,7 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // Get the list of all running incarnations of this item.
   // |event_flags| specifies the flags which were set by the event which
   // triggered this menu generation. It can be used to generate different lists.
-  ChromeLauncherAppMenuItems GetApplicationList(const ash::LauncherItem& item,
+  ChromeLauncherAppMenuItems GetApplicationList(const ash::ShelfItem& item,
                                                 int event_flags);
 
   // Get the list of all tabs which belong to a certain application type.
@@ -381,7 +377,7 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   BrowserShortcutLauncherItemController*
       GetBrowserShortcutLauncherItemController();
 
-  LauncherItemController* GetLauncherItemController(const ash::LauncherID id);
+  LauncherItemController* GetLauncherItemController(const ash::ShelfID id);
 
   // Returns true if |browser| is owned by the active user.
   bool IsBrowserFromActiveUser(Browser* browser);
@@ -397,16 +393,16 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   }
 
  protected:
-  // Creates a new app shortcut item and controller on the launcher at |index|.
+  // Creates a new app shortcut item and controller on the shelf at |index|.
   // Use kInsertItemAtEnd to add a shortcut as the last item.
-  ash::LauncherID CreateAppShortcutLauncherItem(const std::string& app_id,
-                                                int index);
+  ash::ShelfID CreateAppShortcutLauncherItem(const std::string& app_id,
+                                             int index);
 
   // Sets the AppTabHelper/AppIconLoader, taking ownership of the helper class.
   // These are intended for testing.
   void SetAppTabHelperForTest(AppTabHelper* helper);
   void SetAppIconLoaderForTest(extensions::AppIconLoader* loader);
-  const std::string& GetAppIdFromLauncherIdForTest(ash::LauncherID id);
+  const std::string& GetAppIdFromShelfIdForTest(ash::ShelfID id);
 
   // Sets the ash::ShelfItemDelegateManager only for unittests and doesn't
   // take an ownership of it.
@@ -415,40 +411,45 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
  private:
   friend class ChromeLauncherControllerTest;
-  friend class LauncherAppBrowserTest;
+  friend class ShelfAppBrowserTest;
   friend class LauncherPlatformAppBrowserTest;
 
-  typedef std::map<ash::LauncherID, LauncherItemController*>
-          IDToItemControllerMap;
+  typedef std::map<ash::ShelfID, LauncherItemController*> IDToItemControllerMap;
   typedef std::list<content::WebContents*> WebContentsList;
   typedef std::map<std::string, WebContentsList> AppIDToWebContentsListMap;
   typedef std::map<content::WebContents*, std::string> WebContentsToAppIDMap;
 
-  // Creates a new app shortcut item and controller on the launcher at |index|.
+  // Remembers / restores list of running applications.
+  // Note that this order will neither be stored in the preference nor will it
+  // remember the order of closed applications since it is only temporary.
+  void RememberUnpinnedRunningApplicationOrder();
+  void RestoreUnpinnedRunningApplicationOrder(const std::string& user_id);
+
+  // Creates a new app shortcut item and controller on the shelf at |index|.
   // Use kInsertItemAtEnd to add a shortcut as the last item.
-  ash::LauncherID CreateAppShortcutLauncherItemWithType(
+  ash::ShelfID CreateAppShortcutLauncherItemWithType(
       const std::string& app_id,
       int index,
-      ash::LauncherItemType launcher_item_type);
+      ash::ShelfItemType shelf_item_type);
 
   // Invoked when the associated browser or app is closed.
-  void LauncherItemClosed(ash::LauncherID id);
+  void LauncherItemClosed(ash::ShelfID id);
 
   // Internal helpers for pinning and unpinning that handle both
   // client-triggered and internal pinning operations.
   void DoPinAppWithID(const std::string& app_id);
   void DoUnpinAppWithID(const std::string& app_id);
 
-  // Pin a running app with |launcher_id| internally to |index|. It returns
+  // Pin a running app with |shelf_id| internally to |index|. It returns
   // the index where the item was pinned.
-  int PinRunningAppInternal(int index, ash::LauncherID launcher_id);
+  int PinRunningAppInternal(int index, ash::ShelfID shelf_id);
 
   // Unpin a locked application. This is an internal call which converts the
   // model type of the given app index from a shortcut into an unpinned running
   // app.
   void UnpinRunningAppInternal(int index);
 
-  // Re-syncs launcher model with prefs::kPinnedLauncherApps.
+  // Re-syncs shelf model with prefs::kPinnedLauncherApps.
   void UpdateAppLaunchersFromPref();
 
   // Persists the shelf auto-hide behavior to prefs.
@@ -469,22 +470,21 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   // Creates an app launcher to insert at |index|. Note that |index| may be
   // adjusted by the model to meet ordering constraints.
-  // The |launcher_item_type| will be set into the ShelfModel.
-  ash::LauncherID InsertAppLauncherItem(
-      LauncherItemController* controller,
-      const std::string& app_id,
-      ash::LauncherItemStatus status,
-      int index,
-      ash::LauncherItemType launcher_item_type);
+  // The |shelf_item_type| will be set into the ShelfModel.
+  ash::ShelfID InsertAppLauncherItem(LauncherItemController* controller,
+                                        const std::string& app_id,
+                                        ash::ShelfItemStatus status,
+                                        int index,
+                                        ash::ShelfItemType shelf_item_type);
 
-  bool HasItemController(ash::LauncherID id) const;
+  bool HasItemController(ash::ShelfID id) const;
 
   // Enumerate all Web contents which match a given shortcut |controller|.
   std::vector<content::WebContents*> GetV1ApplicationsFromController(
       LauncherItemController* controller);
 
-  // Create LauncherItem for Browser Shortcut.
-  ash::LauncherID CreateBrowserShortcutLauncherItem();
+  // Create ShelfItem for Browser Shortcut.
+  ash::ShelfID CreateBrowserShortcutLauncherItem();
 
   // Check if the given |web_contents| is in incognito mode.
   bool IsIncognito(const content::WebContents* web_contents) const;
@@ -523,7 +523,7 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   // Set ShelfItemDelegate |item_delegate| for |id| and take an ownership.
   // TODO(simon.hong81): Make this take a scoped_ptr of |item_delegate|.
-  void SetShelfItemDelegate(ash::LauncherID id,
+  void SetShelfItemDelegate(ash::ShelfID id,
                             ash::ShelfItemDelegate* item_delegate);
 
   // Attach to a specific profile.
@@ -572,8 +572,8 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;
 
-  // Launchers that are currently being observed.
-  std::set<ash::Launcher*> launchers_;
+  // Shelves that are currently being observed.
+  std::set<ash::Shelf*> shelves_;
 
   // The owned browser status monitor.
   scoped_ptr<BrowserStatusMonitor> browser_status_monitor_;
@@ -586,6 +586,12 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   // True if each user has an own desktop.
   bool multi_profile_desktop_separation_;
+
+  // The list of running & un-pinned applications for different users on hidden
+  // desktops.
+  typedef std::vector<std::string> RunningAppListIds;
+  typedef std::map<std::string, RunningAppListIds> RunningAppListIdMap;
+  RunningAppListIdMap last_used_running_application_order_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherController);
 };

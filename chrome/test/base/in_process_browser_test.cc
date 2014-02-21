@@ -17,7 +17,6 @@
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/io_thread.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -42,10 +41,10 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/webdata/encryptor/encryptor.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_launcher.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -55,7 +54,7 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/windows_version.h"
 #include "ui/base/win/atl_module.h"
@@ -68,7 +67,7 @@
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-#include "chrome/browser/storage_monitor/test_storage_monitor.h"
+#include "components/storage_monitor/test_storage_monitor.h"
 #endif
 
 namespace {
@@ -167,7 +166,7 @@ void InProcessBrowserTest::SetUp() {
   // and set up renderer.
   if (command_line->HasSwitch(switches::kSingleProcess)) {
     content::SetRendererClientForTesting(
-        &g_chrome_content_renderer_client.Get());
+        g_chrome_content_renderer_client.Pointer());
   }
 
 #if defined(OS_CHROMEOS)
@@ -185,6 +184,11 @@ void InProcessBrowserTest::SetUp() {
   // browser shutdown). To avoid this, the following pool is recycled after each
   // time code is directly executed.
   autorelease_pool_ = new base::mac::ScopedNSAutoreleasePool;
+
+  // Always use the MockKeychain if OS encription is used (which is when
+  // anything sensitive gets stored, including Cookies).  Without this,
+  // many tests will hang waiting for a user to approve KeyChain access.
+  Encryptor::UseMockKeychain(true);
 #endif
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
@@ -197,7 +201,7 @@ void InProcessBrowserTest::SetUp() {
 
   google_util::SetMockLinkDoctorBaseURLForTesting();
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests)) {
     com_initializer_.reset(new base::win::ScopedCOMInitializer());
@@ -216,7 +220,7 @@ void InProcessBrowserTest::PrepareTestCommandLine(CommandLine* command_line) {
   // This is a Browser test.
   command_line->AppendSwitchASCII(switches::kTestType, kBrowserTestType);
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   if (command_line->HasSwitch(switches::kAshBrowserTests)) {
     command_line->AppendSwitchNative(switches::kViewerLaunchViaAppId,
                                      win8::test::kDefaultTestAppUserModelId);
@@ -270,7 +274,7 @@ bool InProcessBrowserTest::CreateUserDataDirectory() {
 
 void InProcessBrowserTest::TearDown() {
   DCHECK(!g_browser_process);
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   com_initializer_.reset();
 #endif
   BrowserTestBase::TearDown();

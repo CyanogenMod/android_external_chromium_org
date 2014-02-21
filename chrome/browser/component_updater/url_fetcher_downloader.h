@@ -5,11 +5,16 @@
 #ifndef CHROME_BROWSER_COMPONENT_UPDATER_URL_FETCHER_DOWNLOADER_H_
 #define CHROME_BROWSER_COMPONENT_UPDATER_URL_FETCHER_DOWNLOADER_H_
 
+#include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "chrome/browser/component_updater/crx_downloader.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 namespace net {
 class URLFetcher;
+class URLRequestContextGetter;
 }
 
 namespace component_updater {
@@ -31,10 +36,17 @@ class UrlFetcherDownloader : public CrxDownloader,
 
   // Overrides for URLFetcherDelegate.
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
-
+  virtual void OnURLFetchDownloadProgress(const net::URLFetcher* source,
+                                          int64 current,
+                                          int64 total) OVERRIDE;
   scoped_ptr<net::URLFetcher> url_fetcher_;
   net::URLRequestContextGetter* context_getter_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
+
+  base::Time download_start_time_;
+
+  int64 downloaded_bytes_;
+  int64 total_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(UrlFetcherDownloader);
 };

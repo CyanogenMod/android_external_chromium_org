@@ -16,8 +16,9 @@ IPC_ENUM_TRAITS(quota::QuotaStatusCode)
 
 // Quota messages sent from the browser to the child process.
 
-IPC_MESSAGE_CONTROL2(QuotaMsg_DidGrantStorageQuota,
+IPC_MESSAGE_CONTROL3(QuotaMsg_DidGrantStorageQuota,
                      int /* request_id */,
+                     int64 /* current_usage */,
                      int64 /* granted_quota */)
 
 IPC_MESSAGE_CONTROL3(QuotaMsg_DidQueryStorageUsageAndQuota,
@@ -41,4 +42,4 @@ IPC_MESSAGE_CONTROL5(QuotaHostMsg_RequestStorageQuota,
                      int /* request_id */,
                      GURL /* origin_url */,
                      quota::StorageType /* type */,
-                     int64 /* requested_size */)
+                     uint64 /* requested_size */)

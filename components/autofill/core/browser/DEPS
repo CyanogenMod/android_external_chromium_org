@@ -40,8 +40,8 @@ specific_include_rules = {
     # and please do not introduce more #includes of these files.
     "!chrome/browser/autofill/autofill_cc_infobar_delegate.h",
     "!chrome/browser/autofill/personal_data_manager_factory.h",
+    "!chrome/browser/password_manager/chrome_password_manager_client.h",
     "!chrome/browser/password_manager/password_manager.h",
-    "!chrome/browser/password_manager/password_manager_delegate_impl.h",
     "!chrome/browser/profiles/profile.h",
     "!chrome/browser/sync/profile_sync_service.h",
     "!chrome/browser/sync/profile_sync_service_factory.h",
@@ -49,6 +49,5 @@ specific_include_rules = {
     "!chrome/browser/webdata/web_data_service_factory.h",
     "!chrome/test/base/chrome_render_view_host_test_harness.h",
     "!chrome/test/base/testing_profile.h",
-    "!third_party/WebKit/public/web/WebInputElement.h",
   ],
 }

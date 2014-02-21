@@ -8,7 +8,7 @@
 #import <Cocoa/Cocoa.h>
 #include <vector>
 
-#include "apps/shell_window.h"
+#include "apps/app_window.h"
 #include "apps/ui/native_app_window.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,7 +18,6 @@
 #include "ui/gfx/rect.h"
 
 class ExtensionKeybindingRegistryCocoa;
-class Profile;
 class NativeAppWindowCocoa;
 @class ShellNSWindow;
 class SkRegion;
@@ -44,8 +43,8 @@ class SkRegion;
 class NativeAppWindowCocoa : public apps::NativeAppWindow,
                              public content::WebContentsObserver {
  public:
-  NativeAppWindowCocoa(apps::ShellWindow* shell_window,
-                       const apps::ShellWindow::CreateParams& params);
+  NativeAppWindowCocoa(apps::AppWindow* app_window,
+                       const apps::AppWindow::CreateParams& params);
 
   // ui::BaseWindow implementation.
   virtual bool IsActive() const OVERRIDE;
@@ -118,6 +117,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
+  virtual void UpdateBadgeIcon() OVERRIDE;
   virtual void UpdateShape(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual void UpdateDraggableRegions(
       const std::vector<extensions::DraggableRegion>& regions) OVERRIDE;
@@ -136,9 +136,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   virtual void UpdateWindowMinMaxSize() OVERRIDE;
 
   // WebContentsObserver implementation.
-  virtual void RenderViewHostChanged(
-      content::RenderViewHost* old_host,
-      content::RenderViewHost* new_host) OVERRIDE;
+  virtual void RenderViewCreated(content::RenderViewHost* rvh) OVERRIDE;
 
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
 
@@ -157,10 +155,10 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   ShellNSWindow* window() const;
 
   content::WebContents* web_contents() const {
-    return shell_window_->web_contents();
+    return app_window_->web_contents();
   }
   const extensions::Extension* extension() const {
-    return shell_window_->extension();
+    return app_window_->extension();
   }
 
   // Returns the WindowStyleMask based on the type of window frame.
@@ -184,7 +182,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   // Hides the window unconditionally. Used by Hide and HideWithApp.
   void HideWithoutMarkingHidden();
 
-  apps::ShellWindow* shell_window_; // weak - ShellWindow owns NativeAppWindow.
+  apps::AppWindow* app_window_;  // weak - AppWindow owns NativeAppWindow.
 
   bool has_frame_;
 

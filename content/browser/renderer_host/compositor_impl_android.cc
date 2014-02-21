@@ -35,9 +35,10 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/browser/android/compositor_client.h"
 #include "content/public/common/content_switches.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
+#include "third_party/skia/include/core/SkMallocPixelRef.h"
 #include "ui/base/android/window_android.h"
 #include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/android/java_bitmap.h"
@@ -60,35 +61,74 @@ class DirectOutputSurface : public cc::OutputSurface {
     capabilities_.adjust_deadline_for_parent = false;
   }
 
-  virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE {
+  virtual void Reshape(const gfx::Size& size, float scale_factor) OVERRIDE {
     surface_size_ = size;
   }
   virtual void SwapBuffers(cc::CompositorFrame*) OVERRIDE {
-    context_provider_->Context3d()->shallowFlushCHROMIUM();
+    context_provider_->ContextGL()->ShallowFlushCHROMIUM();
   }
 };
 
 // Used to override capabilities_.adjust_deadline_for_parent to false
 class OutputSurfaceWithoutParent : public cc::OutputSurface {
  public:
-  OutputSurfaceWithoutParent(
-      const scoped_refptr<
-        content::ContextProviderCommandBuffer>& context_provider)
+  OutputSurfaceWithoutParent(const scoped_refptr<
+      content::ContextProviderCommandBuffer>& context_provider)
       : cc::OutputSurface(context_provider) {
     capabilities_.adjust_deadline_for_parent = false;
   }
 
   virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE {
-    content::WebGraphicsContext3DCommandBufferImpl* command_buffer_context =
-        static_cast<content::WebGraphicsContext3DCommandBufferImpl*>(
-            context_provider_->Context3d());
+    content::ContextProviderCommandBuffer* provider_command_buffer =
+        static_cast<content::ContextProviderCommandBuffer*>(
+            context_provider_.get());
     content::CommandBufferProxyImpl* command_buffer_proxy =
-        command_buffer_context->GetCommandBufferProxy();
+        provider_command_buffer->GetCommandBufferProxy();
     DCHECK(command_buffer_proxy);
     command_buffer_proxy->SetLatencyInfo(frame->metadata.latency_info);
 
     OutputSurface::SwapBuffers(frame);
   }
+};
+
+class TransientUIResource : public cc::ScopedUIResource {
+ public:
+  static scoped_ptr<TransientUIResource> Create(
+      cc::LayerTreeHost* host,
+      const cc::UIResourceBitmap& bitmap) {
+    return make_scoped_ptr(new TransientUIResource(host, bitmap));
+  }
+
+  virtual cc::UIResourceBitmap GetBitmap(cc::UIResourceId uid,
+                                         bool resource_lost) OVERRIDE {
+    if (!retrieved_) {
+      cc::UIResourceBitmap old_bitmap(bitmap_);
+
+      // Return a place holder for all following calls to GetBitmap.
+      SkBitmap tiny_bitmap;
+      SkCanvas canvas(tiny_bitmap);
+      tiny_bitmap.setConfig(
+          SkBitmap::kARGB_8888_Config, 1, 1, 0, kOpaque_SkAlphaType);
+      tiny_bitmap.allocPixels();
+      canvas.drawColor(SK_ColorWHITE);
+      tiny_bitmap.setImmutable();
+
+      // Release our reference of the true bitmap.
+      bitmap_ = cc::UIResourceBitmap(tiny_bitmap);
+
+      retrieved_ = true;
+      return old_bitmap;
+    }
+    return bitmap_;
+  }
+
+ protected:
+  TransientUIResource(cc::LayerTreeHost* host,
+                      const cc::UIResourceBitmap& bitmap)
+      : cc::ScopedUIResource(host, bitmap), retrieved_(false) {}
+
+ private:
+  bool retrieved_;
 };
 
 static bool g_initialized = false;
@@ -135,6 +175,7 @@ CompositorImpl::CompositorImpl(CompositorClient* client,
                                gfx::NativeWindow root_window)
     : root_layer_(cc::Layer::Create()),
       has_transparent_background_(false),
+      device_scale_factor_(1),
       window_(NULL),
       surface_id_(0),
       client_(client),
@@ -233,6 +274,7 @@ void CompositorImpl::SetVisible(bool visible) {
     host_->SetLayerTreeHostClientReady();
     host_->SetViewportSize(size_);
     host_->set_has_transparent_background(has_transparent_background_);
+    host_->SetDeviceScaleFactor(device_scale_factor_);
     // Need to recreate the UI resources because a new LayerTreeHost has been
     // created.
     client_->DidLoseUIResources();
@@ -240,6 +282,7 @@ void CompositorImpl::SetVisible(bool visible) {
 }
 
 void CompositorImpl::setDeviceScaleFactor(float factor) {
+  device_scale_factor_ = factor;
   if (host_)
     host_->SetDeviceScaleFactor(factor);
 }
@@ -254,6 +297,12 @@ void CompositorImpl::SetWindowBounds(const gfx::Size& size) {
   root_layer_->SetBounds(size);
 }
 
+void CompositorImpl::SetHasTransparentBackground(bool flag) {
+  has_transparent_background_ = flag;
+  if (host_)
+    host_->set_has_transparent_background(flag);
+}
+
 bool CompositorImpl::CompositeAndReadback(void *pixels, const gfx::Rect& rect) {
   if (host_)
     return host_->CompositeAndReadback(pixels, rect);
@@ -261,93 +310,60 @@ bool CompositorImpl::CompositeAndReadback(void *pixels, const gfx::Rect& rect) {
     return false;
 }
 
-cc::UIResourceId CompositorImpl::GenerateUIResource(
-    const cc::UIResourceBitmap& bitmap) {
+cc::UIResourceId CompositorImpl::GenerateUIResourceFromUIResourceBitmap(
+    const cc::UIResourceBitmap& bitmap,
+    bool is_transient) {
   if (!host_)
     return 0;
-  scoped_ptr<cc::ScopedUIResource> ui_resource =
-      cc::ScopedUIResource::Create(host_.get(), bitmap);
-  cc::UIResourceId id = ui_resource->id();
-  ui_resource_map_.set(id, ui_resource.Pass());
+
+  cc::UIResourceId id = 0;
+  scoped_ptr<cc::UIResourceClient> resource;
+  if (is_transient) {
+    scoped_ptr<TransientUIResource> transient_resource =
+        TransientUIResource::Create(host_.get(), bitmap);
+    id = transient_resource->id();
+    resource = transient_resource.Pass();
+  } else {
+    scoped_ptr<cc::ScopedUIResource> scoped_resource =
+        cc::ScopedUIResource::Create(host_.get(), bitmap);
+    id = scoped_resource->id();
+    resource = scoped_resource.Pass();
+  }
+
+  ui_resource_map_.set(id, resource.Pass());
   return id;
+}
+
+cc::UIResourceId CompositorImpl::GenerateUIResource(const SkBitmap& bitmap,
+                                                    bool is_transient) {
+  return GenerateUIResourceFromUIResourceBitmap(cc::UIResourceBitmap(bitmap),
+                                                is_transient);
+}
+
+cc::UIResourceId CompositorImpl::GenerateCompressedUIResource(
+    const gfx::Size& size,
+    void* pixels,
+    bool is_transient) {
+  DCHECK_LT(0, size.width());
+  DCHECK_LT(0, size.height());
+  DCHECK_EQ(0, size.width() % 4);
+  DCHECK_EQ(0, size.height() % 4);
+
+  size_t data_size = size.width() * size.height() / 2;
+  SkImageInfo info = {size.width(), size.height() / 2, kAlpha_8_SkColorType,
+                      kPremul_SkAlphaType};
+  skia::RefPtr<SkMallocPixelRef> etc1_pixel_ref =
+      skia::AdoptRef(SkMallocPixelRef::NewAllocate(info, 0, 0));
+  memcpy(etc1_pixel_ref->getAddr(), pixels, data_size);
+  etc1_pixel_ref->setImmutable();
+  return GenerateUIResourceFromUIResourceBitmap(
+      cc::UIResourceBitmap(etc1_pixel_ref, size), is_transient);
 }
 
 void CompositorImpl::DeleteUIResource(cc::UIResourceId resource_id) {
   UIResourceMap::iterator it = ui_resource_map_.find(resource_id);
   if (it != ui_resource_map_.end())
     ui_resource_map_.erase(it);
-}
-
-blink::WebGLId CompositorImpl::GenerateTexture(gfx::JavaBitmap& bitmap) {
-  unsigned int texture_id = BuildBasicTexture();
-  blink::WebGraphicsContext3D* context =
-      ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
-  if (texture_id == 0 || context->isContextLost() ||
-      !context->makeContextCurrent())
-    return 0;
-  blink::WebGLId format = GetGLFormatForBitmap(bitmap);
-  blink::WebGLId type = GetGLTypeForBitmap(bitmap);
-
-  context->texImage2D(GL_TEXTURE_2D,
-                      0,
-                      format,
-                      bitmap.size().width(),
-                      bitmap.size().height(),
-                      0,
-                      format,
-                      type,
-                      bitmap.pixels());
-  context->shallowFlushCHROMIUM();
-  return texture_id;
-}
-
-blink::WebGLId CompositorImpl::GenerateCompressedTexture(gfx::Size& size,
-                                                          int data_size,
-                                                          void* data) {
-  unsigned int texture_id = BuildBasicTexture();
-  blink::WebGraphicsContext3D* context =
-        ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
-  if (texture_id == 0 || context->isContextLost() ||
-      !context->makeContextCurrent())
-    return 0;
-  context->compressedTexImage2D(GL_TEXTURE_2D,
-                                0,
-                                GL_ETC1_RGB8_OES,
-                                size.width(),
-                                size.height(),
-                                0,
-                                data_size,
-                                data);
-  context->shallowFlushCHROMIUM();
-  return texture_id;
-}
-
-void CompositorImpl::DeleteTexture(blink::WebGLId texture_id) {
-  blink::WebGraphicsContext3D* context =
-      ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
-  if (context->isContextLost() || !context->makeContextCurrent())
-    return;
-  context->deleteTexture(texture_id);
-  context->shallowFlushCHROMIUM();
-}
-
-bool CompositorImpl::CopyTextureToBitmap(blink::WebGLId texture_id,
-                                         gfx::JavaBitmap& bitmap) {
-  return CopyTextureToBitmap(texture_id, gfx::Rect(bitmap.size()), bitmap);
-}
-
-bool CompositorImpl::CopyTextureToBitmap(blink::WebGLId texture_id,
-                                         const gfx::Rect& sub_rect,
-                                         gfx::JavaBitmap& bitmap) {
-  // The sub_rect should match the bitmap size.
-  DCHECK(bitmap.size() == sub_rect.size());
-  if (bitmap.size() != sub_rect.size() || texture_id == 0) return false;
-
-  GLHelper* helper = ImageTransportFactoryAndroid::GetInstance()->GetGLHelper();
-  helper->ReadbackTextureSync(texture_id,
-                              sub_rect,
-                              static_cast<unsigned char*> (bitmap.pixels()));
-  return true;
 }
 
 static scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
@@ -439,55 +455,6 @@ void CompositorImpl::DidPostSwapBuffers() {
 void CompositorImpl::DidAbortSwapBuffers() {
   TRACE_EVENT0("compositor", "CompositorImpl::DidAbortSwapBuffers");
   client_->OnSwapBuffersCompleted();
-}
-
-blink::WebGLId CompositorImpl::BuildBasicTexture() {
-  blink::WebGraphicsContext3D* context =
-            ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
-  if (context->isContextLost() || !context->makeContextCurrent())
-    return 0;
-  blink::WebGLId texture_id = context->createTexture();
-  context->bindTexture(GL_TEXTURE_2D, texture_id);
-  context->texParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  context->texParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  context->texParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  context->texParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  return texture_id;
-}
-
-blink::WGC3Denum CompositorImpl::GetGLFormatForBitmap(
-    gfx::JavaBitmap& bitmap) {
-  switch (bitmap.format()) {
-    case ANDROID_BITMAP_FORMAT_A_8:
-      return GL_ALPHA;
-      break;
-    case ANDROID_BITMAP_FORMAT_RGBA_4444:
-      return GL_RGBA;
-      break;
-    case ANDROID_BITMAP_FORMAT_RGBA_8888:
-      return GL_RGBA;
-      break;
-    case ANDROID_BITMAP_FORMAT_RGB_565:
-    default:
-      return GL_RGB;
-  }
-}
-
-blink::WGC3Denum CompositorImpl::GetGLTypeForBitmap(gfx::JavaBitmap& bitmap) {
-  switch (bitmap.format()) {
-    case ANDROID_BITMAP_FORMAT_A_8:
-      return GL_UNSIGNED_BYTE;
-      break;
-    case ANDROID_BITMAP_FORMAT_RGBA_4444:
-      return GL_UNSIGNED_SHORT_4_4_4_4;
-      break;
-    case ANDROID_BITMAP_FORMAT_RGBA_8888:
-      return GL_UNSIGNED_BYTE;
-      break;
-    case ANDROID_BITMAP_FORMAT_RGB_565:
-    default:
-      return GL_UNSIGNED_SHORT_5_6_5;
-  }
 }
 
 void CompositorImpl::DidCommit() {

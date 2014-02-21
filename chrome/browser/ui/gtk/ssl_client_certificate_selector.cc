@@ -15,7 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
-#include "chrome/browser/ui/crypto_module_password_dialog.h"
+#include "chrome/browser/ui/crypto_module_password_dialog_nss.h"
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/net/x509_certificate_model.h"
@@ -120,7 +120,7 @@ SSLClientCertificateSelector::SSLClientCertificateSelector(
                      FALSE, FALSE, 0);
 
   GtkWidget* site_label = gtk_label_new(
-      cert_request_info->host_and_port.c_str());
+      cert_request_info->host_and_port.ToString().c_str());
   gtk_util::LeftAlignMisc(site_label);
   gtk_box_pack_start(GTK_BOX(site_vbox), site_label, FALSE, FALSE, 0);
 
@@ -262,12 +262,12 @@ std::string SSLClientCertificateSelector::FormatDetailsText(
 
   rv += l10n_util::GetStringFUTF8(
       IDS_CERT_SUBJECTNAME_FORMAT,
-      UTF8ToUTF16(x509_certificate_model::GetSubjectName(cert)));
+      base::UTF8ToUTF16(x509_certificate_model::GetSubjectName(cert)));
 
   rv += "\n  ";
   rv += l10n_util::GetStringFUTF8(
       IDS_CERT_SERIAL_NUMBER_FORMAT,
-      UTF8ToUTF16(x509_certificate_model::GetSerialNumberHexified(
+      base::UTF8ToUTF16(x509_certificate_model::GetSerialNumberHexified(
           cert, std::string())));
 
   base::Time issued, expires;
@@ -284,14 +284,14 @@ std::string SSLClientCertificateSelector::FormatDetailsText(
   if (usages.size()) {
     rv += "\n  ";
     rv += l10n_util::GetStringFUTF8(IDS_CERT_X509_EXTENDED_KEY_USAGE_FORMAT,
-                                    UTF8ToUTF16(JoinString(usages, ',')));
+                                    base::UTF8ToUTF16(JoinString(usages, ',')));
   }
 
   std::string key_usage_str = x509_certificate_model::GetKeyUsageString(cert);
   if (!key_usage_str.empty()) {
     rv += "\n  ";
     rv += l10n_util::GetStringFUTF8(IDS_CERT_X509_KEY_USAGE_FORMAT,
-                                    UTF8ToUTF16(key_usage_str));
+                                    base::UTF8ToUTF16(key_usage_str));
   }
 
   std::vector<std::string> email_addresses;
@@ -300,15 +300,16 @@ std::string SSLClientCertificateSelector::FormatDetailsText(
     rv += "\n  ";
     rv += l10n_util::GetStringFUTF8(
         IDS_CERT_EMAIL_ADDRESSES_FORMAT,
-        UTF8ToUTF16(JoinString(email_addresses, ',')));
+        base::UTF8ToUTF16(JoinString(email_addresses, ',')));
   }
 
   rv += '\n';
   rv += l10n_util::GetStringFUTF8(
       IDS_CERT_ISSUERNAME_FORMAT,
-      UTF8ToUTF16(x509_certificate_model::GetIssuerName(cert)));
+      base::UTF8ToUTF16(x509_certificate_model::GetIssuerName(cert)));
 
-  base::string16 token(UTF8ToUTF16(x509_certificate_model::GetTokenName(cert)));
+  base::string16 token(
+      base::UTF8ToUTF16(x509_certificate_model::GetTokenName(cert)));
   if (!token.empty()) {
     rv += '\n';
     rv += l10n_util::GetStringFUTF8(IDS_CERT_TOKEN_FORMAT, token);
@@ -350,14 +351,15 @@ void SSLClientCertificateSelector::OnCancelClicked(GtkWidget* button) {
 }
 
 void SSLClientCertificateSelector::OnOkClicked(GtkWidget* button) {
-  net::X509Certificate* cert = GetSelectedCert();
-
   // Remove the observer before we try unlocking, otherwise we might act on a
   // notification while waiting for the unlock dialog, causing us to delete
   // ourself before the Unlocked callback gets called.
   StopObserving();
 
+#if defined(USE_NSS)
   GtkWidget* toplevel = gtk_widget_get_toplevel(root_widget_.get());
+  net::X509Certificate* cert = GetSelectedCert();
+
   chrome::UnlockCertSlotIfNecessary(
       cert,
       chrome::kCryptoModulePasswordClientAuth,
@@ -365,6 +367,9 @@ void SSLClientCertificateSelector::OnOkClicked(GtkWidget* button) {
       GTK_WINDOW(toplevel),
       base::Bind(&SSLClientCertificateSelector::Unlocked,
                  base::Unretained(this)));
+#else
+  Unlocked();
+#endif
 }
 
 void SSLClientCertificateSelector::OnPromptShown(GtkWidget* widget,

@@ -98,21 +98,36 @@ TestBrowserContext::GetMediaRequestContextForStoragePartition(
   return NULL;
 }
 
-void TestBrowserContext::RequestMIDISysExPermission(
+void TestBrowserContext::RequestMidiSysExPermission(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
-      const MIDISysExPermissionCallback& callback) {
+      const MidiSysExPermissionCallback& callback) {
   // Always reject requests for testing.
   callback.Run(false);
 }
 
-void TestBrowserContext::CancelMIDISysExPermissionRequest(
+void TestBrowserContext::CancelMidiSysExPermissionRequest(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame) {
+}
+
+void TestBrowserContext::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
+void TestBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
 }
 
 ResourceContext* TestBrowserContext::GetResourceContext() {

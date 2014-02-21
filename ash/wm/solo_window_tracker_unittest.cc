@@ -74,16 +74,16 @@ class SoloWindowTrackerTest : public test::AshTestBase {
   // Helpers methods to create test windows in the primary root window.
   aura::Window* CreateWindowInPrimary() {
     aura::Window* window = new aura::Window(NULL);
-    window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    window->Init(ui::LAYER_TEXTURED);
+    window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
     window->SetBounds(gfx::Rect(100, 100));
     ParentWindowInPrimaryRootWindow(window);
     return window;
   }
   aura::Window* CreateAlwaysOnTopWindowInPrimary() {
     aura::Window* window = new aura::Window(NULL);
-    window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    window->Init(ui::LAYER_TEXTURED);
+    window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
     window->SetBounds(gfx::Rect(100, 100));
     window->SetProperty(aura::client::kAlwaysOnTopKey, true);
     ParentWindowInPrimaryRootWindow(window);
@@ -91,8 +91,8 @@ class SoloWindowTrackerTest : public test::AshTestBase {
   }
   aura::Window* CreatePanelWindowInPrimary() {
     aura::Window* window = new aura::Window(NULL);
-    window->SetType(aura::client::WINDOW_TYPE_PANEL);
-    window->Init(ui::LAYER_TEXTURED);
+    window->SetType(ui::wm::WINDOW_TYPE_PANEL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
     window->SetBounds(gfx::Rect(100, 100));
     ParentWindowInPrimaryRootWindow(window);
     return window;
@@ -103,14 +103,14 @@ class SoloWindowTrackerTest : public test::AshTestBase {
     // Because the tests use windows without delegates,
     // aura::test::EventGenerator cannot be used.
     gfx::Point drag_to =
-        ash::ScreenAsh::GetDisplayBoundsInParent(window).top_right();
+        ash::ScreenUtil::GetDisplayBoundsInParent(window).top_right();
     scoped_ptr<WindowResizer> resizer(CreateWindowResizer(
         window,
         window->bounds().origin(),
         HTCAPTION,
         aura::client::WINDOW_MOVE_SOURCE_MOUSE));
     resizer->Drag(drag_to, 0);
-    resizer->CompleteDrag(0);
+    resizer->CompleteDrag();
     EXPECT_EQ(internal::kShellWindowId_DockedContainer,
               window->parent()->id());
   }
@@ -118,7 +118,7 @@ class SoloWindowTrackerTest : public test::AshTestBase {
   // Drag |window| out of the dock.
   void UndockWindow(aura::Window* window) {
     gfx::Point drag_to =
-        ash::ScreenAsh::GetDisplayWorkAreaBoundsInParent(window).top_right() -
+        ash::ScreenUtil::GetDisplayWorkAreaBoundsInParent(window).top_right() -
         gfx::Vector2d(10, 0);
     scoped_ptr<WindowResizer> resizer(CreateWindowResizer(
         window,
@@ -126,7 +126,7 @@ class SoloWindowTrackerTest : public test::AshTestBase {
         HTCAPTION,
         aura::client::WINDOW_MOVE_SOURCE_MOUSE));
     resizer->Drag(drag_to, 0);
-    resizer->CompleteDrag(0);
+    resizer->CompleteDrag();
     EXPECT_NE(internal::kShellWindowId_DockedContainer,
               window->parent()->id());
   }
@@ -138,7 +138,7 @@ class SoloWindowTrackerTest : public test::AshTestBase {
 
   // Returns the secondary display.
   gfx::Display GetSecondaryDisplay() {
-    return ScreenAsh::GetSecondaryDisplay();
+    return ScreenUtil::GetSecondaryDisplay();
   }
 
   // Returns the window which uses the solo header, if any, on the primary
@@ -296,8 +296,8 @@ TEST_F(SoloWindowTrackerTest, NotDrawn) {
 
   // Create non-drawing window similar to DragDropTracker.
   aura::Window* not_drawn = new aura::Window(NULL);
-  not_drawn->SetType(aura::client::WINDOW_TYPE_NORMAL);
-  not_drawn->Init(ui::LAYER_NOT_DRAWN);
+  not_drawn->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+  not_drawn->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   ParentWindowInPrimaryRootWindow(not_drawn);
   not_drawn->Show();
 
@@ -329,7 +329,7 @@ TEST_F(SoloWindowTrackerTest, MultiDisplay) {
   // Moves the second window to the secondary display.  Both w1/w2 should be
   // solo.
   w2->SetBoundsInScreen(gfx::Rect(1200, 0, 100, 100),
-                        ScreenAsh::GetSecondaryDisplay());
+                        ScreenUtil::GetSecondaryDisplay());
   EXPECT_EQ(w1.get(), GetWindowWithSoloHeaderInPrimary());
   EXPECT_EQ(w2.get(), GetWindowWithSoloHeader(w2->GetRootWindow()));
   EXPECT_TRUE(checker1.IsPaintScheduledAndReset());
@@ -395,8 +395,8 @@ TEST_F(SoloWindowTrackerTest, ChildWindowVisibility) {
 
   // Create a child window. This should not affect the solo-ness of |w1|.
   aura::Window* child = new aura::Window(NULL);
-  child->SetType(aura::client::WINDOW_TYPE_CONTROL);
-  child->Init(ui::LAYER_TEXTURED);
+  child->SetType(ui::wm::WINDOW_TYPE_CONTROL);
+  child->Init(aura::WINDOW_LAYER_TEXTURED);
   child->SetBounds(gfx::Rect(100, 100));
   w->AddChild(child);
   child->Show();

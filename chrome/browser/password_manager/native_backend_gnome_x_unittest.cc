@@ -15,10 +15,13 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/psl_matching_helper.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using autofill::PasswordForm;
+using base::UTF8ToUTF16;
+using base::UTF16ToUTF8;
 using content::BrowserThread;
 
 namespace {
@@ -185,31 +188,30 @@ gpointer mock_gnome_keyring_delete_password(
   return NULL;
 }
 
-gpointer mock_gnome_keyring_find_itemsv(
+gpointer mock_gnome_keyring_find_items(
     GnomeKeyringItemType type,
+    GnomeKeyringAttributeList* attributes,
     GnomeKeyringOperationGetListCallback callback,
     gpointer data,
-    GDestroyNotify destroy_data,
-    ...) {
+    GDestroyNotify destroy_data) {
   MockKeyringItem::attribute_query query;
-  va_list ap;
-  va_start(ap, destroy_data);
-  char* name;
-  while ((name = va_arg(ap, gchar*))) {
-    // Really a GnomeKeyringAttributeType, but promoted to int through ...
-    if (va_arg(ap, int) == GNOME_KEYRING_ATTRIBUTE_TYPE_STRING) {
-      query.push_back(make_pair(std::string(name),
-          MockKeyringItem::ItemAttribute(va_arg(ap, gchar*))));
-      VLOG(1) << "Querying with item attribute " << name
+  for (size_t i = 0; i < attributes->len; ++i) {
+    GnomeKeyringAttribute attribute =
+        g_array_index(attributes, GnomeKeyringAttribute, i);
+    if (attribute.type == GNOME_KEYRING_ATTRIBUTE_TYPE_STRING) {
+      query.push_back(
+          make_pair(std::string(attribute.name),
+                    MockKeyringItem::ItemAttribute(attribute.value.string)));
+      VLOG(1) << "Querying with item attribute " << attribute.name
               << ", value '" << query.back().second.value_string << "'";
     } else {
-      query.push_back(make_pair(std::string(name),
-          MockKeyringItem::ItemAttribute(va_arg(ap, uint32_t))));
-      VLOG(1) << "Querying with item attribute " << name
-              << ", value " << query.back().second.value_uint32;
+      query.push_back(
+          make_pair(std::string(attribute.name),
+                    MockKeyringItem::ItemAttribute(attribute.value.integer)));
+      VLOG(1) << "Querying with item attribute " << attribute.name << ", value "
+              << query.back().second.value_uint32;
     }
   }
-  va_end(ap);
   // Find matches and add them to a list of results.
   GList* results = NULL;
   for (size_t i = 0; i < mock_keyring_items.size(); ++i) {
@@ -262,9 +264,11 @@ const gchar* mock_gnome_keyring_result_to_message(GnomeKeyringResult res) {
 class MockGnomeKeyringLoader : public GnomeKeyringLoader {
  public:
   static bool LoadMockGnomeKeyring() {
+    if (!LoadGnomeKeyring())
+      return false;
 #define GNOME_KEYRING_ASSIGN_POINTER(name) \
   gnome_keyring_##name = &mock_gnome_keyring_##name;
-    GNOME_KEYRING_FOR_EACH_FUNC(GNOME_KEYRING_ASSIGN_POINTER)
+    GNOME_KEYRING_FOR_EACH_MOCKED_FUNC(GNOME_KEYRING_ASSIGN_POINTER)
 #undef GNOME_KEYRING_ASSIGN_POINTER
     keyring_loaded = true;
     // Reset the state of the mock library.
@@ -286,7 +290,7 @@ class NativeBackendGnomeTest : public testing::Test {
   virtual void SetUp() {
     ASSERT_TRUE(db_thread_.Start());
 
-    MockGnomeKeyringLoader::LoadMockGnomeKeyring();
+    ASSERT_TRUE(MockGnomeKeyringLoader::LoadMockGnomeKeyring());
 
     form_google_.origin = GURL("http://www.google.com/");
     form_google_.action = GURL("http://www.google.com/login");
@@ -295,7 +299,16 @@ class NativeBackendGnomeTest : public testing::Test {
     form_google_.password_element = UTF8ToUTF16("pass");
     form_google_.password_value = UTF8ToUTF16("seekrit");
     form_google_.submit_element = UTF8ToUTF16("submit");
-    form_google_.signon_realm = "Google";
+    form_google_.signon_realm = "http://www.google.com/";
+
+    form_facebook_.origin = GURL("http://www.facebook.com/");
+    form_facebook_.action = GURL("http://www.facebook.com/login");
+    form_facebook_.username_element = UTF8ToUTF16("user");
+    form_facebook_.username_value = UTF8ToUTF16("a");
+    form_facebook_.password_element = UTF8ToUTF16("password");
+    form_facebook_.password_value = UTF8ToUTF16("b");
+    form_facebook_.submit_element = UTF8ToUTF16("submit");
+    form_facebook_.signon_realm = "http://www.facebook.com/";
 
     form_isc_.origin = GURL("http://www.isc.org/");
     form_isc_.action = GURL("http://www.isc.org/auth");
@@ -304,7 +317,7 @@ class NativeBackendGnomeTest : public testing::Test {
     form_isc_.password_element = UTF8ToUTF16("passwd");
     form_isc_.password_value = UTF8ToUTF16("ihazabukkit");
     form_isc_.submit_element = UTF8ToUTF16("login");
-    form_isc_.signon_realm = "ISC";
+    form_isc_.signon_realm = "http://www.isc.org/";
   }
 
   virtual void TearDown() {
@@ -380,6 +393,51 @@ class NativeBackendGnomeTest : public testing::Test {
     CheckStringAttribute(item, "application", app_string);
   }
 
+  // Checks (using EXPECT_* macros), that |credentials| are accessible for
+  // filling in for a page with |origin| iff
+  // |should_credential_be_available_to_url| is true.
+  void CheckCredentialAvailability(const PasswordForm& credentials,
+                                   const std::string& url,
+                                   bool should_credential_be_available_to_url) {
+    PSLMatchingHelper helper;
+    ASSERT_TRUE(helper.IsMatchingEnabled())
+        << "PSL matching needs to be enabled.";
+
+    NativeBackendGnome backend(321, profile_.GetPrefs());
+    backend.Init();
+
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                   base::Unretained(&backend),
+                   credentials));
+
+    PasswordForm target_form;
+    target_form.origin = GURL(url);
+    target_form.signon_realm = url;
+    std::vector<PasswordForm*> form_list;
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::GetLogins),
+                   base::Unretained(&backend),
+                   target_form,
+                   &form_list));
+
+    RunBothThreads();
+
+    EXPECT_EQ(1u, mock_keyring_items.size());
+    if (mock_keyring_items.size() > 0)
+      CheckMockKeyringItem(&mock_keyring_items[0], credentials, "chrome-321");
+
+    if (should_credential_be_available_to_url)
+      EXPECT_EQ(1u, form_list.size());
+    else
+      EXPECT_EQ(0u, form_list.size());
+    STLDeleteElements(&form_list);
+  }
+
   base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
@@ -388,6 +446,7 @@ class NativeBackendGnomeTest : public testing::Test {
 
   // Provide some test forms to avoid having to set them up in each test.
   PasswordForm form_google_;
+  PasswordForm form_facebook_;
   PasswordForm form_isc_;
 };
 
@@ -438,6 +497,28 @@ TEST_F(NativeBackendGnomeTest, BasicListLogins) {
   EXPECT_EQ(1u, mock_keyring_items.size());
   if (mock_keyring_items.size() > 0)
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+}
+
+// Save a password for www.facebook.com and see it suggested for m.facebook.com.
+TEST_F(NativeBackendGnomeTest, PSLMatchingPositive) {
+  CheckCredentialAvailability(form_facebook_,
+                              "http://m.facebook.com/",
+                              /*should_credential_be_available_to_url=*/true);
+}
+
+// Save a password for www.facebook.com and see it not suggested for
+// m-facebook.com.
+TEST_F(NativeBackendGnomeTest, PSLMatchingNegativeDomainMismatch) {
+  CheckCredentialAvailability(form_facebook_,
+                              "http://m-facebook.com/",
+                              /*should_credential_be_available_to_url=*/false);
+}
+
+// Test PSL matching is off for domains excluded from it.
+TEST_F(NativeBackendGnomeTest, PSLMatchingDisabledDomains) {
+  CheckCredentialAvailability(form_google_,
+                              "http://one.google.com/",
+                              /*should_credential_be_available_to_url=*/false);
 }
 
 TEST_F(NativeBackendGnomeTest, BasicRemoveLogin) {

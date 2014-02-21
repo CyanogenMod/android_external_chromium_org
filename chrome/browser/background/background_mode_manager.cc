@@ -20,7 +20,6 @@
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -41,6 +40,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "grit/chrome_unscaled_resources.h"
@@ -49,7 +49,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 using extensions::Extension;
 using extensions::UpdatedExtensionPermissionsInfo;
 
@@ -123,7 +123,7 @@ void BackgroundModeManager::BackgroundModeData::BuildProfileMenu(
       // Check that the command ID is within the dynamic range.
       DCHECK(command_id < IDC_MinimumLabelValue);
       command_id_extension_vector_->push_back(position);
-      menu->AddItem(command_id, UTF8ToUTF16(name));
+      menu->AddItem(command_id, base::UTF8ToUTF16(name));
       if (icon)
         menu->SetIcon(menu->GetItemCount() - 1, gfx::Image(*icon));
 
@@ -157,7 +157,7 @@ void BackgroundModeManager::BackgroundModeData::SetName(
   name_ = new_profile_name;
 }
 
-string16 BackgroundModeManager::BackgroundModeData::name() {
+base::string16 BackgroundModeManager::BackgroundModeData::name() {
   return name_;
 }
 

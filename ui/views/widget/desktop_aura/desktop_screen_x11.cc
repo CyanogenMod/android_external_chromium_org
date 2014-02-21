@@ -23,8 +23,8 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/x/x11_types.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 
 namespace {
 
@@ -183,7 +183,7 @@ gfx::NativeWindow DesktopScreenX11::GetWindowUnderCursor() {
 gfx::NativeWindow DesktopScreenX11::GetWindowAtScreenPoint(
     const gfx::Point& point) {
   std::vector<aura::Window*> windows =
-      DesktopRootWindowHostX11::GetAllOpenWindows();
+      DesktopWindowTreeHostX11::GetAllOpenWindows();
 
   for (std::vector<aura::Window*>::const_iterator it = windows.begin();
        it != windows.end(); ++it) {
@@ -215,7 +215,7 @@ gfx::Display DesktopScreenX11::GetDisplayNearestWindow(
   // bounds.
   aura::WindowEventDispatcher* dispatcher = window->GetDispatcher();
   if (dispatcher) {
-    DesktopRootWindowHostX11* rwh = DesktopRootWindowHostX11::GetHostForXID(
+    DesktopWindowTreeHostX11* rwh = DesktopWindowTreeHostX11::GetHostForXID(
         dispatcher->host()->GetAcceleratedWidget());
     if (rwh)
       return GetDisplayMatching(rwh->GetX11RootWindowBounds());
@@ -264,7 +264,7 @@ void DesktopScreenX11::RemoveObserver(gfx::DisplayObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
-bool DesktopScreenX11::Dispatch(const base::NativeEvent& event) {
+uint32_t DesktopScreenX11::Dispatch(const base::NativeEvent& event) {
   if (event->type - xrandr_event_base_ == RRScreenChangeNotify) {
     // Pass the event through to xlib.
     XRRUpdateConfiguration(event);
@@ -283,7 +283,7 @@ bool DesktopScreenX11::Dispatch(const base::NativeEvent& event) {
     }
   }
 
-  return true;
+  return POST_DISPATCH_NONE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

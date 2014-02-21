@@ -43,9 +43,6 @@ namespace base {
 class DictionaryValue;
 class FilePath;
 }
-namespace crypto {
-class CryptoModuleBlockingPasswordDelegate;
-}
 
 namespace gfx {
 class ImageSkia;
@@ -167,10 +164,10 @@ class CONTENT_EXPORT ContentBrowserClient {
       WebContents* embedder_web_contents,
       const base::DictionaryValue& extra_params) {}
 
-  // Notifies that a RenderProcessHost has been created. This is called before
+  // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
   // embedder's IPC filters have priority.
-  virtual void RenderProcessHostCreated(RenderProcessHost* host) {}
+  virtual void RenderProcessWillLaunch(RenderProcessHost* host) {}
 
   // Notifies that a BrowserChildProcessHost has been created.
   virtual void BrowserChildProcessHostCreated(BrowserChildProcessHost* host) {}
@@ -188,7 +185,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns a list additional WebUI schemes, if any.  These additional schemes
   // act as aliases to the chrome: scheme.  The additional schemes may or may
   // not serve specific WebUI pages depending on the particular URLDataSource
-  // and its override of URLDataSource::ShouldServiceRequest.
+  // and its override of URLDataSource::ShouldServiceRequest. For all schemes
+  // returned here, view-source is allowed.
   virtual void GetAdditionalWebUISchemes(
       std::vector<std::string>* additional_schemes) {}
 
@@ -238,6 +236,14 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Called from a site instance's destructor.
   virtual void SiteInstanceDeleting(SiteInstance* site_instance) {}
+
+  // Called when a worker process is created.
+  virtual void WorkerProcessCreated(SiteInstance* site_instance,
+                                    int worker_process_id) {}
+
+  // Called when a worker process is terminated.
+  virtual void WorkerProcessTerminated(SiteInstance* site_instance,
+                                       int worker_process_id) {}
 
   // Returns true if for the navigation from |current_url| to |new_url|
   // in |site_instance|, a new SiteInstance and BrowsingInstance should be
@@ -293,7 +299,7 @@ class CONTENT_EXPORT ContentBrowserClient {
                               const net::CookieList& cookie_list,
                               ResourceContext* context,
                               int render_process_id,
-                              int render_view_id);
+                              int render_frame_id);
 
   // Allow the embedder to control if the given cookie can be set.
   // This is called on the IO thread.
@@ -302,15 +308,15 @@ class CONTENT_EXPORT ContentBrowserClient {
                               const std::string& cookie_line,
                               ResourceContext* context,
                               int render_process_id,
-                              int render_view_id,
+                              int render_frame_id,
                               net::CookieOptions* options);
 
   // This is called on the IO thread.
   virtual bool AllowSaveLocalState(ResourceContext* context);
 
   // Allow the embedder to control if access to web database by a shared worker
-  // is allowed. |render_views| is a vector of pairs of
-  // RenderProcessID/RenderViewID of RenderViews that are using this worker.
+  // is allowed. |render_frame| is a vector of pairs of
+  // RenderProcessID/RenderFrameID of RenderFrame that are using this worker.
   // This is called on the IO thread.
   virtual bool AllowWorkerDatabase(
       const GURL& url,
@@ -318,7 +324,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       const base::string16& display_name,
       unsigned long estimated_size,
       ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_views);
+      const std::vector<std::pair<int, int> >& render_frames);
 
   // Allow the embedder to control if access to file system by a shared worker
   // is allowed.
@@ -326,7 +332,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool AllowWorkerFileSystem(
       const GURL& url,
       ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_views);
+      const std::vector<std::pair<int, int> >& render_frames);
 
   // Allow the embedder to control if access to IndexedDB by a shared worker
   // is allowed.
@@ -335,7 +341,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       const GURL& url,
       const base::string16& name,
       ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_views);
+      const std::vector<std::pair<int, int> >& render_frames);
 
   // Allow the embedder to override the request context based on the URL for
   // certain operations, like cookie access. Returns NULL to indicate the
@@ -390,7 +396,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // or denied immediately, and the callback won't be run.
   virtual void AllowCertificateError(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
@@ -404,7 +410,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // certificate was selected NULL is returned to the |callback|.
   virtual void SelectClientCertificate(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) {}
@@ -605,19 +611,14 @@ class CONTENT_EXPORT ContentBrowserClient {
                                 bool* success) {}
 #endif
 
-#if defined(USE_NSS)
-  // Return a delegate to authenticate and unlock |module|.
-  // This is called on a worker thread.
-  virtual
-      crypto::CryptoModuleBlockingPasswordDelegate* GetCryptoPasswordDelegate(
-          const GURL& url);
-#endif
-
   // Returns true if plugin referred to by the url can use
   // pp::FileIO::RequestOSFileHandle.
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
       content::BrowserContext* browser_context,
       const GURL& url);
+
+  // Returns true if dev channel APIs are available for plugins.
+  virtual bool IsPluginAllowedToUseDevChannelAPIs();
 };
 
 }  // namespace content

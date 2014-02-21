@@ -72,12 +72,12 @@ class FeatureInfoTest : public testing::Test {
  protected:
   virtual void SetUp() {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
   }
 
   virtual void TearDown() {
     info_ = NULL;
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
     gl_.reset();
   }
 
@@ -110,7 +110,6 @@ TEST_F(FeatureInfoTest, Basic) {
   EXPECT_FALSE(info_->feature_flags().oes_egl_image_external);
   EXPECT_FALSE(info_->feature_flags().oes_depth24);
   EXPECT_FALSE(info_->feature_flags().packed_depth24_stencil8);
-  EXPECT_FALSE(info_->feature_flags().chromium_stream_texture);
   EXPECT_FALSE(info_->feature_flags().angle_translated_shader_source);
   EXPECT_FALSE(info_->feature_flags().angle_pack_reverse_row_order);
   EXPECT_FALSE(info_->feature_flags().arb_texture_rectangle);
@@ -281,6 +280,10 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
       GL_DEPTH24_STENCIL8));
   EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
       GL_DEPTH_STENCIL));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGBA32F));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGB32F));
   EXPECT_FALSE(info_->validators()->texture_format.IsValid(
       GL_DEPTH_STENCIL));
   EXPECT_FALSE(info_->validators()->pixel_type.IsValid(
@@ -406,6 +409,19 @@ TEST_F(FeatureInfoTest, InitializeEXT_read_format_bgra) {
       GL_BGRA_EXT));
   EXPECT_FALSE(info_->validators()->render_buffer_format.IsValid(
       GL_BGRA8_EXT));
+}
+
+TEST_F(FeatureInfoTest, InitializeARB_texture_float) {
+  SetupInitExpectations("GL_ARB_texture_float");
+  EXPECT_TRUE(info_->feature_flags().chromium_color_buffer_float_rgba);
+  EXPECT_TRUE(info_->feature_flags().chromium_color_buffer_float_rgb);
+  std::string extensions = info_->extensions() + " ";
+  EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgb "));
+  EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgba"));
+  EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGBA32F));
+  EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGB32F));
 }
 
 TEST_F(FeatureInfoTest, InitializeOES_texture_floatGLES2) {
@@ -618,7 +634,7 @@ TEST_F(FeatureInfoTest, InitializeEXT_multisampled_render_to_texture) {
 TEST_F(FeatureInfoTest, InitializeIMG_multisampled_render_to_texture) {
   SetupInitExpectations("GL_IMG_multisampled_render_to_texture");
   EXPECT_TRUE(info_->feature_flags(
-      ).use_img_for_multisampled_render_to_texture);
+      ).multisampled_render_to_texture);
   EXPECT_TRUE(info_->feature_flags(
       ).use_img_for_multisampled_render_to_texture);
   EXPECT_THAT(info_->extensions(),
@@ -808,13 +824,6 @@ TEST_F(FeatureInfoTest, InitializeOES_compressed_ETC1_RGB8_texture) {
       GL_ETC1_RGB8_OES));
   EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
       GL_ETC1_RGB8_OES));
-}
-
-TEST_F(FeatureInfoTest, InitializeCHROMIUM_stream_texture) {
-  SetupInitExpectations("GL_CHROMIUM_stream_texture");
-  EXPECT_THAT(info_->extensions(),
-              HasSubstr("GL_CHROMIUM_stream_texture"));
-  EXPECT_TRUE(info_->feature_flags().chromium_stream_texture);
 }
 
 TEST_F(FeatureInfoTest, InitializeEXT_occlusion_query_boolean) {

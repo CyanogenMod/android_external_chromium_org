@@ -18,8 +18,7 @@ class NativeViewportX11 : public NativeViewport,
                           public base::MessagePumpDispatcher {
  public:
   NativeViewportX11(NativeViewportDelegate* delegate)
-      : delegate_(delegate),
-        bounds_(10, 10, 500, 500) {
+      : delegate_(delegate) {
   }
 
   virtual ~NativeViewportX11() {
@@ -31,16 +30,14 @@ class NativeViewportX11 : public NativeViewport,
 
  private:
   // Overridden from NativeViewport:
-
-  virtual gfx::Size GetSize() OVERRIDE {
-    return bounds_.size();
-  }
-
-  virtual void Init() OVERRIDE {
+  virtual void Init(const gfx::Rect& bounds) OVERRIDE {
     XDisplay* display = gfx::GetXDisplay();
+
     XSetWindowAttributes swa;
     memset(&swa, 0, sizeof(swa));
     swa.override_redirect = False;
+
+    bounds_ = bounds;
     window_ = XCreateWindow(
         display,
         DefaultRootWindow(display),
@@ -49,20 +46,40 @@ class NativeViewportX11 : public NativeViewport,
         CopyFromParent,  // depth
         InputOutput,
         CopyFromParent,  // visual
-        CWBackPixmap | CWOverrideRedirect, &swa);
+        CWBackPixmap | CWOverrideRedirect,
+        &swa);
+
+    atom_wm_protocols_ = XInternAtom(display, "WM_PROTOCOLS", 1);
+    atom_wm_delete_window_ = XInternAtom(display, "WM_DELETE_WINDOW", 1);
+    XSetWMProtocols(display, window_, &atom_wm_delete_window_, 1);
 
     base::MessagePumpX11::Current()->AddDispatcherForWindow(this, window_);
     base::MessagePumpX11::Current()->AddDispatcherForRootWindow(this);
 
+    delegate_->OnAcceleratedWidgetAvailable(window_);
+  }
+
+  virtual void Show() OVERRIDE {
+    XDisplay* display = gfx::GetXDisplay();
     XMapWindow(display, window_);
     XFlush(display);
+  }
 
-    delegate_->OnAcceleratedWidgetAvailable(window_);
+  virtual void Hide() OVERRIDE {
+    XWithdrawWindow(gfx::GetXDisplay(), window_, 0);
   }
 
   virtual void Close() OVERRIDE {
     // TODO(beng): perform this in response to XWindow destruction.
     delegate_->OnDestroyed();
+  }
+
+  virtual gfx::Size GetSize() OVERRIDE {
+    return bounds_.size();
+  }
+
+  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE {
+    NOTIMPLEMENTED();
   }
 
   virtual void SetCapture() OVERRIDE {
@@ -74,13 +91,25 @@ class NativeViewportX11 : public NativeViewport,
   }
 
   // Overridden from base::MessagePumpDispatcher:
-  virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE {
-    return true;
+  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE {
+    switch (event->type) {
+      case ClientMessage: {
+        if (event->xclient.message_type == atom_wm_protocols_) {
+          Atom protocol = static_cast<Atom>(event->xclient.data.l[0]);
+          if (protocol == atom_wm_delete_window_)
+            delegate_->OnDestroyed();
+        }
+        break;
+      }
+    }
+    return POST_DISPATCH_NONE;
   }
 
   NativeViewportDelegate* delegate_;
   gfx::Rect bounds_;
   XID window_;
+  Atom atom_wm_protocols_;
+  Atom atom_wm_delete_window_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeViewportX11);
 };

@@ -67,7 +67,6 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual IconManager* icon_manager() OVERRIDE;
   virtual GLStringManager* gl_string_manager() OVERRIDE;
   virtual GpuModeManager* gpu_mode_manager() OVERRIDE;
-  virtual RenderWidgetSnapshotTaker* GetRenderWidgetSnapshotTaker() OVERRIDE;
   virtual BackgroundModeManager* background_mode_manager() OVERRIDE;
   virtual void set_background_mode_manager_for_test(
       scoped_ptr<BackgroundModeManager> manager) OVERRIDE;
@@ -108,11 +107,12 @@ class TestingBrowserProcess : public BrowserProcess {
 
   virtual ChromeNetLog* net_log() OVERRIDE;
   virtual prerender::PrerenderTracker* prerender_tracker() OVERRIDE;
-  virtual ComponentUpdateService* component_updater() OVERRIDE;
+  virtual component_updater::ComponentUpdateService*
+      component_updater() OVERRIDE;
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
-  virtual PnaclComponentInstaller* pnacl_component_installer() OVERRIDE;
+  virtual component_updater::PnaclComponentInstaller*
+      pnacl_component_installer() OVERRIDE;
   virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
-  virtual StorageMonitor* storage_monitor() OVERRIDE;
   virtual MediaFileSystemRegistry* media_file_system_registry() OVERRIDE;
   virtual bool created_local_state() const OVERRIDE;
 
@@ -129,7 +129,6 @@ class TestingBrowserProcess : public BrowserProcess {
   void SetSafeBrowsingService(SafeBrowsingService* sb_service);
   void SetBookmarkPromptController(BookmarkPromptController* controller);
   void SetSystemRequestContext(net::URLRequestContextGetter* context_getter);
-  void SetStorageMonitor(scoped_ptr<StorageMonitor> storage_monitor);
 
  private:
   // See CreateInstance() and DestoryInstance() above.
@@ -158,13 +157,11 @@ class TestingBrowserProcess : public BrowserProcess {
 #endif
 
   scoped_ptr<prerender::PrerenderTracker> prerender_tracker_;
-  scoped_ptr<RenderWidgetSnapshotTaker> render_widget_snapshot_taker_;
   scoped_refptr<SafeBrowsingService> sb_service_;
   scoped_ptr<BookmarkPromptController> bookmark_prompt_controller_;
 #endif  // !defined(OS_IOS)
 
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
-  scoped_ptr<StorageMonitor> storage_monitor_;
   scoped_ptr<MediaFileSystemRegistry> media_file_system_registry_;
 #endif
 

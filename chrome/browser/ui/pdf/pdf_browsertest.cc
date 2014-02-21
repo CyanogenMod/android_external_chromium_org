@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/hash.h"
 #include "base/path_service.h"
@@ -29,6 +30,9 @@
 
 using content::NavigationController;
 using content::WebContents;
+
+// Note: All tests in here require the internal PDF plugin, so they're disabled
+// in non-official builds. We still compile them though, to prevent bitrot.
 
 namespace {
 
@@ -114,7 +118,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     // renderer code will think the second message is to go to next result, but
     // there are none so the plugin will assert.
 
-    base::string16 query = UTF8ToUTF16(
+    base::string16 query = base::UTF8ToUTF16(
         std::string("xyzxyz" + base::IntToString(next_dummy_search_value_++)));
     ASSERT_EQ(0, ui_test_utils::FindInPage(
         browser()->tab_strip_model()->GetActiveWebContents(),
@@ -129,7 +133,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     base::FilePath reference = ui_test_utils::GetTestFilePath(
         GetPDFTestDir(),
         base::FilePath().AppendASCII(expected_filename_));
-    base::PlatformFileInfo info;
+    base::File::Info info;
     ASSERT_TRUE(base::GetFileInfo(reference, &info));
     int size = static_cast<size_t>(info.size);
     scoped_ptr<char[]> data(new char[size]);
@@ -211,15 +215,11 @@ class PDFBrowserTest : public InProcessBrowserTest,
   net::test_server::EmbeddedTestServer pdf_test_server_;
 };
 
-#if defined(OS_CHROMEOS)
-// TODO(sanjeevr): http://crbug.com/79837
-#define MAYBE_Basic DISABLED_Basic
-#else
-#define MAYBE_Basic Basic
-#endif
+
+// TODO(thestig): http://crbug.com/79837
 // Tests basic PDF rendering.  This can be broken depending on bad merges with
 // the vendor, so it's important that we have basic sanity checking.
-IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Basic) {
+IN_PROC_BROWSER_TEST_F(PDFBrowserTest, DISABLED_Basic) {
   ASSERT_NO_FATAL_FAILURE(Load());
   ASSERT_NO_FATAL_FAILURE(WaitForResponse());
   // OS X uses CoreText, and FreeType renders slightly different on Linux and
@@ -235,8 +235,9 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Basic) {
 #endif
 }
 
-#if defined(OS_CHROMEOS)
-// TODO(sanjeevr): http://crbug.com/79837
+#if (!defined(GOOGLE_CHROME_BUILD) || defined(OS_CHROMEOS)) || \
+    (defined(OS_LINUX) || defined(OS_MACOSX))
+// TODO(sanjeevr): http://crbug.com/79837, http://crbug.com/332778
 #define MAYBE_Scroll DISABLED_Scroll
 #else
 #define MAYBE_Scroll Scroll
@@ -265,8 +266,9 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Scroll) {
   ASSERT_GT(y_offset, 0);
 }
 
-#if defined(OS_CHROMEOS)
-// TODO(sanjeevr): http://crbug.com/79837
+#if (!defined(GOOGLE_CHROME_BUILD) || defined(OS_CHROMEOS)) || \
+    (defined(OS_LINUX) || defined(OS_MACOSX))
+// TODO(thestig): http://crbug.com/79837, http://crbug.com/329912
 #define MAYBE_FindAndCopy DISABLED_FindAndCopy
 #else
 #define MAYBE_FindAndCopy FindAndCopy
@@ -276,7 +278,7 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_FindAndCopy) {
   // Verifies that find in page works.
   ASSERT_EQ(3, ui_test_utils::FindInPage(
       browser()->tab_strip_model()->GetActiveWebContents(),
-      UTF8ToUTF16("adipiscing"),
+      base::UTF8ToUTF16("adipiscing"),
       true, false, NULL, NULL));
 
   // Verify that copying selected text works.
@@ -303,7 +305,12 @@ const int kLoadingNumberOfParts = 10;
 // This also loads all documents that used to crash, to ensure we don't have
 // regressions.
 // If it flakes, reopen http://crbug.com/74548.
-IN_PROC_BROWSER_TEST_P(PDFBrowserTest, Loading) {
+#if !defined(GOOGLE_CHROME_BUILD)
+#define MAYBE_Loading DISABLED_Loading
+#else
+#define MAYBE_Loading Loading
+#endif
+IN_PROC_BROWSER_TEST_P(PDFBrowserTest, MAYBE_Loading) {
   ASSERT_TRUE(pdf_test_server()->InitializeAndWaitUntilReady());
 
   NavigationController* controller =
@@ -369,7 +376,7 @@ INSTANTIATE_TEST_CASE_P(PDFTestFiles,
                         PDFBrowserTest,
                         testing::Range(0, kLoadingNumberOfParts));
 
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+#if !defined(GOOGLE_CHROME_BUILD) || defined(OS_MACOSX)
 // http://crbug.com/315160
 #define MAYBE_Action DISABLED_Action
 #else

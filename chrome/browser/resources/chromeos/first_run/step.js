@@ -18,18 +18,23 @@ cr.define('cr.FirstRun', function() {
     // Button leading to next tutorial step.
     nextButton_: null,
 
-    // Whether screen is shown.
-    isShown_: false,
+    // Default control for this step.
+    defaultControl_: null,
 
     decorate: function() {
       this.name_ = this.getAttribute('id');
-      this.nextButton_ = this.getElementsByClassName('next-button')[0];
+      var controlsContainer = this.getElementsByClassName('controls')[0];
+      if (!controlsContainer)
+          throw Error('Controls not found.');
+      this.nextButton_ =
+          controlsContainer.getElementsByClassName('next-button')[0];
       if (!this.nextButton_)
         throw Error('Next button not found.');
       this.nextButton_.addEventListener('click', (function(e) {
         chrome.send('nextButtonClicked', [this.getName()]);
         e.stopPropagation();
       }).bind(this));
+      this.defaultControl_ = controlsContainer.children[0];
     },
 
     /**
@@ -41,18 +46,38 @@ cr.define('cr.FirstRun', function() {
 
     /**
      * Hides the step.
+     * @param {boolean} animated Whether transition should be animated.
+     * @param {function()=} opt_onHidden Called after step has been hidden.
      */
-    hide: function() {
-      this.style.setProperty('display', 'none');
-      this.isShown_ = false;
+    hide: function(animated, opt_onHidden) {
+      var transitionDuration =
+          animated ? cr.FirstRun.getDefaultTransitionDuration() : 0;
+      changeVisibility(this,
+                       false,
+                       transitionDuration,
+                       function() {
+                         this.classList.add('hidden');
+                         if (opt_onHidden)
+                            opt_onHidden();
+                       }.bind(this));
     },
 
     /**
      * Shows the step.
+     * @param {boolean} animated Whether transition should be animated.
+     * @param {function(Step)=} opt_onShown Called after step has been shown.
      */
-    show: function() {
-      this.style.setProperty('display', 'inline-block');
-      this.isShown_ = true;
+    show: function(animated, opt_onShown) {
+      var transitionDuration =
+          animated ? cr.FirstRun.getDefaultTransitionDuration() : 0;
+      this.classList.remove('hidden');
+      changeVisibility(this,
+                       true,
+                       transitionDuration,
+                       function() {
+                         if (opt_onShown)
+                           opt_onShown(this);
+                       }.bind(this));
     },
 
     /**
@@ -66,22 +91,72 @@ cr.define('cr.FirstRun', function() {
         if (position.hasOwnProperty(property))
           style.setProperty(property, position[property] + 'px');
       });
-    }
+    },
+
+    /**
+     * Makes default control focused. Default control is a first control in
+     * current implementation.
+     */
+    focusDefaultControl: function() {
+      this.defaultControl_.focus();
+    },
   };
 
   var Bubble = cr.ui.define('div');
 
-  // Styles of .step which are used for arrow styling.
-  var ARROW_STYLES = [
-    'points-up',
-    'points-left',
-    'points-down',
-    'points-right',
-    'top',
-    'left',
-    'bottom',
-    'right'
-  ];
+  // List of rules declaring bubble's arrow position depending on text direction
+  // and shelf alignment. Every rule has required field |position| with list
+  // of classes that should be applied to arrow element if this rule choosen.
+  // The rule is suitable if its |shelf| and |dir| fields are correspond
+  // to current shelf alignment and text direction. Missing fields behaves like
+  // '*' wildcard. The last suitable rule in list is choosen for arrow style.
+  var ARROW_POSITION = {
+    'app-list': [
+      {
+        position: ['points-down', 'left']
+      },
+      {
+        dir: 'rtl',
+        position: ['points-down', 'right']
+      },
+      {
+        shelf: 'left',
+        position: ['points-left', 'top']
+      },
+      {
+        shelf: 'right',
+        position: ['points-right', 'top']
+      }
+    ],
+    'tray': [
+      {
+        position: ['points-right', 'top']
+      },
+      {
+        dir: 'rtl',
+        shelf: 'bottom',
+        position: ['points-left', 'top']
+      },
+      {
+        shelf: 'left',
+        position: ['points-left', 'top']
+      }
+    ],
+    'help': [
+      {
+        position: ['points-right', 'bottom']
+      },
+      {
+        dir: 'rtl',
+        shelf: 'bottom',
+        position: ['points-left', 'bottom']
+      },
+      {
+        shelf: 'left',
+        position: ['points-left', 'bottom']
+      }
+    ]
+  };
 
   var DISTANCE_TO_POINTEE = 10;
   var MINIMAL_SCREEN_OFFSET = 10;
@@ -105,16 +180,24 @@ cr.define('cr.FirstRun', function() {
       this.arrow_ = document.createElement('div');
       this.arrow_.classList.add('arrow');
       this.appendChild(this.arrow_);
-      ARROW_STYLES.forEach(function(style) {
-        if (!this.classList.contains(style))
-          return;
-        // Changing right to left in RTL case.
-        if (document.documentElement.getAttribute('dir') == 'rtl') {
-          style = style.replace(/right|left/, function(match) {
-            return (match == 'right') ? 'left' : 'right';
-          });
-        }
-        this.arrow_.classList.add(style);
+      var inputDirection = document.documentElement.getAttribute('dir');
+      var shelfAlignment = document.documentElement.getAttribute('shelf');
+      var isSuitable = function(rule) {
+        var inputDirectionMatch = !rule.hasOwnProperty('dir') ||
+                                  rule.dir === inputDirection;
+        var shelfAlignmentMatch = !rule.hasOwnProperty('shelf') ||
+                                  rule.shelf === shelfAlignment;
+        return inputDirectionMatch && shelfAlignmentMatch;
+      };
+      var lastSuitableRule = null;
+      var rules = ARROW_POSITION[this.getName()];
+      rules.forEach(function(rule) {
+        if (isSuitable(rule))
+          lastSuitableRule = rule;
+      });
+      assert(lastSuitableRule);
+      lastSuitableRule.position.forEach(function(cls) {
+        this.arrow_.classList.add(cls);
       }.bind(this));
       var list = this.arrow_.classList;
       if (list.contains('points-up'))
@@ -135,11 +218,11 @@ cr.define('cr.FirstRun', function() {
      * @param {offset} number Additional offset from |point|.
      */
     setPointsTo: function(point, offset) {
-      var shouldShowBefore = !this.isShown_;
+      var shouldShowBefore = this.hidden;
       // "Showing" bubble in order to make offset* methods work.
       if (shouldShowBefore) {
         this.style.setProperty('opacity', '0');
-        this.show();
+        this.show(false);
       }
       var arrow = [this.arrow_.offsetLeft + this.arrow_.offsetWidth / 2,
                    this.arrow_.offsetTop + this.arrow_.offsetHeight / 2];
@@ -162,8 +245,8 @@ cr.define('cr.FirstRun', function() {
       this.style.setProperty('left', left + 'px');
       this.style.setProperty('top', top + 'px');
       if (shouldShowBefore) {
-        this.hide();
-        this.style.setProperty('opacity', '1');
+        this.hide(false);
+        this.style.removeProperty('opacity');
       }
     },
 
@@ -186,7 +269,7 @@ cr.define('cr.FirstRun', function() {
           }
         });
       Step.prototype.setPosition.call(this, position);
-    }
+    },
   };
 
   var HelpStep = cr.ui.define('div');
@@ -215,4 +298,3 @@ cr.define('cr.FirstRun', function() {
 
   return {DecorateStep: DecorateStep};
 });
-

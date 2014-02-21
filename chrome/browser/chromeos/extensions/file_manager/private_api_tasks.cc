@@ -4,20 +4,19 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_tasks.h"
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/file_tasks.h"
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/mime_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/api/file_browser_private.h"
-#include "content/public/browser/render_view_host.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
-using extensions::app_file_handler_util::PathAndMimeTypeSet;
-using extensions::Extension;
 using fileapi::FileSystemURL;
 
 namespace extensions {
@@ -47,8 +46,8 @@ std::set<std::string> GetUniqueMimeTypes(
     const std::vector<std::string>& mime_type_list) {
   std::set<std::string> mime_types;
   for (size_t i = 0; i < mime_type_list.size(); ++i) {
-    std::string mime_type;
-    // We'll skip empty MIME types.
+    const std::string mime_type = mime_type_list[i];
+    // We'll skip empty MIME types and existing MIME types.
     if (!mime_type.empty())
       mime_types.insert(mime_type);
   }
@@ -59,20 +58,23 @@ std::set<std::string> GetUniqueMimeTypes(
 
 bool FileBrowserPrivateExecuteTaskFunction::RunImpl() {
   using extensions::api::file_browser_private::ExecuteTask::Params;
+  using extensions::api::file_browser_private::ExecuteTask::Results::Create;
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
-
-  // TODO(kaznacheev): Crack the task_id here, store it in the Executor
-  // and avoid passing it around.
 
   file_manager::file_tasks::TaskDescriptor task;
   if (!file_manager::file_tasks::ParseTaskID(params->task_id, &task)) {
     LOG(WARNING) << "Invalid task " << params->task_id;
+    results_ =
+        Create(extensions::api::file_browser_private::TASK_RESULT_FAILED);
     return false;
   }
 
-  if (params->file_urls.empty())
+  if (params->file_urls.empty()) {
+    results_ = Create(extensions::api::file_browser_private::TASK_RESULT_EMPTY);
+    SendResponse(true);
     return true;
+  }
 
   const scoped_refptr<fileapi::FileSystemContext> file_system_context =
       file_manager::util::GetFileSystemContextForRenderViewHost(
@@ -83,24 +85,34 @@ bool FileBrowserPrivateExecuteTaskFunction::RunImpl() {
     const FileSystemURL url =
         file_system_context->CrackURL(GURL(params->file_urls[i]));
     if (!chromeos::FileSystemBackend::CanHandleURL(url)) {
-      error_ = kInvalidFileUrl;
+      SetError(kInvalidFileUrl);
+      results_ =
+          Create(extensions::api::file_browser_private::TASK_RESULT_FAILED);
       return false;
     }
     file_urls.push_back(url);
   }
 
-  return file_manager::file_tasks::ExecuteFileTask(
+  const bool result = file_manager::file_tasks::ExecuteFileTask(
       GetProfile(),
       source_url(),
-      extension_->id(),
       task,
       file_urls,
       base::Bind(&FileBrowserPrivateExecuteTaskFunction::OnTaskExecuted, this));
+  if (!result) {
+    results_ =
+        Create(extensions::api::file_browser_private::TASK_RESULT_FAILED);
+  }
+  return result;
 }
 
-void FileBrowserPrivateExecuteTaskFunction::OnTaskExecuted(bool success) {
-  SetResult(new base::FundamentalValue(success));
-  SendResponse(true);
+void FileBrowserPrivateExecuteTaskFunction::OnTaskExecuted(
+    extensions::api::file_browser_private::TaskResult result) {
+  results_ =
+      extensions::api::file_browser_private::ExecuteTask::Results::Create(
+          result);
+  SendResponse(result !=
+               extensions::api::file_browser_private::TASK_RESULT_FAILED);
 }
 
 bool FileBrowserPrivateGetFileTasksFunction::RunImpl() {
@@ -122,7 +134,7 @@ bool FileBrowserPrivateGetFileTasksFunction::RunImpl() {
 
   // Collect all the URLs, convert them to GURLs, and crack all the urls into
   // file paths.
-  PathAndMimeTypeSet path_mime_set;
+  extensions::app_file_handler_util::PathAndMimeTypeSet path_mime_set;
   std::vector<GURL> file_urls;
   for (size_t i = 0; i < params->file_urls.size(); ++i) {
     std::string mime_type;

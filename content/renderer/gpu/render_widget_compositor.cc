@@ -24,10 +24,12 @@
 #include "cc/debug/micro_benchmark.h"
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host.h"
+#include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/common/content_switches.h"
-#include "content/renderer/gpu/input_handler_manager.h"
+#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gl/gl_switches.h"
@@ -130,7 +132,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                                            max_untiled_layer_height);
 
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
-  settings.gpu_rasterization = cc::switches::IsGPURasterizationEnabled();
+  settings.gpu_rasterization = cc::switches::IsGpuRasterizationEnabled();
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -168,8 +170,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
         settings.top_controls_hide_threshold = hide_threshold;
   }
 
-  settings.partial_swap_enabled = widget->AllowPartialSwap() &&
-      cmd->HasSwitch(cc::switches::kEnablePartialSwap);
+  settings.partial_swap_enabled = widget->AllowPartialSwap();
   settings.background_color_instead_of_checkerboard =
       cmd->HasSwitch(cc::switches::kBackgroundColorInsteadOfCheckerboard);
   settings.show_overdraw_in_tracing =
@@ -203,7 +204,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kShowNonOccludingRects);
 
   settings.initial_debug_state.SetRecordRenderingStats(
-      cmd->HasSwitch(switches::kEnableGpuBenchmarking));
+      cmd->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
   if (cmd->HasSwitch(cc::switches::kSlowDownRasterScaleFactor)) {
     const int kMinSlowDownScaleFactor = 0;
@@ -214,16 +215,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
         kMinSlowDownScaleFactor,
         kMaxSlowDownScaleFactor,
         &settings.initial_debug_state.slow_down_raster_scale_factor);
-  }
-
-  if (cmd->HasSwitch(cc::switches::kNumRasterThreads)) {
-    const int kMinRasterThreads = 1;
-    const int kMaxRasterThreads = 64;
-    int num_raster_threads;
-    if (GetSwitchValueAsInt(*cmd, cc::switches::kNumRasterThreads,
-                            kMinRasterThreads, kMaxRasterThreads,
-                            &num_raster_threads))
-      settings.num_raster_threads = num_raster_threads;
   }
 
   if (cmd->HasSwitch(cc::switches::kMaxTilesForInterestArea)) {
@@ -264,25 +255,37 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
       widget->UsingSynchronousRendererCompositor();
-  settings.always_overscroll = widget->UsingSynchronousRendererCompositor();
   // RGBA_4444 textures are only enabled for low end devices
   // and are disabled for Android WebView as it doesn't support the format.
   settings.use_rgba_4444_textures =
       base::android::SysUtils::IsLowEndDevice() &&
       !widget->UsingSynchronousRendererCompositor() &&
       !cmd->HasSwitch(cc::switches::kDisable4444Textures);
-#elif !defined(OS_MACOSX)
-  if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
-    settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
+  if (widget->UsingSynchronousRendererCompositor()) {
+    // TODO(boliu): Set this ratio for Webview.
+  } else if (base::android::SysUtils::IsLowEndDevice()) {
+    // On low-end we want to be very carefull about killing other
+    // apps. So initially we use 50% more memory to avoid flickering
+    // or raster-on-demand.
+    settings.max_memory_for_prepaint_percentage = 67;
+  } else {
+    // On other devices we have increased memory excessively to avoid
+    // raster-on-demand already, so now we reserve 50% _only_ to avoid
+    // raster-on-demand, and use 50% of the memory otherwise.
+    settings.max_memory_for_prepaint_percentage = 50;
   }
-  if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport) ||
-      cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
+
+#elif !defined(OS_MACOSX)
+  if (IsOverlayScrollbarEnabled()) {
+    settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
+    settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
+  } else if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
+    settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
 #endif
 
-  if (!compositor->Initialize(settings))
-    return scoped_ptr<RenderWidgetCompositor>();
+  compositor->Initialize(settings);
 
   return compositor.Pass();
 }
@@ -318,7 +321,7 @@ bool RenderWidgetCompositor::BeginMainFrameRequested() const {
   return layer_tree_host_->BeginMainFrameRequested();
 }
 
-void RenderWidgetCompositor::Animate(base::TimeTicks time) {
+void RenderWidgetCompositor::UpdateAnimations(base::TimeTicks time) {
   layer_tree_host_->UpdateClientAnimations(time);
 }
 
@@ -334,10 +337,6 @@ void RenderWidgetCompositor::SetRasterizeOnlyVisibleContent() {
   cc::LayerTreeDebugState current = layer_tree_host_->debug_state();
   current.rasterize_only_visible_content = true;
   layer_tree_host_->SetDebugState(current);
-}
-
-void RenderWidgetCompositor::GetRenderingStats(cc::RenderingStats* stats) {
-  layer_tree_host_->CollectRenderingStats(stats);
 }
 
 void RenderWidgetCompositor::UpdateTopControlsState(
@@ -390,7 +389,7 @@ bool RenderWidgetCompositor::ScheduleMicroBenchmark(
   return layer_tree_host_->ScheduleMicroBenchmark(name, value.Pass(), callback);
 }
 
-bool RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
+void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
   if (compositor_message_loop_proxy.get()) {
@@ -400,7 +399,7 @@ bool RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
         this, this, NULL, settings);
   }
-  return layer_tree_host_;
+  DCHECK(layer_tree_host_);
 }
 
 void RenderWidgetCompositor::setSurfaceReady() {
@@ -573,16 +572,18 @@ void RenderWidgetCompositor::DidBeginMainFrame() {
   widget_->InstrumentDidBeginFrame();
 }
 
-void RenderWidgetCompositor::Animate(double frame_begin_time) {
-  widget_->webwidget()->animate(frame_begin_time);
+void RenderWidgetCompositor::Animate(base::TimeTicks frame_begin_time) {
+  widget_->webwidget()->animate(
+      (frame_begin_time - base::TimeTicks()).InSecondsF());
 }
 
 void RenderWidgetCompositor::Layout() {
   widget_->webwidget()->layout();
 }
 
-void RenderWidgetCompositor::ApplyScrollAndScale(gfx::Vector2d scroll_delta,
-                                                 float page_scale) {
+void RenderWidgetCompositor::ApplyScrollAndScale(
+    const gfx::Vector2d& scroll_delta,
+    float page_scale) {
   widget_->webwidget()->applyScrollAndScale(scroll_delta, page_scale);
 }
 
@@ -640,7 +641,7 @@ void RenderWidgetCompositor::DidAbortSwapBuffers() {
 void RenderWidgetCompositor::RateLimitSharedMainThreadContext() {
   cc::ContextProvider* provider =
       RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
-  provider->Context3d()->rateLimitOffscreenContextCHROMIUM();
+  provider->ContextGL()->RateLimitOffscreenContextCHROMIUM();
 }
 
 }  // namespace content

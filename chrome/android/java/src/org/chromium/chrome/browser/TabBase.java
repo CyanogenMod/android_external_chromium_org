@@ -13,6 +13,7 @@ import android.view.View;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
+import org.chromium.chrome.browser.banners.AppBannerManager;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItemDelegate;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
 import org.chromium.chrome.browser.contextmenu.ContextMenuParams;
@@ -30,6 +31,7 @@ import org.chromium.content.browser.NavigationClient;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageInfo;
 import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.Clipboard;
 import org.chromium.ui.base.WindowAndroid;
 
@@ -39,12 +41,17 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The basic Java representation of a tab.  Contains and manages a {@link ContentView}.
  *
  * TabBase provides common functionality for ChromiumTestshell's Tab as well as Chrome on Android's
- * tab. It's intended to be extended both on Java and C++, with ownership managed by the subclass.
- * Because of the inner-workings of JNI, the subclass is responsible for constructing the native
- * subclass which in turn constructs TabAndroid (the native counterpart to TabBase) which in turn
- * sets the native pointer for TabBase. The same is true for destruction. The Java subclass must be
- * destroyed which will call into the native subclass and finally lead to the destruction of the
- * parent classes.
+ * tab. It is intended to be extended either on Java or both Java and C++, with ownership managed
+ * by this base class.
+ *
+ * Extending just Java:
+ *  - Just extend the class normally.  Do not override initializeNative().
+ * Extending Java and C++:
+ *  - Because of the inner-workings of JNI, the subclass is responsible for constructing the native
+ *    subclass, which in turn constructs TabAndroid (the native counterpart to TabBase), which in
+ *    turn sets the native pointer for TabBase.  For destruction, subclasses in Java must clear
+ *    their own native pointer reference, but TabBase#destroy() will handle deleting the native
+ *    object.
  */
 public abstract class TabBase implements NavigationClient {
     public static final int INVALID_TAB_ID = -1;
@@ -81,6 +88,9 @@ public abstract class TabBase implements NavigationClient {
     /** InfoBar container to show InfoBars for this tab. */
     private InfoBarContainer mInfoBarContainer;
 
+    /** Manages app banners shown for this tab. */
+    private AppBannerManager mAppBannerManager;
+
     /** The sync id of the TabBase if session sync is enabled. */
     private int mSyncId;
 
@@ -99,6 +109,7 @@ public abstract class TabBase implements NavigationClient {
     // Content layer Observers and Delegates
     private ContentViewClient mContentViewClient;
     private WebContentsObserverAndroid mWebContentsObserver;
+    private VoiceSearchTabHelper mVoiceSearchTabHelper;
     private TabBaseChromeWebContentsDelegateAndroid mWebContentsDelegate;
 
     /**
@@ -172,6 +183,16 @@ public abstract class TabBase implements NavigationClient {
         public void toggleFullscreenModeForTab(boolean enableFullscreen) {
             for (TabObserver observer : mObservers) {
                 observer.onToggleFullscreenMode(TabBase.this, enableFullscreen);
+            }
+        }
+
+        @Override
+        public void navigationStateChanged(int flags) {
+            if ((flags & INVALIDATE_TYPE_TITLE) != 0) {
+                for (TabObserver observer : mObservers) observer.onTitleUpdated(TabBase.this);
+            }
+            if ((flags & INVALIDATE_TYPE_URL) != 0) {
+                for (TabObserver observer : mObservers) observer.onUrlUpdated(TabBase.this);
             }
         }
     }
@@ -412,6 +433,14 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
+     * @return The web contents associated with this tab.
+     */
+    public WebContents getWebContents() {
+        if (mNativeTabAndroid == 0) return null;
+        return nativeGetWebContents(mNativeTabAndroid);
+    }
+
+    /**
      * @return The profile associated with this tab.
      */
     public Profile getProfile() {
@@ -585,7 +614,19 @@ public abstract class TabBase implements NavigationClient {
     /**
      * Initializes this {@link TabBase}.
      */
-    public void initialize() { }
+    public void initialize() {
+        initializeNative();
+    }
+
+    /**
+     * Builds the native counterpart to this class.  Meant to be overridden by subclasses to build
+     * subclass native counterparts instead.  Subclasses should not call this via super and instead
+     * rely on the native class to create the JNI association.
+     */
+    protected void initializeNative() {
+        if (mNativeTabAndroid == 0) nativeInit();
+        assert mNativeTabAndroid != 0;
+    }
 
     /**
      * A helper method to initialize a {@link ContentView} without any native WebContents pointer.
@@ -614,6 +655,7 @@ public abstract class TabBase implements NavigationClient {
         mContentViewCore = mContentView.getContentViewCore();
         mWebContentsDelegate = createWebContentsDelegate();
         mWebContentsObserver = new TabBaseWebContentsObserverAndroid(mContentViewCore);
+        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore);
 
         if (mContentViewClient != null) mContentViewCore.setContentViewClient(mContentViewClient);
 
@@ -633,12 +675,19 @@ public abstract class TabBase implements NavigationClient {
         } else {
             mInfoBarContainer.onParentViewChanged(getId(), getContentView());
         }
+
+        if (AppBannerManager.isEnabled() && mAppBannerManager == null) {
+            mAppBannerManager = new AppBannerManager(this);
+        }
+
+        for (TabObserver observer : mObservers) observer.onContentChanged(this);
     }
 
     /**
      * Cleans up all internal state, destroying any {@link NativePage} or {@link ContentView}
-     * currently associated with this {@link TabBase}.  Typically, pnce this call is made this
-     * {@link TabBase} should no longer be used as subclasses usually destroy the native component.
+     * currently associated with this {@link TabBase}.  This also destroys the native counterpart
+     * to this class, which means that all subclasses should erase their native pointers after
+     * this method is called.  Once this call is made this {@link TabBase} should no longer be used.
      */
     public void destroy() {
         for (TabObserver observer : mObservers) observer.onDestroyed(this);
@@ -647,6 +696,15 @@ public abstract class TabBase implements NavigationClient {
         mNativePage = null;
         destroyNativePageInternal(currentNativePage);
         destroyContentView(true);
+
+        // Destroys the native tab after destroying the ContentView but before destroying the
+        // InfoBarContainer. The native tab should be destroyed before the infobar container as
+        // destroying the native tab cleanups up any remaining infobars. The infobar container
+        // expects all infobars to be cleaned up before its own destruction.
+        assert mNativeTabAndroid != 0;
+        nativeDestroy(mNativeTabAndroid);
+        assert mNativeTabAndroid == 0;
+
         if (mInfoBarContainer != null) {
             mInfoBarContainer.destroy();
             mInfoBarContainer = null;
@@ -719,6 +777,7 @@ public abstract class TabBase implements NavigationClient {
         mContentViewCore = null;
         mWebContentsDelegate = null;
         mWebContentsObserver = null;
+        mVoiceSearchTabHelper = null;
 
         assert mNativeTabAndroid != 0;
         nativeDestroyWebContents(mNativeTabAndroid, deleteNativeWebContents);
@@ -752,7 +811,7 @@ public abstract class TabBase implements NavigationClient {
     /**
      * @return The {@link WindowAndroid} associated with this {@link TabBase}.
      */
-    protected WindowAndroid getWindowAndroid() {
+    public WindowAndroid getWindowAndroid() {
         return mWindowAndroid;
     }
 
@@ -772,6 +831,14 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
+     * Called when the navigation entry containing the historyitem changed,
+     * for example because of a scroll offset or form field change.
+     */
+    @CalledByNative
+    protected void onNavEntryChanged() {
+    }
+
+    /**
      * @return The native pointer representing the native side of this {@link TabBase} object.
      */
     @CalledByNative
@@ -781,17 +848,32 @@ public abstract class TabBase implements NavigationClient {
 
     /** This is currently called when committing a pre-rendered page. */
     @CalledByNative
-    private void swapWebContents(final long newWebContents) {
-        if (mContentViewCore != null) mContentViewCore.onHide();
+    private void swapWebContents(
+            final long newWebContents, boolean didStartLoad, boolean didFinishLoad) {
+        int originalWidth = 0;
+        int originalHeight = 0;
+        if (mContentViewCore != null) {
+            originalWidth = mContentViewCore.getViewportWidthPix();
+            originalHeight = mContentViewCore.getViewportHeightPix();
+            mContentViewCore.onHide();
+        }
         destroyContentView(false);
         NativePage previousNativePage = mNativePage;
         mNativePage = null;
         initContentView(newWebContents);
+        // Size of the new ContentViewCore is zero at this point. If we don't call onSizeChanged(),
+        // next onShow() call would send a resize message with the current ContentViewCore size
+        // (zero) to the renderer process, although the new size will be set soon.
+        // However, this size fluttering may confuse Blink and rendered result can be broken
+        // (see http://crbug.com/340987).
+        mContentViewCore.onSizeChanged(originalWidth, originalHeight, 0, 0);
         mContentViewCore.onShow();
         mContentViewCore.attachImeAdapter();
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
         destroyNativePageInternal(previousNativePage);
-        for (TabObserver observer : mObservers) observer.onWebContentsSwapped(this);
+        for (TabObserver observer : mObservers) {
+            observer.onWebContentsSwapped(this, didStartLoad, didFinishLoad);
+        }
     }
 
     @CalledByNative
@@ -853,10 +935,13 @@ public abstract class TabBase implements NavigationClient {
         sIdCounter.addAndGet(diff);
     }
 
+    private native void nativeInit();
+    private native void nativeDestroy(long nativeTabAndroid);
     private native void nativeInitWebContents(long nativeTabAndroid, boolean incognito,
             ContentViewCore contentViewCore, ChromeWebContentsDelegateAndroid delegate,
             ContextMenuPopulator contextMenuPopulator);
     private native void nativeDestroyWebContents(long nativeTabAndroid, boolean deleteNative);
+    private native WebContents nativeGetWebContents(long nativeTabAndroid);
     private native Profile nativeGetProfileAndroid(long nativeTabAndroid);
     private native int nativeGetSecurityLevel(long nativeTabAndroid);
     private native void nativeSetActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url,

@@ -7,6 +7,9 @@ package org.chromium.android_webview.test;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.test.ActivityInstrumentationTestCase2;
+import android.util.Log;
+
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 
 import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
@@ -32,8 +35,9 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class AwTestBase
         extends ActivityInstrumentationTestCase2<AwTestRunnerActivity> {
-    protected static final int WAIT_TIMEOUT_SECONDS = 15;
+    protected static final long WAIT_TIMEOUT_MS = scaleTimeout(15000);
     protected static final int CHECK_INTERVAL = 100;
+    private static final String TAG = "AwTestBase";
 
     public AwTestBase() {
         super(AwTestRunnerActivity.class);
@@ -103,8 +107,8 @@ public class AwTestBase
                                final String url) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         loadUrlAsync(awContents, url);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     protected void loadUrlSyncAndExpectError(final AwContents awContents,
@@ -114,10 +118,10 @@ public class AwTestBase
         int onErrorCallCount = onReceivedErrorHelper.getCallCount();
         int onFinishedCallCount = onPageFinishedHelper.getCallCount();
         loadUrlAsync(awContents, url);
-        onReceivedErrorHelper.waitForCallback(onErrorCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
-        onPageFinishedHelper.waitForCallback(onFinishedCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onReceivedErrorHelper.waitForCallback(onErrorCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
+        onPageFinishedHelper.waitForCallback(onFinishedCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -141,8 +145,8 @@ public class AwTestBase
             byte[] postData) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         postUrlAsync(awContents, url, postData);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -173,8 +177,8 @@ public class AwTestBase
                                 final boolean isBase64Encoded) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         loadDataAsync(awContents, data, mimeType, isBase64Encoded);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     protected void loadDataSyncWithCharset(final AwContents awContents,
@@ -190,8 +194,8 @@ public class AwTestBase
                         data, mimeType, isBase64Encoded, charset));
             }
         });
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -209,11 +213,33 @@ public class AwTestBase
         });
     }
 
+    protected void loadDataWithBaseUrlSync(final AwContents awContents,
+            CallbackHelper onPageFinishedHelper, final String data, final String mimeType,
+            final boolean isBase64Encoded, final String baseUrl,
+            final String historyUrl) throws Throwable {
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        loadDataWithBaseUrlAsync(awContents, data, mimeType, isBase64Encoded, baseUrl, historyUrl);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
+    }
+
+    protected void loadDataWithBaseUrlAsync(final AwContents awContents,
+            final String data, final String mimeType, final boolean isBase64Encoded,
+            final String baseUrl, final String historyUrl) throws Throwable {
+        runTestOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                awContents.loadUrl(LoadUrlParams.createLoadDataParamsWithBaseUrl(
+                        data, mimeType, isBase64Encoded, baseUrl, historyUrl));
+            }
+        });
+    }
+
     /**
      * Reloads the current page synchronously.
      */
     protected void reloadSync(final AwContents awContents,
-                              CallbackHelper onPageFinishedHelper) throws Throwable {
+                              CallbackHelper onPageFinishedHelper) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
@@ -221,8 +247,8 @@ public class AwTestBase
                 awContents.getContentViewCore().reload(true);
             }
         });
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -249,7 +275,7 @@ public class AwTestBase
 
     protected AwTestContainerView createAwTestContainerView(
             final AwContentsClient awContentsClient) {
-        return createAwTestContainerView(awContentsClient, true);
+        return createAwTestContainerView(awContentsClient, false);
     }
 
     protected AwTestContainerView createAwTestContainerView(
@@ -267,7 +293,7 @@ public class AwTestBase
 
     protected AwTestContainerView createDetachedAwTestContainerView(
             final AwContentsClient awContentsClient) {
-        return createDetachedAwTestContainerView(awContentsClient, true);
+        return createDetachedAwTestContainerView(awContentsClient, false);
     }
 
     protected AwTestContainerView createDetachedAwTestContainerView(
@@ -277,8 +303,6 @@ public class AwTestBase
             testDependencyFactory.createAwTestContainerView(getActivity());
         AwSettings awSettings = testDependencyFactory.createAwSettings(getActivity(),
                 supportsLegacyQuirks);
-        // TODO(mnaganov): Should also have tests for the "pure Chromium" mode.
-        // See http://crbug.com/278106
         testContainerView.initialize(new AwContents(
                 mBrowserContext, testContainerView, testContainerView.getInternalAccessDelegate(),
                 awContentsClient, awSettings, testDependencyFactory.createLayoutSizer()));
@@ -288,7 +312,7 @@ public class AwTestBase
 
     protected AwTestContainerView createAwTestContainerViewOnMainSync(
             final AwContentsClient client) throws Exception {
-        return createAwTestContainerViewOnMainSync(client, true);
+        return createAwTestContainerViewOnMainSync(client, false);
     }
 
     protected AwTestContainerView createAwTestContainerViewOnMainSync(
@@ -355,18 +379,31 @@ public class AwTestBase
     }
 
     /**
-     * Similar to CriteriaHelper.pollForCriteria but runs the callable on the UI thread.
-     * Note that exceptions are treated as failure.
+     * Wrapper around CriteriaHelper.pollForCriteria. This uses AwTestBase-specifc timeouts and
+     * treats timeouts and exceptions as test failures automatically.
      */
-    protected boolean pollOnUiThread(final Callable<Boolean> callable) throws Exception {
-        return CriteriaHelper.pollForCriteria(new Criteria() {
+    protected static void poll(final Callable<Boolean> callable) throws Exception {
+        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
             public boolean isSatisfied() {
                 try {
-                    return runTestOnUiThreadAndGetResult(callable);
+                    return callable.call();
                 } catch (Throwable e) {
+                    Log.e(TAG, "Exception while polling.", e);
                     return false;
                 }
+            }
+        }, WAIT_TIMEOUT_MS, CHECK_INTERVAL));
+    }
+
+    /**
+     * Wrapper around {@link AwTestBase#poll()} but runs the callable on the UI thread.
+     */
+    protected void pollOnUiThread(final Callable<Boolean> callable) throws Exception {
+        poll(new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return runTestOnUiThreadAndGetResult(callable);
             }
         });
     }
@@ -401,7 +438,7 @@ public class AwTestBase
     /**
      * Returns page scale multiplied by the screen density.
      */
-    protected float getPixelScaleOnUiThread(final AwContents awContents) throws Throwable {
+    protected float getPixelScaleOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Float>() {
             @Override
             public Float call() throws Exception {
@@ -413,7 +450,7 @@ public class AwTestBase
     /**
      * Returns whether a user can zoom the page in.
      */
-    protected boolean canZoomInOnUiThread(final AwContents awContents) throws Throwable {
+    protected boolean canZoomInOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
@@ -425,7 +462,7 @@ public class AwTestBase
     /**
      * Returns whether a user can zoom the page out.
      */
-    protected boolean canZoomOutOnUiThread(final AwContents awContents) throws Throwable {
+    protected boolean canZoomOutOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {

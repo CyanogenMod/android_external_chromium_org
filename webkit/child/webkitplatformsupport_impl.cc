@@ -32,17 +32,8 @@
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/public/platform/WebCookie.h"
 #include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
-#include "third_party/WebKit/public/platform/WebGestureCurve.h"
-#include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
-#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebFrameClient.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/layout.h"
 #include "webkit/child/webkit_child_helpers.h"
 #include "webkit/child/websocketstreamhandle_impl.h"
@@ -57,17 +48,13 @@
 #include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
 #endif
 
-using blink::WebAudioBus;
-using blink::WebCookie;
 using blink::WebData;
 using blink::WebLocalizedString;
-using blink::WebPluginListBuilder;
 using blink::WebString;
 using blink::WebSocketStreamHandle;
 using blink::WebURL;
 using blink::WebURLError;
 using blink::WebURLLoader;
-using blink::WebVector;
 
 namespace {
 
@@ -165,10 +152,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_SLIDER;
     case WebLocalizedString::AXMediaSliderThumb:
       return IDS_AX_MEDIA_SLIDER_THUMB;
-    case WebLocalizedString::AXMediaRewindButton:
-      return IDS_AX_MEDIA_REWIND_BUTTON;
-    case WebLocalizedString::AXMediaReturnToRealTime:
-      return IDS_AX_MEDIA_RETURN_TO_REALTIME_BUTTON;
     case WebLocalizedString::AXMediaCurrentTimeDisplay:
       return IDS_AX_MEDIA_CURRENT_TIME_DISPLAY;
     case WebLocalizedString::AXMediaTimeRemainingDisplay:
@@ -179,10 +162,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_ENTER_FULL_SCREEN_BUTTON;
     case WebLocalizedString::AXMediaExitFullscreenButton:
       return IDS_AX_MEDIA_EXIT_FULL_SCREEN_BUTTON;
-  case WebLocalizedString::AXMediaSeekForwardButton:
-    return IDS_AX_MEDIA_SEEK_FORWARD_BUTTON;
-    case WebLocalizedString::AXMediaSeekBackButton:
-      return IDS_AX_MEDIA_SEEK_BACK_BUTTON;
     case WebLocalizedString::AXMediaShowClosedCaptionsButton:
       return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON;
     case WebLocalizedString::AXMediaHideClosedCaptionsButton:
@@ -203,10 +182,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_SLIDER_HELP;
     case WebLocalizedString::AXMediaSliderThumbHelp:
       return IDS_AX_MEDIA_SLIDER_THUMB_HELP;
-    case WebLocalizedString::AXMediaRewindButtonHelp:
-      return IDS_AX_MEDIA_REWIND_BUTTON_HELP;
-    case WebLocalizedString::AXMediaReturnToRealTimeHelp:
-      return IDS_AX_MEDIA_RETURN_TO_REALTIME_BUTTON_HELP;
     case WebLocalizedString::AXMediaCurrentTimeDisplayHelp:
       return IDS_AX_MEDIA_CURRENT_TIME_DISPLAY_HELP;
     case WebLocalizedString::AXMediaTimeRemainingDisplayHelp:
@@ -217,10 +192,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_ENTER_FULL_SCREEN_BUTTON_HELP;
     case WebLocalizedString::AXMediaExitFullscreenButtonHelp:
       return IDS_AX_MEDIA_EXIT_FULL_SCREEN_BUTTON_HELP;
-  case WebLocalizedString::AXMediaSeekForwardButtonHelp:
-    return IDS_AX_MEDIA_SEEK_FORWARD_BUTTON_HELP;
-    case WebLocalizedString::AXMediaSeekBackButtonHelp:
-      return IDS_AX_MEDIA_SEEK_BACK_BUTTON_HELP;
     case WebLocalizedString::AXMediaShowClosedCaptionsButtonHelp:
       return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON_HELP;
     case WebLocalizedString::AXMediaHideClosedCaptionsButtonHelp:
@@ -411,7 +382,7 @@ WebData WebKitPlatformSupportImpl::parseDataURL(
 
 WebURLError WebKitPlatformSupportImpl::cancelledError(
     const WebURL& unreachableURL) const {
-  return WebURLLoaderImpl::CreateError(unreachableURL, net::ERR_ABORTED);
+  return WebURLLoaderImpl::CreateError(unreachableURL, false, net::ERR_ABORTED);
 }
 
 void WebKitPlatformSupportImpl::decrementStatsCounter(const char* name) {

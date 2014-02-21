@@ -30,7 +30,7 @@ const int kWaitForInvalidationsTimeoutSeconds = 5;
 
 }  // namespace
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
 
 const int64 CloudPolicyRefreshScheduler::kDefaultRefreshDelayMs =
     24 * 60 * 60 * 1000;  // 1 day.
@@ -214,8 +214,8 @@ void CloudPolicyRefreshScheduler::UpdateLastRefreshFromPolicy() {
     return;
   }
 
-#if defined(OS_ANDROID)
-  // Refreshing on Android:
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  // Refreshing on mobile platforms:
   // - if no user is signed-in then the |client_| is never registered and
   //   nothing happens here.
   // - if the user is signed-in but isn't enterprise then the |client_| is
@@ -305,6 +305,7 @@ void CloudPolicyRefreshScheduler::ScheduleRefresh() {
     case DM_STATUS_SERVICE_INVALID_SERIAL_NUMBER:
     case DM_STATUS_SERVICE_DEVICE_ID_CONFLICT:
     case DM_STATUS_SERVICE_MISSING_LICENSES:
+    case DM_STATUS_SERVICE_DEPROVISIONED:
       // Need a re-registration, no use in retrying.
       refresh_callback_.Cancel();
       return;

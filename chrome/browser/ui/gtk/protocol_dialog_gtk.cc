@@ -32,7 +32,9 @@ const int kMessageWidth = 400;
 void ExternalProtocolHandler::RunExternalProtocolDialog(
     const GURL& url, int render_process_host_id, int routing_id) {
   new ProtocolDialogGtk(scoped_ptr<const ProtocolDialogDelegate>(
-        new ExternalProtocolDialogDelegate(url)));
+      new ExternalProtocolDialogDelegate(url,
+                                         render_process_host_id,
+                                         routing_id)));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -42,10 +44,10 @@ ProtocolDialogGtk::ProtocolDialogGtk(
     scoped_ptr<const ProtocolDialogDelegate> delegate)
     : delegate_(delegate.Pass()),
       creation_time_(base::TimeTicks::Now()) {
-  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+  DCHECK(base::MessageLoopForUI::IsCurrent());
 
   dialog_ = gtk_dialog_new_with_buttons(
-      UTF16ToUTF8(delegate_->GetTitleText()).c_str(),
+      base::UTF16ToUTF8(delegate_->GetTitleText()).c_str(),
       NULL,
       GTK_DIALOG_NO_SEPARATOR,
       NULL);
@@ -66,13 +68,13 @@ ProtocolDialogGtk::ProtocolDialogGtk(
 
   // Add the message text.
   GtkWidget* label = gtk_label_new(
-      UTF16ToUTF8(delegate_->GetMessageText()).c_str());
+      base::UTF16ToUTF8(delegate_->GetMessageText()).c_str());
   gtk_util::SetLabelWidth(label, kMessageWidth);
   gtk_box_pack_start(GTK_BOX(vbox), label, TRUE, TRUE, 0);
 
   // Add the checkbox.
   checkbox_ = gtk_check_button_new_with_label(
-      UTF16ToUTF8(delegate_->GetCheckboxText()).c_str());
+      base::UTF16ToUTF8(delegate_->GetCheckboxText()).c_str());
   gtk_box_pack_start(GTK_BOX(vbox), checkbox_,
                      FALSE, FALSE, 0);
 

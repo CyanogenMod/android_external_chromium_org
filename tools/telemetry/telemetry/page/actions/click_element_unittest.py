@@ -6,8 +6,11 @@ from telemetry.core import util
 from telemetry.page.actions import click_element
 from telemetry.page.actions import wait
 from telemetry.unittest import tab_test_case
+from telemetry.unittest import test
+
 
 class ClickElementActionTest(tab_test_case.TabTestCase):
+  @test.Disabled('chromeos')
   def testClickWithSelectorWaitForNavigation(self):
     self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(
@@ -27,6 +30,7 @@ class ClickElementActionTest(tab_test_case.TabTestCase):
         self._tab.EvaluateJavaScript('document.location.pathname;'),
         '/blank.html')
 
+  @test.Disabled('chromeos')
   def testClickWithSingleQuoteSelectorWaitForNavigation(self):
     self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(
@@ -46,6 +50,7 @@ class ClickElementActionTest(tab_test_case.TabTestCase):
         self._tab.EvaluateJavaScript('document.location.pathname;'),
         '/blank.html')
 
+  @test.Disabled('chromeos')
   def testClickWithTextWaitForRefChange(self):
     self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(
@@ -65,6 +70,7 @@ class ClickElementActionTest(tab_test_case.TabTestCase):
         self._tab.EvaluateJavaScript('document.location.pathname;'),
         '/blank.html')
 
+  @test.Disabled('chromeos')
   def testClickWithXPathWaitForRefChange(self):
     self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(

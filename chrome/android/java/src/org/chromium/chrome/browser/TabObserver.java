@@ -32,10 +32,25 @@ public interface TabObserver {
     void onFaviconUpdated(TabBase tab);
 
     /**
-     * Called when the WebContents of a {@link TabBase} have been swapped.
+     * Called when the title of a {@link TabBase} changes.
      * @param tab The notifying {@link TabBase}.
      */
-    void onWebContentsSwapped(TabBase tab);
+    void onTitleUpdated(TabBase tab);
+
+    /**
+     * Called when the URL of a {@link TabBase} changes.
+     * @param tab The notifying {@link TabBase}.
+     */
+    void onUrlUpdated(TabBase tab);
+
+    /**
+     * Called when the WebContents of a {@link TabBase} have been swapped.
+     * @param tab The notifying {@link TabBase}.
+     * @param didStartLoad Whether WebContentsObserver::DidStartProvisionalLoadForFrame() has
+     *     already been called.
+     * @param didFinishLoad Whether WebContentsObserver::DidFinishLoad() has already been called.
+     */
+    void onWebContentsSwapped(TabBase tab, boolean didStartLoad, boolean didFinishLoad);
 
     /**
      * Called when a context menu is shown for a {@link ContentView} owned by a {@link TabBase}.
@@ -80,4 +95,5 @@ public interface TabObserver {
      */
     void onDidFailLoad(TabBase tab, boolean isProvisionalLoad, boolean isMainFrame, int errorCode,
             String description, String failingUrl);
+
 }

@@ -23,7 +23,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tab_restore_service_delegate.h"
-#include "chrome/browser/ui/views/frame/browser_desktop_root_window_host_x11.h"
+#include "chrome/browser/ui/views/frame/browser_desktop_window_tree_host_x11.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/global_menu_bar_registrar_x11.h"
 #include "chrome/common/pref_names.h"
@@ -312,7 +312,7 @@ struct GlobalMenuBarX11::HistoryItem {
 };
 
 GlobalMenuBarX11::GlobalMenuBarX11(BrowserView* browser_view,
-                                   BrowserDesktopRootWindowHostX11* host)
+                                   BrowserDesktopWindowTreeHostX11* host)
     : browser_(browser_view->browser()),
       profile_(browser_->profile()),
       browser_view_(browser_view),
@@ -529,10 +529,10 @@ void GlobalMenuBarX11::AddHistoryItemToMenu(HistoryItem* item,
   std::string url_string = item->url.possibly_invalid_spec();
 
   if (title.empty())
-    title = UTF8ToUTF16(url_string);
+    title = base::UTF8ToUTF16(url_string);
   gfx::ElideString(title, kMaximumMenuWidthInChars, &title);
 
-  DbusmenuMenuitem* menu_item = BuildMenuItem(UTF16ToUTF8(title), tag);
+  DbusmenuMenuitem* menu_item = BuildMenuItem(base::UTF16ToUTF8(title), tag);
   g_signal_connect(menu_item, "item-activated",
                    G_CALLBACK(OnHistoryItemActivatedThunk), this);
 

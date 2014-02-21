@@ -247,7 +247,7 @@ bool ValidateExtensionIconSet(const ExtensionIconSet& icon_set,
         extension->GetResource(iter->second).GetFilePath();
     if (!ValidateFilePath(path)) {
       *error = l10n_util::GetStringFUTF8(error_message_id,
-                                         UTF8ToUTF16(iter->second));
+                                         base::UTF8ToUTF16(iter->second));
       return false;
     }
   }
@@ -325,7 +325,8 @@ std::set<base::FilePath> GetBrowserImagePaths(const Extension* extension) {
 
 void GarbageCollectExtensions(
     const base::FilePath& install_directory,
-    const std::multimap<std::string, base::FilePath>& extension_paths) {
+    const std::multimap<std::string, base::FilePath>& extension_paths,
+    bool clean_temp_dir) {
   // Nothing to clean up if it doesn't exist.
   if (!base::DirectoryExists(install_directory))
     return;
@@ -343,7 +344,8 @@ void GarbageCollectExtensions(
     // Clean up temporary files left if Chrome crashed or quit in the middle
     // of an extension install.
     if (basename.value() == kTempDirectoryName) {
-      base::DeleteFile(extension_path, true);  // Recursive
+      if (clean_temp_dir)
+        base::DeleteFile(extension_path, true);  // Recursive
       continue;
     }
 
@@ -484,7 +486,7 @@ bool CheckForIllegalFilenames(const base::FilePath& extension_path,
       *error = base::StringPrintf(
           "Cannot load extension with file or directory name %s. "
           "Filenames starting with \"_\" are reserved for use by the system.",
-          filename.c_str());
+          file.BaseName().AsUTF8Unsafe().c_str());
       return false;
     }
   }

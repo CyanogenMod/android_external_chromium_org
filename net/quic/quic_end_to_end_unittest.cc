@@ -27,8 +27,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
-extern int FLAGS_fake_packet_loss_percentage;
-
 using base::StringPiece;
 using net::tools::QuicInMemoryCache;
 using net::tools::test::QuicInMemoryCachePeer;
@@ -48,14 +46,11 @@ class TestTransactionFactory : public HttpTransactionFactory {
       : session_(new HttpNetworkSession(params)) {}
 
   virtual ~TestTransactionFactory() {
-    FLAGS_fake_packet_loss_percentage = 0;
   }
 
   // HttpTransactionFactory methods
   virtual int CreateTransaction(RequestPriority priority,
-                                scoped_ptr<HttpTransaction>* trans,
-                                HttpTransactionDelegate* delegate) OVERRIDE {
-    EXPECT_TRUE(delegate == NULL);
+                                scoped_ptr<HttpTransaction>* trans) OVERRIDE {
     trans->reset(new HttpNetworkTransaction(priority, session_));
     return OK;
   }
@@ -140,10 +135,10 @@ class QuicEndToEndTest : public PlatformTest {
     server_thread_.reset(new ServerThread(server_address_, server_config_,
                                           QuicSupportedVersions(),
                                           strike_register_no_startup_period_));
-    server_thread_->Start();
-    server_thread_->WaitForServerStartup();
+    server_thread_->Initialize();
     server_address_ = IPEndPoint(server_address_.address(),
                                  server_thread_->GetPort());
+    server_thread_->Start();
     server_started_ = true;
   }
 

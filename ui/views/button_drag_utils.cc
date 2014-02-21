@@ -21,7 +21,7 @@ namespace button_drag_utils {
 static const int kLinkDragImageMaxWidth = 200;
 
 void SetURLAndDragImage(const GURL& url,
-                        const string16& title,
+                        const base::string16& title,
                         const gfx::ImageSkia& icon,
                         ui::OSExchangeData* data,
                         views::Widget* widget) {
@@ -31,7 +31,8 @@ void SetURLAndDragImage(const GURL& url,
 
   // Create a button to render the drag image for us.
   views::TextButton button(NULL,
-                           title.empty() ? UTF8ToUTF16(url.spec()) : title);
+                           title.empty() ? base::UTF8ToUTF16(url.spec())
+                                         : title);
   button.set_max_width(kLinkDragImageMaxWidth);
   if (icon.isNull()) {
     button.SetIcon(*ui::ResourceBundle::GetSharedInstance().GetImageNamed(

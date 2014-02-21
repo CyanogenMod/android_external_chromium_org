@@ -34,22 +34,14 @@ $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_glx.cc: $(gyp_shared_in
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_glx.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_glx.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_mock.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
+$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_mock.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_osmesa.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_osmesa.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_osmesa.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_wgl.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_wgl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_wgl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_egl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_gl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_glx.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_osmesa.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_wgl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_egl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_gl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_glx.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_osmesa.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
-$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_wgl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 
 
 GYP_GENERATED_OUTPUTS := \
@@ -63,22 +55,14 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_glx.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_glx.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_mock.cc \
+	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_mock.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_osmesa.cc \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_osmesa.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_osmesa.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_wgl.cc \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_wgl.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_wgl.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_egl.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_gl.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_glx.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_osmesa.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_interface_autogen_wgl.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_egl.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_gl.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_glx.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_osmesa.h \
-	$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_wgl.h
+	$(gyp_shared_intermediate_dir)/ui/gl/gl_mock_autogen_gl.h
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
@@ -86,15 +70,12 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 LOCAL_CPP_EXTENSION := .cc
 $(gyp_intermediate_dir)/gl_bindings_autogen_gl.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_gl.cc
 	mkdir -p $(@D); cp $< $@
-$(gyp_intermediate_dir)/gl_bindings_autogen_mock.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_mock.cc
-	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/gl_bindings_autogen_osmesa.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_osmesa.cc
 	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/gl_bindings_autogen_egl.cc: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc
 	mkdir -p $(@D); cp $< $@
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_intermediate_dir)/gl_bindings_autogen_gl.cc \
-	$(gyp_intermediate_dir)/gl_bindings_autogen_mock.cc \
 	$(gyp_intermediate_dir)/gl_bindings_autogen_osmesa.cc \
 	$(gyp_intermediate_dir)/gl_bindings_autogen_egl.cc
 
@@ -110,6 +91,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_context.cc \
 	ui/gl/gl_context_android.cc \
 	ui/gl/gl_context_stub.cc \
+	ui/gl/gl_context_stub_with_extensions.cc \
 	ui/gl/gl_fence.cc \
 	ui/gl/gl_gl_api_implementation.cc \
 	ui/gl/gl_image.cc \
@@ -118,7 +100,6 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_image_stub.cc \
 	ui/gl/gl_implementation.cc \
 	ui/gl/gl_implementation_android.cc \
-	ui/gl/gl_interface.cc \
 	ui/gl/gl_osmesa_api_implementation.cc \
 	ui/gl/gl_share_group.cc \
 	ui/gl/gl_state_restorer.cc \
@@ -126,6 +107,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_surface_stub.cc \
 	ui/gl/gl_surface_osmesa.cc \
 	ui/gl/gl_switches.cc \
+	ui/gl/gl_version_info.cc \
 	ui/gl/gpu_switching_manager.cc \
 	ui/gl/scoped_binders.cc \
 	ui/gl/scoped_make_current.cc \
@@ -165,14 +147,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -183,7 +166,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -197,8 +179,9 @@ MY_DEFS_Debug := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -253,7 +236,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -286,14 +268,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -304,7 +287,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -318,8 +300,9 @@ MY_DEFS_Release := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -375,7 +358,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

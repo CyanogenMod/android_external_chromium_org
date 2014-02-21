@@ -122,7 +122,7 @@ DownloadManagerDelegate* ShellBrowserContext::GetDownloadManagerDelegate()  {
   DownloadManager* manager = BrowserContext::GetDownloadManager(this);
 
   if (!download_manager_delegate_.get()) {
-    download_manager_delegate_ = new ShellDownloadManagerDelegate();
+    download_manager_delegate_.reset(new ShellDownloadManagerDelegate());
     download_manager_delegate_->SetDownloadManager(manager);
     CommandLine* cmd_line = CommandLine::ForCurrentProcess();
     if (cmd_line->HasSwitch(switches::kDumpRenderTree)) {
@@ -176,27 +176,41 @@ net::URLRequestContextGetter*
   return GetRequestContext();
 }
 
-void ShellBrowserContext::RequestMIDISysExPermission(
+void ShellBrowserContext::RequestMidiSysExPermission(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
-      const MIDISysExPermissionCallback& callback) {
+      const MidiSysExPermissionCallback& callback) {
   // Always reject requests for LayoutTests for now.
   // TODO(toyoshim): Make it programmable to improve test coverage.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDumpRenderTree)) {
     callback.Run(false);
     return;
   }
-  // TODO(toyoshim): Implement. http://crbug.com/257618 .
-  callback.Run(false);
+  callback.Run(true);
 }
 
-void ShellBrowserContext::CancelMIDISysExPermissionRequest(
+void ShellBrowserContext::CancelMidiSysExPermissionRequest(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame) {
+}
+
+void ShellBrowserContext::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+  callback.Run(true);
+}
+
+void ShellBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
 }
 
 net::URLRequestContextGetter*

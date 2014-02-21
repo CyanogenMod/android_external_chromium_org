@@ -29,7 +29,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
-#include "ui/views/focus/accelerator_handler.h"
+#include "ui/views/corewm/wm_state.h"
 #include "ui/views/test/test_views_delegate.h"
 
 #if defined(USE_X11)
@@ -57,13 +57,12 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
       views::Widget* widget) OVERRIDE {
     return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
   }
-  virtual bool UseTransparentWindows() const OVERRIDE {
-    // Ash uses transparent window frames.
-    return true;
-  }
   virtual void OnBeforeWidgetInit(
       views::Widget::InitParams* params,
       views::internal::NativeWidgetDelegate* delegate) OVERRIDE {
+    if (params->opacity == views::Widget::InitParams::INFER_OPACITY)
+      params->opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+
     if (params->native_widget)
       return;
 
@@ -98,8 +97,12 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #endif
 }
 
+void ShellBrowserMainParts::ToolkitInitialized() {
+  wm_state_.reset(new views::corewm::WMState);
+}
+
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
-  net_log_.reset(new content::ShellNetLog());
+  net_log_.reset(new content::ShellNetLog("ash_shell"));
   browser_context_.reset(new content::ShellBrowserContext(
       false, net_log_.get()));
 
@@ -120,7 +123,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   ash::Shell::CreateInstance(delegate_);
   delegate_->set_browser_context(browser_context_.get());
-  ash::Shell::GetInstance()->CreateLauncher();
+  ash::Shell::GetInstance()->CreateShelf();
   ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(
       user::LOGGED_IN_USER);
 

@@ -23,6 +23,7 @@
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/var.h"
@@ -78,16 +79,17 @@ static int GetRoutingID(PP_Instance instance) {
 }
 
 // Launch NaCl's sel_ldr process.
-PP_ExternalPluginResult LaunchSelLdr(PP_Instance instance,
-                                     const char* alleged_url,
-                                     PP_Bool uses_irt,
-                                     PP_Bool uses_ppapi,
-                                     PP_Bool enable_ppapi_dev,
-                                     PP_Bool enable_dyncode_syscalls,
-                                     PP_Bool enable_exception_handling,
-                                     PP_Bool enable_crash_throttling,
-                                     void* imc_handle,
-                                     struct PP_Var* error_message) {
+void LaunchSelLdr(PP_Instance instance,
+                  const char* alleged_url,
+                  PP_Bool uses_irt,
+                  PP_Bool uses_ppapi,
+                  PP_Bool enable_ppapi_dev,
+                  PP_Bool enable_dyncode_syscalls,
+                  PP_Bool enable_exception_handling,
+                  PP_Bool enable_crash_throttling,
+                  void* imc_handle,
+                  struct PP_Var* error_message,
+                  PP_CompletionCallback callback) {
   nacl::FileDescriptor result_socket;
   IPC::Sender* sender = content::RenderThread::Get();
   DCHECK(sender);
@@ -99,8 +101,13 @@ PP_ExternalPluginResult LaunchSelLdr(PP_Instance instance,
   // so those nexes can skip finding a routing_id.
   if (uses_ppapi) {
     routing_id = GetRoutingID(instance);
-    if (!routing_id)
-      return PP_EXTERNAL_PLUGIN_FAILED;
+    if (!routing_id) {
+      ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+          FROM_HERE,
+          base::Bind(callback.func, callback.user_data,
+                     static_cast<int32_t>(PP_ERROR_FAILED)));
+      return;
+    }
   }
 
   InstanceInfo instance_info;
@@ -127,11 +134,19 @@ PP_ExternalPluginResult LaunchSelLdr(PP_Instance instance,
                                  PP_ToBool(enable_crash_throttling)),
           &launch_result,
           &error_message_string))) {
-    return PP_EXTERNAL_PLUGIN_FAILED;
+    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+        FROM_HERE,
+        base::Bind(callback.func, callback.user_data,
+                   static_cast<int32_t>(PP_ERROR_FAILED)));
+    return;
   }
   if (!error_message_string.empty()) {
     *error_message = ppapi::StringVar::StringToPPVar(error_message_string);
-    return PP_EXTERNAL_PLUGIN_FAILED;
+    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+        FROM_HERE,
+        base::Bind(callback.func, callback.user_data,
+                   static_cast<int32_t>(PP_ERROR_FAILED)));
+    return;
   }
   result_socket = launch_result.imc_channel_handle;
   instance_info.channel_handle = launch_result.ipc_channel_handle;
@@ -148,8 +163,10 @@ PP_ExternalPluginResult LaunchSelLdr(PP_Instance instance,
 
   *(static_cast<NaClHandle*>(imc_handle)) =
       nacl::ToNativeHandle(result_socket);
-
-  return PP_EXTERNAL_PLUGIN_OK;
+  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+      FROM_HERE,
+      base::Bind(callback.func, callback.user_data,
+                 static_cast<int32_t>(PP_OK)));
 }
 
 PP_ExternalPluginResult StartPpapiProxy(PP_Instance instance) {
@@ -239,6 +256,16 @@ PP_FileHandle CreateTemporaryFile(PP_Instance instance) {
   return handle;
 }
 
+int32_t GetNumberOfProcessors() {
+  int32_t num_processors;
+  IPC::Sender* sender = content::RenderThread::Get();
+  DCHECK(sender);
+  if(!sender->Send(new NaClHostMsg_NaClGetNumProcessors(&num_processors))) {
+    return 1;
+  }
+  return num_processors;
+}
+
 int32_t GetNexeFd(PP_Instance instance,
                   const char* pexe_url,
                   uint32_t abi_version,
@@ -246,6 +273,8 @@ int32_t GetNexeFd(PP_Instance instance,
                   const char* last_modified,
                   const char* etag,
                   PP_Bool has_no_store_header,
+                  const char* sandbox_isa,
+                  const char* extra_flags,
                   PP_Bool* is_hit,
                   PP_FileHandle* handle,
                   struct PP_CompletionCallback callback) {
@@ -269,6 +298,8 @@ int32_t GetNexeFd(PP_Instance instance,
   cache_info.last_modified = last_modified_time;
   cache_info.etag = std::string(etag);
   cache_info.has_no_store_header = PP_ToBool(has_no_store_header);
+  cache_info.sandbox_isa = std::string(sandbox_isa);
+  cache_info.extra_flags = std::string(extra_flags);
 
   g_pnacl_resource_host.Get()->RequestNexeFd(
       GetRoutingID(instance),
@@ -353,18 +384,49 @@ blink::WebString EventTypeToString(PP_NaClEventType event_type) {
   return blink::WebString();
 }
 
+struct ProgressEvent {
+  PP_Instance instance;
+  PP_NaClEventType event_type;
+  std::string resource_url;
+  bool length_is_computable;
+  uint64_t loaded_bytes;
+  uint64_t total_bytes;
+};
+
+void DispatchEventOnMainThread(const ProgressEvent &event);
+
 void DispatchEvent(PP_Instance instance,
                    PP_NaClEventType event_type,
-                   struct PP_Var resource_url,
+                   const char *resource_url,
                    PP_Bool length_is_computable,
                    uint64_t loaded_bytes,
                    uint64_t total_bytes) {
+  ProgressEvent p;
+  p.instance = instance;
+  p.event_type = event_type;
+  p.length_is_computable = PP_ToBool(length_is_computable);
+  p.loaded_bytes = loaded_bytes;
+  p.total_bytes = total_bytes;
+
+  // We have to copy resource_url into our struct manually since we don't have
+  // guarantees about the PP_Var lifetime.
+  p.resource_url = std::string();
+  if (resource_url)
+    p.resource_url = std::string(resource_url);
+
+  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+      FROM_HERE,
+      base::Bind(&DispatchEventOnMainThread, p));
+}
+
+void DispatchEventOnMainThread(const ProgressEvent &event) {
   content::PepperPluginInstance* plugin_instance =
-      content::PepperPluginInstance::Get(instance);
-  if (!plugin_instance) {
-    NOTREACHED();
+      content::PepperPluginInstance::Get(event.instance);
+  // The instance may have been destroyed after we were scheduled, so just
+  // return if it's gone.
+  if (!plugin_instance)
     return;
-  }
+
   blink::WebPluginContainer* container = plugin_instance->GetContainer();
   // It's possible that container() is NULL if the plugin has been removed from
   // the DOM (but the PluginInstance is not destroyed yet).
@@ -382,22 +444,22 @@ void DispatchEvent(PP_Instance instance,
   }
   v8::Context::Scope context_scope(context);
 
-  ppapi::StringVar* url_var = ppapi::StringVar::FromPPVar(resource_url);
-  if (url_var) {
+  if (!event.resource_url.empty()) {
     blink::WebString url_string = blink::WebString::fromUTF8(
-        url_var->value().data(), url_var->value().size());
-    blink::WebDOMResourceProgressEvent event(EventTypeToString(event_type),
-                                              PP_ToBool(length_is_computable),
-                                              loaded_bytes,
-                                              total_bytes,
-                                              url_string);
-    container->element().dispatchEvent(event);
+        event.resource_url.data(), event.resource_url.size());
+    blink::WebDOMResourceProgressEvent blink_event(
+        EventTypeToString(event.event_type),
+        event.length_is_computable,
+        event.loaded_bytes,
+        event.total_bytes,
+        url_string);
+    container->element().dispatchEvent(blink_event);
   } else {
-    blink::WebDOMProgressEvent event(EventTypeToString(event_type),
-                                      PP_ToBool(length_is_computable),
-                                      loaded_bytes,
-                                      total_bytes);
-    container->element().dispatchEvent(event);
+    blink::WebDOMProgressEvent blink_event(EventTypeToString(event.event_type),
+                                           event.length_is_computable,
+                                           event.loaded_bytes,
+                                           event.total_bytes);
+    container->element().dispatchEvent(blink_event);
   }
 }
 
@@ -417,6 +479,7 @@ const PPB_NaCl_Private nacl_interface = {
   &BrokerDuplicateHandle,
   &GetReadonlyPnaclFD,
   &CreateTemporaryFile,
+  &GetNumberOfProcessors,
   &GetNexeFd,
   &ReportTranslationFinished,
   &ReportNaClError,

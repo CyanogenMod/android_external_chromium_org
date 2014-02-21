@@ -31,13 +31,13 @@ DisplayErrorObserver::~DisplayErrorObserver() {
 }
 
 void DisplayErrorObserver::OnDisplayModeChangeFailed(
-    chromeos::OutputState new_state) {
+    ui::OutputState new_state) {
   // Always remove the notification to make sure the notification appears
   // as a popup in any situation.
   message_center::MessageCenter::Get()->RemoveNotification(
       kDisplayErrorNotificationId, false /* by_user */);
 
-  int message_id = (new_state == chromeos::STATE_DUAL_MIRROR) ?
+  int message_id = (new_state == ui::OUTPUT_STATE_DUAL_MIRROR) ?
       IDS_ASH_DISPLAY_FAILURE_ON_MIRRORING :
       IDS_ASH_DISPLAY_FAILURE_ON_NON_MIRRORING;
 
@@ -47,7 +47,7 @@ void DisplayErrorObserver::OnDisplayModeChangeFailed(
       kDisplayErrorNotificationId,
       l10n_util::GetStringUTF16(message_id),
       base::string16(),  // message
-      bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY),
+      bundle.GetImageNamed(IDR_AURA_NOTIFICATION_DISPLAY),
       base::string16(),  // display_source
       message_center::NotifierId(
           message_center::NotifierId::SYSTEM_COMPONENT,
@@ -57,7 +57,8 @@ void DisplayErrorObserver::OnDisplayModeChangeFailed(
   message_center::MessageCenter::Get()->AddNotification(notification.Pass());
 }
 
-string16 DisplayErrorObserver::GetTitleOfDisplayErrorNotificationForTest() {
+base::string16 DisplayErrorObserver::
+    GetTitleOfDisplayErrorNotificationForTest() {
   message_center::NotificationList::Notifications notifications =
       message_center::MessageCenter::Get()->GetVisibleNotifications();
   for (message_center::NotificationList::Notifications::const_iterator iter =

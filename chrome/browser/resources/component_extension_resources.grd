@@ -61,11 +61,16 @@
       <include name="IDR_GAIA_AUTH_BACKGROUND_JS" file="gaia_auth/background.js" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_SAML_INJECTED_JS" file="gaia_auth/saml_injected.js" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_CHANNEL_JS" file="gaia_auth/channel.js" type="BINDATA" />
-      <include name="IDR_GAIA_AUTH_INLINE_INJECTED_JS" file="gaia_auth/inline_injected.js" type="BINDATA" />
-      <include name="IDR_GAIA_AUTH_INLINE_MAIN" file="gaia_auth/inline_main.html" allowexternalscript="true" type="BINDATA" />
-      <!-- Hangout Services extension -->
-      <include name="IDR_HANGOUT_SERVICES_BACKGROUND_HTML" file="hangout_services/background.html" type="BINDATA" />
-      <include name="IDR_HANGOUT_SERVICES_THUNK_JS" file="hangout_services/thunk.js" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_DESKTOP_INJECTED_JS" file="gaia_auth/desktop_injected.js" type="BINDATA" />
+      <!-- Hangout Services extension, included in Google Chrome builds only. -->
+      <if expr="pp_ifdef('_google_chrome') or pp_ifdef('enable_hangout_services_extension')">
+        <include name="IDR_HANGOUT_SERVICES_BACKGROUND_HTML" file="hangout_services/background.html" type="BINDATA" />
+        <include name="IDR_HANGOUT_SERVICES_THUNK_JS" file="hangout_services/thunk.js" type="BINDATA" />
+      </if>
+      <!-- Hotword Helper extension -->
+      <include name="IDR_HOTWORD_HELPER_AUDIO_CLIENT_JS" file="hotword_helper/audio_client.js" type="BINDATA" />
+      <include name="IDR_HOTWORD_HELPER_OPTIN_CLIENT_JS" file="hotword_helper/optin_client.js" type="BINDATA" />
+      <include name="IDR_HOTWORD_HELPER_MANAGER_JS" file="hotword_helper/manager.js" type="BINDATA" />
       <if expr="pp_ifdef('chromeos')">
         <!-- Background page loader  -->
         <include name="IDR_BACKLOADER_BACKGROUND_HTML" file="backloader/background.html" type="BINDATA" />
@@ -80,7 +85,7 @@
       <include name="IDR_FEEDBACK_FEEDBACK_CSS" file="feedback/css/feedback.css" type="BINDATA" />
       <include name="IDR_FEEDBACK_ICON_32" file="feedback/images/icon32.png" type="BINDATA" />
       <include name="IDR_FEEDBACK_ICON_64" file="feedback/images/icon64.png" type="BINDATA" />
-      <if expr="pp_ifdef('file_manager_extension')">
+      <if expr="pp_ifdef('chromeos')">
         <!-- App pages and scripts. -->
         <include name="IDR_FILE_MANAGER_MAIN" file="file_manager/main.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_MAIN_JS" file="file_manager/foreground/js/main_scripts.js" flattenhtml="true" type="BINDATA" />
@@ -89,6 +94,9 @@
         <include name="IDR_FILE_MANAGER_MEDIAPLAYER" file="file_manager/mediaplayer.html" allowexternalscript="true" flattenhtml="true" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_MEDIAPLAYER_JS" file="file_manager/foreground/js/media/mediaplayer_scripts.js" flattenhtml="true" type="BINDATA" />
 
+        <include name="IDR_FILE_MANAGER_AUDIO_PLAYER" file="file_manager/audio_player.html" allowexternalscript="true" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_AUDIO_PLAYER_SCRIPTS_JS" file="file_manager/audio_player/js/audio_player_scripts.js" flattenhtml="true" type="BINDATA" />
+
         <include name="IDR_FILE_MANAGER_VIDEO_PLAYER" file="file_manager/video_player.html" allowexternalscript="true" flattenhtml="true" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_VIDEO_PLAYER_JS" file="file_manager/foreground/js/media/video_player_scripts.js" flattenhtml="true" type="BINDATA" />
 
@@ -96,15 +104,17 @@
         <include name="IDR_FILE_MANAGER_GALLERY_JS" file="file_manager/foreground/js/photo/gallery_scripts.js" flattenhtml="true" type="BINDATA" />
 
         <!-- Scripts working in background page. -->
-        <include name="IDR_FILE_MANAGER_VOLUME_MANAGER_JS" file="file_manager/background/js/volume_manager.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_ASYNC_UTIL_JS" file="file_manager/common/js/async_util.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_DEVICE_HANDLER_JS" file="file_manager/background/js/device_handler.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_DRIVE_SYNC_HANDLER_JS" file="file_manager/background/js/drive_sync_handler.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_FILE_OPERATION_HANDLER_JS" file="file_manager/background/js/file_operation_handler.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_FILE_OPERATION_MANAGER_JS" file="file_manager/background/js/file_operation_manager.js" flattenhtml="false" type="BINDATA" />
-        <include name="IDR_FILE_MANAGER_PROGRESS_CENTER_JS" file="file_manager/background/js/progress_center.js" flattenhtml="false" type="BINDATA" />
-        <include name="IDR_FILE_MANAGER_PROGRESS_CENTER_COMMON_JS" file="file_manager/common/js/progress_center_common.js" flattenhtml="false" type="BINDATA" />
-        <include name="IDR_FILE_MANAGER_ASYNC_UTIL_JS" file="file_manager/common/js/async_util.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_PATH_UTIL_JS" file="file_manager/common/js/path_util.js" flattenhtml="false" type="BINDATA" />
-        <include name="IDR_FILE_MANAGER_UTIL_JS" file="file_manager/common/js/util.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_PROGRESS_CENTER_COMMON_JS" file="file_manager/common/js/progress_center_common.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_PROGRESS_CENTER_JS" file="file_manager/background/js/progress_center.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_TEST_UTIL_JS" file="file_manager/background/js/test_util.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_UTIL_JS" file="file_manager/common/js/util.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_VOLUME_MANAGER_JS" file="file_manager/background/js/volume_manager.js" flattenhtml="false" type="BINDATA" />
 
         <!-- Scripts required by the metadata parser worker. -->
         <include name="IDR_FILE_MANAGER_UTIL" file="file_manager/common/js/util.js" type="BINDATA" />
@@ -126,7 +136,7 @@
         <include name="IDR_FILE_MANAGER_ICON_96" file="file_manager/common/images/icon96.png" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_ICON_128" file="file_manager/common/images/icon128.png" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_ICON_256" file="file_manager/common/images/icon256.png" type="BINDATA" />
-        <include name="IDR_FILE_MANAGER_AUDIO_PLAYER_ICON_2X" file="file_manager/foreground/images/media/2x/audio_player.png" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_AUDIO_PLAYER_ICON_64" file="file_manager/audio_player/icons/audio-player-64.png" type="BINDATA" />
 
         <!-- Resources used for non-flattened HTML files. -->
         <include name="IDR_FILE_MANAGER_DRIVE_WELCOME_STYLE" file="file_manager/foreground/css/drive_welcome.css" type="BINDATA" />
@@ -169,11 +179,6 @@
       <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_DIALOG_CSS" file="identity_scope_approval_dialog/scope_approval_dialog.css" type="BINDATA" />
       <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_DIALOG" file="identity_scope_approval_dialog/scope_approval_dialog.html" type="BINDATA" />
       <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_DIALOG_JS" file="identity_scope_approval_dialog/scope_approval_dialog.js" type="BINDATA" />
-      <include name="IDR_APPS_DEBUGGER_MAIN" file="apps_debugger/main.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      <include name="IDR_APPS_DEBUGGER_BACKGROUND_JS" file="apps_debugger/background.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_APPS_DEBUGGER_MAIN_JS" file="apps_debugger/js/main_scripts.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_APPS_DEBUGGER_ICON_128" file="apps_debugger/images/dev-icon-128.png" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_APPS_DEBUGGER_ICON_16" file="apps_debugger/images/dev-icon-16.png" flattenhtml="true" type="BINDATA" />
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_WALLPAPER_MANAGER_CONSTANTS_JS" file="chromeos/wallpaper_manager/js/constants.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_WALLPAPER_MANAGER_EVENT_JS" file="chromeos/wallpaper_manager/js/event_page.js" flattenhtml="true" type="BINDATA" />
@@ -206,9 +211,23 @@
         <include name="IDR_SETTINGS_APP_JS" file="settings_app/settings_app.js" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('enable_plugins')">
-        <include name="IDR_PDF_HTML" file="pdf/pdf.html" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_PDF_INDEX_HTML" file="pdf/index.html" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_PDF_INDEX_JS" file="pdf/index.js" type="BINDATA" />
         <include name="IDR_PDF_BACKGROUND_JS" file="pdf/background.js" type="BINDATA" />
         <include name="IDR_PDF_JS" file="pdf/pdf.js" type="BINDATA" />
+        <include name="IDR_PDF_POLYMER_JS" file="pdf/polymer_loader.js" type="BINDATA" flattenhtml="true" />
+        <include name="IDR_PDF_BUTTON_LOW_1" file="pdf/html_office/elements/viewer-button/img/lowDPI/button_fit_page.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_LOW_2" file="pdf/html_office/elements/viewer-button/img/lowDPI/button_fit_width.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_LOW_3" file="pdf/html_office/elements/viewer-button/img/lowDPI/button_zoom_out.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_LOW_4" file="pdf/html_office/elements/viewer-button/img/lowDPI/button_zoom_in.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_LOW_5" file="pdf/html_office/elements/viewer-button/img/lowDPI/button_save.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_LOW_6" file="pdf/html_office/elements/viewer-button/img/lowDPI/button_print.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_HIGH_1" file="pdf/html_office/elements/viewer-button/img/hiDPI/button_fit_page.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_HIGH_2" file="pdf/html_office/elements/viewer-button/img/hiDPI/button_fit_width.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_HIGH_3" file="pdf/html_office/elements/viewer-button/img/hiDPI/button_zoom_out.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_HIGH_4" file="pdf/html_office/elements/viewer-button/img/hiDPI/button_zoom_in.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_HIGH_5" file="pdf/html_office/elements/viewer-button/img/hiDPI/button_save.png" type="BINDATA" />
+        <include name="IDR_PDF_BUTTON_HIGH_6" file="pdf/html_office/elements/viewer-button/img/hiDPI/button_print.png" type="BINDATA" />
       </if>
     </includes>
   </release>

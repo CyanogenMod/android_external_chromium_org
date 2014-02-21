@@ -4,6 +4,7 @@
 
 import csv
 import json
+import logging
 import os
 
 from telemetry.page import cloud_storage
@@ -56,9 +57,13 @@ class PageSet(object):
 
     # Attempt to download the credentials file.
     if self.credentials_path:
-      cloud_storage.GetIfChanged(
-          cloud_storage.INTERNAL_BUCKET,
-          os.path.join(self._base_dir, self.credentials_path))
+      try:
+        cloud_storage.GetIfChanged(
+            os.path.join(self._base_dir, self.credentials_path))
+      except (cloud_storage.CredentialsError,
+              cloud_storage.PermissionError):
+        logging.warning('Cannot retrieve credential file: %s',
+                        self.credentials_path)
 
     # Scan every serving directory for .sha1 files
     # and download them from Cloud Storage. Assume all data is public.
@@ -69,15 +74,15 @@ class PageSet(object):
         all_serving_dirs.add(page.serving_dir)
     # Scan all serving dirs.
     for serving_dir in all_serving_dirs:
-      if serving_dir == '/':
-        raise ValueError('Trying to serve "/" from HTTP server.')
+      if os.path.splitdrive(serving_dir)[1] == '/':
+        raise ValueError('Trying to serve root directory from HTTP server.')
       for dirpath, _, filenames in os.walk(serving_dir):
         for filename in filenames:
           path, extension = os.path.splitext(
               os.path.join(dirpath, filename))
           if extension != '.sha1':
             continue
-          cloud_storage.GetIfChanged(cloud_storage.PUBLIC_BUCKET, path)
+          cloud_storage.GetIfChanged(path)
 
   @classmethod
   def FromFile(cls, file_path):

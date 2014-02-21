@@ -8,12 +8,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
-#include "chrome/browser/extensions/extension_pref_value_map.h"
-#include "chrome/browser/extensions/extension_pref_value_map_factory.h"
-#include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/extensions/extension_prefs_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store.h"
@@ -23,10 +18,18 @@
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_prefs_factory.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/quota_service.h"
+#include "extensions/browser/runtime_data.h"
 
 using content::BrowserThread;
 
@@ -36,7 +39,8 @@ TestExtensionSystem::TestExtensionSystem(Profile* profile)
     : profile_(profile),
       value_store_(NULL),
       info_map_(new InfoMap()),
-      error_console_(new ErrorConsole(profile, NULL)) {}
+      error_console_(new ErrorConsole(profile, NULL)),
+      quota_service_(new QuotaService()) {}
 
 TestExtensionSystem::~TestExtensionSystem() {
 }
@@ -96,6 +100,7 @@ ExtensionService* TestExtensionSystem::CreateExtensionService(
   management_policy_.reset(new ManagementPolicy());
   management_policy_->RegisterProvider(
       standard_management_policy_provider_.get());
+  runtime_data_.reset(new RuntimeData(ExtensionRegistry::Get(profile_)));
   extension_service_.reset(new ExtensionService(profile_,
                                                 command_line,
                                                 install_directory,
@@ -110,6 +115,10 @@ ExtensionService* TestExtensionSystem::CreateExtensionService(
 
 ExtensionService* TestExtensionSystem::extension_service() {
   return extension_service_.get();
+}
+
+RuntimeData* TestExtensionSystem::runtime_data() {
+  return runtime_data_.get();
 }
 
 ManagementPolicy* TestExtensionSystem::management_policy() {
@@ -155,16 +164,20 @@ Blacklist* TestExtensionSystem::blacklist() {
   return blacklist_.get();
 }
 
-const OneShotEvent& TestExtensionSystem::ready() const {
-  return ready_;
-}
-
 ErrorConsole* TestExtensionSystem::error_console() {
   return error_console_.get();
 }
 
 InstallVerifier* TestExtensionSystem::install_verifier() {
   return install_verifier_.get();
+}
+
+QuotaService* TestExtensionSystem::quota_service() {
+  return quota_service_.get();
+}
+
+const OneShotEvent& TestExtensionSystem::ready() const {
+  return ready_;
 }
 
 // static

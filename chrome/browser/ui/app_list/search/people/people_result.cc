@@ -9,16 +9,18 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/app_list/search/common/url_icon_source.h"
 #include "chrome/browser/ui/app_list/search/people/person.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/extensions/api/hangouts_private.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -61,9 +63,9 @@ namespace app_list {
 PeopleResult::PeopleResult(Profile* profile, scoped_ptr<Person> person)
     : profile_(profile), person_(person.Pass()), weak_factory_(this) {
   set_id(person_->id);
-  set_title(UTF8ToUTF16(person_->display_name));
+  set_title(base::UTF8ToUTF16(person_->display_name));
   set_relevance(person_->interaction_rank);
-  set_details(UTF8ToUTF16(person_->email));
+  set_details(base::UTF8ToUTF16(person_->email));
 
   RefreshHangoutsExtensionId();
   SetDefaultActions();
@@ -146,10 +148,10 @@ void PeopleResult::OpenChat() {
   request.type = extensions::api::hangouts_private::HANGOUT_TYPE_CHAT;
 
   // from: the user this chat request is originating from.
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  DCHECK(token_service);
-  request.from = token_service->GetPrimaryAccountId();
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile_);
+  DCHECK(signin_manager);
+  request.from = signin_manager->GetAuthenticatedAccountId();
 
   // to: list of users with whom to start this hangout is with.
   linked_ptr<User> target(new User());
@@ -166,7 +168,7 @@ void PeopleResult::OpenChat() {
       profile_)->event_router()->DispatchEventToExtension(
           hangouts_extension_id_, event.Pass());
 
-  content::RecordAction(content::UserMetricsAction("PeopleSearch_OpenChat"));
+  content::RecordAction(base::UserMetricsAction("PeopleSearch_OpenChat"));
 }
 
 void PeopleResult::SendEmail() {
@@ -176,7 +178,7 @@ void PeopleResult::SendEmail() {
   // If no window exists, this will open a new window this one tab.
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
-  content::RecordAction(content::UserMetricsAction("PeopleSearch_SendEmail"));
+  content::RecordAction(base::UserMetricsAction("PeopleSearch_SendEmail"));
 }
 
 void PeopleResult::RefreshHangoutsExtensionId() {

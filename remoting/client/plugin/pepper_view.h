@@ -48,7 +48,8 @@ class PepperView : public FrameConsumer {
   virtual void ApplyBuffer(const webrtc::DesktopSize& view_size,
                            const webrtc::DesktopRect& clip_area,
                            webrtc::DesktopFrame* buffer,
-                           const webrtc::DesktopRegion& region) OVERRIDE;
+                           const webrtc::DesktopRegion& region,
+                           const webrtc::DesktopRegion& shape) OVERRIDE;
   virtual void ReturnBuffer(webrtc::DesktopFrame* buffer) OVERRIDE;
   virtual void SetSourceSize(const webrtc::DesktopSize& source_size,
                              const webrtc::DesktopVector& dpi) OVERRIDE;
@@ -61,12 +62,6 @@ class PepperView : public FrameConsumer {
   // Returns the dimensions of the most recently displayed frame, in pixels.
   const webrtc::DesktopSize& get_source_size() const {
     return source_size_;
-  }
-
-  // Return the dimensions of the view in Density Independent Pixels (DIPs).
-  // Note that there may be multiple device pixels per DIP.
-  const webrtc::DesktopSize& get_view_size_dips() const {
-    return dips_size_;
   }
 
  private:

@@ -131,16 +131,6 @@ void AddSetMsiMarkerWorkItem(const InstallerState& installer_state,
                              bool set,
                              WorkItemList* work_item_list);
 
-// Called for either installation or uninstallation. This method updates the
-// registry according to Chrome Frame specific options for the current
-// installation.  This includes handling of the ready-mode option.
-void AddChromeFrameWorkItems(const InstallationState& original_state,
-                             const InstallerState& installer_state,
-                             const base::FilePath& setup_path,
-                             const base::Version& new_version,
-                             const Product& product,
-                             WorkItemList* list);
-
 // Called for either installation or uninstallation. This method adds or
 // removes COM registration for a product's DelegateExecute verb handler.
 // If |new_version| is empty, the registrations will point to
@@ -167,10 +157,6 @@ void AddActiveSetupWorkItems(const InstallerState& installer_state,
 void AddDeleteOldIELowRightsPolicyWorkItems(
     const InstallerState& installer_state,
     WorkItemList* install_list);
-
-// Adds work items to copy IE low rights policies for an in-use update.
-void AddCopyIELowRightsPolicyWorkItems(const InstallerState& installer_state,
-                                       WorkItemList* install_list);
 
 // Utility method currently shared between install.cc and install_worker.cc
 void AppendUninstallCommandLineFlags(const InstallerState& installer_state,
@@ -200,17 +186,9 @@ void AddQueryEULAAcceptanceWorkItems(const InstallerState& installer_state,
                                      const Product& product,
                                      WorkItemList* work_item_list);
 
-// Adds work items to add or remove the "quick-enable-cf" to the multi-installer
-// binaries' version key on the basis of the current operation (represented in
-// |installer_state|) and the pre-existing machine configuration (represented in
-// |machine_state|).  |setup_path| (the path to the executable currently being
-// run) and |new_version| (the version of the product(s) currently being
-// installed) are required when processing product installation; they are unused
-// (and may therefore be empty) when uninstalling.
+// Adds work items to remove "quick-enable-cf" from the multi-installer
+// binaries' version key.
 void AddQuickEnableChromeFrameWorkItems(const InstallerState& installer_state,
-                                        const InstallationState& machine_state,
-                                        const base::FilePath& setup_path,
-                                        const base::Version& new_version,
                                         WorkItemList* work_item_list);
 
 }  // namespace installer

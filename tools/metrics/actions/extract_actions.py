@@ -13,7 +13,7 @@ as well as generating the lists of possible actions in situations where
 there are many possible actions.
 
 See also:
-  content/browser/user_metrics.h
+  base/metrics/user_metrics.h
   http://wiki.corp.google.com/twiki/bin/view/Main/ChromeUserExperienceMetrics
 
 If run with a "--hash" argument, chromeactions.txt will be updated.
@@ -85,35 +85,29 @@ LANGUAGE_CODES = (
 
 # Input method IDs used in Chrome OS. The list should be updated when a
 # new input method is added to
-# chrome/browser/chromeos/input_method/input_methods.txt in the Chrome tree, as
+# chromeos/ime/input_methods.txt in the Chrome tree, as
 # follows:
 #
-# % sort chrome/browser/chromeos/input_method/input_methods.txt | \
+# % sort chromeos/ime/input_methods.txt | \
 #   perl -ne "print \"'\$1', \" if /^([^#]+?)\s/" | \
 #   fold -w75 -s | perl -pe 's/^/  /;s/ $//'; echo
 #
 # The script extracts input method IDs from input_methods.txt.
 INPUT_METHOD_IDS = (
-  'english-m', 'm17n:am:sera', 'm17n:ar:kbd', 'm17n:bn:itrans',
-  'm17n:fa:isiri', 'm17n:gu:itrans', 'm17n:hi:itrans', 'm17n:kn:itrans',
-  'm17n:ml:itrans', 'm17n:mr:itrans', 'm17n:ta:inscript', 'm17n:ta:itrans',
-  'm17n:ta:phonetic', 'm17n:ta:tamil99', 'm17n:ta:typewriter',
-  'm17n:te:itrans', 'm17n:th:kesmanee', 'm17n:th:pattachote',
-  'm17n:th:tis820', 'm17n:vi:tcvn', 'm17n:vi:telex', 'm17n:vi:viqr',
-  'm17n:vi:vni', 'm17n:zh:cangjie', 'm17n:zh:quick', 'mozc', 'mozc-chewing',
-  'mozc-dv', 'mozc-hangul', 'mozc-jp', 'pinyin', 'pinyin-dv', 'xkb:be::fra',
-  'xkb:be::ger', 'xkb:be::nld', 'xkb:bg::bul', 'xkb:bg:phonetic:bul',
-  'xkb:br::por', 'xkb:ca::fra', 'xkb:ca:eng:eng', 'xkb:ch::ger',
-  'xkb:ch:fr:fra', 'xkb:cz::cze', 'xkb:de::ger', 'xkb:de:neo:ger',
-  'xkb:dk::dan', 'xkb:ee::est', 'xkb:es::spa', 'xkb:es:cat:cat',
-  'xkb:fi::fin', 'xkb:fr::fra', 'xkb:gb:dvorak:eng', 'xkb:gb:extd:eng',
-  'xkb:gr::gre', 'xkb:hr::scr', 'xkb:hu::hun', 'xkb:il::heb', 'xkb:it::ita',
-  'xkb:jp::jpn', 'xkb:kr:kr104:kor', 'xkb:latam::spa', 'xkb:lt::lit',
-  'xkb:lv:apostrophe:lav', 'xkb:no::nob', 'xkb:pl::pol', 'xkb:pt::por',
-  'xkb:ro::rum', 'xkb:rs::srp', 'xkb:ru::rus', 'xkb:ru:phonetic:rus',
-  'xkb:se::swe', 'xkb:si::slv', 'xkb:sk::slo', 'xkb:tr::tur', 'xkb:ua::ukr',
-  'xkb:us::eng', 'xkb:us:altgr-intl:eng', 'xkb:us:colemak:eng',
-  'xkb:us:dvorak:eng', 'xkb:us:intl:eng',
+  'xkb:am:phonetic:arm', 'xkb:be::fra', 'xkb:be::ger', 'xkb:be::nld',
+  'xkb:bg::bul', 'xkb:bg:phonetic:bul', 'xkb:br::por', 'xkb:by::bel',
+  'xkb:ca::fra', 'xkb:ca:eng:eng', 'xkb:ca:multix:fra', 'xkb:ch::ger',
+  'xkb:ch:fr:fra', 'xkb:cz::cze', 'xkb:cz:qwerty:cze', 'xkb:de::ger',
+  'xkb:de:neo:ger', 'xkb:dk::dan', 'xkb:ee::est', 'xkb:es::spa',
+  'xkb:es:cat:cat', 'xkb:fi::fin', 'xkb:fr::fra', 'xkb:gb:dvorak:eng',
+  'xkb:gb:extd:eng', 'xkb:ge::geo', 'xkb:gr::gre', 'xkb:hr::scr',
+  'xkb:hu::hun', 'xkb:il::heb', 'xkb:is::ice', 'xkb:it::ita', 'xkb:jp::jpn',
+  'xkb:latam::spa', 'xkb:lt::lit', 'xkb:lv:apostrophe:lav', 'xkb:mn::mon',
+  'xkb:no::nob', 'xkb:pl::pol', 'xkb:pt::por', 'xkb:ro::rum', 'xkb:rs::srp',
+  'xkb:ru::rus', 'xkb:ru:phonetic:rus', 'xkb:se::swe', 'xkb:si::slv',
+  'xkb:sk::slo', 'xkb:tr::tur', 'xkb:ua::ukr', 'xkb:us::eng',
+  'xkb:us:altgr-intl:eng', 'xkb:us:colemak:eng', 'xkb:us:dvorak:eng',
+  'xkb:us:intl:eng',
 )
 
 # The path to the root of the repository.
@@ -206,10 +200,11 @@ def AddAndroidActions(actions):
   Arguments
     actions: set of actions to add to.
   """
-  actions.add('Cast_Sender_CastEnterFullscreen');
   actions.add('Cast_Sender_CastDeviceSelected');
-  actions.add('Cast_Sender_YouTubeDeviceSelected');
+  actions.add('Cast_Sender_CastEnterFullscreen');
+  actions.add('Cast_Sender_CastMediaType');
   actions.add('Cast_Sender_CastPlayRequested');
+  actions.add('Cast_Sender_YouTubeDeviceSelected');
   actions.add('DataReductionProxy_PromoDisplayed');
   actions.add('DataReductionProxy_PromoLearnMore');
   actions.add('DataReductionProxy_TurnedOn');
@@ -239,6 +234,7 @@ def AddAndroidActions(actions):
   actions.add('MobileContextMenuText')
   actions.add('MobileContextMenuVideo')
   actions.add('MobileContextMenuViewImage')
+  actions.add('MobileFirstEditInOmnibox')
   actions.add('MobileFocusedFakeboxOnNtp')
   actions.add('MobileFocusedOmniboxNotOnNtp')
   actions.add('MobileFocusedOmniboxOnNtp')
@@ -512,6 +508,8 @@ def AddLiteralActions(actions):
   WalkDirectory(chrome_root, actions, EXTENSIONS, GrepForActions)
   content_root = os.path.normpath(os.path.join(REPOSITORY_ROOT, 'content'))
   WalkDirectory(content_root, actions, EXTENSIONS, GrepForActions)
+  net_root = os.path.normpath(os.path.join(REPOSITORY_ROOT, 'net'))
+  WalkDirectory(net_root, actions, EXTENSIONS, GrepForActions)
   webkit_root = os.path.normpath(os.path.join(REPOSITORY_ROOT, 'webkit'))
   WalkDirectory(os.path.join(webkit_root, 'glue'), actions, EXTENSIONS,
                 GrepForActions)
@@ -561,6 +559,25 @@ def AddKeySystemSupportActions(actions):
   actions.add('KeySystemSupport.Widevine.Supported')
   actions.add('KeySystemSupport.WidevineWithType.Supported')
 
+def AddAutomaticResetBannerActions(actions):
+  """Add actions that are used for the automatic profile settings reset banners
+  in chrome://settings.
+
+  Arguments
+    actions: set of actions to add to.
+  """
+  # These actions relate to the the automatic settings reset banner shown as
+  # a result of the reset prompt.
+  actions.add('AutomaticReset_WebUIBanner_BannerShown')
+  actions.add('AutomaticReset_WebUIBanner_ManuallyClosed')
+  actions.add('AutomaticReset_WebUIBanner_ResetClicked')
+
+  # These actions relate to the the automatic settings reset banner shown as
+  # a result of settings hardening.
+  actions.add('AutomaticSettingsReset_WebUIBanner_BannerShown')
+  actions.add('AutomaticSettingsReset_WebUIBanner_ManuallyClosed')
+  actions.add('AutomaticSettingsReset_WebUIBanner_LearnMoreClicked')
+
 def main(argv):
   if '--hash' in argv:
     hash_output = True
@@ -595,6 +612,7 @@ def main(argv):
   # print "Found {0} entries".format(len(actions))
 
   AddAndroidActions(actions)
+  AddAutomaticResetBannerActions(actions)
   AddBookmarkManagerActions(actions)
   AddChromeOSActions(actions)
   AddClosedSourceActions(actions)

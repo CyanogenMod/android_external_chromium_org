@@ -20,6 +20,10 @@ namespace views {
 class View;
 class Widget;
 
+namespace corewm {
+class WMState;
+}
+
 class TestViewsDelegate : public ViewsDelegate {
  public:
   TestViewsDelegate();
@@ -41,8 +45,8 @@ class TestViewsDelegate : public ViewsDelegate {
   virtual void NotifyAccessibilityEvent(
       View* view, ui::AccessibilityTypes::Event event_type) OVERRIDE {}
 
-  virtual void NotifyMenuItemFocused(const string16& menu_name,
-                                     const string16& menu_item_name,
+  virtual void NotifyMenuItemFocused(const base::string16& menu_name,
+                                     const base::string16& menu_item_name,
                                      int item_index,
                                      int item_count,
                                      bool has_submenu) OVERRIDE {}
@@ -59,7 +63,6 @@ class TestViewsDelegate : public ViewsDelegate {
 #endif
   virtual NonClientFrameView* CreateDefaultNonClientFrameView(
       Widget* widget) OVERRIDE;
-  virtual bool UseTransparentWindows() const OVERRIDE;
   virtual void AddRef() OVERRIDE {}
   virtual void ReleaseRef() OVERRIDE {}
   virtual content::WebContents* CreateWebContents(
@@ -72,6 +75,10 @@ class TestViewsDelegate : public ViewsDelegate {
 
  private:
   bool use_transparent_windows_;
+
+#if defined(USE_AURA)
+  scoped_ptr<views::corewm::WMState> wm_state_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(TestViewsDelegate);
 };

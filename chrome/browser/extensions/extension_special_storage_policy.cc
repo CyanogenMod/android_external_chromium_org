@@ -16,8 +16,10 @@
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 
 using content::BrowserThread;
 using extensions::APIPermission;
@@ -39,6 +41,10 @@ bool ExtensionSpecialStoragePolicy::IsStorageProtected(const GURL& origin) {
 
 bool ExtensionSpecialStoragePolicy::IsStorageUnlimited(const GURL& origin) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUnlimitedStorage))
+    return true;
+
+  if (origin.SchemeIs(content::kChromeDevToolsScheme) &&
+      origin.host() == chrome::kChromeUIDevToolsHost)
     return true;
 
   base::AutoLock locker(lock_);
@@ -86,7 +92,8 @@ bool ExtensionSpecialStoragePolicy::NeedsProtection(
   return extension->is_hosted_app() && !extension->from_bookmark();
 }
 
-const ExtensionSet* ExtensionSpecialStoragePolicy::ExtensionsProtectingOrigin(
+const extensions::ExtensionSet*
+ExtensionSpecialStoragePolicy::ExtensionsProtectingOrigin(
     const GURL& origin) {
   base::AutoLock locker(lock_);
   return protected_apps_.ExtensionsContaining(origin);
@@ -229,15 +236,15 @@ bool ExtensionSpecialStoragePolicy::SpecialCollection::Contains(
   return !ExtensionsContaining(origin)->is_empty();
 }
 
-const ExtensionSet*
+const extensions::ExtensionSet*
 ExtensionSpecialStoragePolicy::SpecialCollection::ExtensionsContaining(
     const GURL& origin) {
   CachedResults::const_iterator found = cached_results_.find(origin);
   if (found != cached_results_.end())
     return found->second;
 
-  ExtensionSet* result = new ExtensionSet();
-  for (ExtensionSet::const_iterator iter = extensions_.begin();
+  extensions::ExtensionSet* result = new extensions::ExtensionSet();
+  for (extensions::ExtensionSet::const_iterator iter = extensions_.begin();
        iter != extensions_.end(); ++iter) {
     if ((*iter)->OverlapsWithOrigin(origin))
       result->Insert(*iter);

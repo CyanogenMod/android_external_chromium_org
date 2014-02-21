@@ -94,8 +94,8 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Temporarily hides/unhides the notification bubble.
   void SetHideNotifications(bool hidden);
 
-  // Returns true if the launcher should be forced visible when auto-hidden.
-  bool ShouldShowLauncher() const;
+  // Returns true if the shelf should be forced visible when auto-hidden.
+  bool ShouldShowShelf() const;
 
   // Returns true if there is a system bubble (already visible or in the process
   // of being created).
@@ -157,6 +157,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Add a tray user item for testing purposes. Note: The passed |tray_user|
   // will be owned by the SystemTray after the call.
   void AddTrayUserItemForTest(internal::TrayUser* tray_user);
+
+  // Gets tray_date_ for browser tests.
+  internal::TrayDate* GetTrayDateForTesting() const;
 
  private:
   // Creates the default set of items for the sytem tray.

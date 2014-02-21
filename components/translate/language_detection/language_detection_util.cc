@@ -10,9 +10,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "components/translate/common/translate_constants.h"
-#include "components/translate/common/translate_metrics.h"
-#include "components/translate/common/translate_util.h"
+#include "components/translate/core/common/translate_constants.h"
+#include "components/translate/core/common/translate_metrics.h"
+#include "components/translate/core/common/translate_util.h"
 
 #if !defined(CLD_VERSION) || CLD_VERSION==1
 #include "third_party/cld/encodings/compact_lang_det/compact_lang_det.h"
@@ -110,7 +110,7 @@ std::string DetermineTextLanguage(const base::string16& text,
 #endif
 #if !defined(CLD_VERSION) || CLD_VERSION==2
     case 2: {
-      std::string utf8_text(UTF16ToUTF8(text));
+      std::string utf8_text(base::UTF16ToUTF8(text));
       CLD2::Language language3[3];
       int percent3[3];
       CLD2::DetectLanguageSummary(

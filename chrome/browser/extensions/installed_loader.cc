@@ -13,9 +13,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
@@ -25,14 +23,17 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace extensions {
 
@@ -73,7 +74,7 @@ enum ExternalItemState {
   EXTERNAL_ITEM_MAX_ITEMS = 8
 };
 
-bool IsManifestCorrupt(const DictionaryValue* manifest) {
+bool IsManifestCorrupt(const base::DictionaryValue* manifest) {
   if (!manifest)
     return false;
 
@@ -81,8 +82,8 @@ bool IsManifestCorrupt(const DictionaryValue* manifest) {
   // file, one particularly bad case resulting in having both a background page
   // and background scripts values. In those situations we want to reload the
   // manifest from the extension to fix this.
-  const Value* background_page;
-  const Value* background_scripts;
+  const base::Value* background_page;
+  const base::Value* background_scripts;
   return manifest->Get(manifest_keys::kBackgroundPage, &background_page) &&
       manifest->Get(manifest_keys::kBackgroundScripts, &background_scripts);
 }
@@ -117,8 +118,8 @@ BackgroundPageType GetBackgroundPageType(const Extension* extension) {
 
 InstalledLoader::InstalledLoader(ExtensionService* extension_service)
     : extension_service_(extension_service),
-      extension_prefs_(extension_service->extension_prefs()) {
-}
+      extension_registry_(ExtensionRegistry::Get(extension_service->profile())),
+      extension_prefs_(extension_service->extension_prefs()) {}
 
 InstalledLoader::~InstalledLoader() {
 }
@@ -153,6 +154,7 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
       extension_service_->profile())->management_policy();
   if (extension.get()) {
     Extension::DisableReason disable_reason = Extension::DISABLE_NONE;
+    bool force_disabled = false;
     if (!policy->UserMayLoad(extension.get(), NULL)) {
       // The error message from UserMayInstall() often contains the extension ID
       // and is therefore not well suited to this UI.
@@ -162,7 +164,10 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
                policy->MustRemainDisabled(extension, &disable_reason, NULL)) {
       extension_prefs_->SetExtensionState(extension->id(), Extension::DISABLED);
       extension_prefs_->AddDisableReason(extension->id(), disable_reason);
+      force_disabled = true;
     }
+    UMA_HISTOGRAM_BOOLEAN("ExtensionInstalledLoader.ForceDisabled",
+                          force_disabled);
   }
 
   if (!extension.get()) {
@@ -225,7 +230,7 @@ void InstalledLoader::LoadAllExtensions() {
       }
 
       extensions_info->at(i)->extension_manifest.reset(
-          static_cast<DictionaryValue*>(
+          static_cast<base::DictionaryValue*>(
               extension->manifest()->value()->DeepCopy()));
       should_write_prefs = true;
     }
@@ -249,9 +254,9 @@ void InstalledLoader::LoadAllExtensions() {
                            reload_reason_counts[NEEDS_RELOCALIZATION]);
 
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadAll",
-                           extension_service_->extensions()->size());
+                           extension_registry_->enabled_extensions().size());
   UMA_HISTOGRAM_COUNTS_100("Extensions.Disabled",
-                           extension_service_->disabled_extensions()->size());
+                           extension_registry_->disabled_extensions().size());
 
   UMA_HISTOGRAM_TIMES("Extensions.LoadAllTime",
                       base::TimeTicks::Now() - start_time);
@@ -271,9 +276,9 @@ void InstalledLoader::LoadAllExtensions() {
   int disabled_for_permissions_count = 0;
   int item_user_count = 0;
   int non_webstore_ntp_override_count = 0;
-  const ExtensionSet* extensions = extension_service_->extensions();
+  const ExtensionSet& extensions = extension_registry_->enabled_extensions();
   ExtensionSet::const_iterator ex;
-  for (ex = extensions->begin(); ex != extensions->end(); ++ex) {
+  for (ex = extensions.begin(); ex != extensions.end(); ++ex) {
     Manifest::Location location = (*ex)->location();
     Manifest::Type type = (*ex)->GetType();
     if ((*ex)->is_app()) {
@@ -403,10 +408,10 @@ void InstalledLoader::LoadAllExtensions() {
         ex->get(), "Extensions.Permissions_Load");
   }
 
-  const ExtensionSet* disabled_extensions =
-      extension_service_->disabled_extensions();
-  for (ex = disabled_extensions->begin();
-       ex != disabled_extensions->end(); ++ex) {
+  const ExtensionSet& disabled_extensions =
+      extension_registry_->disabled_extensions();
+  for (ex = disabled_extensions.begin(); ex != disabled_extensions.end();
+       ++ex) {
     if (extension_service_->extension_prefs()->
         DidExtensionEscalatePermissions((*ex)->id())) {
       ++disabled_for_permissions_count;

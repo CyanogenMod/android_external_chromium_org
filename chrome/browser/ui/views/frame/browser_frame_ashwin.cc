@@ -8,7 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/metro_utils/metro_chrome_win.h"
-#include "ui/aura/remote_root_window_host_win.h"
+#include "ui/aura/remote_window_tree_host_win.h"
 
 BrowserFrameAshWin::BrowserFrameAshWin(BrowserFrame* browser_frame,
                                        BrowserView* browser_view)
@@ -30,7 +30,8 @@ void BrowserFrameAshWin::OnWindowFocused(aura::Window* gained_focus,
 
   // If the activated window is in Metro mode, and the viewer process window is
   // not in the foreground, activate Metro Chrome.
-  if (!aura::RemoteRootWindowHostWin::Instance()->IsForegroundWindow() &&
+  if (aura::RemoteWindowTreeHostWin::IsValid() &&
+      !aura::RemoteWindowTreeHostWin::Instance()->IsForegroundWindow() &&
       !browser_shutdown::IsTryingToQuit()) {
     // PostTask because ActivateMetroChrome can not be called nested in another
     // ::SendMessage().

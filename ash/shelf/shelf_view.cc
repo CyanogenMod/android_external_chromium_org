@@ -9,6 +9,7 @@
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
 #include "ash/drag_drop/drag_image_view.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
 #include "ash/scoped_target_root_window.h"
 #include "ash/shelf/alternate_app_list_button.h"
@@ -17,6 +18,7 @@
 #include "ash/shelf/overflow_bubble_view.h"
 #include "ash/shelf/overflow_button.h"
 #include "ash/shelf/shelf_button.h"
+#include "ash/shelf/shelf_constants.h"
 #include "ash/shelf/shelf_delegate.h"
 #include "ash/shelf/shelf_icon_observer.h"
 #include "ash/shelf/shelf_item_delegate.h"
@@ -26,7 +28,7 @@
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_tooltip_manager.h"
 #include "ash/shelf/shelf_widget.h"
-#include "ash/shell_delegate.h"
+#include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "base/auto_reset.h"
 #include "base/memory/scoped_ptr.h"
@@ -86,7 +88,7 @@ const int kHorizontalIconSpacing = 2;
 const int kHorizontalNoIconInsetSpacing =
     kHorizontalIconSpacing + kDefaultLeadingInset;
 
-// The proportion of the launcher space reserved for non-panel icons. Panels
+// The proportion of the shelf space reserved for non-panel icons. Panels
 // may flow into this space but will be put into the overflow bubble if there
 // is contention for the space.
 const float kReservedNonPanelIconProportion = 0.67f;
@@ -119,6 +121,28 @@ const float kDraggedImageOpacity = 0.5f;
 
 namespace {
 
+// A class to temporarily disable a given bounds animator.
+class BoundsAnimatorDisabler {
+ public:
+  BoundsAnimatorDisabler(views::BoundsAnimator* bounds_animator)
+      : old_duration_(bounds_animator->GetAnimationDuration()),
+        bounds_animator_(bounds_animator) {
+    bounds_animator_->SetAnimationDuration(1);
+  }
+
+  ~BoundsAnimatorDisabler() {
+    bounds_animator_->SetAnimationDuration(old_duration_);
+  }
+
+ private:
+  // The previous animation duration.
+  int old_duration_;
+  // The bounds animator which gets used.
+  views::BoundsAnimator* bounds_animator_;
+
+  DISALLOW_COPY_AND_ASSIGN(BoundsAnimatorDisabler);
+};
+
 // The MenuModelAdapter gets slightly changed to adapt the menu appearance to
 // our requirements.
 class ShelfMenuModelAdapter : public views::MenuModelAdapter {
@@ -126,7 +150,7 @@ class ShelfMenuModelAdapter : public views::MenuModelAdapter {
   explicit ShelfMenuModelAdapter(ShelfMenuModel* menu_model);
 
   // views::MenuModelAdapter:
-  virtual const gfx::Font* GetLabelFont(int command_id) const OVERRIDE;
+  virtual const gfx::FontList* GetLabelFontList(int command_id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void GetHorizontalIconMargins(int id,
                                         int icon_size,
@@ -152,12 +176,13 @@ ShelfMenuModelAdapter::ShelfMenuModelAdapter(ShelfMenuModel* menu_model)
       menu_model_(menu_model) {
 }
 
-const gfx::Font* ShelfMenuModelAdapter::GetLabelFont(int command_id) const {
+const gfx::FontList* ShelfMenuModelAdapter::GetLabelFontList(
+    int command_id) const {
   if (command_id != kCommandIdOfMenuName)
-    return MenuModelAdapter::GetLabelFont(command_id);
+    return MenuModelAdapter::GetLabelFontList(command_id);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  return &rb.GetFont(ui::ResourceBundle::BoldFont);
+  return &rb.GetFontList(ui::ResourceBundle::BoldFont);
 }
 
 bool ShelfMenuModelAdapter::IsCommandEnabled(int id) const {
@@ -202,14 +227,14 @@ bool ShelfMenuModelAdapter::ShouldReserveSpaceForSubmenuIndicator() const {
   return false;
 }
 
-// Custom FocusSearch used to navigate the launcher in the order items are in
+// Custom FocusSearch used to navigate the shelf in the order items are in
 // the ViewModel.
-class LauncherFocusSearch : public views::FocusSearch {
+class ShelfFocusSearch : public views::FocusSearch {
  public:
-  explicit LauncherFocusSearch(views::ViewModel* view_model)
+  explicit ShelfFocusSearch(views::ViewModel* view_model)
       : FocusSearch(NULL, true, true),
         view_model_(view_model) {}
-  virtual ~LauncherFocusSearch() {}
+  virtual ~ShelfFocusSearch() {}
 
   // views::FocusSearch overrides:
   virtual View* FindNextFocusableView(
@@ -238,7 +263,7 @@ class LauncherFocusSearch : public views::FocusSearch {
  private:
   views::ViewModel* view_model_;
 
-  DISALLOW_COPY_AND_ASSIGN(LauncherFocusSearch);
+  DISALLOW_COPY_AND_ASSIGN(ShelfFocusSearch);
 };
 
 // AnimationDelegate used when inserting a new item. This steadily increases the
@@ -269,7 +294,7 @@ class FadeInAnimationDelegate
   DISALLOW_COPY_AND_ASSIGN(FadeInAnimationDelegate);
 };
 
-void ReflectItemStatus(const ash::LauncherItem& item, ShelfButton* button) {
+void ReflectItemStatus(const ShelfItem& item, ShelfButton* button) {
   switch (item.status) {
     case STATUS_CLOSED:
       button->ClearState(ShelfButton::STATE_ACTIVE);
@@ -372,7 +397,7 @@ ShelfView::ShelfView(ShelfModel* model,
       closing_event_time_(base::TimeDelta()),
       got_deleted_(NULL),
       drag_and_drop_item_pinned_(false),
-      drag_and_drop_launcher_id_(0),
+      drag_and_drop_shelf_id_(0),
       dragged_off_shelf_(false),
       snap_back_from_rip_off_view_(NULL),
       item_manager_(Shell::GetInstance()->shelf_item_delegate_manager()),
@@ -384,7 +409,7 @@ ShelfView::ShelfView(ShelfModel* model,
   bounds_animator_.reset(new views::BoundsAnimator(this));
   bounds_animator_->AddObserver(this);
   set_context_menu_controller(this);
-  focus_search_.reset(new LauncherFocusSearch(view_model_.get()));
+  focus_search_.reset(new ShelfFocusSearch(view_model_.get()));
   tooltip_.reset(new ShelfTooltipManager(manager, this));
 }
 
@@ -400,8 +425,8 @@ ShelfView::~ShelfView() {
 void ShelfView::Init() {
   model_->AddObserver(this);
 
-  const LauncherItems& items(model_->items());
-  for (LauncherItems::const_iterator i = items.begin(); i != items.end(); ++i) {
+  const ShelfItems& items(model_->items());
+  for (ShelfItems::const_iterator i = items.begin(); i != items.end(); ++i) {
     views::View* child = CreateViewForItem(*i);
     child->SetPaintToLayer(true);
     view_model_->Add(child, static_cast<int>(i - items.begin()));
@@ -454,7 +479,7 @@ void ShelfView::SchedulePaintForAllButtons() {
     overflow_button_->SchedulePaint();
 }
 
-gfx::Rect ShelfView::GetIdealBoundsOfItemIcon(LauncherID id) {
+gfx::Rect ShelfView::GetIdealBoundsOfItemIcon(ShelfID id) {
   int index = model_->ItemIndexByID(id);
   if (index == -1 || (index > last_visible_index_ &&
                       index < model_->FirstPanelIndex()))
@@ -470,7 +495,7 @@ gfx::Rect ShelfView::GetIdealBoundsOfItemIcon(LauncherID id) {
                    icon_bounds.height());
 }
 
-void ShelfView::UpdatePanelIconPosition(LauncherID id,
+void ShelfView::UpdatePanelIconPosition(ShelfID id,
                                         const gfx::Point& midpoint) {
   int current_index = model_->ItemIndexByID(id);
   int first_panel_index = model_->FirstPanelIndex();
@@ -572,7 +597,7 @@ bool ShelfView::StartDrag(const std::string& app_id,
                           const gfx::Point& location_in_screen_coordinates) {
   // Bail if an operation is already going on - or the cursor is not inside.
   // This could happen if mouse / touch operations overlap.
-  if (drag_and_drop_launcher_id_ ||
+  if (drag_and_drop_shelf_id_ ||
       !GetBoundsInScreen().Contains(location_in_screen_coordinates))
     return false;
 
@@ -581,25 +606,25 @@ bool ShelfView::StartDrag(const std::string& app_id,
   CancelDrag(-1);
   drag_and_drop_item_pinned_ = false;
   drag_and_drop_app_id_ = app_id;
-  drag_and_drop_launcher_id_ =
-      delegate_->GetLauncherIDForAppID(drag_and_drop_app_id_);
+  drag_and_drop_shelf_id_ =
+      delegate_->GetShelfIDForAppID(drag_and_drop_app_id_);
   // Check if the application is known and pinned - if not, we have to pin it so
-  // that we can re-arrange the launcher order accordingly. Note that items have
+  // that we can re-arrange the shelf order accordingly. Note that items have
   // to be pinned to give them the same (order) possibilities as a shortcut.
   // When an item is dragged from overflow to shelf, IsShowingOverflowBubble()
   // returns true. At this time, we don't need to pin the item.
   if (!IsShowingOverflowBubble() &&
-      (!drag_and_drop_launcher_id_ ||
+      (!drag_and_drop_shelf_id_ ||
        !delegate_->IsAppPinned(app_id))) {
     delegate_->PinAppWithID(app_id);
-    drag_and_drop_launcher_id_ =
-        delegate_->GetLauncherIDForAppID(drag_and_drop_app_id_);
-    if (!drag_and_drop_launcher_id_)
+    drag_and_drop_shelf_id_ =
+        delegate_->GetShelfIDForAppID(drag_and_drop_app_id_);
+    if (!drag_and_drop_shelf_id_)
       return false;
     drag_and_drop_item_pinned_ = true;
   }
   views::View* drag_and_drop_view = view_model_->view_at(
-      model_->ItemIndexByID(drag_and_drop_launcher_id_));
+      model_->ItemIndexByID(drag_and_drop_shelf_id_));
   DCHECK(drag_and_drop_view);
 
   // Since there is already an icon presented by the caller, we hide this item
@@ -615,7 +640,7 @@ bool ShelfView::StartDrag(const std::string& app_id,
   ash::wm::ConvertPointFromScreen(
       ash::wm::GetRootWindowAt(location_in_screen_coordinates),
       &point_in_root);
-  ui::MouseEvent event(ui::ET_MOUSE_PRESSED, pt, point_in_root, 0);
+  ui::MouseEvent event(ui::ET_MOUSE_PRESSED, pt, point_in_root, 0, 0);
   PointerPressedOnButton(drag_and_drop_view,
                          ShelfButtonHost::DRAG_AND_DROP,
                          event);
@@ -626,19 +651,19 @@ bool ShelfView::StartDrag(const std::string& app_id,
 }
 
 bool ShelfView::Drag(const gfx::Point& location_in_screen_coordinates) {
-  if (!drag_and_drop_launcher_id_ ||
+  if (!drag_and_drop_shelf_id_ ||
       !GetBoundsInScreen().Contains(location_in_screen_coordinates))
     return false;
 
   gfx::Point pt = location_in_screen_coordinates;
   views::View* drag_and_drop_view = view_model_->view_at(
-      model_->ItemIndexByID(drag_and_drop_launcher_id_));
+      model_->ItemIndexByID(drag_and_drop_shelf_id_));
   ConvertPointFromScreen(drag_and_drop_view, &pt);
   gfx::Point point_in_root = location_in_screen_coordinates;
   ash::wm::ConvertPointFromScreen(
       ash::wm::GetRootWindowAt(location_in_screen_coordinates),
       &point_in_root);
-  ui::MouseEvent event(ui::ET_MOUSE_DRAGGED, pt, point_in_root, 0);
+  ui::MouseEvent event(ui::ET_MOUSE_DRAGGED, pt, point_in_root, 0, 0);
   PointerDraggedOnButton(drag_and_drop_view,
                          ShelfButtonHost::DRAG_AND_DROP,
                          event);
@@ -646,11 +671,11 @@ bool ShelfView::Drag(const gfx::Point& location_in_screen_coordinates) {
 }
 
 void ShelfView::EndDrag(bool cancel) {
-  if (!drag_and_drop_launcher_id_)
+  if (!drag_and_drop_shelf_id_)
     return;
 
   views::View* drag_and_drop_view = view_model_->view_at(
-      model_->ItemIndexByID(drag_and_drop_launcher_id_));
+      model_->ItemIndexByID(drag_and_drop_shelf_id_));
   PointerReleasedOnButton(
       drag_and_drop_view, ShelfButtonHost::DRAG_AND_DROP, cancel);
 
@@ -668,7 +693,7 @@ void ShelfView::EndDrag(bool cancel) {
     }
   }
 
-  drag_and_drop_launcher_id_ = 0;
+  drag_and_drop_shelf_id_ = 0;
 }
 
 void ShelfView::LayoutToIdealBounds() {
@@ -715,7 +740,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
 
   // Initial x,y values account both leading_inset in primary
   // coordinate and secondary coordinate based on the dynamic edge of the
-  // launcher (eg top edge on bottom-aligned launcher).
+  // shelf (eg top edge on bottom-aligned shelf).
   int inset = ash::switches::UseAlternateShelfLayout() ? 0 : leading_inset_;
   int x = layout_manager_->SelectValueForShelfAlignment(inset, 0, 0, inset);
   int y = layout_manager_->SelectValueForShelfAlignment(0, inset, inset, 0);
@@ -743,7 +768,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
     return;
   }
 
-  // To address Fitt's law, we make the first launcher button include the
+  // To address Fitt's law, we make the first shelf button include the
   // leading inset (if there is one).
   if (!ash::switches::UseAlternateShelfLayout()) {
     if (view_model_->view_size() > 0) {
@@ -902,20 +927,21 @@ void ShelfView::AnimateToIdealBounds() {
     // Now that the item animation starts, we have to make sure that the
     // padding of the first gets properly transferred to the new first item.
     if (i && view->border())
-      view->set_border(NULL);
+      view->SetBorder(views::Border::NullBorder());
     else if (!i && !view->border())
       UpdateFirstButtonPadding();
   }
   overflow_button_->SetBoundsRect(ideal_bounds.overflow_bounds);
 }
 
-views::View* ShelfView::CreateViewForItem(const LauncherItem& item) {
+views::View* ShelfView::CreateViewForItem(const ShelfItem& item) {
   views::View* view = NULL;
   switch (item.type) {
     case TYPE_BROWSER_SHORTCUT:
     case TYPE_APP_SHORTCUT:
     case TYPE_WINDOWED_APP:
     case TYPE_PLATFORM_APP:
+    case TYPE_DIALOG:
     case TYPE_APP_PANEL: {
       ShelfButton* button = ShelfButton::Create(this, this, layout_manager_);
       button->SetImage(item.image);
@@ -1005,7 +1031,7 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
 
   // If this is not a drag and drop host operation and not the app list item,
   // check if the item got ripped off the shelf - if it did we are done.
-  if (!drag_and_drop_launcher_id_ && ash::switches::UseDragOffShelf() &&
+  if (!drag_and_drop_shelf_id_ && ash::switches::UseDragOffShelf() &&
       RemovableByRipOff(current_index) != NOT_REMOVABLE) {
     if (HandleRipOffDrag(event))
       return;
@@ -1059,7 +1085,7 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
   if (target_index == current_index)
     return;
 
-  // Change the model, the LauncherItemMoved() callback will handle the
+  // Change the model, the ShelfItemMoved() callback will handle the
   // |view_model_| update.
   model_->Move(current_index, target_index);
   bounds_animator_->StopAnimatingView(drag_view_);
@@ -1069,7 +1095,7 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
   int current_index = view_model_->GetIndexOfView(drag_view_);
   DCHECK_NE(-1, current_index);
   std::string dragged_app_id =
-      delegate_->GetAppIDForLauncherID(model_->items()[current_index].id);
+      delegate_->GetAppIDForShelfID(model_->items()[current_index].id);
 
   gfx::Point screen_location = event.root_location();
   ash::wm::ConvertPointToScreen(GetWidget()->GetNativeWindow()->GetRootWindow(),
@@ -1129,7 +1155,7 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
   }
   // Check if we are too far away from the shelf to enter the ripped off state.
   // Determine the distance to the shelf.
-  int delta = CalculateShelfDistance(event.root_location());
+  int delta = CalculateShelfDistance(screen_location);
   if (delta > kRipOffDistance) {
     // Create a proxy view item which can be moved anywhere.
     ShelfButton* button = static_cast<ShelfButton*>(drag_view_);
@@ -1142,7 +1168,7 @@ bool ShelfView::HandleRipOffDrag(const ui::LocatedEvent& event) {
     dragged_off_shelf_ = true;
     if (RemovableByRipOff(current_index) == REMOVABLE) {
       // Move the item to the front of the first panel item and hide it.
-      // LauncherItemMoved() callback will handle the |view_model_| update and
+      // ShelfItemMoved() callback will handle the |view_model_| update and
       // call AnimateToIdealBounds().
       if (current_index != model_->FirstPanelIndex() - 1) {
         model_->Move(current_index, model_->FirstPanelIndex() - 1);
@@ -1194,7 +1220,7 @@ void ShelfView::FinalizeRipOffDrag(bool cancel) {
       // Make sure the item stays invisible upon removal.
       drag_view_->SetVisible(false);
       std::string app_id =
-          delegate_->GetAppIDForLauncherID(model_->items()[current_index].id);
+          delegate_->GetAppIDForShelfID(model_->items()[current_index].id);
       delegate_->UnpinAppWithID(app_id);
     }
   }
@@ -1230,18 +1256,17 @@ void ShelfView::FinalizeRipOffDrag(bool cancel) {
 
 ShelfView::RemovableState ShelfView::RemovableByRipOff(int index) {
   DCHECK(index >= 0 && index < model_->item_count());
-  LauncherItemType type = model_->items()[index].type;
-  if (type == TYPE_APP_LIST || !delegate_->CanPin())
+  ShelfItemType type = model_->items()[index].type;
+  if (type == TYPE_APP_LIST || type == TYPE_DIALOG || !delegate_->CanPin())
     return NOT_REMOVABLE;
-  std::string app_id =
-      delegate_->GetAppIDForLauncherID(model_->items()[index].id);
+
+  std::string app_id = delegate_->GetAppIDForShelfID(model_->items()[index].id);
   // Note: Only pinned app shortcuts can be removed!
   return (type == TYPE_APP_SHORTCUT && delegate_->IsAppPinned(app_id)) ?
       REMOVABLE : DRAGGABLE;
 }
 
-bool ShelfView::SameDragType(LauncherItemType typea,
-                             LauncherItemType typeb) const {
+bool ShelfView::SameDragType(ShelfItemType typea, ShelfItemType typeb) const {
   switch (typea) {
     case TYPE_APP_SHORTCUT:
     case TYPE_BROWSER_SHORTCUT:
@@ -1250,9 +1275,10 @@ bool ShelfView::SameDragType(LauncherItemType typea,
     case TYPE_PLATFORM_APP:
     case TYPE_WINDOWED_APP:
     case TYPE_APP_PANEL:
+    case TYPE_DIALOG:
       return typeb == typea;
     case TYPE_UNDEFINED:
-      NOTREACHED() << "LauncherItemType must be set.";
+      NOTREACHED() << "ShelfItemType must be set.";
       return false;
   }
   NOTREACHED();
@@ -1262,7 +1288,7 @@ bool ShelfView::SameDragType(LauncherItemType typea,
 std::pair<int, int> ShelfView::GetDragRange(int index) {
   int min_index = -1;
   int max_index = -1;
-  LauncherItemType type = model_->items()[index].type;
+  ShelfItemType type = model_->items()[index].type;
   for (int i = 0; i < model_->item_count(); ++i) {
     if (SameDragType(model_->items()[i].type, type)) {
       if (min_index == -1)
@@ -1305,11 +1331,11 @@ void ShelfView::UpdateFirstButtonPadding() {
   if (ash::switches::UseAlternateShelfLayout())
     return;
 
-  // Creates an empty border for first launcher button to make included leading
+  // Creates an empty border for first shelf button to make included leading
   // inset act as the button's padding. This is only needed on button creation
   // and when shelf alignment changes.
   if (view_model_->view_size() > 0) {
-    view_model_->view_at(0)->set_border(views::Border::CreateEmptyBorder(
+    view_model_->view_at(0)->SetBorder(views::Border::CreateEmptyBorder(
         layout_manager_->PrimaryAxisValue(0, leading_inset_),
         layout_manager_->PrimaryAxisValue(leading_inset_, 0),
         0,
@@ -1347,7 +1373,7 @@ void ShelfView::UpdateOverflowRange(ShelfView* overflow_view) {
 
 int ShelfView::GetButtonSize() const {
   return ash::switches::UseAlternateShelfLayout() ?
-      kButtonSize : kLauncherPreferredSize;
+      kButtonSize : kShelfPreferredSize;
 }
 
 int ShelfView::GetButtonSpacing() const {
@@ -1485,6 +1511,12 @@ gfx::Size ShelfView::GetPreferredSize() {
 }
 
 void ShelfView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
+  // This bounds change is produced by the shelf movement and all content has
+  // to follow. Using an animation at that time would produce a time lag since
+  // the animation of the BoundsAnimator has itself a delay before it arrives
+  // at the required location. As such we tell the animator to go there
+  // immediately.
+  BoundsAnimatorDisabler disabler(bounds_animator_.get());
   LayoutToIdealBounds();
   FOR_EACH_OBSERVER(ShelfIconObserver, observers_,
                     OnShelfIconPositionsChanged());
@@ -1543,7 +1575,7 @@ void ShelfView::ShelfItemAdded(int model_index) {
   }
 }
 
-void ShelfView::ShelfItemRemoved(int model_index, LauncherID id) {
+void ShelfView::ShelfItemRemoved(int model_index, ShelfID id) {
   if (id == context_menu_id_)
     launcher_menu_runner_.reset();
   {
@@ -1556,7 +1588,7 @@ void ShelfView::ShelfItemRemoved(int model_index, LauncherID id) {
 
   // When the overflow bubble is visible, the overflow range needs to be set
   // before CalculateIdealBounds() gets called. Otherwise CalculateIdealBounds()
-  // could trigger a LauncherItemChanged() by hiding the overflow bubble and
+  // could trigger a ShelfItemChanged() by hiding the overflow bubble and
   // since the overflow bubble is not yet synced with the ShelfModel this
   // could cause a crash.
   if (overflow_bubble_ && overflow_bubble_->IsShowing()) {
@@ -1583,9 +1615,8 @@ void ShelfView::ShelfItemRemoved(int model_index, LauncherID id) {
     tooltip_->Close();
 }
 
-void ShelfView::ShelfItemChanged(int model_index,
-                                 const LauncherItem& old_item) {
-  const LauncherItem& item(model_->items()[model_index]);
+void ShelfView::ShelfItemChanged(int model_index, const ShelfItem& old_item) {
+  const ShelfItem& item(model_->items()[model_index]);
   if (old_item.type != item.type) {
     // Type changed, swap the views.
     model_index = CancelDrag(model_index);
@@ -1612,6 +1643,7 @@ void ShelfView::ShelfItemChanged(int model_index,
     case TYPE_APP_SHORTCUT:
     case TYPE_WINDOWED_APP:
     case TYPE_PLATFORM_APP:
+    case TYPE_DIALOG:
     case TYPE_APP_PANEL: {
       ShelfButton* button = static_cast<ShelfButton*>(view);
       ReflectItemStatus(item, button);
@@ -1630,7 +1662,7 @@ void ShelfView::ShelfItemChanged(int model_index,
 
 void ShelfView::ShelfItemMoved(int start_index, int target_index) {
   view_model_->Move(start_index, target_index);
-  // When cancelling a drag due to a launcher item being added, the currently
+  // When cancelling a drag due to a shelf item being added, the currently
   // dragged item is moved back to its initial position. AnimateToIdealBounds
   // will be called again when the new item is added to the |view_model_| but
   // at this time the |view_model_| is inconsistent with the |model_|.
@@ -1776,20 +1808,21 @@ void ShelfView::ButtonPressed(views::Button* sender, const ui::Event& event) {
       case TYPE_WINDOWED_APP:
       case TYPE_PLATFORM_APP:
       case TYPE_BROWSER_SHORTCUT:
-        Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+        Shell::GetInstance()->metrics()->RecordUserMetricsAction(
             UMA_LAUNCHER_CLICK_ON_APP);
         break;
 
       case TYPE_APP_LIST:
-        Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+        Shell::GetInstance()->metrics()->RecordUserMetricsAction(
             UMA_LAUNCHER_CLICK_ON_APPLIST_BUTTON);
         break;
 
       case TYPE_APP_PANEL:
+      case TYPE_DIALOG:
         break;
 
       case TYPE_UNDEFINED:
-        NOTREACHED() << "LauncherItemType must be set.";
+        NOTREACHED() << "ShelfItemType must be set.";
         break;
     }
 
@@ -1800,7 +1833,7 @@ void ShelfView::ButtonPressed(views::Button* sender, const ui::Event& event) {
   }
 }
 
-bool ShelfView::ShowListMenuForView(const LauncherItem& item,
+bool ShelfView::ShowListMenuForView(const ShelfItem& item,
                                     views::View* source,
                                     const ui::Event& event) {
   scoped_ptr<ShelfMenuModel> menu_model;
@@ -1826,16 +1859,11 @@ void ShelfView::ShowContextMenuForView(views::View* source,
                                        const gfx::Point& point,
                                        ui::MenuSourceType source_type) {
   int view_index = view_model_->GetIndexOfView(source);
-  // TODO(simon.hong81): Create LauncherContextMenu for applist in its
-  // ShelfItemDelegate.
-  if (view_index != -1 && model_->items()[view_index].type == TYPE_APP_LIST) {
-    view_index = -1;
-  }
-
   if (view_index == -1) {
     Shell::GetInstance()->ShowContextMenu(point, source_type);
     return;
   }
+
   scoped_ptr<ui::MenuModel> menu_model;
   ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[view_index].id);
@@ -1844,7 +1872,7 @@ void ShelfView::ShowContextMenuForView(views::View* source,
   if (!menu_model)
     return;
 
-  base::AutoReset<LauncherID> reseter(
+  base::AutoReset<ShelfID> reseter(
       &context_menu_id_,
       view_index == -1 ? 0 : model_->items()[view_index].id);
 
@@ -1873,11 +1901,11 @@ void ShelfView::ShowMenu(scoped_ptr<views::MenuModelAdapter> menu_model_adapter,
       views::MenuItemView::TOPLEFT;
   gfx::Rect anchor_point = gfx::Rect(click_point, gfx::Size());
 
-  ShelfWidget* shelf = RootWindowController::ForLauncher(
+  ShelfWidget* shelf = RootWindowController::ForShelf(
       GetWidget()->GetNativeView())->shelf();
   if (!context_menu) {
     // Application lists use a bubble.
-    ash::ShelfAlignment align = shelf->GetAlignment();
+    ShelfAlignment align = shelf->GetAlignment();
     anchor_point = source->GetBoundsInScreen();
 
     // It is possible to invoke the menu while it is sliding into view. To cover
@@ -1894,21 +1922,21 @@ void ShelfView::ShowMenu(scoped_ptr<views::MenuModelAdapter> menu_model_adapter,
       anchor_point.Inset(source->border()->GetInsets());
 
     switch (align) {
-      case ash::SHELF_ALIGNMENT_BOTTOM:
+      case SHELF_ALIGNMENT_BOTTOM:
         menu_alignment = views::MenuItemView::BUBBLE_ABOVE;
         break;
-      case ash::SHELF_ALIGNMENT_LEFT:
+      case SHELF_ALIGNMENT_LEFT:
         menu_alignment = views::MenuItemView::BUBBLE_RIGHT;
         break;
-      case ash::SHELF_ALIGNMENT_RIGHT:
+      case SHELF_ALIGNMENT_RIGHT:
         menu_alignment = views::MenuItemView::BUBBLE_LEFT;
         break;
-      case ash::SHELF_ALIGNMENT_TOP:
+      case SHELF_ALIGNMENT_TOP:
         menu_alignment = views::MenuItemView::BUBBLE_BELOW;
         break;
     }
   }
-  // If this gets deleted while we are in the menu, the launcher will be gone
+  // If this gets deleted while we are in the menu, the shelf will be gone
   // as well.
   bool got_deleted = false;
   got_deleted_ = &got_deleted;
@@ -1983,8 +2011,7 @@ bool ShelfView::IsUsableEvent(const ui::Event& event) {
   return (delta.InMilliseconds() < 0 || delta.InMilliseconds() > 130);
 }
 
-const LauncherItem* ShelfView::LauncherItemForView(
-    const views::View* view) const {
+const ShelfItem* ShelfView::ShelfItemForView(const views::View* view) const {
   int view_index = view_model_->GetIndexOfView(view);
   if (view_index == -1)
     return NULL;
@@ -1995,7 +2022,7 @@ bool ShelfView::ShouldShowTooltipForView(const views::View* view) const {
   if (view == GetAppListButtonView() &&
       Shell::GetInstance()->GetAppListWindow())
     return false;
-  const LauncherItem* item = LauncherItemForView(view);
+  const ShelfItem* item = ShelfItemForView(view);
   if (!item)
     return true;
   ShelfItemDelegate* item_delegate =
@@ -2004,22 +2031,22 @@ bool ShelfView::ShouldShowTooltipForView(const views::View* view) const {
 }
 
 int ShelfView::CalculateShelfDistance(const gfx::Point& coordinate) const {
-  ShelfWidget* shelf = RootWindowController::ForLauncher(
+  ShelfWidget* shelf = RootWindowController::ForShelf(
       GetWidget()->GetNativeView())->shelf();
-  ash::ShelfAlignment align = shelf->GetAlignment();
+  ShelfAlignment align = shelf->GetAlignment();
   const gfx::Rect bounds = GetBoundsInScreen();
   int distance = 0;
   switch (align) {
-    case ash::SHELF_ALIGNMENT_BOTTOM:
+    case SHELF_ALIGNMENT_BOTTOM:
       distance = bounds.y() - coordinate.y();
       break;
-    case ash::SHELF_ALIGNMENT_LEFT:
+    case SHELF_ALIGNMENT_LEFT:
       distance = coordinate.x() - bounds.right();
       break;
-    case ash::SHELF_ALIGNMENT_RIGHT:
+    case SHELF_ALIGNMENT_RIGHT:
       distance = bounds.x() - coordinate.x();
       break;
-    case ash::SHELF_ALIGNMENT_TOP:
+    case SHELF_ALIGNMENT_TOP:
       distance = coordinate.y() - bounds.bottom();
       break;
   }

@@ -160,13 +160,10 @@ int RendererMain(const MainFunctionParams& parameters) {
 #if defined(OS_MACOSX)
   // As long as we use Cocoa in the renderer (for the forseeable future as of
   // now; see http://crbug.com/306348 for info) we need to have a UI loop.
-  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI main_message_loop;
 #else
-  // The main message loop of the renderer services doesn't have IO or UI tasks,
-  // unless in-process-plugins is used.
-  base::MessageLoop main_message_loop(RenderProcessImpl::InProcessPlugins()
-                                          ? base::MessageLoop::TYPE_UI
-                                          : base::MessageLoop::TYPE_DEFAULT);
+  // The main message loop of the renderer services doesn't have IO or UI tasks.
+  base::MessageLoop main_message_loop;
 #endif
   main_message_loop.AddTaskObserver(&task_observer);
 
@@ -196,7 +193,8 @@ int RendererMain(const MainFunctionParams& parameters) {
     // reported in crash reports.
     bool result = base::FieldTrialList::CreateTrialsFromString(
         parsed_command_line.GetSwitchValueASCII(switches::kForceFieldTrials),
-        base::FieldTrialList::ACTIVATE_TRIALS);
+        base::FieldTrialList::ACTIVATE_TRIALS,
+        std::set<std::string>());
     DCHECK(result);
   }
 

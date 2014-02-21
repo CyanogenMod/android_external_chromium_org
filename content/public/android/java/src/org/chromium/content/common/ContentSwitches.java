@@ -18,9 +18,6 @@ public abstract class ContentSwitches {
     // Enables test intent handling.
     public static final String ENABLE_TEST_INTENTS = "enable-test-intents";
 
-    // Adds additional thread idle time information into the trace event output.
-    public static final String ENABLE_IDLE_TRACING = "enable-idle-tracing";
-
     // Dump frames-per-second to the log
     public static final String LOG_FPS = "log-fps";
 
@@ -73,6 +70,10 @@ public abstract class ContentSwitches {
 
     // Whether to disable the click delay by sending click events during double tap
     public static final String DISABLE_CLICK_DELAY = "disable-click-delay";
+
+    // Native switch - content_switches::kEnableOverlayFullscreenVideoSubtitle
+    public static final String ENABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE =
+            "enable-overlay-fullscreen-video-subtitle";
 
     // Prevent instantiation.
     private ContentSwitches() {}

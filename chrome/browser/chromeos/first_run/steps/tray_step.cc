@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/first_run/steps/tray_step.h"
 
 #include "ash/first_run/first_run_helper.h"
+#include "ash/shell.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/chromeos/first_run/step_names.h"
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_actor.h"
@@ -18,7 +19,7 @@ TrayStep::TrayStep(ash::FirstRunHelper* shell_helper, FirstRunActor* actor)
     : Step(kTrayStep, shell_helper, actor) {
 }
 
-void TrayStep::Show() {
+void TrayStep::DoShow() {
   if (!shell_helper()->IsTrayBubbleOpened())
     shell_helper()->OpenTrayBubble();
   gfx::Rect bounds = shell_helper()->GetTrayBubbleBounds();
@@ -26,7 +27,11 @@ void TrayStep::Show() {
       bounds.height());
   FirstRunActor::StepPosition position;
   position.SetTop(bounds.y());
-  if (!base::i18n::IsRTL())
+  ash::Shell* shell = ash::Shell::GetInstance();
+  ash::ShelfAlignment alignment =
+      shell->GetShelfAlignment(shell->GetPrimaryRootWindow());
+  if ((!base::i18n::IsRTL() && alignment != ash::SHELF_ALIGNMENT_LEFT) ||
+      alignment == ash::SHELF_ALIGNMENT_RIGHT)
     position.SetRight(GetOverlaySize().width() - bounds.x());
   else
     position.SetLeft(bounds.right());

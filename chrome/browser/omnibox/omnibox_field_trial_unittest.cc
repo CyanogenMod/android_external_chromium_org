@@ -157,6 +157,42 @@ TEST_F(OmniboxFieldTrialTest, ZeroSuggestFieldTrial) {
     CreateTestTrial("AutocompleteDynamicTrial_3", "EnableZeroSuggest_URLs");
     EXPECT_TRUE(OmniboxFieldTrial::InZeroSuggestFieldTrial());
   }
+
+  {
+    SCOPED_TRACE("Bundled field trial parameters.");
+    ResetFieldTrialList();
+    std::map<std::string, std::string> params;
+    params[std::string(OmniboxFieldTrial::kZeroSuggestRule)] = "true";
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+    base::FieldTrialList::CreateFieldTrial(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+    EXPECT_TRUE(OmniboxFieldTrial::InZeroSuggestFieldTrial());
+    EXPECT_FALSE(OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial());
+    EXPECT_FALSE(OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial());
+
+    ResetFieldTrialList();
+    params[std::string(OmniboxFieldTrial::kZeroSuggestVariantRule)] =
+        "MostVisited";
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+    base::FieldTrialList::CreateFieldTrial(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+    EXPECT_TRUE(OmniboxFieldTrial::InZeroSuggestFieldTrial());
+    EXPECT_TRUE(OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial());
+    EXPECT_FALSE(OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial());
+
+    ResetFieldTrialList();
+    params[std::string(OmniboxFieldTrial::kZeroSuggestVariantRule)] =
+        "AfterTyping";
+    base::FieldTrialList::CreateFieldTrial(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+    EXPECT_TRUE(OmniboxFieldTrial::InZeroSuggestFieldTrial());
+    EXPECT_FALSE(OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial());
+    EXPECT_TRUE(OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial());
+  }
 }
 
 TEST_F(OmniboxFieldTrialTest, GetDemotionsByTypeWithFallback) {
@@ -324,4 +360,62 @@ TEST_F(OmniboxFieldTrialTest, GetValueForRuleInContext) {
     ExpectRuleValue("",
                     "rule5", AutocompleteInput::OTHER);    // no rule at all
   }
+}
+
+TEST_F(OmniboxFieldTrialTest, HUPNewScoringFieldTrial) {
+  {
+    std::map<std::string, std::string> params;
+    params[std::string(OmniboxFieldTrial::kHUPNewScoringEnabledParam)] = "1";
+    params[std::string(
+        OmniboxFieldTrial::kHUPNewScoringTypedCountRelevanceCapParam)] = "56";
+    params[std::string(
+        OmniboxFieldTrial::kHUPNewScoringTypedCountHalfLifeTimeParam)] = "77";
+    params[std::string(
+        OmniboxFieldTrial::kHUPNewScoringTypedCountScoreBucketsParam)] =
+        "0.2:25,0.1:1001,2.3:777";
+    params[std::string(
+        OmniboxFieldTrial::kHUPNewScoringVisitedCountRelevanceCapParam)] = "11";
+    params[std::string(
+        OmniboxFieldTrial::kHUPNewScoringVisitedCountHalfLifeTimeParam)] = "31";
+    params[std::string(
+        OmniboxFieldTrial::kHUPNewScoringVisitedCountScoreBucketsParam)] =
+        "5:300,0:200";
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+  }
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+
+  HUPScoringParams scoring_params;
+  OmniboxFieldTrial::GetExperimentalHUPScoringParams(&scoring_params);
+  EXPECT_TRUE(scoring_params.experimental_scoring_enabled);
+  EXPECT_EQ(56, scoring_params.typed_count_buckets.relevance_cap());
+  EXPECT_EQ(77, scoring_params.typed_count_buckets.half_life_days());
+  ASSERT_EQ(3u, scoring_params.typed_count_buckets.buckets().size());
+  EXPECT_EQ(std::make_pair(2.3, 777),
+            scoring_params.typed_count_buckets.buckets()[0]);
+  EXPECT_EQ(std::make_pair(0.2, 25),
+            scoring_params.typed_count_buckets.buckets()[1]);
+  EXPECT_EQ(std::make_pair(0.1, 1001),
+            scoring_params.typed_count_buckets.buckets()[2]);
+  EXPECT_EQ(11, scoring_params.visited_count_buckets.relevance_cap());
+  EXPECT_EQ(31, scoring_params.visited_count_buckets.half_life_days());
+  ASSERT_EQ(2u, scoring_params.visited_count_buckets.buckets().size());
+  EXPECT_EQ(std::make_pair(5.0, 300),
+            scoring_params.visited_count_buckets.buckets()[0]);
+  EXPECT_EQ(std::make_pair(0.0, 200),
+            scoring_params.visited_count_buckets.buckets()[1]);
+}
+
+TEST_F(OmniboxFieldTrialTest, HalfLifeTimeDecay) {
+  HUPScoringParams::ScoreBuckets buckets;
+
+  // No decay by default.
+  EXPECT_EQ(1.0, buckets.HalfLifeTimeDecay(base::TimeDelta::FromDays(7)));
+
+  buckets.set_half_life_days(7);
+  EXPECT_EQ(0.5, buckets.HalfLifeTimeDecay(base::TimeDelta::FromDays(7)));
+  EXPECT_EQ(0.25, buckets.HalfLifeTimeDecay(base::TimeDelta::FromDays(14)));
+  EXPECT_EQ(1.0, buckets.HalfLifeTimeDecay(base::TimeDelta::FromDays(0)));
+  EXPECT_EQ(1.0, buckets.HalfLifeTimeDecay(base::TimeDelta::FromDays(-1)));
 }

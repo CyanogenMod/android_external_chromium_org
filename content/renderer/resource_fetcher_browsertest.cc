@@ -25,6 +25,13 @@ using blink::WebFrame;
 using blink::WebURLRequest;
 using blink::WebURLResponse;
 
+namespace {
+
+// The first RenderFrame is routing ID 1, and the first RenderView is 2.
+const int kRenderViewRoutingId = 2;
+
+}
+
 namespace content {
 
 static const int kMaxWaitTimeMs = 5000;
@@ -126,7 +133,7 @@ class ResourceFetcherTests : public ContentBrowserTest {
  public:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kSingleProcess);
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
     // Don't want to try to create a GPU process.
     command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
 #endif
@@ -135,15 +142,16 @@ class ResourceFetcherTests : public ContentBrowserTest {
   RenderView* GetRenderView() {
     // We could have the test on the UI thread get the WebContent's routing ID,
     // but we know this will be the first RV so skip that and just hardcode it.
-    return RenderView::FromRoutingID(1);
+    return RenderView::FromRoutingID(kRenderViewRoutingId);
   }
 
   void ResourceFetcherDownloadOnRenderer(const GURL& url) {
     WebFrame* frame = GetRenderView()->GetWebView()->mainFrame();
 
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
-    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(
-        url, frame, WebURLRequest::TargetIsMainFrame, delegate->NewCallback()));
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
 
     delegate->WaitForResponse();
 
@@ -157,8 +165,9 @@ class ResourceFetcherTests : public ContentBrowserTest {
     WebFrame* frame = GetRenderView()->GetWebView()->mainFrame();
 
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
-    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(
-        url, frame, WebURLRequest::TargetIsMainFrame, delegate->NewCallback()));
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
 
     delegate->WaitForResponse();
 
@@ -173,8 +182,9 @@ class ResourceFetcherTests : public ContentBrowserTest {
     // Try to fetch a page on a site that doesn't exist.
     GURL url("http://localhost:1339/doesnotexist");
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
-    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(
-        url, frame, WebURLRequest::TargetIsMainFrame, delegate->NewCallback()));
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
 
     delegate->WaitForResponse();
 
@@ -190,9 +200,9 @@ class ResourceFetcherTests : public ContentBrowserTest {
     WebFrame* frame = GetRenderView()->GetWebView()->mainFrame();
 
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
-    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(
-        url, frame, WebURLRequest::TargetIsMainFrame,
-        delegate->NewCallback()));
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
     fetcher->SetTimeout(base::TimeDelta());
 
     delegate->WaitForResponse();
@@ -209,20 +219,74 @@ class ResourceFetcherTests : public ContentBrowserTest {
     WebFrame* frame = GetRenderView()->GetWebView()->mainFrame();
 
     scoped_ptr<EvilFetcherDelegate> delegate(new EvilFetcherDelegate);
-    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(
-        url, frame, WebURLRequest::TargetIsMainFrame,
-        delegate->NewCallback()));
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
     fetcher->SetTimeout(base::TimeDelta());
     delegate->SetFetcher(fetcher.release());
 
     delegate->WaitForResponse();
     EXPECT_FALSE(delegate->timed_out());
   }
+
+  void ResourceFetcherPost(const GURL& url) {
+    const char* kBody = "Really nifty POST body!";
+
+    WebFrame* frame = GetRenderView()->GetWebView()->mainFrame();
+
+    scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->SetMethod("POST");
+    fetcher->SetBody(kBody);
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
+
+    delegate->WaitForResponse();
+    ASSERT_TRUE(delegate->completed());
+    EXPECT_EQ(delegate->response().httpStatusCode(), 200);
+    EXPECT_EQ(kBody, delegate->data());
+  }
+
+  void ResourceFetcherSetHeader(const GURL& url) {
+    const char* kHeader = "Rather boring header.";
+
+    WebFrame* frame = GetRenderView()->GetWebView()->mainFrame();
+
+    scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
+    scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
+    fetcher->SetHeader("header", kHeader);
+    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+                   delegate->NewCallback());
+
+    delegate->WaitForResponse();
+    ASSERT_TRUE(delegate->completed());
+    EXPECT_EQ(delegate->response().httpStatusCode(), 200);
+    EXPECT_EQ(kHeader, delegate->data());
+  }
 };
+
+#if defined(OS_ANDROID)
+// Disable (http://crbug.com/248796).
+#define MAYBE_ResourceFetcher404 DISABLED_ResourceFetcher404
+#define MAYBE_ResourceFetcherDeletedInCallback \
+  DISABLED_ResourceFetcherDeletedInCallback
+#define MAYBE_ResourceFetcherTimeout DISABLED_ResourceFetcherTimeout
+#define MAYBE_ResourceFetcherDownload DISABLED_ResourceFetcherDownload
+// Disable (http://crbug.com/341142).
+#define MAYBE_ResourceFetcherPost DISABLED_ResourceFetcherPost
+#define MAYBE_ResourceFetcherSetHeader DISABLED_ResourceFetcherSetHeader
+#else
+#define MAYBE_ResourceFetcher404 ResourceFetcher404
+#define MAYBE_ResourceFetcherDeletedInCallback ResourceFetcherDeletedInCallback
+#define MAYBE_ResourceFetcherTimeout ResourceFetcherTimeout
+#define MAYBE_ResourceFetcherDownload ResourceFetcherDownload
+#define MAYBE_ResourceFetcherPost ResourceFetcherPost
+#define MAYBE_ResourceFetcherSetHeader ResourceFetcherSetHeader
+#endif
 
 // Test a fetch from the test server.
 // If this flakes, use http://crbug.com/51622.
-IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDownload) {
+IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherDownload) {
   // Need to spin up the renderer.
   NavigateToURL(shell(), GURL(kAboutBlankURL));
 
@@ -234,7 +298,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDownload) {
                    base::Unretained(this), url));
 }
 
-IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcher404) {
+IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcher404) {
   // Need to spin up the renderer.
   NavigateToURL(shell(), GURL(kAboutBlankURL));
 
@@ -257,7 +321,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDidFail) {
                    base::Unretained(this)));
 }
 
-IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherTimeout) {
+IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherTimeout) {
   // Need to spin up the renderer.
   NavigateToURL(shell(), GURL(kAboutBlankURL));
 
@@ -271,7 +335,8 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherTimeout) {
                    base::Unretained(this), url));
 }
 
-IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDeletedInCallback) {
+IN_PROC_BROWSER_TEST_F(ResourceFetcherTests,
+                       MAYBE_ResourceFetcherDeletedInCallback) {
   // Need to spin up the renderer.
   NavigateToURL(shell(), GURL(kAboutBlankURL));
 
@@ -283,6 +348,38 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDeletedInCallback) {
   PostTaskToInProcessRendererAndWait(
         base::Bind(
             &ResourceFetcherTests::ResourceFetcherDeletedInCallbackOnRenderer,
+            base::Unretained(this), url));
+}
+
+
+
+// Test that ResourceFetchers can handle POSTs.
+IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherPost) {
+  // Need to spin up the renderer.
+  NavigateToURL(shell(), GURL(kAboutBlankURL));
+
+  // Grab a page that echos the POST body.
+  ASSERT_TRUE(test_server()->Start());
+  GURL url(test_server()->GetURL("echo"));
+
+  PostTaskToInProcessRendererAndWait(
+        base::Bind(
+            &ResourceFetcherTests::ResourceFetcherPost,
+            base::Unretained(this), url));
+}
+
+// Test that ResourceFetchers can set headers.
+IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherSetHeader) {
+  // Need to spin up the renderer.
+  NavigateToURL(shell(), GURL(kAboutBlankURL));
+
+  // Grab a page that echos the POST body.
+  ASSERT_TRUE(test_server()->Start());
+  GURL url(test_server()->GetURL("echoheader?header"));
+
+  PostTaskToInProcessRendererAndWait(
+        base::Bind(
+            &ResourceFetcherTests::ResourceFetcherSetHeader,
             base::Unretained(this), url));
 }
 

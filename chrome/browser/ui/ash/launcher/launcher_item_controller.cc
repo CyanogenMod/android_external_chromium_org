@@ -17,7 +17,7 @@ LauncherItemController::LauncherItemController(
     ChromeLauncherController* launcher_controller)
     : type_(type),
       app_id_(app_id),
-      launcher_id_(0),
+      shelf_id_(0),
       launcher_controller_(launcher_controller),
       locked_(0),
       image_set_by_controller_(false) {
@@ -30,16 +30,16 @@ const std::string& LauncherItemController::app_id() const {
   return app_id_;
 }
 
-string16 LauncherItemController::GetAppTitle() const {
+base::string16 LauncherItemController::GetAppTitle() const {
   if (app_id_.empty())
     return base::string16();
   const extensions::Extension* extension =
       launcher_controller_->profile()->GetExtensionService()->
       GetInstalledExtension(app_id_);
-  return extension ? UTF8ToUTF16(extension->name()) : base::string16();
+  return extension ? base::UTF8ToUTF16(extension->name()) : base::string16();
 }
 
-ash::LauncherItemType LauncherItemController::GetLauncherItemType() const {
+ash::ShelfItemType LauncherItemController::GetShelfItemType() const {
   switch (type_) {
     case LauncherItemController::TYPE_SHORTCUT:
     case LauncherItemController::TYPE_WINDOWED_APP:

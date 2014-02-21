@@ -23,19 +23,19 @@ class CC_EXPORT TilingData {
  public:
   TilingData();
   TilingData(
-      gfx::Size max_texture_size,
-      gfx::Size total_size,
+      const gfx::Size& max_texture_size,
+      const gfx::Size& total_size,
       bool has_border_texels);
   TilingData(
-      gfx::Size max_texture_size,
-      gfx::Size total_size,
+      const gfx::Size& max_texture_size,
+      const gfx::Size& total_size,
       int border_texels);
 
   gfx::Size total_size() const { return total_size_; }
-  void SetTotalSize(const gfx::Size total_size);
+  void SetTotalSize(const gfx::Size& total_size);
 
   gfx::Size max_texture_size() const { return max_texture_size_; }
-  void SetMaxTextureSize(gfx::Size max_texture_size);
+  void SetMaxTextureSize(const gfx::Size& max_texture_size);
 
   int border_texels() const { return border_texels_; }
   void SetHasBorderTexels(bool has_border_texels);
@@ -89,7 +89,7 @@ class CC_EXPORT TilingData {
   // Iterate through all indices whose bounds + border intersect with |rect|.
   class CC_EXPORT Iterator : public BaseIterator {
    public:
-    Iterator(const TilingData* tiling_data, gfx::Rect rect);
+    Iterator(const TilingData* tiling_data, const gfx::Rect& tiling_rect);
     Iterator& operator++();
 
    private:
@@ -104,8 +104,8 @@ class CC_EXPORT TilingData {
    public:
     DifferenceIterator(
       const TilingData* tiling_data,
-      gfx::Rect consider,
-      gfx::Rect ignore);
+      const gfx::Rect& consider_rect,
+      const gfx::Rect& ignore_rect);
     DifferenceIterator& operator++();
 
    private:

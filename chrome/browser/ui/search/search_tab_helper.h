@@ -108,6 +108,8 @@ class SearchTabHelper : public content::WebContentsObserver,
   FRIEND_TEST_ALL_PREFIXES(SearchTabHelperWindowTest,
                            OnProvisionalLoadFailRedirectNTPToLocal);
   FRIEND_TEST_ALL_PREFIXES(SearchTabHelperWindowTest,
+                           OnProvisionalLoadFailDontRedirectIfAborted);
+  FRIEND_TEST_ALL_PREFIXES(SearchTabHelperWindowTest,
                            OnProvisionalLoadFailDontRedirectNonNTP);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            IgnoreMessageIfThePageIsNotActive);
@@ -160,6 +162,8 @@ class SearchTabHelper : public content::WebContentsObserver,
   virtual void OnUndoMostVisitedDeletion(const GURL& url) OVERRIDE;
   virtual void OnUndoAllMostVisitedDeletions() OVERRIDE;
   virtual void OnLogEvent(NTPLoggingEventType event) OVERRIDE;
+  virtual void OnLogImpression(int position,
+                               const base::string16& provider) OVERRIDE;
   virtual void PasteIntoOmnibox(const base::string16& text) OVERRIDE;
   virtual void OnChromeIdentityCheck(const base::string16& identity) OVERRIDE;
 
@@ -167,6 +171,7 @@ class SearchTabHelper : public content::WebContentsObserver,
   virtual void ThemeInfoChanged(const ThemeBackgroundInfo& theme_info) OVERRIDE;
   virtual void MostVisitedItemsChanged(
       const std::vector<InstantMostVisitedItem>& items) OVERRIDE;
+  virtual void OmniboxStartMarginChanged(int omnibox_start_margin) OVERRIDE;
 
   // Removes recommended URLs if a matching URL is already open in the Browser,
   // if the Most Visited Tile Placement experiment is enabled, and the client is

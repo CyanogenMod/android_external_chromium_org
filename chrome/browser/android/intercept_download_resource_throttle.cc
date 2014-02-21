@@ -7,6 +7,7 @@
 #include "content/public/browser/android/download_controller_android.h"
 #include "content/public/browser/resource_controller.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 
 namespace chrome {
@@ -38,9 +39,26 @@ const char* InterceptDownloadResourceThrottle::GetNameForLogging() const {
 }
 
 void InterceptDownloadResourceThrottle::ProcessDownloadRequest() {
-  if (request_->method() != net::HttpRequestHeaders::kGetMethod ||
-      request_->response_info().did_use_http_auth)
+  if (request_->method() != net::HttpRequestHeaders::kGetMethod)
     return;
+
+  // In general, if the request uses HTTP authorization, either with the origin
+  // or a proxy, then the network stack should handle the download. The one
+  // exception is a request that is fetched via the Chrome Proxy and does not
+  // authenticate with the origin.
+  if (request_->response_info().did_use_http_auth) {
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+    net::HttpRequestHeaders headers;
+    request_->GetFullRequestHeaders(&headers);
+    if (headers.HasHeader(net::HttpRequestHeaders::kAuthorization) ||
+        !(request_->response_info().headers &&
+            request_->response_info().headers->IsChromeProxyResponse())) {
+      return;
+    }
+#else
+    return;
+#endif
+  }
 
   if (request_->url_chain().empty())
     return;

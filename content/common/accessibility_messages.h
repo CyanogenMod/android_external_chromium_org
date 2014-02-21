@@ -6,7 +6,6 @@
 // Multiply-included message file, hence no include guard.
 
 #include "base/basictypes.h"
-#include "content/common/accessibility_node_data.h"
 #include "content/common/content_export.h"
 #include "content/common/view_message_enums.h"
 #include "content/public/common/common_param_traits.h"
@@ -15,22 +14,23 @@
 #include "ipc/ipc_param_traits.h"
 #include "ipc/param_traits_macros.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
+#include "ui/accessibility/ax_node_data.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
 #define IPC_MESSAGE_START AccessibilityMsgStart
 
-IPC_ENUM_TRAITS(blink::WebAXEvent)
-IPC_ENUM_TRAITS(blink::WebAXRole)
+IPC_ENUM_TRAITS(ui::AXEvent)
+IPC_ENUM_TRAITS(ui::AXRole)
 
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::BoolAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::FloatAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::IntAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::IntListAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::StringAttribute)
+IPC_ENUM_TRAITS(ui::AXBoolAttribute)
+IPC_ENUM_TRAITS(ui::AXFloatAttribute)
+IPC_ENUM_TRAITS(ui::AXIntAttribute)
+IPC_ENUM_TRAITS(ui::AXIntListAttribute)
+IPC_ENUM_TRAITS(ui::AXStringAttribute)
 
-IPC_STRUCT_TRAITS_BEGIN(content::AccessibilityNodeData)
+IPC_STRUCT_TRAITS_BEGIN(ui::AXNodeData)
   IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(role)
   IPC_STRUCT_TRAITS_MEMBER(state)
@@ -47,13 +47,22 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
   // Vector of nodes in the tree that need to be updated before
   // sending the event.
-  IPC_STRUCT_MEMBER(std::vector<content::AccessibilityNodeData>, nodes)
+  IPC_STRUCT_MEMBER(std::vector<ui::AXNodeData>, nodes)
 
   // Type of event.
-  IPC_STRUCT_MEMBER(blink::WebAXEvent, event_type)
+  IPC_STRUCT_MEMBER(ui::AXEvent, event_type)
 
   // ID of the node that the event applies to.
   IPC_STRUCT_MEMBER(int, id)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(AccessibilityHostMsg_LocationChangeParams)
+  // ID of the object whose location is changing.
+  IPC_STRUCT_MEMBER(int, id)
+
+  // The object's new location, in frame-relative coordinates (same
+  // as the coordinates in AccessibilityNodeData).
+  IPC_STRUCT_MEMBER(gfx::Rect, new_location)
 IPC_STRUCT_END()
 
 // Messages sent from the browser to the renderer.
@@ -105,3 +114,8 @@ IPC_MESSAGE_ROUTED0(AccessibilityMsg_FatalError)
 IPC_MESSAGE_ROUTED1(
     AccessibilityHostMsg_Events,
     std::vector<AccessibilityHostMsg_EventParams>)
+
+// Sent to update the browser of the location of accessibility objects.
+IPC_MESSAGE_ROUTED1(
+    AccessibilityHostMsg_LocationChanges,
+    std::vector<AccessibilityHostMsg_LocationChangeParams>)

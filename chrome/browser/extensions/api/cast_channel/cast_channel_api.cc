@@ -9,11 +9,11 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/cast_channel/cast_socket.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
 
@@ -59,7 +59,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<CastChannelAPI> > g_factory =
 
 // static
 ProfileKeyedAPIFactory<CastChannelAPI>* CastChannelAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 scoped_ptr<CastSocket> CastChannelAPI::CreateCastSocket(
@@ -87,11 +87,6 @@ void CastChannelAPI::OnError(const CastSocket* socket,
   scoped_ptr<Event> event(new Event(OnError::kEventName, results.Pass()));
   extensions::ExtensionSystem::Get(profile_)->event_router()->
     DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
-
-  // Destroy the socket that caused the error.
-  ApiResourceManager<CastSocket>* manager =
-    ApiResourceManager<CastSocket>::Get(profile_);
-  manager->Remove(socket->owner_extension_id(), socket->id());
 }
 
 void CastChannelAPI::OnMessage(const CastSocket* socket,

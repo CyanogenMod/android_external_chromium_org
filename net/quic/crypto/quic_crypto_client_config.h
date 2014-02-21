@@ -17,6 +17,14 @@
 
 namespace net {
 
+class ChannelIDSigner;
+class CryptoHandshakeMessage;
+class ProofVerifier;
+class ProofVerifyDetails;
+class QuicRandom;
+class QuicServerInfo;
+class QuicServerInfoFactory;
+
 // QuicCryptoClientConfig contains crypto-related configuration settings for a
 // client. Note that this object isn't thread-safe. It's designed to be used on
 // a single thread at a time.
@@ -28,6 +36,7 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   class NET_EXPORT_PRIVATE CachedState {
    public:
     CachedState();
+    explicit CachedState(scoped_ptr<QuicServerInfo> quic_server_info);
     ~CachedState();
 
     // IsComplete returns true if this object contains enough information to
@@ -87,7 +96,6 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     void InitializeFrom(const CachedState& other);
 
    private:
-    std::string server_config_id_;      // An opaque id from the server.
     std::string server_config_;         // A serialized handshake message.
     std::string source_address_token_;  // An opaque proof of IP ownership.
     std::vector<std::string> certs_;    // A list of certificates in leaf-first
@@ -106,6 +114,9 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     // scfg contains the cached, parsed value of |server_config|.
     mutable scoped_ptr<CryptoHandshakeMessage> scfg_;
 
+    // |quic_server_info_| is used to fetch crypto config information from disk.
+    scoped_ptr<QuicServerInfo> quic_server_info_;
+
     DISALLOW_COPY_AND_ASSIGN(CachedState);
   };
 
@@ -115,8 +126,17 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // Sets the members to reasonable, default values.
   void SetDefaults();
 
+  // Create returns a CachedState for the given hostname. It creates a
+  // CachedState and caches it. If |quic_server_info_factory| is not NULL, then
+  // it is used to create QuicServerInfo which is used to fetch crypto config
+  // information from disk for the given hostname.
+  CachedState* Create(const std::string& server_hostname,
+                      QuicServerInfoFactory* quic_server_info_factory);
+
   // LookupOrCreate returns a CachedState for the given hostname. If no such
   // CachedState currently exists, it will be created and cached.
+  // TODO(rtenneti): fix the server code and pass QuicServerInfoFactory as
+  // argument.
   CachedState* LookupOrCreate(const std::string& server_hostname);
 
   // FillInchoateClientHello sets |out| to be a CHLO message that elicits a

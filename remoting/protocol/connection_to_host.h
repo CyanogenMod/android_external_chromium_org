@@ -52,11 +52,10 @@ class ConnectionToHost : public SignalStrategy::Listener,
                          public base::NonThreadSafe {
  public:
   // The UI implementations maintain corresponding definitions of this
-  // enumeration in webapp/client_session.js and
-  // android/java/res/values/strings.xml. The Android app also includes a
-  // constant in android/java/src/org/chromium/chromoting/jni/JniInterface.java
-  // that tracks the numeric value of the CONNECTED state. Be sure to update
-  // these locations to match this one if you make any changes to the ordering.
+  // enumeration in webapp/client_session.js,
+  // android/java/res/values/strings.xml and
+  // android/java/src/org/chromium/chromoting/jni/JniInterface.java. Be sure to
+  // update these locations if you make any changes to the ordering.
   enum State {
     INITIALIZING,
     CONNECTING,
@@ -78,6 +77,10 @@ class ConnectionToHost : public SignalStrategy::Listener,
     // delayed. This is used to indicate in the UI when connection is
     // temporarily broken.
     virtual void OnConnectionReady(bool ready) = 0;
+
+    // Called when the route type (direct vs. STUN vs. proxied) changes.
+    virtual void OnRouteChanged(const std::string& channel_name,
+                                const protocol::TransportRoute& route) = 0;
   };
 
   ConnectionToHost(bool allow_nat_traversal);

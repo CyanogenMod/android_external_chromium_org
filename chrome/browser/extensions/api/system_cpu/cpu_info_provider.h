@@ -5,6 +5,9 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SYSTEM_CPU_CPU_INFO_PROVIDER_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SYSTEM_CPU_CPU_INFO_PROVIDER_H_
 
+#include <vector>
+
+#include "base/cpu.h"
 #include "base/lazy_instance.h"
 #include "chrome/browser/extensions/api/system_info/system_info_provider.h"
 #include "chrome/common/extensions/api/system_cpu.h"
@@ -26,8 +29,16 @@ class CpuInfoProvider : public SystemInfoProvider {
   CpuInfoProvider();
   virtual ~CpuInfoProvider();
 
+  // Platform specific implementation for querying the CPU time information
+  // for each processor.
+  virtual bool QueryCpuTimePerProcessor(
+      std::vector<linked_ptr<api::system_cpu::ProcessorInfo> >* infos);
+
   // Overriden from SystemInfoProvider.
   virtual bool QueryInfo() OVERRIDE;
+
+  // Creates a list of codenames for currently active features.
+  std::vector<std::string> GetFeatures() const;
 
   // The last information filled up by QueryInfo and is accessed on multiple
   // threads, but the whole class is being guarded by SystemInfoProvider base
@@ -39,6 +50,7 @@ class CpuInfoProvider : public SystemInfoProvider {
   api::system_cpu::CpuInfo info_;
 
   static base::LazyInstance<scoped_refptr<CpuInfoProvider> > provider_;
+  base::CPU cpu_;
 
   DISALLOW_COPY_AND_ASSIGN(CpuInfoProvider);
 };

@@ -12,6 +12,8 @@
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "url/gurl.h"
 
@@ -19,22 +21,13 @@ using content::WebContents;
 
 namespace extensions {
 
-const char kManifestKey[] = "manifest";
-const char kIconUrlKey[] = "icon_url";
-const char kLocalizedNameKey[] = "localized_name";
-const char kLocalizedDescriptionKey[] = "localized_description";
-const char kUsersKey[] = "users";
-const char kShowUserCountKey[] = "show_user_count";
-const char kAverageRatingKey[] = "average_rating";
-const char kRatingCountKey[] = "rating_count";
-
 const char kInvalidWebstoreItemId[] = "Invalid Chrome Web Store item ID";
 const char kWebstoreRequestError[] =
     "Could not fetch data from the Chrome Web Store";
 const char kInvalidWebstoreResponseError[] = "Invalid Chrome Web Store reponse";
 const char kInvalidManifestError[] = "Invalid manifest";
 const char kUserCancelledError[] = "User cancelled install";
-
+const char kExtensionIsBlacklisted[] = "Extension is blacklisted";
 
 WebstoreStandaloneInstaller::WebstoreStandaloneInstaller(
     const std::string& webstore_item_id,
@@ -107,7 +100,7 @@ void WebstoreStandaloneInstaller::OnWebstoreRequestFailure() {
 }
 
 void WebstoreStandaloneInstaller::OnWebstoreResponseParseSuccess(
-    scoped_ptr<DictionaryValue> webstore_data) {
+    scoped_ptr<base::DictionaryValue> webstore_data) {
   if (!CheckRequestorAlive()) {
     CompleteInstall(std::string());
     return;
@@ -237,12 +230,31 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
     return;
   }
 
+  ExtensionService* extension_service =
+      ExtensionSystem::Get(profile_)->extension_service();
+  const Extension* extension =
+      extension_service->GetExtensionById(id_, true /* include disabled */);
+  if (extension) {
+    std::string install_result;  // Empty string for install success.
+    if (!extension_service->IsExtensionEnabled(id_)) {
+      if (!ExtensionPrefs::Get(profile_)->IsExtensionBlacklisted(id_)) {
+        // If the extension is installed but disabled, and not blacklisted,
+        // enable it.
+        extension_service->EnableExtension(id_);
+      } else {  // Don't install a blacklisted extension.
+        install_result = kExtensionIsBlacklisted;
+      }
+    }  // else extension is installed and enabled; no work to be done.
+    CompleteInstall(install_result);
+    return;
+  }
+
   scoped_ptr<WebstoreInstaller::Approval> approval = CreateApproval();
 
   scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
       profile_,
       this,
-      &(GetWebContents()->GetController()),
+      GetWebContents(),
       id_,
       approval.Pass(),
       install_source_);
@@ -279,9 +291,13 @@ void WebstoreStandaloneInstaller::AbortInstall() {
   }
 }
 
-void WebstoreStandaloneInstaller::CompleteInstall(const std::string& error) {
+void WebstoreStandaloneInstaller::InvokeCallback(const std::string& error) {
   if (!callback_.is_null())
     callback_.Run(error.empty(), error);
+}
+
+void WebstoreStandaloneInstaller::CompleteInstall(const std::string& error) {
+  InvokeCallback(error);
   Release();  // Matches the AddRef in BeginInstall.
 }
 

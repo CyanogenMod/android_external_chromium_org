@@ -39,7 +39,7 @@ class TestContentLayer : public Layer {
       return gfx::IntersectRects(opaque_contents_rect_, visible_content_rect());
     return Layer::VisibleContentOpaqueRegion();
   }
-  void SetOpaqueContentsRect(gfx::Rect opaque_contents_rect) {
+  void SetOpaqueContentsRect(const gfx::Rect& opaque_contents_rect) {
     override_opaque_contents_rect_ = true;
     opaque_contents_rect_ = opaque_contents_rect;
   }
@@ -63,7 +63,7 @@ class TestContentLayerImpl : public LayerImpl {
       return gfx::IntersectRects(opaque_contents_rect_, visible_content_rect());
     return LayerImpl::VisibleContentOpaqueRegion();
   }
-  void SetOpaqueContentsRect(gfx::Rect opaque_contents_rect) {
+  void SetOpaqueContentsRect(const gfx::Rect& opaque_contents_rect) {
     override_opaque_contents_rect_ = true;
     opaque_contents_rect_ = opaque_contents_rect;
   }
@@ -84,17 +84,17 @@ template <typename LayerType, typename RenderSurfaceType>
 class TestOcclusionTrackerWithClip
     : public TestOcclusionTrackerBase<LayerType, RenderSurfaceType> {
  public:
-  TestOcclusionTrackerWithClip(gfx::Rect viewport_rect,
+  TestOcclusionTrackerWithClip(const gfx::Rect& viewport_rect,
                                bool record_metrics_for_frame)
       : TestOcclusionTrackerBase<LayerType, RenderSurfaceType>(
             viewport_rect,
             record_metrics_for_frame) {}
-  explicit TestOcclusionTrackerWithClip(gfx::Rect viewport_rect)
+  explicit TestOcclusionTrackerWithClip(const gfx::Rect& viewport_rect)
       : TestOcclusionTrackerBase<LayerType, RenderSurfaceType>(viewport_rect,
                                                                false) {}
 
   bool OccludedLayer(const LayerType* layer,
-                     gfx::Rect content_rect) const {
+                     const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
     return this->Occluded(layer->render_target(),
                           content_rect,
@@ -105,7 +105,7 @@ class TestOcclusionTrackerWithClip
   // Gives an unoccluded sub-rect of |content_rect| in the content space of the
   // layer. Simple wrapper around UnoccludedContentRect.
   gfx::Rect UnoccludedLayerContentRect(const LayerType* layer,
-                                       gfx::Rect content_rect) const {
+                                       const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
     return this->UnoccludedContentRect(
         layer->render_target(),
@@ -122,10 +122,7 @@ struct OcclusionTrackerTestMainThreadTypes {
   typedef TestContentLayer ContentLayerType;
   typedef scoped_refptr<Layer> LayerPtrType;
   typedef scoped_refptr<ContentLayerType> ContentLayerPtrType;
-  typedef LayerIterator<Layer,
-                        RenderSurfaceLayerList,
-                        RenderSurface,
-                        LayerIteratorActions::FrontToBack> TestLayerIterator;
+  typedef LayerIterator<Layer> TestLayerIterator;
   typedef OcclusionTracker OcclusionTrackerType;
 
   static LayerPtrType CreateLayer(HostType*  host) { return Layer::Create(); }
@@ -155,10 +152,7 @@ struct OcclusionTrackerTestImplThreadTypes {
   typedef TestContentLayerImpl ContentLayerType;
   typedef scoped_ptr<LayerImpl> LayerPtrType;
   typedef scoped_ptr<ContentLayerType> ContentLayerPtrType;
-  typedef LayerIterator<LayerImpl,
-                        LayerImplList,
-                        RenderSurfaceImpl,
-                        LayerIteratorActions::FrontToBack> TestLayerIterator;
+  typedef LayerIterator<LayerImpl> TestLayerIterator;
   typedef OcclusionTrackerImpl OcclusionTrackerType;
 
   static LayerPtrType CreateLayer(HostType* host) {
@@ -200,8 +194,8 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   typename Types::HostType* GetHost();
 
   typename Types::ContentLayerType* CreateRoot(const gfx::Transform& transform,
-                                               gfx::PointF position,
-                                               gfx::Size bounds) {
+                                               const gfx::PointF& position,
+                                               const gfx::Size& bounds) {
     typename Types::ContentLayerPtrType layer(
         Types::CreateContentLayer(GetHost()));
     typename Types::ContentLayerType* layer_ptr = layer.get();
@@ -217,8 +211,8 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   typename Types::LayerType* CreateLayer(typename Types::LayerType* parent,
                                          const gfx::Transform& transform,
-                                         gfx::PointF position,
-                                         gfx::Size bounds) {
+                                         const gfx::PointF& position,
+                                         const gfx::Size& bounds) {
     typename Types::LayerPtrType layer(Types::CreateLayer(GetHost()));
     typename Types::LayerType* layer_ptr = layer.get();
     SetProperties(layer_ptr, transform, position, bounds);
@@ -228,8 +222,8 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   typename Types::LayerType* CreateSurface(typename Types::LayerType* parent,
                                            const gfx::Transform& transform,
-                                           gfx::PointF position,
-                                           gfx::Size bounds) {
+                                           const gfx::PointF& position,
+                                           const gfx::Size& bounds) {
     typename Types::LayerType* layer =
         CreateLayer(parent, transform, position, bounds);
     layer->SetForceRenderSurface(true);
@@ -239,8 +233,8 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   typename Types::ContentLayerType* CreateDrawingLayer(
       typename Types::LayerType* parent,
       const gfx::Transform& transform,
-      gfx::PointF position,
-      gfx::Size bounds,
+      const gfx::PointF& position,
+      const gfx::Size& bounds,
       bool opaque) {
     typename Types::ContentLayerPtrType layer(
         Types::CreateContentLayer(GetHost()));
@@ -264,8 +258,8 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   typename Types::LayerType* CreateReplicaLayer(
       typename Types::LayerType* owning_layer,
       const gfx::Transform& transform,
-      gfx::PointF position,
-      gfx::Size bounds) {
+      const gfx::PointF& position,
+      const gfx::Size& bounds) {
     typename Types::ContentLayerPtrType layer(
         Types::CreateContentLayer(GetHost()));
     typename Types::ContentLayerType* layer_ptr = layer.get();
@@ -276,7 +270,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   typename Types::LayerType* CreateMaskLayer(
       typename Types::LayerType* owning_layer,
-      gfx::Size bounds) {
+      const gfx::Size& bounds) {
     typename Types::ContentLayerPtrType layer(
         Types::CreateContentLayer(GetHost()));
     typename Types::ContentLayerType* layer_ptr = layer.get();
@@ -288,8 +282,8 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   typename Types::ContentLayerType* CreateDrawingSurface(
       typename Types::LayerType* parent,
       const gfx::Transform& transform,
-      gfx::PointF position,
-      gfx::Size bounds,
+      const gfx::PointF& position,
+      const gfx::Size& bounds,
       bool opaque) {
     typename Types::ContentLayerType* layer =
         CreateDrawingLayer(parent, transform, position, bounds, opaque);
@@ -413,10 +407,9 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   void SetBaseProperties(typename Types::LayerType* layer,
                          const gfx::Transform& transform,
-                         gfx::PointF position,
-                         gfx::Size bounds) {
+                         const gfx::PointF& position,
+                         const gfx::Size& bounds) {
     layer->SetTransform(transform);
-    layer->SetSublayerTransform(gfx::Transform());
     layer->SetAnchorPoint(gfx::PointF());
     layer->SetPosition(position);
     layer->SetBounds(bounds);
@@ -424,15 +417,15 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   void SetProperties(Layer* layer,
                      const gfx::Transform& transform,
-                     gfx::PointF position,
-                     gfx::Size bounds) {
+                     const gfx::PointF& position,
+                     const gfx::Size& bounds) {
     SetBaseProperties(layer, transform, position, bounds);
   }
 
   void SetProperties(LayerImpl* layer,
                      const gfx::Transform& transform,
-                     gfx::PointF position,
-                     gfx::Size bounds) {
+                     const gfx::PointF& position,
+                     const gfx::Size& bounds) {
     SetBaseProperties(layer, transform, position, bounds);
 
     layer->SetContentBounds(layer->bounds());
@@ -1172,7 +1165,7 @@ class OcclusionTrackerTestSurfaceRotatedOffAxis
                                  typename Types::RenderSurfaceType> occlusion(
         gfx::Rect(0, 0, 1000, 1000));
 
-    gfx::Rect clipped_layer_in_child = MathUtil::MapClippedRect(
+    gfx::Rect clipped_layer_in_child = MathUtil::MapEnclosingClippedRect(
         layer_transform, layer->visible_content_rect());
 
     this->VisitLayer(layer, &occlusion);
@@ -1962,7 +1955,10 @@ class OcclusionTrackerTestUnsorted3dLayers
                                  gfx::PointF(50.f, 50.f),
                                  gfx::Size(100, 100),
                                  true);
-    parent->SetPreserves3d(true);
+    parent->SetShouldFlattenTransform(false);
+    parent->SetIs3dSorted(true);
+    child1->SetIs3dSorted(true);
+    child2->SetIs3dSorted(true);
 
     this->CalcDrawEtc(parent);
 
@@ -2006,8 +2002,11 @@ class OcclusionTrackerTestPerspectiveTransform
                                  gfx::PointF(100.f, 100.f),
                                  gfx::Size(200, 200),
                                  true);
-    container->SetPreserves3d(true);
-    layer->SetPreserves3d(true);
+    container->SetShouldFlattenTransform(false);
+    container->SetIs3dSorted(true);
+    layer->SetIs3dSorted(true);
+    layer->SetShouldFlattenTransform(false);
+
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType,
@@ -2025,7 +2024,6 @@ class OcclusionTrackerTestPerspectiveTransform
 // the occlusion tracker on the main thread. So this test should run on the impl
 // thread.
 IMPL_THREAD_TEST(OcclusionTrackerTestPerspectiveTransform);
-
 template <class Types>
 class OcclusionTrackerTestPerspectiveTransformBehindCamera
     : public OcclusionTrackerTest<Types> {
@@ -2050,8 +2048,10 @@ class OcclusionTrackerTestPerspectiveTransformBehindCamera
         parent, this->identity_matrix, gfx::PointF(), gfx::Size(500, 500));
     typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
         container, transform, gfx::PointF(), gfx::Size(500, 500), true);
-    container->SetPreserves3d(true);
-    layer->SetPreserves3d(true);
+    container->SetShouldFlattenTransform(false);
+    container->SetIs3dSorted(true);
+    layer->SetShouldFlattenTransform(false);
+    layer->SetIs3dSorted(true);
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType,
@@ -2092,8 +2092,10 @@ class OcclusionTrackerTestLayerBehindCameraDoesNotOcclude
         this->identity_matrix, gfx::PointF(), gfx::Size(100, 100));
     typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
         parent, transform, gfx::PointF(), gfx::Size(100, 100), true);
-    parent->SetPreserves3d(true);
-    layer->SetPreserves3d(true);
+    parent->SetShouldFlattenTransform(false);
+    parent->SetIs3dSorted(true);
+    layer->SetShouldFlattenTransform(false);
+    layer->SetIs3dSorted(true);
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType,
@@ -2132,8 +2134,10 @@ class OcclusionTrackerTestLargePixelsOccludeInsideClipRect
     parent->SetMasksToBounds(true);
     typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
         parent, transform, gfx::PointF(), gfx::Size(100, 100), true);
-    parent->SetPreserves3d(true);
-    layer->SetPreserves3d(true);
+    parent->SetShouldFlattenTransform(false);
+    parent->SetIs3dSorted(true);
+    layer->SetShouldFlattenTransform(false);
+    layer->SetIs3dSorted(true);
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType,

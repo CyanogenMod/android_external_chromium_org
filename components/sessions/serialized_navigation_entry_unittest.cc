@@ -33,7 +33,7 @@ const content::Referrer kReferrer =
     content::Referrer(GURL("http://www.referrer.com"),
                       blink::WebReferrerPolicyAlways);
 const GURL kVirtualURL("http://www.virtual-url.com");
-const base::string16 kTitle = ASCIIToUTF16("title");
+const base::string16 kTitle = base::ASCIIToUTF16("title");
 const content::PageState kPageState =
     content::PageState::CreateFromEncodedData("page state");
 const content::PageTransition kTransitionType =
@@ -46,7 +46,7 @@ const int64 kPostID = 100;
 const GURL kOriginalRequestURL("http://www.original-request.com");
 const bool kIsOverridingUserAgent = true;
 const base::Time kTimestamp = syncer::ProtoTimeToTime(100);
-const base::string16 kSearchTerms = ASCIIToUTF16("my search terms");
+const base::string16 kSearchTerms = base::ASCIIToUTF16("my search terms");
 const GURL kFaviconURL("http://virtual-url.com/favicon.ico");
 const int kHttpStatusCode = 404;
 
@@ -78,7 +78,8 @@ sync_pb::TabNavigation MakeSyncDataForTest() {
   sync_pb::TabNavigation sync_data;
   sync_data.set_virtual_url(kVirtualURL.spec());
   sync_data.set_referrer(kReferrer.url.spec());
-  sync_data.set_title(UTF16ToUTF8(kTitle));
+  sync_data.set_referrer_policy(blink::WebReferrerPolicyOrigin);
+  sync_data.set_title(base::UTF16ToUTF8(kTitle));
   sync_data.set_state(kPageState.ToEncodedData());
   sync_data.set_page_transition(
       sync_pb::SyncEnums_PageTransition_AUTO_SUBFRAME);
@@ -86,7 +87,7 @@ sync_pb::TabNavigation MakeSyncDataForTest() {
   sync_data.set_timestamp_msec(syncer::TimeToProtoTime(kTimestamp));
   sync_data.set_redirect_type(sync_pb::SyncEnums::CLIENT_REDIRECT);
   sync_data.set_navigation_home_page(true);
-  sync_data.set_search_terms(UTF16ToUTF8(kSearchTerms));
+  sync_data.set_search_terms(base::UTF16ToUTF8(kSearchTerms));
   sync_data.set_favicon_url(kFaviconURL.spec());
   sync_data.set_http_status_code(kHttpStatusCode);
   return sync_data;
@@ -153,7 +154,7 @@ TEST(SerializedNavigationEntryTest, FromSyncData) {
   EXPECT_EQ(kIndex, navigation.index());
   EXPECT_EQ(kUniqueID, navigation.unique_id());
   EXPECT_EQ(kReferrer.url, navigation.referrer().url);
-  EXPECT_EQ(blink::WebReferrerPolicyDefault, navigation.referrer().policy);
+  EXPECT_EQ(blink::WebReferrerPolicyOrigin, navigation.referrer().policy);
   EXPECT_EQ(kVirtualURL, navigation.virtual_url());
   EXPECT_EQ(kTitle, navigation.title());
   EXPECT_EQ(kPageState, navigation.page_state());
@@ -250,7 +251,7 @@ TEST(SerializedNavigationEntryTest, ToSyncData) {
 
   EXPECT_EQ(kVirtualURL.spec(), sync_data.virtual_url());
   EXPECT_EQ(kReferrer.url.spec(), sync_data.referrer());
-  EXPECT_EQ(kTitle, ASCIIToUTF16(sync_data.title()));
+  EXPECT_EQ(kTitle, base::ASCIIToUTF16(sync_data.title()));
   EXPECT_TRUE(sync_data.state().empty());
   EXPECT_EQ(sync_pb::SyncEnums_PageTransition_AUTO_SUBFRAME,
             sync_data.page_transition());
@@ -293,6 +294,40 @@ TEST(SerializedNavigationEntryTest, TransitionTypes) {
       EXPECT_EQ(transition, constructed_transition);
     }
   }
+}
+
+// Tests that the input data is sanitized when a SerializedNavigationEntry
+// is created from a pickle format.
+TEST(SerializedNavigationEntryTest, Sanitize) {
+  sync_pb::TabNavigation sync_data = MakeSyncDataForTest();
+
+  sync_data.set_referrer_policy(blink::WebReferrerPolicyNever);
+  content::PageState page_state =
+      content::PageState::CreateFromURL(kVirtualURL);
+  sync_data.set_state(page_state.ToEncodedData());
+
+  const SerializedNavigationEntry& navigation =
+      SerializedNavigationEntry::FromSyncData(kIndex, sync_data);
+
+  EXPECT_EQ(kIndex, navigation.index());
+  EXPECT_EQ(kUniqueID, navigation.unique_id());
+  EXPECT_EQ(GURL(), navigation.referrer().url);
+  EXPECT_EQ(blink::WebReferrerPolicyDefault, navigation.referrer().policy);
+  EXPECT_EQ(kVirtualURL, navigation.virtual_url());
+  EXPECT_EQ(kTitle, navigation.title());
+  EXPECT_EQ(page_state, navigation.page_state());
+  EXPECT_EQ(kTransitionType, navigation.transition_type());
+  EXPECT_FALSE(navigation.has_post_data());
+  EXPECT_EQ(-1, navigation.post_id());
+  EXPECT_EQ(GURL(), navigation.original_request_url());
+  EXPECT_FALSE(navigation.is_overriding_user_agent());
+  EXPECT_TRUE(navigation.timestamp().is_null());
+  EXPECT_EQ(kSearchTerms, navigation.search_terms());
+  EXPECT_EQ(kFaviconURL, navigation.favicon_url());
+  EXPECT_EQ(kHttpStatusCode, navigation.http_status_code());
+
+  content::PageState empty_state;
+  EXPECT_TRUE(empty_state.Equals(empty_state.RemoveReferrer()));
 }
 
 }  // namespace

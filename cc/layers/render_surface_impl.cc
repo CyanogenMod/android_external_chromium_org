@@ -53,18 +53,12 @@ gfx::RectF RenderSurfaceImpl::DrawableContentRect() const {
   return drawable_content_rect;
 }
 
-std::string RenderSurfaceImpl::Name() const {
-  return base::StringPrintf("RenderSurfaceImpl(id=%i,owner=%s)",
-                            owning_layer_->id(),
-                            owning_layer_->debug_name().data());
-}
-
 int RenderSurfaceImpl::OwningLayerId() const {
   return owning_layer_ ? owning_layer_->id() : 0;
 }
 
 
-void RenderSurfaceImpl::SetClipRect(gfx::Rect clip_rect) {
+void RenderSurfaceImpl::SetClipRect(const gfx::Rect& clip_rect) {
   if (clip_rect_ == clip_rect)
     return;
 
@@ -76,7 +70,7 @@ bool RenderSurfaceImpl::ContentsChanged() const {
   return !damage_tracker_->current_damage_rect().IsEmpty();
 }
 
-void RenderSurfaceImpl::SetContentRect(gfx::Rect content_rect) {
+void RenderSurfaceImpl::SetContentRect(const gfx::Rect& content_rect) {
   if (content_rect_ == content_rect)
     return;
 

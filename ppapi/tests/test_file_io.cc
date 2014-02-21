@@ -296,7 +296,8 @@ std::string TestFileIO::TestOpenDirectory() {
 
   // Make a directory.
   pp::FileRef dir_ref(file_system, "/test_dir_open_directory");
-  callback.WaitForResult(dir_ref.MakeDirectory(callback.GetCallback()));
+  callback.WaitForResult(dir_ref.MakeDirectory(
+      PP_MAKEDIRECTORYFLAG_NONE, callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
@@ -652,11 +653,11 @@ std::string TestFileIO::TestAbortCalls() {
     callback.WaitForResult(rv);
     CHECK_CALLBACK_BEHAVIOR(callback);
     if (callback_type() == PP_BLOCKING) {
-      ASSERT_EQ(callback.result(), PP_OK);
+      ASSERT_EQ(PP_OK, callback.result());
       // The operation completed synchronously, so |info| should have changed.
       ASSERT_NE(0, memcmp(&info_copy, &info, sizeof(info)));
     } else {
-      ASSERT_EQ(callback.result(), PP_ERROR_ABORTED);
+      ASSERT_EQ(PP_ERROR_ABORTED, callback.result());
       ASSERT_EQ(0, memcmp(&info_copy, &info, sizeof(info)));
     }
   }
@@ -696,7 +697,7 @@ std::string TestFileIO::TestAbortCalls() {
     if (callback_type() == PP_BLOCKING) {
       ASSERT_EQ(callback.result(), sizeof(buf));
     } else {
-      ASSERT_EQ(callback.result(), PP_ERROR_ABORTED);
+      ASSERT_EQ(PP_ERROR_ABORTED, callback.result());
       ASSERT_EQ(0, memcmp(&buf_copy, &buf, sizeof(buf)));
     }
   }
@@ -718,7 +719,7 @@ std::string TestFileIO::TestAbortCalls() {
     if (callback_type() == PP_BLOCKING)
       ASSERT_EQ(callback.result(), sizeof(buf));
     else
-      ASSERT_EQ(callback.result(), PP_ERROR_ABORTED);
+      ASSERT_EQ(PP_ERROR_ABORTED, callback.result());
   }
 
   // Abort |SetLength()|.

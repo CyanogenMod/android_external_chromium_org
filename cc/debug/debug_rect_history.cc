@@ -6,6 +6,7 @@
 
 #include "cc/base/math_util.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/layers/layer_utils.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/layer_tree_host.h"
@@ -111,9 +112,9 @@ void DebugRectHistory::SavePropertyChangedRects(
       if (layer->LayerPropertyChanged()) {
         debug_rects_.push_back(
             DebugRect(PROPERTY_CHANGED_RECT_TYPE,
-                      MathUtil::MapClippedRect(
+                      MathUtil::MapEnclosingClippedRect(
                           layer->screen_space_transform(),
-                          gfx::RectF(gfx::PointF(), layer->content_bounds()))));
+                          gfx::Rect(layer->content_bounds()))));
       }
     }
   }
@@ -237,18 +238,18 @@ void DebugRectHistory::SaveNonFastScrollableRectsCallback(LayerImpl* layer) {
 
 void DebugRectHistory::SaveLayerAnimationBoundsRects(
     const LayerImplList& render_surface_layer_list) {
-  typedef LayerIterator<LayerImpl,
-                        LayerImplList,
-                        RenderSurfaceImpl,
-                        LayerIteratorActions::FrontToBack> LayerIteratorType;
+  typedef LayerIterator<LayerImpl> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
   for (LayerIteratorType it =
            LayerIteratorType::Begin(&render_surface_layer_list);
        it != end; ++it) {
     if (!it.represents_itself())
       continue;
+
+    // TODO(avallee): Figure out if we should show something for a layer who's
+    // animating bounds but that we can't compute them.
     gfx::BoxF inflated_bounds;
-    if (!(*it)->GetAnimationBounds(&inflated_bounds))
+    if (!LayerUtils::GetAnimationBounds(**it, &inflated_bounds))
       continue;
 
     debug_rects_.push_back(DebugRect(ANIMATION_BOUNDS_RECT_TYPE,

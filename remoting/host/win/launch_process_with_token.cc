@@ -54,11 +54,12 @@ void CloseHandlesAndTerminateProcess(PROCESS_INFORMATION* process_information) {
 // Connects to the executor server corresponding to |session_id|.
 bool ConnectToExecutionServer(uint32 session_id,
                               base::win::ScopedHandle* pipe_out) {
-  string16 pipe_name;
+  base::string16 pipe_name;
 
   // Use winsta!WinStationQueryInformationW() to determine the process creation
   // pipe name for the session.
-  base::FilePath winsta_path(base::GetNativeLibraryName(UTF8ToUTF16("winsta")));
+  base::FilePath winsta_path(
+      base::GetNativeLibraryName(base::UTF8ToUTF16("winsta")));
   base::ScopedNativeLibrary winsta(winsta_path);
   if (winsta.is_valid()) {
     PWINSTATIONQUERYINFORMATIONW win_station_query_information =
@@ -80,7 +81,7 @@ bool ConnectToExecutionServer(uint32 session_id,
 
   // Use the default pipe name if we couldn't query its name.
   if (pipe_name.empty()) {
-    pipe_name = UTF8ToUTF16(
+    pipe_name = base::UTF8ToUTF16(
         base::StringPrintf(kCreateProcessDefaultPipeNameFormat, session_id));
   }
 
@@ -290,7 +291,7 @@ bool SendCreateProcessRequest(
     const base::FilePath::StringType& application_name,
     const CommandLine::StringType& command_line,
     DWORD creation_flags,
-    const char16* desktop_name) {
+    const base::char16* desktop_name) {
   // |CreateProcessRequest| structure passes the same parameters to
   // the execution server as CreateProcessAsUser() function does. Strings are
   // stored as wide strings immediately after the structure. String pointers are
@@ -313,7 +314,7 @@ bool SendCreateProcessRequest(
     PROCESS_INFORMATION process_information;
   };
 
-  string16 desktop;
+  base::string16 desktop;
   if (desktop_name)
     desktop = desktop_name;
 
@@ -373,7 +374,7 @@ bool CreateRemoteSessionProcess(
     const base::FilePath::StringType& application_name,
     const CommandLine::StringType& command_line,
     DWORD creation_flags,
-    const char16* desktop_name,
+    const base::char16* desktop_name,
     PROCESS_INFORMATION* process_information_out)
 {
   DCHECK_LT(base::win::GetVersion(), base::win::VERSION_VISTA);
@@ -456,7 +457,7 @@ bool LaunchProcessWithToken(const base::FilePath& binary,
                             SECURITY_ATTRIBUTES* thread_attributes,
                             bool inherit_handles,
                             DWORD creation_flags,
-                            const char16* desktop_name,
+                            const base::char16* desktop_name,
                             ScopedHandle* process_out,
                             ScopedHandle* thread_out) {
   base::FilePath::StringType application_name = binary.value();
@@ -465,7 +466,7 @@ bool LaunchProcessWithToken(const base::FilePath& binary,
   memset(&startup_info, 0, sizeof(startup_info));
   startup_info.cb = sizeof(startup_info);
   if (desktop_name)
-    startup_info.lpDesktop = const_cast<char16*>(desktop_name);
+    startup_info.lpDesktop = const_cast<base::char16*>(desktop_name);
 
   PROCESS_INFORMATION temp_process_info = {};
   BOOL result = CreateProcessAsUser(user_token,

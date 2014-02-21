@@ -103,8 +103,6 @@ class CommandBufferProxyImpl
       unsigned internalformat,
       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
-  virtual bool GenerateMailboxNames(unsigned num,
-                                    std::vector<gpu::Mailbox>* names) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
   virtual void SignalSyncPoint(uint32 sync_point,
                                const base::Closure& callback) OVERRIDE;
@@ -114,6 +112,7 @@ class CommandBufferProxyImpl
   virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
       OVERRIDE;
   virtual void Echo(const base::Closure& callback) OVERRIDE;
+  virtual uint32 CreateStreamTexture(uint32 texture_id) OVERRIDE;
 
   int GetRouteID() const;
   bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
@@ -126,13 +125,12 @@ class CommandBufferProxyImpl
   void AddDeletionObserver(DeletionObserver* observer);
   void RemoveDeletionObserver(DeletionObserver* observer);
 
-  bool DiscardBackbuffer();
   bool EnsureBackbuffer();
 
   void SetOnConsoleMessageCallback(
       const GpuConsoleMessageCallback& callback);
 
-  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
+  void SetLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
 
   // TODO(apatrick): this is a temporary optimization while skia is calling
   // ContentGLContext::MakeCurrent prior to every GL call. It saves returning 6
@@ -159,7 +157,6 @@ class CommandBufferProxyImpl
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
   void OnSetMemoryAllocation(const gpu::MemoryAllocation& allocation);
   void OnSignalSyncPointAck(uint32 id);
-  void OnGenerateMailboxNamesReply(const std::vector<std::string>& names);
 
   // Try to read an updated copy of the state from shared memory.
   void TryUpdateState();

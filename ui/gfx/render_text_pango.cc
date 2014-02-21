@@ -353,7 +353,7 @@ void RenderTextPango::SetupPangoAttributes(PangoLayout* layout) {
     const size_t italic_end = styles()[ITALIC].GetRange(italic).end();
     const size_t style_end = std::min(bold_end, italic_end);
     if (style != font_list().GetFontStyle()) {
-      FontList derived_font_list = font_list().DeriveFontList(style);
+      FontList derived_font_list = font_list().DeriveWithStyle(style);
       ScopedPangoFontDescription desc(pango_font_description_from_string(
           derived_font_list.GetFontDescriptionString().c_str()));
 
@@ -397,7 +397,25 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
           gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE;
   renderer.SetFontSmoothingSettings(
       render_params.antialiasing,
-      use_subpixel_rendering && !background_is_transparent());
+      use_subpixel_rendering && !background_is_transparent(),
+      render_params.subpixel_positioning);
+
+  SkPaint::Hinting skia_hinting = SkPaint::kNormal_Hinting;
+  switch (render_params.hinting) {
+    case gfx::FontRenderParams::HINTING_NONE:
+      skia_hinting = SkPaint::kNo_Hinting;
+      break;
+    case gfx::FontRenderParams::HINTING_SLIGHT:
+      skia_hinting = SkPaint::kSlight_Hinting;
+      break;
+    case gfx::FontRenderParams::HINTING_MEDIUM:
+      skia_hinting = SkPaint::kNormal_Hinting;
+      break;
+    case gfx::FontRenderParams::HINTING_FULL:
+      skia_hinting = SkPaint::kFull_Hinting;
+      break;
+  }
+  renderer.SetFontHinting(skia_hinting);
 
   // Temporarily apply composition underlines and selection colors.
   ApplyCompositionAndSelectionStyles();

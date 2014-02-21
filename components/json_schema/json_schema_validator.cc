@@ -14,7 +14,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "components/json_schema/json_schema_constants.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace schema = json_schema_constants;
 
@@ -163,7 +162,10 @@ bool IsValidSchema(const base::DictionaryValue* dict,
       return false;
     }
 
-    if (!it.value().IsType(entry->type)) {
+    // Integer can be converted to double.
+    if (!(it.value().IsType(entry->type) ||
+          (it.value().IsType(base::Value::TYPE_INTEGER) &&
+           entry->type == base::Value::TYPE_DOUBLE))) {
       *error = base::StringPrintf("Invalid value for %s attribute",
                                   it.key().c_str());
       return false;

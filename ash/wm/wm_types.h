@@ -5,6 +5,7 @@
 #ifndef ASH_WM_WM_TYPES_H_
 #define ASH_WM_WM_TYPES_H_
 
+#include "ash/ash_export.h"
 #include "ui/base/ui_base_types.h"
 
 namespace ash {
@@ -40,13 +41,57 @@ enum WindowShowType {
   SHOW_TYPE_AUTO_POSITIONED,
 };
 
+// Set of operations that can change the window's state.
+enum WMEvent {
+  // Following events are the request to become corresponding state.
+  // Note that this does not mean the window will be in corresponding
+  // state and the request may not be fullfilled.
+
+  // NORMAL is used as a restore operation with a few exceptions.
+  NORMAL,
+  MAXIMIZE,
+  MINIMIZE,
+  FULLSCREEN,
+  // TODO(oshima): Consolidate these two events.
+  SNAP_LEFT,
+  SNAP_RIGHT,
+
+  // Following events are compond events which may lead to different
+  // states depending on the current state.
+
+  // A user requested to toggle maximized state by double clicking window
+  // header.
+  TOGGLE_MAXIMIZE_CAPTION,
+
+  // A user requested to toggle maximized state using shortcut.
+  TOGGLE_MAXIMIZE,
+
+  // A user requested to toggle vertical maximize by double clicking
+  // top/bottom edge.
+  TOGGLE_VERTICAL_MAXIMIZE,
+
+  // A user requested to toggle horizontal maximize by double clicking
+  // left/right edge.
+  TOGGLE_HORIZONTAL_MAXIMIZE,
+
+  // A user requested to toggle fullscreen state.
+  TOGGLE_FULLSCREEN,
+
+  // TODO(oshima): Investigate if this can be removed from ash.
+  // Widget requested to show in inactive state.
+  SHOW_INACTIVE,
+};
+
 // Utility functions to convert WindowShowType <-> ui::WindowShowState.
 // Note: LEFT/RIGHT MAXIMIZED, AUTO_POSITIONED type will be lost when
 // converting to ui::WindowShowState.
-WindowShowType ToWindowShowType(ui::WindowShowState state);
-ui::WindowShowState ToWindowShowState(WindowShowType type);
+ASH_EXPORT WindowShowType ToWindowShowType(ui::WindowShowState state);
+ASH_EXPORT ui::WindowShowState ToWindowShowState(WindowShowType type);
 
-}  // namespace
-}  // namespace
+// Returns true if |type| is SHOW_TYPE_MAXIMIZED or SHOW_TYPE_FULLSCREEN.
+ASH_EXPORT bool IsMaximizedOrFullscreenWindowShowType(WindowShowType type);
+
+}  // namespace wm
+}  // namespace ash
 
 #endif  // ASH_WM_WM_TYPES_H_

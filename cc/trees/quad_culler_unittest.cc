@@ -30,7 +30,7 @@ namespace {
 class TestOcclusionTrackerImpl
     : public TestOcclusionTrackerBase<LayerImpl, RenderSurfaceImpl> {
  public:
-  TestOcclusionTrackerImpl(gfx::Rect scissor_rect_in_screen,
+  TestOcclusionTrackerImpl(const gfx::Rect& scissor_rect_in_screen,
                            bool record_metrics_for_frame = true)
       : TestOcclusionTrackerBase(scissor_rect_in_screen,
                                  record_metrics_for_frame) {}
@@ -39,10 +39,7 @@ class TestOcclusionTrackerImpl
   DISALLOW_COPY_AND_ASSIGN(TestOcclusionTrackerImpl);
 };
 
-typedef LayerIterator<LayerImpl,
-                      LayerImplList,
-                      RenderSurfaceImpl,
-                      LayerIteratorActions::FrontToBack> LayerIteratorType;
+typedef LayerIterator<LayerImpl> LayerIteratorType;
 
 class QuadCullerTest : public testing::Test {
  public:
@@ -52,10 +49,10 @@ class QuadCullerTest : public testing::Test {
 
   scoped_ptr<TiledLayerImpl> MakeLayer(TiledLayerImpl* parent,
                                        const gfx::Transform& draw_transform,
-                                       gfx::Rect layer_rect,
+                                       const gfx::Rect& layer_rect,
                                        float opacity,
                                        bool opaque,
-                                       gfx::Rect layer_opaque_rect,
+                                       const gfx::Rect& layer_opaque_rect,
                                        LayerImplList& surface_layer_list) {
     scoped_ptr<TiledLayerImpl> layer =
         TiledLayerImpl::Create(host_impl_.active_tree(), layer_id_++);
@@ -84,7 +81,7 @@ class QuadCullerTest : public testing::Test {
       }
     }
 
-    gfx::Rect rect_in_target = MathUtil::MapClippedRect(
+    gfx::Rect rect_in_target = MathUtil::MapEnclosingClippedRect(
         layer->draw_transform(), layer->visible_content_rect());
     if (!parent) {
       layer->CreateRenderSurface();
@@ -94,7 +91,7 @@ class QuadCullerTest : public testing::Test {
     } else {
       layer->draw_properties().render_target = parent->render_target();
       parent->render_surface()->layer_list().push_back(layer.get());
-      rect_in_target.Union(MathUtil::MapClippedRect(
+      rect_in_target.Union(MathUtil::MapEnclosingClippedRect(
           parent->draw_transform(), parent->visible_content_rect()));
       parent->render_surface()->SetContentRect(rect_in_target);
     }

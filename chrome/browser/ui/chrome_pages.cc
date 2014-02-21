@@ -37,7 +37,7 @@
 #include "chromeos/chromeos_switches.h"
 #endif
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace chrome {
 namespace {
@@ -76,7 +76,6 @@ void ShowHelpImpl(Browser* browser,
 #if defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD)
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(chromeos::switches::kDisableGeniusApp)) {
-    Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
     const extensions::Extension* extension = profile->GetExtensionService()->
         GetInstalledExtension(genius_app::kGeniusAppId);
     OpenApplication(
@@ -277,16 +276,6 @@ void ShowBrowserSignin(Browser* browser, signin::Source source) {
                            GURL(signin::GetPromoURL(source, false)));
     DCHECK_GT(browser->tab_strip_model()->count(), 0);
   }
-}
-
-void ShowGaiaSignin(Browser* browser,
-                    const std::string& service,
-                    const GURL& continue_url) {
-  GURL url(GaiaUrls::GetInstance()->service_login_url());
-  url = net::AppendQueryParameter(url, "service", service);
-  if (continue_url.is_valid())
-    url = net::AppendQueryParameter(url, "continue", continue_url.spec());
-  NavigateToSingletonTab(browser, url);
 }
 
 }  // namespace chrome

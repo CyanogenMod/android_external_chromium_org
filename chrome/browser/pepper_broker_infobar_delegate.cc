@@ -24,10 +24,6 @@
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(GOOGLE_TV)
-#include "base/android/context_types.h"
-#endif
-
 
 // static
 void PepperBrokerInfoBarDelegate::Create(
@@ -46,44 +42,6 @@ void PepperBrokerInfoBarDelegate::Create(
   TabSpecificContentSettings* tab_content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents);
 
-#if defined(OS_CHROMEOS)
-  // On ChromeOS, we're ok with granting broker access to the Netflix and
-  // Widevine plugins, since they can only come installed with the OS.
-  const char kWidevinePluginFileName[] = "libwidevinecdmadapter.so";
-  const char kNetflixDomain[] = "netflix.com";
-
-  base::FilePath plugin_file_name = plugin_path.BaseName();
-  if (plugin_file_name.value() == FILE_PATH_LITERAL(kWidevinePluginFileName) &&
-      url.DomainIs(kNetflixDomain)) {
-    tab_content_settings->SetPepperBrokerAllowed(true);
-    callback.Run(true);
-    return;
-  }
-#endif
-
-#if defined(GOOGLE_TV)
-  // On GoogleTV, Netflix crypto/mdx plugin and DRM server adapter plugin can
-  // only come pre-installed with the OS, so we're willing to auto-grant access
-  // to them. PluginRootName should be matched with PEPPER_PLUGIN_ROOT
-  // in PepperPluginManager.java.
-  const char kPluginRootName[] = "/system/lib/pepperplugin";
-  const char kNetflixCryptoPluginFileName[] = "libnrddpicrypto.so";
-  const char kNetflixMdxPluginFileName[] = "libnrdmdx.so";
-  const char kDrmServerAdapterPluginFileName[] = "libdrmserveradapter.so";
-  base::FilePath::StringType plugin_dir_name = plugin_path.DirName().value();
-  base::FilePath::StringType plugin_file_name = plugin_path.BaseName().value();
-  if (base::android::IsRunningInWebapp() &&
-      plugin_dir_name == FILE_PATH_LITERAL(kPluginRootName) &&
-      (plugin_file_name == FILE_PATH_LITERAL(kNetflixCryptoPluginFileName) ||
-       plugin_file_name == FILE_PATH_LITERAL(kNetflixMdxPluginFileName) ||
-       plugin_file_name ==
-          FILE_PATH_LITERAL(kDrmServerAdapterPluginFileName))) {
-    tab_content_settings->SetPepperBrokerAllowed(true);
-    callback.Run(true);
-    return;
-  }
-#endif
-
   HostContentSettingsMap* content_settings =
       profile->GetHostContentSettingsMap();
   ContentSetting setting =
@@ -93,7 +51,7 @@ void PepperBrokerInfoBarDelegate::Create(
 
   if (setting == CONTENT_SETTING_ASK) {
     content::RecordAction(
-        content::UserMetricsAction("PPAPI.BrokerInfobarDisplayed"));
+        base::UserMetricsAction("PPAPI.BrokerInfobarDisplayed"));
     InfoBarService* infobar_service =
         InfoBarService::FromWebContents(web_contents);
     infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
@@ -106,8 +64,8 @@ void PepperBrokerInfoBarDelegate::Create(
 
   bool allowed = (setting == CONTENT_SETTING_ALLOW);
   content::RecordAction(allowed ?
-      content::UserMetricsAction("PPAPI.BrokerSettingAllow") :
-      content::UserMetricsAction("PPAPI.BrokerSettingDeny"));
+      base::UserMetricsAction("PPAPI.BrokerSettingAllow") :
+      base::UserMetricsAction("PPAPI.BrokerSettingDeny"));
   tab_content_settings->SetPepperBrokerAllowed(allowed);
   callback.Run(allowed);
 }
@@ -137,7 +95,7 @@ int PepperBrokerInfoBarDelegate::GetIconID() const {
   return IDR_INFOBAR_PLUGIN_INSTALL;
 }
 
-string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
+base::string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
   content::PluginService* plugin_service =
       content::PluginService::GetInstance();
   content::WebPluginInfo plugin;
@@ -151,7 +109,7 @@ string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
                                                    languages_));
 }
 
-string16 PepperBrokerInfoBarDelegate::GetButtonLabel(
+base::string16 PepperBrokerInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_PEPPER_BROKER_ALLOW_BUTTON : IDS_PEPPER_BROKER_DENY_BUTTON);
@@ -167,7 +125,7 @@ bool PepperBrokerInfoBarDelegate::Cancel() {
   return true;
 }
 
-string16 PepperBrokerInfoBarDelegate::GetLinkText() const {
+base::string16 PepperBrokerInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
@@ -183,8 +141,8 @@ bool PepperBrokerInfoBarDelegate::LinkClicked(
 
 void PepperBrokerInfoBarDelegate::DispatchCallback(bool result) {
   content::RecordAction(result ?
-      content::UserMetricsAction("PPAPI.BrokerInfobarClickedAllow") :
-      content::UserMetricsAction("PPAPI.BrokerInfobarClickedDeny"));
+      base::UserMetricsAction("PPAPI.BrokerInfobarClickedAllow") :
+      base::UserMetricsAction("PPAPI.BrokerInfobarClickedDeny"));
   callback_.Run(result);
   callback_ = base::Callback<void(bool)>();
   content_settings_->SetContentSetting(

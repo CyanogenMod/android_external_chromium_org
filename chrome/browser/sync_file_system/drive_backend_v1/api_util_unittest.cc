@@ -12,9 +12,9 @@
 #include "base/values.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_uploader.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_service_helper.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_uploader.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/drive/drive_api_parser.h"
@@ -63,7 +63,8 @@ class APIUtilTest : public testing::Test {
     fake_drive_uploader_ = new FakeDriveUploader(fake_drive_service_);
 
     fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_, fake_drive_uploader_));
+        fake_drive_service_, fake_drive_uploader_,
+        APIUtil::GetSyncRootDirectoryName()));
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     api_util_ = APIUtil::CreateForTesting(

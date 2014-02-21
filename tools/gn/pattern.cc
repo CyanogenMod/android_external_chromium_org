@@ -20,7 +20,7 @@ const char kPattern_Help[] =
     "  Everything else is a literal.\n"
     "\n"
     "   * Matches zero or more of any character. It does not depend on the\n"
-    "     preceeding character (in regular expression parlance it is\n"
+    "     preceding character (in regular expression parlance it is\n"
     "     equivalent to \".*\").\n"
     "\n"
     "  \\b Matches a path boundary. This will match the beginning or end of\n"
@@ -186,6 +186,10 @@ PatternList::PatternList() {
 }
 
 PatternList::~PatternList() {
+}
+
+void PatternList::Append(const Pattern& pattern) {
+  patterns_.push_back(pattern);
 }
 
 void PatternList::SetFromValue(const Value& v, Err* err) {

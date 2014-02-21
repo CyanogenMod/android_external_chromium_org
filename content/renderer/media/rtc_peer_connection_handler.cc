@@ -14,7 +14,9 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
+#include "content/renderer/media/media_stream_audio_source.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
+#include "content/renderer/media/media_stream_track_extra_data.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/remote_media_stream_impl.h"
 #include "content/renderer/media/rtc_data_channel_handler.h"
@@ -121,7 +123,8 @@ CreateWebKitSessionDescription(
     return description;
   }
 
-  description.initialize(UTF8ToUTF16(native_desc->type()), UTF8ToUTF16(sdp));
+  description.initialize(base::UTF8ToUTF16(native_desc->type()),
+                         base::UTF8ToUTF16(sdp));
   return description;
 }
 
@@ -136,8 +139,8 @@ static void GetNativeIceServers(
     webrtc::PeerConnectionInterface::IceServer server;
     const blink::WebRTCICEServer& webkit_server =
         server_configuration.server(i);
-    server.username = UTF16ToUTF8(webkit_server.username());
-    server.password = UTF16ToUTF8(webkit_server.credential());
+    server.username = base::UTF16ToUTF8(webkit_server.username());
+    server.password = base::UTF16ToUTF8(webkit_server.credential());
     server.uri = webkit_server.uri().spec();
     servers->push_back(server);
   }
@@ -188,7 +191,7 @@ class CreateSessionDescriptionRequest
   }
   virtual void OnFailure(const std::string& error) OVERRIDE {
     tracker_.TrackOnFailure(error);
-    webkit_request_.requestFailed(UTF8ToUTF16(error));
+    webkit_request_.requestFailed(base::UTF8ToUTF16(error));
   }
 
  protected:
@@ -216,7 +219,7 @@ class SetSessionDescriptionRequest
   }
   virtual void OnFailure(const std::string& error) OVERRIDE {
     tracker_.TrackOnFailure(error);
-    webkit_request_.requestFailed(UTF8ToUTF16(error));
+    webkit_request_.requestFailed(base::UTF8ToUTF16(error));
   }
 
  protected:
@@ -507,9 +510,9 @@ bool RTCPeerConnectionHandler::addICECandidate(
     const blink::WebRTCICECandidate& candidate) {
   scoped_ptr<webrtc::IceCandidateInterface> native_candidate(
       dependency_factory_->CreateIceCandidate(
-          UTF16ToUTF8(candidate.sdpMid()),
+          base::UTF16ToUTF8(candidate.sdpMid()),
           candidate.sdpMLineIndex(),
-          UTF16ToUTF8(candidate.candidate())));
+          base::UTF16ToUTF8(candidate.candidate())));
   if (!native_candidate) {
     LOG(ERROR) << "Could not create native ICE candidate.";
     return false;
@@ -532,7 +535,7 @@ void RTCPeerConnectionHandler::OnaddICECandidateResult(
     // We don't have the actual error code from the libjingle, so for now
     // using a generic error string.
     return webkit_request.requestFailed(
-        UTF8ToUTF16("Error processing ICE candidate"));
+        base::UTF8ToUTF16("Error processing ICE candidate"));
   }
 
   return webkit_request.requestSucceeded();
@@ -548,13 +551,28 @@ bool RTCPeerConnectionHandler::addStream(
         this, stream, PeerConnectionTracker::SOURCE_LOCAL);
 
   // A media stream is connected to a peer connection, enable the
-  // peer connection mode for the capturer.
-  WebRtcAudioDeviceImpl* audio_device =
-      dependency_factory_->GetWebRtcAudioDevice();
-  if (audio_device) {
-    WebRtcAudioCapturer* capturer = audio_device->GetDefaultCapturer();
-    if (capturer)
-      capturer->EnablePeerConnectionMode();
+  // peer connection mode for the sources.
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
+  stream.audioTracks(audio_tracks);
+  for (size_t i = 0; i < audio_tracks.size(); ++i) {
+    MediaStreamTrackExtraData* extra_data =
+        static_cast<MediaStreamTrackExtraData*>(audio_tracks[i].extraData());
+    if (!extra_data->is_local_track()) {
+      // We don't support connecting remote audio tracks to PeerConnection yet.
+      // See issue http://crbug/344303.
+      // TODO(xians): Remove this after we support connecting remote audio track
+      // to PeerConnection.
+      DLOG(ERROR) << "addStream() failed because we don't support connecting"
+                  << " remote audio track to PeerConnection";
+      return false;
+    }
+
+    // This is a local audio track.
+    const blink::WebMediaStreamSource& source = audio_tracks[i].source();
+    MediaStreamAudioSource* audio_source =
+        static_cast<MediaStreamAudioSource*>(source.extraData());
+    if (audio_source && audio_source->GetAudioCapturer())
+      audio_source->GetAudioCapturer()->EnablePeerConnectionMode();
   }
 
   return AddStream(stream, &constraints);
@@ -590,13 +608,16 @@ void RTCPeerConnectionHandler::getStats(LocalRTCStatsRequest* request) {
       return;
     }
   }
-  GetStats(observer, track);
+  GetStats(observer,
+           track,
+           webrtc::PeerConnectionInterface::kStatsOutputLevelStandard);
 }
 
 void RTCPeerConnectionHandler::GetStats(
     webrtc::StatsObserver* observer,
-    webrtc::MediaStreamTrackInterface* track) {
-  if (!native_peer_connection_->GetStats(observer, track)) {
+    webrtc::MediaStreamTrackInterface* track,
+    webrtc::PeerConnectionInterface::StatsOutputLevel level) {
+  if (!native_peer_connection_->GetStats(observer, track, level)) {
     DVLOG(1) << "GetStats failed.";
     // TODO(hta): Consider how to get an error back.
     std::vector<webrtc::StatsReport> no_reports;
@@ -607,7 +628,7 @@ void RTCPeerConnectionHandler::GetStats(
 
 blink::WebRTCDataChannelHandler* RTCPeerConnectionHandler::createDataChannel(
     const blink::WebString& label, const blink::WebRTCDataChannelInit& init) {
-  DVLOG(1) << "createDataChannel label " << UTF16ToUTF8(label);
+  DVLOG(1) << "createDataChannel label " << base::UTF16ToUTF8(label);
 
   webrtc::DataChannelInit config;
   // TODO(jiayl): remove the deprecated reliable field once Libjingle is updated
@@ -618,10 +639,11 @@ blink::WebRTCDataChannelHandler* RTCPeerConnectionHandler::createDataChannel(
   config.negotiated = init.negotiated;
   config.maxRetransmits = init.maxRetransmits;
   config.maxRetransmitTime = init.maxRetransmitTime;
-  config.protocol = UTF16ToUTF8(init.protocol);
+  config.protocol = base::UTF16ToUTF8(init.protocol);
 
   talk_base::scoped_refptr<webrtc::DataChannelInterface> webrtc_channel(
-      native_peer_connection_->CreateDataChannel(UTF16ToUTF8(label), &config));
+      native_peer_connection_->CreateDataChannel(base::UTF16ToUTF8(label),
+                                                 &config));
   if (!webrtc_channel) {
     DLOG(ERROR) << "Could not create native data channel.";
     return NULL;
@@ -756,8 +778,8 @@ void RTCPeerConnectionHandler::OnIceCandidate(
     return;
   }
   blink::WebRTCICECandidate web_candidate;
-  web_candidate.initialize(UTF8ToUTF16(sdp),
-                           UTF8ToUTF16(candidate->sdp_mid()),
+  web_candidate.initialize(base::UTF8ToUTF16(sdp),
+                           base::UTF8ToUTF16(candidate->sdp_mid()),
                            candidate->sdp_mline_index());
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackAddIceCandidate(
@@ -791,8 +813,8 @@ webrtc::SessionDescriptionInterface*
 RTCPeerConnectionHandler::CreateNativeSessionDescription(
     const blink::WebRTCSessionDescription& description,
     webrtc::SdpParseError* error) {
-  std::string sdp = UTF16ToUTF8(description.sdp());
-  std::string type = UTF16ToUTF8(description.type());
+  std::string sdp = base::UTF16ToUTF8(description.sdp());
+  std::string type = base::UTF16ToUTF8(description.type());
   webrtc::SessionDescriptionInterface* native_desc =
       dependency_factory_->CreateSessionDescription(type, sdp, error);
 

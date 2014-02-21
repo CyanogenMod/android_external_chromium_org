@@ -10,31 +10,52 @@
 <include src="instant_iframe_validation.js">
 
 /**
- * Enum for the different types of events that are logged from the NTP.
+ * The different types of events that are logged from the NTP.  This enum is
+ * used to transfer information from the NTP javascript to the renderer and is
+ * not used as a UMA enum histogram's logged value.
+ * Note: Keep in sync with common/ntp_logging_events.h
  * @enum {number}
  * @const
  */
 var NTP_LOGGING_EVENT_TYPE = {
-  // The user moused over an NTP tile or title.
-  NTP_MOUSEOVER: 0,
-  // The page attempted to load a thumbnail image.
-  NTP_THUMBNAIL_ATTEMPT: 1,
+  // The suggestion is coming from the server.
+  NTP_SERVER_SIDE_SUGGESTION: 0,
+  // The suggestion is coming from the client.
+  NTP_CLIENT_SIDE_SUGGESTION: 1,
+  // Indicates a tile was rendered, no matter if it's a thumbnail, a gray tile
+  // or an external tile.
+  NTP_TILE: 2,
+  // The tile uses a local thumbnail image.
+  NTP_THUMBNAIL_TILE: 3,
+  // Used when no thumbnail is specified and a gray tile with the domain is used
+  // as the main tile.
+  NTP_GRAY_TILE: 4,
+  // The visuals of that tile are handled externally by the page itself.
+  NTP_EXTERNAL_TILE: 5,
   // There was an error in loading both the thumbnail image and the fallback
   // (if it was provided), resulting in a grey tile.
-  NTP_THUMBNAIL_ERROR: 2,
-  // The page attempted to load a thumbnail URL while a fallback thumbnail was
-  // provided.
-  NTP_FALLBACK_THUMBNAIL_REQUESTED: 3,
-  // The primary thumbnail image failed to load and caused us to use the
-  // secondary thumbnail as a fallback.
-  NTP_FALLBACK_THUMBNAIL_USED: 4,
-  // The suggestion is coming from the server.
-  NTP_SERVER_SIDE_SUGGESTION: 5,
-  // The suggestion is coming from the client.
-  NTP_CLIENT_SIDE_SUGGESTION: 6,
-  // The visuals of that tile are handled externally by the page itself.
-  NTP_EXTERNAL_TILE: 7
+  NTP_THUMBNAIL_ERROR: 6,
+  // Used a gray tile with the domain as the fallback for a failed thumbnail.
+  NTP_GRAY_TILE_FALLBACK: 7,
+  // The visuals of that tile's fallback are handled externally.
+  NTP_EXTERNAL_TILE_FALLBACK: 8,
+  // The user moused over an NTP tile or title.
+  NTP_MOUSEOVER: 9
 };
+
+/**
+ * Type of the impression provider for a generic client-provided suggestion.
+ * @type {string}
+ * @const
+ */
+var CLIENT_PROVIDER_NAME = 'client';
+
+/**
+ * Type of the impression provider for a generic server-provided suggestion.
+ * @type {string}
+ * @const
+ */
+var SERVER_PROVIDER_NAME = 'server';
 
 /**
  * Parses query parameters from Location.
@@ -70,9 +91,12 @@ function parseQueryParams(location) {
  * @param {string|undefined} ping If specified, a location relative to the
  *     referrer of this iframe, to ping when the link is clicked. Only works if
  *     the referrer is HTTPS.
+ * @param {string|undefined} provider A provider name (max 8 alphanumeric
+ *     characters) used for logging. Undefined if suggestion is not coming from
+ *     the server.
  * @return {HTMLAnchorElement} A new link element.
  */
-function createMostVisitedLink(params, href, title, text, ping) {
+function createMostVisitedLink(params, href, title, text, ping, provider) {
   var styles = getMostVisitedStyles(params, !!text);
   var link = document.createElement('a');
   link.style.color = styles.color;
@@ -82,6 +106,8 @@ function createMostVisitedLink(params, href, title, text, ping) {
   link.href = href;
   if ('pos' in params && isFinite(params.pos)) {
     link.ping = '/log.html?pos=' + params.pos;
+    if (provider)
+      link.ping += '&pr=' + provider;
     // If a ping parameter was specified, add it to the list of pings, relative
     // to the referrer of this iframe, which is the default search provider.
     if (ping) {
@@ -157,11 +183,12 @@ function fillMostVisited(location, fill) {
     // Means that the suggestion data comes from the server. Create data object.
     data.url = params.url;
     data.thumbnailUrl = params.tu || '';
-    data.thumbnailUrl2 = params.tu2 || '';
     data.title = params.ti || '';
     data.direction = params.di || '';
     data.domain = params.dom || '';
     data.ping = params.ping || '';
+    data.provider = params.pr || SERVER_PROVIDER_NAME;
+
     // Log the fact that suggestion was obtained from the server.
     var ntpApiHandle = chrome.embeddedSearch.newTabPage;
     ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_SERVER_SIDE_SUGGESTION);
@@ -170,11 +197,12 @@ function fillMostVisited(location, fill) {
     data = apiHandle.getMostVisitedItemData(params.rid);
     if (!data)
       return;
+    data.provider = CLIENT_PROVIDER_NAME;
     delete data.ping;
   }
   if (/^javascript:/i.test(data.url) ||
       /^javascript:/i.test(data.thumbnailUrl) ||
-      /^javascript:/i.test(data.thumbnailUrl2))
+      !/^[a-z0-9]{0,8}$/i.test(data.provider))
     return;
   if (data.direction)
     document.body.dir = data.direction;

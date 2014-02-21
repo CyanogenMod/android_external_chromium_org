@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -657,9 +657,6 @@ void GLES2GetProgramInfoCHROMIUM(
 GLuint GLES2CreateStreamTextureCHROMIUM(GLuint texture) {
   return gles2::GetGLContext()->CreateStreamTextureCHROMIUM(texture);
 }
-void GLES2DestroyStreamTextureCHROMIUM(GLuint texture) {
-  gles2::GetGLContext()->DestroyStreamTextureCHROMIUM(texture);
-}
 GLuint GLES2CreateImageCHROMIUM(
     GLsizei width, GLsizei height, GLenum internalformat) {
   return gles2::GetGLContext()->CreateImageCHROMIUM(
@@ -763,6 +760,9 @@ void GLES2WaitSyncPointCHROMIUM(GLuint sync_point) {
 }
 void GLES2DrawBuffersEXT(GLsizei count, const GLenum* bufs) {
   gles2::GetGLContext()->DrawBuffersEXT(count, bufs);
+}
+void GLES2DiscardBackbufferCHROMIUM() {
+  gles2::GetGLContext()->DiscardBackbufferCHROMIUM();
 }
 
 namespace gles2 {
@@ -1067,8 +1067,6 @@ extern const NameToFunc g_gles2_function_table[] = {
       glGetProgramInfoCHROMIUM), },
   { "glCreateStreamTextureCHROMIUM", reinterpret_cast<GLES2FunctionPointer>(
       glCreateStreamTextureCHROMIUM), },
-  { "glDestroyStreamTextureCHROMIUM", reinterpret_cast<GLES2FunctionPointer>(
-      glDestroyStreamTextureCHROMIUM), },
   { "glCreateImageCHROMIUM", reinterpret_cast<GLES2FunctionPointer>(
       glCreateImageCHROMIUM), },
   { "glDestroyImageCHROMIUM", reinterpret_cast<GLES2FunctionPointer>(
@@ -1121,6 +1119,8 @@ extern const NameToFunc g_gles2_function_table[] = {
       glWaitSyncPointCHROMIUM), },
   { "glDrawBuffersEXT", reinterpret_cast<GLES2FunctionPointer>(
       glDrawBuffersEXT), },
+  { "glDiscardBackbufferCHROMIUM", reinterpret_cast<GLES2FunctionPointer>(
+      glDiscardBackbufferCHROMIUM), },
   { NULL, NULL, },
 };
 

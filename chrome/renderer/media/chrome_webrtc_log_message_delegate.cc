@@ -13,6 +13,7 @@ ChromeWebRtcLogMessageDelegate::ChromeWebRtcLogMessageDelegate(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop,
     WebRtcLoggingMessageFilter* message_filter)
     : io_message_loop_(io_message_loop),
+      logging_started_(false),
       message_filter_(message_filter) {
   content::InitWebRtcLoggingDelegate(this);
 }
@@ -22,19 +23,35 @@ ChromeWebRtcLogMessageDelegate::~ChromeWebRtcLogMessageDelegate() {
 }
 
 void ChromeWebRtcLogMessageDelegate::LogMessage(const std::string& message) {
-  if (!CalledOnValidThread()) {
-    io_message_loop_->PostTask(
-        FROM_HERE, base::Bind(
-            &ChromeWebRtcLogMessageDelegate::LogMessage,
-            base::Unretained(this),
-            message));
-    return;
-  }
+  io_message_loop_->PostTask(
+      FROM_HERE, base::Bind(
+          &ChromeWebRtcLogMessageDelegate::LogMessageOnIOThread,
+          base::Unretained(this),
+          message));
+}
 
-  if (circular_buffer_) {
-    circular_buffer_->Write(message.c_str(), message.length());
-    const char eol = '\n';
-    circular_buffer_->Write(&eol, 1);
+void ChromeWebRtcLogMessageDelegate::LogMessageOnIOThread(
+    const std::string& message) {
+  DCHECK(CalledOnValidThread());
+  if (logging_started_ && message_filter_) {
+    if (!log_buffer_.empty()) {
+      // A delayed task has already been posted for sending the buffer contents.
+      // Just add the message to the buffer.
+      log_buffer_ += "\n" + message;
+    } else {
+      if (base::TimeTicks::Now() - last_log_buffer_send_ >
+          base::TimeDelta::FromMilliseconds(100)) {
+        log_buffer_ = message;
+        SendLogBuffer();
+      } else {
+        log_buffer_ = message;
+        io_message_loop_->PostDelayedTask(
+            FROM_HERE,
+            base::Bind(&ChromeWebRtcLogMessageDelegate::SendLogBuffer,
+                       base::Unretained(this)),
+            base::TimeDelta::FromMilliseconds(200));
+      }
+    }
   }
 }
 
@@ -43,29 +60,26 @@ void ChromeWebRtcLogMessageDelegate::OnFilterRemoved() {
   message_filter_ = NULL;
 }
 
-void ChromeWebRtcLogMessageDelegate::OnStartLogging(
-    base::SharedMemoryHandle handle,
-    uint32 length) {
+void ChromeWebRtcLogMessageDelegate::OnStartLogging() {
   DCHECK(CalledOnValidThread());
-  DCHECK(!shared_memory_ && !circular_buffer_);
-
-  shared_memory_.reset(new base::SharedMemory(handle, false));
-  CHECK(shared_memory_->Map(length));
-  circular_buffer_.reset(
-      new PartialCircularBuffer(shared_memory_->memory(),
-                                length,
-                                length / 2,
-                                true));
-
+  logging_started_ = true;
   content::InitWebRtcLogging();
 }
 
 void ChromeWebRtcLogMessageDelegate::OnStopLogging() {
   DCHECK(CalledOnValidThread());
-  DCHECK(shared_memory_ && circular_buffer_);
-
-  circular_buffer_.reset(NULL);
-  shared_memory_.reset(NULL);
+  if (!log_buffer_.empty())
+    SendLogBuffer();
   if (message_filter_)
     message_filter_->LoggingStopped();
+  logging_started_ = false;
+}
+
+void ChromeWebRtcLogMessageDelegate::SendLogBuffer() {
+  DCHECK(CalledOnValidThread());
+  if (logging_started_ && message_filter_) {
+    message_filter_->AddLogMessage(log_buffer_);
+    last_log_buffer_send_ = base::TimeTicks::Now();
+  }
+  log_buffer_.clear();
 }

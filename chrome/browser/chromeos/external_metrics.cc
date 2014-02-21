@@ -32,8 +32,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace chromeos {
 
@@ -95,7 +95,7 @@ void SetupProgressiveScanFieldTrial() {
             << "' ('" << group_char << "') for "
             << name_of_experiment << " field trial";
   } else {
-    LOG(ERROR) << "Couldn't write to " << group_file_path.value();
+    VLOG(1) << "Couldn't write to " << group_file_path.value();
   }
 }
 

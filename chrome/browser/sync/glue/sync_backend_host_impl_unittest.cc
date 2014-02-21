@@ -16,10 +16,10 @@
 #include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/sync/glue/device_info.h"
-#include "chrome/browser/sync/glue/sync_frontend.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/sync_driver/sync_frontend.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -72,7 +72,6 @@ class MockSyncFrontend : public SyncFrontend {
   MOCK_METHOD0(OnSyncCycleCompleted, void());
   MOCK_METHOD1(OnConnectionStatusChange,
                void(syncer::ConnectionStatus status));
-  MOCK_METHOD0(OnStopSyncingPermanently, void());
   MOCK_METHOD0(OnClearServerDataSucceeded, void());
   MOCK_METHOD0(OnClearServerDataFailed, void());
   MOCK_METHOD2(OnPassphraseRequired,

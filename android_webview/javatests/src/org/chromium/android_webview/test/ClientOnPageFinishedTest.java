@@ -7,11 +7,11 @@ package org.chromium.android_webview.test;
 import android.test.suitebuilder.annotation.MediumTest;
 
 import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.test.util.CommonResources;
+import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.net.test.util.TestWebServer;
-
-import java.util.concurrent.TimeUnit;
 
 /**
  * Tests for the ContentViewClient.onPageFinished() method.
@@ -24,7 +24,11 @@ public class ClientOnPageFinishedTest extends AwTestBase {
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        mContentsClient = new TestAwContentsClient();
+        setTestAwContentsClient(new TestAwContentsClient());
+    }
+
+    private void setTestAwContentsClient(TestAwContentsClient contentsClient) throws Exception {
+        mContentsClient = contentsClient;
         final AwTestContainerView testContainerView =
                 createAwTestContainerViewOnMainSync(mContentsClient);
         mAwContents = testContainerView.getAwContents();
@@ -47,27 +51,79 @@ public class ClientOnPageFinishedTest extends AwTestBase {
     @MediumTest
     @Feature({"AndroidWebView"})
     public void testOnPageFinishedCalledAfterError() throws Throwable {
+        setTestAwContentsClient(new TestAwContentsClient() {
+            private boolean isOnReceivedErrorCalled = false;
+            private boolean isOnPageFinishedCalled = false;
+
+            @Override
+            public void onReceivedError(int errorCode, String description, String failingUrl) {
+                isOnReceivedErrorCalled = true;
+                // Make sure onReceivedError is called before onPageFinished
+                assertEquals(false, isOnPageFinishedCalled);
+                super.onReceivedError(errorCode, description, failingUrl);
+            }
+
+            @Override
+            public void onPageFinished(String url) {
+                isOnPageFinishedCalled = true;
+                // Make sure onReceivedError is called before onPageFinished
+                assertEquals(true, isOnReceivedErrorCalled);
+                super.onPageFinished(url);
+            }
+        });
+
         TestCallbackHelperContainer.OnReceivedErrorHelper onReceivedErrorHelper =
                 mContentsClient.getOnReceivedErrorHelper();
         TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
                 mContentsClient.getOnPageFinishedHelper();
 
-        assertEquals(0, onReceivedErrorHelper.getCallCount());
-
-        String url = "http://localhost:7/non_existent";
+        String invalidUrl = "http://localhost:7/non_existent";
         int onReceivedErrorCallCount = onReceivedErrorHelper.getCallCount();
         int onPageFinishedCallCount = onPageFinishedHelper.getCallCount();
-        loadUrlAsync(mAwContents, url);
+        loadUrlSync(mAwContents, onPageFinishedHelper, invalidUrl);
 
-        onReceivedErrorHelper.waitForCallback(onReceivedErrorCallCount,
-                                              1 /* numberOfCallsToWaitFor */,
-                                              WAIT_TIMEOUT_SECONDS,
-                                              TimeUnit.SECONDS);
-        onPageFinishedHelper.waitForCallback(onPageFinishedCallCount,
-                                              1 /* numberOfCallsToWaitFor */,
-                                              WAIT_TIMEOUT_SECONDS,
-                                              TimeUnit.SECONDS);
-        assertEquals(1, onReceivedErrorHelper.getCallCount());
+        assertEquals(invalidUrl, onReceivedErrorHelper.getFailingUrl());
+        assertEquals(invalidUrl, onPageFinishedHelper.getUrl());
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testOnPageFinishedCalledAfterRedirectedUrlIsOverridden() throws Throwable {
+        /*
+         * If url1 is redirected url2, and url2 load is overridden, onPageFinished should still be
+         * called for url2.
+         * Steps:
+         * 1. load url1. url1 onPageStarted
+         * 2. server redirects url1 to url2. url2 onPageStarted
+         * 3. shouldOverridedUrlLoading called for url2 and returns true
+         * 4. url2 onPageFinishedCalled
+         */
+
+        TestWebServer webServer = null;
+        try {
+            webServer = new TestWebServer(false);
+            final String redirectTargetPath = "/redirect_target.html";
+            final String redirectTargetUrl = webServer.setResponse(redirectTargetPath,
+                    "<html><body>hello world</body></html>", null);
+            final String redirectUrl = webServer.setRedirect("/302.html", redirectTargetUrl);
+
+            final TestAwContentsClient.ShouldOverrideUrlLoadingHelper urlOverrideHelper =
+                    mContentsClient.getShouldOverrideUrlLoadingHelper();
+            // Override the load of redirectTargetUrl
+            urlOverrideHelper.setShouldOverrideUrlLoadingReturnValue(true);
+
+            TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                mContentsClient.getOnPageFinishedHelper();
+
+            final int currentOnPageFinishedCallCount = onPageFinishedHelper.getCallCount();
+            loadUrlAsync(mAwContents, redirectUrl);
+
+            onPageFinishedHelper.waitForCallback(currentOnPageFinishedCallCount);
+            // onPageFinished needs to be called for redirectTargetUrl, but not for redirectUrl
+            assertEquals(redirectTargetUrl, onPageFinishedHelper.getUrl());
+        } finally {
+            if (webServer != null) webServer.shutdown();
+        }
     }
 
     @MediumTest
@@ -149,6 +205,63 @@ public class ClientOnPageFinishedTest extends AwTestBase {
             assertEquals(syncUrl, onPageFinishedHelper.getUrl());
             assertEquals(2, onPageFinishedHelper.getCallCount());
 
+        } finally {
+            if (webServer != null) webServer.shutdown();
+        }
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testOnPageFinishedCalledForHrefNavigations() throws Throwable {
+        doTestOnPageFinishedCalledForHrefNavigations(false);
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testOnPageFinishedCalledForHrefNavigationsWithBaseUrl() throws Throwable {
+        doTestOnPageFinishedCalledForHrefNavigations(true);
+    }
+
+    private void doTestOnPageFinishedCalledForHrefNavigations(boolean useBaseUrl) throws Throwable {
+        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                mContentsClient.getOnPageFinishedHelper();
+        TestCallbackHelperContainer.OnPageStartedHelper onPageStartedHelper =
+                mContentsClient.getOnPageStartedHelper();
+        enableJavaScriptOnUiThread(mAwContents);
+
+        TestWebServer webServer = null;
+        try {
+            webServer = new TestWebServer(false);
+
+            final String testHtml = CommonResources.makeHtmlPageFrom("",
+                    "<a href=\"#anchor\" id=\"link\">anchor</a>");
+            final String testPath = "/test.html";
+            final String testUrl = webServer.setResponse(testPath, testHtml, null);
+
+            if (useBaseUrl) {
+                loadDataWithBaseUrlSync(mAwContents, onPageFinishedHelper,
+                        testHtml, "text/html", false, webServer.getBaseUrl(), null);
+            } else {
+                loadUrlSync(mAwContents, onPageFinishedHelper, testUrl);
+            }
+
+            int onPageFinishedCallCount = onPageFinishedHelper.getCallCount();
+            int onPageStartedCallCount = onPageStartedHelper.getCallCount();
+
+            JSUtils.clickOnLinkUsingJs(this, mAwContents,
+                    mContentsClient.getOnEvaluateJavaScriptResultHelper(), "link");
+
+            onPageFinishedHelper.waitForCallback(onPageFinishedCallCount);
+            assertEquals(onPageStartedCallCount, onPageStartedHelper.getCallCount());
+
+            onPageFinishedCallCount = onPageFinishedHelper.getCallCount();
+            onPageStartedCallCount = onPageStartedHelper.getCallCount();
+
+            executeJavaScriptAndWaitForResult(mAwContents, mContentsClient,
+                    "window.history.go(-1)");
+
+            onPageFinishedHelper.waitForCallback(onPageFinishedCallCount);
+            assertEquals(onPageStartedCallCount, onPageStartedHelper.getCallCount());
         } finally {
             if (webServer != null) webServer.shutdown();
         }

@@ -84,9 +84,9 @@ bool DataPack::LoadFromPath(const base::FilePath& path) {
   return LoadImpl();
 }
 
-bool DataPack::LoadFromFile(base::PlatformFile file) {
+bool DataPack::LoadFromFile(base::File file) {
   mmap_.reset(new base::MemoryMappedFile);
-  if (!mmap_->Initialize(file)) {
+  if (!mmap_->Initialize(file.Pass())) {
     DLOG(ERROR) << "Failed to mmap datapack";
     UMA_HISTOGRAM_ENUMERATION("DataPack.Load", INIT_FAILED_FROM_FILE,
                               LOAD_ERRORS_COUNT);
@@ -200,8 +200,7 @@ base::RefCountedStaticMemory* DataPack::GetStaticMemory(
   if (!GetStringPiece(resource_id, &piece))
     return NULL;
 
-  return new base::RefCountedStaticMemory(
-      reinterpret_cast<const unsigned char*>(piece.data()), piece.length());
+  return new base::RefCountedStaticMemory(piece.data(), piece.length());
 }
 
 ResourceHandle::TextEncodingType DataPack::GetTextEncodingType() const {

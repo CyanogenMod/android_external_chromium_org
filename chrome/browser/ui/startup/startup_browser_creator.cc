@@ -47,6 +47,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/search_engines/util.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -59,6 +60,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "content/public/browser/browser_thread.h"
@@ -72,8 +74,10 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/app_mode/app_launch_utils.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chromeos/chromeos_switches.h"
 #endif
 
@@ -82,7 +86,6 @@
 #endif
 
 #if defined(OS_WIN)
-#include "chrome/browser/automation/chrome_frame_automation_provider_win.h"
 #include "chrome/browser/ui/startup/startup_browser_creator_win.h"
 #endif
 
@@ -436,7 +439,7 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
       ChildProcessSecurityPolicy* policy =
           ChildProcessSecurityPolicy::GetInstance();
       if (policy->IsWebSafeScheme(url.scheme()) ||
-          url.SchemeIs(chrome::kFileScheme) ||
+          url.SchemeIs(content::kFileScheme) ||
 #if defined(OS_CHROMEOS)
           // In ChromeOS, allow a settings page to be specified on the
           // command line. See ExistingUserController::OnLoginSuccess.
@@ -535,17 +538,9 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     if (expected_tabs == 0)
       silent_launch = true;
 
-    if (command_line.HasSwitch(switches::kChromeFrame)) {
-#if defined(OS_WIN)
-      if (!CreateAutomationProvider<ChromeFrameAutomationProvider>(
-          automation_channel_id, last_used_profile, expected_tabs))
-        return false;
-#endif
-    } else {
-      if (!CreateAutomationProvider<AutomationProvider>(
-          automation_channel_id, last_used_profile, expected_tabs))
-        return false;
-    }
+    if (!CreateAutomationProvider<AutomationProvider>(
+        automation_channel_id, last_used_profile, expected_tabs))
+      return false;
   }
 #endif  // defined(ENABLE_AUTOMATION)
 
@@ -553,7 +548,8 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   // If we are just displaying a print dialog we shouldn't open browser
   // windows.
   if (command_line.HasSwitch(switches::kCloudPrintFile) &&
-      print_dialog_cloud::CreatePrintDialogFromCommandLine(command_line)) {
+      print_dialog_cloud::CreatePrintDialogFromCommandLine(last_used_profile,
+                                                           command_line)) {
     silent_launch = true;
   }
 
@@ -622,6 +618,15 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     // Skip browser launch since app mode launches its app window.
     silent_launch = true;
   }
+
+  // If we are a demo app session and we crashed, there is no safe recovery
+  // possible. We should instead cleanly exit and go back to the OOBE screen,
+  // where we will launch again after the timeout has expired.
+  if (chromeos::DemoAppLauncher::IsDemoAppSession(
+      command_line.GetSwitchValueASCII(chromeos::switches::kLoginUser))) {
+    chrome::AttemptUserExit();
+    return false;
+  }
 #endif
 
 #if defined(TOOLKIT_VIEWS) && defined(USE_X11)
@@ -683,7 +688,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   // create a browser window for the corresponding original profile.
   if (last_opened_profiles.empty()) {
     // If the last used profile was a guest, show the user manager instead.
-    if (profiles::IsNewProfileManagementEnabled() &&
+    if (switches::IsNewProfileManagement() &&
         last_used_profile->IsGuestSession()) {
       chrome::ShowUserManager(base::FilePath());
       return true;
@@ -717,7 +722,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
         continue;
 
       // Don't re-open a browser window for the guest profile.
-      if (profiles::IsNewProfileManagementEnabled() &&
+      if (switches::IsNewProfileManagement() &&
           (*it)->IsGuestSession())
         continue;
 
@@ -733,7 +738,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
 
     // If the last used profile was the guest one, we didn't open it so
     // we don't need to activate it either.
-    if (!profiles::IsNewProfileManagementEnabled() &&
+    if (!switches::IsNewProfileManagement() &&
         !last_used_profile->IsGuestSession())
       profile_launch_observer.Get().set_profile_to_activate(last_used_profile);
   }
@@ -800,4 +805,22 @@ bool StartupBrowserCreator::ActivatedProfile() {
 bool HasPendingUncleanExit(Profile* profile) {
   return profile->GetLastSessionExitType() == Profile::EXIT_CRASHED &&
       !profile_launch_observer.Get().HasBeenLaunched(profile);
+}
+
+base::FilePath GetStartupProfilePath(const base::FilePath& user_data_dir,
+                                     const CommandLine& command_line) {
+  // If we are showing the app list then chrome isn't shown so load the app
+  // list's profile rather than chrome's.
+  if (command_line.HasSwitch(switches::kShowAppList)) {
+    return AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)->
+        GetProfilePath(user_data_dir);
+  }
+
+  if (command_line.HasSwitch(switches::kProfileDirectory)) {
+    return user_data_dir.Append(
+        command_line.GetSwitchValuePath(switches::kProfileDirectory));
+  }
+
+  return g_browser_process->profile_manager()->GetLastUsedProfileDir(
+      user_data_dir);
 }

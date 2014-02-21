@@ -19,23 +19,25 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_global_error.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -63,12 +65,19 @@ namespace {
 static const char kChromiumDomainRedirectUrlPattern[] =
     "https://%s.chromiumapp.org/";
 
+std::string GetPrimaryAccountId(Profile* profile) {
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile);
+  return signin_manager->GetAuthenticatedAccountId();
+}
+
 }  // namespace
 
 namespace identity = api::identity;
 
 IdentityGetAuthTokenFunction::IdentityGetAuthTokenFunction()
-    : should_prompt_for_scopes_(false),
+    : OAuth2TokenService::Consumer("extensions_identity_api"),
+      should_prompt_for_scopes_(false),
       should_prompt_for_signin_(false) {}
 
 IdentityGetAuthTokenFunction::~IdentityGetAuthTokenFunction() {}
@@ -103,20 +112,19 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
     return false;
   }
 
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
-
   std::set<std::string> scopes(oauth2_info.scopes.begin(),
                                oauth2_info.scopes.end());
   token_key_.reset(new ExtensionTokenKey(
-      GetExtension()->id(), token_service->GetPrimaryAccountId(), scopes));
+      GetExtension()->id(), GetPrimaryAccountId(GetProfile()), scopes));
 
   // Balanced in CompleteFunctionWithResult|CompleteFunctionWithError
   AddRef();
 
 #if defined(OS_CHROMEOS)
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (chromeos::UserManager::Get()->IsLoggedInAsKioskApp() &&
-      g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+      connector->IsEnterpriseManaged()) {
     StartMintTokenFlow(IdentityMintRequestQueue::MINT_TYPE_NONINTERACTIVE);
     return true;
   }
@@ -220,8 +228,10 @@ void IdentityGetAuthTokenFunction::StartMintToken(
         // Always force minting token for ChromeOS kiosk app.
         if (chromeos::UserManager::Get()->IsLoggedInAsKioskApp()) {
           gaia_mint_token_mode_ = OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE;
-          if (g_browser_process->browser_policy_connector()->
-                  IsEnterpriseManaged()) {
+          policy::BrowserPolicyConnectorChromeOS* connector =
+              g_browser_process->platform_part()
+                  ->browser_policy_connector_chromeos();
+          if (connector->IsEnterpriseManaged()) {
             StartDeviceLoginAccessTokenRequest();
           } else {
             StartLoginAccessTokenRequest();
@@ -423,6 +433,7 @@ void IdentityGetAuthTokenFunction::DidGetTokenService(
 void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
   ProfileOAuth2TokenService* service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
+  const std::string primary_account_id = GetPrimaryAccountId(GetProfile());
 #if defined(OS_CHROMEOS)
   if (chrome::IsRunningInForcedAppMode()) {
     std::string app_client_id;
@@ -430,7 +441,7 @@ void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
     if (chromeos::UserManager::Get()->GetAppModeChromeClientOAuthInfo(
            &app_client_id, &app_client_secret)) {
       login_token_request_ =
-          service->StartRequestForClient(service->GetPrimaryAccountId(),
+          service->StartRequestForClient(primary_account_id,
                                          app_client_id,
                                          app_client_secret,
                                          OAuth2TokenService::ScopeSet(),
@@ -440,7 +451,7 @@ void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
   }
 #endif
   login_token_request_ = service->StartRequest(
-      service->GetPrimaryAccountId(), OAuth2TokenService::ScopeSet(), this);
+      primary_account_id, OAuth2TokenService::ScopeSet(), this);
 }
 
 void IdentityGetAuthTokenFunction::StartGaiaRequest(
@@ -485,7 +496,7 @@ bool IdentityGetAuthTokenFunction::HasLoginToken() const {
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
   return token_service->RefreshTokenIsAvailable(
-      token_service->GetPrimaryAccountId());
+      GetPrimaryAccountId(GetProfile()));
 }
 
 std::string IdentityGetAuthTokenFunction::MapOAuth2ErrorToDescription(
@@ -714,9 +725,7 @@ const IdentityAPI::CachedTokens& IdentityAPI::GetAllCachedTokens() {
 }
 
 void IdentityAPI::ReportAuthError(const GoogleServiceAuthError& error) {
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  account_tracker_.ReportAuthError(token_service->GetPrimaryAccountId(), error);
+  account_tracker_.ReportAuthError(GetPrimaryAccountId(profile_), error);
 }
 
 void IdentityAPI::Shutdown() {
@@ -729,7 +738,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<IdentityAPI> >
 
 // static
 ProfileKeyedAPIFactory<IdentityAPI>* IdentityAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void IdentityAPI::OnAccountAdded(const AccountIds& ids) {}
@@ -751,7 +760,7 @@ void IdentityAPI::OnAccountSignInChanged(const AccountIds& ids,
 
 template <>
 void ProfileKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies() {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
 }
 

@@ -21,17 +21,15 @@ TranslateMessageInfoBar::~TranslateMessageInfoBar() {
 void TranslateMessageInfoBar::Layout() {
   TranslateInfoBarBase::Layout();
 
-  gfx::Size label_size = label_->GetPreferredSize();
-  label_->SetBounds(StartX(), OffsetY(label_size),
-      std::min(label_size.width(),
-               std::max(0, EndX() - StartX() - ContentMinimumWidth())),
-      label_size.height());
+  int x = StartX();
+  const int width =
+      std::min(label_->width(), std::max(0, EndX() - x - NonLabelWidth()));
+  label_->SetBounds(x, OffsetY(label_), width, label_->height());
+  if (!label_->text().empty())
+    x = label_->bounds().right() + kEndOfLabelSpacing;
 
-  if (button_) {
-    gfx::Size button_size = button_->GetPreferredSize();
-    button_->SetBounds(label_->bounds().right() + kButtonInLabelSpacing,
-        OffsetY(button_size), button_size.width(), button_size.height());
-  }
+  if (button_)
+    button_->SetPosition(gfx::Point(x, OffsetY(button_)));
 }
 
 void TranslateMessageInfoBar::ViewHierarchyChanged(
@@ -63,7 +61,12 @@ void TranslateMessageInfoBar::ButtonPressed(views::Button* sender,
     TranslateInfoBarBase::ButtonPressed(sender, event);
 }
 
-int TranslateMessageInfoBar::ContentMinimumWidth() const {
-  return (button_ != NULL) ?
-      (button_->GetPreferredSize().width() + kButtonInLabelSpacing) : 0;
+int TranslateMessageInfoBar::ContentMinimumWidth() {
+  return label_->GetMinimumSize().width() + NonLabelWidth();
+}
+
+int TranslateMessageInfoBar::NonLabelWidth() const {
+  if (!button_)
+    return 0;
+  return button_->width() + (label_->text().empty() ? 0 : kEndOfLabelSpacing);
 }

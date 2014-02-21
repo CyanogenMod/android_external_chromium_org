@@ -56,7 +56,7 @@ RootDeleteHelper::~RootDeleteHelper() {
 }
 
 void RootDeleteHelper::Run() {
-  util::Log(logging::LOG_INFO, FROM_HERE,
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
             "Deleting the entire local filesystem for remote root deletion: "
             "%s", url_.DebugString().c_str());
 
@@ -66,7 +66,7 @@ void RootDeleteHelper::Run() {
                  weak_factory_.GetWeakPtr()));
 }
 
-void RootDeleteHelper::DidDeleteFileSystem(base::PlatformFileError error) {
+void RootDeleteHelper::DidDeleteFileSystem(base::File::Error error) {
   // Ignore errors, no idea how to deal with it.
 
   DCHECK(!sync_status_->IsWritable(url_));
@@ -97,7 +97,7 @@ void RootDeleteHelper::DidResetFileChangeTracker() {
 
 void RootDeleteHelper::DidOpenFileSystem(const GURL& /* root */,
                                          const std::string& /* name */,
-                                         base::PlatformFileError error) {
+                                         base::File::Error error) {
   FileStatusCallback callback = callback_;
   callback.Run(error);
 }

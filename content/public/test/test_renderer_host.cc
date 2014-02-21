@@ -45,7 +45,8 @@ RenderViewHost* RenderViewHostTester::GetPendingForController(
 
 // static
 bool RenderViewHostTester::IsRenderViewHostSwappedOut(RenderViewHost* rvh) {
-  return static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out();
+  return static_cast<RenderViewHostImpl*>(rvh)->rvh_state() ==
+         RenderViewHostImpl::STATE_SWAPPED_OUT;
 }
 
 // static
@@ -167,7 +168,8 @@ void RenderViewHostTestHarness::SetUp() {
 #if defined(USE_AURA)
   aura_test_helper_.reset(
       new aura::test::AuraTestHelper(base::MessageLoopForUI::current()));
-  aura_test_helper_->SetUp();
+  bool allow_test_contexts = true;
+  aura_test_helper_->SetUp(allow_test_contexts);
 #endif
 
   DCHECK(!browser_context_);

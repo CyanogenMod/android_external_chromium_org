@@ -17,11 +17,12 @@
 #include "base/strings/string_piece.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
-#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/ui_data_type_controller.h"
@@ -54,7 +55,7 @@ using testing::_;
 using testing::Invoke;
 using testing::Return;
 
-typedef std::map<const std::string, const Value*> PreferenceValues;
+typedef std::map<const std::string, const base::Value*> PreferenceValues;
 
 ACTION_P(CreateAndSaveChangeProcessor, change_processor) {
   syncer::UserShare* user_share = arg0->GetUserShare();
@@ -80,7 +81,7 @@ class ProfileSyncServicePreferenceTest
     : public AbstractProfileSyncServiceTest,
       public syncer::DataTypeDebugInfoListener {
  public:
-  int64 SetSyncedValue(const std::string& name, const Value& value) {
+  int64 SetSyncedValue(const std::string& name, const base::Value& value) {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode root(&trans);
     if (root.InitByTagLookup(syncer::ModelTypeToRootTag(
@@ -125,8 +126,9 @@ class ProfileSyncServicePreferenceTest
   virtual void SetUp() {
     AbstractProfileSyncServiceTest::SetUp();
     TestingProfile::Builder builder;
-    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeOAuth2TokenService::BuildTokenService);
+    builder.AddTestingFactory(
+        ProfileOAuth2TokenServiceFactory::GetInstance(),
+        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     profile_ = builder.Build().Pass();
     invalidation::InvalidationServiceFactory::GetInstance()->
         SetBuildOnlyFakeInvalidatorsForTest(true);
@@ -160,10 +162,8 @@ class ProfileSyncServicePreferenceTest
     SigninManagerBase* signin =
          SigninManagerFactory::GetForProfile(profile_.get());
     signin->SetAuthenticatedUsername("test");
-    sync_service_ = static_cast<TestProfileSyncService*>(
-        ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), &TestProfileSyncService::BuildAutoStartAsyncInit));
-    sync_service_->set_backend_init_callback(callback);
+    sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(
+        profile_.get(), callback);
     pref_sync_service_ = reinterpret_cast<PrefModelAssociator*>(
         prefs_->GetSyncableService(syncer::PREFERENCES));
     if (!pref_sync_service_)
@@ -176,7 +176,9 @@ class ProfileSyncServicePreferenceTest
     EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _, _, _)).
         WillOnce(ReturnNewDataTypeManagerWithDebugListener(
                      syncer::MakeWeakHandle(debug_ptr_factory_.GetWeakPtr())));
-    dtc_ = new UIDataTypeController(syncer::PREFERENCES,
+    dtc_ = new UIDataTypeController(base::MessageLoopProxy::current(),
+                                    base::Closure(),
+                                    syncer::PREFERENCES,
                                     components,
                                     profile_.get(),
                                     sync_service_);
@@ -206,14 +208,14 @@ class ProfileSyncServicePreferenceTest
     return true;
   }
 
-  const Value& GetPreferenceValue(const std::string& name) {
+  const base::Value& GetPreferenceValue(const std::string& name) {
     const PrefService::Preference* preference =
         prefs_->FindPreference(name.c_str());
     return *preference->GetValue();
   }
 
   // Caller gets ownership of the returned value.
-  const Value* GetSyncedValue(const std::string& name) {
+  const base::Value* GetSyncedValue(const std::string& name) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode node(&trans);
 
@@ -229,7 +231,7 @@ class ProfileSyncServicePreferenceTest
   }
 
   int64 WriteSyncedValue(const std::string& name,
-                         const Value& value,
+                         const base::Value& value,
                          syncer::WriteNode* node) {
     syncer::SyncData sync_data;
     if (!pref_sync_service_->CreatePrefSyncData(name,
@@ -249,7 +251,7 @@ class ProfileSyncServicePreferenceTest
     return pref_sync_service_->IsPrefSynced(pref_name);
   }
 
-  std::string ValueString(const Value& value) {
+  std::string ValueString(const base::Value& value) {
     std::string serialized;
     JSONStringValueSerializer json(&serialized);
     json.Serialize(value);
@@ -329,7 +331,7 @@ TEST_F(ProfileSyncServicePreferenceTest, CreatePrefSyncData) {
       preference());
   EXPECT_EQ(std::string(prefs::kHomePage), specifics.name());
 
-  scoped_ptr<Value> value(base::JSONReader::Read(specifics.value()));
+  scoped_ptr<base::Value> value(base::JSONReader::Read(specifics.value()));
   EXPECT_TRUE(pref->GetValue()->Equals(value.get()));
 }
 
@@ -350,15 +352,15 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationEmptyCloud) {
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartup);
-    ListValue* url_list = update.Get();
-    url_list->Append(Value::CreateStringValue(example_url0_));
-    url_list->Append(Value::CreateStringValue(example_url1_));
+    base::ListValue* url_list = update.Get();
+    url_list->Append(base::Value::CreateStringValue(example_url0_));
+    url_list->Append(base::Value::CreateStringValue(example_url1_));
   }
   CreateRootHelper create_root(this, syncer::PREFERENCES);
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<const Value> value(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> value(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(GetPreferenceValue(prefs::kHomePage).Equals(value.get()));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
@@ -371,36 +373,36 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationCloudHasData) {
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartup);
-    ListValue* url_list = update.Get();
-    url_list->Append(Value::CreateStringValue(example_url0_));
-    url_list->Append(Value::CreateStringValue(example_url1_));
+    base::ListValue* url_list = update.Get();
+    url_list->Append(base::Value::CreateStringValue(example_url0_));
+    url_list->Append(base::Value::CreateStringValue(example_url1_));
   }
 
   PreferenceValues cloud_data;
   STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
-  cloud_data[prefs::kHomePage] = Value::CreateStringValue(example_url1_);
-  ListValue* urls_to_restore = new ListValue;
-  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
-  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  cloud_data[prefs::kHomePage] = base::Value::CreateStringValue(example_url1_);
+  base::ListValue* urls_to_restore = new base::ListValue;
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url2_));
   cloud_data[prefs::kURLsToRestoreOnStartup] = urls_to_restore;
   cloud_data[prefs::kDefaultCharset] =
-      Value::CreateStringValue(non_default_charset_value_);
+      base::Value::CreateStringValue(non_default_charset_value_);
 
   AddPreferenceEntriesHelper helper(this, cloud_data);
   ASSERT_TRUE(StartSyncService(helper.callback(), false));
   ASSERT_TRUE(helper.success());
 
-  scoped_ptr<const Value> value(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> value(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(value.get());
   std::string string_value;
   EXPECT_TRUE(value->GetAsString(&string_value));
   EXPECT_EQ(example_url1_, string_value);
   EXPECT_EQ(example_url1_, prefs_->GetString(prefs::kHomePage));
 
-  scoped_ptr<ListValue> expected_urls(new ListValue);
-  expected_urls->Append(Value::CreateStringValue(example_url1_));
-  expected_urls->Append(Value::CreateStringValue(example_url2_));
-  expected_urls->Append(Value::CreateStringValue(example_url0_));
+  scoped_ptr<base::ListValue> expected_urls(new base::ListValue);
+  expected_urls->Append(base::Value::CreateStringValue(example_url1_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url2_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url0_));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(value->Equals(expected_urls.get()));
@@ -421,9 +423,9 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationMigrateOldData) {
 
   PreferenceValues cloud_data;
   STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
-  ListValue* urls_to_restore = new ListValue;
-  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
-  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  base::ListValue* urls_to_restore = new base::ListValue;
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url2_));
   cloud_data[prefs::kURLsToRestoreOnStartupOld] = urls_to_restore;
 
   AddPreferenceEntriesHelper helper(this, cloud_data);
@@ -431,19 +433,20 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationMigrateOldData) {
   ASSERT_TRUE(helper.success());
 
   // Expect that the new preference data contains the old pref's values.
-  scoped_ptr<ListValue> expected_urls(new ListValue);
-  expected_urls->Append(Value::CreateStringValue(example_url1_));
-  expected_urls->Append(Value::CreateStringValue(example_url2_));
+  scoped_ptr<base::ListValue> expected_urls(new base::ListValue);
+  expected_urls->Append(base::Value::CreateStringValue(example_url1_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url2_));
 
   ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
-  scoped_ptr<const Value> value(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
+  scoped_ptr<const base::Value> value(
+      GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(value->Equals(expected_urls.get()));
   EXPECT_TRUE(GetPreferenceValue(prefs::kURLsToRestoreOnStartup).
               Equals(expected_urls.get()));
 
   // The old preference value should be the same.
-  expected_urls.reset(new ListValue);
+  expected_urls.reset(new base::ListValue);
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartupOld));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(GetPreferenceValue(prefs::kURLsToRestoreOnStartupOld).
@@ -457,24 +460,24 @@ TEST_F(ProfileSyncServicePreferenceTest,
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartup);
-    ListValue* url_list = update.Get();
-    url_list->Append(Value::CreateStringValue(example_url0_));
-    url_list->Append(Value::CreateStringValue(example_url1_));
+    base::ListValue* url_list = update.Get();
+    url_list->Append(base::Value::CreateStringValue(example_url0_));
+    url_list->Append(base::Value::CreateStringValue(example_url1_));
   }
 
   PreferenceValues cloud_data;
   STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
-  cloud_data[prefs::kHomePage] = Value::CreateStringValue(example_url1_);
-  ListValue* urls_to_restore = new ListValue;
-  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
-  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  cloud_data[prefs::kHomePage] = base::Value::CreateStringValue(example_url1_);
+  base::ListValue* urls_to_restore = new base::ListValue;
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url2_));
   cloud_data[prefs::kURLsToRestoreOnStartupOld] = urls_to_restore;
 
   AddPreferenceEntriesHelper helper(this, cloud_data);
   ASSERT_TRUE(StartSyncService(helper.callback(), false));
   ASSERT_TRUE(helper.success());
 
-  scoped_ptr<const Value> value(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> value(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(value.get());
   std::string string_value;
   EXPECT_TRUE(value->GetAsString(&string_value));
@@ -482,10 +485,10 @@ TEST_F(ProfileSyncServicePreferenceTest,
   EXPECT_EQ(example_url1_, prefs_->GetString(prefs::kHomePage));
 
   // Expect that the new preference data contains the merged old prefs values.
-  scoped_ptr<ListValue> expected_urls(new ListValue);
-  expected_urls->Append(Value::CreateStringValue(example_url1_));
-  expected_urls->Append(Value::CreateStringValue(example_url2_));
-  expected_urls->Append(Value::CreateStringValue(example_url0_));
+  scoped_ptr<base::ListValue> expected_urls(new base::ListValue);
+  expected_urls->Append(base::Value::CreateStringValue(example_url1_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url2_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url0_));
 
   ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
@@ -495,7 +498,7 @@ TEST_F(ProfileSyncServicePreferenceTest,
               Equals(expected_urls.get()));
 
   // The old preference name should also contain the merged sync data.
-  expected_urls.reset(new ListValue);
+  expected_urls.reset(new base::ListValue);
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartupOld));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(GetPreferenceValue(prefs::kURLsToRestoreOnStartupOld).
@@ -509,24 +512,24 @@ TEST_F(ProfileSyncServicePreferenceTest,
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartupOld);
-    ListValue* url_list = update.Get();
-    url_list->Append(Value::CreateStringValue(example_url0_));
-    url_list->Append(Value::CreateStringValue(example_url1_));
+    base::ListValue* url_list = update.Get();
+    url_list->Append(base::Value::CreateStringValue(example_url0_));
+    url_list->Append(base::Value::CreateStringValue(example_url1_));
   }
 
   PreferenceValues cloud_data;
   STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
-  cloud_data[prefs::kHomePage] = Value::CreateStringValue(example_url1_);
-  ListValue* urls_to_restore = new ListValue;
-  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
-  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  cloud_data[prefs::kHomePage] = base::Value::CreateStringValue(example_url1_);
+  base::ListValue* urls_to_restore = new base::ListValue;
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url2_));
   cloud_data[prefs::kURLsToRestoreOnStartup] = urls_to_restore;
 
   AddPreferenceEntriesHelper helper(this, cloud_data);
   ASSERT_TRUE(StartSyncService(helper.callback(), false));
   ASSERT_TRUE(helper.success());
 
-  scoped_ptr<const Value> value(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> value(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(value.get());
   std::string string_value;
   EXPECT_TRUE(value->GetAsString(&string_value));
@@ -534,9 +537,9 @@ TEST_F(ProfileSyncServicePreferenceTest,
   EXPECT_EQ(example_url1_, prefs_->GetString(prefs::kHomePage));
 
   // Expect that the cloud data under the new migrated preference name sticks.
-  scoped_ptr<ListValue> expected_urls(new ListValue);
-  expected_urls->Append(Value::CreateStringValue(example_url1_));
-  expected_urls->Append(Value::CreateStringValue(example_url2_));
+  scoped_ptr<base::ListValue> expected_urls(new base::ListValue);
+  expected_urls->Append(base::Value::CreateStringValue(example_url1_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url2_));
 
   ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
@@ -546,9 +549,9 @@ TEST_F(ProfileSyncServicePreferenceTest,
               Equals(expected_urls.get()));
 
   // The old preference data should still be here, though not synced.
-  expected_urls.reset(new ListValue);
-  expected_urls->Append(Value::CreateStringValue(example_url0_));
-  expected_urls->Append(Value::CreateStringValue(example_url1_));
+  expected_urls.reset(new base::ListValue);
+  expected_urls->Append(base::Value::CreateStringValue(example_url0_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url1_));
 
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartupOld));
   ASSERT_FALSE(value.get());
@@ -563,24 +566,24 @@ TEST_F(ProfileSyncServicePreferenceTest,
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update_old(prefs_, prefs::kURLsToRestoreOnStartupOld);
-    ListValue* url_list_old = update_old.Get();
-    url_list_old->Append(Value::CreateStringValue(example_url0_));
-    url_list_old->Append(Value::CreateStringValue(example_url1_));
+    base::ListValue* url_list_old = update_old.Get();
+    url_list_old->Append(base::Value::CreateStringValue(example_url0_));
+    url_list_old->Append(base::Value::CreateStringValue(example_url1_));
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartup);
-    ListValue* url_list = update.Get();
-    url_list->Append(Value::CreateStringValue(example_url1_));
-    url_list->Append(Value::CreateStringValue(example_url2_));
+    base::ListValue* url_list = update.Get();
+    url_list->Append(base::Value::CreateStringValue(example_url1_));
+    url_list->Append(base::Value::CreateStringValue(example_url2_));
   }
 
   PreferenceValues cloud_data;
   STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
-  cloud_data[prefs::kHomePage] = Value::CreateStringValue(example_url1_);
+  cloud_data[prefs::kHomePage] = base::Value::CreateStringValue(example_url1_);
 
   AddPreferenceEntriesHelper helper(this, cloud_data);
   ASSERT_TRUE(StartSyncService(helper.callback(), false));
   ASSERT_TRUE(helper.success());
 
-  scoped_ptr<const Value> value(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> value(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(value.get());
   std::string string_value;
   EXPECT_TRUE(value->GetAsString(&string_value));
@@ -588,9 +591,9 @@ TEST_F(ProfileSyncServicePreferenceTest,
   EXPECT_EQ(example_url1_, prefs_->GetString(prefs::kHomePage));
 
   // Expect that the cloud data under the new migrated preference name sticks.
-  scoped_ptr<ListValue> expected_urls(new ListValue);
-  expected_urls->Append(Value::CreateStringValue(example_url1_));
-  expected_urls->Append(Value::CreateStringValue(example_url2_));
+  scoped_ptr<base::ListValue> expected_urls(new base::ListValue);
+  expected_urls->Append(base::Value::CreateStringValue(example_url1_));
+  expected_urls->Append(base::Value::CreateStringValue(example_url2_));
 
   ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
@@ -620,10 +623,11 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedPreferenceWithDefaultValue) {
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> expected(Value::CreateStringValue(example_url0_));
+  scoped_ptr<base::Value> expected(
+      base::Value::CreateStringValue(example_url0_));
   profile_->GetPrefs()->Set(prefs::kHomePage, *expected);
 
-  scoped_ptr<const Value> actual(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> actual(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(actual.get());
   EXPECT_TRUE(expected->Equals(actual.get()));
 }
@@ -634,10 +638,11 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedPreferenceWithValue) {
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> expected(Value::CreateStringValue(example_url1_));
+  scoped_ptr<base::Value> expected(
+      base::Value::CreateStringValue(example_url1_));
   profile_->GetPrefs()->Set(prefs::kHomePage, *expected);
 
-  scoped_ptr<const Value> actual(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> actual(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(actual.get());
   EXPECT_TRUE(expected->Equals(actual.get()));
 }
@@ -648,7 +653,8 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionUpdate) {
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> expected(Value::CreateStringValue(example_url1_));
+  scoped_ptr<base::Value> expected(
+      base::Value::CreateStringValue(example_url1_));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *expected);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
@@ -660,7 +666,7 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionUpdate) {
   }
   change_processor_->CommitChangesFromSyncModel();
 
-  const Value& actual = GetPreferenceValue(prefs::kHomePage);
+  const base::Value& actual = GetPreferenceValue(prefs::kHomePage);
   EXPECT_TRUE(expected->Equals(&actual));
 }
 
@@ -669,7 +675,8 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionAdd) {
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> expected(Value::CreateStringValue(example_url0_));
+  scoped_ptr<base::Value> expected(
+      base::Value::CreateStringValue(example_url0_));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *expected);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
@@ -681,7 +688,7 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionAdd) {
   }
   change_processor_->CommitChangesFromSyncModel();
 
-  const Value& actual = GetPreferenceValue(prefs::kHomePage);
+  const base::Value& actual = GetPreferenceValue(prefs::kHomePage);
   EXPECT_TRUE(expected->Equals(&actual));
   EXPECT_EQ(1U,
       pref_sync_service_->registered_preferences().count(prefs::kHomePage));
@@ -692,7 +699,8 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeUnknownPreference) {
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> expected(Value::CreateStringValue(example_url0_));
+  scoped_ptr<base::Value> expected(
+      base::Value::CreateStringValue(example_url0_));
   int64 node_id = SetSyncedValue("unknown preference", *expected);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
@@ -710,8 +718,8 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeUnknownPreference) {
 
 TEST_F(ProfileSyncServicePreferenceTest, ManagedPreferences) {
   // Make the homepage preference managed.
-  scoped_ptr<Value> managed_value(
-      Value::CreateStringValue("http://example.com"));
+  scoped_ptr<base::Value> managed_value(
+      base::Value::CreateStringValue("http://example.com"));
   prefs_->SetManagedPref(prefs::kHomePage, managed_value->DeepCopy());
 
   CreateRootHelper create_root(this, syncer::PREFERENCES);
@@ -719,15 +727,15 @@ TEST_F(ProfileSyncServicePreferenceTest, ManagedPreferences) {
   ASSERT_TRUE(create_root.success());
 
   // Changing the homepage preference should not sync anything.
-  scoped_ptr<Value> user_value(
-      Value::CreateStringValue("http://chromium..com"));
+  scoped_ptr<base::Value> user_value(
+      base::Value::CreateStringValue("http://chromium..com"));
   prefs_->SetUserPref(prefs::kHomePage, user_value->DeepCopy());
   EXPECT_EQ(NULL, GetSyncedValue(prefs::kHomePage));
 
   // An incoming sync transaction should change the user value, not the managed
   // value.
-  scoped_ptr<Value> sync_value(
-      Value::CreateStringValue("http://crbug.com"));
+  scoped_ptr<base::Value> sync_value(
+      base::Value::CreateStringValue("http://crbug.com"));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *sync_value);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
@@ -748,40 +756,40 @@ TEST_F(ProfileSyncServicePreferenceTest, ManagedPreferences) {
 // managed preferences.
 TEST_F(ProfileSyncServicePreferenceTest, ManagedListPreferences) {
   // Make the list of urls to restore on startup managed.
-  ListValue managed_value;
-  managed_value.Append(Value::CreateStringValue(example_url0_));
-  managed_value.Append(Value::CreateStringValue(example_url1_));
+  base::ListValue managed_value;
+  managed_value.Append(base::Value::CreateStringValue(example_url0_));
+  managed_value.Append(base::Value::CreateStringValue(example_url1_));
   prefs_->SetManagedPref(prefs::kURLsToRestoreOnStartup,
                          managed_value.DeepCopy());
 
   // Set a cloud version.
   PreferenceValues cloud_data;
   STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
-  ListValue* urls_to_restore = new ListValue;
-  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
-  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  base::ListValue* urls_to_restore = new base::ListValue;
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(base::Value::CreateStringValue(example_url2_));
   cloud_data[prefs::kURLsToRestoreOnStartup] = urls_to_restore;
 
   // Start sync and verify the synced value didn't get merged.
   AddPreferenceEntriesHelper helper(this, cloud_data);
   ASSERT_TRUE(StartSyncService(helper.callback(), false));
   ASSERT_TRUE(helper.success());
-  scoped_ptr<const Value> actual(
+  scoped_ptr<const base::Value> actual(
       GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   EXPECT_TRUE(cloud_data[prefs::kURLsToRestoreOnStartup]->Equals(actual.get()));
 
   // Changing the user's urls to restore on startup pref should not sync
   // anything.
-  ListValue user_value;
-  user_value.Append(Value::CreateStringValue("http://chromium.org"));
+  base::ListValue user_value;
+  user_value.Append(base::Value::CreateStringValue("http://chromium.org"));
   prefs_->SetUserPref(prefs::kURLsToRestoreOnStartup, user_value.DeepCopy());
   actual.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   EXPECT_TRUE(cloud_data[prefs::kURLsToRestoreOnStartup]->Equals(actual.get()));
 
   // An incoming sync transaction should change the user value, not the managed
   // value.
-  ListValue sync_value;
-  sync_value.Append(Value::CreateStringValue("http://crbug.com"));
+  base::ListValue sync_value;
+  sync_value.Append(base::Value::CreateStringValue("http://crbug.com"));
   int64 node_id = SetSyncedValue(prefs::kURLsToRestoreOnStartup, sync_value);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
@@ -804,16 +812,16 @@ TEST_F(ProfileSyncServicePreferenceTest, DynamicManagedPreferences) {
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> initial_value(
-      Value::CreateStringValue("http://example.com/initial"));
+  scoped_ptr<base::Value> initial_value(
+      base::Value::CreateStringValue("http://example.com/initial"));
   profile_->GetPrefs()->Set(prefs::kHomePage, *initial_value);
-  scoped_ptr<const Value> actual(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> actual(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(actual.get());
   EXPECT_TRUE(initial_value->Equals(actual.get()));
 
   // Switch kHomePage to managed and set a different value.
-  scoped_ptr<Value> managed_value(
-      Value::CreateStringValue("http://example.com/managed"));
+  scoped_ptr<base::Value> managed_value(
+      base::Value::CreateStringValue("http://example.com/managed"));
   profile_->GetTestingPrefService()->SetManagedPref(
       prefs::kHomePage, managed_value->DeepCopy());
 
@@ -833,21 +841,21 @@ TEST_F(ProfileSyncServicePreferenceTest,
   ASSERT_TRUE(StartSyncService(create_root.callback(), false));
   ASSERT_TRUE(create_root.success());
 
-  scoped_ptr<Value> initial_value(
-      Value::CreateStringValue("http://example.com/initial"));
+  scoped_ptr<base::Value> initial_value(
+      base::Value::CreateStringValue("http://example.com/initial"));
   profile_->GetPrefs()->Set(prefs::kHomePage, *initial_value);
-  scoped_ptr<const Value> actual(GetSyncedValue(prefs::kHomePage));
+  scoped_ptr<const base::Value> actual(GetSyncedValue(prefs::kHomePage));
   EXPECT_TRUE(initial_value->Equals(actual.get()));
 
   // Switch kHomePage to managed and set a different value.
-  scoped_ptr<Value> managed_value(
-      Value::CreateStringValue("http://example.com/managed"));
+  scoped_ptr<base::Value> managed_value(
+      base::Value::CreateStringValue("http://example.com/managed"));
   profile_->GetTestingPrefService()->SetManagedPref(
       prefs::kHomePage, managed_value->DeepCopy());
 
   // Change the sync value.
-  scoped_ptr<Value> sync_value(
-      Value::CreateStringValue("http://example.com/sync"));
+  scoped_ptr<base::Value> sync_value(
+      base::Value::CreateStringValue("http://example.com/sync"));
   int64 node_id = SetSyncedValue(prefs::kHomePage, *sync_value);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
@@ -880,8 +888,8 @@ TEST_F(ProfileSyncServicePreferenceTest, DynamicManagedDefaultPreferences) {
   EXPECT_TRUE(pref->IsDefaultValue());
   EXPECT_TRUE(GetSyncedValue(prefs::kHomePage) == NULL);
   // Switch kHomePage to managed and set a different value.
-  scoped_ptr<Value> managed_value(
-      Value::CreateStringValue("http://example.com/managed"));
+  scoped_ptr<base::Value> managed_value(
+      base::Value::CreateStringValue("http://example.com/managed"));
   profile_->GetTestingPrefService()->SetManagedPref(
       prefs::kHomePage, managed_value->DeepCopy());
   // The pref value should be the one dictated by policy.

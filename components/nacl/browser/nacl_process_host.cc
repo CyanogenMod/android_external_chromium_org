@@ -36,6 +36,7 @@
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/child_process_data.h"
+#include "content/public/browser/plugin_service.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
@@ -47,7 +48,8 @@
 #include "ppapi/host/host_factory.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/shared_impl/ppapi_nacl_channel_args.h"
+#include "ppapi/shared_impl/ppapi_nacl_plugin_args.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
 
 #if defined(OS_POSIX)
 #include <fcntl.h>
@@ -195,6 +197,8 @@ ppapi::PpapiPermissions GetNaClPermissions(uint32 permission_bits) {
   // a compromised renderer to be able to start a nacl plugin with e.g. Flash
   // permissions which may expand the surface area of the sandbox.
   uint32 masked_bits = permission_bits & ppapi::PERMISSION_DEV;
+  if (content::PluginService::GetInstance()->PpapiDevChannelSupported())
+    masked_bits |= ppapi::PERMISSION_DEV_CHANNEL;
   return ppapi::PpapiPermissions::GetForCommandLine(masked_bits);
 }
 
@@ -212,15 +216,6 @@ struct NaClProcessHost::NaClInternal {
 };
 
 // -----------------------------------------------------------------------------
-
-NaClProcessHost::PluginListener::PluginListener(NaClProcessHost* host)
-    : host_(host) {
-}
-
-bool NaClProcessHost::PluginListener::OnMessageReceived(
-    const IPC::Message& msg) {
-  return host_->OnUntrustedMessageForwarded(msg);
-}
 
 NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
                                  int render_view_id,
@@ -249,7 +244,6 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
       enable_crash_throttling_(enable_crash_throttling),
       off_the_record_(off_the_record),
       profile_directory_(profile_directory),
-      ipc_plugin_listener_(this),
       render_view_id_(render_view_id) {
   process_.reset(content::BrowserChildProcessHost::Create(
       PROCESS_TYPE_NACL_LOADER, this));
@@ -543,6 +537,7 @@ bool NaClProcessHost::LaunchSelLdr() {
     }
   } else {
     process_->Launch(new NaClSandboxedProcessLauncherDelegate,
+                     false,
                      cmd_line.release());
   }
 #elif defined(OS_POSIX)
@@ -567,8 +562,8 @@ bool NaClProcessHost::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER_DELAY_REPLY(NaClProcessMsg_AttachDebugExceptionHandler,
                                     OnAttachDebugExceptionHandler)
 #endif
-    IPC_MESSAGE_HANDLER(NaClProcessHostMsg_PpapiChannelCreated,
-                        OnPpapiChannelCreated)
+    IPC_MESSAGE_HANDLER(NaClProcessHostMsg_PpapiChannelsCreated,
+                        OnPpapiChannelsCreated)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -663,26 +658,33 @@ void NaClProcessHost::SendMessageToRenderer(
 }
 
 // TCP port we chose for NaCl debug stub. It can be any other number.
-static const int kDebugStubPort = 4014;
+static const int kInitialDebugStubPort = 4014;
 
 #if defined(OS_POSIX)
 net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
   NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
   net::SocketDescriptor s = net::kInvalidSocket;
-  // We allocate currently unused TCP port for debug stub tests. The port
-  // number is passed to the test via debug stub port listener.
-  if (nacl_browser->HasGdbDebugStubPortListener()) {
-    int port;
+  // We always try to allocate the default port first. If this fails, we then
+  // allocate any available port.
+  // On success, if the test system has register a handler
+  // (GdbDebugStubPortListener), we fire a notification.
+  int port = kInitialDebugStubPort;
+  s = net::TCPListenSocket::CreateAndBind("127.0.0.1", port);
+  if (s == net::kInvalidSocket) {
     s = net::TCPListenSocket::CreateAndBindAnyPort("127.0.0.1", &port);
-    if (s != net::kInvalidSocket) {
+  }
+  if (s != net::kInvalidSocket) {
+    if (nacl_browser->HasGdbDebugStubPortListener()) {
       nacl_browser->FireGdbDebugStubPortOpened(port);
     }
-  } else {
-    s = net::TCPListenSocket::CreateAndBind("127.0.0.1", kDebugStubPort);
   }
+  // Set debug stub port on the process object.
+  process_->SetNaClDebugStubPort(port);
   if (s == net::kInvalidSocket) {
     LOG(ERROR) << "failed to open socket for debug stub";
     return net::kInvalidSocket;
+  } else {
+    LOG(WARNING) << "debug stub on port " << port;
   }
   if (listen(s, 1)) {
     LOG(ERROR) << "listen() failed on debug stub socket";
@@ -708,6 +710,8 @@ bool NaClProcessHost::StartNaClExecution() {
   params.enable_ipc_proxy = enable_ppapi_proxy();
   params.uses_irt = uses_irt_;
   params.enable_dyncode_syscalls = enable_dyncode_syscalls_;
+  params.enable_nonsfi_mode = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableNaClNonSfiMode);
 
   const ChildProcessData& data = process_->GetData();
   if (!ShareHandleToSelLdr(data.handle,
@@ -772,21 +776,19 @@ bool NaClProcessHost::SendStart() {
 }
 
 // This method is called when NaClProcessHostMsg_PpapiChannelCreated is
-// received or PpapiHostMsg_ChannelCreated is forwarded by our plugin
-// listener.
-void NaClProcessHost::OnPpapiChannelCreated(
-    const IPC::ChannelHandle& channel_handle) {
+// received.
+void NaClProcessHost::OnPpapiChannelsCreated(
+    const IPC::ChannelHandle& browser_channel_handle,
+    const IPC::ChannelHandle& renderer_channel_handle) {
   // Only renderer processes should create a channel.
   DCHECK(enable_ppapi_proxy());
-  // If the proxy channel is null, this must be the initial NaCl-Browser IPC
-  // channel.
   if (!ipc_proxy_channel_.get()) {
     DCHECK_EQ(PROCESS_TYPE_NACL_LOADER, process_->GetData().process_type);
 
     ipc_proxy_channel_.reset(
-        new IPC::ChannelProxy(channel_handle,
+        new IPC::ChannelProxy(browser_channel_handle,
                               IPC::Channel::MODE_CLIENT,
-                              &ipc_plugin_listener_,
+                              NULL,
                               base::MessageLoopProxy::current().get()));
     // Create the browser ppapi host and enable PPAPI message dispatching to the
     // browser process.
@@ -798,13 +800,19 @@ void NaClProcessHost::OnPpapiChannelCreated(
         nacl_host_message_filter_->render_process_id(),
         render_view_id_,
         profile_directory_));
+    ppapi_host_->SetOnKeepaliveCallback(
+        NaClBrowser::GetDelegate()->GetOnKeepaliveCallback());
 
-    ppapi::PpapiNaClChannelArgs args;
+    ppapi::PpapiNaClPluginArgs args;
     args.off_the_record = nacl_host_message_filter_->off_the_record();
     args.permissions = permissions_;
     CommandLine* cmdline = CommandLine::ForCurrentProcess();
     DCHECK(cmdline);
-    std::string flag_whitelist[] = {switches::kV, switches::kVModule};
+    std::string flag_whitelist[] = {
+      switches::kPpapiKeepAliveThrottle,
+      switches::kV,
+      switches::kVModule,
+    };
     for (size_t i = 0; i < arraysize(flag_whitelist); ++i) {
       std::string value = cmdline->GetSwitchValueASCII(flag_whitelist[i]);
       if (!value.empty()) {
@@ -818,34 +826,16 @@ void NaClProcessHost::OnPpapiChannelCreated(
             NaClBrowser::GetDelegate()->CreatePpapiHostFactory(
                 ppapi_host_.get())));
 
-    // Send a message to create the NaCl-Renderer channel. The handle is just
-    // a place holder.
-    ipc_proxy_channel_->Send(
-        new PpapiMsg_CreateNaClChannel(
-            nacl_host_message_filter_->render_process_id(),
-            args,
-            SerializedHandle(SerializedHandle::CHANNEL_HANDLE,
-                             IPC::InvalidPlatformFileForTransit())));
-  } else if (reply_msg_) {
-    // Otherwise, this must be a renderer channel.
-    ReplyToRenderer(channel_handle);
+    // Send a message to initialize the IPC dispatchers in the NaCl plugin.
+    ipc_proxy_channel_->Send(new PpapiMsg_InitializeNaClDispatcher(args));
+
+    // Let the renderer know that the IPC channels are established.
+    ReplyToRenderer(renderer_channel_handle);
   } else {
-    // Attempt to open more than 1 renderer channel is not supported.
+    // Attempt to open more than 1 browser channel is not supported.
     // Shut down the NaCl process.
     process_->GetHost()->ForceShutdown();
   }
-}
-
-bool NaClProcessHost::OnUntrustedMessageForwarded(const IPC::Message& msg) {
-  // Handle messages that have been forwarded from our PluginListener.
-  // These messages come from untrusted code so should be handled with care.
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(NaClProcessHost, msg)
-    IPC_MESSAGE_HANDLER(PpapiHostMsg_ChannelCreated,
-                        OnPpapiChannelCreated)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
 }
 
 bool NaClProcessHost::StartWithLaunchedProcess() {

@@ -124,6 +124,9 @@ remoting.ClientSession = function(accessCode, fetchPin, fetchThirdPartyToken,
       document.getElementById('send-keys-menu')
   );
 
+  /** @type {HTMLMediaElement} @private */
+  this.video_ = null;
+
   /** @type {HTMLElement} @private */
   this.resizeToClientButton_ =
       document.getElementById('screen-resize-to-client');
@@ -211,6 +214,17 @@ remoting.ClientSession.State = {
   FAILED: 5
 };
 
+/**
+ * @param {string} state The state name.
+ * @return {remoting.ClientSession.State} The session state enum value.
+ */
+remoting.ClientSession.State.fromString = function(state) {
+  if (!remoting.ClientSession.State.hasOwnProperty(state)) {
+    throw "Invalid ClientSession.State: " + state;
+  }
+  return remoting.ClientSession.State[state];
+}
+
 /** @enum {number} */
 remoting.ClientSession.ConnectionError = {
   UNKNOWN: -1,
@@ -221,6 +235,18 @@ remoting.ClientSession.ConnectionError = {
   NETWORK_FAILURE: 4,
   HOST_OVERLOAD: 5
 };
+
+/**
+ * @param {string} error The connection error name.
+ * @return {remoting.ClientSession.ConnectionError} The connection error enum.
+ */
+remoting.ClientSession.ConnectionError.fromString = function(error) {
+  if (!remoting.ClientSession.ConnectionError.hasOwnProperty(error)) {
+    console.error('Unexpected ClientSession.ConnectionError string: ', error);
+    return remoting.ClientSession.ConnectionError.UNKNOWN;
+  }
+  return remoting.ClientSession.ConnectionError[error];
+}
 
 // The mode of this session.
 /** @enum {number} */
@@ -307,10 +333,14 @@ remoting.ClientSession.prototype.hasCapability_ = function(capability) {
 /**
  * @param {Element} container The element to add the plugin to.
  * @param {string} id Id to use for the plugin element .
+ * @param {function(string, string):boolean} onExtensionMessage The handler for
+ *     protocol extension messages. Returns true if a message is recognized;
+ *     false otherwise.
  * @return {remoting.ClientPlugin} Create plugin object for the locally
  * installed plugin.
  */
-remoting.ClientSession.prototype.createClientPlugin_ = function(container, id) {
+remoting.ClientSession.prototype.createClientPlugin_ =
+    function(container, id, onExtensionMessage) {
   var plugin = /** @type {remoting.ViewerPlugin} */
       document.createElement('embed');
 
@@ -322,7 +352,7 @@ remoting.ClientSession.prototype.createClientPlugin_ = function(container, id) {
   plugin.tabIndex = 0;  // Required, otherwise focus() doesn't work.
   container.appendChild(plugin);
 
-  return new remoting.ClientPluginAsync(plugin);
+  return new remoting.ClientPlugin(plugin, onExtensionMessage);
 };
 
 /**
@@ -350,10 +380,14 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
  * Adds <embed> element to |container| and readies the sesion object.
  *
  * @param {Element} container The element to add the plugin to.
+ * @param {function(string, string):boolean} onExtensionMessage The handler for
+ *     protocol extension messages. Returns true if a message is recognized;
+ *     false otherwise.
  */
 remoting.ClientSession.prototype.createPluginAndConnect =
-    function(container) {
-  this.plugin_ = this.createClientPlugin_(container, this.PLUGIN_ID);
+    function(container, onExtensionMessage) {
+  this.plugin_ = this.createClientPlugin_(container, this.PLUGIN_ID,
+                                          onExtensionMessage);
   remoting.HostSettings.load(this.hostId_,
                              this.onHostSettingsLoaded_.bind(this));
 };
@@ -440,6 +474,26 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
     this.applyRemapKeys_(true);
   }
 
+  // Enable MediaSource-based rendering if available.
+  if (remoting.settings.USE_MEDIA_SOURCE_RENDERING &&
+      this.plugin_.hasFeature(
+          remoting.ClientPlugin.Feature.MEDIA_SOURCE_RENDERING)) {
+    this.video_ = /** @type {HTMLMediaElement} */(
+        document.getElementById('mediasource-video-output'));
+    // Make sure that the <video> element is hidden until we get the first
+    // frame.
+    this.video_.style.width = '0px';
+    this.video_.style.height = '0px';
+
+    var renderer = new remoting.MediaSourceRenderer(this.video_);
+    this.plugin_.enableMediaSourceRendering(renderer);
+    /** @type {HTMLElement} */(document.getElementById('video-container'))
+        .classList.add('mediasource-rendering');
+  } else {
+    /** @type {HTMLElement} */(document.getElementById('video-container'))
+        .classList.remove('mediasource-rendering');
+  }
+
   /** @param {string} msg The IQ stanza to send. */
   this.plugin_.onOutgoingIqHandler = this.sendIq_.bind(this);
   /** @param {string} msg The message to log. */
@@ -485,6 +539,11 @@ remoting.ClientSession.prototype.removePlugin = function() {
 
   // In case the user had selected full-screen mode, cancel it now.
   document.webkitCancelFullScreen();
+
+  // Remove mediasource-rendering class from video-contained - this will also
+  // hide the <video> element.
+  /** @type {HTMLElement} */(document.getElementById('video-container'))
+      .classList.remove('mediasource-rendering');
 };
 
 /**
@@ -1087,31 +1146,24 @@ remoting.ClientSession.prototype.updateDimensions = function() {
     }
   }
 
-  var pluginWidth = desktopWidth * scale;
-  var pluginHeight = desktopHeight * scale;
+  var pluginWidth = Math.round(desktopWidth * scale);
+  var pluginHeight = Math.round(desktopHeight * scale);
+
+  if (this.video_) {
+    this.video_.style.width = pluginWidth + 'px';
+    this.video_.style.height = pluginHeight + 'px';
+  }
 
   // Resize the plugin if necessary.
   // TODO(wez): Handle high-DPI to high-DPI properly (crbug.com/135089).
-  this.plugin_.element().width = pluginWidth;
-  this.plugin_.element().height = pluginHeight;
+  this.plugin_.element().style.width = pluginWidth + 'px';
+  this.plugin_.element().style.height = pluginHeight + 'px';
 
   // Position the container.
   // Note that clientWidth/Height take into account scrollbars.
   var clientWidth = document.documentElement.clientWidth;
   var clientHeight = document.documentElement.clientHeight;
   var parentNode = this.plugin_.element().parentNode;
-
-  if (pluginWidth < clientWidth) {
-    parentNode.style.left = (clientWidth - pluginWidth) / 2 + 'px';
-  } else {
-    parentNode.style.left = '0';
-  }
-
-  if (pluginHeight < clientHeight) {
-    parentNode.style.top = (clientHeight - pluginHeight) / 2 + 'px';
-  } else {
-    parentNode.style.top = '0';
-  }
 
   console.log('plugin dimensions: ' +
               parentNode.style.left + ',' +
@@ -1168,15 +1220,18 @@ remoting.ClientSession.prototype.requestPairing = function(clientName, onDone) {
  * @private
  */
 remoting.ClientSession.prototype.toggleFullScreen_ = function() {
+  var htmlNode = /** @type {HTMLElement} */ (document.body.parentNode);
   if (document.webkitIsFullScreen) {
     document.webkitCancelFullScreen();
     this.enableBumpScroll_(false);
+    htmlNode.classList.remove('full-screen');
   } else {
     document.body.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT);
     // Don't enable bump scrolling immediately because it can result in
     // onMouseMove firing before the webkitIsFullScreen property can be
     // read safely (crbug.com/132180).
     window.setTimeout(this.enableBumpScroll_.bind(this, true), 0);
+    htmlNode.classList.add('full-screen');
   }
 };
 
@@ -1328,4 +1383,3 @@ remoting.ClientSession.prototype.sendClipboardItem = function(mimeType, item) {
     return;
   this.plugin_.sendClipboardItem(mimeType, item)
 };
-

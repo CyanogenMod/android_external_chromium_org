@@ -73,13 +73,19 @@
         ],
       },
     }],
+    ['OS=="linux" or OS=="mac"', {
+      'variables': {
+        # Can't be enabled on Windows due to http://crbug.com/342913
+        'read_only': 1,
+      },
+    }],
     ['OS=="mac"', {
       'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/ffmpegsumo.so',
         ],
         'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/Chromium Framework.framework/',
+          '<(PRODUCT_DIR)/<(mac_product_name) Framework.framework/',
         ],
       },
     }],
@@ -102,8 +108,8 @@
     ['OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
-          '<(PRODUCT_DIR)/icudt.dll',
         ],
         'isolate_dependency_untracked': [
           '../ppapi/lib/gl/include/KHR/',
@@ -112,5 +118,8 @@
         ],
       },
     }],
+  ],
+  'includes': [
+    '../third_party/icu/icu.isolate',
   ],
 }

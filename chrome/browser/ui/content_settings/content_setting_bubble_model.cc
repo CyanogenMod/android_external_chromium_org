@@ -39,7 +39,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 using content::WebContents;
 using content_settings::SettingInfo;
 using content_settings::SettingSource;
@@ -250,7 +250,7 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
       &display_host);
 
   if (display_host.empty())
-    display_host = ASCIIToUTF16(url.spec());
+    display_host = base::ASCIIToUTF16(url.spec());
 
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
@@ -338,7 +338,7 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
   } else {
     SettingInfo info;
     HostContentSettingsMap* map = profile()->GetHostContentSettingsMap();
-    scoped_ptr<Value> value(map->GetWebsiteSetting(
+    scoped_ptr<base::Value> value(map->GetWebsiteSetting(
         url, url, content_type(), std::string(), &info));
     setting = content_settings::ValueToContentSetting(value.get());
     setting_source = info.source;
@@ -361,6 +361,8 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
     radio_group.default_item = 1;
     block_setting_ = setting;
   }
+
+  set_setting_is_managed(setting_source != SETTING_SOURCE_USER);
   if (setting_source != SETTING_SOURCE_USER) {
     set_radio_group_enabled(false);
   } else {
@@ -449,7 +451,11 @@ ContentSettingPluginBubbleModel::ContentSettingPluginBubbleModel(
     : ContentSettingSingleRadioGroup(
           delegate, web_contents, profile, content_type) {
   DCHECK_EQ(content_type, CONTENT_SETTINGS_TYPE_PLUGINS);
-  set_custom_link_enabled(web_contents &&
+  // Disable the "Run all plugins this time" link if the setting is managed and
+  // can't be controlled by the user or if the user already clicked on the link
+  // and ran all plugins.
+  set_custom_link_enabled(!setting_is_managed() &&
+                          web_contents &&
                           TabSpecificContentSettings::FromWebContents(
                               web_contents)->load_plugins_link_enabled());
 }
@@ -465,14 +471,11 @@ ContentSettingPluginBubbleModel::~ContentSettingPluginBubbleModel() {
 void ContentSettingPluginBubbleModel::OnCustomLinkClicked() {
   content::RecordAction(UserMetricsAction("ClickToPlay_LoadAll_Bubble"));
   DCHECK(web_contents());
-  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
 #if defined(ENABLE_PLUGINS)
-  ChromePluginServiceFilter::GetInstance()->AuthorizeAllPlugins(
-      host->GetProcess()->GetID());
-#endif
   // TODO(bauerb): We should send the identifiers of blocked plug-ins here.
-  host->Send(new ChromeViewMsg_LoadBlockedPlugins(host->GetRoutingID(),
-                                                  std::string()));
+  ChromePluginServiceFilter::GetInstance()->AuthorizeAllPlugins(
+      web_contents(), true, std::string());
+#endif
   set_custom_link_enabled(false);
   TabSpecificContentSettings::FromWebContents(web_contents())->
       set_load_plugins_link_enabled(false);
@@ -660,7 +663,7 @@ void ContentSettingMediaStreamBubbleModel::SetRadioGroup() {
       url,
       profile()->GetPrefs()->GetString(prefs::kAcceptLanguages),
       &display_host_utf16);
-  std::string display_host(UTF16ToUTF8(display_host_utf16));
+  std::string display_host(base::UTF16ToUTF8(display_host_utf16));
   if (display_host.empty())
     display_host = url.spec();
 
@@ -721,7 +724,7 @@ void ContentSettingMediaStreamBubbleModel::SetRadioGroup() {
   }
 
   std::string radio_allow_label = l10n_util::GetStringFUTF8(
-      radio_allow_label_id, UTF8ToUTF16(display_host));
+      radio_allow_label_id, base::UTF8ToUTF16(display_host));
   std::string radio_block_label =
       l10n_util::GetStringUTF8(radio_block_label_id);
 
@@ -1023,18 +1026,20 @@ ContentSettingRPHBubbleModel::ContentSettingRPHBubbleModel(
     protocol = l10n_util::GetStringUTF16(
         IDS_REGISTER_PROTOCOL_HANDLER_WEBCAL_NAME);
   } else {
-    protocol = UTF8ToUTF16(pending_handler_.protocol());
+    protocol = base::UTF8ToUTF16(pending_handler_.protocol());
   }
 
   if (previous_handler_.IsEmpty()) {
     set_title(l10n_util::GetStringFUTF8(
         IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
-        pending_handler_.title(), UTF8ToUTF16(pending_handler_.url().host()),
+        pending_handler_.title(),
+        base::UTF8ToUTF16(pending_handler_.url().host()),
         protocol));
   } else {
     set_title(l10n_util::GetStringFUTF8(
         IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
-        pending_handler_.title(), UTF8ToUTF16(pending_handler_.url().host()),
+        pending_handler_.title(),
+        base::UTF8ToUTF16(pending_handler_.url().host()),
         protocol, previous_handler_.title()));
   }
 
@@ -1126,15 +1131,14 @@ void ContentSettingRPHBubbleModel::ClearOrSetPreviousHandler() {
   }
 }
 
-// TODO(toyoshim): Should share as many code with geolocation as possible.
-class ContentSettingMIDISysExBubbleModel
+class ContentSettingMidiSysExBubbleModel
     : public ContentSettingTitleAndLinkModel {
  public:
-  ContentSettingMIDISysExBubbleModel(Delegate* delegate,
+  ContentSettingMidiSysExBubbleModel(Delegate* delegate,
                                      WebContents* web_contents,
                                      Profile* profile,
                                      ContentSettingsType content_type);
-  virtual ~ContentSettingMIDISysExBubbleModel() {}
+  virtual ~ContentSettingMidiSysExBubbleModel() {}
 
  private:
   void MaybeAddDomainList(const std::set<std::string>& hosts, int title_id);
@@ -1142,7 +1146,7 @@ class ContentSettingMIDISysExBubbleModel
   virtual void OnCustomLinkClicked() OVERRIDE;
 };
 
-ContentSettingMIDISysExBubbleModel::ContentSettingMIDISysExBubbleModel(
+ContentSettingMidiSysExBubbleModel::ContentSettingMidiSysExBubbleModel(
     Delegate* delegate,
     WebContents* web_contents,
     Profile* profile,
@@ -1153,7 +1157,7 @@ ContentSettingMIDISysExBubbleModel::ContentSettingMIDISysExBubbleModel(
   SetDomainsAndCustomLink();
 }
 
-void ContentSettingMIDISysExBubbleModel::MaybeAddDomainList(
+void ContentSettingMidiSysExBubbleModel::MaybeAddDomainList(
     const std::set<std::string>& hosts, int title_id) {
   if (!hosts.empty()) {
     DomainList domain_list;
@@ -1163,7 +1167,7 @@ void ContentSettingMIDISysExBubbleModel::MaybeAddDomainList(
   }
 }
 
-void ContentSettingMIDISysExBubbleModel::SetDomainsAndCustomLink() {
+void ContentSettingMidiSysExBubbleModel::SetDomainsAndCustomLink() {
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
   const ContentSettingsUsagesState& usages_state =
@@ -1190,7 +1194,7 @@ void ContentSettingMIDISysExBubbleModel::SetDomainsAndCustomLink() {
   }
 }
 
-void ContentSettingMIDISysExBubbleModel::OnCustomLinkClicked() {
+void ContentSettingMidiSysExBubbleModel::OnCustomLinkClicked() {
   if (!web_contents())
     return;
   // Reset this embedder's entry to default for each of the requesting
@@ -1251,7 +1255,7 @@ ContentSettingBubbleModel*
                                             registry, content_type);
   }
   if (content_type == CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
-    return new ContentSettingMIDISysExBubbleModel(delegate, web_contents,
+    return new ContentSettingMidiSysExBubbleModel(delegate, web_contents,
                                                   profile, content_type);
   }
   return new ContentSettingSingleRadioGroup(delegate, web_contents, profile,
@@ -1264,7 +1268,8 @@ ContentSettingBubbleModel::ContentSettingBubbleModel(
     ContentSettingsType content_type)
     : web_contents_(web_contents),
       profile_(profile),
-      content_type_(content_type) {
+      content_type_(content_type),
+      setting_is_managed_(false) {
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
                  content::Source<WebContents>(web_contents));
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,

@@ -183,10 +183,10 @@ bool URLPatternSet::OverlapsWith(const URLPatternSet& other) const {
 }
 
 scoped_ptr<base::ListValue> URLPatternSet::ToValue() const {
-  scoped_ptr<ListValue> value(new ListValue);
+  scoped_ptr<base::ListValue> value(new base::ListValue);
   for (URLPatternSet::const_iterator i = patterns_.begin();
        i != patterns_.end(); ++i)
-    value->AppendIfNotPresent(Value::CreateStringValue(i->GetAsString()));
+    value->AppendIfNotPresent(new base::StringValue(i->GetAsString()));
   return value.Pass();
 }
 
@@ -206,7 +206,7 @@ bool URLPatternSet::Populate(const std::vector<std::string>& patterns,
       }
       return false;
     }
-    if (!allow_file_access && pattern.MatchesScheme(chrome::kFileScheme)) {
+    if (!allow_file_access && pattern.MatchesScheme(content::kFileScheme)) {
       pattern.SetValidSchemes(
           pattern.valid_schemes() & ~URLPattern::SCHEME_FILE);
     }

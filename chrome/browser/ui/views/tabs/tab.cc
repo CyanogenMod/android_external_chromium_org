@@ -376,8 +376,7 @@ class Tab::TabCloseButton : public views::ImageButton {
   }
 
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
-    if (tab_->controller())
-      tab_->controller()->OnMouseEventInTab(this, event);
+    tab_->controller_->OnMouseEventInTab(this, event);
 
     bool handled = ImageButton::OnMousePressed(event);
     // Explicitly mark midle-mouse clicks as non-handled to ensure the tab
@@ -386,14 +385,12 @@ class Tab::TabCloseButton : public views::ImageButton {
   }
 
   virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE {
-    if (tab_->controller())
-      tab_->controller()->OnMouseEventInTab(this, event);
+    tab_->controller_->OnMouseEventInTab(this, event);
     CustomButton::OnMouseMoved(event);
   }
 
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE {
-    if (tab_->controller())
-      tab_->controller()->OnMouseEventInTab(this, event);
+    tab_->controller_->OnMouseEventInTab(this, event);
     CustomButton::OnMouseReleased(event);
   }
 
@@ -422,15 +419,30 @@ class Tab::TabCloseButton : public views::ImageButton {
     views::View::ConvertRectToTarget(tab_, this, &tab_bounds_f);
     gfx::Rect tab_bounds = gfx::ToEnclosingRect(tab_bounds_f);
 
-    // If the button is hidden behind another tab, the hit test mask is empty.
-    // Otherwise set the hit test mask to be the contents bounds.
-    path->reset();
-    if (tab_bounds.Contains(button_bounds)) {
-      // Include the padding in the hit test mask for touch events.
-      if (source == HIT_TEST_SOURCE_TOUCH)
-        button_bounds = GetLocalBounds();
+    // If either the top or bottom of the tab close button is clipped,
+    // do not consider these regions to be part of the button's bounds.
+    int top_overflow = tab_bounds.y() - button_bounds.y();
+    int bottom_overflow = button_bounds.bottom() - tab_bounds.bottom();
+    if (top_overflow > 0)
+      button_bounds.set_y(tab_bounds.y());
+    else if (bottom_overflow > 0)
+      button_bounds.set_height(button_bounds.height() - bottom_overflow);
 
-      path->addRect(RectToSkRect(button_bounds));
+    // If the hit test request is in response to a gesture, |path| should be
+    // empty unless the entire tab close button is visible to the user. Hit
+    // test requests in response to a mouse event should always set |path|
+    // to be the visible portion of the tab close button, even if it is
+    // partially hidden behind another tab.
+    path->reset();
+    gfx::Rect intersection(gfx::IntersectRects(tab_bounds, button_bounds));
+    if (!intersection.IsEmpty()) {
+      // TODO(tdanderson): Consider always returning the intersection if
+      // the non-rectangular shape of the tabs can be accounted for.
+      if (source == HIT_TEST_SOURCE_TOUCH &&
+          !tab_bounds.Contains(button_bounds))
+        return;
+
+      path->addRect(RectToSkRect(intersection));
     }
   }
 
@@ -483,13 +495,13 @@ Tab::Tab(TabController* controller)
       immersive_loading_step_(0),
       should_display_crashed_favicon_(false),
       animating_media_state_(TAB_MEDIA_STATE_NONE),
-      theme_provider_(NULL),
       tab_activated_with_last_gesture_begin_(false),
       hover_controller_(this),
       showing_icon_(false),
       showing_media_indicator_(false),
       showing_close_button_(false),
       close_button_color_(0) {
+  DCHECK(controller);
   InitTabResources();
 
   // So we get don't get enter/exit on children and don't prematurely stop the
@@ -526,11 +538,11 @@ void Tab::set_animation_container(gfx::AnimationContainer* container) {
 }
 
 bool Tab::IsActive() const {
-  return controller() ? controller()->IsActiveTab(this) : true;
+  return controller_->IsActiveTab(this);
 }
 
 bool Tab::IsSelected() const {
-  return controller() ? controller()->IsTabSelected(this) : true;
+  return controller_->IsTabSelected(this);
 }
 
 void Tab::SetData(const TabRendererData& data) {
@@ -726,7 +738,7 @@ void Tab::ButtonPressed(views::Button* sender, const ui::Event& event) {
        (event.flags() & ui::EF_FROM_TOUCH) == 0) ? CLOSE_TAB_FROM_MOUSE :
       CLOSE_TAB_FROM_TOUCH;
   DCHECK_EQ(close_button_, sender);
-  controller()->CloseTab(this, source);
+  controller_->CloseTab(this, source);
   if (event.type() == ui::ET_GESTURE_TAP)
     TouchUMA::RecordGestureAction(TouchUMA::GESTURE_TABCLOSE_TAP);
 }
@@ -737,8 +749,8 @@ void Tab::ButtonPressed(views::Button* sender, const ui::Event& event) {
 void Tab::ShowContextMenuForView(views::View* source,
                                  const gfx::Point& point,
                                  ui::MenuSourceType source_type) {
-  if (controller() && !closing())
-    controller()->ShowContextMenuForTab(this, point, source_type);
+  if (!closing())
+    controller_->ShowContextMenuForTab(this, point, source_type);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -751,16 +763,14 @@ void Tab::OnPaint(gfx::Canvas* canvas) {
     return;
 
   gfx::Rect clip;
-  if (controller()) {
-    if (!controller()->ShouldPaintTab(this, &clip))
-      return;
-    if (!clip.IsEmpty()) {
-      canvas->Save();
-      canvas->ClipRect(clip);
-    }
+  if (!controller_->ShouldPaintTab(this, &clip))
+    return;
+  if (!clip.IsEmpty()) {
+    canvas->Save();
+    canvas->ClipRect(clip);
   }
 
-  if (controller() && controller()->IsImmersiveStyle())
+  if (controller_->IsImmersiveStyle())
     PaintImmersiveTab(canvas);
   else
     PaintTab(canvas);
@@ -779,7 +789,7 @@ void Tab::Layout() {
   // The height of the content of the Tab is the largest of the favicon,
   // the title text and the close button graphic.
   int content_height = std::max(tab_icon_size(), font_height_);
-  close_button_->set_border(NULL);
+  close_button_->SetBorder(views::Border::NullBorder());
   gfx::Size close_button_size(close_button_->GetPreferredSize());
   content_height = std::max(content_height, close_button_size.height());
 
@@ -818,8 +828,8 @@ void Tab::Layout() {
     int left_border = kCloseButtonHorzFuzz;
     int right_border = width() - (lb.width() + close_button_size.width() +
         left_border);
-    close_button_->set_border(views::Border::CreateEmptyBorder(top_border,
-        left_border, bottom_border, right_border));
+    close_button_->SetBorder(views::Border::CreateEmptyBorder(
+        top_border, left_border, bottom_border, right_border));
     close_button_->SetPosition(gfx::Point(lb.width(), 0));
     close_button_->SizeToPreferredSize();
     close_button_->SetVisible(true);
@@ -914,35 +924,21 @@ void Tab::GetHitTestMask(HitTestSource source, gfx::Path* path) const {
   // It is possible for a portion of the tab to be occluded if tabs are
   // stacked, so modify the hit test mask to only include the visible
   // region of the tab.
-  if (controller()) {
-    gfx::Rect clip;
-    controller()->ShouldPaintTab(this, &clip);
-    if (clip.size().GetArea()) {
-      SkRect intersection(path->getBounds());
-      intersection.intersect(RectToSkRect(clip));
-      path->reset();
-      path->addRect(intersection);
-    }
+  gfx::Rect clip;
+  controller_->ShouldPaintTab(this, &clip);
+  if (clip.size().GetArea()) {
+    SkRect intersection(path->getBounds());
+    intersection.intersect(RectToSkRect(clip));
+    path->reset();
+    path->addRect(intersection);
   }
 }
 
 bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
-  // TODO(miu): Rectify inconsistent tooltip behavior.  http://crbug.com/310947
-
-  if (data_.media_state != TAB_MEDIA_STATE_NONE) {
-    *tooltip = chrome::AssembleTabTooltipText(data_.title, data_.media_state);
-    return true;
-  }
-
-  if (data_.title.empty())
-    return false;
-
-  // Only show the tooltip if the title is truncated.
-  if (font_->GetStringWidth(data_.title) > GetTitleBounds().width()) {
-    *tooltip = data_.title;
-    return true;
-  }
-  return false;
+  // Note: Anything that affects the tooltip text should be accounted for when
+  // calling TooltipTextChanged() from Tab::DataChanged().
+  *tooltip = chrome::AssembleTabTooltipText(data_.title, data_.media_state);
+  return !tooltip->empty();
 }
 
 bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) const {
@@ -951,69 +947,57 @@ bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) const {
   return true;
 }
 
-ui::ThemeProvider* Tab::GetThemeProvider() const {
-  ui::ThemeProvider* tp = View::GetThemeProvider();
-  return tp ? tp : theme_provider_;
-}
-
 bool Tab::OnMousePressed(const ui::MouseEvent& event) {
-  if (!controller())
-    return false;
-
-  controller()->OnMouseEventInTab(this, event);
+  controller_->OnMouseEventInTab(this, event);
 
   // Allow a right click from touch to drag, which corresponds to a long click.
   if (event.IsOnlyLeftMouseButton() ||
       (event.IsOnlyRightMouseButton() && event.flags() & ui::EF_FROM_TOUCH)) {
     ui::ListSelectionModel original_selection;
-    original_selection.Copy(controller()->GetSelectionModel());
+    original_selection.Copy(controller_->GetSelectionModel());
     // Changing the selection may cause our bounds to change. If that happens
     // the location of the event may no longer be valid. Create a copy of the
     // event in the parents coordinate, which won't change, and recreate an
     // event after changing so the coordinates are correct.
     ui::MouseEvent event_in_parent(event, static_cast<View*>(this), parent());
-    if (controller()->SupportsMultipleSelection()) {
+    if (controller_->SupportsMultipleSelection()) {
       if (event.IsShiftDown() && event.IsControlDown()) {
-        controller()->AddSelectionFromAnchorTo(this);
+        controller_->AddSelectionFromAnchorTo(this);
       } else if (event.IsShiftDown()) {
-        controller()->ExtendSelectionTo(this);
+        controller_->ExtendSelectionTo(this);
       } else if (event.IsControlDown()) {
-        controller()->ToggleSelected(this);
+        controller_->ToggleSelected(this);
         if (!IsSelected()) {
           // Don't allow dragging non-selected tabs.
           return false;
         }
       } else if (!IsSelected()) {
-        controller()->SelectTab(this);
+        controller_->SelectTab(this);
       }
     } else if (!IsSelected()) {
-      controller()->SelectTab(this);
+      controller_->SelectTab(this);
     }
     ui::MouseEvent cloned_event(event_in_parent, parent(),
                                 static_cast<View*>(this));
-    controller()->MaybeStartDrag(this, cloned_event, original_selection);
+    controller_->MaybeStartDrag(this, cloned_event, original_selection);
   }
   return true;
 }
 
 bool Tab::OnMouseDragged(const ui::MouseEvent& event) {
-  if (controller())
-    controller()->ContinueDrag(this, event);
+  controller_->ContinueDrag(this, event);
   return true;
 }
 
 void Tab::OnMouseReleased(const ui::MouseEvent& event) {
-  if (!controller())
-    return;
-
-  controller()->OnMouseEventInTab(this, event);
+  controller_->OnMouseEventInTab(this, event);
 
   // Notify the drag helper that we're done with any potential drag operations.
   // Clean up the drag helper, which is re-created on the next mouse press.
   // In some cases, ending the drag will schedule the tab for destruction; if
   // so, bail immediately, since our members are already dead and we shouldn't
   // do anything else except drop the tab where it is.
-  if (controller()->EndDrag(END_DRAG_COMPLETE))
+  if (controller_->EndDrag(END_DRAG_COMPLETE))
     return;
 
   // Close tab on middle click, but only if the button is released over the tab
@@ -1021,28 +1005,27 @@ void Tab::OnMouseReleased(const ui::MouseEvent& event) {
   // releases happen off the element).
   if (event.IsMiddleMouseButton()) {
     if (HitTestPoint(event.location())) {
-      controller()->CloseTab(this, CLOSE_TAB_FROM_MOUSE);
+      controller_->CloseTab(this, CLOSE_TAB_FROM_MOUSE);
     } else if (closing_) {
       // We're animating closed and a middle mouse button was pushed on us but
       // we don't contain the mouse anymore. We assume the user is clicking
       // quicker than the animation and we should close the tab that falls under
       // the mouse.
-      Tab* closest_tab = controller()->GetTabAt(this, event.location());
+      Tab* closest_tab = controller_->GetTabAt(this, event.location());
       if (closest_tab)
-        controller()->CloseTab(closest_tab, CLOSE_TAB_FROM_MOUSE);
+        controller_->CloseTab(closest_tab, CLOSE_TAB_FROM_MOUSE);
     }
   } else if (event.IsOnlyLeftMouseButton() && !event.IsShiftDown() &&
              !event.IsControlDown()) {
     // If the tab was already selected mouse pressed doesn't change the
     // selection. Reset it now to handle the case where multiple tabs were
     // selected.
-    controller()->SelectTab(this);
+    controller_->SelectTab(this);
   }
 }
 
 void Tab::OnMouseCaptureLost() {
-  if (controller())
-    controller()->EndDrag(END_DRAG_CAPTURE_LOST);
+  controller_->EndDrag(END_DRAG_CAPTURE_LOST);
 }
 
 void Tab::OnMouseEntered(const ui::MouseEvent& event) {
@@ -1051,8 +1034,7 @@ void Tab::OnMouseEntered(const ui::MouseEvent& event) {
 
 void Tab::OnMouseMoved(const ui::MouseEvent& event) {
   hover_controller_.SetLocation(event.location());
-  if (controller())
-    controller()->OnMouseEventInTab(this, event);
+  controller_->OnMouseEventInTab(this, event);
 }
 
 void Tab::OnMouseExited(const ui::MouseEvent& event) {
@@ -1060,11 +1042,6 @@ void Tab::OnMouseExited(const ui::MouseEvent& event) {
 }
 
 void Tab::OnGestureEvent(ui::GestureEvent* event) {
-  if (!controller()) {
-    event->SetHandled();
-    return;
-  }
-
   switch (event->type()) {
     case ui::ET_GESTURE_BEGIN: {
       if (event->details().touch_points() != 1)
@@ -1074,24 +1051,24 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
       ui::GestureEvent event_in_parent(*event, static_cast<View*>(this),
                                        parent());
       ui::ListSelectionModel original_selection;
-      original_selection.Copy(controller()->GetSelectionModel());
+      original_selection.Copy(controller_->GetSelectionModel());
       tab_activated_with_last_gesture_begin_ = !IsActive();
       if (!IsSelected())
-        controller()->SelectTab(this);
+        controller_->SelectTab(this);
       gfx::Point loc(event->location());
       views::View::ConvertPointToScreen(this, &loc);
       ui::GestureEvent cloned_event(event_in_parent, parent(),
                                     static_cast<View*>(this));
-      controller()->MaybeStartDrag(this, cloned_event, original_selection);
+      controller_->MaybeStartDrag(this, cloned_event, original_selection);
       break;
     }
 
     case ui::ET_GESTURE_END:
-      controller()->EndDrag(END_DRAG_COMPLETE);
+      controller_->EndDrag(END_DRAG_COMPLETE);
       break;
 
     case ui::ET_GESTURE_SCROLL_UPDATE:
-      controller()->ContinueDrag(this, *event);
+      controller_->ContinueDrag(this, *event);
       break;
 
     default:
@@ -1128,6 +1105,9 @@ void Tab::MaybeAdjustLeftForMiniTab(gfx::Rect* bounds) const {
 }
 
 void Tab::DataChanged(const TabRendererData& old) {
+  if (data().media_state != old.media_state || data().title != old.title)
+    TooltipTextChanged();
+
   if (data().blocked == old.blocked)
     return;
 
@@ -1579,7 +1559,7 @@ void Tab::AdvanceLoadingAnimation(TabRendererData::NetworkState old_state,
     loading_animation_frame_ = 0;
     immersive_loading_step_ = 0;
   }
-  if (controller() && controller()->IsImmersiveStyle())
+  if (controller_->IsImmersiveStyle())
     SchedulePaintInRect(GetImmersiveBarRect());
   else
     ScheduleIconPaint();
@@ -1694,7 +1674,8 @@ gfx::Rect Tab::GetImmersiveBarRect() const {
 void Tab::GetTabIdAndFrameId(views::Widget* widget,
                              int* tab_id,
                              int* frame_id) const {
-  if (widget && widget->GetTopLevelWidget()->ShouldUseNativeFrame()) {
+  if (widget &&
+      widget->GetTopLevelWidget()->ShouldWindowContentsBeTransparent()) {
     *tab_id = IDR_THEME_TAB_BACKGROUND_V;
     *frame_id = 0;
   } else if (data().incognito) {

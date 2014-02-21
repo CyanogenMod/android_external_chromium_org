@@ -46,6 +46,12 @@ class MEDIA_EXPORT SourceBufferStream {
     kEndOfStream
   };
 
+  enum Type {
+    kAudio,
+    kVideo,
+    kText
+  };
+
   SourceBufferStream(const AudioDecoderConfig& audio_config,
                      const LogCB& log_cb);
   SourceBufferStream(const VideoDecoderConfig& video_config,
@@ -101,6 +107,11 @@ class MEDIA_EXPORT SourceBufferStream {
 
   // Returns a list of the buffered time ranges.
   Ranges<base::TimeDelta> GetBufferedTime() const;
+
+  // Returns the duration of the buffered ranges, which is equivalent
+  // to the end timestamp of the last buffered range. If no data is buffered
+  // then base::TimeDelta() is returned.
+  base::TimeDelta GetBufferedDuration() const;
 
   // Notifies this object that end of stream has been signalled.
   void MarkEndOfStream();
@@ -260,8 +271,8 @@ class MEDIA_EXPORT SourceBufferStream {
   // have a keyframe after |timestamp| then kNoTimestamp() is returned.
   base::TimeDelta FindKeyframeAfterTimestamp(const base::TimeDelta timestamp);
 
-  // Returns "VIDEO" for a video SourceBufferStream and "AUDIO" for an audio
-  // one.
+  // Returns "VIDEO" for a video SourceBufferStream, "AUDIO" for an audio
+  // stream, and "TEXT" for a text stream.
   std::string GetStreamTypeName() const;
 
   // Returns true if we don't have any ranges or the last range is selected
@@ -286,7 +297,12 @@ class MEDIA_EXPORT SourceBufferStream {
       base::TimeDelta start, base::TimeDelta end, bool is_exclusive,
       BufferQueue* deleted_buffers);
 
-  bool is_video() const { return video_configs_.size() > 0; }
+  Type GetType() const;
+
+  // See GetNextBuffer() for additional details.  The internal method hands out
+  // buffers from the |track_buffer_| and |selected_range_| without additional
+  // processing for splice frame buffers; which is handled by GetNextBuffer().
+  Status GetNextBufferInternal(scoped_refptr<StreamParserBuffer>* out_buffer);
 
   // Callback used to report error strings that can help the web developer
   // figure out what is wrong with the content.
@@ -363,6 +379,15 @@ class MEDIA_EXPORT SourceBufferStream {
   // config. GetNextBuffer() must not be called again until
   // GetCurrentXXXDecoderConfig() has been called.
   bool config_change_pending_;
+
+  // Used by GetNextBuffer() when a buffer with fade out is returned from
+  // GetNextBufferInternal().  Will be set to the returned buffer and will be
+  // consumed after the fade out section has been exhausted.
+  scoped_refptr<StreamParserBuffer> fade_in_buffer_;
+
+  // Indicates which of the fade out preroll buffers in |fade_in_buffer_| should
+  // be handled out next.
+  size_t fade_out_preroll_index_;
 
   DISALLOW_COPY_AND_ASSIGN(SourceBufferStream);
 };

@@ -73,8 +73,16 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void AddFilter(BrowserMessageFilter* filter) OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
-  virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
+  virtual void FilterURL(bool empty_allowed, GURL* url) OVERRIDE;
+#if defined(ENABLE_WEBRTC)
+  virtual void EnableAecDump(const base::FilePath& file) OVERRIDE;
+  virtual void DisableAecDump() OVERRIDE;
+  virtual void SetWebRtcLogMessageCallback(
+      base::Callback<void(const std::string&)> callback) OVERRIDE;
+#endif
+  virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
+      OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -91,6 +99,10 @@ class MockRenderProcessHost : public RenderProcessHost {
 
   int GetActiveViewCount();
 
+  void SetIsGuest(bool is_guest) {
+    is_guest_ = is_guest;
+  }
+
  private:
   // Stores IPC messages that would have been sent to the renderer.
   IPC::TestSink sink_;
@@ -106,6 +118,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   IDMap<IPC::Listener> listeners_;
   bool fast_shutdown_started_;
   bool deletion_callback_called_;
+  bool is_guest_;
 
   DISALLOW_COPY_AND_ASSIGN(MockRenderProcessHost);
 };

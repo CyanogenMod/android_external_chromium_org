@@ -24,12 +24,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
-#include "chrome/browser/ui/browser_tab_contents.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/status_bubble.h"
+#include "chrome/browser/ui/tab_helpers.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/pref_names.h"
@@ -56,7 +57,7 @@ using content::WebContents;
 class BrowserNavigatorWebContentsAdoption {
  public:
   static void AttachTabHelpers(content::WebContents* contents) {
-    BrowserTabContents::AttachTabHelpers(contents);
+    TabHelpers::AttachTabHelpers(contents);
   }
 };
 
@@ -364,20 +365,17 @@ content::WebContents* CreateTargetContents(const chrome::NavigateParams& params,
 // |params->target_contents| with it and update to point to the swapped-in
 // WebContents.
 bool SwapInPrerender(const GURL& url, chrome::NavigateParams* params) {
+  Profile* profile =
+      Profile::FromBrowserContext(params->target_contents->GetBrowserContext());
+  InstantSearchPrerenderer* prerenderer =
+      InstantSearchPrerenderer::GetForProfile(profile);
+  if (prerenderer && prerenderer->UsePrerenderedPage(url, params))
+    return true;
+
   prerender::PrerenderManager* prerender_manager =
-      prerender::PrerenderManagerFactory::GetForProfile(
-          Profile::FromBrowserContext(
-              params->target_contents->GetBrowserContext()));
+      prerender::PrerenderManagerFactory::GetForProfile(profile);
   return prerender_manager &&
       prerender_manager->MaybeUsePrerenderedPage(url, params);
-}
-
-bool SwapInInstantNTP(chrome::NavigateParams* params,
-                      const GURL& url,
-                      content::WebContents* source_contents) {
-  BrowserInstantController* instant = params->browser->instant_controller();
-  return instant && instant->MaybeSwapInInstantNTPContents(
-      url, source_contents, &params->target_contents);
 }
 
 chrome::HostDesktopType GetHostDesktop(Browser* browser) {
@@ -576,8 +574,8 @@ void Navigate(NavigateParams* params) {
   // Check if this is a singleton tab that already exists
   int singleton_index = chrome::GetIndexOfSingletonTab(params);
 
-  // Did we use Instant's NTP contents or a prerender?
-  bool swapped_in = false;
+  // Did we use a prerender?
+  bool swapped_in_prerender = false;
 
   // If no target WebContents was specified, we need to construct one if
   // we are supposed to target a new tab; unless it's a singleton that already
@@ -593,9 +591,7 @@ void Navigate(NavigateParams* params) {
     }
 
     if (params->disposition != CURRENT_TAB) {
-      swapped_in = SwapInInstantNTP(params, url, NULL);
-      if (!swapped_in)
-        params->target_contents = CreateTargetContents(*params, url);
+      params->target_contents = CreateTargetContents(*params, url);
 
       // This function takes ownership of |params->target_contents| until it
       // is added to a TabStripModel.
@@ -604,9 +600,7 @@ void Navigate(NavigateParams* params) {
       // ... otherwise if we're loading in the current tab, the target is the
       // same as the source.
       DCHECK(params->source_contents);
-      swapped_in = SwapInInstantNTP(params, url, params->source_contents);
-      if (!swapped_in)
-        params->target_contents = params->source_contents;
+      params->target_contents = params->source_contents;
       DCHECK(params->target_contents);
       // Prerender expects |params->target_contents| to be attached to a browser
       // window, so only call for CURRENT_TAB navigations. (Others are currently
@@ -619,14 +613,13 @@ void Navigate(NavigateParams* params) {
       // Therefore, we should swap in regardless of CURRENT_TAB, and instead,
       // check in the swapin function whether the WebContents is not in a
       // TabStrip model, in which case we must not swap in.
-      if (!swapped_in)
-        swapped_in = SwapInPrerender(url, params);
+      swapped_in_prerender = SwapInPrerender(url, params);
     }
 
     if (user_initiated)
       params->target_contents->UserGestureDone();
 
-    if (!swapped_in) {
+    if (!swapped_in_prerender) {
       // Try to handle non-navigational URLs that popup dialogs and such, these
       // should not actually navigate.
       if (!HandleNonNavigationAboutURL(url)) {
@@ -659,7 +652,7 @@ void Navigate(NavigateParams* params) {
     params->source_contents->GetView()->Focus();
 
   if (params->source_contents == params->target_contents ||
-      (swapped_in && params->disposition == CURRENT_TAB)) {
+      (swapped_in_prerender && params->disposition == CURRENT_TAB)) {
     // The navigation occurred in the source tab.
     params->browser->UpdateUIForNavigationInTab(params->target_contents,
                                                 params->transition,
@@ -730,13 +723,16 @@ bool IsURLAllowedInIncognito(const GURL& url,
   // Most URLs are allowed in incognito; the following are exceptions.
   // chrome://extensions is on the list because it redirects to
   // chrome://settings.
-  if (url.scheme() == chrome::kChromeUIScheme &&
+  if (url.scheme() == content::kChromeUIScheme &&
       (url.host() == chrome::kChromeUISettingsHost ||
        url.host() == chrome::kChromeUISettingsFrameHost ||
        url.host() == chrome::kChromeUIExtensionsHost ||
        url.host() == chrome::kChromeUIBookmarksHost ||
 #if defined(ENABLE_ENHANCED_BOOKMARKS)
        url.host() == chrome::kChromeUIEnhancedBookmarksHost ||
+#endif
+#if !defined(OS_CHROMEOS)
+       url.host() == chrome::kChromeUIChromeSigninHost ||
 #endif
        url.host() == chrome::kChromeUIUberHost ||
        url.host() == chrome::kChromeUIThumbnailHost ||
@@ -758,7 +754,7 @@ bool IsURLAllowedInIncognito(const GURL& url,
       &rewritten_url, browser_context, &reverse_on_redirect);
 
   // Some URLs are mapped to uber subpages. Do not allow them in incognito.
-  return !(rewritten_url.scheme() == chrome::kChromeUIScheme &&
+  return !(rewritten_url.scheme() == content::kChromeUIScheme &&
            rewritten_url.host() == chrome::kChromeUIUberHost);
 }
 

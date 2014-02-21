@@ -55,7 +55,9 @@ void PasswordManagerPresenter::Initialize() {
     store->AddObserver(this);
 }
 
-void PasswordManagerPresenter::OnLoginsChanged() {
+void PasswordManagerPresenter::OnLoginsChanged(
+    const PasswordStoreChangeList& changes) {
+  // Entire list is updated for convenience.
   UpdatePasswordLists();
 }
 
@@ -65,6 +67,9 @@ PasswordStore* PasswordManagerPresenter::GetPasswordStore() {
 }
 
 void PasswordManagerPresenter::UpdatePasswordLists() {
+  // Reset so that showing a password will require re-authentication.
+  last_authentication_time_ = base::TimeTicks();
+
   // Reset the current lists.
   password_list_.clear();
   password_exception_list_.clear();
@@ -80,7 +85,7 @@ void PasswordManagerPresenter::RemoveSavedPassword(size_t index) {
     return;
   store->RemoveLogin(*password_list_[index]);
   content::RecordAction(
-      content::UserMetricsAction("PasswordManager_RemoveSavedPassword"));
+      base::UserMetricsAction("PasswordManager_RemoveSavedPassword"));
 }
 
 void PasswordManagerPresenter::RemovePasswordException(size_t index) {
@@ -90,7 +95,7 @@ void PasswordManagerPresenter::RemovePasswordException(size_t index) {
     return;
   store->RemoveLogin(*password_exception_list_[index]);
   content::RecordAction(
-      content::UserMetricsAction("PasswordManager_RemovePasswordException"));
+      base::UserMetricsAction("PasswordManager_RemovePasswordException"));
 }
 
 void PasswordManagerPresenter::RequestShowPassword(size_t index) {
@@ -144,9 +149,7 @@ bool PasswordManagerPresenter::IsAuthenticationRequired() {
 }
 
 PasswordManagerPresenter::ListPopulater::ListPopulater(
-    PasswordManagerPresenter* page)
-    : page_(page),
-      pending_login_query_(0) {
+    PasswordManagerPresenter* page) : page_(page) {
 }
 
 PasswordManagerPresenter::ListPopulater::~ListPopulater() {
@@ -159,32 +162,19 @@ PasswordManagerPresenter::PasswordListPopulater::PasswordListPopulater(
 void PasswordManagerPresenter::PasswordListPopulater::Populate() {
   PasswordStore* store = page_->GetPasswordStore();
   if (store != NULL) {
-    if (pending_login_query_)
-      store->CancelRequest(pending_login_query_);
-
-    pending_login_query_ = store->GetAutofillableLogins(this);
+    cancelable_task_tracker()->TryCancelAll();
+    store->GetAutofillableLogins(this);
   } else {
     LOG(ERROR) << "No password store! Cannot display passwords.";
   }
 }
 
-void PasswordManagerPresenter::PasswordListPopulater::
-    OnPasswordStoreRequestDone(
-        CancelableRequestProvider::Handle handle,
-        const std::vector<autofill::PasswordForm*>& result) {
-  DCHECK_EQ(pending_login_query_, handle);
-  pending_login_query_ = 0;
-  page_->password_list_.clear();
-  page_->password_list_.insert(page_->password_list_.end(),
-                               result.begin(), result.end());
-  page_->SetPasswordList();
-}
-
 void PasswordManagerPresenter::PasswordListPopulater::OnGetPasswordStoreResults(
     const std::vector<autofill::PasswordForm*>& results) {
-  // TODO(kaiwang): Implement when I refactor
-  // PasswordStore::GetAutofillableLogins and PasswordStore::GetBlacklistLogins.
-  NOTIMPLEMENTED();
+  page_->password_list_.clear();
+  page_->password_list_.insert(page_->password_list_.end(),
+                               results.begin(), results.end());
+  page_->SetPasswordList();
 }
 
 PasswordManagerPresenter::PasswordExceptionListPopulater::
@@ -195,31 +185,18 @@ PasswordManagerPresenter::PasswordExceptionListPopulater::
 void PasswordManagerPresenter::PasswordExceptionListPopulater::Populate() {
   PasswordStore* store = page_->GetPasswordStore();
   if (store != NULL) {
-    if (pending_login_query_)
-      store->CancelRequest(pending_login_query_);
-
-    pending_login_query_ = store->GetBlacklistLogins(this);
+    cancelable_task_tracker()->TryCancelAll();
+    store->GetBlacklistLogins(this);
   } else {
     LOG(ERROR) << "No password store! Cannot display exceptions.";
   }
 }
 
 void PasswordManagerPresenter::PasswordExceptionListPopulater::
-    OnPasswordStoreRequestDone(
-        CancelableRequestProvider::Handle handle,
-        const std::vector<autofill::PasswordForm*>& result) {
-  DCHECK_EQ(pending_login_query_, handle);
-  pending_login_query_ = 0;
-  page_->password_exception_list_.clear();
-  page_->password_exception_list_.insert(page_->password_exception_list_.end(),
-                                         result.begin(), result.end());
-  page_->SetPasswordExceptionList();
-}
-
-void PasswordManagerPresenter::PasswordExceptionListPopulater::
     OnGetPasswordStoreResults(
         const std::vector<autofill::PasswordForm*>& results) {
-  // TODO(kaiwang): Implement when I refactor
-  // PasswordStore::GetAutofillableLogins and PasswordStore::GetBlacklistLogins.
-  NOTIMPLEMENTED();
+  page_->password_exception_list_.clear();
+  page_->password_exception_list_.insert(page_->password_exception_list_.end(),
+                                         results.begin(), results.end());
+  page_->SetPasswordExceptionList();
 }

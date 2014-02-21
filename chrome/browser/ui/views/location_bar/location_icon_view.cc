@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -25,11 +26,15 @@ bool LocationIconView::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 void LocationIconView::OnMouseReleased(const ui::MouseEvent& event) {
-  page_info_helper_.ProcessEvent(event);
+  if (!chrome::ShouldDisplayOriginChip() &&
+      !chrome::ShouldDisplayOriginChipV2())
+    page_info_helper_.ProcessEvent(event);
 }
 
 void LocationIconView::OnGestureEvent(ui::GestureEvent* event) {
-  if (event->type() == ui::ET_GESTURE_TAP) {
+  if (!chrome::ShouldDisplayOriginChip() &&
+      !chrome::ShouldDisplayOriginChipV2() &&
+      (event->type() == ui::ET_GESTURE_TAP)) {
     page_info_helper_.ProcessEvent(*event);
     event->SetHandled();
   }

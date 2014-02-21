@@ -82,7 +82,6 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) OVERRIDE;
-  virtual void EmitLoginPromptReady() OVERRIDE;
   virtual void EmitLoginPromptVisible() OVERRIDE;
   virtual void RestartJob(int pid, const std::string& command_line) OVERRIDE;
   virtual void StartSession(const std::string& user_email) OVERRIDE;
@@ -168,7 +167,7 @@ class DeviceSettingsTestBase : public testing::Test {
   // |device_settings_service_| and flushes the resulting load operation.
   void ReloadDeviceSettings();
 
-  base::MessageLoop loop_;
+  base::MessageLoopForUI loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 

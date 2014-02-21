@@ -52,13 +52,13 @@
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/translate/translate_bubble_model.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/content_restriction.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -67,6 +67,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -94,12 +95,12 @@ namespace {
 const char kOsOverrideForTabletSite[] = "Linux; Android 4.0.3";
 }
 
+using base::UserMetricsAction;
 using content::NavigationController;
 using content::NavigationEntry;
 using content::OpenURLParams;
 using content::Referrer;
 using content::SSLStatus;
-using content::UserMetricsAction;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 
@@ -256,10 +257,11 @@ int GetContentRestrictions(const Browser* browser) {
     CoreTabHelper* core_tab_helper =
         CoreTabHelper::FromWebContents(current_tab);
     content_restrictions = core_tab_helper->content_restrictions();
-    NavigationEntry* entry =
-        current_tab->GetController().GetLastCommittedEntry();
+    NavigationEntry* active_entry =
+        current_tab->GetController().GetActiveEntry();
     // See comment in UpdateCommandsForTabState about why we call url().
-    if (!content::IsSavableURL(entry ? entry->GetURL() : GURL()) ||
+    if (!content::IsSavableURL(
+            active_entry ? active_entry->GetURL() : GURL()) ||
         current_tab->ShowingInterstitialPage())
       content_restrictions |= CONTENT_RESTRICTION_SAVE;
     if (current_tab->ShowingInterstitialPage())
@@ -396,8 +398,26 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
   }
 #endif
 
+  GURL url = browser->profile()->GetHomePage();
+
+  // Streamlined hosted apps should return to their launch page when the home
+  // button is pressed.
+  if (browser->is_app()) {
+    const ExtensionService* service = browser->profile()->GetExtensionService();
+    if (!service)
+      return;
+
+    const extensions::Extension* extension =
+        service->GetInstalledExtension(
+            web_app::GetExtensionIdFromApplicationName(browser->app_name()));
+    if (!extension)
+      return;
+
+    url = extensions::AppLaunchInfo::GetLaunchWebURL(extension);
+  }
+
   OpenURLParams params(
-      browser->profile()->GetHomePage(), Referrer(), disposition,
+      url, Referrer(), disposition,
       content::PageTransitionFromInt(
           content::PAGE_TRANSITION_AUTO_BOOKMARK |
           content::PAGE_TRANSITION_HOME_PAGE),
@@ -532,20 +552,6 @@ void SelectNextTab(Browser* browser) {
 void SelectPreviousTab(Browser* browser) {
   content::RecordAction(UserMetricsAction("SelectPrevTab"));
   browser->tab_strip_model()->SelectPreviousTab();
-}
-
-void OpenTabpose(Browser* browser) {
-#if defined(OS_MACOSX)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableExposeForTabs)) {
-    return;
-  }
-
-  content::RecordAction(UserMetricsAction("OpenTabpose"));
-  browser->window()->OpenTabpose();
-#else
-  NOTREACHED();
-#endif
 }
 
 void MoveTabNext(Browser* browser) {
@@ -692,16 +698,15 @@ void Translate(Browser* browser) {
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(web_contents);
 
-  TranslateBubbleModel::ViewState view_state =
-      TranslateBubbleModel::VIEW_STATE_BEFORE_TRANSLATE;
+  TranslateTabHelper::TranslateStep step = TranslateTabHelper::BEFORE_TRANSLATE;
   if (translate_tab_helper) {
-    if (translate_tab_helper->language_state().translation_pending())
-      view_state = TranslateBubbleModel::VIEW_STATE_TRANSLATING;
-    else if (translate_tab_helper->language_state().IsPageTranslated())
-      view_state = TranslateBubbleModel::VIEW_STATE_AFTER_TRANSLATE;
+    if (translate_tab_helper->GetLanguageState().translation_pending())
+      step = TranslateTabHelper::TRANSLATING;
+    else if (translate_tab_helper->GetLanguageState().IsPageTranslated())
+      step = TranslateTabHelper::AFTER_TRANSLATE;
   }
-  browser->window()->ShowTranslateBubble(web_contents, view_state,
-                                         TranslateErrors::NONE);
+  browser->window()->ShowTranslateBubble(
+      web_contents, step, TranslateErrors::NONE);
 }
 
 void TogglePagePinnedToStartScreen(Browser* browser) {
@@ -810,11 +815,11 @@ void EmailPageLocation(Browser* browser) {
   DCHECK(wc);
 
   std::string title = net::EscapeQueryParamValue(
-      UTF16ToUTF8(wc->GetTitle()), false);
+      base::UTF16ToUTF8(wc->GetTitle()), false);
   std::string page_url = net::EscapeQueryParamValue(wc->GetURL().spec(), false);
   std::string mailto = std::string("mailto:?subject=Fwd:%20") +
       title + "&body=%0A%0A" + page_url;
-  platform_util::OpenExternal(GURL(mailto));
+  platform_util::OpenExternal(browser->profile(), GURL(mailto));
 }
 
 bool CanEmailPageLocation(const Browser* browser) {
@@ -871,9 +876,6 @@ void FindInPage(Browser* browser, bool find_next, bool forward_direction) {
 }
 
 void Zoom(Browser* browser, content::PageZoom zoom) {
-  if (browser->is_devtools())
-    return;
-
   chrome_page_zoom::Zoom(browser->tab_strip_model()->GetActiveWebContents(),
                          zoom);
 }
@@ -987,7 +989,7 @@ void ToggleSpeechInput(Browser* browser) {
 bool CanRequestTabletSite(WebContents* current_tab) {
   if (!current_tab)
     return false;
-  return current_tab->GetController().GetLastCommittedEntry() != NULL;
+  return current_tab->GetController().GetActiveEntry() != NULL;
 }
 
 bool IsRequestingTabletSite(Browser* browser) {
@@ -995,7 +997,7 @@ bool IsRequestingTabletSite(Browser* browser) {
   if (!current_tab)
     return false;
   content::NavigationEntry* entry =
-      current_tab->GetController().GetLastCommittedEntry();
+      current_tab->GetController().GetActiveEntry();
   if (!entry)
     return false;
   return entry->GetIsOverridingUserAgent();
@@ -1006,7 +1008,7 @@ void ToggleRequestTabletSite(Browser* browser) {
   if (!current_tab)
     return;
   NavigationController& controller = current_tab->GetController();
-  NavigationEntry* entry = controller.GetLastCommittedEntry();
+  NavigationEntry* entry = controller.GetActiveEntry();
   if (!entry)
     return;
   if (entry->GetIsOverridingUserAgent()) {
@@ -1061,25 +1063,25 @@ void ViewSource(Browser* browser,
   content::RecordAction(UserMetricsAction("ViewSource"));
   DCHECK(contents);
 
-  // Note that Clone does not copy the pending or transient entries, so we can
-  // take the last committed entry in view_source_contents.
+  // Note that Clone does not copy the pending or transient entries, so the
+  // active entry in view_source_contents will be the last committed entry.
   WebContents* view_source_contents = contents->Clone();
   DCHECK(view_source_contents->GetController().CanPruneAllButLastCommitted());
   view_source_contents->GetController().PruneAllButLastCommitted();
-  NavigationEntry* entry =
-      view_source_contents->GetController().GetLastCommittedEntry();
-  if (!entry)
+  NavigationEntry* active_entry =
+      view_source_contents->GetController().GetActiveEntry();
+  if (!active_entry)
     return;
 
   GURL view_source_url =
       GURL(content::kViewSourceScheme + std::string(":") + url.spec());
-  entry->SetVirtualURL(view_source_url);
+  active_entry->SetVirtualURL(view_source_url);
 
   // Do not restore scroller position.
-  entry->SetPageState(page_state.RemoveScrollOffset());
+  active_entry->SetPageState(page_state.RemoveScrollOffset());
 
   // Do not restore title, derive it from the url.
-  entry->SetTitle(string16());
+  active_entry->SetTitle(base::string16());
 
   // Now show view-source entry.
   if (browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP)) {
@@ -1124,8 +1126,9 @@ void ViewSelectedSource(Browser* browser) {
 }
 
 bool CanViewSource(const Browser* browser) {
-  return browser->tab_strip_model()->GetActiveWebContents()->
-      GetController().CanViewSource();
+  return !browser->is_devtools() &&
+      browser->tab_strip_model()->GetActiveWebContents()->GetController().
+          CanViewSource();
 }
 
 void CreateApplicationShortcuts(Browser* browser) {
@@ -1150,7 +1153,7 @@ bool CanCreateApplicationShortcuts(const Browser* browser) {
 
 void ConvertTabToAppWindow(Browser* browser,
                            content::WebContents* contents) {
-  const GURL& url = contents->GetController().GetLastCommittedEntry()->GetURL();
+  const GURL& url = contents->GetController().GetActiveEntry()->GetURL();
   std::string app_name = web_app::GenerateApplicationNameFromURL(url);
 
   int index = browser->tab_strip_model()->GetIndexOfWebContents(contents);

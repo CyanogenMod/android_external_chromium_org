@@ -20,7 +20,7 @@ void RegisterProtocolHandlerInfoBarDelegate::Create(
     ProtocolHandlerRegistry* registry,
     const ProtocolHandler& handler) {
   content::RecordAction(
-      content::UserMetricsAction("RegisterProtocolHandler.InfoBar_Shown"));
+      base::UserMetricsAction("RegisterProtocolHandler.InfoBar_Shown"));
 
   scoped_ptr<InfoBar> infobar(ConfirmInfoBarDelegate::CreateInfoBar(
       scoped_ptr<ConfirmInfoBarDelegate>(
@@ -73,10 +73,10 @@ base::string16 RegisterProtocolHandlerInfoBarDelegate::GetMessageText() const {
   ProtocolHandler old_handler = registry_->GetHandlerFor(handler_.protocol());
   return old_handler.IsEmpty() ?
       l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
-          handler_.title(), UTF8ToUTF16(handler_.url().host()),
+          handler_.title(), base::UTF8ToUTF16(handler_.url().host()),
           GetProtocolName(handler_)) :
       l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
-          handler_.title(), UTF8ToUTF16(handler_.url().host()),
+          handler_.title(), base::UTF8ToUTF16(handler_.url().host()),
           GetProtocolName(handler_), old_handler.title());
 }
 
@@ -95,14 +95,14 @@ bool RegisterProtocolHandlerInfoBarDelegate::NeedElevation(
 
 bool RegisterProtocolHandlerInfoBarDelegate::Accept() {
   content::RecordAction(
-      content::UserMetricsAction("RegisterProtocolHandler.Infobar_Accept"));
+      base::UserMetricsAction("RegisterProtocolHandler.Infobar_Accept"));
   registry_->OnAcceptRegisterProtocolHandler(handler_);
   return true;
 }
 
 bool RegisterProtocolHandlerInfoBarDelegate::Cancel() {
   content::RecordAction(
-      content::UserMetricsAction("RegisterProtocolHandler.InfoBar_Deny"));
+      base::UserMetricsAction("RegisterProtocolHandler.InfoBar_Deny"));
   registry_->OnIgnoreRegisterProtocolHandler(handler_);
   return true;
 }
@@ -114,7 +114,7 @@ base::string16 RegisterProtocolHandlerInfoBarDelegate::GetLinkText() const {
 bool RegisterProtocolHandlerInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   content::RecordAction(
-      content::UserMetricsAction("RegisterProtocolHandler.InfoBar_LearnMore"));
+      base::UserMetricsAction("RegisterProtocolHandler.InfoBar_LearnMore"));
   web_contents()->OpenURL(content::OpenURLParams(
       GURL(chrome::kLearnMoreRegisterProtocolHandlerURL), content::Referrer(),
       (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
@@ -128,5 +128,5 @@ base::string16 RegisterProtocolHandlerInfoBarDelegate::GetProtocolName(
     return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_MAILTO_NAME);
   if (handler.protocol() == "webcal")
     return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_WEBCAL_NAME);
-  return UTF8ToUTF16(handler.protocol());
+  return base::UTF8ToUTF16(handler.protocol());
 }

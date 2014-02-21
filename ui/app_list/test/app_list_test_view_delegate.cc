@@ -53,7 +53,8 @@ AppListTestViewDelegate::AppListTestViewDelegate()
     : dismiss_count_(0),
       open_search_result_count_(0),
       test_signin_delegate_(new TestSigninDelegate),
-      model_(new AppListTestModel) {
+      model_(new AppListTestModel),
+      speech_ui_(SPEECH_RECOGNITION_OFF) {
 }
 
 AppListTestViewDelegate::~AppListTestViewDelegate() {}
@@ -88,8 +89,17 @@ void AppListTestViewDelegate::GetShortcutPathForApp(
 }
 
 void AppListTestViewDelegate::OpenSearchResult(SearchResult* result,
+                                               bool auto_launch,
                                                int event_flags) {
   ++open_search_result_count_;
+}
+
+base::TimeDelta AppListTestViewDelegate::GetAutoLaunchTimeout() {
+  return auto_launch_timeout_;
+}
+
+void AppListTestViewDelegate::AutoLaunchCanceled() {
+  auto_launch_timeout_ = base::TimeDelta();
 }
 
 void AppListTestViewDelegate::Dismiss() {
@@ -101,6 +111,10 @@ gfx::ImageSkia AppListTestViewDelegate::GetWindowIcon() {
 }
 
 content::WebContents* AppListTestViewDelegate::GetStartPageContents() {
+  return NULL;
+}
+
+content::WebContents* AppListTestViewDelegate::GetSpeechRecognitionContents() {
   return NULL;
 }
 

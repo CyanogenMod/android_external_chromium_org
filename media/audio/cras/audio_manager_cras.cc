@@ -79,8 +79,7 @@ AudioOutputStream* AudioManagerCras::MakeLinearOutputStream(
 
 AudioOutputStream* AudioManagerCras::MakeLowLatencyOutputStream(
     const AudioParameters& params,
-    const std::string& device_id,
-    const std::string& input_device_id) {
+    const std::string& device_id) {
   DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   // TODO(dgreid): Open the correct input device for unified IO.
@@ -125,7 +124,7 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 AudioOutputStream* AudioManagerCras::MakeOutputStream(
@@ -136,6 +135,21 @@ AudioOutputStream* AudioManagerCras::MakeOutputStream(
 AudioInputStream* AudioManagerCras::MakeInputStream(
     const AudioParameters& params, const std::string& device_id) {
   return new CrasInputStream(params, this, device_id);
+}
+
+snd_pcm_format_t AudioManagerCras::BitsToFormat(int bits_per_sample) {
+  switch (bits_per_sample) {
+    case 8:
+      return SND_PCM_FORMAT_U8;
+    case 16:
+      return SND_PCM_FORMAT_S16;
+    case 24:
+      return SND_PCM_FORMAT_S24;
+    case 32:
+      return SND_PCM_FORMAT_S32;
+    default:
+      return SND_PCM_FORMAT_UNKNOWN;
+  }
 }
 
 }  // namespace media

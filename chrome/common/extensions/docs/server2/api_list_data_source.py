@@ -3,13 +3,8 @@
 # found in the LICENSE file.
 
 from operator import itemgetter
-import os
-import posixpath
 
 import docs_server_utils as utils
-from branch_utility import ChannelInfo
-from extensions_paths import PUBLIC_TEMPLATES
-from file_system import FileNotFoundError
 
 class APIListDataSource(object):
   """ This class creates a list of chrome.* APIs and chrome.experimental.* APIs
@@ -59,6 +54,8 @@ class APIListDataSource(object):
         experimental_apis = []
         all_apis = []
         for api_name, api_model in self._api_models.IterModels():
+          if not self._api_categorizer.IsDocumented(platform, api_name):
+            continue
           api = {
             'name': api_name,
             'description': api_model.description,

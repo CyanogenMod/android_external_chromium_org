@@ -16,7 +16,9 @@
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
 #define FPL(a) FILE_PATH_LITERAL(a)
@@ -145,6 +147,7 @@ class MetadataDatabaseTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
+    in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
   }
 
   virtual void TearDown() OVERRIDE { DropDatabase(); }
@@ -167,6 +170,7 @@ class MetadataDatabaseTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     MetadataDatabase::Create(base::MessageLoopProxy::current(),
                              database_dir_.path(),
+                             in_memory_env_.get(),
                              CreateResultReceiver(&status,
                                                   &metadata_database_));
     message_loop_.RunUntilIdle();
@@ -223,6 +227,7 @@ class MetadataDatabaseTest : public testing::Test {
     leveldb::Options options;
     options.create_if_missing = true;
     options.max_open_files = 0;  // Use minimum.
+    options.env = in_memory_env_.get();
     leveldb::Status status =
         leveldb::DB::Open(options, database_dir_.path().AsUTF8Unsafe(), &db);
     EXPECT_TRUE(status.ok());
@@ -251,6 +256,7 @@ class MetadataDatabaseTest : public testing::Test {
     FileDetails* details = sync_root.mutable_details();
     details->set_title(kSyncRootFolderTitle);
     details->set_file_kind(FILE_KIND_FOLDER);
+    details->set_change_id(current_change_id_);
     return sync_root;
   }
 
@@ -264,6 +270,7 @@ class MetadataDatabaseTest : public testing::Test {
     details->set_file_kind(FILE_KIND_FILE);
     details->set_md5(
         "md5_value_" + base::Int64ToString(next_md5_sequence_number_++));
+    details->set_change_id(current_change_id_);
     return file;
   }
 
@@ -275,6 +282,7 @@ class MetadataDatabaseTest : public testing::Test {
     details->add_parent_folder_ids(parent.file_id());
     details->set_title(title);
     details->set_file_kind(FILE_KIND_FOLDER);
+    details->set_change_id(current_change_id_);
     return folder;
   }
 
@@ -414,14 +422,14 @@ class MetadataDatabaseTest : public testing::Test {
 
   leveldb::Status PutFileToDB(leveldb::DB* db, const FileMetadata& file) {
     leveldb::WriteBatch batch;
-    PutFileToBatch(file, &batch);
+    PutFileMetadataToBatch(file, &batch);
     return db->Write(leveldb::WriteOptions(), &batch);
   }
 
   leveldb::Status PutTrackerToDB(leveldb::DB* db,
                                  const FileTracker& tracker) {
     leveldb::WriteBatch batch;
-    PutTrackerToBatch(tracker, &batch);
+    PutFileTrackerToBatch(tracker, &batch);
     return db->Write(leveldb::WriteOptions(), &batch);
   }
 
@@ -576,10 +584,15 @@ class MetadataDatabaseTest : public testing::Test {
     tracker->set_tracker_id(GetTrackerIDByFileID(tracker->file_id()));
   }
 
+  int64 current_change_id() const {
+    return current_change_id_;
+  }
+
  private:
   base::ScopedTempDir database_dir_;
   base::MessageLoop message_loop_;
 
+  scoped_ptr<leveldb::Env> in_memory_env_;
   scoped_ptr<MetadataDatabase> metadata_database_;
 
   int64 current_change_id_;
@@ -1060,7 +1073,6 @@ TEST_F(MetadataDatabaseTest, PopulateInitialDataTest) {
     &sync_root, &app_root
   };
 
-  int64 largest_change_id = 42;
   scoped_ptr<google_apis::FileResource> sync_root_folder(
       CreateFileResourceFromMetadata(sync_root.metadata));
   scoped_ptr<google_apis::FileResource> app_root_folder(
@@ -1071,7 +1083,7 @@ TEST_F(MetadataDatabaseTest, PopulateInitialDataTest) {
 
   EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
   EXPECT_EQ(SYNC_STATUS_OK, PopulateInitialData(
-      largest_change_id,
+      current_change_id(),
       *sync_root_folder,
       app_root_folders));
 

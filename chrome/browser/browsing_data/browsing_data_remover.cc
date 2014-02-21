@@ -21,6 +21,7 @@
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #endif
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -32,7 +33,6 @@
 #include "chrome/browser/media/media_device_id_salt.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/predictors/logged_in_predictor_table.h"
 #include "chrome/browser/predictors/predictor_database.h"
@@ -51,6 +51,7 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/password_manager/core/browser/password_store.h"
 #if defined(OS_CHROMEOS)
 #include "chromeos/attestation/attestation_constants.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -82,10 +83,10 @@
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/quota/quota_types.h"
 
+using base::UserMetricsAction;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DOMStorageContext;
-using content::UserMetricsAction;
 
 bool BrowsingDataRemover::is_removing_ = false;
 
@@ -485,6 +486,13 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
   }
 #endif
 
+#if defined(OS_ANDROID)
+  if (remove_mask & REMOVE_APP_BANNER_DATA) {
+    profile_->GetHostContentSettingsMap()->ClearSettingsForOneType(
+        CONTENT_SETTINGS_TYPE_APP_BANNER);
+  }
+#endif
+
   if (remove_mask & REMOVE_PASSWORDS) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Passwords"));
     PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
@@ -591,7 +599,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
     storage_partition->ClearData(
         storage_partition_remove_mask,
         quota_storage_remove_mask,
-        &remove_origin_,
+        remove_origin_,
         base::Bind(&DoesOriginMatchMask, origin_set_mask_),
         delete_begin_,
         delete_end_,

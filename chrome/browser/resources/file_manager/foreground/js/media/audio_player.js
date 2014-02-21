@@ -12,12 +12,12 @@
  */
 function AudioPlayer(container) {
   this.container_ = container;
-  this.metadataCache_ = MetadataCache.createFull();
   this.currentTrack_ = -1;
   this.playlistGeneration_ = 0;
   this.selectedEntry_ = null;
   this.volumeManager_ = new VolumeManagerWrapper(
       VolumeManagerWrapper.DriveEnabledStatus.DRIVE_ENABLED);
+  this.metadataCache_ = MetadataCache.createFull(this.volumeManager_);
 
   this.container_.classList.add('collapsed');
 
@@ -40,7 +40,6 @@ function AudioPlayer(container) {
 
   this.audioControls_ = new FullWindowAudioControls(
       createChild(), this.advance_.bind(this), this.onError_.bind(this));
-
   this.audioControls_.attachMedia(createChild('', 'audio'));
 
   chrome.fileBrowserPrivate.getStrings(function(strings) {
@@ -67,14 +66,9 @@ function AudioPlayer(container) {
 AudioPlayer.load = function() {
   document.ondragstart = function(e) { e.preventDefault() };
 
-  // TODO(mtomasz): Consider providing an exact size icon, instead of relying
-  // on downsampling by ash.
-  chrome.app.window.current().setIcon(
-      'foreground/images/media/2x/audio_player.png');
-
   AudioPlayer.instance =
       new AudioPlayer(document.querySelector('.audio-player'));
-  reload();
+  AudioPlayer.instance.load(window.appState);
 };
 
 util.addPageLoadHandler(AudioPlayer.load);
@@ -91,11 +85,7 @@ function unload() {
  * Reload the player.
  */
 function reload() {
-  if (window.appState) {
-    util.saveAppState();
-    AudioPlayer.instance.load(window.appState);
-    return;
-  }
+  AudioPlayer.instance.load(window.appState);
 }
 
 /**
@@ -107,51 +97,55 @@ AudioPlayer.prototype.load = function(playlist) {
   this.audioControls_.pause();
   this.currentTrack_ = -1;
 
-  // Save the app state, in case of restart.
-  window.appState = playlist;
+  // Save the app state, in case of restart. Make a copy of the object, so the
+  // playlist member is not changed after entries are resolved.
+  window.appState = JSON.parse(JSON.stringify(playlist));
   util.saveAppState();
 
-  util.URLsToEntries(playlist.items, function(entries) {
-    this.entries_ = entries;
-    this.invalidTracks_ = {};
-    this.cancelAutoAdvance_();
+  // Resolving entries has to be done after the volume manager is initialized.
+  this.volumeManager_.ensureInitialized(function() {
+    util.URLsToEntries(playlist.items, function(entries) {
+      this.entries_ = entries;
+      this.invalidTracks_ = {};
+      this.cancelAutoAdvance_();
 
-    if (this.entries_.length <= 1)
-      this.container_.classList.add('single-track');
-    else
-      this.container_.classList.remove('single-track');
+      if (this.entries_.length <= 1)
+        this.container_.classList.add('single-track');
+      else
+        this.container_.classList.remove('single-track');
 
-    this.syncHeight_();
+      this.syncHeight_();
 
-    this.trackList_.textContent = '';
-    this.trackStack_.textContent = '';
+      this.trackList_.textContent = '';
+      this.trackStack_.textContent = '';
 
-    this.trackListItems_ = [];
-    this.trackStackItems_ = [];
+      this.trackListItems_ = [];
+      this.trackStackItems_ = [];
 
-    if (this.entries_.length == 0)
-      return;
+      if (this.entries_.length == 0)
+        return;
 
-    for (var i = 0; i != this.entries_.length; i++) {
-      var entry = this.entries_[i];
-      var onClick = this.select_.bind(this, i, false /* no restore */);
-      this.trackListItems_.push(
-          new AudioPlayer.TrackInfo(this.trackList_, entry, onClick));
-      this.trackStackItems_.push(
-          new AudioPlayer.TrackInfo(this.trackStack_, entry, onClick));
-    }
+      for (var i = 0; i != this.entries_.length; i++) {
+        var entry = this.entries_[i];
+        var onClick = this.select_.bind(this, i, false /* no restore */);
+        this.trackListItems_.push(
+            new AudioPlayer.TrackInfo(this.trackList_, entry, onClick));
+        this.trackStackItems_.push(
+            new AudioPlayer.TrackInfo(this.trackStack_, entry, onClick));
+      }
 
-    this.select_(playlist.position, !!playlist.time);
+      this.select_(playlist.position, !!playlist.time);
 
-    // This class will be removed if at least one track has art.
-    this.container_.classList.add('noart');
+      // This class will be removed if at least one track has art.
+      this.container_.classList.add('noart');
 
-    // Load the selected track metadata first, then load the rest.
-    this.loadMetadata_(playlist.position);
-    for (i = 0; i != this.entries_.length; i++) {
-      if (i != playlist.position)
-        this.loadMetadata_(i);
-    }
+      // Load the selected track metadata first, then load the rest.
+      this.loadMetadata_(playlist.position);
+      for (i = 0; i != this.entries_.length; i++) {
+        if (i != playlist.position)
+          this.loadMetadata_(i);
+      }
+    }.bind(this));
   }.bind(this));
 };
 
@@ -216,13 +210,9 @@ AudioPlayer.prototype.select_ = function(newTrack, opt_restoreState) {
 
   this.currentTrack_ = newTrack;
 
-  if (window.appState) {
-    window.appState.position = this.currentTrack_;
-    window.appState.time = 0;
-    util.saveAppState();
-  } else {
-    util.platform.setPreference(AudioPlayer.TRACK_KEY, this.currentTrack_);
-  }
+  window.appState.position = this.currentTrack_;
+  window.appState.time = 0;
+  util.saveAppState();
 
   this.scrollToCurrent_(false);
 

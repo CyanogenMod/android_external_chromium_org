@@ -48,10 +48,11 @@ class LayerTreeHostDamageTestSetNeedsRedraw
     }
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
 
     RenderSurfaceImpl* root_surface =
         impl->active_tree()->root_layer()->render_surface();
@@ -73,7 +74,7 @@ class LayerTreeHostDamageTestSetNeedsRedraw
     }
 
     ++draw_count_;
-    return result;
+    return draw_result;
   }
 
   virtual void AfterTest() OVERRIDE {}
@@ -109,10 +110,11 @@ class LayerTreeHostDamageTestSetViewportSize
     }
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
 
     RenderSurfaceImpl* root_surface =
         impl->active_tree()->root_layer()->render_surface();
@@ -134,7 +136,7 @@ class LayerTreeHostDamageTestSetViewportSize
     }
 
     ++draw_count_;
-    return result;
+    return draw_result;
   }
 
   virtual void AfterTest() OVERRIDE {}
@@ -167,10 +169,11 @@ class LayerTreeHostDamageTestNoDamageDoesNotSwap
     LayerTreeHostDamageTest::SetupTree();
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* host_impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
 
     int source_frame = host_impl->active_tree()->source_frame_number();
     switch (source_frame) {
@@ -191,7 +194,7 @@ class LayerTreeHostDamageTestNoDamageDoesNotSwap
         EndTest();
         break;
     }
-    return result;
+    return draw_result;
   }
 
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
@@ -256,10 +259,11 @@ class LayerTreeHostDamageTestNoDamageReadbackDoesDraw
     LayerTreeHostDamageTest::SetupTree();
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* host_impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
 
     int source_frame = host_impl->active_tree()->source_frame_number();
     switch (source_frame) {
@@ -284,7 +288,7 @@ class LayerTreeHostDamageTestNoDamageReadbackDoesDraw
         NOTREACHED();
         break;
     }
-    return result;
+    return draw_result;
   }
 
   virtual void DidCommitAndDrawFrame() OVERRIDE {
@@ -326,10 +330,11 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
     LayerTreeHostDamageTest::SetupTree();
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* host_impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
 
     RenderSurfaceImpl* root_surface =
         host_impl->active_tree()->root_layer()->render_surface();
@@ -398,7 +403,7 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
         EndTest();
         break;
     }
-    return result;
+    return draw_result;
   }
 
   virtual void DidCommitAndDrawFrame() OVERRIDE {
@@ -428,17 +433,23 @@ class LayerTreeHostScrollbarDamageTest : public LayerTreeHostDamageTest {
     root_layer->SetMasksToBounds(true);
     layer_tree_host()->SetRootLayer(root_layer);
 
+    scoped_refptr<Layer> scroll_clip_layer = Layer::Create();
     scoped_refptr<Layer> content_layer = FakeContentLayer::Create(&client_);
-    content_layer->SetScrollable(true);
+    content_layer->SetScrollClipLayerId(scroll_clip_layer->id());
     content_layer->SetScrollOffset(gfx::Vector2d(10, 20));
-    content_layer->SetMaxScrollOffset(gfx::Vector2d(30, 50));
     content_layer->SetBounds(gfx::Size(100, 200));
-    root_layer->AddChild(content_layer);
+    scroll_clip_layer->SetBounds(
+        gfx::Size(content_layer->bounds().width() - 30,
+                  content_layer->bounds().height() - 50));
+    scroll_clip_layer->AddChild(content_layer);
+    root_layer->AddChild(scroll_clip_layer);
 
     scoped_refptr<Layer> scrollbar_layer =
         FakePaintedScrollbarLayer::Create(false, true, content_layer->id());
     scrollbar_layer->SetPosition(gfx::Point(300, 300));
     scrollbar_layer->SetBounds(gfx::Size(10, 100));
+    scrollbar_layer->ToScrollbarLayer()->SetClipLayer(scroll_clip_layer->id());
+    scrollbar_layer->ToScrollbarLayer()->SetScrollLayer(content_layer->id());
     root_layer->AddChild(scrollbar_layer);
 
     gfx::RectF content_rect(content_layer->position(),
@@ -461,10 +472,11 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* host_impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
     RenderSurfaceImpl* root_surface =
         host_impl->active_tree()->root_layer()->render_surface();
     gfx::RectF root_damage =
@@ -488,7 +500,7 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
         EndTest();
         break;
     }
-    return result;
+    return draw_result;
   }
 
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
@@ -496,7 +508,8 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
     ++did_swaps_;
     EXPECT_TRUE(result);
     LayerImpl* root = host_impl->active_tree()->root_layer();
-    LayerImpl* scroll_layer = root->children()[0];
+    LayerImpl* scroll_clip_layer = root->children()[0];
+    LayerImpl* scroll_layer = scroll_clip_layer->children()[0];
     switch (did_swaps_) {
       case 1:
         // Test that modifying the position of the content layer (not
@@ -510,7 +523,8 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
         host_impl->SetNeedsRedraw();
         break;
       case 3:
-        scroll_layer->SetMaxScrollOffset(gfx::Vector2d(60, 100));
+        scroll_layer->SetBounds(gfx::Size(root->bounds().width() + 60,
+                                          root->bounds().height() + 100));
         host_impl->SetNeedsRedraw();
         break;
     }
@@ -532,10 +546,11 @@ class LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* host_impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
     RenderSurfaceImpl* root_surface =
         host_impl->active_tree()->root_layer()->render_surface();
     gfx::RectF root_damage =
@@ -561,7 +576,7 @@ class LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
         NOTREACHED();
         break;
     }
-    return result;
+    return draw_result;
   }
 
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
@@ -569,7 +584,8 @@ class LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
     ++did_swaps_;
     EXPECT_TRUE(result);
     LayerImpl* root = host_impl->active_tree()->root_layer();
-    LayerImpl* scroll_layer = root->children()[0];
+    LayerImpl* scroll_clip_layer = root->children()[0];
+    LayerImpl* scroll_layer = scroll_clip_layer->children()[0];
     switch (did_swaps_) {
       case 1:
         // Scroll on the thread.  This should damage the scrollbar for the
@@ -622,10 +638,11 @@ class LayerTreeHostDamageTestVisibleTilesStillTriggerDraws
     update_visible_tile_count_ = 0;
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
+  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+      LayerTreeHostImpl* host_impl,
+      LayerTreeHostImpl::FrameData* frame_data,
+      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
     prepare_to_draw_count_++;
     switch (prepare_to_draw_count_) {
       case 1:
@@ -651,7 +668,7 @@ class LayerTreeHostDamageTestVisibleTilesStillTriggerDraws
         break;
     }
 
-    return result;
+    return draw_result;
   }
 
   virtual void UpdateVisibleTilesOnThread(

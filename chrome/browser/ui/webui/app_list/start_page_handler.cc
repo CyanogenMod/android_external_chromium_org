@@ -8,10 +8,12 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
+#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/recommended_apps.h"
@@ -19,9 +21,12 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/speech_ui_model_observer.h"
 #include "ui/events/event_constants.h"
 
@@ -95,6 +100,36 @@ void StartPageHandler::SendRecommendedApps() {
                                    recommended_list);
 }
 
+#if defined(OS_CHROMEOS)
+bool StartPageHandler::HotwordEnabled() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  return HotwordService::DoesHotwordSupportLanguage(profile) &&
+      profile->GetPrefs()->GetBoolean(prefs::kHotwordAppListEnabled);
+}
+
+void StartPageHandler::OnHotwordEnabledChanged() {
+  web_ui()->CallJavascriptFunction(
+      "appList.startPage.setHotwordEnabled",
+      base::FundamentalValue(HotwordEnabled()));
+}
+
+void StartPageHandler::SynchronizeHotwordEnabled() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  PrefService* pref_service = profile->GetPrefs();
+  const PrefService::Preference* pref =
+      pref_service->FindPreference(prefs::kHotwordSearchEnabled);
+  if (!pref || pref->IsDefaultValue())
+    return;
+
+  bool search_enabled = false;
+  if (!pref->GetValue()->GetAsBoolean(&search_enabled))
+    return;
+
+  if (pref_service->GetBoolean(prefs::kHotwordAppListEnabled) != search_enabled)
+    pref_service->SetBoolean(prefs::kHotwordAppListEnabled, search_enabled);
+}
+#endif
+
 void StartPageHandler::HandleInitialize(const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
   StartPageService* service = StartPageService::Get(profile);
@@ -105,6 +140,24 @@ void StartPageHandler::HandleInitialize(const base::ListValue* args) {
   recommended_apps_->AddObserver(this);
 
   SendRecommendedApps();
+
+#if defined(OS_CHROMEOS)
+  if (app_list::switches::IsVoiceSearchEnabled() &&
+      HotwordService::DoesHotwordSupportLanguage(profile) &&
+      base::SysInfo::IsRunningOnChromeOS()) {
+    SynchronizeHotwordEnabled();
+    OnHotwordEnabledChanged();
+    pref_change_registrar_.Init(profile->GetPrefs());
+    pref_change_registrar_.Add(
+        prefs::kHotwordSearchEnabled,
+        base::Bind(&StartPageHandler::SynchronizeHotwordEnabled,
+                   base::Unretained(this)));
+    pref_change_registrar_.Add(
+        prefs::kHotwordAppListEnabled,
+        base::Bind(&StartPageHandler::OnHotwordEnabledChanged,
+                   base::Unretained(this)));
+  }
+#endif
 }
 
 void StartPageHandler::HandleLaunchApp(const base::ListValue* args) {
@@ -146,22 +199,30 @@ void StartPageHandler::HandleSpeechSoundLevel(const base::ListValue* args) {
 
   StartPageService* service =
       StartPageService::Get(Profile::FromWebUI(web_ui()));
-  service->OnSpeechSoundLevelChanged(static_cast<int16>(level));
+  if (service)
+    service->OnSpeechSoundLevelChanged(static_cast<int16>(level));
 }
 
 void StartPageHandler::HandleSpeechRecognition(const base::ListValue* args) {
   std::string state_string;
   CHECK(args->GetString(0, &state_string));
 
-  SpeechRecognitionState new_state = SPEECH_RECOGNITION_NOT_STARTED;
-  if (state_string == "on")
-    new_state = SPEECH_RECOGNITION_ON;
-  else if (state_string == "in-speech")
+  SpeechRecognitionState new_state = SPEECH_RECOGNITION_OFF;
+  if (state_string == "READY")
+    new_state = SPEECH_RECOGNITION_READY;
+  else if (state_string == "HOTWORD_RECOGNIZING")
+    new_state = SPEECH_RECOGNITION_HOTWORD_LISTENING;
+  else if (state_string == "RECOGNIZING")
+    new_state = SPEECH_RECOGNITION_RECOGNIZING;
+  else if (state_string == "IN_SPEECH")
     new_state = SPEECH_RECOGNITION_IN_SPEECH;
+  else if (state_string == "STOPPING")
+    new_state = SPEECH_RECOGNITION_STOPPING;
 
   StartPageService* service =
       StartPageService::Get(Profile::FromWebUI(web_ui()));
-  service->OnSpeechRecognitionStateChanged(new_state);
+  if (service)
+    service->OnSpeechRecognitionStateChanged(new_state);
 }
 
 }  // namespace app_list

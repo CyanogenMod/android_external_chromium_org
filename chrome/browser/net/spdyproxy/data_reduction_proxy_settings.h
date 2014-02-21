@@ -22,6 +22,7 @@ class AuthChallengeInfo;
 class HostPortPair;
 class HttpAuthCache;
 class HttpNetworkSession;
+class HttpResponseHeaders;
 class URLFetcher;
 }
 
@@ -35,6 +36,42 @@ const unsigned int kNumDaysInHistorySummary = 30;
 
 COMPILE_ASSERT(kNumDaysInHistorySummary <= kNumDaysInHistory,
                DataReductionProxySettings_summary_too_long);
+
+  // Values of the UMA DataReductionProxy.StartupState histogram.
+  // This enum must remain synchronized with DataReductionProxyStartupState
+  // in metrics/histograms/histograms.xml.
+  enum ProxyStartupState {
+    PROXY_NOT_AVAILABLE = 0,
+    PROXY_DISABLED,
+    PROXY_ENABLED,
+    PROXY_STARTUP_STATE_COUNT,
+  };
+
+  // Values of the UMA DataReductionProxy.ProbeURL histogram.
+  // This enum must remain synchronized with
+  // DataReductionProxyProbeURLFetchResult in metrics/histograms/histograms.xml.
+  // TODO(marq): Rename these histogram buckets with s/DISABLED/RESTRICTED/, so
+  //     their names match the behavior they track.
+  enum ProbeURLFetchResult {
+    // The probe failed because the internet was disconnected.
+    INTERNET_DISCONNECTED = 0,
+
+    // The probe failed for any other reason, and as a result, the proxy was
+    // disabled.
+    FAILED_PROXY_DISABLED,
+
+    // The probe failed, but the proxy was already restricted.
+    FAILED_PROXY_ALREADY_DISABLED,
+
+    // THe probe succeeded, and as a result the proxy was restricted.
+    SUCCEEDED_PROXY_ENABLED,
+
+    // The probe succeeded, but the proxy was already restricted.
+    SUCCEEDED_PROXY_ALREADY_ENABLED,
+
+    // This must always be last.
+    PROBE_URL_FETCH_RESULT_COUNT
+  };
 
 }  // namespace spdyproxy
 
@@ -149,9 +186,10 @@ class DataReductionProxySettings
   ContentLengthList GetDailyContentLengths(const char* pref_name);
 
   // Sets the proxy configs, enabling or disabling the proxy according to
-  // the value of |enabled|. |at_startup| is true when this method is called
-  // from InitDataReductionProxySettings.
-  virtual void SetProxyConfigs(bool enabled, bool at_startup);
+  // the value of |enabled|. If |restricted| is true, only enable the fallback
+  // proxy. |at_startup| is true when this method is called from
+  // InitDataReductionProxySettings.
+  virtual void SetProxyConfigs(bool enabled, bool restricted, bool at_startup);
 
   // Metrics methods. Subclasses should override if they wish to provide
   // alternate methods.
@@ -161,10 +199,14 @@ class DataReductionProxySettings
 
   // Writes a warning to the log that is used in backend processing of
   // customer feedback. Virtual so tests can mock it for verification.
-  virtual void LogProxyState(bool enabled, bool at_startup);
+  virtual void LogProxyState(bool enabled, bool restricted, bool at_startup);
 
   // Accessor for unit tests.
   std::vector<std::string> BypassRules() { return bypass_rules_;}
+
+  // Virtualized for mocking
+  virtual void RecordProbeURLFetchResult(spdyproxy::ProbeURLFetchResult result);
+  virtual void RecordStartupState(spdyproxy::ProxyStartupState state);
 
  private:
   friend class DataReductionProxySettingsTestBase;
@@ -222,7 +264,7 @@ class DataReductionProxySettings
 
   std::vector<std::string> bypass_rules_;
 
-  bool disabled_by_carrier_;
+  bool restricted_by_carrier_;
   bool enabled_by_user_;
 
   scoped_ptr<net::URLFetcher> fetcher_;

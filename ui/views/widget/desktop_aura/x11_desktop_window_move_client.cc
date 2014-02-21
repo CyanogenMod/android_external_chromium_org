@@ -71,7 +71,7 @@ void X11DesktopWindowMoveClient::OnMoveLoopEnded() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostLinux, aura::client::WindowMoveClient implementation:
+// DesktopWindowTreeHostLinux, aura::client::WindowMoveClient implementation:
 
 aura::client::WindowMoveResult X11DesktopWindowMoveClient::RunMoveLoop(
     aura::Window* source,
@@ -80,7 +80,8 @@ aura::client::WindowMoveResult X11DesktopWindowMoveClient::RunMoveLoop(
   window_offset_ = drag_offset;
   root_window_ = source->GetDispatcher();
 
-  bool success = move_loop_.RunMoveLoop(source, root_window_->last_cursor());
+  bool success = move_loop_.RunMoveLoop(source,
+                                        root_window_->host()->last_cursor());
   return success ? aura::client::MOVE_SUCCESSFUL : aura::client::MOVE_CANCELED;
 }
 
@@ -90,10 +91,10 @@ void X11DesktopWindowMoveClient::EndMoveLoop() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostLinux, private:
+// DesktopWindowTreeHostLinux, private:
 
 void X11DesktopWindowMoveClient::SetHostBounds(const gfx::Rect& rect) {
-  root_window_->SetHostBounds(rect);
+  root_window_->host()->SetBounds(rect);
 }
 
 }  // namespace views

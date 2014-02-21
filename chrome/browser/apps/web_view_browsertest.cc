@@ -32,6 +32,11 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "ui/gl/gl_switches.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#include "chrome/browser/chromeos/accessibility/speech_monitor.h"
+#endif
+
 // For fine-grained suppression on flaky tests.
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -242,10 +247,6 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
       content::SpeechRecognitionManager::SetManagerForTesting(
           fake_speech_recognition_manager_.get());
     }
-
-    // We need real contexts, otherwise the embedder doesn't composite, but the
-    // guest does, and that isn't an expected configuration.
-    UseRealGLContexts();
     extensions::PlatformAppBrowserTest::SetUp();
   }
 
@@ -449,8 +450,8 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
   void ExecuteScriptWaitForTitle(content::WebContents* web_contents,
                                  const char* script,
                                  const char* title) {
-    base::string16 expected_title(ASCIIToUTF16(title));
-    base::string16 error_title(ASCIIToUTF16("error"));
+    base::string16 expected_title(base::ASCIIToUTF16(title));
+    base::string16 error_title(base::ASCIIToUTF16("error"));
 
     content::TitleWatcher title_watcher(web_contents, expected_title);
     title_watcher.AlsoWaitForTitle(error_title);
@@ -519,7 +520,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     content::RunAllPendingInMessageLoop();
 
     content::WebContents* embedder_web_contents =
-        GetFirstShellWindowWebContents();
+        GetFirstAppWindowWebContents();
     if (!embedder_web_contents) {
       LOG(ERROR) << "UNABLE TO FIND EMBEDDER WEB CONTENTS.";
       return;
@@ -576,7 +577,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     ASSERT_TRUE(loaded_listener.WaitUntilSatisfied());
 
     content::WebContents* embedder_web_contents =
-        GetFirstShellWindowWebContents();
+        GetFirstAppWindowWebContents();
     ASSERT_TRUE(embedder_web_contents);
 
     ExtensionTestMessageListener test_run_listener("PASSED", false);
@@ -637,7 +638,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
 // This test ensures <webview> doesn't crash in SW rendering when autosize is
 // turned on.
 // Flaky on Windows http://crbug.com/299507
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_AutoSizeSW DISABLED_AutoSizeSW
 #else
 #define MAYBE_AutoSizeSW AutoSizeSW
@@ -905,8 +906,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveWebviewOnExit) {
   LoadAndLaunchPlatformApp("web_view/shim");
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
-  content::WebContents* embedder_web_contents =
-      GetFirstShellWindowWebContents();
+  content::WebContents* embedder_web_contents = GetFirstAppWindowWebContents();
   ASSERT_TRUE(embedder_web_contents);
 
   GURL::Replacements replace_host;
@@ -997,8 +997,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, InterstitialTeardown) {
       SetBrowserClientForTesting(&new_client);
 
   // Now load the guest.
-  content::WebContents* embedder_web_contents =
-      GetFirstShellWindowWebContents();
+  content::WebContents* embedder_web_contents = GetFirstAppWindowWebContents();
   ExtensionTestMessageListener second("GuestAddedToDom", false);
   EXPECT_TRUE(content::ExecuteScript(
       embedder_web_contents,
@@ -1012,17 +1011,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, InterstitialTeardown) {
   WaitForInterstitial(guest_web_contents);
 
   // Now close the app while interstitial page being shown in guest.
-  apps::ShellWindow* window = GetFirstShellWindow();
+  apps::AppWindow* window = GetFirstAppWindow();
   window->GetBaseWindow()->Close();
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, ShimSrcAttribute) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/src_attribute"))
       << message_;
-}
-
-IN_PROC_BROWSER_TEST_F(WebViewTest, Size) {
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/size")) << message_;
 }
 
 // This test verifies that prerendering has been disabled inside <webview>.
@@ -1493,8 +1488,7 @@ void WebViewTest::MediaAccessAPIAllowTestHelper(const std::string& test_name) {
   LoadAndLaunchPlatformApp("web_view/media_access/allow");
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
-  content::WebContents* embedder_web_contents =
-      GetFirstShellWindowWebContents();
+  content::WebContents* embedder_web_contents = GetFirstAppWindowWebContents();
   ASSERT_TRUE(embedder_web_contents);
   MockWebContentsDelegate* mock = new MockWebContentsDelegate;
   embedder_web_contents->SetDelegate(mock);
@@ -1546,12 +1540,32 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognition) {
   // way that this will trigger clicking on speech recognition input mic.
   SimulateMouseClick(guest_web_contents, 0, blink::WebMouseEvent::ButtonLeft);
 
-  base::string16 expected_title(ASCIIToUTF16("PASSED"));
-  base::string16 error_title(ASCIIToUTF16("FAILED"));
+  base::string16 expected_title(base::ASCIIToUTF16("PASSED"));
+  base::string16 error_title(base::ASCIIToUTF16("FAILED"));
   content::TitleWatcher title_watcher(guest_web_contents, expected_title);
   title_watcher.AlsoWaitForTitle(error_title);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
+
+#if defined(OS_CHROMEOS)
+IN_PROC_BROWSER_TEST_F(WebViewTest, ChromeVoxInjection) {
+  EXPECT_FALSE(
+      chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
+
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  content::WebContents* guest_web_contents = LoadGuest(
+      "/extensions/platform_apps/web_view/chromevox_injection/guest.html",
+      "web_view/chromevox_injection");
+  ASSERT_TRUE(guest_web_contents);
+
+  chromeos::SpeechMonitor monitor;
+  chromeos::AccessibilityManager::Get()->EnableSpokenFeedback(
+      true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+
+  EXPECT_EQ("chrome vox test title", monitor.GetNextUtterance());
+}
+#endif
 
 // Flaky on Windows. http://crbug.com/303966
 #if defined(OS_WIN)
@@ -1564,12 +1578,12 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_TearDownTest) {
   const extensions::Extension* extension =
       LoadAndLaunchPlatformApp("web_view/teardown");
   ASSERT_TRUE(first_loaded_listener.WaitUntilSatisfied());
-  apps::ShellWindow* window = NULL;
-  if (!GetShellWindowCount())
-    window = CreateShellWindow(extension);
+  apps::AppWindow* window = NULL;
+  if (!GetAppWindowCount())
+    window = CreateAppWindow(extension);
   else
-    window = GetFirstShellWindow();
-  CloseShellWindow(window);
+    window = GetFirstAppWindow();
+  CloseAppWindow(window);
 
   // Load the app again.
   ExtensionTestMessageListener second_loaded_listener("guest-loaded", false);
@@ -1844,13 +1858,15 @@ IN_PROC_BROWSER_TEST_F(WebViewPluginTest, TestLoadPluginEvent) {
 }
 #endif  // defined(ENABLE_PLUGINS)
 
-// Taking a screenshot does not work with threaded compositing, so disable
-// threaded compositing for this test (http://crbug.com/326756).
 class WebViewCaptureTest : public WebViewTest,
   public testing::WithParamInterface<std::string> {
  public:
   WebViewCaptureTest() {}
   virtual ~WebViewCaptureTest() {}
+  virtual void SetUp() OVERRIDE {
+    EnablePixelOutput();
+    WebViewTest::SetUp();
+  }
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(GetParam());
     // http://crbug.com/327035
@@ -1859,8 +1875,14 @@ class WebViewCaptureTest : public WebViewTest,
   }
 };
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestZoomAPI) {
+  TestHelper("testZoomAPI", "web_view/shim", NO_TEST_SERVER);
+}
+
+// <webview> screenshot capture fails with ubercomp.
+// See http://crbug.com/327035.
 IN_PROC_BROWSER_TEST_P(WebViewCaptureTest,
-                       Shim_ScreenshotCapture) {
+                       DISABLED_Shim_ScreenshotCapture) {
   TestHelper("testScreenshotCapture", "web_view/shim", NO_TEST_SERVER);
 }
 

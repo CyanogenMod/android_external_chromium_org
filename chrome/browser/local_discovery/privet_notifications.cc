@@ -117,21 +117,16 @@ void PrivetNotificationsListener::CreateInfoOperation(
   DCHECK(device_iter != devices_seen_.end());
   DeviceContext* device = device_iter->second.get();
   device->privet_http.swap(http_client);
-  device->info_operation =
-       device->privet_http->CreateInfoOperation(this);
+  device->info_operation = device->privet_http->CreateInfoOperation(
+      base::Bind(&PrivetNotificationsListener::OnPrivetInfoDone,
+                 base::Unretained(this),
+                 device));
   device->info_operation->Start();
 }
 
 void PrivetNotificationsListener::OnPrivetInfoDone(
-      PrivetInfoOperation* operation,
-      int http_code,
-      const base::DictionaryValue* json_value) {
-  ReportPrivetUmaEvent(PRIVET_INFO_DONE);
-  std::string name = operation->GetHTTPClient()->GetName();
-  DeviceContextMap::iterator device_iter = devices_seen_.find(name);
-  DCHECK(device_iter != devices_seen_.end());
-  DeviceContext* device = device_iter->second.get();
-
+    DeviceContext* device,
+    const base::DictionaryValue* json_value) {
   int uptime;
 
   if (!json_value ||
@@ -179,7 +174,7 @@ void PrivetNotificationsListener::NotifyDeviceRemoved() {
   if (devices_active_ == 0) {
     delegate_->PrivetRemoveNotification();
   } else {
-    delegate_->PrivetNotify(devices_active_ > 1, true);
+    delegate_->PrivetNotify(devices_active_ > 1, false);
   }
 }
 
@@ -269,7 +264,7 @@ void PrivetNotificationService::PrivetNotify(bool has_multiple,
       blink::WebTextDirectionDefault,
       message_center::NotifierId(GURL(kPrivetNotificationOriginUrl)),
       product_name,
-      UTF8ToUTF16(kPrivetNotificationID),
+      base::UTF8ToUTF16(kPrivetNotificationID),
       rich_notification_data,
       new PrivetNotificationDelegate(profile_));
 

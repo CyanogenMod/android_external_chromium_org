@@ -13,9 +13,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/sync/glue/backend_data_type_configurer.h"
 #include "chrome/browser/sync/glue/extensions_activity_monitor.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
+#include "components/sync_driver/backend_data_type_configurer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -94,7 +94,7 @@ class SyncBackendHostImpl
       const std::string& passphrase,
       bool is_explicit) OVERRIDE;
   virtual bool SetDecryptionPassphrase(const std::string& passphrase)
-      WARN_UNUSED_RESULT OVERRIDE;
+      OVERRIDE WARN_UNUSED_RESULT;
   virtual void StopSyncingForShutdown() OVERRIDE;
   virtual scoped_ptr<base::Thread> Shutdown(ShutdownOption option) OVERRIDE;
   virtual void UnregisterInvalidationIds() OVERRIDE;
@@ -201,6 +201,9 @@ class SyncBackendHostImpl
   // Let the front end handle the actionable error event.
   void HandleActionableErrorEventOnFrontendLoop(
       const syncer::SyncProtocolError& sync_error);
+
+  // Handle a migration request.
+  void HandleMigrationRequestedOnFrontendLoop(const syncer::ModelTypeSet types);
 
   // Checks if |passphrase| can be used to decrypt the cryptographer's pending
   // keys that were cached during NotifyPassphraseRequired. Returns true if

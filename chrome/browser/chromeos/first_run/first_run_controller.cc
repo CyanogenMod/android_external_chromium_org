@@ -4,11 +4,12 @@
 
 #include "chrome/browser/chromeos/first_run/first_run_controller.h"
 
-#include "ash/first_run/first_run_helper.h"
 #include "ash/shell.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/chromeos/first_run/first_run_view.h"
+#include "chrome/browser/chromeos/first_run/metrics.h"
 #include "chrome/browser/chromeos/first_run/steps/app_list_step.h"
 #include "chrome/browser/chromeos/first_run/steps/help_step.h"
 #include "chrome/browser/chromeos/first_run/steps/tray_step.h"
@@ -23,6 +24,12 @@ size_t NONE_STEP_INDEX = std::numeric_limits<size_t>::max();
 // Instance of currently running controller, or NULL if controller is not
 // running now.
 chromeos::FirstRunController* g_instance;
+
+void RecordCompletion(chromeos::first_run::TutorialCompletion type) {
+  UMA_HISTOGRAM_ENUMERATION("CrosFirstRun.TutorialCompletion",
+                            type,
+                            chromeos::first_run::kTutorialCompletionSize);
+}
 
 }  // namespace
 
@@ -51,6 +58,10 @@ void FirstRunController::Stop() {
   g_instance = NULL;
 }
 
+FirstRunController* FirstRunController::GetInstanceForTest() {
+  return g_instance;
+}
+
 FirstRunController::FirstRunController()
     : actor_(NULL),
       current_step_index_(NONE_STEP_INDEX),
@@ -58,51 +69,79 @@ FirstRunController::FirstRunController()
 }
 
 void FirstRunController::Init() {
+  start_time_ = base::Time::Now();
   UserManager* user_manager = UserManager::Get();
   user_profile_ = user_manager->GetProfileByUser(user_manager->GetActiveUser());
 
   shell_helper_.reset(ash::Shell::GetInstance()->CreateFirstRunHelper());
+  shell_helper_->AddObserver(this);
 
   FirstRunView* view = new FirstRunView();
   view->Init(user_profile_);
   shell_helper_->GetOverlayWidget()->SetContentsView(view);
   actor_ = view->GetActor();
   actor_->set_delegate(this);
+  shell_helper_->GetOverlayWidget()->Show();
+  view->RequestFocus();
+  web_contents_for_tests_ = view->GetWebContents();
+
   if (actor_->IsInitialized())
     OnActorInitialized();
 }
 
 void FirstRunController::Finalize() {
+  int furthest_step = current_step_index_ == NONE_STEP_INDEX
+                          ? steps_.size() - 1
+                          : current_step_index_;
+  UMA_HISTOGRAM_ENUMERATION("CrosFirstRun.FurthestStep",
+                            furthest_step,
+                            steps_.size());
+  UMA_HISTOGRAM_MEDIUM_TIMES("CrosFirstRun.TimeSpent",
+                             base::Time::Now() - start_time_);
   if (GetCurrentStep())
     GetCurrentStep()->OnBeforeHide();
   steps_.clear();
   if (actor_)
     actor_->set_delegate(NULL);
   actor_ = NULL;
+  shell_helper_->RemoveObserver(this);
   shell_helper_.reset();
 }
 
 void FirstRunController::OnActorInitialized() {
   RegisterSteps();
-  shell_helper_->GetOverlayWidget()->Show();
-  actor_->SetBackgroundVisible(true);
   ShowNextStep();
 }
 
 void FirstRunController::OnNextButtonClicked(const std::string& step_name) {
   DCHECK(GetCurrentStep() && GetCurrentStep()->name() == step_name);
-  ShowNextStep();
+  GetCurrentStep()->OnBeforeHide();
+  actor_->HideCurrentStep();
 }
 
 void FirstRunController::OnHelpButtonClicked() {
-  Stop();
-  chrome::ShowHelpForProfile(
-      user_profile_,
-      chrome::HOST_DESKTOP_TYPE_ASH,
-      chrome::HELP_SOURCE_MENU);
+  RecordCompletion(first_run::kTutorialCompletedWithKeepExploring);
+  on_actor_finalized_ = base::Bind(chrome::ShowHelpForProfile,
+                                   user_profile_,
+                                   chrome::HOST_DESKTOP_TYPE_ASH,
+                                   chrome::HELP_SOURCE_MENU);
+  actor_->Finalize();
 }
 
-void FirstRunController::OnCloseButtonClicked() {
+void FirstRunController::OnStepHidden(const std::string& step_name) {
+  DCHECK(GetCurrentStep() && GetCurrentStep()->name() == step_name);
+  GetCurrentStep()->OnAfterHide();
+  if (!actor_->IsFinalizing())
+    ShowNextStep();
+}
+
+void FirstRunController::OnStepShown(const std::string& step_name) {
+  DCHECK(GetCurrentStep() && GetCurrentStep()->name() == step_name);
+}
+
+void FirstRunController::OnActorFinalized() {
+  if (!on_actor_finalized_.is_null())
+    on_actor_finalized_.Run();
   Stop();
 }
 
@@ -111,6 +150,11 @@ void FirstRunController::OnActorDestroyed() {
   // actor's lifetime.
   NOTREACHED() <<
     "FirstRunActor destroyed before FirstRunController::Finalize.";
+}
+
+void FirstRunController::OnCancelled() {
+  RecordCompletion(first_run::kTutorialNotFinished);
+  Stop();
 }
 
 void FirstRunController::RegisterSteps() {
@@ -123,13 +167,13 @@ void FirstRunController::RegisterSteps() {
 }
 
 void FirstRunController::ShowNextStep() {
-  if (GetCurrentStep())
-    GetCurrentStep()->OnBeforeHide();
   AdvanceStep();
-  if (GetCurrentStep())
-    GetCurrentStep()->Show();
-  else
-    Stop();
+  if (!GetCurrentStep()) {
+    actor_->Finalize();
+    RecordCompletion(first_run::kTutorialCompletedWithGotIt);
+    return;
+  }
+  GetCurrentStep()->Show();
 }
 
 void FirstRunController::AdvanceStep() {

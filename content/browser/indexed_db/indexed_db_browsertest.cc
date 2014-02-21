@@ -27,6 +27,7 @@
 #include "webkit/browser/database/database_util.h"
 #include "webkit/browser/quota/quota_manager.h"
 
+using base::ASCIIToUTF16;
 using quota::QuotaManager;
 using webkit_database::DatabaseUtil;
 
@@ -355,6 +356,31 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CanDeleteWhenOverQuotaTest) {
   SimpleTest(GetTestUrl("indexeddb", "delete_over_quota.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DeleteCompactsBackingStore) {
+  const GURL test_url = GetTestUrl("indexeddb", "delete_compact.html");
+  SimpleTest(GURL(test_url.spec() + "#fill"));
+  int64 after_filling = RequestDiskUsage();
+  EXPECT_GT(after_filling, 0);
+
+  SimpleTest(GURL(test_url.spec() + "#purge"));
+  int64 after_deleting = RequestDiskUsage();
+  EXPECT_LT(after_deleting, after_filling);
+
+  // The above tests verify basic assertions - that filling writes data and
+  // deleting reduces the amount stored.
+
+  // The below tests make assumptions about implementation specifics, such as
+  // data compression, compaction efficiency, and the maximum amount of
+  // metadata and log data remains after a deletion. It is possible that
+  // changes to the implementation may require these constants to be tweaked.
+
+  const int kTestFillBytes = 1024 * 1024 * 5;  // 5MB
+  EXPECT_GT(after_filling, kTestFillBytes);
+
+  const int kTestCompactBytes = 1024 * 1024 * 1;  // 1MB
+  EXPECT_LT(after_deleting, kTestCompactBytes);
+}
+
 // Complex multi-step (converted from pyauto) tests begin here.
 
 // Verify null key path persists after restarting browser.
@@ -433,8 +459,14 @@ class IndexedDBBrowserTestSingleProcess : public IndexedDBBrowserTest {
   }
 };
 
+// Crashing on Android due to kSingleProcess flag: http://crbug.com/342525
+#if defined(OS_ANDROID)
+#define MAYBE_RenderThreadShutdownTest DISABLED_RenderThreadShutdownTest
+#else
+#define MAYBE_RenderThreadShutdownTest RenderThreadShutdownTest
+#endif
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestSingleProcess,
-                       RenderThreadShutdownTest) {
+                       MAYBE_RenderThreadShutdownTest) {
   SimpleTest(GetTestUrl("indexeddb", "shutdown_with_requests.html"));
 }
 

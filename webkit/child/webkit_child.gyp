@@ -40,6 +40,7 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
+        '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/native_theme/native_theme.gyp:native_theme',
         '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/url/url.gyp:url_lib',
@@ -67,29 +68,15 @@
         'resource_loader_bridge.h',
         'touch_fling_gesture_curve.cc',
         'touch_fling_gesture_curve.h',
-        'web_discardable_memory_impl.cc',
-        'web_discardable_memory_impl.h',
-        'webfallbackthemeengine_impl.cc',
-        'webfallbackthemeengine_impl.h',
         'webkit_child_export.h',
         'webkit_child_helpers.cc',
         'webkit_child_helpers.h',
-        'webkitplatformsupport_child_impl.cc',
-        'webkitplatformsupport_child_impl.h',
         'webkitplatformsupport_impl.cc',
         'webkitplatformsupport_impl.h',
         'websocketstreamhandle_bridge.h',
         'websocketstreamhandle_delegate.h',
         'websocketstreamhandle_impl.cc',
         'websocketstreamhandle_impl.h',
-        'webthemeengine_impl_android.cc',
-        'webthemeengine_impl_android.h',
-        'webthemeengine_impl_default.cc',
-        'webthemeengine_impl_default.h',
-        'webthemeengine_impl_mac.cc',
-        'webthemeengine_impl_mac.h',
-        'webthemeengine_impl_win.cc',
-        'webthemeengine_impl_win.h',
         'webthread_impl.cc',
         'webthread_impl.h',
         'weburlloader_impl.cc',
@@ -104,14 +91,6 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267 ],
       'conditions': [
-        ['use_default_render_theme==0',
-          {
-            'sources/': [
-              ['exclude', 'webthemeengine_impl_default.cc'],
-              ['exclude', 'webthemeengine_impl_default.h'],
-            ],
-          }
-        ],
         ['OS=="mac"',
           {
             'link_settings': {

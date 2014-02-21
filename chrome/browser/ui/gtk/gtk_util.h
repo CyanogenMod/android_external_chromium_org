@@ -182,7 +182,7 @@ GdkPoint MakeBidiGdkPoint(gint x, gint y, gint width, bool ltr);
 
 // Creates a tooltip string to be passed to gtk_widget_set_tooltip_markup from
 // the title and URL.
-std::string BuildTooltipTitleFor(string16 title, const GURL& url);
+std::string BuildTooltipTitleFor(base::string16 title, const GURL& url);
 
 // Draws a GTK text entry with the style parameters of GtkEntry
 // |offscreen_entry| onto |widget_to_draw_on| in the rectangle |rec|. Drawing
@@ -283,7 +283,7 @@ gfx::Rect GetDialogBounds(GtkWidget* dialog);
 
 // Returns the stock menu item label for the "preferences" item - returns an
 // empty string if no stock item found.
-string16 GetStockPreferencesMenuLabel();
+base::string16 GetStockPreferencesMenuLabel();
 
 // Checks whether a widget is actually visible, i.e. whether it and all its
 // ancestors up to its toplevel are visible.

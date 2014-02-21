@@ -11,9 +11,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "extensions/browser/process_map.h"
 #include "extensions/browser/quota_service.h"
+#include "extensions/common/extension_set.h"
 
 namespace extensions {
 class Extension;
@@ -30,7 +30,10 @@ class InfoMap : public base::RefCountedThreadSafe<InfoMap> {
     return disabled_extensions_;
   }
 
+  // Information about which extensions are assigned to which render processes.
   const extensions::ProcessMap& process_map() const;
+  // Information about which extensions are assigned to which worker processes.
+  const extensions::ProcessMap& worker_process_map() const;
 
   // Callback for when new extensions are loaded.
   void AddExtension(const extensions::Extension* extension,
@@ -64,6 +67,14 @@ class InfoMap : public base::RefCountedThreadSafe<InfoMap> {
                                   int site_instance_id);
   void UnregisterAllExtensionsInProcess(int process_id);
 
+  // Adds an entry to worker_process_map_.
+  void RegisterExtensionWorkerProcess(const std::string& extension_id,
+                                      int process_id,
+                                      int site_instance_id);
+
+  // Removes an entry from worker_process_map_.
+  void UnregisterExtensionWorkerProcess(int process_id);
+
   // Returns the subset of extensions which has the same |origin| in
   // |process_id| with the specified |permission|.
   void GetExtensionsWithAPIPermissionForSecurityOrigin(
@@ -79,6 +90,7 @@ class InfoMap : public base::RefCountedThreadSafe<InfoMap> {
                                       extensions::APIPermission::ID permission)
       const;
 
+  // Returns the IO thread QuotaService. Creates the instance on first call.
   QuotaService* GetQuotaService();
 
   // Keep track of the signin process, so we can restrict extension access to
@@ -88,9 +100,8 @@ class InfoMap : public base::RefCountedThreadSafe<InfoMap> {
 
   // Notifications can be enabled/disabled in real time by the user.
   void SetNotificationsDisabled(const std::string& extension_id,
-                               bool notifications_disabled);
-  bool AreNotificationsDisabled(const std::string& extension_id)
-      const;
+                                bool notifications_disabled);
+  bool AreNotificationsDisabled(const std::string& extension_id) const;
 
  private:
   friend class base::RefCountedThreadSafe<InfoMap>;
@@ -113,8 +124,11 @@ class InfoMap : public base::RefCountedThreadSafe<InfoMap> {
   // the IO thread.
   scoped_ptr<QuotaService> quota_service_;
 
-  // Assignment of extensions to processes.
+  // Assignment of extensions to renderer processes.
   extensions::ProcessMap process_map_;
+
+  // Assignment of extensions to worker processes.
+  extensions::ProcessMap worker_process_map_;
 
   int signin_process_id_;
 };

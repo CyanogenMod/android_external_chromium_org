@@ -6,15 +6,13 @@
 
 import logging
 import os
-import shutil
 import sys
 import tempfile
 
 from pylib import cmd_helper
 from pylib import constants
 from pylib import pexpect
-
-from test_package import TestPackage
+from pylib.gtest.test_package import TestPackage
 
 
 class TestPackageExecutable(TestPackage):
@@ -53,7 +51,8 @@ class TestPackageExecutable(TestPackage):
       ret = 1
     return ret
 
-  def _AddNativeCoverageExports(self, adb):
+  @staticmethod
+  def _AddNativeCoverageExports(adb):
     # export GCOV_PREFIX set the path for native coverage results
     # export GCOV_PREFIX_STRIP indicates how many initial directory
     #                          names to strip off the hardwired absolute paths.
@@ -122,26 +121,19 @@ class TestPackageExecutable(TestPackage):
     if self.tool.NeedsDebugInfo():
       target_name = self.suite_path
     else:
-      target_name = self.suite_path + '_' + adb.GetDevice() + '_stripped'
-      should_strip = True
-      if os.path.isfile(target_name):
-        logging.info('Found target file %s' % target_name)
-        target_mtime = os.stat(target_name).st_mtime
-        source_mtime = os.stat(self.suite_path).st_mtime
-        if target_mtime > source_mtime:
-          logging.info('Target mtime (%d) is newer than source (%d), assuming '
-                       'no change.' % (target_mtime, source_mtime))
-          should_strip = False
+      target_name = self.suite_path + '_stripped'
+      if not os.path.isfile(target_name):
+        raise Exception('Did not find %s, build target %s' %
+                        (target_name, self.suite_name + '_stripped'))
 
-      if should_strip:
-        logging.info('Did not find up-to-date stripped binary. Generating a '
-                     'new one (%s).' % target_name)
-        # Whenever we generate a stripped binary, copy to the symbols dir. If we
-        # aren't stripping a new binary, assume it's there.
-        if not os.path.exists(self._symbols_dir):
-          os.makedirs(self._symbols_dir)
-        shutil.copy(self.suite_path, self._symbols_dir)
-        strip = os.environ['STRIP']
-        cmd_helper.RunCmd([strip, self.suite_path, '-o', target_name])
+      target_mtime = os.stat(target_name).st_mtime
+      source_mtime = os.stat(self.suite_path).st_mtime
+      if target_mtime < source_mtime:
+        raise Exception(
+            'stripped binary (%s, timestamp %d) older than '
+            'source binary (%s, timestamp %d), build target %s' %
+            (target_name, target_mtime, self.suite_path, source_mtime,
+             self.suite_name + '_stripped'))
+
     test_binary = constants.TEST_EXECUTABLE_DIR + '/' + self.suite_name
     adb.PushIfNeeded(target_name, test_binary)

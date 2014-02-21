@@ -13,30 +13,29 @@
 #include "cc/output/output_surface.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/trees/layer_tree_host.h"
+#include "content/test/test_context_provider_factory.h"
 #include "content/test/test_webkit_platform_support.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebLayer.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
-#include "third_party/WebKit/public/platform/WebRenderingStats.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "ui/gfx/frame_time.h"
-#include "webkit/common/gpu/test_context_provider_factory.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using blink::WebColor;
 using blink::WebGraphicsContext3D;
 using blink::WebRect;
-using blink::WebRenderingStats;
 using blink::WebSize;
+using webkit::WebLayerImpl;
 
-namespace webkit {
+namespace content {
 
 WebLayerTreeViewImplForTesting::WebLayerTreeViewImplForTesting() {}
 
 WebLayerTreeViewImplForTesting::~WebLayerTreeViewImplForTesting() {}
 
-bool WebLayerTreeViewImplForTesting::Initialize() {
+void WebLayerTreeViewImplForTesting::Initialize() {
   cc::LayerTreeSettings settings;
 
   // For web contents, layer transforms should scale up the contents of layers
@@ -47,9 +46,7 @@ bool WebLayerTreeViewImplForTesting::Initialize() {
   settings.accelerated_animation_enabled = true;
   layer_tree_host_ =
       cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
-  if (!layer_tree_host_)
-    return false;
-  return true;
+  DCHECK(layer_tree_host_);
 }
 
 void WebLayerTreeViewImplForTesting::setSurfaceReady() {
@@ -124,10 +121,6 @@ bool WebLayerTreeViewImplForTesting::commitRequested() const {
   return layer_tree_host_->CommitRequested();
 }
 
-void WebLayerTreeViewImplForTesting::composite() {
-  layer_tree_host_->Composite(gfx::FrameTime::Now());
-}
-
 void WebLayerTreeViewImplForTesting::didStopFlinging() {}
 
 bool WebLayerTreeViewImplForTesting::compositeAndReadback(
@@ -144,13 +137,11 @@ void WebLayerTreeViewImplForTesting::setDeferCommits(bool defer_commits) {
   layer_tree_host_->SetDeferCommits(defer_commits);
 }
 
-void WebLayerTreeViewImplForTesting::renderingStats(WebRenderingStats&) const {}
-
 void WebLayerTreeViewImplForTesting::Layout() {
 }
 
 void WebLayerTreeViewImplForTesting::ApplyScrollAndScale(
-    gfx::Vector2d scroll_delta,
+    const gfx::Vector2d& scroll_delta,
     float page_scale) {}
 
 scoped_ptr<cc::OutputSurface>
@@ -162,8 +153,28 @@ WebLayerTreeViewImplForTesting::CreateOutputSurface(bool fallback) {
 scoped_refptr<cc::ContextProvider>
 WebLayerTreeViewImplForTesting::OffscreenContextProvider() {
   // Unit tests only run in single threaded mode.
-  return webkit::gpu::TestContextProviderFactory::GetInstance()->
+  return content::TestContextProviderFactory::GetInstance()->
       OffscreenContextProviderForMainThread();
 }
 
-}  // namespace webkit
+void WebLayerTreeViewImplForTesting::registerViewportLayers(
+    const blink::WebLayer* pageScaleLayer,
+    const blink::WebLayer* innerViewportScrollLayer,
+    const blink::WebLayer* outerViewportScrollLayer) {
+  layer_tree_host_->RegisterViewportLayers(
+      static_cast<const WebLayerImpl*>(pageScaleLayer)->layer(),
+      static_cast<const WebLayerImpl*>(innerViewportScrollLayer)->layer(),
+      // The outer viewport layer will only exist when using pinch virtual
+      // viewports.
+      outerViewportScrollLayer
+          ? static_cast<const WebLayerImpl*>(outerViewportScrollLayer)->layer()
+          : NULL);
+}
+
+void WebLayerTreeViewImplForTesting::clearViewportLayers() {
+  layer_tree_host_->RegisterViewportLayers(scoped_refptr<cc::Layer>(),
+                                           scoped_refptr<cc::Layer>(),
+                                           scoped_refptr<cc::Layer>());
+}
+
+}  // namespace content

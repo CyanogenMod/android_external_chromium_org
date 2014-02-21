@@ -10,12 +10,6 @@ import re
 import sys
 import time
 
-
-sys.path.append(os.path.join(sys.path[0],
-                             os.pardir, os.pardir, 'build', 'util', 'lib',
-                             'common'))
-import perf_tests_results_helper
-
 from pylib import android_commands
 from pylib import constants
 from pylib import flag_changer
@@ -23,8 +17,12 @@ from pylib import valgrind_tools
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
 from pylib.instrumentation import json_perf_parser
+from pylib.instrumentation import test_result
 
-import test_result
+sys.path.append(os.path.join(sys.path[0],
+                             os.pardir, os.pardir, 'build', 'util', 'lib',
+                             'common'))
+import perf_tests_results_helper # pylint: disable=F0401
 
 
 _PERF_TEST_ANNOTATION = 'PerfTest'
@@ -73,19 +71,21 @@ class TestRunner(base_test_runner.BaseTestRunner):
                                      test_options.cleanup_test_files)
     self._lighttp_port = constants.LIGHTTPD_RANDOM_PORT_FIRST + shard_index
 
+    self.coverage_device_file = None
+    self.coverage_dir = test_options.coverage_dir
+    self.coverage_host_file = None
     self.options = test_options
     self.test_pkg = test_pkg
-    self.coverage_dir = test_options.coverage_dir
     # Use the correct command line file for the package under test.
     cmdline_file = [a.cmdline_file for a in constants.PACKAGE_INFO.itervalues()
                     if a.test_package == self.test_pkg.GetPackageName()]
     assert len(cmdline_file) < 2, 'Multiple packages have the same test package'
     if len(cmdline_file) and cmdline_file[0]:
       self.flags = flag_changer.FlagChanger(self.adb, cmdline_file[0])
+      if additional_flags:
+        self.flags.AddFlags(additional_flags)
     else:
-      self.flags = flag_changer.FlagChanger(self.adb)
-    if additional_flags:
-      self.flags.AddFlags(additional_flags)
+      self.flags = None
 
   #override
   def InstallTestPackage(self):
@@ -112,7 +112,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     # TODO(frankf): Specify test data in this file as opposed to passing
     # as command-line.
     for dest_host_pair in self.options.test_data:
-      dst_src = dest_host_pair.split(':',1)
+      dst_src = dest_host_pair.split(':', 1)
       dst_layer = dst_src[0]
       host_src = dst_src[1]
       host_test_files_path = '%s/%s' % (constants.DIR_SOURCE_ROOT, host_src)
@@ -152,13 +152,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
     # We give different default value to launch HTTP server based on shard index
     # because it may have race condition when multiple processes are trying to
     # launch lighttpd with same port at same time.
-    http_server_ports = self.LaunchTestHttpServer(
+    self.LaunchTestHttpServer(
         os.path.join(constants.DIR_SOURCE_ROOT), self._lighttp_port)
-    self.flags.AddFlags(['--disable-fre', '--enable-test-intents'])
+    if self.flags:
+      self.flags.AddFlags(['--disable-fre', '--enable-test-intents'])
 
   def TearDown(self):
     """Cleans up the test harness and saves outstanding data from test run."""
-    self.flags.Restore()
+    if self.flags:
+      self.flags.Restore()
     super(TestRunner, self).TearDown()
 
   def TestSetup(self, test):
@@ -330,9 +332,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
     raw_result = None
     start_date_ms = None
     results = base_test_result.TestRunResults()
-    timeout=(self._GetIndividualTestTimeoutSecs(test) *
-             self._GetIndividualTestTimeoutScale(test) *
-             self.tool.GetTimeoutScale())
+    timeout = (self._GetIndividualTestTimeoutSecs(test) *
+               self._GetIndividualTestTimeoutScale(test) *
+               self.tool.GetTimeoutScale())
     try:
       self.TestSetup(test)
       start_date_ms = int(time.time()) * 1000
@@ -340,15 +342,18 @@ class TestRunner(base_test_runner.BaseTestRunner):
       duration_ms = int(time.time()) * 1000 - start_date_ms
       status_code = raw_result.GetStatusCode()
       if status_code:
+        if self.options.screenshot_failures:
+          self._TakeScreenshot(test)
         log = raw_result.GetFailureReason()
         if not log:
           log = 'No information.'
-        if (self.options.screenshot_failures or
-            log.find('INJECT_EVENTS perm') >= 0):
-          self._TakeScreenshot(test)
+        result_type = base_test_result.ResultType.FAIL
+        package = self.adb.DismissCrashDialogIfNeeded()
+        # Assume test package convention of ".test" suffix
+        if package and package in self.test_pkg.GetPackageName():
+          result_type = base_test_result.ResultType.CRASH
         result = test_result.InstrumentationTestResult(
-            test, base_test_result.ResultType.FAIL, start_date_ms, duration_ms,
-            log=log)
+            test, result_type, start_date_ms, duration_ms, log=log)
       else:
         result = test_result.InstrumentationTestResult(
             test, base_test_result.ResultType.PASS, start_date_ms, duration_ms)

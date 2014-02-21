@@ -21,6 +21,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/base/web_ui_browsertest.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
@@ -142,7 +143,7 @@ const uint8 kGoodbyePacket[] = {
   0x00, 0x00,               // ID is zeroed out
   0x80, 0x00,               // Standard query response, RA, no error
   0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x01,               // 1 RR (answers)
+  0x00, 0x02,               // 1 RR (answers)
   0x00, 0x00,               // 0 authority RRs
   0x00, 0x00,               // 0 additional RRs
 
@@ -157,6 +158,21 @@ const uint8 kGoodbyePacket[] = {
   0x00, 0x0c,        // RDLENGTH is 12 bytes.
   0x09, 'm', 'y', 'S', 'e', 'r', 'v', 'i', 'c', 'e',
   0xc0, 0x0c,
+
+
+  0x09, 'm', 'y', 'S', 'e', 'r', 'v', 'i', 'c', 'e',
+  0xc0, 0x0c,
+  0x00, 0x21,        // Type is SRV
+  0x00, 0x01,        // CLASS is IN
+  0x00, 0x00,        // TTL (4 bytes) is 0 seconds.
+  0x00, 0x00,
+  0x00, 0x17,        // RDLENGTH is 23
+  0x00, 0x00,
+  0x00, 0x00,
+  0x22, 0xb8,        // port 8888
+  0x09, 'm', 'y', 'S', 'e', 'r', 'v', 'i', 'c', 'e',
+  0x05, 'l', 'o', 'c', 'a', 'l',
+  0x00,
 };
 
 const uint8 kAnnouncePacketRegistered[] = {
@@ -226,6 +242,10 @@ const char kResponseGaiaToken[] = "{"
     "  \"access_token\": \"at1\","
     "  \"expires_in\": 3600,"
     "  \"token_type\": \"Bearer\""
+    "}";
+
+const char kResponseGaiaId[] = "{"
+    "  \"id\": \"12345\""
     "}";
 
 const char kURLInfo[] = "http://1.2.3.4:8888/privet/info";
@@ -375,6 +395,16 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
 
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
         kURLGaiaToken))
+        .Times(AnyNumber());
+
+    fake_fetcher_factory().SetFakeResponse(
+        GaiaUrls::GetInstance()->oauth_user_info_url(),
+        kResponseGaiaId,
+        net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
+
+    EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
+        GaiaUrls::GetInstance()->oauth_user_info_url().spec()))
         .Times(AnyNumber());
 
     ProfileOAuth2TokenService* token_service =

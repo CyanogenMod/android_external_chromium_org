@@ -93,7 +93,7 @@ class SpellcheckCharAttribute {
 //   // Set up a SpellcheckWordIterator object which extracts English words,
 //   // and retrieve them.
 //   SpellcheckWordIterator iterator;
-//   base::string16 text(UTF8ToUTF16("this is a test."));
+//   base::string16 text(base::UTF8ToUTF16("this is a test."));
 //   iterator.Initialize(&attribute, true);
 //   iterator.SetText(text.c_str(), text_.length());
 //
@@ -122,7 +122,7 @@ class SpellcheckWordIterator {
   // Set text to be iterated. (This text does not have to be NULL-terminated.)
   // This function also resets internal state so we can reuse this iterator
   // without calling Initialize().
-  bool SetText(const char16* text, size_t length);
+  bool SetText(const base::char16* text, size_t length);
 
   // Retrieves a word (or a contraction), stores its copy to 'word_string', and
   // stores the position and the length for input word to 'word_start'. Since
@@ -154,7 +154,7 @@ class SpellcheckWordIterator {
                  base::string16* output_string) const;
 
   // The pointer to the input string from which we are extracting words.
-  const char16* text_;
+  const base::char16* text_;
 
   // The length of the original string.
   int length_;

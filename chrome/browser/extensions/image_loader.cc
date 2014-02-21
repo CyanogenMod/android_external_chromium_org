@@ -247,14 +247,12 @@ bool ImageLoader::IsComponentExtensionResource(
         path_to_resource_id.Pointer(),
         kExtraComponentExtensionResources,
         arraysize(kExtraComponentExtensionResources));
-#if defined(USE_AURA)
-    if (keyboard::IsKeyboardEnabled()) {
-      size_t size;
-      const GritResourceMap* keyboard_resources =
-          keyboard::GetKeyboardExtensionResources(&size);
-      AddComponentResourceEntries(
-          path_to_resource_id.Pointer(), keyboard_resources, size);
-    }
+#if defined(OS_CHROMEOS)
+    size_t size;
+    const GritResourceMap* keyboard_resources =
+        keyboard::GetKeyboardExtensionResources(&size);
+    AddComponentResourceEntries(
+        path_to_resource_id.Pointer(), keyboard_resources, size);
 #endif
   }
 
@@ -314,14 +312,6 @@ void ImageLoader::LoadImagesAsync(
                                      it->resource.relative_path(),
                                      &resource_id)) {
       LoadResourceOnUIThread(resource_id, &bitmaps[i]);
-      if (bitmaps[i].isNull()) {
-        // bshe's log for http://crbug.com/314872
-        LOG(ERROR) << "Component extension icon for " << extension->name()
-                   << " is null.";
-        LOG(ERROR) << "Extension icon resource id = " << resource_id
-                   << "; desired_size = " << it->desired_size.ToString()
-                   << "; scale_factor = " << it->scale_factor;
-      }
     }
   }
 

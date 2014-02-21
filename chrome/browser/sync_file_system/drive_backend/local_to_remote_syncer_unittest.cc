@@ -14,14 +14,14 @@
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_uploader.h"
 #include "chrome/browser/sync_file_system/drive_backend/list_changes_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_service_helper.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_uploader.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
@@ -29,6 +29,8 @@
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/gdata_errorcode.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -52,6 +54,7 @@ class LocalToRemoteSyncerTest : public testing::Test,
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
+    in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
     fake_drive_service_.reset(new FakeDriveServiceWrapper);
     ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
@@ -61,7 +64,8 @@ class LocalToRemoteSyncerTest : public testing::Test,
 
     drive_uploader_.reset(new FakeDriveUploader(fake_drive_service_.get()));
     fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_.get(), drive_uploader_.get()));
+        fake_drive_service_.get(), drive_uploader_.get(),
+        kSyncRootFolderTitle));
     fake_remote_change_processor_.reset(new FakeRemoteChangeProcessor);
 
     RegisterSyncableFileSystem();
@@ -82,7 +86,8 @@ class LocalToRemoteSyncerTest : public testing::Test,
     SyncEngineInitializer initializer(this,
                                       base::MessageLoopProxy::current(),
                                       fake_drive_service_.get(),
-                                      database_dir_.path());
+                                      database_dir_.path(),
+                                      in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     initializer.Run(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
@@ -147,9 +152,9 @@ class LocalToRemoteSyncerTest : public testing::Test,
     return file_id;
   }
 
-  void RemoveResource(const std::string& file_id) {
-    EXPECT_EQ(google_apis::HTTP_SUCCESS,
-              fake_drive_helper_->RemoveResource(file_id));
+  void DeleteResource(const std::string& file_id) {
+    EXPECT_EQ(google_apis::HTTP_NO_CONTENT,
+              fake_drive_helper_->DeleteResource(file_id));
   }
 
   SyncStatusCode RunLocalToRemoteSyncer(FileChange file_change,
@@ -222,6 +227,7 @@ class LocalToRemoteSyncerTest : public testing::Test,
  private:
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir database_dir_;
+  scoped_ptr<leveldb::Env> in_memory_env_;
 
   scoped_ptr<FakeDriveServiceWrapper> fake_drive_service_;
   scoped_ptr<FakeDriveUploader> drive_uploader_;
@@ -409,9 +415,9 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_UpdateDeleteOnFile) {
                 status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
   } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
 
-  RemoveResource(file_id);
+  DeleteResource(file_id);
 
-  EXPECT_EQ(SYNC_STATUS_RETRY, RunLocalToRemoteSyncer(
+  EXPECT_EQ(SYNC_STATUS_FILE_BUSY, RunLocalToRemoteSyncer(
       FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                  SYNC_FILE_TYPE_FILE),
       URL(kOrigin, "foo")));
@@ -445,7 +451,7 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateDeleteOnFile) {
                 status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
   } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
 
-  RemoveResource(file_id);
+  DeleteResource(file_id);
 
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
 
@@ -500,7 +506,7 @@ TEST_F(LocalToRemoteSyncerTest, AppRootDeletion) {
   InitializeMetadataDatabase();
   RegisterApp(kOrigin.host(), app_root);
 
-  RemoveResource(app_root);
+  DeleteResource(app_root);
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   SyncStatusCode status;
   do {

@@ -27,6 +27,7 @@ SerializedNavigationEntry::SerializedNavigationEntry()
       post_id_(-1),
       is_overriding_user_agent_(false),
       http_status_code_(0),
+      is_restored_(false),
       blocked_state_(STATE_INVALID) {}
 
 SerializedNavigationEntry::~SerializedNavigationEntry() {}
@@ -48,6 +49,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromNavigationEntry(
   navigation.original_request_url_ = entry.GetOriginalRequestURL();
   navigation.is_overriding_user_agent_ = entry.GetIsOverridingUserAgent();
   navigation.timestamp_ = entry.GetTimestamp();
+  navigation.is_restored_ = entry.IsRestored();
   // If you want to navigate a named frame in Chrome, you will first need to
   // add support for persisting it. It is currently only used for layout tests.
   CHECK(entry.GetFrameToNavigate().empty());
@@ -65,11 +67,11 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
   SerializedNavigationEntry navigation;
   navigation.index_ = index;
   navigation.unique_id_ = sync_data.unique_id();
-  navigation.referrer_ =
-      content::Referrer(GURL(sync_data.referrer()),
-                        blink::WebReferrerPolicyDefault);
+  navigation.referrer_ = content::Referrer(
+      GURL(sync_data.referrer()),
+      static_cast<blink::WebReferrerPolicy>(sync_data.referrer_policy()));
   navigation.virtual_url_ = GURL(sync_data.virtual_url());
-  navigation.title_ = UTF8ToUTF16(sync_data.title());
+  navigation.title_ = base::UTF8ToUTF16(sync_data.title());
   navigation.page_state_ =
       content::PageState::CreateFromEncodedData(sync_data.state());
 
@@ -141,7 +143,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
       static_cast<content::PageTransition>(transition);
 
   navigation.timestamp_ = base::Time();
-  navigation.search_terms_ = UTF8ToUTF16(sync_data.search_terms());
+  navigation.search_terms_ = base::UTF8ToUTF16(sync_data.search_terms());
   if (sync_data.has_favicon_url())
     navigation.favicon_url_ = GURL(sync_data.favicon_url());
 
@@ -150,6 +152,10 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
   // We shouldn't sync session data for managed users down at the moment.
   DCHECK(!sync_data.has_blocked_state());
   DCHECK_EQ(0, sync_data.content_pack_categories_size());
+
+  navigation.Sanitize();
+
+  navigation.is_restored_ = true;
 
   return navigation;
 }
@@ -183,7 +189,7 @@ void WriteString16ToPickle(Pickle* pickle,
                            int* bytes_written,
                            int max_bytes,
                            const base::string16& str) {
-  int num_bytes = str.size() * sizeof(char16);
+  int num_bytes = str.size() * sizeof(base::char16);
   if (*bytes_written + num_bytes < max_bytes) {
     *bytes_written += num_bytes;
     pickle->WriteString16(str);
@@ -325,6 +331,10 @@ bool SerializedNavigationEntry::ReadFromPickle(PickleIterator* iterator) {
       http_status_code_ = 0;
   }
 
+  Sanitize();
+
+  is_restored_ = true;
+
   return true;
 }
 
@@ -366,9 +376,9 @@ scoped_ptr<NavigationEntry> SerializedNavigationEntry::ToNavigationEntry(
 sync_pb::TabNavigation SerializedNavigationEntry::ToSyncData() const {
   sync_pb::TabNavigation sync_data;
   sync_data.set_virtual_url(virtual_url_.spec());
-  // FIXME(zea): Support referrer policy?
   sync_data.set_referrer(referrer_.url.spec());
-  sync_data.set_title(UTF16ToUTF8(title_));
+  sync_data.set_referrer_policy(referrer_.policy);
+  sync_data.set_title(base::UTF16ToUTF8(title_));
 
   // Page transition core.
   COMPILE_ASSERT(content::PAGE_TRANSITION_LAST_CORE ==
@@ -449,7 +459,7 @@ sync_pb::TabNavigation SerializedNavigationEntry::ToSyncData() const {
   // The full-resolution timestamp works as a global ID.
   sync_data.set_global_id(timestamp_.ToInternalValue());
 
-  sync_data.set_search_terms(UTF16ToUTF8(search_terms_));
+  sync_data.set_search_terms(base::UTF16ToUTF8(search_terms_));
 
   sync_data.set_http_status_code(http_status_code_);
 
@@ -467,6 +477,8 @@ sync_pb::TabNavigation SerializedNavigationEntry::ToSyncData() const {
     sync_data.add_content_pack_categories(*it);
   }
 
+  sync_data.set_is_restored(is_restored_);
+
   return sync_data;
 }
 
@@ -483,6 +495,38 @@ std::vector<NavigationEntry*> SerializedNavigationEntry::ToNavigationEntries(
     ++page_id;
   }
   return entries;
+}
+
+void SerializedNavigationEntry::Sanitize() {
+  // Store original referrer so we can later see whether it was actually
+  // changed during sanitization, and we need to strip the referrer from the
+  // page state as well.
+  content::Referrer old_referrer = referrer_;
+
+  if (!referrer_.url.SchemeIsHTTPOrHTTPS())
+    referrer_ = content::Referrer();
+  switch (referrer_.policy) {
+    case blink::WebReferrerPolicyNever:
+      referrer_.url = GURL();
+      break;
+    case blink::WebReferrerPolicyAlways:
+      break;
+    case blink::WebReferrerPolicyOrigin:
+      referrer_.url = referrer_.url.GetWithEmptyPath();
+      break;
+    case blink::WebReferrerPolicyDefault:
+      // Fall through.
+    default:
+      referrer_.policy = blink::WebReferrerPolicyDefault;
+      if (referrer_.url.SchemeIsSecure() && !virtual_url_.SchemeIsSecure())
+        referrer_.url = GURL();
+  }
+
+  if (referrer_.url != old_referrer.url ||
+      referrer_.policy != old_referrer.policy) {
+    referrer_ = content::Referrer();
+    page_state_ = page_state_.RemoveReferrer();
+  }
 }
 
 }  // namespace sessions

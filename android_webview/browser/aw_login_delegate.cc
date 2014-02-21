@@ -8,7 +8,7 @@
 #include "base/logging.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
@@ -18,7 +18,7 @@
 using namespace base::android;
 
 using content::BrowserThread;
-using content::RenderViewHost;
+using content::RenderFrameHost;
 using content::ResourceDispatcherHost;
 using content::ResourceRequestInfo;
 using content::WebContents;
@@ -41,9 +41,9 @@ AwLoginDelegate::AwLoginDelegate(net::AuthChallengeInfo* auth_info,
     : auth_info_(auth_info),
       request_(request),
       render_process_id_(0),
-      render_view_id_(0) {
-    ResourceRequestInfo::GetRenderViewForRequest(
-        request, &render_process_id_, &render_view_id_);
+      render_frame_id_(0) {
+    ResourceRequestInfo::GetRenderFrameForRequest(
+        request, &render_process_id_, &render_frame_id_);
 
     UrlRequestAuthAttemptsData* count =
         static_cast<UrlRequestAuthAttemptsData*>(
@@ -66,8 +66,8 @@ AwLoginDelegate::~AwLoginDelegate() {
   DCHECK(aw_http_auth_handler_ == NULL);
 }
 
-void AwLoginDelegate::Proceed(const string16& user,
-                              const string16& password) {
+void AwLoginDelegate::Proceed(const base::string16& user,
+                              const base::string16& password) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
       base::Bind(&AwLoginDelegate::ProceedOnIOThread,
@@ -87,15 +87,10 @@ void AwLoginDelegate::HandleHttpAuthRequestOnUIThread(
   aw_http_auth_handler_.reset(AwHttpAuthHandlerBase::Create(
       this, auth_info_.get(), first_auth_attempt));
 
-  RenderViewHost* render_view_host = RenderViewHost::FromID(
-      render_process_id_, render_view_id_);
-  if (!render_view_host) {
-    Cancel();
-    return;
-  }
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(
-      render_view_host);
+  RenderFrameHost* render_frame_host = RenderFrameHost::FromID(
+      render_process_id_, render_frame_id_);
+  WebContents* web_contents = WebContents::FromRenderFrameHost(
+      render_frame_host);
   if (!aw_http_auth_handler_->HandleOnUIThread(web_contents)) {
     Cancel();
     return;
@@ -112,8 +107,8 @@ void AwLoginDelegate::CancelOnIOThread() {
   DeleteAuthHandlerSoon();
 }
 
-void AwLoginDelegate::ProceedOnIOThread(const string16& user,
-                                        const string16& password) {
+void AwLoginDelegate::ProceedOnIOThread(const base::string16& user,
+                                        const base::string16& password) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (request_) {
     request_->SetAuth(net::AuthCredentials(user, password));

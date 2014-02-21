@@ -172,7 +172,8 @@ void P2PSocketHostUdp::HandleReadResult(int result) {
       }
     }
 
-    message_sender_->Send(new P2PMsg_OnDataReceived(id_, recv_address_, data));
+    message_sender_->Send(new P2PMsg_OnDataReceived(
+        id_, recv_address_, data, base::TimeTicks::Now()));
   } else if (result < 0 && !IsTransientError(result)) {
     LOG(ERROR) << "Error when reading from UDP socket: " << result;
     OnError();
@@ -292,6 +293,22 @@ P2PSocketHost* P2PSocketHostUdp::AcceptIncomingTcpConnection(
   NOTREACHED();
   OnError();
   return NULL;
+}
+
+bool P2PSocketHostUdp::SetOption(P2PSocketOption option, int value) {
+  DCHECK_EQ(STATE_OPEN, state_);
+  switch (option) {
+    case P2P_SOCKET_OPT_RCVBUF:
+      return socket_->SetReceiveBufferSize(value);
+    case P2P_SOCKET_OPT_SNDBUF:
+      return socket_->SetSendBufferSize(value);
+    case P2P_SOCKET_OPT_DSCP:
+      return (net::OK == socket_->SetDiffServCodePoint(
+          static_cast<net::DiffServCodePoint>(value))) ? true : false;
+    default:
+      NOTREACHED();
+      return false;
+  }
 }
 
 }  // namespace content

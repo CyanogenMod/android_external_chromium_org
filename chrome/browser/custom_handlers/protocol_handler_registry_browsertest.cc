@@ -25,9 +25,9 @@ namespace {
 
 class TestRenderViewContextMenu : public RenderViewContextMenu {
  public:
-  TestRenderViewContextMenu(WebContents* web_contents,
+  TestRenderViewContextMenu(content::RenderFrameHost* render_frame_host,
                             content::ContextMenuParams params)
-      : RenderViewContextMenu(web_contents, params) { }
+      : RenderViewContextMenu(render_frame_host, params) { }
 
   virtual void PlatformInit() OVERRIDE { }
   virtual void PlatformCancel() OVERRIDE { }
@@ -62,7 +62,8 @@ class RegisterProtocolHandlerBrowserTest : public InProcessBrowserTest {
     params.writing_direction_right_to_left = 0;
 #endif  // OS_MACOSX
     TestRenderViewContextMenu* menu = new TestRenderViewContextMenu(
-        browser()->tab_strip_model()->GetActiveWebContents(), params);
+        browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+        params);
     menu->Init();
     return menu;
   }
@@ -92,7 +93,7 @@ IN_PROC_BROWSER_TEST_F(RegisterProtocolHandlerBrowserTest,
 
   AddProtocolHandler(std::string("web+search"),
                      GURL("http://www.google.com/%s"),
-                     UTF8ToUTF16(std::string("Test handler")));
+                     base::UTF8ToUTF16(std::string("Test handler")));
   GURL url("web+search:testing");
   ProtocolHandlerRegistry* registry =
       ProtocolHandlerRegistryFactory::GetForProfile(browser()->profile());
@@ -105,7 +106,7 @@ IN_PROC_BROWSER_TEST_F(RegisterProtocolHandlerBrowserTest, CustomHandler) {
   ASSERT_TRUE(test_server()->Start());
   GURL handler_url = test_server()->GetURL("files/custom_handler_foo.html");
   AddProtocolHandler("foo", handler_url,
-                     UTF8ToUTF16(std::string("Test foo Handler")));
+                     base::UTF8ToUTF16(std::string("Test foo Handler")));
 
   ui_test_utils::NavigateToURL(browser(), GURL("foo:test"));
 

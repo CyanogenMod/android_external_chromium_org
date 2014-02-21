@@ -24,19 +24,13 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
  public:
   class SentPacket {
    public:
-    SentPacket(QuicByteCount bytes,
-               QuicTime timestamp,
-               HasRetransmittableData has_retransmittable_data)
+    SentPacket(QuicByteCount bytes, QuicTime timestamp)
         : bytes_sent_(bytes),
           send_timestamp_(timestamp),
-          has_retransmittable_data_(has_retransmittable_data),
           nack_count_(0) {
     }
     QuicByteCount bytes_sent() const { return bytes_sent_; }
     const QuicTime& send_timestamp() const { return send_timestamp_; }
-    HasRetransmittableData has_retransmittable_data() const {
-      return has_retransmittable_data_;
-    }
     size_t nack_count() const { return nack_count_; }
 
     void Nack(size_t min_nacks) {
@@ -46,7 +40,6 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
    private:
     QuicByteCount bytes_sent_;
     QuicTime send_timestamp_;
-    HasRetransmittableData has_retransmittable_data_;
     size_t nack_count_;
   };
 
@@ -70,8 +63,7 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
 
   // Called for each received ACK, with sequence number from remote peer.
   virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
-                             QuicByteCount acked_bytes,
-                             QuicTime::Delta rtt) = 0;
+                             QuicByteCount acked_bytes) = 0;
 
   // Indicates a loss event of one packet. |sequence_number| is the
   // sequence number of the lost packet.
@@ -89,8 +81,9 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
                             TransmissionType transmission_type,
                             HasRetransmittableData is_retransmittable) = 0;
 
-  // Called when the retransmission timeout fires.
-  virtual void OnRetransmissionTimeout() = 0;
+  // Called when the retransmission timeout fires.  Neither OnPacketAbandoned
+  // nor OnPacketLost will be called for these packets.
+  virtual void OnRetransmissionTimeout(bool packets_retransmitted) = 0;
 
   // Called when a packet is timed out.
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
@@ -106,6 +99,9 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // What's the current estimated bandwidth in bytes per second.
   // Returns 0 when it does not have an estimate.
   virtual QuicBandwidth BandwidthEstimate() const = 0;
+
+  // Updates the smoothed RTT based on a new sample.
+  virtual void UpdateRtt(QuicTime::Delta rtt_sample) = 0;
 
   // TODO(satyamshekhar): Monitor MinRtt.
   virtual QuicTime::Delta SmoothedRtt() const = 0;

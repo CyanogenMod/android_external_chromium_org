@@ -15,6 +15,7 @@
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
 
 namespace base {
+class ScopedClosureRunner;
 class SequencedTaskRunner;
 }  // namespace base
 
@@ -75,7 +76,7 @@ class FileCache {
   scoped_ptr<Iterator> GetIterator();
 
   // Frees up disk space to store a file with |num_bytes| size content, while
-  // keeping kMinFreeSpace bytes on the disk, if needed.
+  // keeping cryptohome::kMinFreeSpaceInBytes bytes on the disk, if needed.
   // Returns true if we successfully manage to have enough space, otherwise
   // false.
   bool FreeDiskSpaceIfNeededFor(int64 num_bytes);
@@ -87,6 +88,7 @@ class FileCache {
 
   // Stores |source_path| as a cache of the remote content of the file
   // with |id| and |md5|.
+  // Pass an empty string as MD5 to mark the entry as dirty.
   FileError Store(const std::string& id,
                   const std::string& md5,
                   const base::FilePath& source_path,
@@ -105,11 +107,20 @@ class FileCache {
   // Sets the state of the cache entry corresponding to file_path as unmounted.
   FileError MarkAsUnmounted(const base::FilePath& file_path);
 
-  // Marks the specified entry dirty.
-  FileError MarkDirty(const std::string& id);
+  // Opens the cache file corresponding to |id| for write. |file_closer| should
+  // be kept alive until writing finishes.
+  // This method must be called before writing to cache files.
+  FileError OpenForWrite(const std::string& id,
+                         scoped_ptr<base::ScopedClosureRunner>* file_closer);
 
-  // Clears dirty state of the specified entry and updates its MD5.
-  FileError ClearDirty(const std::string& id, const std::string& md5);
+  // Returns true if the cache file corresponding to |id| is write-opened.
+  bool IsOpenedForWrite(const std::string& id);
+
+  // Calculates MD5 of the cache file and updates the stored value.
+  FileError UpdateMd5(const std::string& id);
+
+  // Clears dirty state of the specified entry.
+  FileError ClearDirty(const std::string& id);
 
   // Removes the specified cache entry and delete cache files if available.
   FileError Remove(const std::string& id);
@@ -153,12 +164,16 @@ class FileCache {
   void DestroyOnBlockingPool();
 
   // Returns true if we have sufficient space to store the given number of
-  // bytes, while keeping kMinFreeSpace bytes on the disk.
+  // bytes, while keeping cryptohome::kMinFreeSpaceInBytes bytes on the disk.
   bool HasEnoughSpaceFor(int64 num_bytes, const base::FilePath& path);
 
   // Renames cache files from old "prefix:id.md5" format to the new format.
   // TODO(hashimoto): Remove this method at some point.
   bool RenameCacheFilesToNewFormat();
+
+  // This method must be called after writing to a cache file.
+  // Used to implement OpenForWrite().
+  void CloseForWrite(const std::string& id);
 
   const base::FilePath cache_file_directory_;
 
@@ -168,22 +183,18 @@ class FileCache {
 
   FreeDiskSpaceGetterInterface* free_disk_space_getter_;  // Not owned.
 
+  // IDs of files being write-opened.
+  std::map<std::string, int> write_opened_files_;
+
   // IDs of files marked mounted.
   std::set<std::string> mounted_files_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
+  // This object should be accessed only on |blocking_task_runner_|.
   base::WeakPtrFactory<FileCache> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(FileCache);
 };
-
-// The minimum free space to keep. Operations that add cache files return
-// FILE_ERROR_NO_LOCAL_SPACE if the available space is smaller than
-// this value.
-//
-// Copied from cryptohome/homedirs.h.
-// TODO(hashimoto): Share the constant.
-const int64 kMinFreeSpace = 512 * 1LL << 20;
 
 }  // namespace internal
 }  // namespace drive

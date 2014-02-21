@@ -22,6 +22,7 @@
 #include "base/win/windows_version.h"
 #include "base/win/wrapped_window_proc.h"
 #include "chrome/browser/browser_util_win.h"
+#include "chrome/browser/chrome_elf_init_win.h"
 #include "chrome/browser/install_verification/win/install_verification.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
@@ -236,8 +237,9 @@ int ChromeBrowserMainPartsWin::PreCreateThreads() {
 }
 
 void ChromeBrowserMainPartsWin::ShowMissingLocaleMessageBox() {
-  ui::MessageBox(NULL, ASCIIToUTF16(chrome_browser::kMissingLocaleDataMessage),
-                 ASCIIToUTF16(chrome_browser::kMissingLocaleDataTitle),
+  ui::MessageBox(NULL,
+                 base::ASCIIToUTF16(chrome_browser::kMissingLocaleDataMessage),
+                 base::ASCIIToUTF16(chrome_browser::kMissingLocaleDataTitle),
                  MB_OK | MB_ICONERROR | MB_TOPMOST);
 }
 
@@ -251,6 +253,8 @@ void ChromeBrowserMainPartsWin::PostBrowserStart() {
           FROM_HERE,
           base::Bind(&VerifyInstallation),
           base::TimeDelta::FromSeconds(45));
+
+  InitializeChromeElf();
 }
 
 // static
@@ -281,10 +285,10 @@ void ChromeBrowserMainPartsWin::PrepareRestartOnCrashEnviroment(
   base::i18n::AdjustStringForLocaleDirection(&adjusted_string);
   dlg_strings.append(adjusted_string);
   dlg_strings.push_back('|');
-  dlg_strings.append(ASCIIToUTF16(
+  dlg_strings.append(base::ASCIIToUTF16(
       base::i18n::IsRTL() ? env_vars::kRtlLocale : env_vars::kLtrLocale));
 
-  env->SetVar(env_vars::kRestartInfo, UTF16ToUTF8(dlg_strings));
+  env->SetVar(env_vars::kRestartInfo, base::UTF16ToUTF8(dlg_strings));
 }
 
 // static
@@ -405,7 +409,8 @@ bool ChromeBrowserMainPartsWin::CheckMachineLevelInstall() {
   return false;
 }
 
-string16 TranslationDelegate::GetLocalizedString(int installer_string_id) {
+base::string16 TranslationDelegate::GetLocalizedString(
+    int installer_string_id) {
   int resource_id = 0;
   switch (installer_string_id) {
   // HANDLE_STRING is used by the DO_INSTALLER_STRING_MAPPING macro which is in

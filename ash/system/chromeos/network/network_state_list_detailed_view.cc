@@ -5,8 +5,10 @@
 #include "ash/system/chromeos/network/network_state_list_detailed_view.h"
 
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/chromeos/network/network_connect.h"
 #include "ash/system/chromeos/network/network_icon.h"
@@ -63,7 +65,7 @@ const int kRequestScanDelaySeconds = 10;
 views::Label* CreateInfoBubbleLabel(const base::string16& text) {
   views::Label* label = new views::Label(text);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  label->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
+  label->SetFontList(rb.GetFontList(ui::ResourceBundle::SmallFont));
   label->SetEnabledColor(SkColorSetARGB(127, 0, 0, 0));
   return label;
 }
@@ -71,10 +73,11 @@ views::Label* CreateInfoBubbleLabel(const base::string16& text) {
 // Create a label formatted for info items in the menu
 views::Label* CreateMenuInfoLabel(const base::string16& text) {
   views::Label* label = new views::Label(text);
-  label->set_border(views::Border::CreateEmptyBorder(
-      ash::kTrayPopupPaddingBetweenItems,
-      ash::kTrayPopupPaddingHorizontal,
-      ash::kTrayPopupPaddingBetweenItems, 0));
+  label->SetBorder(
+      views::Border::CreateEmptyBorder(ash::kTrayPopupPaddingBetweenItems,
+                                       ash::kTrayPopupPaddingHorizontal,
+                                       ash::kTrayPopupPaddingBetweenItems,
+                                       0));
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label->SetEnabledColor(SkColorSetARGB(192, 0, 0, 0));
   return label;
@@ -87,8 +90,8 @@ views::View* CreateInfoBubbleLine(const base::string16& text_label,
   view->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 1));
   view->AddChildView(CreateInfoBubbleLabel(text_label));
-  view->AddChildView(CreateInfoBubbleLabel(UTF8ToUTF16(": ")));
-  view->AddChildView(CreateInfoBubbleLabel(UTF8ToUTF16(text_string)));
+  view->AddChildView(CreateInfoBubbleLabel(base::UTF8ToUTF16(": ")));
+  view->AddChildView(CreateInfoBubbleLabel(base::UTF8ToUTF16(text_string)));
   return view;
 }
 
@@ -273,6 +276,10 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
   } else if (sender == button_mobile_) {
     ToggleMobile();
   } else if (sender == settings_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        list_type_ == LIST_TYPE_VPN ?
+        ash::UMA_STATUS_AREA_VPN_SETTINGS_CLICKED :
+        ash::UMA_STATUS_AREA_NETWORK_SETTINGS_CLICKED);
     delegate->ShowNetworkSettings("");
   } else if (sender == proxy_settings_) {
     delegate->ChangeProxySettings();
@@ -286,8 +293,12 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
         FROM_HERE,
         base::Bind(&NetworkStateListDetailedView::Init, AsWeakPtr()));
   } else if (sender == other_wifi_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_NETWORK_JOIN_OTHER_CLICKED);
     delegate->ShowOtherNetworkDialog(shill::kTypeWifi);
   } else if (sender == other_vpn_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_VPN_JOIN_OTHER_CLICKED);
     delegate->ShowOtherNetworkDialog(shill::kTypeVPN);
   } else {
     NOTREACHED();
@@ -323,9 +334,17 @@ void NetworkStateListDetailedView::OnViewClicked(views::View* sender) {
   const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
       GetNetworkState(service_path);
   if (!network || network->IsConnectedState() || network->IsConnectingState()) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        list_type_ == LIST_TYPE_VPN ?
+        ash::UMA_STATUS_AREA_SHOW_NETWORK_CONNECTION_DETAILS :
+        ash::UMA_STATUS_AREA_SHOW_VPN_CONNECTION_DETAILS);
     Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings(
         service_path);
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        list_type_ == LIST_TYPE_VPN ?
+        ash::UMA_STATUS_AREA_CONNECT_TO_VPN :
+        ash::UMA_STATUS_AREA_CONNECT_TO_CONFIGURED_NETWORK);
     ash::network_connect::ConnectToNetwork(service_path, NULL);
   }
 }
@@ -411,7 +430,7 @@ void NetworkStateListDetailedView::CreateNetworkExtra() {
       std::string toggle_debug_preferred_label =
           (list_type_ == LIST_TYPE_DEBUG_PREFERRED) ? "Visible" : "Preferred";
       toggle_debug_preferred_networks_ = new TrayPopupLabelButton(
-          this, UTF8ToUTF16(toggle_debug_preferred_label));
+          this, base::UTF8ToUTF16(toggle_debug_preferred_label));
       bottom_row->AddChildView(toggle_debug_preferred_networks_);
     }
   } else {
@@ -528,7 +547,7 @@ void NetworkStateListDetailedView::UpdateNetworkList() {
       if (favorite) {
         info->image = network_icon::GetImageForDisconnectedNetwork(
             network_icon::ICON_TYPE_LIST, favorite->type());
-        info->label = UTF8ToUTF16(favorite->name());
+        info->label = base::UTF8ToUTF16(favorite->name());
       }
     }
   }
@@ -600,8 +619,8 @@ bool NetworkStateListDetailedView::UpdateNetworkChild(int index,
     container = new HoverHighlightView(this);
     container->AddIconAndLabel(info->image, info->label, font);
     scroll_content()->AddChildViewAt(container, index);
-    container->set_border(views::Border::CreateEmptyBorder(
-        0, kTrayPopupPaddingHorizontal, 0, 0));
+    container->SetBorder(
+        views::Border::CreateEmptyBorder(0, kTrayPopupPaddingHorizontal, 0, 0));
     needs_relayout = true;
   } else {
     container = found->second;
@@ -815,7 +834,7 @@ views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {
   views::View* container = new views::View;
   container->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 1));
-  container->set_border(views::Border::CreateEmptyBorder(0, 5, 0, 5));
+  container->SetBorder(views::Border::CreateEmptyBorder(0, 5, 0, 5));
 
   std::string ethernet_address, wifi_address, vpn_address;
   if (list_type_ != LIST_TYPE_VPN) {

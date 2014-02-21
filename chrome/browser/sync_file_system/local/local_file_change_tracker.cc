@@ -12,7 +12,9 @@
 #include "base/stl_util.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_status.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
@@ -37,7 +39,8 @@ const char kMark[] = "d";
 // object must be destructed on file_task_runner.
 class LocalFileChangeTracker::TrackerDB {
  public:
-  explicit TrackerDB(const base::FilePath& base_path);
+  TrackerDB(const base::FilePath& base_path,
+            leveldb::Env* env_override);
 
   SyncStatusCode MarkDirty(const std::string& url);
   SyncStatusCode ClearDirty(const std::string& url);
@@ -57,6 +60,7 @@ class LocalFileChangeTracker::TrackerDB {
                    const leveldb::Status& status);
 
   const base::FilePath base_path_;
+  leveldb::Env* env_override_;
   scoped_ptr<leveldb::DB> db_;
   SyncStatusCode db_status_;
 
@@ -70,10 +74,11 @@ LocalFileChangeTracker::ChangeInfo::~ChangeInfo() {}
 
 LocalFileChangeTracker::LocalFileChangeTracker(
     const base::FilePath& base_path,
+    leveldb::Env* env_override,
     base::SequencedTaskRunner* file_task_runner)
     : initialized_(false),
       file_task_runner_(file_task_runner),
-      tracker_db_(new TrackerDB(base_path)),
+      tracker_db_(new TrackerDB(base_path, env_override)),
       current_change_seq_(0),
       num_changes_(0) {
 }
@@ -145,8 +150,11 @@ void LocalFileChangeTracker::GetChangesForURL(
   DCHECK(changes);
   changes->clear();
   FileChangeMap::iterator found = changes_.find(url);
-  if (found == changes_.end())
-    return;
+  if (found == changes_.end()) {
+    found = demoted_changes_.find(url);
+    if (found == demoted_changes_.end())
+      return;
+  }
   *changes = found->second.change_list;
 }
 
@@ -154,6 +162,7 @@ void LocalFileChangeTracker::ClearChangesForURL(const FileSystemURL& url) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   ClearDirtyOnDatabase(url);
   mirror_changes_.erase(url);
+  demoted_changes_.erase(url);
   FileChangeMap::iterator found = changes_.find(url);
   if (found == changes_.end())
     return;
@@ -195,6 +204,48 @@ void LocalFileChangeTracker::ResetToMirrorAndCommitChangesForURL(
   RemoveMirrorAndCommitChangesForURL(url);
 }
 
+void LocalFileChangeTracker::DemoteChangesForURL(
+    const fileapi::FileSystemURL& url) {
+  FileChangeMap::iterator found = changes_.find(url);
+  if (found == changes_.end())
+    return;
+  FileChangeList changes = found->second.change_list;
+
+  mirror_changes_.erase(url);
+  change_seqs_.erase(found->second.change_seq);
+  changes_.erase(found);
+
+  FileChangeList::List change_list = changes.list();
+  while (!change_list.empty()) {
+    RecordChangeToChangeMaps(url, change_list.front(), 0,
+                             &demoted_changes_, NULL);
+    change_list.pop_front();
+  }
+}
+
+bool LocalFileChangeTracker::PromoteDemotedChanges() {
+  if (demoted_changes_.empty())
+    return false;
+  for (FileChangeMap::iterator iter = demoted_changes_.begin();
+       iter != demoted_changes_.end();) {
+    fileapi::FileSystemURL url = iter->first;
+    FileChangeList::List change_list = iter->second.change_list.list();
+    demoted_changes_.erase(iter++);
+
+    // Make sure that this URL is in no queues.
+    DCHECK(!ContainsKey(changes_, url));
+    DCHECK(!ContainsKey(demoted_changes_, url));
+    DCHECK(!ContainsKey(mirror_changes_, url));
+
+    while (!change_list.empty()) {
+      RecordChange(url, change_list.front());
+      change_list.pop_front();
+    }
+  }
+  demoted_changes_.clear();
+  return true;
+}
+
 SyncStatusCode LocalFileChangeTracker::Initialize(
     FileSystemContext* file_system_context) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
@@ -220,6 +271,7 @@ void LocalFileChangeTracker::ResetForFileSystem(
       continue;
     }
     mirror_changes_.erase(url);
+    demoted_changes_.erase(url);
     change_seqs_.erase(iter->second.change_seq);
     changes_.erase(iter++);
 
@@ -289,7 +341,7 @@ SyncStatusCode LocalFileChangeTracker::CollectLastDirtyChanges(
   scoped_ptr<FileSystemOperationContext> context(
       new FileSystemOperationContext(file_system_context));
 
-  base::PlatformFileInfo file_info;
+  base::File::Info file_info;
   base::FilePath platform_path;
 
   while (!dirty_files.empty()) {
@@ -344,6 +396,10 @@ SyncStatusCode LocalFileChangeTracker::CollectLastDirtyChanges(
 void LocalFileChangeTracker::RecordChange(
     const FileSystemURL& url, const FileChange& change) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
+  if (ContainsKey(demoted_changes_, url)) {
+    RecordChangeToChangeMaps(url, change, 0, &demoted_changes_, NULL);
+    return;
+  }
   int change_seq = current_change_seq_++;
   RecordChangeToChangeMaps(url, change, change_seq, &changes_, &change_seqs_);
   if (ContainsKey(mirror_changes_, url))
@@ -372,8 +428,10 @@ void LocalFileChangeTracker::RecordChangeToChangeMaps(
 
 // TrackerDB -------------------------------------------------------------------
 
-LocalFileChangeTracker::TrackerDB::TrackerDB(const base::FilePath& base_path)
+LocalFileChangeTracker::TrackerDB::TrackerDB(const base::FilePath& base_path,
+                                             leveldb::Env* env_override)
   : base_path_(base_path),
+    env_override_(env_override),
     db_status_(SYNC_STATUS_OK) {}
 
 SyncStatusCode LocalFileChangeTracker::TrackerDB::Init(
@@ -386,6 +444,8 @@ SyncStatusCode LocalFileChangeTracker::TrackerDB::Init(
   leveldb::Options options;
   options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
+  if (env_override_)
+    options.env = env_override_;
   leveldb::DB* db;
   leveldb::Status status = leveldb::DB::Open(options, path, &db);
   if (status.ok()) {

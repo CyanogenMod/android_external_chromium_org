@@ -45,6 +45,9 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
     retention_time_ = delta;
   }
 
+  // Remove actions (rows) which IDs are specified in the action_ids array.
+  virtual void RemoveActions(const std::vector<int64>& action_ids) OVERRIDE;
+
   // Clean the URL data stored for this policy.
   virtual void RemoveURLs(const std::vector<GURL>&) OVERRIDE;
 
@@ -71,7 +74,10 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   // A type used to track pending writes to the database.  The key is an action
   // to write; the value is the amount by which the count field should be
   // incremented in the database.
-  typedef std::map<scoped_refptr<Action>, int, ActionComparatorExcludingTime>
+  typedef std::map<
+      scoped_refptr<Action>,
+      int,
+      ActionComparatorExcludingTimeAndActionId>
       ActionQueue;
 
   // Adds an Action to those to be written out; this is an internal method used
@@ -87,6 +93,10 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
       const std::string& page_url,
       const std::string& arg_url,
       const int days_ago);
+
+  // The implementation of RemoveActions; this must only run on the database
+  // thread.
+  void DoRemoveActions(const std::vector<int64>& action_ids);
 
   // The implementation of RemoveURLs; this must only run on the database
   // thread.

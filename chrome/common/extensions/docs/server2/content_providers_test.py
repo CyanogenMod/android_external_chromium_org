@@ -9,6 +9,7 @@ import unittest
 from compiled_file_system import CompiledFileSystem
 from content_providers import ContentProviders
 from extensions_paths import EXTENSIONS
+from gcs_file_system_provider import CloudStorageFileSystemProvider
 from object_store_creator import ObjectStoreCreator
 from test_file_system import TestFileSystem
 from test_util import DisableLogging
@@ -100,12 +101,18 @@ class _MockGithubFileSystemProvider(object):
 
 class ContentProvidersTest(unittest.TestCase):
   def setUp(self):
+    object_store_creator = ObjectStoreCreator.ForTest()
     test_file_system = TestFileSystem(_FILE_SYSTEM_DATA, relative_to=EXTENSIONS)
     self._github_fs_provider = _MockGithubFileSystemProvider(test_file_system)
+    object_store_creator = ObjectStoreCreator.ForTest()
+    # TODO(mangini): create tests for GCS
+    self._gcs_fs_provider = CloudStorageFileSystemProvider(object_store_creator)
     self._content_providers = ContentProviders(
-        CompiledFileSystem.Factory(ObjectStoreCreator.ForTest()),
+        object_store_creator,
+        CompiledFileSystem.Factory(object_store_creator),
         test_file_system,
-        self._github_fs_provider)
+        self._github_fs_provider,
+        self._gcs_fs_provider)
 
   def testSimpleRootPath(self):
     provider = self._content_providers.GetByName('apples')
@@ -132,30 +139,38 @@ class ContentProvidersTest(unittest.TestCase):
         provider.GetContentAndType('apples/gala.txt').Get().content)
 
   def testSimpleServlet(self):
-    provider, path = self._content_providers.GetByServeFrom('apples-dir')
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
+        'apples-dir')
     self.assertEqual('apples', provider.name)
+    self.assertEqual('apples-dir', serve_from)
     self.assertEqual('', path)
-    provider, path = self._content_providers.GetByServeFrom(
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
         'apples-dir/are/forever')
     self.assertEqual('apples', provider.name)
+    self.assertEqual('apples-dir', serve_from)
     self.assertEqual('are/forever', path)
 
   def testComplexServlet(self):
-    provider, path = self._content_providers.GetByServeFrom(
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
         'tomatoes-dir/are/a')
     self.assertEqual('tomatoes', provider.name)
+    self.assertEqual('tomatoes-dir/are/a', serve_from)
     self.assertEqual('', path)
-    provider, path = self._content_providers.GetByServeFrom(
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
         'tomatoes-dir/are/a/fruit/they/are')
     self.assertEqual('tomatoes', provider.name)
+    self.assertEqual('tomatoes-dir/are/a', serve_from)
     self.assertEqual('fruit/they/are', path)
 
   def testEmptyStringServlet(self):
-    provider, path = self._content_providers.GetByServeFrom('tomatoes-dir/are')
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
+        'tomatoes-dir/are')
     self.assertEqual('bananas', provider.name)
+    self.assertEqual('', serve_from)
     self.assertEqual('tomatoes-dir/are', path)
-    provider, path = self._content_providers.GetByServeFrom('')
+    provider, serve_from, path = self._content_providers.GetByServeFrom('')
     self.assertEqual('bananas', provider.name)
+    self.assertEqual('', serve_from)
     self.assertEqual('', path)
 
   @DisableLogging('error')
@@ -163,9 +178,10 @@ class ContentProvidersTest(unittest.TestCase):
     self.assertEqual(None, self._content_providers.GetByName('cabbages'))
 
   def testGithubContentProvider(self):
-    provider, path = self._content_providers.GetByServeFrom(
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
         'gh/apples/green/granny smith.txt')
     self.assertEqual('github-provider', provider.name)
+    self.assertEqual('gh', serve_from)
     self.assertEqual('apples/green/granny smith.txt', path)
     self.assertEqual([('GoogleChrome', 'hello-world')],
                      self._github_fs_provider.GetAndReset())
@@ -174,9 +190,10 @@ class ContentProvidersTest(unittest.TestCase):
         provider.GetContentAndType(path).Get().content)
 
   def testGithubContentProviderWithDir(self):
-    provider, path = self._content_providers.GetByServeFrom(
+    provider, serve_from, path = self._content_providers.GetByServeFrom(
         'gh2/fruit/cherry.txt')
     self.assertEqual('github-provider-with-dir', provider.name)
+    self.assertEqual('gh2', serve_from)
     self.assertEqual('fruit/cherry.txt', path)
     self.assertEqual([('SomeOwner', 'some-repo')],
                      self._github_fs_provider.GetAndReset())

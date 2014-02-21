@@ -22,11 +22,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "ui/gl/gl_switches.h"
 
-// From gl2/gl2ext.h.
-#ifndef GL_MAILBOX_SIZE_CHROMIUM
-#define GL_MAILBOX_SIZE_CHROMIUM 64
-#endif
-
 namespace content {
 
 namespace {
@@ -284,17 +279,16 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("renderer",
       "GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped");
+  if (!ui::LatencyInfo::Verify(params.latency_info,
+                               "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
+    return;
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox_name = params.mailbox_name;
+  ack_params.mailbox = params.mailbox;
   ack_params.sync_point = 0;
   ScopedSendOnIOThread delayed_send(
       host_id_,
       new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
                                                 ack_params));
-
-  if (!params.mailbox_name.empty() &&
-      params.mailbox_name.length() != GL_MAILBOX_SIZE_CHROMIUM)
-    return;
 
   RenderWidgetHostViewPort* view = GetRenderWidgetHostViewFromSurfaceID(
       params.surface_id);
@@ -307,12 +301,23 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   if (swap_delay.ToInternalValue())
     base::PlatformThread::Sleep(swap_delay);
 
+  GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params view_params = params;
+
+  RenderWidgetHostImpl* impl =
+      RenderWidgetHostImpl::From(view->GetRenderWidgetHost());
+  for (size_t i = 0; i < view_params.latency_info.size(); i++)
+    impl->AddLatencyInfoComponentIds(&view_params.latency_info[i]);
+
   // View must send ACK message after next composite.
-  view->AcceleratedSurfaceBuffersSwapped(params, host_id_);
+  view->AcceleratedSurfaceBuffersSwapped(view_params, host_id_);
   view->DidReceiveRendererFrame();
 }
 
-void GpuProcessHostUIShim::OnFrameDrawn(const ui::LatencyInfo& latency_info) {
+void GpuProcessHostUIShim::OnFrameDrawn(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  if (!ui::LatencyInfo::Verify(latency_info,
+                               "GpuProcessHostUIShim::OnFrameDrawn"))
+    return;
   RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
 }
 
@@ -320,18 +325,16 @@ void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(
     const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params) {
   TRACE_EVENT0("renderer",
       "GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer");
-
+  if (!ui::LatencyInfo::Verify(params.latency_info,
+                               "GpuHostMsg_AcceleratedSurfacePostSubBuffer"))
+    return;
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox_name = params.mailbox_name;
+  ack_params.mailbox = params.mailbox;
   ack_params.sync_point = 0;
-   ScopedSendOnIOThread delayed_send(
+  ScopedSendOnIOThread delayed_send(
       host_id_,
       new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
                                                 ack_params));
-
-  if (!params.mailbox_name.empty() &&
-      params.mailbox_name.length() != GL_MAILBOX_SIZE_CHROMIUM)
-    return;
 
   RenderWidgetHostViewPort* view =
       GetRenderWidgetHostViewFromSurfaceID(params.surface_id);
@@ -340,8 +343,15 @@ void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(
 
   delayed_send.Cancel();
 
+  GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params view_params = params;
+
+  RenderWidgetHostImpl* impl =
+      RenderWidgetHostImpl::From(view->GetRenderWidgetHost());
+  for (size_t i = 0; i < view_params.latency_info.size(); i++)
+    impl->AddLatencyInfoComponentIds(&view_params.latency_info[i]);
+
   // View must send ACK message after next composite.
-  view->AcceleratedSurfacePostSubBuffer(params, host_id_);
+  view->AcceleratedSurfacePostSubBuffer(view_params, host_id_);
   view->DidReceiveRendererFrame();
 }
 

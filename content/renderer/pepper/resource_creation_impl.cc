@@ -18,12 +18,10 @@
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 #include "ppapi/shared_impl/ppb_image_data_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
-#include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
 
 using ppapi::InputEventData;
 using ppapi::PPB_InputEvent_Shared;
-using ppapi::PPB_ResourceArray_Shared;
 using ppapi::StringVar;
 
 namespace content {
@@ -159,16 +157,30 @@ PP_Resource ResourceCreationImpl::CreateIMEInputEvent(
       segment_offsets, target_segment, selection_start, selection_end);
 }
 
-PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent(
+PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent_1_0(
     PP_Instance instance,
     PP_InputEvent_Type type,
     PP_TimeTicks time_stamp,
     uint32_t modifiers,
     uint32_t key_code,
     struct PP_Var character_text) {
+  PP_Var code = StringVar::StringToPPVar("");
   return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
       ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers, key_code,
-      character_text);
+      character_text, code);
+}
+
+PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent_1_2(
+    PP_Instance instance,
+    PP_InputEvent_Type type,
+    PP_TimeTicks time_stamp,
+    uint32_t modifiers,
+    uint32_t key_code,
+    struct PP_Var character_text,
+    struct PP_Var code) {
+  return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
+      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers, key_code,
+      character_text, code);
 }
 
 PP_Resource ResourceCreationImpl::CreateMouseInputEvent(
@@ -233,15 +245,6 @@ PP_Resource ResourceCreationImpl::CreateScrollbar(PP_Instance instance,
 
 PP_Resource ResourceCreationImpl::CreateTalk(PP_Instance /* instance */) {
   return 0;  // Not supported in-process.
-}
-
-PP_Resource ResourceCreationImpl::CreateResourceArray(
-    PP_Instance instance,
-    const PP_Resource elements[],
-    uint32_t size) {
-  PPB_ResourceArray_Shared* object = new PPB_ResourceArray_Shared(
-      ppapi::OBJECT_IS_IMPL, instance, elements, size);
-  return object->GetReference();
 }
 
 PP_Resource ResourceCreationImpl::CreateTCPServerSocketPrivate(

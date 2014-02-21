@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/common/content_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -15,21 +16,6 @@ class CastStreamingApiTest : public ExtensionApiTest {
     command_line->AppendSwitchASCII(
         switches::kWhitelistedExtensionID,
         "ddchlicdkolnonkihahngkmmmjnjlkkf");
-  }
-
-  virtual void SetUp() OVERRIDE {
-    // TODO(danakj): The GPU Video Decoder needs real GL bindings.
-    // crbug.com/269087
-    UseRealGLBindings();
-
-    // These test should be using OSMesa on CrOS, which would make this
-    // unneeded.
-    // crbug.com/313128
-#if !defined(OS_CHROMEOS)
-    UseRealGLContexts();
-#endif
-
-    ExtensionApiTest::SetUp();
   }
 };
 

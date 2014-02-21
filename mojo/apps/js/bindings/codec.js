@@ -44,12 +44,6 @@ define(function() {
            (memory[pointer + 3] << 24);
   }
 
-  function load64(memory, pointer) {
-    var low = load32(memory, pointer);
-    var high = load32(memory, pointer + 4);
-    return low + high * 0x10000;
-  }
-
   var kAlignment = 8;
 
   function align(size) {
@@ -98,6 +92,12 @@ define(function() {
     this.handles = handles;
     this.base = base;
     this.next = base;
+    this.viewU32 = new Uint32Array(
+        this.memory.buffer, 0,
+        Math.floor(this.memory.length / Uint32Array.BYTES_PER_ELEMENT));
+    this.viewFloat = new Float32Array(
+        this.memory.buffer, 0,
+        Math.floor(this.memory.length / Float32Array.BYTES_PER_ELEMENT));
   }
 
   Decoder.prototype.skip = function(offset) {
@@ -111,14 +111,20 @@ define(function() {
   };
 
   Decoder.prototype.read32 = function() {
-    var result = load32(this.memory, this.next);
-    this.next += 4;
+    var result = this.viewU32[this.next / this.viewU32.BYTES_PER_ELEMENT];
+    this.next += this.viewU32.BYTES_PER_ELEMENT;
     return result;
   };
 
   Decoder.prototype.read64 = function() {
-    var result = load64(this.memory, this.next);
-    this.next += 8;
+    var low = this.read32();
+    var high = this.read32();
+    return low + high * 0x100000000;
+  };
+
+  Decoder.prototype.decodeFloat = function() {
+    var result = this.viewFloat[this.next / this.viewFloat.BYTES_PER_ELEMENT];
+    this.next += this.viewFloat.BYTES_PER_ELEMENT;
     return result;
   };
 
@@ -204,6 +210,14 @@ define(function() {
   Encoder.prototype.write64 = function(val) {
     store64(this.buffer.memory, this.next, val);
     this.next += 8;
+  };
+
+  Encoder.prototype.encodeFloat = function(val) {
+    var floatBuffer = new Float32Array(1);
+    floatBuffer[0] = val;
+    var buffer = new Uint8Array(floatBuffer.buffer, 0);
+    for (var i = 0; i < buffer.length; ++i)
+      this.buffer.memory[this.next++] = buffer[i];
   };
 
   Encoder.prototype.encodePointer = function(pointer) {

@@ -17,15 +17,32 @@ namespace drive {
 // All the method should be called on UI thread.
 class DebugInfoCollector {
  public:
+  // Callback for ReadDirectory().
+  typedef base::Callback<void(FileError error,
+                              scoped_ptr<ResourceEntryVector> entries)>
+      ReadDirectoryCallback;
+
   // Callback for IterateFileCache().
   typedef base::Callback<void(const std::string& id,
                               const FileCacheEntry& cache_entry)>
       IterateFileCacheCallback;
 
-  DebugInfoCollector(FileSystemInterface* file_system,
-                     internal::FileCache* file_cache,
+  DebugInfoCollector(internal::FileCache* file_cache,
+                     internal::ResourceMetadata* metadata,
+                     FileSystemInterface* file_system,
                      base::SequencedTaskRunner* blocking_task_runner);
   ~DebugInfoCollector();
+
+  // Finds a locally stored entry (a file or a directory) by |file_path|.
+  // |callback| must not be null.
+  void GetResourceEntry(const base::FilePath& file_path,
+                        const GetResourceEntryCallback& callback);
+
+  // Finds and reads a directory by |file_path|.
+  // |callback| must not be null.
+  void ReadDirectory(const base::FilePath& file_path,
+                     const ReadDirectoryCallback& callback);
+
 
   // Iterates all files in the file cache and calls |iteration_callback| for
   // each file. |completion_callback| is run upon completion.
@@ -38,8 +55,9 @@ class DebugInfoCollector {
   void GetMetadata(const GetFilesystemMetadataCallback& callback);
 
  private:
-  FileSystemInterface* file_system_;  // Not owned.
   internal::FileCache* file_cache_;  // Not owned.
+  internal::ResourceMetadata* metadata_;  // No owned.
+  FileSystemInterface* file_system_;  // Not owned.
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(DebugInfoCollector);

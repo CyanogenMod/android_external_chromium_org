@@ -6,6 +6,7 @@ SPHINXOPTS    = -W
 SPHINXBUILD   = sphinx-build
 PAPER         =
 BUILDDIR      = _build
+CHROMESITE_BUILDDIR = $(realpath ../../doc_generated)
 
 # User-friendly check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $$?), 1)
@@ -21,7 +22,7 @@ I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 
 .PHONY: help clean html dirhtml singlehtml pickle json htmlhelp qthelp devhelp epub latex latexpdf text man changes linkcheck doctest gettext all
 
-all: devsite
+all: chromesite
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -47,9 +48,12 @@ help:
 	@echo "  pseudoxml    to make pseudoxml-XML files for display purposes"
 	@echo "  linkcheck    to check all external links for integrity"
 	@echo "  doctest      to run all doctests embedded in the documentation (if enabled)"
-	@echo "  devsite      build locally viewable version of docs for developer.google.com"
-	@echo "  devsite-prod build production docs for developer.google.com"
+	@echo "  devsite      build locally viewable version of docs for developers.google.com"
+	@echo "  devsite-prod build production docs for developers.google.com"
 	@echo "  serve        start python web server on port server 8009"
+	@echo "  chromesite   build docs for developer.chrome.com"
+	@echo "  chromesite_rst    only build .rst docs; no doxygen"
+	@echo "  serve_chromesite  start python web server for chromesite docs"
 
 clean:
 	rm -rf $(BUILDDIR)/*
@@ -202,5 +206,25 @@ devsite:
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/devsite."
 
+chromesite:
+	-rm $(CHROMESITE_BUILDDIR)/.buildinfo
+	doxygen/generate_docs.py $(CHROMESITE_BUILDDIR)
+	$(SPHINXBUILD) -b chromesite $(ALLSPHINXOPTS) $(CHROMESITE_BUILDDIR)
+	rm -rf $(CHROMESITE_BUILDDIR)/images
+	cp -r $(CHROMESITE_BUILDDIR)/_images $(CHROMESITE_BUILDDIR)/images
+	rm -rf $(CHROMESITE_BUILDDIR)/{_images,searchindex.js}
+	@echo
+	@echo "Build finished. The HTML pages are in $(CHROMESITE_BUILDDIR)"
+
+chromesite_rst:
+	$(SPHINXBUILD) -b chromesite $(ALLSPHINXOPTS) $(CHROMESITE_BUILDDIR)
+	rm -rf $(CHROMESITE_BUILDDIR)/images
+	cp -r $(CHROMESITE_BUILDDIR)/_images $(CHROMESITE_BUILDDIR)/images
+	rm -rf $(CHROMESITE_BUILDDIR)/{_images,searchindex.js}
+
+
 serve:
 	cd _build/devsite && python -m SimpleHTTPServer 8009
+
+serve_chromesite:
+	../../../chrome/common/extensions/docs/server2/preview.py

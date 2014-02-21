@@ -92,8 +92,7 @@ void ConnectionToHost::Connect(SignalStrategy* signal_strategy,
   signal_strategy_->AddListener(this);
   signal_strategy_->Connect();
 
-  session_manager_.reset(new JingleSessionManager(
-      transport_factory.Pass(), allow_nat_traversal_));
+  session_manager_.reset(new JingleSessionManager(transport_factory.Pass()));
   session_manager_->Init(signal_strategy_, this);
 
   SetState(CONNECTING, OK);
@@ -213,8 +212,7 @@ void ConnectionToHost::OnSessionStateChange(
 
 void ConnectionToHost::OnSessionRouteChange(const std::string& channel_name,
                                             const TransportRoute& route) {
-  VLOG(0) << "Using " << TransportRoute::GetTypeString(route.type)
-          << " connection for " << channel_name << " channel";
+  event_callback_->OnRouteChanged(channel_name, route);
 }
 
 void ConnectionToHost::OnSessionChannelReady(const std::string& channel_name,

@@ -6,9 +6,9 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/password_manager/password_manager_delegate_impl.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/pref_names.h"
@@ -22,6 +22,8 @@
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -39,7 +41,9 @@ class TestAutofillMetrics : public autofill::AutofillMetrics {
 class TestPasswordGenerationManager : public PasswordGenerationManager {
  public:
   explicit TestPasswordGenerationManager(content::WebContents* contents)
-      : PasswordGenerationManager(contents) {}
+      : PasswordGenerationManager(
+            contents,
+            ChromePasswordManagerClient::FromWebContents(contents)) {}
   virtual ~TestPasswordGenerationManager() {}
 
   virtual void SendAccountCreationFormsToRenderer(
@@ -69,6 +73,7 @@ class PasswordGenerationManagerTest : public ChromeRenderViewHostTestHarness {
     SetThreadBundleOptions(content::TestBrowserThreadBundle::REAL_IO_THREAD);
     ChromeRenderViewHostTestHarness::SetUp();
 
+    ChromePasswordManagerClient::CreateForWebContents(web_contents());
     password_generation_manager_.reset(
         new TestPasswordGenerationManager(web_contents()));
   }
@@ -102,15 +107,9 @@ class IncognitoPasswordGenerationManagerTest :
 };
 
 TEST_F(PasswordGenerationManagerTest, IsGenerationEnabled) {
-  PasswordManagerDelegateImpl::CreateForWebContents(web_contents());
-  PasswordManager::CreateForWebContentsAndDelegate(
-      web_contents(),
-      PasswordManagerDelegateImpl::FromWebContents(web_contents()));
-
   PrefService* prefs = profile()->GetPrefs();
 
-  // Always set password sync enabled so we can test the behavior of password
-  // generation.
+  // Enable syncing. Generation should be enabled.
   prefs->SetBoolean(prefs::kSyncKeepEverythingSynced, false);
   ProfileSyncService* sync_service = ProfileSyncServiceFactory::GetForProfile(
       profile());
@@ -118,13 +117,6 @@ TEST_F(PasswordGenerationManagerTest, IsGenerationEnabled) {
   syncer::ModelTypeSet preferred_set;
   preferred_set.Put(syncer::PASSWORDS);
   sync_service->ChangePreferredDataTypes(preferred_set);
-
-  // Pref is false, should not be enabled.
-  prefs->SetBoolean(prefs::kPasswordGenerationEnabled, false);
-  EXPECT_FALSE(IsGenerationEnabled());
-
-  // Pref is true, should be enabled.
-  prefs->SetBoolean(prefs::kPasswordGenerationEnabled, true);
   EXPECT_TRUE(IsGenerationEnabled());
 
   // Change syncing preferences to not include passwords. Generation should
@@ -141,16 +133,9 @@ TEST_F(PasswordGenerationManagerTest, IsGenerationEnabled) {
 
 TEST_F(PasswordGenerationManagerTest, DetectAccountCreationForms) {
   // Setup so that IsGenerationEnabled() returns true.
-  PasswordManagerDelegateImpl::CreateForWebContents(web_contents());
-  PasswordManager::CreateForWebContentsAndDelegate(
-      web_contents(),
-      PasswordManagerDelegateImpl::FromWebContents(web_contents()));
-
   ProfileSyncService* sync_service = ProfileSyncServiceFactory::GetForProfile(
       profile());
   sync_service->SetSyncSetupCompleted();
-
-  profile()->GetPrefs()->SetBoolean(prefs::kPasswordGenerationEnabled, true);
 
   autofill::FormData login_form;
   login_form.origin = GURL("http://www.yahoo.com/login/");
@@ -205,18 +190,10 @@ TEST_F(IncognitoPasswordGenerationManagerTest,
        UpdatePasswordSyncStateIncognito) {
   // Disable password manager by going incognito. Even though syncing is
   // enabled, generation should still be disabled.
-  PasswordManagerDelegateImpl::CreateForWebContents(web_contents());
-  PasswordManager::CreateForWebContentsAndDelegate(
-      web_contents(),
-      PasswordManagerDelegateImpl::FromWebContents(web_contents()));
-
   PrefService* prefs = profile()->GetPrefs();
 
   // Allow this test to control what should get synced.
   prefs->SetBoolean(prefs::kSyncKeepEverythingSynced, false);
-  // Always set password generation enabled check box so we can test the
-  // behavior of password sync.
-  prefs->SetBoolean(prefs::kPasswordGenerationEnabled, true);
 
   browser_sync::SyncPrefs sync_prefs(profile()->GetPrefs());
   sync_prefs.SetSyncSetupCompleted();

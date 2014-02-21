@@ -39,31 +39,34 @@ void ResetProfileSettingsHandler::InitializeHandler() {
   resetter_.reset(new ProfileResetter(profile));
   automatic_profile_resetter_ =
       AutomaticProfileResetterFactory::GetForBrowserContext(profile);
-  DCHECK(automatic_profile_resetter_);
 }
 
 void ResetProfileSettingsHandler::InitializePage() {
   web_ui()->CallJavascriptFunction(
       "ResetProfileSettingsOverlay.setResettingState",
       base::FundamentalValue(resetter_->IsActive()));
+  if (automatic_profile_resetter_ &&
+      automatic_profile_resetter_->ShouldShowResetBanner())
+    web_ui()->CallJavascriptFunction("ResetProfileSettingsBanner.show");
 }
 
 void ResetProfileSettingsHandler::Uninitialize() {
-  if (has_shown_confirmation_dialog_) {
-    DCHECK(automatic_profile_resetter_);
+  if (has_shown_confirmation_dialog_ && automatic_profile_resetter_) {
     automatic_profile_resetter_->NotifyDidCloseWebUIResetDialog(
         false /*performed_reset*/);
   }
 }
 
 void ResetProfileSettingsHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
+    { "resetProfileSettingsBannerText",
+        IDS_RESET_PROFILE_SETTINGS_BANNER_TEXT },
     { "resetProfileSettingsCommit", IDS_RESET_PROFILE_SETTINGS_COMMIT_BUTTON },
     { "resetProfileSettingsExplanation",
-        IDS_RESET_PROFILE_SETTINGS_EXPLANATION},
+        IDS_RESET_PROFILE_SETTINGS_EXPLANATION },
     { "resetProfileSettingsFeedback", IDS_RESET_PROFILE_SETTINGS_FEEDBACK }
   };
 
@@ -83,10 +86,17 @@ void ResetProfileSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("onShowResetProfileDialog",
       base::Bind(&ResetProfileSettingsHandler::OnShowResetProfileDialog,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("onHideResetProfileDialog",
+      base::Bind(&ResetProfileSettingsHandler::OnHideResetProfileDialog,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("onDismissedResetProfileSettingsBanner",
+      base::Bind(&ResetProfileSettingsHandler::
+                 OnDismissedResetProfileSettingsBanner,
+                 base::Unretained(this)));
 }
 
 void ResetProfileSettingsHandler::HandleResetProfileSettings(
-    const ListValue* value) {
+    const base::ListValue* value) {
   bool send_settings = false;
   if (!value->GetBoolean(0, &send_settings))
     NOTREACHED();
@@ -103,10 +113,10 @@ void ResetProfileSettingsHandler::HandleResetProfileSettings(
   }
 }
 
-void ResetProfileSettingsHandler::OnResetProfileSettingsDone() {
-  DCHECK(automatic_profile_resetter_);
+void ResetProfileSettingsHandler::OnResetProfileSettingsDone(
+    bool send_feedback) {
   web_ui()->CallJavascriptFunction("ResetProfileSettingsOverlay.doneResetting");
-  if (setting_snapshot_) {
+  if (send_feedback && setting_snapshot_) {
     Profile* profile = Profile::FromWebUI(web_ui());
     ResettableSettingsSnapshot current_snapshot(profile);
     int difference = setting_snapshot_->FindDifferentFields(current_snapshot);
@@ -114,26 +124,31 @@ void ResetProfileSettingsHandler::OnResetProfileSettingsDone() {
       setting_snapshot_->Subtract(current_snapshot);
       std::string report = SerializeSettingsReport(*setting_snapshot_,
                                                    difference);
-      bool is_reset_prompt_active =
+      bool is_reset_prompt_active = automatic_profile_resetter_ &&
           automatic_profile_resetter_->IsResetPromptFlowActive();
       SendSettingsFeedback(report, profile, is_reset_prompt_active ?
           PROFILE_RESET_PROMPT : PROFILE_RESET_WEBUI);
     }
-    setting_snapshot_.reset();
   }
-  automatic_profile_resetter_->NotifyDidCloseWebUIResetDialog(
-      true /*performed_reset*/);
+  setting_snapshot_.reset();
+  if (automatic_profile_resetter_) {
+    automatic_profile_resetter_->NotifyDidCloseWebUIResetDialog(
+        true /*performed_reset*/);
+  }
 }
 
-void ResetProfileSettingsHandler::OnShowResetProfileDialog(const ListValue*) {
-  DictionaryValue flashInfo;
-  flashInfo.Set("feedbackInfo", GetReadableFeedback(
-      Profile::FromWebUI(web_ui())));
-  web_ui()->CallJavascriptFunction(
-      "ResetProfileSettingsOverlay.setFeedbackInfo",
-      flashInfo);
+void ResetProfileSettingsHandler::OnShowResetProfileDialog(
+    const base::ListValue* value) {
+  if (!resetter_->IsActive()) {
+    setting_snapshot_.reset(
+        new ResettableSettingsSnapshot(Profile::FromWebUI(web_ui())));
+    setting_snapshot_->RequestShortcuts(base::Bind(
+        &ResetProfileSettingsHandler::UpdateFeedbackUI, AsWeakPtr()));
+    UpdateFeedbackUI();
+  }
 
-  automatic_profile_resetter_->NotifyDidOpenWebUIResetDialog();
+  if (automatic_profile_resetter_)
+    automatic_profile_resetter_->NotifyDidOpenWebUIResetDialog();
   has_shown_confirmation_dialog_ = true;
 
   if (brandcode_.empty())
@@ -143,6 +158,18 @@ void ResetProfileSettingsHandler::OnShowResetProfileDialog(const ListValue*) {
                  Unretained(this)),
       GURL("https://tools.google.com/service/update2"),
       brandcode_));
+}
+
+void ResetProfileSettingsHandler::OnHideResetProfileDialog(
+    const base::ListValue* value) {
+  if (!resetter_->IsActive())
+    setting_snapshot_.reset();
+}
+
+void ResetProfileSettingsHandler::OnDismissedResetProfileSettingsBanner(
+    const base::ListValue* args) {
+  if (automatic_profile_resetter_)
+    automatic_profile_resetter_->NotifyDidCloseWebUIResetBanner();
 }
 
 void ResetProfileSettingsHandler::OnSettingsFetched() {
@@ -168,16 +195,27 @@ void ResetProfileSettingsHandler::ResetProfile(bool send_settings) {
   // installation, use default settings.
   if (!default_settings)
     default_settings.reset(new BrandcodedDefaultSettings);
-  // Save current settings if required.
-  setting_snapshot_.reset(send_settings ?
-      new ResettableSettingsSnapshot(Profile::FromWebUI(web_ui())) : NULL);
   resetter_->Reset(
       ProfileResetter::ALL,
       default_settings.Pass(),
       base::Bind(&ResetProfileSettingsHandler::OnResetProfileSettingsDone,
-                 AsWeakPtr()));
-  content::RecordAction(content::UserMetricsAction("ResetProfile"));
+                 AsWeakPtr(),
+                 send_settings));
+  content::RecordAction(base::UserMetricsAction("ResetProfile"));
   UMA_HISTOGRAM_BOOLEAN("ProfileReset.SendFeedback", send_settings);
+}
+
+void ResetProfileSettingsHandler::UpdateFeedbackUI() {
+  if (!setting_snapshot_)
+    return;
+  scoped_ptr<base::ListValue> list = GetReadableFeedbackForSnapshot(
+      Profile::FromWebUI(web_ui()),
+      *setting_snapshot_);
+  base::DictionaryValue feedback_info;
+  feedback_info.Set("feedbackInfo", list.release());
+  web_ui()->CallJavascriptFunction(
+      "ResetProfileSettingsOverlay.setFeedbackInfo",
+      feedback_info);
 }
 
 }  // namespace options

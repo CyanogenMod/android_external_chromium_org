@@ -16,7 +16,9 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
 #include "ui/views/corewm/shadow_types.h"
+#include "ui/views/corewm/window_animations.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/public/masked_window_targeter.h"
 
 namespace {
 
@@ -55,6 +57,8 @@ const int kSelectionHandleHorizPadding = 10;
 const int kSelectionHandleVertPadding = 20;
 
 const int kContextMenuTimoutMs = 200;
+
+const int kSelectionHandleQuickFadeDurationMs = 50;
 
 // Creates a widget to host SelectionHandleView.
 views::Widget* CreateTouchSelectionPopupWidget(
@@ -112,12 +116,31 @@ gfx::Rect ConvertFromScreen(ui::TouchEditable* client, const gfx::Rect& rect) {
 
 namespace views {
 
+typedef TouchSelectionControllerImpl::EditingHandleView EditingHandleView;
+
+class TouchHandleWindowTargeter : public wm::MaskedWindowTargeter {
+ public:
+  TouchHandleWindowTargeter(aura::Window* window,
+                            EditingHandleView* handle_view);
+
+  virtual ~TouchHandleWindowTargeter() {}
+
+ private:
+  // wm::MaskedWindowTargeter:
+  virtual bool GetHitTestMask(aura::Window* window,
+                              gfx::Path* mask) const OVERRIDE;
+
+  EditingHandleView* handle_view_;
+
+  DISALLOW_COPY_AND_ASSIGN(TouchHandleWindowTargeter);
+};
+
 // A View that displays the text selection handle.
 class TouchSelectionControllerImpl::EditingHandleView
     : public views::WidgetDelegateView {
  public:
-  explicit EditingHandleView(TouchSelectionControllerImpl* controller,
-                             gfx::NativeView context)
+  EditingHandleView(TouchSelectionControllerImpl* controller,
+                    gfx::NativeView context)
       : controller_(controller),
         drag_offset_(0),
         draw_invisible_(false) {
@@ -125,11 +148,16 @@ class TouchSelectionControllerImpl::EditingHandleView
     widget_->SetContentsView(this);
     widget_->SetAlwaysOnTop(true);
 
+    aura::Window* window = widget_->GetNativeWindow();
+    window->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
+        new TouchHandleWindowTargeter(window, this)));
+
     // We are owned by the TouchSelectionController.
     set_owned_by_client();
   }
 
   virtual ~EditingHandleView() {
+    SetWidgetVisible(false, false);
   }
 
   // Overridden from views::WidgetDelegateView:
@@ -204,9 +232,13 @@ class TouchSelectionControllerImpl::EditingHandleView
     return widget_->IsVisible();
   }
 
-  void SetWidgetVisible(bool visible) {
+  void SetWidgetVisible(bool visible, bool quick) {
     if (widget_->IsVisible() == visible)
       return;
+    corewm::SetWindowVisibilityAnimationDuration(
+        widget_->GetNativeView(),
+        base::TimeDelta::FromMilliseconds(
+            quick ? kSelectionHandleQuickFadeDurationMs : 0));
     if (visible)
       widget_->Show();
     else
@@ -235,6 +267,8 @@ class TouchSelectionControllerImpl::EditingHandleView
     SchedulePaint();
   }
 
+  const gfx::Rect& selection_rect() const { return selection_rect_; }
+
  private:
   scoped_ptr<Widget> widget_;
   TouchSelectionControllerImpl* controller_;
@@ -253,6 +287,24 @@ class TouchSelectionControllerImpl::EditingHandleView
 
   DISALLOW_COPY_AND_ASSIGN(EditingHandleView);
 };
+
+TouchHandleWindowTargeter::TouchHandleWindowTargeter(
+    aura::Window* window,
+    EditingHandleView* handle_view)
+    : wm::MaskedWindowTargeter(window),
+      handle_view_(handle_view) {
+}
+
+bool TouchHandleWindowTargeter::GetHitTestMask(aura::Window* window,
+                                               gfx::Path* mask) const {
+  const gfx::Rect& selection_rect = handle_view_->selection_rect();
+  gfx::Size image_size = GetHandleImageSize();
+  mask->addRect(SkIntToScalar(0), SkIntToScalar(selection_rect.height()),
+      SkIntToScalar(image_size.width()) + 2 * kSelectionHandleHorizPadding,
+      SkIntToScalar(selection_rect.height() + image_size.height() +
+                    kSelectionHandleVertPadding));
+  return true;
+}
 
 TouchSelectionControllerImpl::TouchSelectionControllerImpl(
     ui::TouchEditable* client_view)
@@ -332,13 +384,13 @@ void TouchSelectionControllerImpl::SelectionChanged() {
 
     // Check if there is any selection at all.
     if (screen_pos_1 == screen_pos_2) {
-      selection_handle_1_->SetWidgetVisible(false);
-      selection_handle_2_->SetWidgetVisible(false);
+      selection_handle_1_->SetWidgetVisible(false, false);
+      selection_handle_2_->SetWidgetVisible(false, false);
       SetHandleSelectionRect(cursor_handle_.get(), r1, screen_rect_1);
       return;
     }
 
-    cursor_handle_->SetWidgetVisible(false);
+    cursor_handle_->SetWidgetVisible(false, false);
     SetHandleSelectionRect(selection_handle_1_.get(), r1, screen_rect_1);
     SetHandleSelectionRect(selection_handle_2_.get(), r2, screen_rect_2);
   }
@@ -346,6 +398,12 @@ void TouchSelectionControllerImpl::SelectionChanged() {
 
 bool TouchSelectionControllerImpl::IsHandleDragInProgress() {
   return !!dragging_handle_;
+}
+
+void TouchSelectionControllerImpl::HideHandles(bool quick) {
+  selection_handle_1_->SetWidgetVisible(false, quick);
+  selection_handle_2_->SetWidgetVisible(false, quick);
+  cursor_handle_->SetWidgetVisible(false, quick);
 }
 
 void TouchSelectionControllerImpl::SetDraggingHandle(
@@ -397,7 +455,7 @@ void TouchSelectionControllerImpl::SetHandleSelectionRect(
     EditingHandleView* handle,
     const gfx::Rect& rect,
     const gfx::Rect& rect_in_screen) {
-  handle->SetWidgetVisible(client_view_->GetBounds().Contains(rect));
+  handle->SetWidgetVisible(client_view_->GetBounds().Contains(rect), false);
   if (handle->IsWidgetVisible())
     handle->SetSelectionRectInScreen(rect_in_screen);
 }

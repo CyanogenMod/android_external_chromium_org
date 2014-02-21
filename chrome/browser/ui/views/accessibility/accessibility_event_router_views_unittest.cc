@@ -36,19 +36,7 @@
 #include "ui/aura/test/aura_test_helper.h"
 #endif
 
-namespace {
-
-// The expected initial focus count.
-#if defined(OS_WIN) && !defined(USE_AURA)
-// On windows (non-aura) this code triggers activating the window. Activating
-// the window triggers clearing the focus then resetting it. This results in an
-// additional focus change.
-const int kInitialFocusCount = 2;
-#else
-const int kInitialFocusCount = 1;
-#endif
-
-}  // namespace
+using base::ASCIIToUTF16;
 
 class AccessibilityViewsDelegate : public views::TestViewsDelegate {
  public:
@@ -119,7 +107,8 @@ class AccessibilityEventRouterViewsTest
     views::ViewsDelegate::views_delegate = new AccessibilityViewsDelegate();
 #if defined(USE_AURA)
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    aura_test_helper_->SetUp();
+    bool allow_test_contexts = true;
+    aura_test_helper_->SetUp(allow_test_contexts);
 #endif  // USE_AURA
     EnableAccessibilityAndListenToFocusNotifications();
   }
@@ -208,15 +197,15 @@ TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
   views::View* contents = new views::View();
   views::LabelButton* button1 = new views::LabelButton(
       NULL, ASCIIToUTF16(kButton1ASCII));
-  button1->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  button1->SetStyle(views::Button::STYLE_BUTTON);
   contents->AddChildView(button1);
   views::LabelButton* button2 = new views::LabelButton(
       NULL, ASCIIToUTF16(kButton2ASCII));
-  button2->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  button2->SetStyle(views::Button::STYLE_BUTTON);
   contents->AddChildView(button2);
   views::LabelButton* button3 = new views::LabelButton(
       NULL, ASCIIToUTF16(kButton3ASCII));
-  button3->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  button3->SetStyle(views::Button::STYLE_BUTTON);
   contents->AddChildView(button3);
 
   // Put the view in a window.
@@ -265,7 +254,7 @@ TEST_F(AccessibilityEventRouterViewsTest, TestToolbarContext) {
       ui::AccessibilityTypes::ROLE_TOOLBAR);
   views::LabelButton* button = new views::LabelButton(
       NULL, ASCIIToUTF16(kButtonNameASCII));
-  button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(views::Button::STYLE_BUTTON);
   contents->AddChildView(button);
 
   // Put the view in a window.
@@ -278,7 +267,7 @@ TEST_F(AccessibilityEventRouterViewsTest, TestToolbarContext) {
   base::MessageLoop::current()->RunUntilIdle();
 
   // Test that we got the event with the expected name and context.
-  EXPECT_EQ(kInitialFocusCount, control_event_count_);
+  EXPECT_EQ(1, control_event_count_);
   EXPECT_EQ(kButtonNameASCII, last_control_name_);
   EXPECT_EQ(kToolbarNameASCII, last_control_context_);
 
@@ -297,7 +286,7 @@ TEST_F(AccessibilityEventRouterViewsTest, TestAlertContext) {
   contents->AddChildView(label);
   views::LabelButton* button = new views::LabelButton(
       NULL, ASCIIToUTF16(kButtonNameASCII));
-  button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(views::Button::STYLE_BUTTON);
   contents->AddChildView(button);
 
   // Put the view in a window.
@@ -310,7 +299,7 @@ TEST_F(AccessibilityEventRouterViewsTest, TestAlertContext) {
   base::MessageLoop::current()->RunUntilIdle();
 
   // Test that we got the event with the expected name and context.
-  EXPECT_EQ(kInitialFocusCount, control_event_count_);
+  EXPECT_EQ(1, control_event_count_);
   EXPECT_EQ(kButtonNameASCII, last_control_name_);
   EXPECT_EQ(kAlertTextASCII, last_control_context_);
 
@@ -329,7 +318,7 @@ TEST_F(AccessibilityEventRouterViewsTest, StateChangeAfterNotification) {
   ViewWithNameAndRole* child = new ViewWithNameAndRole(
       ASCIIToUTF16(kOldNameASCII),
       ui::AccessibilityTypes::ROLE_PUSHBUTTON);
-  child->set_focusable(true);
+  child->SetFocusable(true);
   contents->AddChildView(child);
 
   // Put the view in a window.
@@ -348,7 +337,7 @@ TEST_F(AccessibilityEventRouterViewsTest, StateChangeAfterNotification) {
   // Process anything in the event loop. Now we should get the notification,
   // and it should give us the new control name, not the old one.
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(kInitialFocusCount, control_event_count_);
+  EXPECT_EQ(1, control_event_count_);
   EXPECT_EQ(kNewNameASCII, last_control_name_);
 
   window->CloseNow();
@@ -365,7 +354,7 @@ TEST_F(AccessibilityEventRouterViewsTest, NotificationOnDeletedObject) {
   ViewWithNameAndRole* child = new ViewWithNameAndRole(
       ASCIIToUTF16(kNameASCII),
       ui::AccessibilityTypes::ROLE_PUSHBUTTON);
-  child->set_focusable(true);
+  child->SetFocusable(true);
   contents->AddChildView(child);
 
   // Put the view in a window.
@@ -398,7 +387,7 @@ TEST_F(AccessibilityEventRouterViewsTest, AlertsFromWindowAndControl) {
   views::View* contents = new views::View();
   views::LabelButton* button = new views::LabelButton(
       NULL, ASCIIToUTF16(kButtonASCII));
-  button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(views::Button::STYLE_BUTTON);
   contents->AddChildView(button);
 
   // Put the view in a window.

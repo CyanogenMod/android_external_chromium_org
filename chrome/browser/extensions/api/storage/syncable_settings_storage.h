@@ -27,7 +27,9 @@ class SyncableSettingsStorage : public ValueStore {
       const scoped_refptr<SettingsObserverList>& observers,
       const std::string& extension_id,
       // Ownership taken.
-      ValueStore* delegate);
+      ValueStore* delegate,
+      syncer::ModelType sync_type,
+      const syncer::SyncableService::StartSyncFlare& flare);
 
   virtual ~SyncableSettingsStorage();
 
@@ -41,7 +43,7 @@ class SyncableSettingsStorage : public ValueStore {
   virtual WriteResult Set(
       WriteOptions options,
       const std::string& key,
-      const Value& value) OVERRIDE;
+      const base::Value& value) OVERRIDE;
   virtual WriteResult Set(
       WriteOptions options, const base::DictionaryValue& values) OVERRIDE;
   virtual WriteResult Remove(const std::string& key) OVERRIDE;
@@ -80,16 +82,16 @@ class SyncableSettingsStorage : public ValueStore {
   // are taken.
   syncer::SyncError OnSyncAdd(
       const std::string& key,
-      Value* new_value,
+      base::Value* new_value,
       ValueStoreChangeList* changes);
   syncer::SyncError OnSyncUpdate(
       const std::string& key,
-      Value* old_value,
-      Value* new_value,
+      base::Value* old_value,
+      base::Value* new_value,
       ValueStoreChangeList* changes);
   syncer::SyncError OnSyncDelete(
       const std::string& key,
-      Value* old_value,
+      base::Value* old_value,
       ValueStoreChangeList* changes);
 
   // List of observers to settings changes.
@@ -103,6 +105,9 @@ class SyncableSettingsStorage : public ValueStore {
 
   // Object which sends changes to sync.
   scoped_ptr<SettingsSyncProcessor> sync_processor_;
+
+  const syncer::ModelType sync_type_;
+  const syncer::SyncableService::StartSyncFlare flare_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncableSettingsStorage);
 };

@@ -11,6 +11,7 @@
 #include "ui/aura/window.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/oak/oak_pretty_print.h"
+#include "ui/views/corewm/window_util.h"
 
 namespace oak {
 namespace internal {
@@ -34,7 +35,6 @@ ROW_TRANSIENTPARENT,
 ROW_USERDATA,
 ROW_IGNOREEVENTS,
 ROW_CANFOCUS,
-ROW_HITTESTBOUNDSOVERRIDEOUTER,
 ROW_HITTESTBOUNDSOVERRIDEINNER,
 ROW_COUNT
 };
@@ -43,32 +43,32 @@ ROW_COUNT
 base::string16 PropertyWithWindowType(int type) {
   std::string property = "Type: ";
   switch (type) {
-    case aura::client::WINDOW_TYPE_UNKNOWN:
+    case ui::wm::WINDOW_TYPE_UNKNOWN:
       property.append("WINDOW_TYPE_UNKNOWN");
       break;
-    case aura::client::WINDOW_TYPE_NORMAL:
+    case ui::wm::WINDOW_TYPE_NORMAL:
       property.append("WINDOW_TYPE_NORMAL");
       break;
-    case aura::client::WINDOW_TYPE_POPUP:
+    case ui::wm::WINDOW_TYPE_POPUP:
       property.append("WINDOW_TYPE_POPUP");
       break;
-    case aura::client::WINDOW_TYPE_CONTROL:
+    case ui::wm::WINDOW_TYPE_CONTROL:
       property.append("WINDOW_TYPE_CONTROL");
       break;
-    case aura::client::WINDOW_TYPE_PANEL:
+    case ui::wm::WINDOW_TYPE_PANEL:
       property.append("WINDOW_TYPE_PANEL");
       break;
-    case aura::client::WINDOW_TYPE_MENU:
+    case ui::wm::WINDOW_TYPE_MENU:
       property.append("WINDOW_TYPE_MENU");
       break;
-    case aura::client::WINDOW_TYPE_TOOLTIP:
+    case ui::wm::WINDOW_TYPE_TOOLTIP:
       property.append("WINDOW_TYPE_TOOLTIP");
       break;
     default:
       NOTREACHED();
       break;
   }
-  return ASCIIToUTF16(property);
+  return base::ASCIIToUTF16(property);
 }
 
 }  // namespace
@@ -110,9 +110,9 @@ base::string16 OakAuraWindowDisplay::GetText(int row, int column_id) {
     case ROW_TYPE:
       return PropertyWithWindowType(window_->type());
     case ROW_NAME:
-      return ASCIIToUTF16("Name: " + window_->name());
+      return base::ASCIIToUTF16("Name: " + window_->name());
     case ROW_TITLE:
-      return ASCIIToUTF16("Title: ") + window_->title();
+      return base::ASCIIToUTF16("Title: ") + window_->title();
     case ROW_TRANSPARENT:
       return PropertyWithBool("Transparent: ", window_->transparent());
     case ROW_LAYER:
@@ -125,17 +125,18 @@ base::string16 OakAuraWindowDisplay::GetText(int row, int column_id) {
       return PropertyWithBounds("Bounds in Root Window: ",
                                 window_->GetBoundsInRootWindow());
     case ROW_TRANSFORM:
-      return ASCIIToUTF16("Transform:");
+      return base::ASCIIToUTF16("Transform:");
     case ROW_PARENT:
       return PropertyWithVoidStar("Parent: ", window_->parent());
     case ROW_ROOTWINDOW:
       return PropertyWithVoidStar("Root Window: ", window_->GetRootWindow());
     case ROW_TRANSIENTCHILDREN:
-      return PropertyWithInteger("Transient Children: ",
-                                 window_->transient_children().size());
+      return PropertyWithInteger(
+          "Transient Children: ",
+          views::corewm::GetTransientChildren(window_).size());
     case ROW_TRANSIENTPARENT:
       return PropertyWithVoidStar("Transient Parent: ",
-                                  window_->transient_parent());
+                                  views::corewm::GetTransientParent(window_));
     case ROW_USERDATA:
       return PropertyWithVoidStar("User Data: ", window_->user_data());
     case ROW_IGNOREEVENTS:
@@ -143,9 +144,6 @@ base::string16 OakAuraWindowDisplay::GetText(int row, int column_id) {
                               window_->CanReceiveEvents());
     case ROW_CANFOCUS:
       return PropertyWithBool("Can Focus: ", window_->CanFocus());
-    case ROW_HITTESTBOUNDSOVERRIDEOUTER:
-      return PropertyWithInsets("Hit test bounds override outer: ",
-          window_->hit_test_bounds_override_outer_mouse());
     case ROW_HITTESTBOUNDSOVERRIDEINNER:
       return PropertyWithInsets("Hit test bounds override inner: ",
                                 window_->hit_test_bounds_override_inner());

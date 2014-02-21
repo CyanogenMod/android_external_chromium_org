@@ -30,10 +30,19 @@ class DriveApiUrlGenerator {
   GURL GetAboutGetUrl() const;
 
   // Returns a URL to invoke "Apps: list" method.
-  GURL GetAppsListUrl() const;
+  // Set |use_internal_endpoint| to true if official Chrome's API key is used
+  // and retrieving more information (related to App uninstall) is necessary.
+  GURL GetAppsListUrl(bool use_internal_endpoint) const;
+
+  // Returns a URL to uninstall an app with the give |app_id|.
+  GURL GetAppsDeleteUrl(const std::string& app_id) const;
 
   // Returns a URL to fetch a file metadata.
   GURL GetFilesGetUrl(const std::string& file_id) const;
+
+  // Returns a URL to authorize an app to access a file.
+  GURL GetFilesAuthorizeUrl(const std::string& file_id,
+                            const std::string& app_id) const;
 
   // Returns a URL to create a resource.
   GURL GetFilesInsertUrl() const;
@@ -50,6 +59,9 @@ class DriveApiUrlGenerator {
   GURL GetFilesListUrl(int max_results,
                        const std::string& page_token,
                        const std::string& q) const;
+
+  // Returns a URL to delete a resource with the given |file_id|.
+  GURL GetFilesDeleteUrl(const std::string& file_id) const;
 
   // Returns a URL to trash a resource with the given |file_id|.
   GURL GetFilesTrashUrl(const std::string& file_id) const;
@@ -69,11 +81,12 @@ class DriveApiUrlGenerator {
                             const std::string& folder_id) const;
 
   // Returns a URL to initiate uploading a new file.
-  GURL GetInitiateUploadNewFileUrl() const;
+  GURL GetInitiateUploadNewFileUrl(bool set_modified_date) const;
 
   // Returns a URL to initiate uploading an existing file specified by
   // |resource_id|.
-  GURL GetInitiateUploadExistingFileUrl(const std::string& resource_id) const;
+  GURL GetInitiateUploadExistingFileUrl(const std::string& resource_id,
+                                        bool set_modified_date) const;
 
   // Generates a URL for downloading a file.
   GURL GenerateDownloadFileUrl(const std::string& resource_id) const;

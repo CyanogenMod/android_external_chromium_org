@@ -14,14 +14,14 @@ namespace {
 
 // URL schemes for which we'll send events.
 const char* kValidSchemes[] = {
-  chrome::kChromeUIScheme,
+  content::kChromeUIScheme,
   content::kHttpScheme,
   content::kHttpsScheme,
-  chrome::kFileScheme,
+  content::kFileScheme,
   content::kFtpScheme,
   content::kJavaScriptScheme,
-  chrome::kDataScheme,
-  chrome::kFileSystemScheme,
+  content::kDataScheme,
+  content::kFileSystemScheme,
 };
 
 }  // namespace

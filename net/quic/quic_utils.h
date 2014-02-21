@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Some helpers for quic
+// Some helpers for quic.
 
 #ifndef NET_QUIC_QUIC_UTILS_H_
 #define NET_QUIC_QUIC_UTILS_H_
@@ -20,7 +20,7 @@ class NET_EXPORT_PRIVATE QuicUtils {
     PEER_PRIORITY,
   };
 
-  // returns the 64 bit FNV1a hash of the data.  See
+  // Returns the 64 bit FNV1a hash of the data.  See
   // http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-param
   static uint64 FNV1a_64_Hash(const char* data, int len);
 
@@ -75,6 +75,10 @@ class NET_EXPORT_PRIVATE QuicUtils {
   static char* AsChars(unsigned char* data) {
     return reinterpret_cast<char*>(data);
   }
+
+  static QuicPriority LowestPriority();
+
+  static QuicPriority HighestPriority();
 };
 
 // Utility function that returns an IOVector object wrapped around |str|.

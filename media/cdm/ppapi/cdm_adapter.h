@@ -39,7 +39,7 @@ class CdmAdapter : public pp::Instance,
                    public pp::ContentDecryptor_Private,
                    public cdm::Host_1,
                    public cdm::Host_2,
-                   public cdm::Host_3 {
+                   public cdm::Host_4 {
  public:
   CdmAdapter(PP_Instance instance, pp::Module* module);
   virtual ~CdmAdapter();
@@ -54,8 +54,10 @@ class CdmAdapter : public pp::Instance,
   // PPB_ContentDecryptor_Private interface.
   virtual void Initialize(const std::string& key_system) OVERRIDE;
   virtual void CreateSession(uint32_t session_id,
-                             const std::string& type,
+                             const std::string& content_type,
                              pp::VarArrayBuffer init_data) OVERRIDE;
+  virtual void LoadSession(uint32_t session_id,
+                           const std::string& web_session_id) OVERRIDE;
   virtual void UpdateSession(uint32_t session_id,
                              pp::VarArrayBuffer response) OVERRIDE;
   virtual void ReleaseSession(uint32_t session_id) OVERRIDE;
@@ -103,7 +105,7 @@ class CdmAdapter : public pp::Instance,
       cdm::StreamType stream_type,
       cdm::Status decoder_status) OVERRIDE;
 
-  // cdm::Host_3 implementation.
+  // cdm::Host_4 implementation.
   virtual void OnSessionCreated(uint32_t session_id,
                                 const char* web_session_id,
                                 uint32_t web_session_id_length) OVERRIDE;
@@ -117,6 +119,7 @@ class CdmAdapter : public pp::Instance,
   virtual void OnSessionError(uint32_t session_id,
                               cdm::MediaKeyError error_code,
                               uint32_t system_code) OVERRIDE;
+  virtual cdm::FileIO* CreateFileIO(cdm::FileIOClient* client) OVERRIDE;
 
  private:
   typedef linked_ptr<DecryptedBlockImpl> LinkedDecryptedBlock;
@@ -169,6 +172,13 @@ class CdmAdapter : public pp::Instance,
   void TimerExpired(int32_t result, void* context);
 
   bool IsValidVideoFrame(const LinkedVideoFrame& video_frame);
+
+#if !defined(NDEBUG)
+  // Logs the given message to the JavaScript console associated with the
+  // CDM adapter instance. The name of the CDM adapter issuing the log message
+  // will be automatically prepended to the message.
+  void LogToConsole(const pp::Var& value);
+#endif  // !defined(NDEBUG)
 
 #if defined(OS_CHROMEOS)
   void SendPlatformChallengeDone(int32_t result);

@@ -528,11 +528,18 @@ struct NET_EXPORT NetworkInterface {
 
 typedef std::vector<NetworkInterface> NetworkInterfaceList;
 
+// Policy settings to include/exclude VMWare host only network interfaces.
+enum HostScopeVirtualInterfacePolicy {
+  INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+  EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+};
+
 // Returns list of network interfaces except loopback interface. If an
 // interface has more than one address, a separate entry is added to
 // the list for each address.
 // Can be called only on a thread that allows IO.
-NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks);
+NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks,
+                               HostScopeVirtualInterfacePolicy policy);
 
 // General category of the IEEE 802.11 (wifi) physical layer operating mode.
 enum WifiPHYLayerProtocol {
@@ -567,6 +574,7 @@ unsigned MaskPrefixLength(const IPAddressNumber& mask);
 // See http://tools.ietf.org/html/rfc2474 for details.
 enum DiffServCodePoint {
   DSCP_NO_CHANGE = -1,
+  DSCP_FIRST = DSCP_NO_CHANGE,
   DSCP_DEFAULT = 0,  // Same as DSCP_CS0
   DSCP_CS0  = 0,   // The default
   DSCP_CS1  = 8,   // Bulk/background traffic
@@ -589,6 +597,7 @@ enum DiffServCodePoint {
   DSCP_EF   = 46,  // Voice
   DSCP_CS6  = 48,  // Voice
   DSCP_CS7  = 56,  // Control messages
+  DSCP_LAST = DSCP_CS7
 };
 
 }  // namespace net

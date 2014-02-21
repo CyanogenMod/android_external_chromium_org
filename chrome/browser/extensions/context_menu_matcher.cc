@@ -6,10 +6,10 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/context_menu_matcher.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/common/context_menu_params.h"
+#include "extensions/browser/extension_system.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 
@@ -65,7 +65,7 @@ void ContextMenuMatcher::AppendExtensionItems(
     MenuItem::List submenu_items;
 
     if (items.size() > 1 || items[0]->type() != MenuItem::NORMAL) {
-      title = UTF8ToUTF16(extension->name());
+      title = base::UTF8ToUTF16(extension->name());
       submenu_items = items;
     } else {
       MenuItem* item = items[0];
@@ -109,7 +109,7 @@ base::string16 ContextMenuMatcher::GetTopLevelContextMenuTitle(
   if (items.empty() ||
       items.size() > 1 ||
       items[0]->type() != MenuItem::NORMAL) {
-    title = UTF8ToUTF16(extension->name());
+    title = base::UTF8ToUTF16(extension->name());
   } else {
     MenuItem* item = items[0];
     title = item->TitleWithReplacement(
@@ -161,7 +161,7 @@ bool ContextMenuMatcher::GetRelevantExtensionTopLevelItems(
   if (!all_items || all_items->empty())
     return false;
 
-  *can_cross_incognito = extension_util::CanCrossIncognito(*extension, service);
+  *can_cross_incognito = util::CanCrossIncognito(*extension, profile_);
   items = GetRelevantExtensionItems(*all_items,
                                     *can_cross_incognito);
 

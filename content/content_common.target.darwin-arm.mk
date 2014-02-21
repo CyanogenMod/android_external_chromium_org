@@ -14,11 +14,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp)/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_gyp)/webkit_glue_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_common_aidl_gyp)/common_aidl.stamp
 
@@ -38,7 +38,6 @@ LOCAL_SRC_FILES := \
 	content/public/common/content_constants.cc \
 	content/public/common/content_switches.cc \
 	content/public/common/context_menu_params.cc \
-	content/public/common/desktop_media_id.cc \
 	content/public/common/drop_data.cc \
 	content/public/common/favicon_url.cc \
 	content/public/common/file_chooser_params.cc \
@@ -58,16 +57,13 @@ LOCAL_SRC_FILES := \
 	content/public/common/url_constants.cc \
 	content/public/common/url_utils.cc \
 	content/public/common/webplugininfo.cc \
-	content/common/accessibility_node_data.cc \
 	content/common/android/address_parser.cc \
 	content/common/android/address_parser_internal.cc \
 	content/common/android/common_jni_registrar.cc \
 	content/common/android/device_telephony_info.cc \
 	content/common/android/hash_set.cc \
 	content/common/android/surface_texture_peer.cc \
-	content/common/android/trace_event_binding.cc \
 	content/common/browser_plugin/browser_plugin_constants.cc \
-	content/common/browser_rendering_stats.cc \
 	content/common/cc_messages.cc \
 	content/common/child_process_host_impl.cc \
 	content/common/clipboard_messages.cc \
@@ -76,10 +72,12 @@ LOCAL_SRC_FILES := \
 	content/common/content_message_generator.cc \
 	content/common/content_param_traits.cc \
 	content/common/content_paths.cc \
+	content/common/content_switches_internal.cc \
 	content/common/cookie_data.cc \
 	content/common/dom_storage/dom_storage_map.cc \
 	content/common/font_list.cc \
 	content/common/font_list_android.cc \
+	content/common/frame_param.cc \
 	content/common/gamepad_user_gesture.cc \
 	content/common/gpu/client/command_buffer_proxy_impl.cc \
 	content/common/gpu/client/context_provider_command_buffer.cc \
@@ -100,16 +98,13 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/gpu_memory_manager.cc \
 	content/common/gpu/gpu_memory_manager_client.cc \
 	content/common/gpu/gpu_memory_tracking.cc \
-	content/common/gpu/gpu_rendering_stats.cc \
 	content/common/gpu/gpu_surface_lookup.cc \
 	content/common/gpu/image_transport_surface.cc \
 	content/common/gpu/image_transport_surface_android.cc \
 	content/common/gpu/media/gpu_video_decode_accelerator.cc \
 	content/common/gpu/media/gpu_video_encode_accelerator.cc \
-	content/common/gpu/media/h264_bit_reader.cc \
-	content/common/gpu/media/h264_parser.cc \
 	content/common/gpu/media/video_decode_accelerator_impl.cc \
-	content/common/gpu/stream_texture_manager_android.cc \
+	content/common/gpu/stream_texture_android.cc \
 	content/common/gpu/sync_point_manager.cc \
 	content/common/gpu/texture_image_transport_surface.cc \
 	content/common/indexed_db/indexed_db_key.cc \
@@ -141,6 +136,8 @@ LOCAL_SRC_FILES := \
 	content/common/process_type.cc \
 	content/common/resource_messages.cc \
 	content/common/savable_url_schemes.cc \
+	content/common/service_worker/service_worker_status_code.cc \
+	content/common/service_worker/service_worker_types.cc \
 	content/common/set_process_title.cc \
 	content/common/socket_stream_handle_data.cc \
 	content/common/ssl_status_serialization.cc \
@@ -182,15 +179,16 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -201,20 +199,21 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_SECCOMP_BPF' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -222,6 +221,7 @@ MY_DEFS_Debug := \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
@@ -260,6 +260,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
@@ -286,7 +287,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -319,15 +319,16 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -338,20 +339,21 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DUSE_SECCOMP_BPF' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -359,6 +361,7 @@ MY_DEFS_Release := \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DAPPCACHE_USE_SIMPLE_CACHE' \
@@ -398,6 +401,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
@@ -424,7 +428,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -476,9 +479,9 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_library_gyp \
+	ui_accessibility_ax_gen_gyp \
 	ui_ui_gyp \
-	ui_gl_gl_gyp \
-	webkit_glue_glue_gyp
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

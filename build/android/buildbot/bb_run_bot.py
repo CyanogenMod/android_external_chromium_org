@@ -48,7 +48,6 @@ def DictDiff(d1, d2):
 def GetEnvironment(host_obj, testing, extra_env_vars=None):
   init_env = dict(os.environ)
   init_env['GYP_GENERATORS'] = 'ninja'
-  init_env['GOMA_DIR'] = bb_utils.GOMA_DIR
   if extra_env_vars:
     init_env.update(extra_env_vars)
   envsetup_cmd = '. build/android/envsetup.sh'
@@ -70,7 +69,8 @@ def GetEnvironment(host_obj, testing, extra_env_vars=None):
     print >> sys.stderr, envsetup_output
     sys.exit(1)
   env = json.loads(json_env)
-  env['GYP_DEFINES'] = env.get('GYP_DEFINES', '') + ' fastbuild=1'
+  env['GYP_DEFINES'] = env.get('GYP_DEFINES', '') + \
+      ' fastbuild=1 use_goma=1 gomadir=%s' % bb_utils.GOMA_DIR
   extra_gyp = host_obj.extra_gyp_defines
   if extra_gyp:
     env['GYP_DEFINES'] += ' %s' % extra_gyp
@@ -104,7 +104,7 @@ def GetCommands(options, bot_config):
 
   test_obj = bot_config.test_obj
   if test_obj:
-    run_test_cmd = [test_obj.script, '--reboot'] + property_args
+    run_test_cmd = [test_obj.script] + property_args
     for test in test_obj.tests:
       run_test_cmd.extend(['-f', test])
     if test_obj.extra_args:
@@ -141,8 +141,9 @@ def GetBotStepMap():
       B('main-tests', H(std_test_steps), T(std_tests, [flakiness_server])),
 
       # Other waterfalls
-      B('asan-builder-tests', H(compile_step, extra_gyp='asan=1'),
-        T(std_tests, ['--asan'])),
+      B('asan-builder-tests', H(compile_step,
+                                extra_gyp='asan=1 component=shared_library'),
+        T(std_tests, ['--asan', '--asan-symbolize'])),
       B('blink-try-builder', H(compile_step)),
       B('chromedriver-fyi-tests-dbg', H(std_test_steps),
         T(['chromedriver'], ['--install=ChromiumTestShell'])),
@@ -179,7 +180,7 @@ def GetBotStepMap():
           extra_gyp='include_tests=1 enable_tracing=1')),
       B('webrtc-chromium-tests', H(std_test_steps),
         T(['webrtc_chromium'],
-          [flakiness_server, '--gtest-filter=Webrtc*:WebRTC*'])),
+          [flakiness_server, '--gtest-filter=WebRtc*'])),
       B('webrtc-native-tests', H(std_test_steps),
         T(['webrtc_native'], [flakiness_server])),
 

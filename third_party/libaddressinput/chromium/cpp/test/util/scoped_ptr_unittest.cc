@@ -13,8 +13,6 @@
 
 namespace {
 
-using i18n::addressinput::scoped_ptr;
-
 class ConDecLogger {
  public:
   ConDecLogger() : ptr_(NULL) { }
@@ -30,12 +28,16 @@ class ConDecLogger {
   DISALLOW_COPY_AND_ASSIGN(ConDecLogger);
 };
 
+
+void TakePointer(scoped_ptr<ConDecLogger> pointer) {}
+
 TEST(ScopedPtrTest, ScopedPtr) {
   int constructed = 0;
 
   {
     scoped_ptr<ConDecLogger> scoper(new ConDecLogger(&constructed));
     EXPECT_EQ(1, constructed);
+    EXPECT_TRUE(scoper);
     EXPECT_TRUE(scoper.get());
 
     EXPECT_EQ(10, scoper->SomeMeth(10));
@@ -48,29 +50,29 @@ TEST(ScopedPtrTest, ScopedPtr) {
   {
     scoped_ptr<ConDecLogger> scoper(new ConDecLogger(&constructed));
     EXPECT_EQ(1, constructed);
-    EXPECT_TRUE(scoper.get());
+    EXPECT_TRUE(scoper);
 
     scoper.reset(new ConDecLogger(&constructed));
     EXPECT_EQ(1, constructed);
-    EXPECT_TRUE(scoper.get());
+    EXPECT_TRUE(scoper);
 
     scoper.reset();
     EXPECT_EQ(0, constructed);
-    EXPECT_FALSE(scoper.get());
+    EXPECT_FALSE(scoper);
 
     scoper.reset(new ConDecLogger(&constructed));
     EXPECT_EQ(1, constructed);
-    EXPECT_TRUE(scoper.get());
+    EXPECT_TRUE(scoper);
 
     ConDecLogger* take = scoper.release();
     EXPECT_EQ(1, constructed);
-    EXPECT_FALSE(scoper.get());
+    EXPECT_FALSE(scoper);
     delete take;
     EXPECT_EQ(0, constructed);
 
     scoper.reset(new ConDecLogger(&constructed));
     EXPECT_EQ(1, constructed);
-    EXPECT_TRUE(scoper.get());
+    EXPECT_TRUE(scoper);
   }
   EXPECT_EQ(0, constructed);
 
@@ -93,6 +95,18 @@ TEST(ScopedPtrTest, ScopedPtr) {
     EXPECT_FALSE(scoper1.get());
     EXPECT_FALSE(scoper1 == scoper2.get());
     EXPECT_TRUE(scoper1 != scoper2.get());
+  }
+  EXPECT_EQ(0, constructed);
+
+  // Test Pass().
+  {
+    scoped_ptr<ConDecLogger> scoper(new ConDecLogger(&constructed));
+    EXPECT_EQ(1, constructed);
+    TakePointer(scoper.Pass());
+    EXPECT_EQ(0, constructed);
+    EXPECT_FALSE(scoper);
+
+    TakePointer(make_scoped_ptr(new ConDecLogger(&constructed)));
   }
   EXPECT_EQ(0, constructed);
 }

@@ -10,6 +10,8 @@
 #import "base/mac/scoped_nsobject.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
+#include "media/video/capture/video_capture_device.h"
+#include "media/video/capture/video_capture_types.h"
 #import "media/video/capture/mac/avfoundation_glue.h"
 #import "media/video/capture/mac/platform_video_capturing_mac.h"
 
@@ -36,9 +38,8 @@ class VideoCaptureDeviceMac;
 //  * Method -setCaptureDevice: must be called at least once with a device
 //    identifier from +deviceNames. Creates all the necessary AVFoundation
 //    objects on first call; it connects them ready for capture every time.
-//    It also configures a by default capture resolution of 1280x720@30fps. This
-//    method should not be called during capture (i.e. between -startCapture and
-//    -stopCapture).
+//    This method should not be called during capture (i.e. between
+//    -startCapture and -stopCapture).
 //  * -setCaptureWidth:height:frameRate: is called if a resolution or frame rate
 //    different than the by default one set by -setCaptureDevice: is needed.
 //    This method should not be called during capture. This method must be
@@ -58,8 +59,7 @@ class VideoCaptureDeviceMac;
     : NSObject<CrAVCaptureVideoDataOutputSampleBufferDelegate,
                PlatformVideoCapturingMac> {
  @private
-  // The following three attributes are set to default values 1280, 720, 30fps
-  // in -setCaptureDevice: or explicitly via -setCaptureHeight:width:frameRate:.
+  // The following attributes are set via -setCaptureHeight:width:frameRate:.
   int frameWidth_;
   int frameHeight_;
   int frameRate_;
@@ -76,11 +76,16 @@ class VideoCaptureDeviceMac;
   CrAVCaptureDeviceInput* captureDeviceInput_;
   base::scoped_nsobject<CrAVCaptureVideoDataOutput> captureVideoDataOutput_;
 
-  base::ThreadChecker thread_checker_;
+  base::ThreadChecker main_thread_checker_;
+  base::ThreadChecker callback_thread_checker_;
 }
 
 // Returns a dictionary of capture devices with friendly name and unique id.
 + (NSDictionary*)deviceNames;
+
+// Retrieve the capture supported formats for a given device |name|.
++ (void)getDevice:(const media::VideoCaptureDevice::Name&)name
+    supportedFormats:(media::VideoCaptureFormats*)formats;
 
 // Initializes the instance and the underlying capture session and registers the
 // frame receiver.

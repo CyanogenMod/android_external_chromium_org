@@ -17,9 +17,16 @@
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
-namespace fileapi {
+using fileapi::FileSystemContext;
+using fileapi::FileSystemOperationContext;
+using fileapi::FileSystemOperationRunner;
+using fileapi::FileSystemType;
+using fileapi::FileSystemURL;
+
+namespace content {
 
 SandboxFileSystemTestHelper::SandboxFileSystemTestHelper(
     const GURL& origin, FileSystemType type)
@@ -28,7 +35,7 @@ SandboxFileSystemTestHelper::SandboxFileSystemTestHelper(
 
 SandboxFileSystemTestHelper::SandboxFileSystemTestHelper()
     : origin_(GURL("http://foo.com")),
-      type_(kFileSystemTypeTemporary),
+      type_(fileapi::kFileSystemTypeTemporary),
       file_util_(NULL) {
 }
 
@@ -91,14 +98,15 @@ FileSystemURL SandboxFileSystemTestHelper::CreateURL(
 
 int64 SandboxFileSystemTestHelper::GetCachedOriginUsage() const {
   return file_system_context_->GetQuotaUtil(type_)
-      ->GetOriginUsageOnFileThread(file_system_context_.get(), origin_, type_);
+      ->GetOriginUsageOnFileTaskRunner(
+          file_system_context_.get(), origin_, type_);
 }
 
 int64 SandboxFileSystemTestHelper::ComputeCurrentOriginUsage() {
   usage_cache()->CloseCacheFiles();
   int64 size = base::ComputeDirectorySize(GetOriginRootPath());
   if (base::PathExists(GetUsageCachePath()))
-    size -= FileSystemUsageCache::kUsageFileSize;
+    size -= fileapi::FileSystemUsageCache::kUsageFileSize;
   return size;
 }
 
@@ -123,12 +131,12 @@ SandboxFileSystemTestHelper::NewOperationContext() {
 }
 
 void SandboxFileSystemTestHelper::AddFileChangeObserver(
-    FileChangeObserver* observer) {
+    fileapi::FileChangeObserver* observer) {
   file_system_context_->sandbox_backend()->GetQuotaUtil()->
       AddFileChangeObserver(type_, observer, NULL);
 }
 
-FileSystemUsageCache* SandboxFileSystemTestHelper::usage_cache() {
+fileapi::FileSystemUsageCache* SandboxFileSystemTestHelper::usage_cache() {
   return file_system_context()->sandbox_delegate()->usage_cache();
 }
 
@@ -149,4 +157,4 @@ void SandboxFileSystemTestHelper::SetUpFileSystem() {
     usage_cache()->UpdateUsage(usage_cache_path, 0);
 }
 
-}  // namespace fileapi
+}  // namespace content

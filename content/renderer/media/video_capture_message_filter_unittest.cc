@@ -29,10 +29,15 @@ class MockVideoCaptureDelegate : public VideoCaptureMessageFilter::Delegate {
                                      int length,
                                      int buffer_id));
   MOCK_METHOD1(OnBufferDestroyed, void(int buffer_id));
-  MOCK_METHOD3(OnBufferReceived, void(int buffer_id,
-                                      base::Time timestamp,
-                                      const media::VideoCaptureFormat& format));
+  MOCK_METHOD3(OnBufferReceived,
+               void(int buffer_id,
+                    base::TimeTicks timestamp,
+                    const media::VideoCaptureFormat& format));
   MOCK_METHOD1(OnStateChanged, void(VideoCaptureState state));
+  MOCK_METHOD1(OnDeviceSupportedFormatsEnumerated,
+               void(const media::VideoCaptureFormats& formats));
+  MOCK_METHOD1(OnDeviceFormatsInUseReceived,
+               void(const media::VideoCaptureFormats& formats_in_use));
 
   virtual void OnDelegateAdded(int32 device_id) OVERRIDE {
     ASSERT_TRUE(device_id != 0);
@@ -79,7 +84,7 @@ TEST(VideoCaptureMessageFilterTest, Basic) {
 
   // VideoCaptureMsg_BufferReady
   int buffer_id = 22;
-  base::Time timestamp = base::Time::FromInternalValue(1);
+  base::TimeTicks timestamp = base::TimeTicks::FromInternalValue(1);
 
   media::VideoCaptureFormat format(
       gfx::Size(234, 512), 30, media::PIXEL_FORMAT_I420);
@@ -140,4 +145,35 @@ TEST(VideoCaptureMessageFilterTest, Delegates) {
                                    VIDEO_CAPTURE_STATE_ENDED));
 }
 
+TEST(VideoCaptureMessageFilterTest, GetSomeDeviceSupportedFormats) {
+  scoped_refptr<VideoCaptureMessageFilter> filter(
+      new VideoCaptureMessageFilter());
+
+  IPC::TestSink channel;
+  filter->OnFilterAdded(&channel);
+  MockVideoCaptureDelegate delegate;
+  filter->AddDelegate(&delegate);
+  ASSERT_EQ(1, delegate.device_id());
+
+  EXPECT_CALL(delegate, OnDeviceSupportedFormatsEnumerated(_));
+  media::VideoCaptureFormats supported_formats;
+  filter->OnMessageReceived(VideoCaptureMsg_DeviceSupportedFormatsEnumerated(
+      delegate.device_id(), supported_formats));
+}
+
+TEST(VideoCaptureMessageFilterTest, GetSomeDeviceFormatInUse) {
+  scoped_refptr<VideoCaptureMessageFilter> filter(
+      new VideoCaptureMessageFilter());
+
+  IPC::TestSink channel;
+  filter->OnFilterAdded(&channel);
+  MockVideoCaptureDelegate delegate;
+  filter->AddDelegate(&delegate);
+  ASSERT_EQ(1, delegate.device_id());
+
+  EXPECT_CALL(delegate, OnDeviceFormatsInUseReceived(_));
+  media::VideoCaptureFormats formats_in_use;
+  filter->OnMessageReceived(VideoCaptureMsg_DeviceFormatsInUseReceived(
+      delegate.device_id(), formats_in_use));
+}
 }  // namespace content

@@ -36,8 +36,8 @@ const CGFloat kInfiniteSize = 1.0e6;
 const CGFloat kLineFragmentPadding = 2.0;
 
 // Padding added on top of the label so its first line looks centered with
-// respect to the input field.
-const CGFloat kLabelTopPadding = 5.0;
+// respect to the input field. Only added when the input field is showing.
+const CGFloat kLabelWithInputTopPadding = 5.0;
 
 }
 
@@ -50,6 +50,34 @@ const CGFloat kLabelTopPadding = 5.0;
 // Adjust the cell's baseline so that the lower edge of the image aligns with
 // the longest descender, not the font baseline
 - (void)adjustBaselineForFont:(NSFont*)font;
+
+@end
+
+
+@interface AutofillSuggestionView : NSView {
+ @private
+  // The main input field - only view not ignoring mouse events.
+  NSView* inputField_;
+}
+
+@property (assign, nonatomic) NSView* inputField;
+
+@end
+
+
+// The suggestion container should ignore any mouse events unless they occur
+// within the bounds of an editable field.
+@implementation AutofillSuggestionView
+
+@synthesize inputField = inputField_;
+
+- (NSView*)hitTest:(NSPoint)point {
+  NSView* hitView = [super hitTest:point];
+  if ([hitView isDescendantOf:inputField_])
+    return hitView;
+
+  return nil;
+}
 
 @end
 
@@ -82,6 +110,17 @@ const CGFloat kLabelTopPadding = 5.0;
 @end
 
 
+@interface AutofillSuggestionContainer (Private)
+
+// Set the main suggestion text and the corresponding |icon|.
+// Attempts to wrap the text if |wrapText| is set.
+- (void)setSuggestionText:(NSString*)line
+                     icon:(NSImage*)icon
+                 wrapText:(BOOL)wrapText;
+
+@end
+
+
 @implementation AutofillSuggestionContainer
 
 - (AutofillTextField*)inputField {
@@ -109,7 +148,7 @@ const CGFloat kLabelTopPadding = 5.0;
 
   base::scoped_nsobject<NSMutableParagraphStyle> paragraphStyle(
       [[NSMutableParagraphStyle alloc] init]);
-  [paragraphStyle setLineHeightMultiple:1.5];
+  [paragraphStyle setLineSpacing:0.5 * [[label_ font] pointSize]];
   [label_ setDefaultParagraphStyle:paragraphStyle];
 
   inputField_.reset([[AutofillTextField alloc] initWithFrame:NSZeroRect]);
@@ -119,13 +158,17 @@ const CGFloat kLabelTopPadding = 5.0;
   [spacer_ setBoxType:NSBoxSeparator];
   [spacer_ setBorderType:NSLineBorder];
 
-  base::scoped_nsobject<NSView> view([[NSView alloc] initWithFrame:NSZeroRect]);
+  base::scoped_nsobject<AutofillSuggestionView> view(
+      [[AutofillSuggestionView alloc] initWithFrame:NSZeroRect]);
   [view setSubviews:
       @[ label_, inputField_, spacer_ ]];
+  [view setInputField:inputField_];
   [self setView:view];
 }
 
-- (void)setSuggestionText:(NSString*)line icon:(NSImage*)icon {
+- (void)setSuggestionText:(NSString*)line
+                     icon:(NSImage*)icon
+                 wrapText:(BOOL)wrapText {
   [label_ setString:@""];
 
   if ([icon size].width) {
@@ -151,10 +194,30 @@ const CGFloat kLabelTopPadding = 5.0;
   [[label_ textStorage] appendAttributedString:str1];
 
   [label_ setVerticallyResizable:YES];
-  [label_ setHorizontallyResizable:NO];
-  [label_ setFrameSize:NSMakeSize(2 * autofill::kFieldWidth, kInfiniteSize)];
+  [label_ setHorizontallyResizable:!wrapText];
+  if (wrapText) {
+    CGFloat availableWidth =
+        4 * autofill::kFieldWidth - [inputField_ frame].size.width;
+    [label_ setFrameSize:NSMakeSize(availableWidth, kInfiniteSize)];
+  } else {
+    [label_ setFrameSize:NSMakeSize(kInfiniteSize, kInfiniteSize)];
+  }
+  [[label_ layoutManager] ensureLayoutForTextContainer:[label_ textContainer]];
   [label_ sizeToFit];
 }
+
+- (void)
+    setSuggestionWithVerticallyCompactText:(NSString*)verticallyCompactText
+                   horizontallyCompactText:(NSString*)horizontallyCompactText
+                                      icon:(NSImage*)icon
+                                  maxWidth:(CGFloat)maxWidth {
+  // Prefer the vertically compact text when it fits. If it doesn't fit, fall
+  // back to the horizontally compact text.
+  [self setSuggestionText:verticallyCompactText icon:icon wrapText:NO];
+  if ([self preferredSize].width > maxWidth)
+    [self setSuggestionText:horizontallyCompactText icon:icon wrapText:YES];
+}
+
 
 - (void)showInputField:(NSString*)text withIcon:(NSImage*)icon {
   [[inputField_ cell] setPlaceholderString:text];
@@ -171,11 +234,11 @@ const CGFloat kLabelTopPadding = 5.0;
 
 - (NSSize)preferredSize {
   NSSize size = [label_ bounds].size;
-  size.height += kLabelTopPadding;
 
   // Final inputField_ sizing/spacing depends on a TODO(estade) in Views code.
   if (![inputField_ isHidden]) {
-    size.height = std::max(size.height, NSHeight([inputField_ frame]));
+    size.height = std::max(size.height + kLabelWithInputTopPadding,
+                           NSHeight([inputField_ frame]));
     size.width += NSWidth([inputField_ frame])  + kAroundTextPadding;
   }
 
@@ -195,19 +258,21 @@ const CGFloat kLabelTopPadding = 5.0;
 
   NSRect labelFrame = [label_ bounds];
   labelFrame.origin.x = NSMinX(bounds);
-  labelFrame.origin.y =
-      NSMaxY(bounds) - kLabelTopPadding - NSHeight(labelFrame) - kTopPadding;
+  labelFrame.origin.y = NSMaxY(bounds) - NSHeight(labelFrame) - kTopPadding;
 
   // Position input field - top is aligned to top of label field.
   if (![inputField_ isHidden]) {
-    NSRect inputfieldFrame = [inputField_ frame];
-    inputfieldFrame.origin.x = NSMaxX(bounds) - NSWidth(inputfieldFrame);
-    inputfieldFrame.origin.y =
-        NSMaxY(labelFrame) + kLabelTopPadding - NSHeight(inputfieldFrame);
-    [inputField_ setFrameOrigin:inputfieldFrame.origin];
+    NSRect inputFieldFrame = [inputField_ frame];
+    inputFieldFrame.origin.x = NSMaxX(bounds) - NSWidth(inputFieldFrame);
+    inputFieldFrame.origin.y = NSMaxY(labelFrame) - NSHeight(inputFieldFrame);
+    [inputField_ setFrameOrigin:inputFieldFrame.origin];
+
+    // Vertically center the first line of the label with respect to the input
+    // field.
+    labelFrame.origin.y -= kLabelWithInputTopPadding;
 
     // Due to fixed width, fields are guaranteed to not overlap.
-    DCHECK_LE(NSMaxX(labelFrame), NSMinX(inputfieldFrame));
+    DCHECK_LE(NSMaxX(labelFrame), NSMinX(inputFieldFrame));
   }
 
   [spacer_ setFrame:spacerFrame];

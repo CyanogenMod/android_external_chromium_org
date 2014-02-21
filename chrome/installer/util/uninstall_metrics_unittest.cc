@@ -36,7 +36,7 @@ TEST(UninstallMetricsTest, TestExtractUninstallMetrics) {
       "} \n");
 
   // The URL string we expect to be generated from said make-believe file.
-  string16 expected_url_string(
+  base::string16 expected_url_string(
       L"&installation_date2=1235341141"
       L"&last_launch_time_sec=1235341118"
       L"&last_observed_running_time_sec=1235341183"
@@ -46,12 +46,13 @@ TEST(UninstallMetricsTest, TestExtractUninstallMetrics) {
   JSONStringValueSerializer json_deserializer(pref_string);
   std::string error_message;
 
-  scoped_ptr<Value> root(json_deserializer.Deserialize(NULL, &error_message));
+  scoped_ptr<base::Value> root(
+      json_deserializer.Deserialize(NULL, &error_message));
   ASSERT_TRUE(root.get());
-  string16 uninstall_metrics_string;
+  base::string16 uninstall_metrics_string;
 
   EXPECT_TRUE(
-      ExtractUninstallMetrics(*static_cast<DictionaryValue*>(root.get()),
+      ExtractUninstallMetrics(*static_cast<base::DictionaryValue*>(root.get()),
                               &uninstall_metrics_string));
   EXPECT_EQ(expected_url_string, uninstall_metrics_string);
 }

@@ -30,13 +30,16 @@ class ResourceEntry;
 namespace drive {
 
 class DriveServiceInterface;
+class EventLogger;
 class FileCacheEntry;
 class FileSystemObserver;
 class JobScheduler;
 
 namespace internal {
+class AboutResourceLoader;
 class ChangeListLoader;
 class FileCache;
+class LoaderController;
 class ResourceMetadata;
 class SyncClient;
 }  // namespace internal
@@ -54,7 +57,6 @@ class RemoveOperation;
 class SearchOperation;
 class TouchOperation;
 class TruncateOperation;
-class UpdateOperation;
 }  // namespace file_system
 
 // The production implementation of FileSystemInterface.
@@ -63,6 +65,7 @@ class FileSystem : public FileSystemInterface,
                    public file_system::OperationObserver {
  public:
   FileSystem(PrefService* pref_service,
+             EventLogger* logger,
              internal::FileCache* cache,
              DriveServiceInterface* drive_service,
              JobScheduler* scheduler,
@@ -152,14 +155,14 @@ class FileSystem : public FileSystemInterface,
   virtual void GetCacheEntry(
       const base::FilePath& drive_file_path,
       const GetCacheEntryCallback& callback) OVERRIDE;
-  virtual void Reload(const FileOperationCallback& callback) OVERRIDE;
+  virtual void Reset(const FileOperationCallback& callback) OVERRIDE;
 
   // file_system::OperationObserver overrides.
   virtual void OnDirectoryChangedByOperation(
       const base::FilePath& directory_path) OVERRIDE;
-  virtual void OnCacheFileUploadNeededByOperation(
-      const std::string& local_id) OVERRIDE;
   virtual void OnEntryUpdatedByOperation(const std::string& local_id) OVERRIDE;
+  virtual void OnDriveSyncError(file_system::DriveSyncErrorType type,
+                                const std::string& local_id) OVERRIDE;
 
   // ChangeListLoader::Observer overrides.
   // Used to propagate events from ChangeListLoader.
@@ -175,12 +178,8 @@ class FileSystem : public FileSystemInterface,
   internal::SyncClient* sync_client_for_testing() { return sync_client_.get(); }
 
  private:
-  // Part of Reload(). This is called after the cache and the resource metadata
-  // is cleared, and triggers full feed fetching.
-  void ReloadAfterReset(const FileOperationCallback& callback, FileError error);
-
-  // Used for initialization and Reload(). (Re-)initializes sub components that
-  // need to be recreated during the reload of resource metadata and the cache.
+  // Used for initialization and Reset(). (Re-)initializes sub components that
+  // need to be recreated during the reset of resource metadata and the cache.
   void ResetComponents();
 
   // Part of CreateDirectory(). Called after ChangeListLoader::LoadIfNeeded()
@@ -209,26 +208,11 @@ class FileSystem : public FileSystemInterface,
   // ChangeListLoader::CheckForUpdates() is complete.
   void OnUpdateChecked(FileError error);
 
-  // Part of GetResourceEntry()
-  // 1) Called when GetLocallyStoredResourceEntry() is complete.
-  // 2) Called when LoadDirectoryIfNeeded() is complete.
-  void GetResourceEntryAfterGetEntry(const base::FilePath& file_path,
-                                     const GetResourceEntryCallback& callback,
-                                     scoped_ptr<ResourceEntry> entry,
-                                     FileError error);
+  // Part of GetResourceEntry().
+  // Called when LoadDirectoryIfNeeded() is complete.
   void GetResourceEntryAfterLoad(const base::FilePath& file_path,
                                  const GetResourceEntryCallback& callback,
                                  FileError error);
-
-  // Loads the entry info of the children of |directory_path| to resource
-  // metadata. |callback| must not be null.
-  void LoadDirectoryIfNeeded(const base::FilePath& directory_path,
-                             const FileOperationCallback& callback);
-  void LoadDirectoryIfNeededAfterGetEntry(
-      const base::FilePath& directory_path,
-      const FileOperationCallback& callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
 
   // Part of ReadDirectory()
   // 1) Called when LoadDirectoryIfNeeded() is complete.
@@ -239,8 +223,8 @@ class FileSystem : public FileSystemInterface,
                               FileError error);
   void ReadDirectoryAfterRead(const base::FilePath& directory_path,
                               const ReadDirectoryCallback& callback,
-                              FileError error,
-                              scoped_ptr<ResourceEntryVector> entries);
+                              const ResourceEntryVector* entries,
+                              FileError error);
 
   // Part of GetShareUrl. Resolves the resource entry to get the resource it,
   // and then uses it to ask for the share url. |callback| must not be null.
@@ -255,10 +239,16 @@ class FileSystem : public FileSystemInterface,
       google_apis::GDataErrorCode status,
       const GURL& share_url);
 
+  // Part of OnDriveSyncError().
+  virtual void OnDriveSyncErrorAfterGetFilePath(
+      file_system::DriveSyncErrorType type,
+      const base::FilePath& fiepath);
+
   // Used to get Drive related preferences.
   PrefService* pref_service_;
 
   // Sub components owned by DriveIntegrationService.
+  EventLogger* logger_;
   internal::FileCache* cache_;
   DriveServiceInterface* drive_service_;
   JobScheduler* scheduler_;
@@ -270,10 +260,16 @@ class FileSystem : public FileSystemInterface,
   // Error of the last update check.
   FileError last_update_check_error_;
 
-  scoped_ptr<internal::SyncClient> sync_client_;
+  // Used to load about resource.
+  scoped_ptr<internal::AboutResourceLoader> about_resource_loader_;
+
+  // Used to control ChangeListLoader.
+  scoped_ptr<internal::LoaderController> loader_controller_;
 
   // The loader is used to load the change lists.
   scoped_ptr<internal::ChangeListLoader> change_list_loader_;
+
+  scoped_ptr<internal::SyncClient> sync_client_;
 
   ObserverList<FileSystemObserver> observers_;
 
@@ -291,7 +287,6 @@ class FileSystem : public FileSystemInterface,
   scoped_ptr<file_system::TouchOperation> touch_operation_;
   scoped_ptr<file_system::TruncateOperation> truncate_operation_;
   scoped_ptr<file_system::DownloadOperation> download_operation_;
-  scoped_ptr<file_system::UpdateOperation> update_operation_;
   scoped_ptr<file_system::SearchOperation> search_operation_;
   scoped_ptr<file_system::GetFileForSavingOperation>
       get_file_for_saving_operation_;

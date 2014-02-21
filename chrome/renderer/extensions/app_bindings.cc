@@ -12,13 +12,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/console.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -213,11 +213,12 @@ bool AppBindings::OnMessageReceived(const IPC::Message& message) {
 
 void AppBindings::OnAppInstallStateResponse(
     const std::string& state, int callback_id) {
-  v8::HandleScope handle_scope(context()->isolate());
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(context()->v8_context());
   v8::Handle<v8::Value> argv[] = {
-    v8::String::NewFromUtf8(context()->isolate(), state.c_str()),
-    v8::Integer::New(callback_id)
+    v8::String::NewFromUtf8(isolate, state.c_str()),
+    v8::Integer::New(isolate, callback_id)
   };
   context()->module_system()->CallModuleMethod(
       "app", "onInstallStateResponse", arraysize(argv), argv);

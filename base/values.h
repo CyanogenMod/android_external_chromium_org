@@ -31,11 +31,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 
-// This file declares "using base::Value", etc. at the bottom, so that
-// current code can use these classes without the base namespace. In
-// new code, please always use base::Value, etc. or add your own
-// "using" declaration.
-// http://crbug.com/88666
 namespace base {
 
 class DictionaryValue;
@@ -96,6 +91,7 @@ class BASE_EXPORT Value {
   virtual bool GetAsDouble(double* out_value) const;
   virtual bool GetAsString(std::string* out_value) const;
   virtual bool GetAsString(string16* out_value) const;
+  virtual bool GetAsString(const StringValue** out_value) const;
   virtual bool GetAsList(ListValue** out_value);
   virtual bool GetAsList(const ListValue** out_value) const;
   virtual bool GetAsDictionary(DictionaryValue** out_value);
@@ -159,9 +155,14 @@ class BASE_EXPORT StringValue : public Value {
 
   virtual ~StringValue();
 
+  // Returns |value_| as a pointer or reference.
+  std::string* GetString();
+  const std::string& GetString() const;
+
   // Overridden from Value:
   virtual bool GetAsString(std::string* out_value) const OVERRIDE;
   virtual bool GetAsString(string16* out_value) const OVERRIDE;
+  virtual bool GetAsString(const StringValue** out_value) const OVERRIDE;
   virtual StringValue* DeepCopy() const OVERRIDE;
   virtual bool Equals(const Value* other) const OVERRIDE;
 
@@ -527,11 +528,5 @@ BASE_EXPORT inline std::ostream& operator<<(std::ostream& out,
 }
 
 }  // namespace base
-
-// http://crbug.com/88666
-using base::DictionaryValue;
-using base::ListValue;
-using base::StringValue;
-using base::Value;
 
 #endif  // BASE_VALUES_H_

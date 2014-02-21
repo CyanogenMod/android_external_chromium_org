@@ -28,7 +28,7 @@ FORWARD_DECLARE_TEST(WebViewTest, NoPrerenderer);
 
 namespace prerender {
 
-class PrerenderHandle;
+class PrerenderContents;
 class PrerenderManager;
 
 // PrerenderLinkManager implements the API on Link elements for all documents
@@ -47,6 +47,7 @@ class PrerenderLinkManager : public BrowserContextKeyedService,
   void OnAddPrerender(int child_id,
                       int prerender_id,
                       const GURL& url,
+                      uint32 rel_types,
                       const content::Referrer& referrer,
                       const gfx::Size& size,
                       int render_view_route_id);
@@ -75,22 +76,30 @@ class PrerenderLinkManager : public BrowserContextKeyedService,
     LinkPrerender(int launcher_child_id,
                   int prerender_id,
                   const GURL& url,
+                  uint32 rel_types,
                   const content::Referrer& referrer,
                   const gfx::Size& size,
                   int render_view_route_id,
-                  base::TimeTicks creation_time);
+                  base::TimeTicks creation_time,
+                  PrerenderContents* deferred_launcher);
     ~LinkPrerender();
 
     // Parameters from PrerenderLinkManager::OnAddPrerender():
     int launcher_child_id;
     int prerender_id;
     GURL url;
+    uint32 rel_types;
     content::Referrer referrer;
     gfx::Size size;
     int render_view_route_id;
 
     // The time at which this Prerender was added to PrerenderLinkManager.
     base::TimeTicks creation_time;
+
+    // If non-NULL, this link prerender was launched by an unswapped prerender,
+    // |deferred_launcher|. When |deferred_launcher| is swapped in, the field is
+    // set to NULL.
+    PrerenderContents* deferred_launcher;
 
     // Initially NULL, |handle| is set once we start this prerender. It is owned
     // by this struct, and must be deleted before destructing this struct.
@@ -103,6 +112,8 @@ class PrerenderLinkManager : public BrowserContextKeyedService,
     // True if this prerender has been abandoned by its launcher.
     bool has_been_abandoned;
   };
+
+  class PendingPrerenderManager;
 
   bool IsEmpty() const;
 
@@ -126,12 +137,20 @@ class PrerenderLinkManager : public BrowserContextKeyedService,
   // manager.
   void CancelPrerender(LinkPrerender* prerender);
 
+  // Called when |launcher| is swapped in.
+  void StartPendingPrerendersForLauncher(PrerenderContents* launcher);
+
+  // Called when |launcher| is aborted.
+  void CancelPendingPrerendersForLauncher(PrerenderContents* launcher);
+
   // From BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // From PrerenderHandle::Observer:
   virtual void OnPrerenderStart(PrerenderHandle* prerender_handle) OVERRIDE;
   virtual void OnPrerenderStopLoading(PrerenderHandle* prerender_handle)
+      OVERRIDE;
+  virtual void OnPrerenderDomContentLoaded(PrerenderHandle* prerender_handle)
       OVERRIDE;
   virtual void OnPrerenderStop(PrerenderHandle* prerender_handle) OVERRIDE;
   virtual void OnPrerenderCreatedMatchCompleteReplacement(
@@ -146,10 +165,13 @@ class PrerenderLinkManager : public BrowserContextKeyedService,
   // at the back.
   std::list<LinkPrerender> prerenders_;
 
+  // Helper object to manage prerenders which are launched by other prerenders
+  // and must be deferred until the launcher is swapped in.
+  scoped_ptr<PendingPrerenderManager> pending_prerender_manager_;
+
   DISALLOW_COPY_AND_ASSIGN(PrerenderLinkManager);
 };
 
 }  // namespace prerender
 
 #endif  // CHROME_BROWSER_PRERENDER_PRERENDER_LINK_MANAGER_H_
-

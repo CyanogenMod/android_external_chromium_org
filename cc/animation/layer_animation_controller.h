@@ -109,7 +109,17 @@ class CC_EXPORT LayerAnimationController
     layer_animation_delegate_ = delegate;
   }
 
-  bool AnimatedBoundsForBox(const gfx::BoxF& box, gfx::BoxF* bounds);
+  bool HasFilterAnimationThatInflatesBounds() const;
+  bool HasTransformAnimationThatInflatesBounds() const;
+  bool HasAnimationThatInflatesBounds() const {
+    return HasTransformAnimationThatInflatesBounds() ||
+           HasFilterAnimationThatInflatesBounds();
+  }
+
+  bool FilterAnimationBoundsForBox(const gfx::BoxF& box,
+                                   gfx::BoxF* bounds) const;
+  bool TransformAnimationBoundsForBox(const gfx::BoxF& box,
+                                      gfx::BoxF* bounds) const;
 
  protected:
   friend class base::RefCounted<LayerAnimationController>;
@@ -146,7 +156,7 @@ class CC_EXPORT LayerAnimationController
   void NotifyObserversOpacityAnimated(float opacity);
   void NotifyObserversTransformAnimated(const gfx::Transform& transform);
   void NotifyObserversFilterAnimated(const FilterOperations& filter);
-  void NotifyObserversScrollOffsetAnimated(gfx::Vector2dF scroll_offset);
+  void NotifyObserversScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset);
 
   void NotifyObserversAnimationWaitingForDeletion();
 

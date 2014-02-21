@@ -7,6 +7,35 @@
 cr.define('chrome.sync', function() {
   var currSearchId = 0;
 
+  var setQueryString = function(queryControl, query) {
+    queryControl.value = query;
+  };
+
+  var createDoQueryFunction = function(queryControl, submitControl, query) {
+    return function() {
+      setQueryString(queryControl, query);
+      submitControl.click();
+    };
+  };
+
+  /**
+   * Decorates the quick search controls
+   *
+   * @param {Array of DOM elements} quickLinkArray The <a> object which
+   *     will be given a link to a quick filter option.
+   * @param {!HTMLInputElement} queryControl The <input> object of
+   *     type=search where the user types in his query.
+   */
+  var decorateQuickQueryControls = function(quickLinkArray, submitControl,
+                                            queryControl) {
+    for (var index = 0; index < allLinks.length; ++index) {
+      var quickQuery = allLinks[index].getAttribute('data-query');
+      var quickQueryFunction = createDoQueryFunction(queryControl,
+          submitControl, quickQuery);
+      allLinks[index].addEventListener('click', quickQueryFunction);
+    }
+  };
+
   /**
    * Runs a search with the given query.
    *
@@ -38,6 +67,8 @@ cr.define('chrome.sync', function() {
    *
    * @param {!HTMLInputElement} queryControl The <input> object of
    *     type=search where the user types in his query.
+   * @param {!HTMLButtonElement} submitControl The <button> object
+   *     where the user can click to do his query.
    * @param {!HTMLElement} statusControl The <span> object display the
    *     search status.
    * @param {!HTMLElement} listControl The <list> object which holds
@@ -45,12 +76,11 @@ cr.define('chrome.sync', function() {
    * @param {!HTMLPreElement} detailsControl The <pre> object which
    *     holds the details of the selected result.
    */
-  function decorateSearchControls(queryControl, statusControl,
+  function decorateSearchControls(queryControl, submitControl, statusControl,
                                   resultsControl, detailsControl) {
     var resultsDataModel = new cr.ui.ArrayDataModel([]);
 
-    // Decorate search box.
-    queryControl.onsearch = function() {
+    var searchFunction = function() {
       var query = queryControl.value;
       statusControl.textContent = '';
       resultsDataModel.splice(0, resultsDataModel.length);
@@ -67,7 +97,7 @@ cr.define('chrome.sync', function() {
         } else {
           statusControl.textContent =
             'Found ' + nodes.length + ' nodes in ' +
-            timer.elapsedSeconds + 's';
+            timer.getElapsedSeconds() + 's';
           queryControl.removeAttribute('error');
 
           // TODO(akalin): Write a nicer list display.
@@ -82,6 +112,10 @@ cr.define('chrome.sync', function() {
         }
       });
     };
+
+    submitControl.addEventListener('click', searchFunction);
+    // Decorate search box.
+    queryControl.onsearch = searchFunction;
     queryControl.value = '';
 
     // Decorate results list.
@@ -97,6 +131,7 @@ cr.define('chrome.sync', function() {
   }
 
   return {
-    decorateSearchControls: decorateSearchControls
+    decorateSearchControls: decorateSearchControls,
+    decorateQuickQueryControls: decorateQuickQueryControls
   };
 });

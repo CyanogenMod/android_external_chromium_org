@@ -15,7 +15,7 @@ namespace message_center {
 
 PaddedButton::PaddedButton(views::ButtonListener* listener)
     : views::ImageButton(listener) {
-  set_focusable(true);
+  SetFocusable(true);
   set_request_focus_on_press(false);
   SetFocusPainter(views::Painter::CreateSolidFocusPainter(
       kFocusBorderColor,
@@ -66,8 +66,6 @@ void PaddedButton::OnPaint(gfx::Canvas* canvas) {
     if (!background_image_.isNull())
       canvas->DrawImageInt(background_image_, position.x(), position.y());
     canvas->DrawImageInt(image, position.x(), position.y());
-    if (!overlay_image_.isNull())
-      canvas->DrawImageInt(overlay_image_, position.x(), position.y());
   }
   views::Painter::PaintFocusPainter(this, canvas, focus_painter());
 }
@@ -97,4 +95,3 @@ gfx::Point PaddedButton::ComputePaddedImagePaintPosition(
 }
 
 }  // namespace message_center
-

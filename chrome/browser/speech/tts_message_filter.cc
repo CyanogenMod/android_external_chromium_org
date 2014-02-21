@@ -15,7 +15,8 @@
 using content::BrowserThread;
 
 TtsMessageFilter::TtsMessageFilter(int render_process_id, Profile* profile)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(TtsMsgStart),
+      render_process_id_(render_process_id),
       profile_(profile) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController::GetInstance()->AddVoicesChangedDelegate(this);
@@ -88,7 +89,7 @@ void TtsMessageFilter::OnSpeak(const TtsUtteranceRequest& request) {
   params.volume = request.volume;
   utterance->set_continuous_parameters(params);
 
-  utterance->set_event_delegate(this);
+  utterance->set_event_delegate(this->AsWeakPtr());
 
   TtsController::GetInstance()->SpeakOrEnqueue(utterance.release());
 }

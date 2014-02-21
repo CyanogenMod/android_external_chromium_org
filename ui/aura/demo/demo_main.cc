@@ -17,12 +17,11 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "ui/base/ui_base_paths.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
+#include "ui/gl/gl_surface.h"
 
 #if defined(USE_X11)
 #include "base/message_loop/message_pump_x11.h"
@@ -108,7 +107,9 @@ class DemoWindowTreeClient : public aura::client::WindowTreeClient {
 
 int DemoMain() {
   // Create the message-loop here before creating the root window.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI message_loop;
+
+  gfx::GLSurface::InitializeOneOff();
 
   // The ContextFactory must exist before any Compositors are created.
   bool allow_test_contexts = false;
@@ -128,7 +129,7 @@ int DemoMain() {
   DemoWindowDelegate window_delegate1(SK_ColorBLUE);
   aura::Window window1(&window_delegate1);
   window1.set_id(1);
-  window1.Init(ui::LAYER_TEXTURED);
+  window1.Init(aura::WINDOW_LAYER_TEXTURED);
   window1.SetBounds(gfx::Rect(100, 100, 400, 400));
   window1.Show();
   aura::client::ParentWindowWithContext(
@@ -137,7 +138,7 @@ int DemoMain() {
   DemoWindowDelegate window_delegate2(SK_ColorRED);
   aura::Window window2(&window_delegate2);
   window2.set_id(2);
-  window2.Init(ui::LAYER_TEXTURED);
+  window2.Init(aura::WINDOW_LAYER_TEXTURED);
   window2.SetBounds(gfx::Rect(200, 200, 350, 350));
   window2.Show();
   aura::client::ParentWindowWithContext(
@@ -146,7 +147,7 @@ int DemoMain() {
   DemoWindowDelegate window_delegate3(SK_ColorGREEN);
   aura::Window window3(&window_delegate3);
   window3.set_id(3);
-  window3.Init(ui::LAYER_TEXTURED);
+  window3.Init(aura::WINDOW_LAYER_TEXTURED);
   window3.SetBounds(gfx::Rect(10, 10, 50, 50));
   window3.Show();
   window2.AddChild(&window3);
@@ -165,9 +166,7 @@ int main(int argc, char** argv) {
   // The exit manager is in charge of calling the dtors of singleton objects.
   base::AtExitManager exit_manager;
 
-  ui::RegisterPathProvider();
   base::i18n::InitializeICU();
-  ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
 
   return DemoMain();
 }

@@ -4,6 +4,7 @@
 
 cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
+  var ResetProfileSettingsBanner = options.ResetProfileSettingsBanner;
 
   /**
    * ResetProfileSettingsOverlay class
@@ -45,7 +46,13 @@ cr.define('options', function() {
 
     /** @override */
     didShowPage: function() {
+      ResetProfileSettingsBanner.dismiss();
       chrome.send('onShowResetProfileDialog');
+    },
+
+    /** @override */
+    didClosePage: function() {
+      chrome.send('onHideResetProfileDialog');
     },
   };
 
@@ -65,12 +72,7 @@ cr.define('options', function() {
    * operation has terminated.
    */
   ResetProfileSettingsOverlay.doneResetting = function() {
-    // The delay gives the user some feedback that the resetting
-    // actually worked. Otherwise the dialog just vanishes instantly in most
-    // cases.
-    window.setTimeout(function() {
-      ResetProfileSettingsOverlay.dismiss();
-    }, 200);
+    ResetProfileSettingsOverlay.dismiss();
   };
 
   /**

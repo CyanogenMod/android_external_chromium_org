@@ -14,6 +14,7 @@
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -27,6 +28,7 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
+#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/geolocation_permission_context.h"
@@ -62,28 +64,41 @@ BrowserPluginHostFactory* BrowserPluginGuest::factory_ = NULL;
 class BrowserPluginGuest::PermissionRequest :
     public base::RefCounted<BrowserPluginGuest::PermissionRequest> {
  public:
-  virtual void Respond(bool should_allow, const std::string& user_input) = 0;
+  void Respond(bool should_allow, const std::string& user_input) {
+    if (!guest_)
+      return;
+    RespondImpl(should_allow, user_input);
+  }
   virtual bool AllowedByDefault() const {
     return false;
   }
  protected:
-  PermissionRequest() {
-    RecordAction(UserMetricsAction("BrowserPlugin.Guest.PermissionRequest"));
+  explicit PermissionRequest(const base::WeakPtr<BrowserPluginGuest>& guest)
+      : guest_(guest) {
+    RecordAction(
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest"));
   }
   virtual ~PermissionRequest() {}
+
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) = 0;
   // Friend RefCounted so that the dtor can be non-public.
   friend class base::RefCounted<BrowserPluginGuest::PermissionRequest>;
+
+  base::WeakPtr<BrowserPluginGuest> guest_;
 };
 
 class BrowserPluginGuest::DownloadRequest : public PermissionRequest {
  public:
-  explicit DownloadRequest(base::Callback<void(bool)> callback)
-      : callback_(callback) {
+  DownloadRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
+                  const base::Callback<void(bool)>& callback)
+      : PermissionRequest(guest),
+        callback_(callback) {
     RecordAction(
-        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Download"));
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Download"));
   }
-  virtual void Respond(bool should_allow,
-                       const std::string& user_input) OVERRIDE {
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) OVERRIDE {
     callback_.Run(should_allow);
   }
 
@@ -94,21 +109,19 @@ class BrowserPluginGuest::DownloadRequest : public PermissionRequest {
 
 class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
  public:
-  GeolocationRequest(GeolocationCallback callback,
-                     int bridge_id,
-                     base::WeakPtrFactory<BrowserPluginGuest>* weak_ptr_factory)
-                     : callback_(callback),
-                       bridge_id_(bridge_id),
-                       weak_ptr_factory_(weak_ptr_factory) {
+  GeolocationRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
+                     GeolocationCallback callback,
+                     int bridge_id)
+                     : PermissionRequest(guest),
+                       callback_(callback),
+                       bridge_id_(bridge_id) {
     RecordAction(
-        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Geolocation"));
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Geolocation"));
   }
 
-  virtual void Respond(bool should_allow,
-                       const std::string& user_input) OVERRIDE {
-    base::WeakPtr<BrowserPluginGuest> guest(weak_ptr_factory_->GetWeakPtr());
-
-    WebContents* web_contents = guest->embedder_web_contents();
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) OVERRIDE {
+    WebContents* web_contents = guest_->embedder_web_contents();
     if (should_allow && web_contents) {
       // If renderer side embedder decides to allow gelocation, we need to check
       // if the app/embedder itself has geolocation access.
@@ -119,7 +132,7 @@ class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
         if (geolocation_context) {
           base::Callback<void(bool)> geolocation_callback = base::Bind(
               &BrowserPluginGuest::SetGeolocationPermission,
-              guest,
+              guest_,
               callback_,
               bridge_id_);
           geolocation_context->RequestGeolocationPermission(
@@ -136,30 +149,29 @@ class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
         }
       }
     }
-    guest->SetGeolocationPermission(callback_, bridge_id_, false);
+    guest_->SetGeolocationPermission(callback_, bridge_id_, false);
   }
 
  private:
   virtual ~GeolocationRequest() {}
   base::Callback<void(bool)> callback_;
   int bridge_id_;
-  base::WeakPtrFactory<BrowserPluginGuest>* weak_ptr_factory_;
 };
 
 class BrowserPluginGuest::MediaRequest : public PermissionRequest {
  public:
-  MediaRequest(const MediaStreamRequest& request,
-               const MediaResponseCallback& callback,
-               BrowserPluginGuest* guest)
-               : request_(request),
-                 callback_(callback),
-                 guest_(guest) {
+  MediaRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
+               const MediaStreamRequest& request,
+               const MediaResponseCallback& callback)
+               : PermissionRequest(guest),
+                 request_(request),
+                 callback_(callback) {
     RecordAction(
-        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Media"));
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Media"));
   }
 
-  virtual void Respond(bool should_allow,
-                       const std::string& user_input) OVERRIDE {
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) OVERRIDE {
     WebContentsImpl* web_contents = guest_->embedder_web_contents();
     if (should_allow && web_contents) {
       // Re-route the request to the embedder's WebContents; the guest gets the
@@ -175,20 +187,20 @@ class BrowserPluginGuest::MediaRequest : public PermissionRequest {
   virtual ~MediaRequest() {}
   MediaStreamRequest request_;
   MediaResponseCallback callback_;
-  BrowserPluginGuest* guest_;
 };
 
 class BrowserPluginGuest::NewWindowRequest : public PermissionRequest {
  public:
-  NewWindowRequest(int instance_id, BrowserPluginGuest* guest)
-      : instance_id_(instance_id),
-        guest_(guest) {
+  NewWindowRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
+                   int instance_id)
+      : PermissionRequest(guest),
+        instance_id_(instance_id) {
     RecordAction(
-        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.NewWindow"));
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.NewWindow"));
   }
 
-  virtual void Respond(bool should_allow,
-                       const std::string& user_input) OVERRIDE {
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) OVERRIDE {
     int embedder_render_process_id =
         guest_->embedder_web_contents()->GetRenderProcessHost()->GetID();
     BrowserPluginGuest* guest =
@@ -207,20 +219,21 @@ class BrowserPluginGuest::NewWindowRequest : public PermissionRequest {
  private:
   virtual ~NewWindowRequest() {}
   int instance_id_;
-  BrowserPluginGuest* guest_;
 };
 
 class BrowserPluginGuest::JavaScriptDialogRequest : public PermissionRequest {
  public:
-  JavaScriptDialogRequest(const DialogClosedCallback& callback)
-      : callback_(callback) {
+  JavaScriptDialogRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
+                          const DialogClosedCallback& callback)
+      : PermissionRequest(guest),
+        callback_(callback) {
     RecordAction(
-        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.JSDialog"));
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.JSDialog"));
   }
 
-  virtual void Respond(bool should_allow,
-                       const std::string& user_input) OVERRIDE {
-    callback_.Run(should_allow, UTF8ToUTF16(user_input));
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) OVERRIDE {
+    callback_.Run(should_allow, base::UTF8ToUTF16(user_input));
   }
 
  private:
@@ -230,21 +243,20 @@ class BrowserPluginGuest::JavaScriptDialogRequest : public PermissionRequest {
 
 class BrowserPluginGuest::PointerLockRequest : public PermissionRequest {
  public:
-  PointerLockRequest(BrowserPluginGuest* guest)
-      : guest_(guest) {
+  explicit PointerLockRequest(const base::WeakPtr<BrowserPluginGuest>& guest)
+      : PermissionRequest(guest) {
     RecordAction(
-        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.PointerLock"));
+        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.PointerLock"));
   }
 
-  virtual void Respond(bool should_allow,
-                       const std::string& user_input) OVERRIDE {
+  virtual void RespondImpl(bool should_allow,
+                           const std::string& user_input) OVERRIDE {
     guest_->SendMessageToEmbedder(
         new BrowserPluginMsg_SetMouseLock(guest_->instance_id(), should_allow));
   }
 
  private:
   virtual ~PointerLockRequest() {}
-  BrowserPluginGuest* guest_;
 };
 
 namespace {
@@ -338,7 +350,6 @@ BrowserPluginGuest::BrowserPluginGuest(
     WebContentsImpl* web_contents,
     BrowserPluginGuest* opener)
     : WebContentsObserver(web_contents),
-      weak_ptr_factory_(this),
       embedder_web_contents_(NULL),
       instance_id_(instance_id),
       damage_buffer_sequence_id_(0),
@@ -355,7 +366,11 @@ BrowserPluginGuest::BrowserPluginGuest(
       next_permission_request_id_(browser_plugin::kInvalidPermissionRequestID),
       has_render_view_(has_render_view),
       last_seen_auto_size_enabled_(false),
-      is_in_destruction_(false) {
+      is_in_destruction_(false),
+      last_text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
+      last_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
+      last_can_compose_inline_(true),
+      weak_ptr_factory_(this) {
   DCHECK(web_contents);
   web_contents->SetDelegate(this);
   if (opener)
@@ -424,7 +439,14 @@ int BrowserPluginGuest::RequestPermission(
     scoped_refptr<BrowserPluginGuest::PermissionRequest> request,
     const base::DictionaryValue& request_info) {
   if (!delegate_) {
-    request->Respond(false, "");
+    // Let the stack unwind before we deny the permission request so that
+    // objects held by the permission request are not destroyed immediately
+    // after creation. This is to allow those same objects to be accessed again
+    // in the same scope without fear of use after freeing.
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&BrowserPluginGuest::PermissionRequest::Respond,
+                   request, false, ""));
     return browser_plugin::kInvalidPermissionRequestID;
   }
 
@@ -484,6 +506,10 @@ BrowserPluginGuest* BrowserPluginGuest::CreateNewGuestWindow(
   return new_guest;
 }
 
+base::WeakPtr<BrowserPluginGuest> BrowserPluginGuest::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
 void BrowserPluginGuest::EmbedderDestroyed() {
   embedder_web_contents_ = NULL;
   if (delegate_)
@@ -506,16 +532,22 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
   IPC_BEGIN_MESSAGE_MAP(BrowserPluginGuest, message)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_BuffersSwappedACK,
                         OnSwapBuffersACK)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CompositorFrameACK,
-                        OnCompositorFrameACK)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CompositorFrameSwappedACK,
+                        OnCompositorFrameSwappedACK)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
                         OnCopyFromCompositingSurfaceAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_DragStatusUpdate,
                         OnDragStatusUpdate)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ExecuteEditCommand,
                         OnExecuteEditCommand)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ExtendSelectionAndDelete,
+                        OnExtendSelectionAndDelete)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_HandleInputEvent,
                         OnHandleInputEvent)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ImeConfirmComposition,
+                        OnImeConfirmComposition)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ImeSetComposition,
+                        OnImeSetComposition)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_LockMouse_ACK, OnLockMouseAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_NavigateGuest, OnNavigateGuest)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_PluginDestroyed, OnPluginDestroyed)
@@ -646,7 +678,7 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
     SiteInstance* guest_site_instance,
     WebContentsImpl* web_contents,
     scoped_ptr<base::DictionaryValue> extra_params) {
-  RecordAction(UserMetricsAction("BrowserPlugin.Guest.Create"));
+  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Create"));
   BrowserPluginGuest* guest = NULL;
   if (factory_) {
     guest = factory_->CreateBrowserPluginGuest(instance_id, web_contents);
@@ -682,6 +714,8 @@ BrowserPluginGuest* BrowserPluginGuest::CreateWithOpener(
 }
 
 RenderWidgetHostView* BrowserPluginGuest::GetEmbedderRenderWidgetHostView() {
+  if (!attached())
+    return NULL;
   return embedder_web_contents_->GetRenderWidgetHostView();
 }
 
@@ -787,6 +821,11 @@ void BrowserPluginGuest::HandleKeyboardEvent(
       web_contents(), event);
 }
 
+void BrowserPluginGuest::SetZoom(double zoom_factor) {
+  if (delegate_)
+    delegate_->SetZoom(zoom_factor);
+}
+
 WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
                                                 const OpenURLParams& params) {
   // If the guest wishes to navigate away prior to attachment then we save the
@@ -822,7 +861,7 @@ void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
       static_cast<WebContentsImpl*>(new_contents);
   BrowserPluginGuest* guest = new_contents_impl->GetBrowserPluginGuest();
   guest->opener_ = AsWeakPtr();
-  std::string guest_name = UTF16ToUTF8(frame_name);
+  std::string guest_name = base::UTF16ToUTF8(frame_name);
   guest->name_ = guest_name;
   // Take ownership of the new guest until it is attached to the embedder's DOM
   // tree to avoid leaking a guest if this guest is destroyed before attaching
@@ -832,14 +871,14 @@ void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
 }
 
 void BrowserPluginGuest::RendererUnresponsive(WebContents* source) {
-  RecordAction(UserMetricsAction("BrowserPlugin.Guest.Hung"));
+  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Hung"));
   if (!delegate_)
     return;
   delegate_->RendererUnresponsive();
 }
 
 void BrowserPluginGuest::RendererResponsive(WebContents* source) {
-  RecordAction(UserMetricsAction("BrowserPlugin.Guest.Responsive"));
+  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Responsive"));
   if (!delegate_)
     return;
   delegate_->RendererResponsive();
@@ -940,7 +979,8 @@ void BrowserPluginGuest::RequestNewWindowPermission(
                        WindowOpenDispositionToString(disposition)));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW,
-                    new NewWindowRequest(guest->instance_id(), this),
+                    new NewWindowRequest(weak_ptr_factory_.GetWeakPtr(),
+                                         guest->instance_id()),
                     request_info);
 }
 
@@ -983,11 +1023,6 @@ void BrowserPluginGuest::EndSystemDrag() {
   RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
       GetWebContents()->GetRenderViewHost());
   guest_rvh->DragSourceSystemDragEnded();
-  // Issue a MouseUp event to get out of a selection state.
-  blink::WebMouseEvent mouse_event;
-  mouse_event.type = blink::WebInputEvent::MouseUp;
-  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
-  guest_rvh->ForwardMouseEvent(mouse_event);
 }
 
 void BrowserPluginGuest::SetDelegate(BrowserPluginGuestDelegate* delegate) {
@@ -1005,8 +1040,9 @@ void BrowserPluginGuest::AskEmbedderForGeolocationPermission(
 
   int request_id =
       RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_GEOLOCATION,
-                        new GeolocationRequest(
-                            callback, bridge_id, &weak_ptr_factory_),
+                        new GeolocationRequest(weak_ptr_factory_.GetWeakPtr(),
+                                               callback,
+                                               bridge_id),
                         request_info);
 
   DCHECK(bridge_id_to_request_id_map_.find(bridge_id) ==
@@ -1058,7 +1094,7 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
     const GURL& url,
     PageTransition transition_type,
     RenderViewHost* render_view_host) {
-  RecordAction(UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
+  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
 }
 
 void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
@@ -1071,16 +1107,18 @@ void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
                           "  window.event.preventDefault(); "
                           "});";
     render_view_host->ExecuteJavascriptInWebFrame(base::string16(),
-                                                  ASCIIToUTF16(script));
+                                                  base::ASCIIToUTF16(script));
   }
 }
 
 void BrowserPluginGuest::RenderViewReady() {
+  RenderViewHost* rvh = GetWebContents()->GetRenderViewHost();
+  // The guest RenderView should always live in a guest process.
+  CHECK(rvh->GetProcess()->IsGuest());
   // TODO(fsamuel): Investigate whether it's possible to update state earlier
   // here (see http://crbug.com/158151).
   Send(new InputMsg_SetFocus(routing_id(), focused_));
   UpdateVisibility();
-  RenderViewHost* rvh = GetWebContents()->GetRenderViewHost();
   if (auto_size_enabled_)
     rvh->EnableAutoResize(min_auto_size_, max_auto_size_);
   else
@@ -1097,13 +1135,14 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
   SendMessageToEmbedder(new BrowserPluginMsg_GuestGone(instance_id()));
   switch (status) {
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
-      RecordAction(UserMetricsAction("BrowserPlugin.Guest.Killed"));
+      RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Killed"));
       break;
     case base::TERMINATION_STATUS_PROCESS_CRASHED:
-      RecordAction(UserMetricsAction("BrowserPlugin.Guest.Crashed"));
+      RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Crashed"));
       break;
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
-      RecordAction(UserMetricsAction("BrowserPlugin.Guest.AbnormalDeath"));
+      RecordAction(
+          base::UserMetricsAction("BrowserPlugin.Guest.AbnormalDeath"));
       break;
     default:
       break;
@@ -1118,10 +1157,10 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
 void BrowserPluginGuest::AcknowledgeBufferPresent(
     int route_id,
     int gpu_host_id,
-    const std::string& mailbox_name,
+    const gpu::Mailbox& mailbox,
     uint32 sync_point) {
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox_name = mailbox_name;
+  ack_params.mailbox = mailbox;
   ack_params.sync_point = sync_point;
   RenderWidgetHostImpl::AcknowledgeBufferPresent(route_id,
                                                  gpu_host_id,
@@ -1133,11 +1172,14 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     const IPC::Message& message) {
   switch (message.type()) {
     case BrowserPluginHostMsg_BuffersSwappedACK::ID:
-    case BrowserPluginHostMsg_CompositorFrameACK::ID:
+    case BrowserPluginHostMsg_CompositorFrameSwappedACK::ID:
     case BrowserPluginHostMsg_CopyFromCompositingSurfaceAck::ID:
     case BrowserPluginHostMsg_DragStatusUpdate::ID:
     case BrowserPluginHostMsg_ExecuteEditCommand::ID:
+    case BrowserPluginHostMsg_ExtendSelectionAndDelete::ID:
     case BrowserPluginHostMsg_HandleInputEvent::ID:
+    case BrowserPluginHostMsg_ImeConfirmComposition::ID:
+    case BrowserPluginHostMsg_ImeSetComposition::ID:
     case BrowserPluginHostMsg_LockMouse_ACK::ID:
     case BrowserPluginHostMsg_NavigateGuest::ID:
     case BrowserPluginHostMsg_PluginDestroyed::ID:
@@ -1173,6 +1215,14 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
  #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowWidget, OnShowWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputTypeChanged,
+                        OnTextInputTypeChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
+                        OnImeCancelComposition)
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
+                        OnImeCompositionRangeChanged)
+#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateFrameName, OnUpdateFrameName)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
@@ -1233,19 +1283,16 @@ void BrowserPluginGuest::Attach(
 
   SendQueuedMessages();
 
-  RecordAction(UserMetricsAction("BrowserPlugin.Guest.Attached"));
+  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Attached"));
 }
 
-void BrowserPluginGuest::OnCompositorFrameACK(
+void BrowserPluginGuest::OnCompositorFrameSwappedACK(
     int instance_id,
-    int route_id,
-    uint32 output_surface_id,
-    int renderer_host_id,
-    const cc::CompositorFrameAck& ack) {
-  RenderWidgetHostImpl::SendSwapCompositorFrameAck(route_id,
-                                                   output_surface_id,
-                                                   renderer_host_id,
-                                                   ack);
+    const FrameHostMsg_CompositorFrameSwappedACK_Params& params) {
+  RenderWidgetHostImpl::SendSwapCompositorFrameAck(params.producing_route_id,
+                                                   params.output_surface_id,
+                                                   params.producing_host_id,
+                                                   params.ack);
 }
 
 void BrowserPluginGuest::OnDragStatusUpdate(int instance_id,
@@ -1281,16 +1328,41 @@ void BrowserPluginGuest::OnExecuteEditCommand(int instance_id,
   Send(new InputMsg_ExecuteEditCommand(routing_id(), name, std::string()));
 }
 
+void BrowserPluginGuest::OnImeSetComposition(
+    int instance_id,
+    const std::string& text,
+    const std::vector<blink::WebCompositionUnderline>& underlines,
+    int selection_start,
+    int selection_end) {
+  Send(new ViewMsg_ImeSetComposition(routing_id(),
+                                     base::UTF8ToUTF16(text), underlines,
+                                     selection_start, selection_end));
+}
+
+void BrowserPluginGuest::OnImeConfirmComposition(
+    int instance_id,
+    const std::string& text,
+    bool keep_selection) {
+  Send(new ViewMsg_ImeConfirmComposition(routing_id(),
+                                         base::UTF8ToUTF16(text),
+                                         gfx::Range::InvalidRange(),
+                                         keep_selection));
+}
+
+void BrowserPluginGuest::OnExtendSelectionAndDelete(
+    int instance_id,
+    int before,
+    int after) {
+  Send(new ViewMsg_ExtendSelectionAndDelete(routing_id(), before, after));
+}
+
 void BrowserPluginGuest::OnReclaimCompositorResources(
     int instance_id,
-    int route_id,
-    uint32 output_surface_id,
-    int renderer_host_id,
-    const cc::CompositorFrameAck& ack) {
-  RenderWidgetHostImpl::SendReclaimCompositorResources(route_id,
-                                                       output_surface_id,
-                                                       renderer_host_id,
-                                                       ack);
+    const FrameHostMsg_ReclaimCompositorResources_Params& params) {
+  RenderWidgetHostImpl::SendReclaimCompositorResources(params.route_id,
+                                                       params.output_surface_id,
+                                                       params.renderer_host_id,
+                                                       params.ack);
 }
 
 void BrowserPluginGuest::OnHandleInputEvent(
@@ -1368,7 +1440,7 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
                        web_contents()->GetLastCommittedURL().spec()));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK,
-                    new PointerLockRequest(this),
+                    new PointerLockRequest(weak_ptr_factory_.GetWeakPtr()),
                     request_info);
 }
 
@@ -1383,13 +1455,6 @@ void BrowserPluginGuest::OnNavigateGuest(
     int instance_id,
     const std::string& src) {
   GURL url = delegate_ ? delegate_->ResolveURL(src) : GURL(src);
-  // We do not load empty urls in web_contents.
-  // If a guest sets empty src attribute after it has navigated to some
-  // non-empty page, the action is considered no-op. This empty src navigation
-  // should never be sent to BrowserPluginGuest (browser process).
-  DCHECK(!src.empty());
-  if (src.empty())
-    return;
 
   // Do not allow navigating a guest to schemes other than known safe schemes.
   // This will block the embedder trying to load unwanted schemes, e.g.
@@ -1411,10 +1476,7 @@ void BrowserPluginGuest::OnNavigateGuest(
   }
 
   GURL validated_url(url);
-  RenderViewHost::FilterURL(
-      GetWebContents()->GetRenderProcessHost(),
-      false,
-      &validated_url);
+  GetWebContents()->GetRenderProcessHost()->FilterURL(false, &validated_url);
   // As guests do not swap processes on navigation, only navigations to
   // normal web URLs are supported.  No protocol handlers are installed for
   // other schemes (e.g., WebUI or extensions), and no permissions or bindings
@@ -1464,12 +1526,18 @@ void BrowserPluginGuest::OnResizeGuest(
 }
 
 void BrowserPluginGuest::OnSetFocus(int instance_id, bool focused) {
-  if (focused_ == focused)
-      return;
   focused_ = focused;
   Send(new InputMsg_SetFocus(routing_id(), focused));
   if (!focused && mouse_locked_)
     OnUnlockMouse();
+
+  // Restore the last seen state of text input to the view.
+  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView());
+  if (rwhv) {
+    rwhv->TextInputTypeChanged(last_text_input_type_, last_input_mode_,
+                               last_can_compose_inline_);
+  }
 }
 
 void BrowserPluginGuest::OnSetName(int instance_id, const std::string& name) {
@@ -1492,7 +1560,8 @@ void BrowserPluginGuest::OnSetSize(
   if (auto_size_enabled_ && (!old_auto_size_enabled ||
                              (old_max_size != max_auto_size_) ||
                              (old_min_size != min_auto_size_))) {
-    RecordAction(UserMetricsAction("BrowserPlugin.Guest.EnableAutoResize"));
+    RecordAction(
+        base::UserMetricsAction("BrowserPlugin.Guest.EnableAutoResize"));
     GetWebContents()->GetRenderViewHost()->EnableAutoResize(
         min_auto_size_, max_auto_size_);
     // TODO(fsamuel): If we're changing autosize parameters, then we force
@@ -1537,12 +1606,11 @@ void BrowserPluginGuest::OnSetVisibility(int instance_id, bool visible) {
     GetWebContents()->WasHidden();
 }
 
-void BrowserPluginGuest::OnSwapBuffersACK(int instance_id,
-                                          int route_id,
-                                          int gpu_host_id,
-                                          const std::string& mailbox_name,
-                                          uint32 sync_point) {
-  AcknowledgeBufferPresent(route_id, gpu_host_id, mailbox_name, sync_point);
+void BrowserPluginGuest::OnSwapBuffersACK(
+    int instance_id,
+    const FrameHostMsg_BuffersSwappedACK_Params& params) {
+  AcknowledgeBufferPresent(params.gpu_route_id, params.gpu_host_id,
+                           params.mailbox, params.sync_point);
 
 // This is only relevant on MACOSX and WIN when threaded compositing
 // is not enabled. In threaded mode, above ACK is sufficient.
@@ -1658,8 +1726,17 @@ void BrowserPluginGuest::RequestMediaAccessPermission(
       base::Value::CreateStringValue(request.security_origin.spec()));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_MEDIA,
-                    new MediaRequest(request, callback, this),
+                    new MediaRequest(weak_ptr_factory_.GetWeakPtr(),
+                                     request,
+                                     callback),
                     request_info);
+}
+
+bool BrowserPluginGuest::PreHandleGestureEvent(
+    WebContents* source, const blink::WebGestureEvent& event) {
+  return event.type == blink::WebGestureEvent::GesturePinchBegin ||
+      event.type == blink::WebGestureEvent::GesturePinchUpdate ||
+      event.type == blink::WebGestureEvent::GesturePinchEnd;
 }
 
 void BrowserPluginGuest::RunJavaScriptDialog(
@@ -1674,10 +1751,10 @@ void BrowserPluginGuest::RunJavaScriptDialog(
   base::DictionaryValue request_info;
   request_info.Set(
       browser_plugin::kDefaultPromptText,
-      base::Value::CreateStringValue(UTF16ToUTF8(default_prompt_text)));
+      base::Value::CreateStringValue(base::UTF16ToUTF8(default_prompt_text)));
   request_info.Set(
       browser_plugin::kMessageText,
-      base::Value::CreateStringValue(UTF16ToUTF8(message_text)));
+      base::Value::CreateStringValue(base::UTF16ToUTF8(message_text)));
   request_info.Set(
       browser_plugin::kMessageType,
       base::Value::CreateStringValue(
@@ -1687,7 +1764,8 @@ void BrowserPluginGuest::RunJavaScriptDialog(
       base::Value::CreateStringValue(origin_url.spec()));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG,
-                    new JavaScriptDialogRequest(callback),
+                    new JavaScriptDialogRequest(weak_ptr_factory_.GetWeakPtr(),
+                                                callback),
                     request_info);
 }
 
@@ -1779,6 +1857,34 @@ void BrowserPluginGuest::OnUpdateRect(
       new BrowserPluginMsg_UpdateRect(instance_id(), relay_params));
 }
 
+void BrowserPluginGuest::OnTextInputTypeChanged(ui::TextInputType type,
+                                                ui::TextInputMode input_mode,
+                                                bool can_compose_inline) {
+  // Save the state of text input so we can restore it on focus.
+  last_text_input_type_ = type;
+  last_input_mode_ = input_mode;
+  last_can_compose_inline_ = can_compose_inline;
+
+  RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView())->TextInputTypeChanged(
+          type, input_mode, can_compose_inline);
+}
+
+void BrowserPluginGuest::OnImeCancelComposition() {
+  RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView())->ImeCancelComposition();
+}
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+void BrowserPluginGuest::OnImeCompositionRangeChanged(
+      const gfx::Range& range,
+      const std::vector<gfx::Rect>& character_bounds) {
+  RenderWidgetHostViewPort::FromRWHV(
+      web_contents()->GetRenderWidgetHostView())->ImeCompositionRangeChanged(
+          range, character_bounds);
+}
+#endif
+
 void BrowserPluginGuest::DidRetrieveDownloadURLFromRequestId(
     const std::string& request_method,
     const base::Callback<void(bool)>& callback,
@@ -1794,7 +1900,8 @@ void BrowserPluginGuest::DidRetrieveDownloadURLFromRequestId(
   request_info.Set(browser_plugin::kURL, base::Value::CreateStringValue(url));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_DOWNLOAD,
-                    new DownloadRequest(callback),
+                    new DownloadRequest(weak_ptr_factory_.GetWeakPtr(),
+                                        callback),
                     request_info);
 }
 

@@ -16,14 +16,21 @@ using base::win::ScopedCOMInitializer;
 namespace media {
 
 WASAPIAudioInputStream::WASAPIAudioInputStream(
-    AudioManagerWin* manager, const AudioParameters& params,
+    AudioManagerWin* manager,
+    const AudioParameters& params,
     const std::string& device_id)
     : manager_(manager),
       capture_thread_(NULL),
       opened_(false),
       started_(false),
+      frame_size_(0),
+      packet_size_frames_(0),
+      packet_size_bytes_(0),
       endpoint_buffer_size_frames_(0),
+      effects_(params.effects()),
       device_id_(device_id),
+      perf_count_to_100ns_units_(0.0),
+      ms_to_frame_count_(0.0),
       sink_(NULL) {
   DCHECK(manager_);
 
@@ -67,8 +74,7 @@ WASAPIAudioInputStream::WASAPIAudioInputStream(
     perf_count_to_100ns_units_ =
         (10000000.0 / static_cast<double>(performance_frequency.QuadPart));
   } else {
-    LOG(ERROR) <<  "High-resolution performance counters are not supported.";
-    perf_count_to_100ns_units_ = 0.0;
+    DLOG(ERROR) << "High-resolution performance counters are not supported.";
   }
 }
 
@@ -123,6 +129,7 @@ void WASAPIAudioInputStream::Start(AudioInputCallback* callback) {
   if (started_)
     return;
 
+  DCHECK(!sink_);
   sink_ = callback;
 
   // Starts periodic AGC microphone measurements if the AGC has been enabled
@@ -173,6 +180,7 @@ void WASAPIAudioInputStream::Stop() {
   }
 
   started_ = false;
+  sink_ = NULL;
 }
 
 void WASAPIAudioInputStream::Close() {
@@ -180,10 +188,6 @@ void WASAPIAudioInputStream::Close() {
   // It is valid to call Close() before calling open or Start().
   // It is also valid to call Close() after Start() has been called.
   Stop();
-  if (sink_) {
-    sink_->OnClose(this);
-    sink_ = NULL;
-  }
 
   // Inform the audio manager that we have been closed. This will cause our
   // destruction.
@@ -240,25 +244,28 @@ double WASAPIAudioInputStream::GetVolume() {
 }
 
 // static
-int WASAPIAudioInputStream::HardwareSampleRate(
+AudioParameters WASAPIAudioInputStream::GetInputStreamParameters(
     const std::string& device_id) {
+  int sample_rate = 48000;
+  ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
+
   base::win::ScopedCoMem<WAVEFORMATEX> audio_engine_mix_format;
-  HRESULT hr = GetMixFormat(device_id, &audio_engine_mix_format);
-  if (FAILED(hr))
-    return 0;
+  if (SUCCEEDED(GetMixFormat(device_id, &audio_engine_mix_format))) {
+    sample_rate = static_cast<int>(audio_engine_mix_format->nSamplesPerSec);
+    channel_layout = audio_engine_mix_format->nChannels == 1 ?
+        CHANNEL_LAYOUT_MONO : CHANNEL_LAYOUT_STEREO;
+  }
 
-  return static_cast<int>(audio_engine_mix_format->nSamplesPerSec);
-}
+  int effects = AudioParameters::NO_EFFECTS;
+  // For non-loopback devices, advertise that ducking is supported.
+  if (device_id != AudioManagerBase::kLoopbackInputDeviceId)
+    effects |= AudioParameters::DUCKING;
 
-// static
-uint32 WASAPIAudioInputStream::HardwareChannelCount(
-    const std::string& device_id) {
-  base::win::ScopedCoMem<WAVEFORMATEX> audio_engine_mix_format;
-  HRESULT hr = GetMixFormat(device_id, &audio_engine_mix_format);
-  if (FAILED(hr))
-    return 0;
-
-  return static_cast<uint32>(audio_engine_mix_format->nChannels);
+  // Use 10ms frame size as default.
+  int frames_per_buffer = sample_rate / 100;
+  return AudioParameters(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, 0, sample_rate,
+      16, frames_per_buffer, effects);
 }
 
 // static
@@ -278,13 +285,13 @@ HRESULT WASAPIAudioInputStream::GetMixFormat(const std::string& device_id,
     hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole,
                                              endpoint_device.Receive());
   } else if (device_id == AudioManagerBase::kLoopbackInputDeviceId) {
-    // Capture the default playback stream.
+    // Get the mix format of the default playback stream.
     hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole,
                                              endpoint_device.Receive());
   } else {
     // Retrieve a capture endpoint device that is specified by an endpoint
     // device-identification string.
-    hr = enumerator->GetDevice(UTF8ToUTF16(device_id).c_str(),
+    hr = enumerator->GetDevice(base::UTF8ToUTF16(device_id).c_str(),
                                endpoint_device.Receive());
   }
   if (FAILED(hr))
@@ -471,7 +478,15 @@ HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
     // Retrieve the default capture audio endpoint for the specified role.
     // Note that, in Windows Vista, the MMDevice API supports device roles
     // but the system-supplied user interface programs do not.
-    hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole,
+
+    // If the caller has requested to turn on ducking, we select the default
+    // communications device instead of the default capture device.
+    // This implicitly turns on ducking and allows the user to control the
+    // attenuation level.
+    ERole role = (effects_ & AudioParameters::DUCKING) ?
+        eCommunications : eConsole;
+
+    hr = enumerator->GetDefaultAudioEndpoint(eCapture, role,
                                              endpoint_device_.Receive());
   } else if (device_id_ == AudioManagerBase::kLoopbackInputDeviceId) {
     // Capture the default playback stream.
@@ -480,7 +495,11 @@ HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
   } else {
     // Retrieve a capture endpoint device that is specified by an endpoint
     // device-identification string.
-    hr = enumerator->GetDevice(UTF8ToUTF16(device_id_).c_str(),
+    // TODO(tommi): Opt into ducking for non-default audio devices.
+    DLOG_IF(WARNING, effects_ & AudioParameters::DUCKING)
+        << "Ducking has been requested for a non-default device."
+           "Not implemented.";
+    hr = enumerator->GetDevice(base::UTF8ToUTF16(device_id_).c_str(),
                                endpoint_device_.Receive());
   }
 

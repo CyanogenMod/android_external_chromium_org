@@ -16,24 +16,23 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/congestion_control/congestion_control.h"
 #include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtp_sender/rtp_sender.h"
-
-namespace crypto {
-  class Encryptor;
-}
+#include "media/cast/rtcp/sender_rtcp_event_subscriber.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
+#include "media/video/video_encode_accelerator.h"
 
 namespace media {
 class VideoFrame;
-}
 
-namespace media {
 namespace cast {
 
-class VideoEncoder;
 class LocalRtcpVideoSenderFeedback;
 class LocalRtpVideoSenderStatistics;
 class LocalVideoEncoderCallback;
-class PacedPacketSender;
+class VideoEncoder;
+
+namespace transport {
+class CastTransportSender;
+}
 
 // Not thread safe. Only called from the main cast thread.
 // This class owns all objects related to sending video, objects that create RTP
@@ -46,8 +45,9 @@ class VideoSender : public base::NonThreadSafe,
  public:
   VideoSender(scoped_refptr<CastEnvironment> cast_environment,
               const VideoSenderConfig& video_config,
-              VideoEncoderController* const video_encoder_controller,
-              PacedPacketSender* const paced_packet_sender);
+              const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+              const CastInitializationCallback& initialization_status,
+              transport::CastTransportSender* const transport_sender);
 
   virtual ~VideoSender();
 
@@ -55,21 +55,11 @@ class VideoSender : public base::NonThreadSafe,
   // The closure callback is called from the video encoder thread as soon as
   // the encoder is done with the frame; it does not mean that the encoded frame
   // has been sent out.
-  void InsertRawVideoFrame(
-      const scoped_refptr<media::VideoFrame>& video_frame,
-      const base::TimeTicks& capture_time);
-
-  // The video_frame must be valid until the closure callback is called.
-  // The closure callback is called from the main thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                             const base::TimeTicks& capture_time,
-                             const base::Closure callback);
+  void InsertRawVideoFrame(const scoped_refptr<media::VideoFrame>& video_frame,
+                           const base::TimeTicks& capture_time);
 
   // Only called from the main cast thread.
-  void IncomingRtcpPacket(const uint8* packet, size_t length,
-                          const base::Closure callback);
+  void IncomingRtcpPacket(scoped_ptr<Packet> packet);
 
  protected:
   // Protected for testability.
@@ -97,36 +87,40 @@ class VideoSender : public base::NonThreadSafe,
   void ScheduleNextSkippedFramesCheck();
   void SkippedFramesCheck();
 
-  void SendEncodedVideoFrame(const EncodedVideoFrame* video_frame,
+  void SendEncodedVideoFrame(const transport::EncodedVideoFrame* video_frame,
                              const base::TimeTicks& capture_time);
   void ResendFrame(uint32 resend_frame_id);
   void ReceivedAck(uint32 acked_frame_id);
   void UpdateFramesInFlight();
 
   void SendEncodedVideoFrameMainThread(
-      scoped_ptr<EncodedVideoFrame> video_frame,
+      scoped_ptr<transport::EncodedVideoFrame> encoded_frame,
+      const base::TimeTicks& capture_time);
+
+  void SendEncodedVideoFrameToTransport(
+      scoped_ptr<transport::EncodedVideoFrame> encoded_frame,
       const base::TimeTicks& capture_time);
 
   void InitializeTimers();
 
-  // Caller must allocate the destination |encrypted_video_frame| the data
-  // member will be resized to hold the encrypted size.
-  bool EncryptVideoFrame(const EncodedVideoFrame& encoded_frame,
-                         EncodedVideoFrame* encrypted_video_frame);
+  void ResendPacketsOnTransportThread(
+      const transport::MissingFramesAndPacketsMap& missing_packets);
 
   const base::TimeDelta rtp_max_delay_;
   const int max_frame_rate_;
 
   scoped_refptr<CastEnvironment> cast_environment_;
+  transport::CastTransportSender* const transport_sender_;
+
+  // Subscribes to raw events.
+  // Processes raw audio events to be sent over to the cast receiver via RTCP.
+  SenderRtcpEventSubscriber event_subscriber_;
+
   scoped_ptr<LocalRtcpVideoSenderFeedback> rtcp_feedback_;
   scoped_ptr<LocalRtpVideoSenderStatistics> rtp_video_sender_statistics_;
   scoped_ptr<VideoEncoder> video_encoder_;
   scoped_ptr<Rtcp> rtcp_;
-  scoped_ptr<RtpSender> rtp_sender_;
-  VideoEncoderController* video_encoder_controller_;
   uint8 max_unacked_frames_;
-  scoped_ptr<crypto::Encryptor> encryptor_;
-  std::string iv_mask_;
   int last_acked_frame_id_;
   int last_sent_frame_id_;
   int duplicate_ack_;
@@ -145,4 +139,3 @@ class VideoSender : public base::NonThreadSafe,
 }  // namespace media
 
 #endif  // MEDIA_CAST_VIDEO_SENDER_VIDEO_SENDER_H_
-

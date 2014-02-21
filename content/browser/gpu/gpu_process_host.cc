@@ -45,7 +45,11 @@
 #include "content/common/sandbox_win.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "sandbox/win/src/sandbox_policy.h"
-#include "ui/surface/accelerated_surface_win.h"
+#include "ui/gfx/switches.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
 #endif
 
 #if defined(USE_OZONE)
@@ -127,7 +131,7 @@ void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
     int surface_id,
     base::TimeTicks timebase,
     base::TimeDelta interval,
-    const ui::LatencyInfo& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI,
@@ -151,7 +155,8 @@ void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
   RenderWidgetHostImpl::From(rwh)->AcknowledgeSwapBuffersToRenderer();
   if (interval != base::TimeDelta())
     RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
-  RenderWidgetHostImpl::From(rwh)->FrameSwapped(latency_info);
+  for (size_t i = 0; i < latency_info.size(); i++)
+    RenderWidgetHostImpl::From(rwh)->FrameSwapped(latency_info[i]);
   RenderWidgetHostImpl::From(rwh)->DidReceiveRendererFrame();
 }
 
@@ -162,7 +167,7 @@ void AcceleratedSurfaceBuffersSwappedCompleted(
     bool alive,
     base::TimeTicks timebase,
     base::TimeDelta interval,
-    const ui::LatencyInfo& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info) {
   AcceleratedSurfaceBuffersSwappedCompletedForGPU(
       host_id, route_id, alive, timebase, interval);
   AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
@@ -573,8 +578,12 @@ bool GpuProcessHost::Init() {
 
   if (in_process_) {
     DCHECK(g_gpu_main_thread_factory);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kDisableGpuWatchdog);
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    command_line->AppendSwitch(switches::kDisableGpuWatchdog);
+
+    GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+    DCHECK(gpu_data_manager);
+    gpu_data_manager->AppendGpuCommandLine(command_line);
 
     in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
     in_process_gpu_thread_->Start();
@@ -743,11 +752,6 @@ void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessInitialized", result);
   initialized_ = result;
 
-#if defined(OS_WIN)
-  if (kind_ == GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED)
-    AcceleratedPresenter::SetAdapterLUID(gpu_info.adapter_luid);
-#endif
-
   if (!initialized_)
     GpuDataManagerImpl::GetInstance()->OnGpuProcessInitFailure();
 }
@@ -872,6 +876,10 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped");
 
+  if (!ui::LatencyInfo::Verify(params.latency_info,
+                               "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
+    return;
+
   gfx::GLSurfaceHandle surface_handle =
       GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
   // Compositor window is always gfx::kNullPluginWindow.
@@ -924,10 +932,15 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped");
 
+  if (!ui::LatencyInfo::Verify(params.latency_info,
+                               "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
+    return;
+
   base::ScopedClosureRunner scoped_completion_runner(
       base::Bind(&AcceleratedSurfaceBuffersSwappedCompleted,
           host_id_, params.route_id, params.surface_id,
-          true, base::TimeTicks(), base::TimeDelta(), ui::LatencyInfo()));
+          true, base::TimeTicks(), base::TimeDelta(),
+          std::vector<ui::LatencyInfo>()));
 
   gfx::GLSurfaceHandle handle =
       GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
@@ -944,55 +957,27 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     return;
   }
 
-  // Otherwise it's the UI swap.
-
-  scoped_refptr<AcceleratedPresenter> presenter(
-      AcceleratedPresenter::GetForWindow(handle.handle));
-  if (!presenter) {
-    TRACE_EVENT1("gpu",
-                 "EarlyOut_NativeWindowNotFound",
-                 "handle",
-                 handle.handle);
-    ignore_result(scoped_completion_runner.Release());
-    AcceleratedSurfaceBuffersSwappedCompleted(host_id_,
-                                              params.route_id,
-                                              params.surface_id,
-                                              true,
-                                              base::TimeTicks(),
-                                              base::TimeDelta(),
-                                              params.latency_info);
-    return;
-  }
-
+  TRACE_EVENT1("gpu",
+               "EarlyOut_NativeWindowNotFound",
+               "handle",
+               handle.handle);
   ignore_result(scoped_completion_runner.Release());
-  presenter->AsyncPresentAndAcknowledge(
-      params.size,
-      params.surface_handle,
-      params.latency_info,
-      base::Bind(&AcceleratedSurfaceBuffersSwappedCompleted,
-                 host_id_,
-                 params.route_id,
-                 params.surface_id));
-
-  FrameSubscriberMap::iterator it = frame_subscribers_.find(params.surface_id);
-  if (it != frame_subscribers_.end() && it->second) {
-    const base::Time present_time = base::Time::Now();
-    scoped_refptr<media::VideoFrame> target_frame;
-    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback copy_callback;
-    if (it->second->ShouldCaptureFrame(present_time,
-                                       &target_frame, &copy_callback)) {
-      // It is a potential improvement to do the copy in present, but we use a
-      // simpler approach for now.
-      presenter->AsyncCopyToVideoFrame(
-          gfx::Rect(params.size), target_frame,
-          base::Bind(copy_callback, present_time));
-    }
-  }
+  AcceleratedSurfaceBuffersSwappedCompleted(host_id_,
+                                            params.route_id,
+                                            params.surface_id,
+                                            true,
+                                            base::TimeTicks(),
+                                            base::TimeDelta(),
+                                            params.latency_info);
 }
 
 void GpuProcessHost::OnAcceleratedSurfacePostSubBuffer(
     const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfacePostSubBuffer");
+
+  if (!ui::LatencyInfo::Verify(params.latency_info,
+                               "GpuHostMsg_AcceleratedSurfacePostSubBuffer"))
+    return;
 
   NOTIMPLEMENTED();
 }
@@ -1009,13 +994,6 @@ void GpuProcessHost::OnAcceleratedSurfaceSuspend(int32 surface_id) {
 #endif
     return;
   }
-
-  scoped_refptr<AcceleratedPresenter> presenter(
-      AcceleratedPresenter::GetForWindow(handle));
-  if (!presenter)
-    return;
-
-  presenter->Suspend();
 }
 
 void GpuProcessHost::OnAcceleratedSurfaceRelease(
@@ -1030,13 +1008,6 @@ void GpuProcessHost::OnAcceleratedSurfaceRelease(
     return;
 #endif
   }
-
-  scoped_refptr<AcceleratedPresenter> presenter(
-      AcceleratedPresenter::GetForWindow(handle));
-  if (!presenter)
-    return;
-
-  presenter->ReleaseSurface();
 }
 
 #endif  // OS_WIN
@@ -1110,10 +1081,9 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   static const char* const kSwitchNames[] = {
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableBreakpad,
-    switches::kDisableGLMultisampling,
+    switches::kDisableGLDrawingForTests,
     switches::kDisableGpuSandbox,
     switches::kDisableGpuWatchdog,
-    switches::kDisableImageTransportSurface,
     switches::kDisableLogging,
     switches::kDisableSeccompFilterSandbox,
 #if defined(ENABLE_WEBRTC)
@@ -1125,7 +1095,6 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kGpuSandboxAllowSysVShm,
     switches::kLoggingLevel,
     switches::kNoSandbox,
-    switches::kReduceGpuSandbox,
     switches::kTestGLLib,
     switches::kTraceStartup,
     switches::kV,
@@ -1133,11 +1102,17 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
+#if defined(OS_CHROMEOS)
+    chromeos::switches::kGpuSandboxFailuresNonfatal,
+#endif
 #if defined(USE_AURA)
     switches::kUIPrioritizeInGpuProcess,
 #endif
 #if defined(USE_OZONE)
     switches::kOzonePlatform,
+#endif
+#if defined(OS_WIN)
+    switches::kHighDPISupport,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -1168,6 +1143,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   process_->Launch(
 #if defined(OS_WIN)
       new GpuSandboxedProcessLauncherDelegate(cmd_line),
+      false,
 #elif defined(OS_POSIX)
       false,
       base::EnvironmentMap(),

@@ -17,6 +17,18 @@
 
 namespace prerender {
 
+// Navigation type for histograms.
+enum NavigationType {
+  // A normal completed navigation.
+  NAVIGATION_TYPE_NORMAL,
+  // A completed navigation or swap that began as a prerender.
+  NAVIGATION_TYPE_PRERENDERED,
+  // A normal completed navigation in the control group or with a control
+  // prerender that would have been prerendered.
+  NAVIGATION_TYPE_WOULD_HAVE_BEEN_PRERENDERED,
+  NAVIGATION_TYPE_MAX,
+};
+
 // PrerenderHistograms is responsible for recording all prerender specific
 // histograms for PrerenderManager.  It keeps track of the type of prerender
 // currently underway (based on the PrerenderOrigin of the most recent
@@ -34,8 +46,7 @@ class PrerenderHistograms {
   // load may have started prior to navigation due to prerender hints.
   void RecordPerceivedPageLoadTime(Origin origin,
                                    base::TimeDelta perceived_page_load_time,
-                                   bool was_prerender,
-                                   bool was_complete_prerender,
+                                   NavigationType navigation_type,
                                    const GURL& url);
 
   // Records, in a histogram, the percentage of the page load time that had
@@ -84,13 +95,26 @@ class PrerenderHistograms {
   void RecordTimeSinceLastRecentVisit(Origin origin,
                                       base::TimeDelta time) const;
 
-  // Record a percentage of pixels of the final page already in place at
-  // swap-in.
-  void RecordFractionPixelsFinalAtSwapin(Origin origin, double fraction) const;
-
   // Records a prerender event.
   void RecordEvent(Origin origin, uint8 experiment_id, PrerenderEvent event)
       const;
+
+  // Record a prerender cookie status bitmap. Must be in the range
+  // [0, PrerenderContents::kNumCookieStatuses).
+  void RecordCookieStatus(Origin origin,
+                          uint8 experiment_id,
+                          int cookie_status) const;
+
+  void RecordPrerenderPageVisitedStatus(Origin origin,
+                                        uint8 experiment_id,
+                                        bool visited_before) const;
+
+  // Record the bytes in the prerender, whether it was used or not, and the
+  // total number of bytes fetched for this profile since the last call to
+  // RecordBytes.
+  void RecordNetworkBytes(bool used,
+                          int64 prerender_bytes,
+                          int64 profile_bytes);
 
  private:
   base::TimeTicks GetCurrentTimeTicks() const;

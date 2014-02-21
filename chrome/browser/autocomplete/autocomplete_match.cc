@@ -31,7 +31,7 @@ bool IsTrivialClassification(const ACMatchClassifications& classifications) {
 // AutocompleteMatch ----------------------------------------------------------
 
 // static
-const char16 AutocompleteMatch::kInvalidChars[] = {
+const base::char16 AutocompleteMatch::kInvalidChars[] = {
   '\n', '\r', '\t',
   0x2028,  // Line separator
   0x2029,  // Paragraph separator
@@ -139,6 +139,10 @@ int AutocompleteMatch::TypeToIcon(Type type) {
     IDR_OMNIBOX_HTTP,
     IDR_OMNIBOX_HTTP,
     IDR_OMNIBOX_HTTP,
+    IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_SEARCH,
@@ -435,7 +439,8 @@ void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              const base::Time& value) {
   RecordAdditionalInfo(property,
-                       UTF16ToUTF8(base::TimeFormatShortDateAndTime(value)));
+                       base::UTF16ToUTF8(
+                           base::TimeFormatShortDateAndTime(value)));
 }
 
 std::string AutocompleteMatch::GetAdditionalInfo(

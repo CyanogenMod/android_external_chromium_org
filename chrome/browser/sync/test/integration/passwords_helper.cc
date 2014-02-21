@@ -9,15 +9,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
-#include "chrome/browser/password_manager/password_form_data.h"
-#include "chrome/browser/password_manager/password_store.h"
-#include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/password_manager/core/browser/password_form_data.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_consumer.h"
 
 using autofill::PasswordForm;
 using sync_datatype_helper::test;
@@ -40,13 +40,6 @@ class PasswordStoreConsumerHelper : public PasswordStoreConsumer {
   explicit PasswordStoreConsumerHelper(std::vector<PasswordForm>* result)
       : PasswordStoreConsumer(),
         result_(result) {}
-
-  virtual void OnPasswordStoreRequestDone(
-      CancelableRequestProvider::Handle handle,
-      const std::vector<PasswordForm*>& result) OVERRIDE {
-    // TODO(kaiwang): Remove this function.
-    NOTREACHED();
-  }
 
   virtual void OnGetPasswordStoreResults(
       const std::vector<PasswordForm*>& result) OVERRIDE {
@@ -93,7 +86,7 @@ void GetLogins(PasswordStore* store, std::vector<PasswordForm>& matches) {
   PasswordForm matcher_form;
   matcher_form.signon_realm = kFakeSignonRealm;
   PasswordStoreConsumerHelper consumer(&matches);
-  store->GetLogins(matcher_form, &consumer);
+  store->GetLogins(matcher_form, PasswordStore::DISALLOW_PROMPT, &consumer);
   content::RunMessageLoop();
 }
 
@@ -216,8 +209,10 @@ PasswordForm CreateTestPasswordForm(int index) {
   PasswordForm form;
   form.signon_realm = kFakeSignonRealm;
   form.origin = GURL(base::StringPrintf(kIndexedFakeOrigin, index));
-  form.username_value = ASCIIToUTF16(base::StringPrintf("username%d", index));
-  form.password_value = ASCIIToUTF16(base::StringPrintf("password%d", index));
+  form.username_value =
+      base::ASCIIToUTF16(base::StringPrintf("username%d", index));
+  form.password_value =
+      base::ASCIIToUTF16(base::StringPrintf("password%d", index));
   form.date_created = base::Time::Now();
   return form;
 }

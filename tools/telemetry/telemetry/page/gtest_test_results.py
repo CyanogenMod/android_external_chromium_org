@@ -11,8 +11,7 @@ from telemetry.page import page_test_results
 
 class GTestTestResults(page_test_results.PageTestResults):
   def __init__(self, output_stream):
-    super(GTestTestResults, self).__init__()
-    self._output_stream = output_stream
+    super(GTestTestResults, self).__init__(output_stream)
     self._timestamp = None
 
   def _GetMs(self):
@@ -63,6 +62,8 @@ class GTestTestResults(page_test_results.PageTestResults):
     super(GTestTestResults, self).addSkip(test, reason)
     test_name = GTestTestResults._formatTestname(test)
     logging.warning('===== SKIPPING TEST %s: %s =====', test_name, reason)
+    if self._timestamp == None:
+      self._timestamp = time.time()
     print >> self._output_stream, '[       OK ]', test_name, (
         '(%0.f ms)' % self._GetMs())
     sys.stdout.flush()

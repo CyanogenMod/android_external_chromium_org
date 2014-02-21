@@ -14,7 +14,7 @@
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/text_constants.h"
@@ -28,9 +28,11 @@ class AutofillField;
 // dialog.
 struct DetailInput {
   enum Length {
-    SHORT,  // Short inputs share a line with other short inputs. [ CVC ][ Zip ]
-    LONG,   // Long inputs will be given their own full line.     [ City       ]
-    NONE,   // Input will not be shown.
+    SHORT,     // Shares a line with other short inputs, like display: inline.
+    SHORT_EOL, // Like SHORT but starts a new line directly afterward. Used to
+               // separate groups of short inputs into different lines.
+    LONG,      // Will be given its own full line, like display: block.
+    NONE,      // Input will not be shown.
   };
 
   // Used to determine which inputs share lines when laying out.
@@ -38,8 +40,8 @@ struct DetailInput {
 
   ServerFieldType type;
 
-  // Placeholder text resource ID.
-  int placeholder_text_rid;
+  // Text shown when the input is at its default state (e.g. empty).
+  base::string16 placeholder_text;
 
   // A number between 0 and 1.0 that describes how much of the horizontal space
   // in the row should be allotted to this input. 0 is equivalent to 1.
@@ -49,11 +51,6 @@ struct DetailInput {
   // used when the user is editing existing data.
   base::string16 initial_value;
 };
-
-// Determines whether |input| and |field| match.
-typedef base::Callback<bool(const DetailInput& input,
-                            const AutofillField& field)>
-    InputFieldComparator;
 
 // Sections of the dialog --- all fields that may be shown to the user fit under
 // one of these sections.
@@ -171,11 +168,8 @@ struct DialogOverlayString {
   // Text content of the message.
   base::string16 text;
 
-  // Color of the message's text.
-  SkColor text_color;
-
-  // Font to render the message's text in.
-  gfx::Font font;
+  // Font list to render the message's text in.
+  gfx::FontList font_list;
 };
 
 // A struct to describe a dialog overlay. If |image| is empty, no overlay should
@@ -220,6 +214,8 @@ class ValidityMessages {
   ValidityMessages();
   ~ValidityMessages();
 
+  // Sets the message for |field|, but will not overwrite a previous, invalid
+  // message.
   void Set(ServerFieldType field, const ValidityMessage& message);
   const ValidityMessage& GetMessageOrDefault(ServerFieldType field) const;
 

@@ -9,7 +9,6 @@
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,6 +19,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "ipc/ipc_message_macros.h"
@@ -37,9 +37,6 @@ typedef virtual_keyboard_private::OnTextInputBoxFocused::Context Context;
 namespace {
 
 const char* kVirtualKeyboardExtensionID = "mppnpdlheglhdfmldimlhpnegondlapf";
-
-// The virtual keyboard show/hide animation duration.
-const int kAnimationDurationMs = 1000;
 
 Context::Type TextInputTypeToGeneratedInputTypeEnum(ui::TextInputType type) {
   switch (type) {
@@ -86,7 +83,7 @@ void AshKeyboardControllerProxy::OnRequest(
 }
 
 content::BrowserContext* AshKeyboardControllerProxy::GetBrowserContext() {
-  return ProfileManager::GetDefaultProfile();
+  return ProfileManager::GetActiveUserProfile();
 }
 
 ui::InputMethod* AshKeyboardControllerProxy::GetInputMethod() {
@@ -103,8 +100,8 @@ void AshKeyboardControllerProxy::RequestAudioInput(
   GURL origin(request.security_origin);
   if (origin.SchemeIs(extensions::kExtensionScheme)) {
     ExtensionService* extensions_service =
-        extensions::ExtensionSystem::Get(ProfileManager::GetDefaultProfile())->
-            extension_service();
+        extensions::ExtensionSystem::Get(
+            GetBrowserContext())->extension_service();
     extension = extensions_service->extensions()->GetByID(origin.host());
     DCHECK(extension);
   }
@@ -116,8 +113,7 @@ void AshKeyboardControllerProxy::RequestAudioInput(
 void AshKeyboardControllerProxy::SetupWebContents(
     content::WebContents* contents) {
   extension_function_dispatcher_.reset(
-      new ExtensionFunctionDispatcher(ProfileManager::GetDefaultProfile(),
-                                      this));
+      new ExtensionFunctionDispatcher(GetBrowserContext(), this));
   extensions::SetViewType(contents, extensions::VIEW_TYPE_VIRTUAL_KEYBOARD);
   extensions::ExtensionWebContentsObserver::CreateForWebContents(contents);
   Observe(contents);
@@ -151,65 +147,25 @@ void AshKeyboardControllerProxy::ShowKeyboardContainer(
   if (container->GetRootWindow() != ash::Shell::GetPrimaryRootWindow())
     NOTIMPLEMENTED();
 
-  ui::LayerAnimator* container_animator = container->layer()->GetAnimator();
-  // If the container is not animating, transform the keyboard window off screen
-  // before start animating. Otherwise, start animating from current state to
-  // new state immediately (IMMEDIATELY_ANIMATE_TO_NEW_TARGET).
-  if (!container_animator->is_animating()) {
-     gfx::Transform transform;
-     transform.Translate(0, GetKeyboardWindow()->bounds().height());
-     container->SetTransform(transform);
-  }
-
-  container_animator->set_preemption_strategy(
-      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-
-  {
-    // Scope the following animation settings as we don't want to animate
-    // visibility change that triggered by a call to the base class function
-    // ShowKeyboardContainer with these settings. The container should become
-    // visible immediately.
-    ui::ScopedLayerAnimationSettings settings(container_animator);
-    settings.SetTweenType(gfx::Tween::EASE_IN);
-    settings.SetTransitionDuration(
-        base::TimeDelta::FromMilliseconds(kAnimationDurationMs));
-    container->SetTransform(gfx::Transform());
-  }
-
-  // TODO(bshe): Add animation observer and do the workspace resizing after
-  // animation finished.
   KeyboardControllerProxy::ShowKeyboardContainer(container);
-  // GetTextInputClient may return NULL when keyboard-usability-experiment flag
-  // is set.
-  if (GetInputMethod()->GetTextInputClient()) {
-    gfx::Rect showing_area =
-        ash::DisplayController::GetPrimaryDisplay().work_area();
-    GetInputMethod()->GetTextInputClient()->EnsureCaretInRect(showing_area);
-  }
 }
 
-void AshKeyboardControllerProxy::HideKeyboardContainer(
-    aura::Window* container) {
-  // The following animation settings should persist within this function scope.
-  // Otherwise, a call to base class function HideKeyboardContainer will hide
-  // the container immediately.
-  ui::ScopedLayerAnimationSettings
-      settings(container->layer()->GetAnimator());
-  settings.SetTweenType(gfx::Tween::EASE_OUT);
-  settings.SetTransitionDuration(
-      base::TimeDelta::FromMilliseconds(kAnimationDurationMs));
-  gfx::Transform transform;
-  transform.Translate(0, GetKeyboardWindow()->bounds().height());
-  container->SetTransform(transform);
-  KeyboardControllerProxy::HideKeyboardContainer(container);
+void AshKeyboardControllerProxy::EnsureCaretInWorkArea() {
+  // GetTextInputClient may return NULL when keyboard-usability-experiment
+  // flag is set.
+  if (GetInputMethod()->GetTextInputClient()) {
+    gfx::Rect showing_area =
+        ash::Shell::GetScreen()->GetPrimaryDisplay().work_area();
+    GetInputMethod()->GetTextInputClient()->EnsureCaretInRect(showing_area);
+  }
 }
 
 void AshKeyboardControllerProxy::SetUpdateInputType(ui::TextInputType type) {
   // TODO(bshe): Need to check the affected window's profile once multi-profile
   // is supported.
-  Profile* profile = ProfileManager::GetDefaultProfile();
+  content::BrowserContext* context = GetBrowserContext();
   extensions::EventRouter* router =
-      extensions::ExtensionSystem::Get(profile)->event_router();
+      extensions::ExtensionSystem::Get(context)->event_router();
 
   if (!router->HasEventListener(
           virtual_keyboard_private::OnTextInputBoxFocused::kEventName)) {
@@ -225,6 +181,6 @@ void AshKeyboardControllerProxy::SetUpdateInputType(ui::TextInputType type) {
   scoped_ptr<extensions::Event> event(new extensions::Event(
       virtual_keyboard_private::OnTextInputBoxFocused::kEventName,
       event_args.Pass()));
-  event->restrict_to_browser_context = profile;
+  event->restrict_to_browser_context = context;
   router->DispatchEventToExtension(kVirtualKeyboardExtensionID, event.Pass());
 }

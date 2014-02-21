@@ -49,7 +49,6 @@ PRUNE_PATHS = set([
     os.path.join('third_party','perl'),
     os.path.join('third_party','psyco_win32'),
     os.path.join('third_party','pylib'),
-    os.path.join('third_party','python_26'),
     os.path.join('third_party','pywebsocket'),
     os.path.join('third_party','syzygy'),
     os.path.join('tools','gn'),
@@ -139,12 +138,6 @@ SPECIAL_CASES = {
         "License": "BSD",
         # Absolute path here is resolved as relative to the source root.
         "License File": "/LICENSE.chromium_os",
-    },
-    os.path.join('third_party', 'GTM'): {
-        "Name": "Google Toolbox for Mac",
-        "URL": "http://code.google.com/p/google-toolbox-for-mac/",
-        "License": "Apache 2.0",
-        "License File": "COPYING",
     },
     os.path.join('third_party', 'lss'): {
         "Name": "linux-syscall-support",
@@ -334,7 +327,7 @@ def FilterDirsWithFiles(dirs_list, root):
 
 def FindThirdPartyDirs(prune_paths, root):
     """Find all third_party directories underneath the source root."""
-    third_party_dirs = []
+    third_party_dirs = set()
     for path, dirs, files in os.walk(root):
         path = path[len(root)+1:]  # Pretty up the path.
 
@@ -354,7 +347,7 @@ def FindThirdPartyDirs(prune_paths, root):
             for dir in dirs:
                 dirpath = os.path.join(path, dir)
                 if dirpath not in prune_paths:
-                    third_party_dirs.append(dirpath)
+                    third_party_dirs.add(dirpath)
 
             # Don't recurse into any subdirs from here.
             dirs[:] = []
@@ -367,7 +360,7 @@ def FindThirdPartyDirs(prune_paths, root):
 
     for dir in ADDITIONAL_PATHS:
         if dir not in prune_paths:
-            third_party_dirs.append(dir)
+            third_party_dirs.add(dir)
 
     return third_party_dirs
 

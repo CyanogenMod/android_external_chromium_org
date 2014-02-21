@@ -83,7 +83,6 @@ enum {
   DIR_PNACL_BASE,               // Full path to the base dir for PNaCl.
   DIR_PNACL_COMPONENT,          // Full path to the latest PNaCl version
                                 // (subdir of DIR_PNACL_BASE).
-  FILE_O3D_PLUGIN,              // Full path to the O3D Pepper plugin file.
   FILE_O1D_PLUGIN,              // Full path to the O1D Pepper plugin file.
   FILE_EFFECTS_PLUGIN,          // Full path to the Effects Pepper plugin file.
   FILE_GTALK_PLUGIN,            // Full path to the GTalk Pepper plugin file.
@@ -105,6 +104,13 @@ enum {
   DIR_MANAGED_USERS_DEFAULT_APPS,  // Directory where installer places .crx
                                    // files to be installed when managed user
                                    // session starts.
+
+#if defined(OS_LINUX) || (defined(OS_MACOSX) && !defined(OS_IOS))
+  DIR_NATIVE_MESSAGING,         // System directory where native messaging host
+                                // manifest files are stored.
+  DIR_USER_NATIVE_MESSAGING,    // Directory with Native Messaging Hosts
+                                // installed per-user.
+#endif
 
   // Valid only in development environment; TODO(darin): move these
   DIR_GEN_TEST_DATA,            // Directory where generated test data resides.

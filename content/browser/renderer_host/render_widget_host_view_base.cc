@@ -10,6 +10,7 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/common/content_switches_internal.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/gfx/display.h"
@@ -206,8 +207,7 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     return;
 
   bool oop_plugins =
-    !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) &&
-    !CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessPlugins);
+    !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
 
   HDWP defer_window_pos_info =
       ::BeginDeferWindowPos(static_cast<int>(moves.size()));
@@ -292,7 +292,8 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
 
       // Note: System will own the hrgn after we call SetWindowRgn,
       // so we don't need to call DeleteObject(hrgn)
-      ::SetWindowRgn(window, hrgn, !move.clip_rect.IsEmpty());
+      ::SetWindowRgn(window, hrgn,
+                     !move.clip_rect.IsEmpty() && (flags & SWP_NOREDRAW) == 0);
 
 #if defined(USE_AURA)
       // When using the software compositor, if the clipping rectangle is empty
@@ -390,6 +391,7 @@ RenderWidgetHostViewBase::RenderWidgetHostViewBase()
       selection_text_offset_(0),
       selection_range_(gfx::Range::InvalidRange()),
       current_device_scale_factor_(0),
+      pinch_zoom_enabled_(content::IsPinchToZoomEnabled()),
       renderer_frame_number_(0) {
 }
 
@@ -477,8 +479,10 @@ void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
       &RenderWidgetHostViewBase::FlushInput);
 }
 
-void RenderWidgetHostViewBase::GestureEventAck(int gesture_event_type,
-                                               InputEventAckState ack_result) {}
+void RenderWidgetHostViewBase::GestureEventAck(
+    const blink::WebGestureEvent& event,
+    InputEventAckState ack_result) {
+}
 
 void RenderWidgetHostViewBase::SetPopupType(blink::WebPopupType popup_type) {
   popup_type_ = popup_type;
@@ -491,6 +495,9 @@ blink::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
 BrowserAccessibilityManager*
     RenderWidgetHostViewBase::GetBrowserAccessibilityManager() const {
   return browser_accessibility_manager_.get();
+}
+
+void RenderWidgetHostViewBase::CreateBrowserAccessibilityManagerIfNeeded() {
 }
 
 void RenderWidgetHostViewBase::SetBrowserAccessibilityManager(
@@ -532,6 +539,9 @@ RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
       RenderWidgetHostImpl::From(GetRenderWidgetHost());
   return scoped_ptr<SyntheticGestureTarget>(
       new SyntheticGestureTargetBase(host));
+}
+
+void RenderWidgetHostViewBase::FocusedNodeChanged(bool is_editable_node) {
 }
 
 // Platform implementation should override this method to allow frame

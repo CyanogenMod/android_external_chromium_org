@@ -1,16 +1,28 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_TRANSLATE_TRANSLATE_TAB_HELPER_H_
 #define CHROME_BROWSER_TRANSLATE_TRANSLATE_TAB_HELPER_H_
 
-#include "chrome/browser/tab_contents/language_state.h"
-#include "chrome/common/translate/translate_errors.h"
+#include <string>
+
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/translate/translate_bubble_model.h"
+#include "components/translate/content/browser/content_translate_driver.h"
+#include "components/translate/core/common/translate_errors.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
+namespace content {
+class BrowserContext;
+class WebContents;
+}
+
 struct LanguageDetectionDetails;
+class PrefService;
+class TranslateAcceptLanguages;
+class TranslatePrefs;
 
 class TranslateTabHelper
     : public content::WebContentsObserver,
@@ -18,7 +30,36 @@ class TranslateTabHelper
  public:
   virtual ~TranslateTabHelper();
 
-  LanguageState& language_state() { return language_state_; }
+  // Gets the LanguageState associated with the page.
+  LanguageState& GetLanguageState();
+
+  // Returns the ContentTranslateDriver instance associated with this
+  // WebContents.
+  ContentTranslateDriver& translate_driver() { return translate_driver_; }
+
+  // Helper method to return a new TranslatePrefs instance.
+  static scoped_ptr<TranslatePrefs> CreateTranslatePrefs(PrefService* prefs);
+
+  // Helper method to return the TranslateAcceptLanguages instance associated
+  // with |browser_context|.
+  static TranslateAcceptLanguages* GetTranslateAcceptLanguages(
+      content::BrowserContext* browser_context);
+
+  // Denotes which state the user is in with respect to translate.
+  enum TranslateStep {
+    BEFORE_TRANSLATE,
+    TRANSLATING,
+    AFTER_TRANSLATE,
+    TRANSLATE_ERROR
+  };
+
+  // Called when the embedder should present UI to the user corresponding to the
+  // user's current |step|.
+  void ShowTranslateUI(TranslateStep step,
+                       content::WebContents* web_contents,
+                       const std::string source_language,
+                       const std::string target_language,
+                       TranslateErrors::Type error_type);
 
  private:
   explicit TranslateTabHelper(content::WebContents* web_contents);
@@ -37,8 +78,12 @@ class TranslateTabHelper
                         const std::string& translated_lang,
                         TranslateErrors::Type error_type);
 
-  // Information about the language the page is in and has been translated to.
-  LanguageState language_state_;
+  // Shows the translate bubble.
+  void ShowBubble(content::WebContents* web_contents,
+                  TranslateStep step,
+                  TranslateErrors::Type error_type);
+
+  ContentTranslateDriver translate_driver_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateTabHelper);
 };

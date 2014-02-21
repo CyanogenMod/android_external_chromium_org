@@ -371,21 +371,6 @@
           'includes': [ '../build/java_aidl.gypi' ],
         },
         {
-          'target_name': 'content_native_libraries_gen',
-          'type': 'none',
-          'sources': [
-            'public/android/java/templates/NativeLibraries.template',
-          ],
-          'variables': {
-            'package_name': 'org/chromium/content/app',
-            'include_path': 'public/android/java/templates',
-            'template_deps': [
-              'public/android/java/templates/native_libraries_array.h'
-            ],
-          },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
-        },
-        {
           'target_name': 'content_java',
           'type': 'none',
           'dependencies': [
@@ -395,16 +380,15 @@
             '../ui/android/ui_android.gyp:ui_java',
             'common_aidl',
             'content_common',
+            'gesture_event_type_java',
             'page_transition_types_java',
             'popup_item_type_java',
             'result_codes_java',
             'speech_recognition_error_java',
             'top_controls_state_java',
-            'content_native_libraries_gen',
           ],
           'variables': {
             'java_in_dir': '../content/public/android/java',
-            'jar_excluded_classes': [ '*/NativeLibraries.class' ],
             'has_java_resources': 1,
             'R_package': 'org.chromium.content',
             'R_package_relpath': 'org/chromium/content',
@@ -419,6 +403,18 @@
             }],
           ],
           'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'gesture_event_type_java',
+          'type': 'none',
+          'sources': [
+            'public/android/java/src/org/chromium/content/browser/GestureEventType.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/content/browser',
+            'template_deps': ['browser/android/gesture_event_type_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
           'target_name': 'page_transition_types_java',
@@ -490,36 +486,24 @@
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
         {
+          'target_name': 'motionevent_jni_headers',
+          'type': 'none',
+          'variables': {
+             'jni_gen_package': 'content',
+             'jni_generator_ptr_type': 'long',
+             'input_java_class': 'android/view/MotionEvent.class',
+           },
+          'includes': [ '../build/jar_file_jni_generator.gypi' ],
+        },
+        {
           'target_name': 'content_jni_headers',
           'type': 'none',
           'dependencies': [
-            'java_set_jni_headers'
+            'java_set_jni_headers',
+            'motionevent_jni_headers'
           ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '<(SHARED_INTERMEDIATE_DIR)/content',
-            ],
-          },
           'includes': [ 'content_jni.gypi' ],
         },
-        {
-          'target_name': 'content_android_linker',
-          'type': 'shared_library',
-          'conditions': [
-            ['android_webview_build == 0', {
-              # Avoid breaking the webview build because it doesn't have
-              # <(android_ndk_root)/crazy_linker.gyp. Note that it never uses
-              # the linker anyway.
-              'sources': [
-                'common/android/linker/linker_jni.cc',
-              ],
-              'dependencies': [
-                '<(android_ndk_root)/crazy_linker.gyp:crazy_linker',
-              ],
-            }],
-          ],
-        },
-
       ],
     }],  # OS == "android"
   ],

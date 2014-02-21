@@ -8,6 +8,7 @@
 #ifndef NET_TOOLS_QUIC_QUIC_SERVER_H_
 #define NET_TOOLS_QUIC_QUIC_SERVER_H_
 
+#include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
@@ -44,8 +45,9 @@ class QuicServer : public EpollCallbackInterface {
   void Shutdown();
 
   // From EpollCallbackInterface
-  virtual void OnRegistration(
-      EpollServer* eps, int fd, int event_mask) OVERRIDE {}
+  virtual void OnRegistration(EpollServer* eps,
+                              int fd,
+                              int event_mask) OVERRIDE {}
   virtual void OnModification(int fd, int event_mask) OVERRIDE {}
   virtual void OnEvent(int fd, EpollEvent* event) OVERRIDE;
   virtual void OnUnregistration(int fd, bool replaced) OVERRIDE {}
@@ -61,14 +63,6 @@ class QuicServer : public EpollCallbackInterface {
                                           int* packets_dropped);
 
   virtual void OnShutdown(EpollServer* eps, int fd) OVERRIDE {}
-
-  // Dispatches the given packet only if it looks like a valid QUIC packet.
-  // TODO(rjshade): Return a status describing why a packet was dropped, and log
-  //                somehow.  Maybe expose as a varz.
-  static void MaybeDispatchPacket(QuicDispatcher* dispatcher,
-                                  const QuicEncryptedPacket& packet,
-                                  const IPEndPoint& server_address,
-                                  const IPEndPoint& client_address);
 
   void SetStrikeRegisterNoStartupPeriod() {
     crypto_config_.set_strike_register_no_startup_period();

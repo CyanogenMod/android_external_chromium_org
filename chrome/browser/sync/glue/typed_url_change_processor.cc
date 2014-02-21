@@ -14,6 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/typed_url_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -173,7 +174,7 @@ bool TypedUrlChangeProcessor::CreateOrUpdateSyncNode(
       return false;
     }
 
-    create_node.SetTitle(UTF8ToWide(tag));
+    create_node.SetTitle(base::UTF8ToWide(tag));
     model_associator_->WriteToSyncNode(url, visit_vector, &create_node);
   }
   return true;

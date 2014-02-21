@@ -496,14 +496,17 @@ class MediaCodecBridge {
             if (playAudio) {
                 int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
                 int channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-                int channelConfig = (channelCount == 1) ? AudioFormat.CHANNEL_OUT_MONO :
-                        AudioFormat.CHANNEL_OUT_STEREO;
+                int channelConfig = getAudioFormat(channelCount);
                 // Using 16bit PCM for output. Keep this value in sync with
                 // kBytesPerAudioOutputSample in media_codec_bridge.cc.
                 int minBufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig,
                         AudioFormat.ENCODING_PCM_16BIT);
                 mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, channelConfig,
                         AudioFormat.ENCODING_PCM_16BIT, minBufferSize, AudioTrack.MODE_STREAM);
+                if (mAudioTrack.getState() == AudioTrack.STATE_UNINITIALIZED) {
+                    mAudioTrack = null;
+                    return false;
+                }
             }
             return true;
         } catch (IllegalStateException e) {
@@ -538,6 +541,23 @@ class MediaCodecBridge {
             mLastPresentationTimeUs =
                     Math.max(presentationTimeUs - MAX_PRESENTATION_TIMESTAMP_SHIFT_US, 0);
             mFlushed = false;
+        }
+    }
+
+    private int getAudioFormat(int channelCount) {
+        switch (channelCount) {
+            case 1:
+                return AudioFormat.CHANNEL_OUT_MONO;
+            case 2:
+                return AudioFormat.CHANNEL_OUT_STEREO;
+            case 4:
+                return AudioFormat.CHANNEL_OUT_QUAD;
+            case 6:
+                return AudioFormat.CHANNEL_OUT_5POINT1;
+            case 8:
+                return AudioFormat.CHANNEL_OUT_7POINT1;
+            default:
+                return AudioFormat.CHANNEL_OUT_DEFAULT;
         }
     }
 }

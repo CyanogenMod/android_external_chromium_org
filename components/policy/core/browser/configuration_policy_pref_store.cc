@@ -26,7 +26,7 @@ namespace {
 void LogErrors(PolicyErrorMap* errors) {
   PolicyErrorMap::const_iterator iter;
   for (iter = errors->begin(); iter != errors->end(); ++iter) {
-    string16 policy = ASCIIToUTF16(iter->first);
+    base::string16 policy = base::ASCIIToUTF16(iter->first);
     DLOG(WARNING) << "Policy " << policy << ": " << iter->second;
   }
 }
@@ -63,8 +63,8 @@ bool ConfigurationPolicyPrefStore::IsInitializationComplete() const {
 }
 
 bool ConfigurationPolicyPrefStore::GetValue(const std::string& key,
-                                            const Value** value) const {
-  const Value* stored_value = NULL;
+                                            const base::Value** value) const {
+  const base::Value* stored_value = NULL;
   if (!prefs_.get() || !prefs_->GetValue(key, &stored_value))
     return false;
 

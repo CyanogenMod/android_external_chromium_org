@@ -10,12 +10,12 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/sync_driver/data_type_controller.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -59,8 +59,9 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
     datatypes.push_back(syncer::FAVICON_IMAGES);
     datatypes.push_back(syncer::SYNCED_NOTIFICATIONS);
     datatypes.push_back(syncer::MANAGED_USERS);
+    datatypes.push_back(syncer::MANAGED_USER_SHARED_SETTINGS);
 
-  return datatypes;
+    return datatypes;
   }
 
   // Returns the number of default datatypes.

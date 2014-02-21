@@ -13,7 +13,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/views/controls/link_listener.h"
 
 #if defined(USE_AURA)
@@ -24,11 +24,11 @@ namespace views {
 
 const char Link::kViewClassName[] = "Link";
 
-Link::Link() : Label(string16()) {
+Link::Link() : Label(base::string16()) {
   Init();
 }
 
-Link::Link(const string16& title) : Label(title) {
+Link::Link(const base::string16& title) : Label(title) {
   Init();
 }
 
@@ -41,11 +41,6 @@ SkColor Link::GetDefaultEnabledColor() {
 #else
   return SkColorSetRGB(0, 51, 153);
 #endif
-}
-
-void Link::OnEnabledChanged() {
-  RecalculateFont();
-  View::OnEnabledChanged();
 }
 
 const char* Link::GetClassName() const {
@@ -61,25 +56,6 @@ gfx::NativeCursor Link::GetCursor(const ui::MouseEvent& event) {
   static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_HAND);
   return g_hand_cursor;
 #endif
-}
-
-void Link::OnPaint(gfx::Canvas* canvas) {
-  Label::OnPaint(canvas);
-
-  if (HasFocus())
-    canvas->DrawFocusRect(GetLocalBounds());
-}
-
-void Link::OnFocus() {
-  Label::OnFocus();
-  // We render differently focused.
-  SchedulePaint();
-}
-
-void Link::OnBlur() {
-  Label::OnBlur();
-  // We render differently focused.
-  SchedulePaint();
 }
 
 bool Link::HitTestRect(const gfx::Rect& rect) const {
@@ -139,17 +115,6 @@ bool Link::OnKeyPressed(const ui::KeyEvent& event) {
   return true;
 }
 
-bool Link::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
-  // Make sure we don't process space or enter as accelerators.
-  return (event.key_code() == ui::VKEY_SPACE) ||
-      (event.key_code() == ui::VKEY_RETURN);
-}
-
-void Link::GetAccessibleState(ui::AccessibleViewState* state) {
-  Label::GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_LINK;
-}
-
 void Link::OnGestureEvent(ui::GestureEvent* event) {
   if (!enabled())
     return;
@@ -167,9 +132,45 @@ void Link::OnGestureEvent(ui::GestureEvent* event) {
   event->SetHandled();
 }
 
-void Link::SetFont(const gfx::Font& font) {
-  Label::SetFont(font);
+bool Link::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
+  // Make sure we don't process space or enter as accelerators.
+  return (event.key_code() == ui::VKEY_SPACE) ||
+      (event.key_code() == ui::VKEY_RETURN);
+}
+
+void Link::GetAccessibleState(ui::AccessibleViewState* state) {
+  Label::GetAccessibleState(state);
+  state->role = ui::AccessibilityTypes::ROLE_LINK;
+}
+
+void Link::OnEnabledChanged() {
   RecalculateFont();
+  View::OnEnabledChanged();
+}
+
+void Link::OnFocus() {
+  Label::OnFocus();
+  // We render differently focused.
+  SchedulePaint();
+}
+
+void Link::OnBlur() {
+  Label::OnBlur();
+  // We render differently focused.
+  SchedulePaint();
+}
+
+void Link::SetFontList(const gfx::FontList& font_list) {
+  Label::SetFontList(font_list);
+  RecalculateFont();
+}
+
+void Link::SetText(const base::string16& text) {
+  Label::SetText(text);
+  // Disable focusability for empty links.  Otherwise Label::GetInsets() will
+  // give them an unconditional 1-px. inset on every side to allow for a focus
+  // border, when in this case we probably wanted zero width.
+  SetFocusable(!text.empty());
 }
 
 void Link::SetEnabledColor(SkColor color) {
@@ -205,7 +206,12 @@ void Link::Init() {
   SetPressedColor(SK_ColorRED);
 #endif
   RecalculateFont();
-  set_focusable(true);
+
+  // Label::Init() calls SetText(), but if that's being called from Label(), our
+  // SetText() override will not be reached (because the constructed class is
+  // only a Label at the moment, not yet a Link).  So so the set_focusable()
+  // call explicitly here.
+  SetFocusable(!text().empty());
 }
 
 void Link::SetPressed(bool pressed) {
@@ -220,11 +226,11 @@ void Link::SetPressed(bool pressed) {
 
 void Link::RecalculateFont() {
   // Underline the link iff it is enabled and |underline_| is true.
-  const int style = font().GetStyle();
+  const int style = font_list().GetFontStyle();
   const int intended_style = (enabled() && underline_) ?
       (style | gfx::Font::UNDERLINE) : (style & ~gfx::Font::UNDERLINE);
   if (style != intended_style)
-    Label::SetFont(font().DeriveFont(0, intended_style));
+    Label::SetFontList(font_list().DeriveWithStyle(intended_style));
 }
 
 }  // namespace views

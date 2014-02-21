@@ -8,8 +8,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
-#include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/extensions/extension_prefs_factory.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -17,6 +15,8 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/manifest_constants.h"
 
@@ -35,8 +35,8 @@ TemplateURLData ConvertSearchProvider(
     const ChromeSettingsOverrides::Search_provider& search_provider) {
   TemplateURLData data;
 
-  data.short_name = UTF8ToUTF16(search_provider.name);
-  data.SetKeyword(UTF8ToUTF16(search_provider.keyword));
+  data.short_name = base::UTF8ToUTF16(search_provider.name);
+  data.SetKeyword(base::UTF8ToUTF16(search_provider.keyword));
   data.SetURL(search_provider.search_url);
   if (search_provider.suggest_url)
     data.suggestions_url = *search_provider.suggest_url;
@@ -84,7 +84,7 @@ SettingsOverridesAPI::~SettingsOverridesAPI() {
 
 ProfileKeyedAPIFactory<SettingsOverridesAPI>*
     SettingsOverridesAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void SettingsOverridesAPI::SetPref(const std::string& extension_id,
@@ -130,8 +130,9 @@ void SettingsOverridesAPI::Observe(
             VLOG(1) << extensions::ErrorUtils::FormatErrorMessage(
                 kManyStartupPagesWarning, manifest_keys::kSettingsOverride);
           }
-          scoped_ptr<ListValue> url_list(new ListValue);
-          url_list->Append(new StringValue(settings->startup_pages[0].spec()));
+          scoped_ptr<base::ListValue> url_list(new base::ListValue);
+          url_list->Append(
+              new base::StringValue(settings->startup_pages[0].spec()));
           SetPref(extension->id(), prefs::kURLsToRestoreOnStartup,
                   url_list.release());
         }

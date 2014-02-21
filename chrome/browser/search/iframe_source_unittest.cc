@@ -14,6 +14,7 @@
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "grit/browser_resources.h"
+#include "ipc/ipc_message.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -46,15 +47,15 @@ class TestIframeSource : public IframeSource {
   virtual void StartDataRequest(
       const std::string& path,
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE {
   }
 
-  // RenderViewHost is hard to mock in concert with everything else, so stub
+  // RenderFrameHost is hard to mock in concert with everything else, so stub
   // this method out for testing.
   virtual bool GetOrigin(
       int process_id,
-      int render_view_id,
+      int render_frame_id,
       std::string* origin) const OVERRIDE {
     if (process_id == kInstantRendererPID) {
       *origin = kInstantOrigin;
@@ -85,8 +86,7 @@ class IframeSourceTest : public testing::Test {
 
   std::string response_string() {
     if (response_.get()) {
-      return std::string(reinterpret_cast<const char*>(response_->front()),
-                         response_->size());
+      return std::string(response_->front_as<char>(), response_->size());
     }
     return "";
   }
@@ -95,7 +95,7 @@ class IframeSourceTest : public testing::Test {
       const std::string& url,
       bool allocate_info,
       int render_process_id,
-      int render_view_id) {
+      int render_frame_id) {
     net::URLRequest* request =
         new net::URLRequest(GURL(url),
                             net::DEFAULT_PRIORITY,
@@ -106,7 +106,8 @@ class IframeSourceTest : public testing::Test {
                                                        ResourceType::SUB_FRAME,
                                                        &resource_context_,
                                                        render_process_id,
-                                                       render_view_id,
+                                                       render_frame_id,
+                                                       MSG_ROUTING_NONE,
                                                        false);
     }
     return request;
@@ -119,8 +120,8 @@ class IframeSourceTest : public testing::Test {
   void SendJSWithOrigin(
       int resource_id,
       int render_process_id,
-      int render_view_id) {
-    source()->SendJSWithOrigin(resource_id, render_process_id, render_view_id,
+      int render_frame_id) {
+    source()->SendJSWithOrigin(resource_id, render_process_id, render_frame_id,
                                callback_);
   }
 

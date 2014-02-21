@@ -39,6 +39,11 @@ class Feature {
 
     // A normal web page. This should have an associated URL matching pattern.
     WEB_PAGE_CONTEXT,
+
+    // A web page context which has been blessed by the user. Typically this
+    // will be via the installation of a hosted app, so this may host an
+    // extension. This is not affected by the URL matching pattern.
+    BLESSED_WEB_PAGE_CONTEXT,
   };
 
   // The location required of extensions the feature is supported in.
@@ -101,7 +106,7 @@ class Feature {
 
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
-  const std::set<std::string>& dependencies() { return dependencies_; }
+  const std::set<std::string>& dependencies() const { return dependencies_; }
   bool no_parent() const { return no_parent_; }
 
   // Gets the platform the code is currently running on.

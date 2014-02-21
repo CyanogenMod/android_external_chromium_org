@@ -125,23 +125,39 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
           const base::FilePath& partition_path,
           bool in_memory) = 0;
 
-  typedef base::Callback<void(bool)> MIDISysExPermissionCallback;
+  typedef base::Callback<void(bool)> MidiSysExPermissionCallback;
 
   // Requests a permission to use system exclusive messages in MIDI events.
   // |callback| will be invoked when the request is resolved.
-  virtual void RequestMIDISysExPermission(
+  virtual void RequestMidiSysExPermission(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
-      const MIDISysExPermissionCallback& callback) = 0;
+      const MidiSysExPermissionCallback& callback) = 0;
 
   // Cancels a pending MIDI permission request.
-  virtual void CancelMIDISysExPermissionRequest(
+  virtual void CancelMidiSysExPermissionRequest(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame) = 0;
+
+  typedef base::Callback<void(bool)> ProtectedMediaIdentifierPermissionCallback;
+
+  // Request permission to access protected media identifier. The callback will
+  // tell whether it's permitted.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      int group_id,
+      const GURL& requesting_frame,
+      const ProtectedMediaIdentifierPermissionCallback& callback) = 0;
+
+  // Cancels pending protected media identifier permission requests.
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      int group_id) = 0;
 
   // Returns the resource context.
   virtual ResourceContext* GetResourceContext() = 0;

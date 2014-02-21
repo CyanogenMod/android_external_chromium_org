@@ -26,6 +26,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_crypto_delegate.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/common/url_constants.h"
 #include "jni/AwCookieManager_jni.h"
@@ -184,15 +185,14 @@ void CookieManager::CreateCookieMonster(
       FROM_HERE,
       base::Bind(ImportLegacyCookieStore, cookie_store_path));
 
-  net::CookieStore* cookie_store = content::CreatePersistentCookieStore(
-    cookie_store_path,
-    true,
-    NULL,
-    NULL,
-    client_task_runner,
-    background_task_runner);
+  content::CookieStoreConfig cookie_config(
+      cookie_store_path,
+      content::CookieStoreConfig::RESTORED_SESSION_COOKIES,
+      NULL, NULL);
+  cookie_config.client_task_runner = client_task_runner;
+  cookie_config.background_task_runner = background_task_runner;
+  net::CookieStore* cookie_store = content::CreateCookieStore(cookie_config);
   cookie_monster_ = cookie_store->GetCookieMonster();
-  cookie_monster_->SetPersistSessionCookies(true);
   SetAcceptFileSchemeCookiesLocked(kDefaultFileSchemeAllowed);
 }
 
@@ -418,7 +418,7 @@ bool CookieManager::AllowFileSchemeCookies() {
 }
 
 bool CookieManager::AllowFileSchemeCookiesLocked() {
-  return cookie_monster_->IsCookieableScheme(chrome::kFileScheme);
+  return cookie_monster_->IsCookieableScheme(content::kFileScheme);
 }
 
 void CookieManager::SetAcceptFileSchemeCookies(bool accept) {

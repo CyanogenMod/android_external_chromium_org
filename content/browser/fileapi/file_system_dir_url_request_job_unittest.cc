@@ -31,7 +31,11 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 
-namespace fileapi {
+using fileapi::FileSystemContext;
+using fileapi::FileSystemOperationContext;
+using fileapi::FileSystemURL;
+
+namespace content {
 namespace {
 
 // We always use the TEMPORARY FileSystem in this test.
@@ -54,8 +58,8 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
         NULL, temp_dir_.path());
 
     file_system_context_->OpenFileSystem(
-        GURL("http://remote/"), kFileSystemTypeTemporary,
-        OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+        GURL("http://remote/"), fileapi::kFileSystemTypeTemporary,
+        fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&FileSystemDirURLRequestJobTest::OnOpenFileSystem,
                    weak_factory_.GetWeakPtr()));
     base::RunLoop().RunUntilIdle();
@@ -75,8 +79,8 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
 
   void OnOpenFileSystem(const GURL& root_url,
                         const std::string& name,
-                        base::PlatformFileError result) {
-    ASSERT_EQ(base::PLATFORM_FILE_OK, result);
+                        base::File::Error result) {
+    ASSERT_EQ(base::File::FILE_OK, result);
   }
 
   void TestRequestHelper(const GURL& url, bool run_to_completion,
@@ -85,7 +89,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     delegate_->set_quit_on_redirect(true);
     request_ = empty_context_.CreateRequest(
         url, net::DEFAULT_PRIORITY, delegate_.get());
-    job_ = new FileSystemDirURLRequestJob(
+    job_ = new fileapi::FileSystemDirURLRequestJob(
         request_.get(), NULL, file_system_context);
 
     request_->Start();
@@ -124,7 +128,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
   void CreateDirectory(const base::StringPiece& dir_name) {
     base::FilePath path = base::FilePath().AppendASCII(dir_name);
     scoped_ptr<FileSystemOperationContext> context(NewOperationContext());
-    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util()->CreateDirectory(
+    ASSERT_EQ(base::File::FILE_OK, file_util()->CreateDirectory(
         context.get(),
         CreateURL(path),
         false /* exclusive */,
@@ -134,20 +138,20 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
   void EnsureFileExists(const base::StringPiece file_name) {
     base::FilePath path = base::FilePath().AppendASCII(file_name);
     scoped_ptr<FileSystemOperationContext> context(NewOperationContext());
-    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util()->EnsureFileExists(
+    ASSERT_EQ(base::File::FILE_OK, file_util()->EnsureFileExists(
         context.get(), CreateURL(path), NULL));
   }
 
   void TruncateFile(const base::StringPiece file_name, int64 length) {
     base::FilePath path = base::FilePath().AppendASCII(file_name);
     scoped_ptr<FileSystemOperationContext> context(NewOperationContext());
-    ASSERT_EQ(base::PLATFORM_FILE_OK, file_util()->Truncate(
+    ASSERT_EQ(base::File::FILE_OK, file_util()->Truncate(
         context.get(), CreateURL(path), length));
   }
 
-  base::PlatformFileError GetFileInfo(const base::FilePath& path,
-                                      base::PlatformFileInfo* file_info,
-                                      base::FilePath* platform_file_path) {
+  base::File::Error GetFileInfo(const base::FilePath& path,
+                                base::File::Info* file_info,
+                                base::FilePath* platform_file_path) {
     scoped_ptr<FileSystemOperationContext> context(NewOperationContext());
     return file_util()->GetFileInfo(context.get(),
                                     CreateURL(path),
@@ -180,7 +184,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     base::Time date;
     icu::UnicodeString date_ustr(match.group(5, status));
     std::string date_str;
-    UTF16ToUTF8(date_ustr.getBuffer(), date_ustr.length(), &date_str);
+    base::UTF16ToUTF8(date_ustr.getBuffer(), date_ustr.length(), &date_str);
     EXPECT_TRUE(base::Time::FromString(date_str.c_str(), &date));
     EXPECT_FALSE(date.is_null());
   }
@@ -206,7 +210,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     }
   }
 
-  FileSystemFileUtil* file_util() {
+  fileapi::FileSystemFileUtil* file_util() {
     return file_system_context_->sandbox_delegate()->sync_file_util();
   }
 
@@ -248,7 +252,7 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(std::getline(in, line));
+  EXPECT_TRUE(!!std::getline(in, line));
 
 #if defined(OS_WIN)
   EXPECT_EQ("<script>start(\"foo\\\\bar\");</script>", line);
@@ -256,10 +260,10 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
   EXPECT_EQ("<script>start(\"/foo/bar\");</script>", line);
 #endif
 
-  EXPECT_TRUE(std::getline(in, line));
+  EXPECT_TRUE(!!std::getline(in, line));
   VerifyListingEntry(line, "hoge", "hoge", false, 10);
 
-  EXPECT_TRUE(std::getline(in, line));
+  EXPECT_TRUE(!!std::getline(in, line));
   VerifyListingEntry(line, "baz", "baz", true, 0);
 }
 
@@ -307,8 +311,8 @@ TEST_F(FileSystemDirURLRequestJobTest, Incognito) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(std::getline(in, line));
-  EXPECT_FALSE(std::getline(in, line));
+  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_FALSE(!!std::getline(in, line));
 
   TestRequestWithContext(CreateFileSystemURL("foo"),
                          file_system_context.get());
@@ -318,4 +322,4 @@ TEST_F(FileSystemDirURLRequestJobTest, Incognito) {
 }
 
 }  // namespace (anonymous)
-}  // namespace fileapi
+}  // namespace content

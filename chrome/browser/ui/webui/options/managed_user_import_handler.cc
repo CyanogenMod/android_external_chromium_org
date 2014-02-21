@@ -11,6 +11,9 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/managed_mode/managed_user_constants.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -45,10 +48,18 @@ scoped_ptr<base::ListValue> GetAvatarIcons() {
 namespace options {
 
 ManagedUserImportHandler::ManagedUserImportHandler()
-    : weak_ptr_factory_(this) {
-}
+    : weak_ptr_factory_(this) {}
 
-ManagedUserImportHandler::~ManagedUserImportHandler() {}
+ManagedUserImportHandler::~ManagedUserImportHandler() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (!profile->IsManaged()) {
+    ManagedUserSyncService* service =
+        ManagedUserSyncServiceFactory::GetForProfile(profile);
+    if (service)
+      service->RemoveObserver(this);
+    subscription_.reset();
+  }
+}
 
 void ManagedUserImportHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
@@ -59,6 +70,7 @@ void ManagedUserImportHandler::GetLocalizedValues(
       { "managedUserImportText", IDS_IMPORT_EXISTING_MANAGED_USER_TEXT },
       { "createNewUserLink", IDS_CREATE_NEW_USER_LINK },
       { "managedUserImportOk", IDS_IMPORT_EXISTING_MANAGED_USER_OK },
+      { "managedUserImportSigninError", IDS_MANAGED_USER_IMPORT_SIGN_IN_ERROR },
       { "managedUserAlreadyOnThisDevice",
           IDS_MANAGED_USER_ALREADY_ON_THIS_DEVICE },
       { "noExistingManagedUsers", IDS_MANAGED_USER_NO_EXISTING_ERROR },
@@ -72,8 +84,25 @@ void ManagedUserImportHandler::GetLocalizedValues(
 }
 
 void ManagedUserImportHandler::InitializeHandler() {
+  Profile* profile = Profile::FromWebUI(web_ui());
   registrar_.Add(this, chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED,
-                 content::Source<Profile>(Profile::FromWebUI(web_ui())));
+                 content::Source<Profile>(profile));
+  if (!profile->IsManaged()) {
+    ManagedUserSyncService* sync_service =
+        ManagedUserSyncServiceFactory::GetForProfile(profile);
+    if (sync_service) {
+      sync_service->AddObserver(this);
+      ManagedUserSharedSettingsService* settings_service =
+          ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(
+              profile);
+      subscription_ = settings_service->Subscribe(
+          base::Bind(&ManagedUserImportHandler::OnSharedSettingChanged,
+                     weak_ptr_factory_.GetWeakPtr()));
+    } else {
+      DCHECK(!ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(
+                 profile));
+    }
+  }
 }
 
 void ManagedUserImportHandler::RegisterMessages() {
@@ -89,14 +118,18 @@ void ManagedUserImportHandler::Observe(
   if (type == chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED) {
     SigninGlobalError* error =
         SigninGlobalError::GetForProfile(Profile::FromWebUI(web_ui()));
-    if (content::Details<SigninGlobalError>(details).ptr() != error)
-      return;
-
-    RequestManagedUserImportUpdate(NULL);
-    return;
+    if (content::Details<SigninGlobalError>(details).ptr() == error)
+      FetchManagedUsers();
   }
+}
 
-  OptionsPageUIHandler::Observe(type, source, details);
+void ManagedUserImportHandler::OnManagedUsersChanged() {
+  FetchManagedUsers();
+}
+
+void ManagedUserImportHandler::FetchManagedUsers() {
+  web_ui()->CallJavascriptFunction("options.ManagedUserListData.resetPromise");
+  RequestManagedUserImportUpdate(NULL);
 }
 
 void ManagedUserImportHandler::RequestManagedUserImportUpdate(
@@ -107,12 +140,6 @@ void ManagedUserImportHandler::RequestManagedUserImportUpdate(
   if (!IsAccountConnected() || HasAuthError()) {
     ClearManagedUsersAndShowError();
   } else {
-    // Account connected and no sign-in errors, then hide
-    // any error messages and send the managed users to update
-    // the managed user list.
-    web_ui()->CallJavascriptFunction(
-        "ManagedUserImportOverlay.hideErrorBubble");
-
     ManagedUserSyncService* managed_user_sync_service =
         ManagedUserSyncServiceFactory::GetForProfile(
             Profile::FromWebUI(web_ui()));
@@ -123,30 +150,45 @@ void ManagedUserImportHandler::RequestManagedUserImportUpdate(
 }
 
 void ManagedUserImportHandler::SendExistingManagedUsers(
-    const DictionaryValue* dict) {
+    const base::DictionaryValue* dict) {
   DCHECK(dict);
   const ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
-  std::set<std::string> managed_user_ids;
-  for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i)
-    managed_user_ids.insert(cache.GetManagedUserIdOfProfileAtIndex(i));
 
-  ListValue managed_users;
-  for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
-    const DictionaryValue* value = NULL;
+  // Collect the ids of local supervised user profiles.
+  std::set<std::string> managed_user_ids;
+  for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
+    if (cache.ProfileIsManagedAtIndex(i))
+      managed_user_ids.insert(cache.GetManagedUserIdOfProfileAtIndex(i));
+  }
+
+  base::ListValue managed_users;
+  Profile* profile = Profile::FromWebUI(web_ui());
+  ManagedUserSharedSettingsService* service =
+      ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(profile);
+  for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
+    const base::DictionaryValue* value = NULL;
     bool success = it.value().GetAsDictionary(&value);
     DCHECK(success);
     std::string name;
     value->GetString(ManagedUserSyncService::kName, &name);
-    std::string avatar_str;
-    value->GetString(ManagedUserSyncService::kChromeAvatar, &avatar_str);
 
-    DictionaryValue* managed_user = new DictionaryValue;
+    base::DictionaryValue* managed_user = new base::DictionaryValue;
     managed_user->SetString("id", it.key());
     managed_user->SetString("name", name);
 
     int avatar_index = ManagedUserSyncService::kNoAvatar;
-    success = ManagedUserSyncService::GetAvatarIndex(avatar_str, &avatar_index);
+    const base::Value* avatar_index_value =
+        service->GetValue(it.key(), managed_users::kChromeAvatarIndex);
+    if (avatar_index_value) {
+      success = avatar_index_value->GetAsInteger(&avatar_index);
+    } else {
+      // Check if there is a legacy avatar index stored.
+      std::string avatar_str;
+      value->GetString(ManagedUserSyncService::kChromeAvatar, &avatar_str);
+      success =
+          ManagedUserSyncService::GetAvatarIndex(avatar_str, &avatar_index);
+    }
     DCHECK(success);
     managed_user->SetBoolean("needAvatar",
                              avatar_index == ManagedUserSyncService::kNoAvatar);
@@ -167,17 +209,12 @@ void ManagedUserImportHandler::SendExistingManagedUsers(
   }
 
   web_ui()->CallJavascriptFunction(
-      "ManagedUserImportOverlay.receiveExistingManagedUsers",
+      "options.ManagedUserListData.receiveExistingManagedUsers",
       managed_users);
 }
 
 void ManagedUserImportHandler::ClearManagedUsersAndShowError() {
-  web_ui()->CallJavascriptFunction(
-      "ManagedUserImportOverlay.receiveExistingManagedUsers");
-  base::string16 error_message =
-      l10n_util::GetStringUTF16(IDS_MANAGED_USER_IMPORT_SIGN_IN_ERROR);
-  web_ui()->CallJavascriptFunction("ManagedUserImportOverlay.onError",
-                                   base::StringValue(error_message));
+  web_ui()->CallJavascriptFunction("options.ManagedUserListData.onSigninError");
 }
 
 bool ManagedUserImportHandler::IsAccountConnected() const {
@@ -198,6 +235,13 @@ bool ManagedUserImportHandler::HasAuthError() const {
       state == GoogleServiceAuthError::USER_NOT_SIGNED_UP ||
       state == GoogleServiceAuthError::ACCOUNT_DELETED ||
       state == GoogleServiceAuthError::ACCOUNT_DISABLED;
+}
+
+void ManagedUserImportHandler::OnSharedSettingChanged(
+    const std::string& managed_user_id,
+    const std::string& key) {
+  if (key == managed_users::kChromeAvatarIndex)
+    FetchManagedUsers();
 }
 
 }  // namespace options

@@ -18,8 +18,8 @@
 #include "net/quic/quic_protocol.h"
 #include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
-#include "net/tools/quic/quic_reliable_client_stream.h"
 #include "net/tools/quic/quic_socket_utils.h"
+#include "net/tools/quic/quic_spdy_client_stream.h"
 
 #ifndef SO_RXQ_OVFL
 #define SO_RXQ_OVFL 40
@@ -153,7 +153,8 @@ bool QuicClient::Connect() {
 }
 
 bool QuicClient::StartConnect() {
-  DCHECK(!connected() && initialized_);
+  DCHECK(initialized_);
+  DCHECK(!connected());
 
   QuicPacketWriter* writer = CreateQuicPacketWriter();
   if (writer_.get() != writer) {
@@ -188,10 +189,10 @@ void QuicClient::Disconnect() {
 
 void QuicClient::SendRequestsAndWaitForResponse(
     const CommandLine::StringVector& args) {
-  for (size_t i = 0; i < args.size(); i++) {
+  for (size_t i = 0; i < args.size(); ++i) {
     BalsaHeaders headers;
     headers.SetRequestFirstlineFromStringPieces("GET", args[i], "HTTP/1.1");
-    QuicReliableClientStream* stream = CreateReliableClientStream();
+    QuicSpdyClientStream* stream = CreateReliableClientStream();
     stream->SendRequest(headers, "", true);
     stream->set_visitor(this);
   }
@@ -199,12 +200,12 @@ void QuicClient::SendRequestsAndWaitForResponse(
   while (WaitForEvents()) { }
 }
 
-QuicReliableClientStream* QuicClient::CreateReliableClientStream() {
+QuicSpdyClientStream* QuicClient::CreateReliableClientStream() {
   if (!connected()) {
     return NULL;
   }
 
-  return session_->CreateOutgoingReliableStream();
+  return session_->CreateOutgoingDataStream();
 }
 
 void QuicClient::WaitForStreamToClose(QuicStreamId id) {
@@ -238,20 +239,26 @@ void QuicClient::OnEvent(int fd, EpollEvent* event) {
     }
   }
   if (connected() && (event->in_events & EPOLLOUT)) {
+    writer_->SetWritable();
     session_->connection()->OnCanWrite();
   }
   if (event->in_events & EPOLLERR) {
-    DLOG(INFO) << "Epollerr";
+    DVLOG(1) << "Epollerr";
   }
 }
 
-void QuicClient::OnClose(ReliableQuicStream* stream) {
+void QuicClient::OnClose(QuicDataStream* stream) {
+  QuicSpdyClientStream* client_stream =
+      static_cast<QuicSpdyClientStream*>(stream);
+  if (response_listener_.get() != NULL) {
+    response_listener_->OnCompleteResponse(
+        stream->id(), client_stream->headers(), client_stream->data());
+  }
+
   if (!print_response_) {
     return;
   }
 
-  QuicReliableClientStream* client_stream =
-      static_cast<QuicReliableClientStream*>(stream);
   const BalsaHeaders& headers = client_stream->headers();
   printf("%s\n", headers.first_line().as_string().c_str());
   for (BalsaHeaders::const_header_lines_iterator i =
@@ -304,18 +311,6 @@ bool QuicClient::ReadAndProcessPacket() {
   }
 
   QuicEncryptedPacket packet(buf, bytes_read, false);
-  QuicGuid our_guid = session_->connection()->guid();
-  QuicGuid packet_guid;
-
-  if (!QuicFramer::ReadGuidFromPacket(packet, &packet_guid)) {
-    DLOG(INFO) << "Could not read GUID from packet";
-    return true;
-  }
-  if (packet_guid != our_guid) {
-    DLOG(INFO) << "Ignoring packet from unexpected GUID: "
-               << packet_guid << " instead of " << our_guid;
-    return true;
-  }
 
   IPEndPoint client_address(client_ip, client_address_.port());
   session_->connection()->ProcessUdpPacket(

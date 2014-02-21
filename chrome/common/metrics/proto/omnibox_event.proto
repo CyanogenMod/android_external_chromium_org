@@ -108,6 +108,10 @@ message OmniboxEventProto {
     // replacement, meaning the URL of the page should've appeared in the
     // omnibox before the user started editing it, not the search terms.
     SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT = 9;
+
+    // When adding new classifications, please consider adding them in
+    // chrome/browser/resources/omnibox/omnibox.html
+    // so that these new options are displayed on about:omnibox.
   }
   optional PageClassification current_page_classification = 10;
 
@@ -139,6 +143,9 @@ message OmniboxEventProto {
     CONTACT = 9;           // The user's contacts
     BOOKMARK = 10;         // The user's bookmarks
     ZERO_SUGGEST = 11;     // Suggestions based on the current page
+    // This enum value is currently only used by Android GSA. It represents
+    // a suggestion from the phone.
+    ON_DEVICE = 12;
   }
 
   // The result set displayed on the completion popup
@@ -149,7 +156,8 @@ message OmniboxEventProto {
 
     // What kind of result this is.
     // This corresponds to the AutocompleteMatch::Type enumeration in
-    // chrome/browser/autocomplete/autocomplete_match.h
+    // chrome/browser/autocomplete/autocomplete_match.h (except for Android
+    // GSA result types).
     enum ResultType {
       UNKNOWN_RESULT_TYPE = 0;    // Unknown type (should not reach here)
       URL_WHAT_YOU_TYPED = 1;     // The input as a URL
@@ -164,12 +172,27 @@ message OmniboxEventProto {
       SEARCH_HISTORY = 8;         // A past search (with the default engine)
                                   // containing the input
       SEARCH_SUGGEST = 9;         // A suggested search (with the default
-                                  // engine)
+                                  // engine) query that doesn't fall into one of
+                                  // the more specific suggestion categories
+                                  // below.
       SEARCH_OTHER_ENGINE = 10;   // A search with a non-default engine
       EXTENSION_APP = 11;         // An Extension App with a title/url that
                                   // contains the input
       CONTACT = 12;               // One of the user's contacts
       BOOKMARK_TITLE = 13;        // A bookmark whose title contains the input.
+      SEARCH_SUGGEST_ENTITY = 14; // A suggested search for an entity.
+      SEARCH_SUGGEST_INFINITE = 15; // A suggested search to complete the tail
+                                    // of the query.
+      SEARCH_SUGGEST_PERSONALIZED = 16; // A personalized suggested search.
+      SEARCH_SUGGEST_PROFILE = 17; // A personalized suggested search for a
+                                   // Google+ profile.      
+      APP_RESULT = 18;             // Result from an installed app
+                                   // (eg: a gmail email).
+                                   // Used by Android GSA for on-device
+                                   // suggestion logging.
+      APP = 19;                    // An app result (eg: the gmail app).
+                                   // Used by Android GSA for on-device
+                                   // suggestion logging.
     }
     optional ResultType result_type = 2;
 

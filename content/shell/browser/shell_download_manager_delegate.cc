@@ -28,16 +28,25 @@
 #include "content/shell/common/shell_switches.h"
 #include "net/base/net_util.h"
 
+#if defined(OS_WIN)
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#endif
+
 namespace content {
 
 ShellDownloadManagerDelegate::ShellDownloadManagerDelegate()
     : download_manager_(NULL),
-      suppress_prompting_(false) {
-  // Balanced in Shutdown();
-  AddRef();
-}
+      suppress_prompting_(false),
+      weak_ptr_factory_(this) {}
 
 ShellDownloadManagerDelegate::~ShellDownloadManagerDelegate(){
+  if (download_manager_) {
+    DCHECK_EQ(static_cast<DownloadManagerDelegate*>(this),
+              download_manager_->GetDelegate());
+    download_manager_->SetDelegate(NULL);
+    download_manager_ = NULL;
+  }
 }
 
 
@@ -47,7 +56,10 @@ void ShellDownloadManagerDelegate::SetDownloadManager(
 }
 
 void ShellDownloadManagerDelegate::Shutdown() {
-  Release();
+  // Revoke any pending callbacks. download_manager_ et. al. are no longer safe
+  // to access after this point.
+  weak_ptr_factory_.InvalidateWeakPtrs();
+  download_manager_ = NULL;
 }
 
 bool ShellDownloadManagerDelegate::DetermineDownloadTarget(
@@ -69,21 +81,22 @@ bool ShellDownloadManagerDelegate::DetermineDownloadTarget(
     return true;
   }
 
-  base::FilePath generated_name = net::GenerateFileName(
-      download->GetURL(),
-      download->GetContentDisposition(),
-      std::string(),
-      download->GetSuggestedFilename(),
-      download->GetMimeType(),
-      "download");
+  FilenameDeterminedCallback filename_determined_callback =
+      base::Bind(&ShellDownloadManagerDelegate::OnDownloadPathGenerated,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 download->GetId(),
+                 callback);
 
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      base::Bind(
-          &ShellDownloadManagerDelegate::GenerateFilename,
-          this, download->GetId(), callback, generated_name,
-          default_download_path_));
+      base::Bind(&ShellDownloadManagerDelegate::GenerateFilename,
+                 download->GetURL(),
+                 download->GetContentDisposition(),
+                 download->GetSuggestedFilename(),
+                 download->GetMimeType(),
+                 default_download_path_,
+                 filename_determined_callback));
   return true;
 }
 
@@ -105,22 +118,28 @@ void ShellDownloadManagerDelegate::GetNextId(
   callback.Run(next_id++);
 }
 
+// static
 void ShellDownloadManagerDelegate::GenerateFilename(
-    uint32 download_id,
-    const DownloadTargetCallback& callback,
-    const base::FilePath& generated_name,
-    const base::FilePath& suggested_directory) {
+    const GURL& url,
+    const std::string& content_disposition,
+    const std::string& suggested_filename,
+    const std::string& mime_type,
+    const base::FilePath& suggested_directory,
+    const FilenameDeterminedCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  base::FilePath generated_name = net::GenerateFileName(url,
+                                                        content_disposition,
+                                                        std::string(),
+                                                        suggested_filename,
+                                                        mime_type,
+                                                        "download");
+
   if (!base::PathExists(suggested_directory))
     base::CreateDirectory(suggested_directory);
 
   base::FilePath suggested_path(suggested_directory.Append(generated_name));
   BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(
-          &ShellDownloadManagerDelegate::OnDownloadPathGenerated,
-          this, download_id, callback, suggested_path));
+      BrowserThread::UI, FROM_HERE, base::Bind(callback, suggested_path));
 }
 
 void ShellDownloadManagerDelegate::OnDownloadPathGenerated(
@@ -149,14 +168,15 @@ void ShellDownloadManagerDelegate::ChooseDownloadPath(
     return;
 
   base::FilePath result;
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   std::wstring file_part = base::FilePath(suggested_path).BaseName().value();
   wchar_t file_name[MAX_PATH];
   base::wcslcpy(file_name, file_part.c_str(), arraysize(file_name));
   OPENFILENAME save_as;
   ZeroMemory(&save_as, sizeof(save_as));
   save_as.lStructSize = sizeof(OPENFILENAME);
-  save_as.hwndOwner = item->GetWebContents()->GetView()->GetNativeView();
+  save_as.hwndOwner = item->GetWebContents()->GetView()->GetNativeView()->
+      GetDispatcher()->host()->GetAcceleratedWidget();
   save_as.lpstrFile = file_name;
   save_as.nMaxFile = arraysize(file_name);
 

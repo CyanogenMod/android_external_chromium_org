@@ -21,7 +21,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "ui/base/cocoa/controls/blue_label_button.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -83,7 +83,8 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   [[self view] addSubview:saveInChromeCheckbox_];
 
   saveInChromeTooltip_.reset(
-      [[AutofillTooltipController alloc] init]);
+      [[AutofillTooltipController alloc]
+            initWithArrowLocation:info_bubble::kTopCenter]);
   [saveInChromeTooltip_ setImage:
       ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
           IDR_AUTOFILL_TOOLTIP_ICON).ToNSImage()];
@@ -258,10 +259,6 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
   CGFloat buttonHeight =
       NSHeight([[[buttonContainer_ subviews] objectAtIndex:1] frame]);
 
-  // Account for a rendering issue in BlueLabelButton.
-  // TODO(groby): Fix that rendering instead.
-  buttonHeight -= 1.0;
-
   // Force first button to be the same height.
   NSView* button = [[buttonContainer_ subviews] objectAtIndex:0];
   NSSize buttonSize = [button frame].size;
@@ -388,6 +385,19 @@ const SkColor kLegalDocumentsTextColor = SkColorSetRGB(102, 102, 102);
     [buttonStripImage_ setImage:image.ToNSImage()];
     [buttonStripImage_ setFrameSize:[[buttonStripImage_ image] size]];
   }
+}
+
+- (void)scrollInitialEditorIntoViewAndMakeFirstResponder {
+  // Try to focus on the first invalid field. If there isn't one, focus on the
+  // first editable field instead.
+  NSView* field = [detailsContainer_ firstInvalidField];
+  if (!field)
+    field = [detailsContainer_ firstVisibleField];
+  if (!field)
+    return;
+
+  [detailsContainer_ scrollToView:field];
+  [[[self view] window] makeFirstResponder:field];
 }
 
 - (void)updateErrorBubble {

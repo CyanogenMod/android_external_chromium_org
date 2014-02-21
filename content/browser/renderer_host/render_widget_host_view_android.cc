@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
 #include "cc/base/latency_info_swap_promise.h"
@@ -37,6 +38,7 @@
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_android.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -45,6 +47,7 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -62,6 +65,7 @@ namespace content {
 namespace {
 
 const int kUndefinedOutputSurfaceId = -1;
+static const char kAsyncReadBackString[] = "Compositing.CopyFromSurfaceTime";
 
 void InsertSyncPointAndAckForCompositor(
     int renderer_host_id,
@@ -90,16 +94,30 @@ void CopyFromCompositingSurfaceFinished(
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     scoped_ptr<cc::SingleReleaseCallback> release_callback,
     scoped_ptr<SkBitmap> bitmap,
+    const base::TimeTicks& start_time,
     scoped_ptr<SkAutoLockPixels> bitmap_pixels_lock,
     bool result) {
   bitmap_pixels_lock.reset();
   release_callback->Run(0, false);
+  UMA_HISTOGRAM_TIMES(kAsyncReadBackString,
+                      base::TimeTicks::Now() - start_time);
   callback.Run(result, *bitmap);
 }
 
-bool UsingDelegatedRenderer() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableDelegatedRenderer);
+ui::LatencyInfo CreateLatencyInfo(const blink::WebInputEvent& event) {
+  ui::LatencyInfo latency_info;
+  // The latency number should only be added if the timestamp is valid.
+  if (event.timeStampSeconds) {
+    const int64 time_micros = static_cast<int64>(
+        event.timeStampSeconds * base::Time::kMicrosecondsPerSecond);
+    latency_info.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+        0,
+        0,
+        base::TimeTicks() + base::TimeDelta::FromMicroseconds(time_micros),
+        1);
+  }
+  return latency_info;
 }
 
 }  // anonymous namespace
@@ -109,7 +127,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     ContentViewCoreImpl* content_view_core)
     : host_(widget_host),
       needs_begin_frame_(false),
-      are_layers_attached_(true),
+      is_showing_(!widget_host->is_hidden()),
       content_view_core_(NULL),
       ime_adapter_android_(this),
       cached_background_color_(SK_ColorWHITE),
@@ -124,8 +142,13 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       accelerated_surface_route_id_(0),
       using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
                                         widget_host->GetProcess()->GetID(),
-                                        widget_host->GetRoutingID()) != NULL) {
-  if (!UsingDelegatedRenderer()) {
+                                        widget_host->GetRoutingID()) != NULL),
+      frame_evictor_(new DelegatedFrameEvictor(this)),
+      using_delegated_renderer_(CommandLine::ForCurrentProcess()->HasSwitch(
+                                    switches::kEnableDelegatedRenderer) &&
+                                !CommandLine::ForCurrentProcess()->HasSwitch(
+                                    switches::kDisableDelegatedRenderer)) {
+  if (!using_delegated_renderer_) {
     texture_layer_ = cc::TextureLayer::Create(NULL);
     layer_ = texture_layer_;
   }
@@ -163,6 +186,8 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
                         OnSetNeedsBeginFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
                         OnTextInputStateChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SmartClipDataExtracted,
+                        OnSmartClipDataExtracted)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -226,31 +251,26 @@ void RenderWidgetHostViewAndroid::SetBounds(const gfx::Rect& rect) {
   SetSize(rect.size());
 }
 
-blink::WebGLId RenderWidgetHostViewAndroid::GetScaledContentTexture(
+void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
     float scale,
-    gfx::Size* out_size) {
-  gfx::Size size(gfx::ToCeiledSize(
-      gfx::ScaleSize(texture_size_in_layer_, scale)));
-
-  if (!CompositorImpl::IsInitialized() ||
-      texture_id_in_layer_ == 0 ||
-      texture_size_in_layer_.IsEmpty() ||
-      size.IsEmpty()) {
-    if (out_size)
-        out_size->SetSize(0, 0);
-
-    return 0;
+    gfx::Size* out_size,
+    const base::Callback<void(bool, const SkBitmap&)>& result_callback) {
+  if (!IsSurfaceAvailableForCopy()) {
+    result_callback.Run(false, SkBitmap());
+    return;
   }
 
-  if (out_size)
-    *out_size = size;
-
-  GLHelper* helper = ImageTransportFactoryAndroid::GetInstance()->GetGLHelper();
-  return helper->CopyAndScaleTexture(texture_id_in_layer_,
-                                     texture_size_in_layer_,
-                                     size,
-                                     true,
-                                     GLHelper::SCALER_QUALITY_FAST);
+  gfx::Size bounds = layer_->bounds();
+  gfx::Rect src_subrect(bounds);
+  const gfx::Display& display =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+  float device_scale_factor = display.device_scale_factor();
+  DCHECK_GT(device_scale_factor, 0);
+  gfx::Size dst_size(
+      gfx::ToCeiledSize(gfx::ScaleSize(bounds, scale / device_scale_factor)));
+  *out_size = dst_size;
+  CopyFromCompositingSurface(
+      src_subrect, dst_size, result_callback, SkBitmap::kARGB_8888_Config);
 }
 
 bool RenderWidgetHostViewAndroid::PopulateBitmapWithContents(jobject jbitmap) {
@@ -266,22 +286,23 @@ bool RenderWidgetHostViewAndroid::PopulateBitmapWithContents(jobject jbitmap) {
 
   GLHelper* helper = ImageTransportFactoryAndroid::GetInstance()->GetGLHelper();
 
-  blink::WebGLId texture = helper->CopyAndScaleTexture(
+  GLuint texture = helper->CopyAndScaleTexture(
       texture_id_in_layer_,
       texture_size_in_layer_,
       bitmap.size(),
       true,
       GLHelper::SCALER_QUALITY_FAST);
-  if (texture == 0)
+  if (texture == 0u)
     return false;
 
   helper->ReadbackTextureSync(texture,
                               gfx::Rect(bitmap.size()),
-                              static_cast<unsigned char*> (bitmap.pixels()));
+                              static_cast<unsigned char*> (bitmap.pixels()),
+                              SkBitmap::kARGB_8888_Config);
 
-  blink::WebGraphicsContext3D* context =
-      ImageTransportFactoryAndroid::GetInstance()->GetContext3D();
-  context->deleteTexture(texture);
+  gpu::gles2::GLES2Interface* gl =
+      ImageTransportFactoryAndroid::GetInstance()->GetContextGL();
+  gl->DeleteTextures(1, &texture);
 
   return true;
 }
@@ -289,10 +310,13 @@ bool RenderWidgetHostViewAndroid::PopulateBitmapWithContents(jobject jbitmap) {
 bool RenderWidgetHostViewAndroid::HasValidFrame() const {
   if (!content_view_core_)
     return false;
+  if (!layer_)
+    return false;
+
   if (texture_size_in_layer_.IsEmpty())
     return false;
 
-  if (UsingDelegatedRenderer()) {
+  if (using_delegated_renderer_) {
     if (!delegated_renderer_layer_.get())
       return false;
   } else {
@@ -353,22 +377,26 @@ bool RenderWidgetHostViewAndroid::IsSurfaceAvailableForCopy() const {
 }
 
 void RenderWidgetHostViewAndroid::Show() {
-  if (are_layers_attached_)
+  if (is_showing_)
     return;
 
-  are_layers_attached_ = true;
-  AttachLayers();
+  is_showing_ = true;
+  if (layer_)
+    layer_->SetHideLayerAndSubtree(false);
 
+  frame_evictor_->SetVisible(true);
   WasShown();
 }
 
 void RenderWidgetHostViewAndroid::Hide() {
-  if (!are_layers_attached_)
+  if (!is_showing_)
     return;
 
-  are_layers_attached_ = false;
-  RemoveLayers();
+  is_showing_ = false;
+  if (layer_)
+    layer_->SetHideLayerAndSubtree(true);
 
+  frame_evictor_->SetVisible(false);
   WasHidden();
 }
 
@@ -376,7 +404,19 @@ bool RenderWidgetHostViewAndroid::IsShowing() {
   // ContentViewCoreImpl represents the native side of the Java
   // ContentViewCore.  It being NULL means that it is not attached
   // to the View system yet, so we treat this RWHVA as hidden.
-  return are_layers_attached_ && content_view_core_;
+  return is_showing_ && content_view_core_;
+}
+
+void RenderWidgetHostViewAndroid::LockResources() {
+  DCHECK(HasValidFrame());
+  DCHECK(host_);
+  DCHECK(!host_->is_hidden());
+  frame_evictor_->LockFrame();
+}
+
+void RenderWidgetHostViewAndroid::UnlockResources() {
+  DCHECK(HasValidFrame());
+  frame_evictor_->UnlockFrame();
 }
 
 gfx::Rect RenderWidgetHostViewAndroid::GetViewBounds() const {
@@ -492,15 +532,29 @@ void RenderWidgetHostViewAndroid::OnStartContentIntent(
     content_view_core_->StartContentIntent(content_url);
 }
 
+void RenderWidgetHostViewAndroid::OnSmartClipDataExtracted(
+    const base::string16& result) {
+  // Custom serialization over IPC isn't allowed normally for security reasons.
+  // Since this feature is only used in (single-process) WebView, there are no
+  // security issues. Enforce that it's only called in single process mode.
+  CHECK(RenderProcessHost::run_renderer_in_process());
+  if (content_view_core_)
+    content_view_core_->OnSmartClipDataExtracted(result);
+}
+
 void RenderWidgetHostViewAndroid::ImeCancelComposition() {
   ime_adapter_android_.CancelComposition();
+}
+
+void RenderWidgetHostViewAndroid::FocusedNodeChanged(bool is_editable_node) {
+  ime_adapter_android_.FocusedNodeChanged(is_editable_node);
 }
 
 void RenderWidgetHostViewAndroid::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
     const std::vector<gfx::Rect>& copy_rects,
-    const ui::LatencyInfo& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info) {
   NOTIMPLEMENTED();
 }
 
@@ -540,7 +594,7 @@ void RenderWidgetHostViewAndroid::SelectionChanged(const base::string16& text,
     return;
   }
 
-  std::string utf8_selection = UTF16ToUTF8(text.substr(pos, n));
+  std::string utf8_selection = base::UTF16ToUTF8(text.substr(pos, n));
 
   content_view_core_->OnSelectionChanged(utf8_selection);
 }
@@ -569,38 +623,63 @@ void RenderWidgetHostViewAndroid::SetBackground(const SkBitmap& background) {
 void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    const SkBitmap::Config bitmap_config) {
+  // Only ARGB888 and RGB565 supported as of now.
+  bool format_support = ((bitmap_config == SkBitmap::kRGB_565_Config) ||
+                         (bitmap_config == SkBitmap::kARGB_8888_Config));
+  if (!format_support) {
+    DCHECK(format_support);
+    callback.Run(false, SkBitmap());
+    return;
+  }
+  base::TimeTicks start_time = base::TimeTicks::Now();
   if (!using_synchronous_compositor_ && !IsSurfaceAvailableForCopy()) {
     callback.Run(false, SkBitmap());
     return;
   }
-
+  ImageTransportFactoryAndroid* factory =
+      ImageTransportFactoryAndroid::GetInstance();
+  GLHelper* gl_helper = factory->GetGLHelper();
+  if (!gl_helper)
+    return;
+  bool check_rgb565_support = gl_helper->CanUseRgb565Readback();
+  if ((bitmap_config == SkBitmap::kRGB_565_Config) &&
+      !check_rgb565_support) {
+    LOG(ERROR) << "Readbackformat rgb565  not supported";
+    callback.Run(false, SkBitmap());
+    return;
+  }
   const gfx::Display& display =
       gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
   float device_scale_factor = display.device_scale_factor();
-
-  DCHECK_EQ(device_scale_factor,
-            ui::GetImageScale(GetScaleFactorForView(this)));
-
-  const gfx::Size& dst_size_in_pixel = ConvertViewSizeToPixel(this, dst_size);
+  gfx::Size dst_size_in_pixel =
+      ConvertRectToPixel(device_scale_factor, gfx::Rect(dst_size)).size();
   gfx::Rect src_subrect_in_pixel =
       ConvertRectToPixel(device_scale_factor, src_subrect);
 
   if (using_synchronous_compositor_) {
-    SynchronousCopyContents(src_subrect_in_pixel, dst_size_in_pixel, callback);
+    SynchronousCopyContents(src_subrect_in_pixel, dst_size_in_pixel, callback,
+                            bitmap_config);
+    UMA_HISTOGRAM_TIMES("Compositing.CopyFromSurfaceTimeSynchronous",
+                        base::TimeTicks::Now() - start_time);
     return;
   }
-
   scoped_ptr<cc::CopyOutputRequest> request;
-  if (src_subrect_in_pixel.size() == dst_size_in_pixel) {
+  if ((src_subrect_in_pixel.size() == dst_size_in_pixel) &&
+      (bitmap_config == SkBitmap::kARGB_8888_Config)) {
       request = cc::CopyOutputRequest::CreateBitmapRequest(base::Bind(
           &RenderWidgetHostViewAndroid::PrepareBitmapCopyOutputResult,
           dst_size_in_pixel,
+          bitmap_config,
+          start_time,
           callback));
   } else {
       request = cc::CopyOutputRequest::CreateRequest(base::Bind(
           &RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult,
           dst_size_in_pixel,
+          bitmap_config,
+          start_time,
           callback));
   }
   request->set_area(src_subrect_in_pixel);
@@ -647,13 +726,29 @@ void RenderWidgetHostViewAndroid::SendDelegatedFrameAck(
                                                    ack);
 }
 
+void RenderWidgetHostViewAndroid::SendReturnedDelegatedResources(
+    uint32 output_surface_id) {
+  DCHECK(resource_collection_);
+
+  cc::CompositorFrameAck ack;
+  resource_collection_->TakeUnusedResourcesForChildCompositor(&ack.resources);
+  DCHECK(!ack.resources.empty());
+
+  RenderWidgetHostImpl::SendReclaimCompositorResources(
+      host_->GetRoutingID(),
+      output_surface_id,
+      host_->GetProcess()->GetID(),
+      ack);
+}
+
 void RenderWidgetHostViewAndroid::UnusedResourcesAreAvailable() {
-  // TODO(danakj): If no ack is pending, collect and send resources now.
+  if (ack_callbacks_.size())
+    return;
+  SendReturnedDelegatedResources(last_output_surface_id_);
 }
 
 void RenderWidgetHostViewAndroid::DestroyDelegatedContent() {
-  if (are_layers_attached_)
-    RemoveLayers();
+  RemoveLayers();
   frame_provider_ = NULL;
   delegated_renderer_layer_ = NULL;
   layer_ = NULL;
@@ -665,13 +760,12 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
   bool has_content = !texture_size_in_layer_.IsEmpty();
 
   if (output_surface_id != last_output_surface_id_) {
-    // TODO(danakj): Lose all resources and send them back here, such as:
-    // resource_collection_->LoseAllResources();
-    // SendReturnedDelegatedResources(last_output_surface_id_);
-
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
     if (resource_collection_.get()) {
+      if (resource_collection_->LoseAllResources())
+        SendReturnedDelegatedResources(last_output_surface_id_);
+
       resource_collection_->SetClient(NULL);
       resource_collection_ = NULL;
     }
@@ -689,15 +783,13 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
     }
     if (!frame_provider_ ||
         texture_size_in_layer_ != frame_provider_->frame_size()) {
-      if (are_layers_attached_)
-        RemoveLayers();
+      RemoveLayers();
       frame_provider_ = new cc::DelegatedFrameProvider(
           resource_collection_.get(), frame_data.Pass());
       delegated_renderer_layer_ =
           cc::DelegatedRendererLayer::Create(frame_provider_);
       layer_ = delegated_renderer_layer_;
-      if (are_layers_attached_)
-        AttachLayers();
+      AttachLayers();
     } else {
       frame_provider_->SetFrameData(frame_data.Pass());
     }
@@ -744,8 +836,16 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
   // to schedule a Draw immediately when it sees the texture layer invalidation.
   UpdateContentViewCoreFrameMetadata(frame->metadata);
 
+  if (layer_ && layer_->layer_tree_host()) {
+    for (size_t i = 0; i < frame->metadata.latency_info.size(); i++) {
+      scoped_ptr<cc::SwapPromise> swap_promise(
+          new cc::LatencyInfoSwapPromise(frame->metadata.latency_info[i]));
+      layer_->layer_tree_host()->QueueSwapPromise(swap_promise.Pass());
+    }
+  }
+
   if (frame->delegated_frame_data) {
-    DCHECK(UsingDelegatedRenderer());
+    DCHECK(using_delegated_renderer_);
 
     DCHECK(frame->delegated_frame_data);
     DCHECK(!frame->delegated_frame_data->render_pass_list.empty());
@@ -756,10 +856,11 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
     ComputeContentsSize(frame->metadata);
 
     SwapDelegatedFrame(output_surface_id, frame->delegated_frame_data.Pass());
+    frame_evictor_->SwappedFrame(!host_->is_hidden());
     return;
   }
 
-  DCHECK(!UsingDelegatedRenderer());
+  DCHECK(!using_delegated_renderer_);
 
   if (!frame->gl_frame_data || frame->gl_frame_data->mailbox.IsZero())
     return;
@@ -781,13 +882,8 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
   texture_size_in_layer_ = frame->gl_frame_data->size;
   ComputeContentsSize(frame->metadata);
 
-  if (layer_->layer_tree_host()) {
-    scoped_ptr<cc::SwapPromise> swap_promise(
-        new cc::LatencyInfoSwapPromise(frame->metadata.latency_info));
-    layer_->layer_tree_host()->QueueSwapPromise(swap_promise.Pass());
-  }
-
   BuffersSwapped(frame->gl_frame_data->mailbox, output_surface_id, callback);
+  frame_evictor_->SwappedFrame(!host_->is_hidden());
 }
 
 void RenderWidgetHostViewAndroid::SynchronousFrameMetadata(
@@ -811,10 +907,15 @@ void RenderWidgetHostViewAndroid::SynchronousFrameMetadata(
   }
 }
 
+void RenderWidgetHostViewAndroid::SetOverlayVideoMode(bool enabled) {
+  layer_->SetContentsOpaque(!enabled);
+}
+
 void RenderWidgetHostViewAndroid::SynchronousCopyContents(
     const gfx::Rect& src_subrect_in_pixel,
     const gfx::Size& dst_size_in_pixel,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    const SkBitmap::Config config) {
   SynchronousCompositor* compositor =
       SynchronousCompositorImpl::FromID(host_->GetProcess()->GetID(),
                                         host_->GetRoutingID());
@@ -824,7 +925,7 @@ void RenderWidgetHostViewAndroid::SynchronousCopyContents(
   }
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+  bitmap.setConfig(config,
                    dst_size_in_pixel.width(),
                    dst_size_in_pixel.height());
   bitmap.allocPixels();
@@ -901,6 +1002,7 @@ void RenderWidgetHostViewAndroid::AttachLayers() {
   content_view_core_->AttachLayer(layer_);
   if (overscroll_effect_enabled_)
     overscroll_effect_->Enable();
+  layer_->SetHideLayerAndSubtree(!is_showing_);
 }
 
 void RenderWidgetHostViewAndroid::RemoveLayers() {
@@ -940,7 +1042,10 @@ void RenderWidgetHostViewAndroid::AcceleratedSurfaceSuspend() {
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfaceRelease() {
-  // This tells us we should free the frontbuffer.
+  NOTREACHED();
+}
+
+void RenderWidgetHostViewAndroid::EvictDelegatedFrame() {
   if (texture_id_in_layer_) {
     texture_layer_->SetTextureId(0);
     texture_layer_->SetIsDrawable(false);
@@ -952,6 +1057,7 @@ void RenderWidgetHostViewAndroid::AcceleratedSurfaceRelease() {
   }
   if (delegated_renderer_layer_.get())
     DestroyDelegatedContent();
+  frame_evictor_->DiscardedFrame();
 }
 
 bool RenderWidgetHostViewAndroid::HasAcceleratedSurface(
@@ -1003,20 +1109,18 @@ void RenderWidgetHostViewAndroid::UnhandledWheelEvent(
 }
 
 void RenderWidgetHostViewAndroid::GestureEventAck(
-    int gesture_event_type,
+    const blink::WebGestureEvent& event,
     InputEventAckState ack_result) {
-  if (gesture_event_type == blink::WebInputEvent::GestureScrollUpdate &&
-      ack_result == INPUT_EVENT_ACK_STATE_CONSUMED) {
-    content_view_core_->OnScrollUpdateGestureConsumed();
-  }
-  if (gesture_event_type == blink::WebInputEvent::GestureFlingStart &&
-      ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS) {
-    content_view_core_->UnhandledFlingStartEvent();
-  }
+  if (content_view_core_)
+    content_view_core_->OnGestureEventAck(event, ack_result);
 }
 
 InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
+  if (content_view_core_ &&
+      content_view_core_->FilterInputEvent(input_event))
+    return INPUT_EVENT_ACK_STATE_CONSUMED;
+
   if (!host_)
     return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 
@@ -1041,12 +1145,12 @@ InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
 void RenderWidgetHostViewAndroid::OnSetNeedsFlushInput() {
   if (flush_input_requested_ || !content_view_core_)
     return;
+  TRACE_EVENT0("input", "RenderWidgetHostViewAndroid::OnSetNeedsFlushInput");
   flush_input_requested_ = true;
   content_view_core_->AddBeginFrameSubscriber();
 }
 
-void RenderWidgetHostViewAndroid::OnAccessibilityEvents(
-    const std::vector<AccessibilityHostMsg_EventParams>& params) {
+void RenderWidgetHostViewAndroid::CreateBrowserAccessibilityManagerIfNeeded() {
   if (!host_ || host_->accessibility_mode() != AccessibilityModeComplete)
     return;
 
@@ -1058,7 +1162,6 @@ void RenderWidgetHostViewAndroid::OnAccessibilityEvents(
         new BrowserAccessibilityManagerAndroid(
             obj, BrowserAccessibilityManagerAndroid::GetEmptyDocument(), this));
   }
-  GetBrowserAccessibilityManager()->OnAccessibilityEvents(params);
 }
 
 void RenderWidgetHostViewAndroid::SetAccessibilityFocus(int acc_obj_id) {
@@ -1134,9 +1237,8 @@ void RenderWidgetHostViewAndroid::SendKeyEvent(
 void RenderWidgetHostViewAndroid::SendTouchEvent(
     const blink::WebTouchEvent& event) {
   if (host_)
-    host_->ForwardTouchEventWithLatencyInfo(event, ui::LatencyInfo());
+    host_->ForwardTouchEventWithLatencyInfo(event, CreateLatencyInfo(event));
 }
-
 
 void RenderWidgetHostViewAndroid::SendMouseEvent(
     const blink::WebMouseEvent& event) {
@@ -1157,7 +1259,7 @@ void RenderWidgetHostViewAndroid::SendGestureEvent(
    overscroll_effect_->Enable();
 
   if (host_)
-    host_->ForwardGestureEvent(event);
+    host_->ForwardGestureEventWithLatencyInfo(event, CreateLatencyInfo(event));
 }
 
 void RenderWidgetHostViewAndroid::SelectRange(const gfx::Point& start,
@@ -1222,7 +1324,7 @@ SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
 void RenderWidgetHostViewAndroid::OnOverscrolled(
     gfx::Vector2dF accumulated_overscroll,
     gfx::Vector2dF current_fling_velocity) {
-  if (!content_view_core_ || !are_layers_attached_)
+  if (!content_view_core_ || !layer_ || !is_showing_)
     return;
 
   if (overscroll_effect_->OnOverscrolled(content_view_core_->GetLayer(),
@@ -1233,13 +1335,16 @@ void RenderWidgetHostViewAndroid::OnOverscrolled(
   }
 }
 
+void RenderWidgetHostViewAndroid::DidStopFlinging() {
+  if (content_view_core_)
+    content_view_core_->DidStopFlinging();
+}
+
 void RenderWidgetHostViewAndroid::SetContentViewCore(
     ContentViewCoreImpl* content_view_core) {
   RunAckCallbacks();
 
-  if (are_layers_attached_)
-    RemoveLayers();
-
+  RemoveLayers();
   if (content_view_core_ && !using_synchronous_compositor_)
     content_view_core_->GetWindowAndroid()->RemoveObserver(this);
 
@@ -1253,11 +1358,9 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
         SetContentViewCore(obj);
   }
 
-  if (are_layers_attached_) {
-    AttachLayers();
-    if (content_view_core_ && !using_synchronous_compositor_)
-      content_view_core_->GetWindowAndroid()->AddObserver(this);
-  }
+  AttachLayers();
+  if (content_view_core_ && !using_synchronous_compositor_)
+    content_view_core_->GetWindowAndroid()->AddObserver(this);
 }
 
 void RenderWidgetHostViewAndroid::RunAckCallbacks() {
@@ -1265,12 +1368,6 @@ void RenderWidgetHostViewAndroid::RunAckCallbacks() {
     ack_callbacks_.front().Run();
     ack_callbacks_.pop();
   }
-}
-
-void RenderWidgetHostViewAndroid::HasTouchEventHandlers(
-    bool need_touch_events) {
-  if (content_view_core_)
-    content_view_core_->HasTouchEventHandlers(need_touch_events);
 }
 
 void RenderWidgetHostViewAndroid::OnCompositingDidCommit() {
@@ -1295,9 +1392,10 @@ void RenderWidgetHostViewAndroid::OnLostResources() {
 // static
 void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
+    const SkBitmap::Config bitmap_config,
+    const base::TimeTicks& start_time,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
-  DCHECK(result->HasTexture());
   base::ScopedClosureRunner scoped_callback_runner(
       base::Bind(callback, false, SkBitmap()));
 
@@ -1305,8 +1403,9 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
     return;
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    dst_size_in_pixel.width(), dst_size_in_pixel.height(),
+  bitmap->setConfig(bitmap_config,
+                    dst_size_in_pixel.width(),
+                    dst_size_in_pixel.height(),
                     0, kOpaque_SkAlphaType);
   if (!bitmap->allocPixels())
     return;
@@ -1331,24 +1430,33 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
   ignore_result(scoped_callback_runner.Release());
 
   gl_helper->CropScaleReadbackAndCleanMailbox(
-      texture_mailbox.name(),
+      texture_mailbox.mailbox(),
       texture_mailbox.sync_point(),
       result->size(),
       gfx::Rect(result->size()),
       dst_size_in_pixel,
       pixels,
+      bitmap_config,
       base::Bind(&CopyFromCompositingSurfaceFinished,
                  callback,
                  base::Passed(&release_callback),
                  base::Passed(&bitmap),
+                 start_time,
                  base::Passed(&bitmap_pixels_lock)));
 }
 
 // static
 void RenderWidgetHostViewAndroid::PrepareBitmapCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
+    const SkBitmap::Config config,
+    const base::TimeTicks& start_time,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
+  if (config != SkBitmap::kARGB_8888_Config) {
+    NOTIMPLEMENTED();
+    callback.Run(false, SkBitmap());
+    return;
+  }
   DCHECK(result->HasBitmap());
   base::ScopedClosureRunner scoped_callback_runner(
       base::Bind(callback, false, SkBitmap()));
@@ -1365,6 +1473,9 @@ void RenderWidgetHostViewAndroid::PrepareBitmapCopyOutputResult(
   DCHECK_EQ(source->height(), dst_size_in_pixel.height());
 
   ignore_result(scoped_callback_runner.Release());
+  UMA_HISTOGRAM_TIMES(kAsyncReadBackString,
+                      base::TimeTicks::Now() - start_time);
+
   callback.Run(true, *source);
 }
 

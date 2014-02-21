@@ -16,14 +16,13 @@
 
 #include <libaddressinput/address_field.h>
 #include <libaddressinput/address_ui_component.h>
-#include <libaddressinput/localization.h>
 
+#include <set>
 #include <string>
 #include <vector>
 
-#include "address_field_util.h"
 #include "grit.h"
-#include "messages.h"
+#include "grit/libaddressinput_strings.h"
 #include "region_data_constants.h"
 #include "rule.h"
 
@@ -31,24 +30,6 @@ namespace i18n {
 namespace addressinput {
 
 namespace {
-
-// Parses the default region data into the static Rule object and returns a
-// constant reference to this object. Cannot return a copy of the object,
-// because Rule objects are not copyable.
-const Rule& InitDefaultRule() {
-  static Rule rule;
-  rule.ParseSerializedRule(RegionDataConstants::GetDefaultRegionData());
-  return rule;
-}
-
-// Returns the constant reference to the Rule object from InitDefaultRule(). The
-// static object is in InitDefaultRule(), but this function maintains a constant
-// static reference to it. The constant static reference avoids re-parsing the
-// default region data.
-const Rule& GetDefaultRule() {
-  static const Rule& kDefaultRule(InitDefaultRule());
-  return kDefaultRule;
-}
 
 int GetMessageIdForField(AddressField field,
                          int admin_area_name_message_id,
@@ -77,11 +58,6 @@ int GetMessageIdForField(AddressField field,
   }
 }
 
-bool IsNewline(AddressField field) {
-  // NEWLINE is an extension for AddressField enum that's used only internally.
-  return field == static_cast<AddressField>(NEWLINE);
-}
-
 }  // namespace
 
 const std::vector<std::string>& GetRegionCodes() {
@@ -89,42 +65,74 @@ const std::vector<std::string>& GetRegionCodes() {
 }
 
 std::vector<AddressUiComponent> BuildComponents(
-    const std::string& region_code,
-    const Localization& localization) {
+    const std::string& region_code) {
   std::vector<AddressUiComponent> result;
 
   Rule rule;
-  rule.CopyFrom(GetDefaultRule());
+  rule.CopyFrom(Rule::GetDefault());
   if (!rule.ParseSerializedRule(
            RegionDataConstants::GetRegionData(region_code))) {
     return result;
   }
 
-  bool previous_field_is_newline = true;
-  bool next_field_is_newline = true;
-  for (std::vector<AddressField>::const_iterator field_it =
-       rule.GetFormat().begin();
-       field_it != rule.GetFormat().end(); ++field_it) {
-    if (IsNewline(*field_it)) {
-      previous_field_is_newline = true;
-      continue;
+  // For avoiding showing an input field twice, when the field is displayed
+  // twice on an envelope.
+  std::set<AddressField> fields;
+
+  for (std::vector<std::vector<FormatElement> >::const_iterator
+           line_it = rule.GetFormat().begin();
+       line_it != rule.GetFormat().end();
+       ++line_it) {
+    int num_fields_this_row = 0;
+    for (std::vector<FormatElement>::const_iterator element_it =
+             line_it->begin();
+         element_it != line_it->end();
+         ++element_it) {
+      if (element_it->IsField()) {
+        ++num_fields_this_row;
+      }
     }
-    AddressUiComponent component;
-    std::vector<AddressField>::const_iterator next_field_it = field_it + 1;
-    next_field_is_newline =
-        next_field_it == rule.GetFormat().end() || IsNewline(*next_field_it);
-    component.length_hint = previous_field_is_newline && next_field_is_newline
-                                ? AddressUiComponent::HINT_LONG
-                                : AddressUiComponent::HINT_SHORT;
-    previous_field_is_newline = false;
-    component.field = *field_it;
-    component.name = localization.GetString(
-        GetMessageIdForField(*field_it, rule.GetAdminAreaNameMessageId(),
-                             rule.GetPostalCodeNameMessageId()));
-    result.push_back(component);
+
+    for (std::vector<FormatElement>::const_iterator element_it =
+             line_it->begin();
+         element_it != line_it->end();
+         ++element_it) {
+      AddressField field = element_it->field;
+      if (!element_it->IsField() || fields.find(field) != fields.end()) {
+        continue;
+      }
+      fields.insert(field);
+
+      AddressUiComponent component;
+      component.length_hint =
+          num_fields_this_row == 1 ? AddressUiComponent::HINT_LONG
+                                   : AddressUiComponent::HINT_SHORT;
+      component.field = field;
+      component.name_id =
+          GetMessageIdForField(field,
+                               rule.GetAdminAreaNameMessageId(),
+                               rule.GetPostalCodeNameMessageId());
+      result.push_back(component);
+    }
   }
 
   return result;
+}
+
+std::vector<AddressField> GetRequiredFields(const std::string& region_code) {
+  Rule rule;
+  rule.CopyFrom(Rule::GetDefault());
+  if (!rule.ParseSerializedRule(
+           RegionDataConstants::GetRegionData(region_code))) {
+    return std::vector<AddressField>();
+  }
+
+  return rule.GetRequired();
+}
+
+const std::string& GetCompactAddressLinesSeparator(
+    const std::string& language_code) {
+  return RegionDataConstants::GetLanguageCompactLineSeparator(language_code);
 }
 
 }  // namespace addressinput

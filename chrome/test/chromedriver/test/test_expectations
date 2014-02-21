@@ -29,7 +29,6 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'ClickScrollingTest.testShouldBeAbleToClickOnAnElementHiddenByDoubleOverflow',
     'ClickScrollingTest.testShouldNotBeAbleToClickElementThatIsOutOfViewInANonScrollableFrame',
     'ClickScrollingTest.testShouldNotScrollIfAlreadyScrolledAndElementIsInView',
-    'ClickTest.testCanClickAnImageMapArea',
     'ClickTest.testShouldBeAbleToClickOnAnElementInFrameGreaterThanTwoViewports',
     'CombinedInputActionsTest.testClickingOnFormElements',
     'CoordinatesTest.testShouldScrollPageAndGetCoordinatesOfAnElementThatIsOutOfViewPort',
@@ -86,12 +85,12 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'WindowTest.*',
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=528
     'PageLoadingTest.testShouldDoNothingIfThereIsNothingToGoBackTo',
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=653
+    'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistoryInPresenceOfIframes',
+    'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistory',
 ]
 _REVISION_NEGATIVE_FILTER['31'] = _REVISION_NEGATIVE_FILTER['HEAD'] + [
     'I18nTest.*',  # This was fixed in a later version of 31 than we use.
-]
-_REVISION_NEGATIVE_FILTER['30'] = _REVISION_NEGATIVE_FILTER['HEAD'] + [
-    'I18nTest.*',
 ]
 
 
@@ -103,7 +102,7 @@ _OS_NEGATIVE_FILTER['win'] = [
     'RenderedWebElementTest.testHoverPersists',
     'RenderedWebElementTest.canClickOnASuckerFishStyleMenu',
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=416
-    'TakesScreenshotTest.testShouldCaptureScreenshotAtIFramePageAfterSwitching',
+    'TakesScreenshotTest.testShouldCaptureScreenshotAtFramePageAfterSwitching',
     'TakesScreenshotTest.testShouldCaptureScreenshotAtFramePage',
 ]
 _OS_NEGATIVE_FILTER['linux'] = []
@@ -151,9 +150,6 @@ _OS_NEGATIVE_FILTER['android:chrome'] = [
 
     # http://crbug.com/156390
     'DragAndDropTest.*',
-
-    # Flick touch events are not yet implemented.
-    'TouchFlickTest.*',
 
     # Scrolling touch events are not supported.
     'TouchScrollTest.*',

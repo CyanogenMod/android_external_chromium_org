@@ -32,12 +32,11 @@
 #include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/base/gtk/gtk_windowing.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/skia_utils_gtk.h"
 
 namespace {
@@ -84,7 +83,7 @@ const float kContentWidthPercentage = 0.7;
 const int kVerticalOffset = 3;
 
 // The size delta between the font used for the edit and the result rows. Passed
-// to gfx::Font::DeriveFont.
+// to gfx::Font::Derive.
 const int kEditFontAdjust = -1;
 
 // UTF-8 Left-to-right embedding.
@@ -99,7 +98,7 @@ gfx::Rect GetWindowRect(GdkWindow* window) {
 
 // TODO(deanm): Find some better home for this, and make it more efficient.
 size_t GetUTF8Offset(const base::string16& text, size_t text_offset) {
-  return UTF16ToUTF8(text.substr(0, text_offset)).length();
+  return base::UTF16ToUTF8(text.substr(0, text_offset)).length();
 }
 
 // Generates the normal URL color, a green color used in unhighlighted URL
@@ -169,7 +168,7 @@ OmniboxPopupViewGtk::OmniboxPopupViewGtk(const gfx::Font& font,
       window_(gtk_window_new(GTK_WINDOW_POPUP)),
       layout_(NULL),
       theme_service_(NULL),
-      font_(font.DeriveFont(kEditFontAdjust)),
+      font_(font.Derive(kEditFontAdjust, font.GetStyle())),
       ignore_mouse_drag_(false),
       opened_(false) {
   // edit_model may be NULL in unit tests.
@@ -395,7 +394,7 @@ void OmniboxPopupViewGtk::SetupLayoutForMatch(
   // classifications.  We need to take this in to account when we translate the
   // UTF-16 offsets in the classification into text_utf8 byte offsets.
   size_t additional_offset = prefix_text.length();  // Length in utf-8 bytes.
-  std::string text_utf8 = prefix_text + UTF16ToUTF8(localized_text);
+  std::string text_utf8 = prefix_text + base::UTF16ToUTF8(localized_text);
 
   PangoAttrList* attrs = pango_attr_list_new();
 
@@ -492,7 +491,7 @@ void OmniboxPopupViewGtk::StackWindow() {
 void OmniboxPopupViewGtk::AcceptLine(size_t line,
                                      WindowOpenDisposition disposition) {
   omnibox_view_->OpenMatch(GetResult().match_at(line), disposition, GURL(),
-                           line);
+                           base::string16(), line);
 }
 
 gfx::Image OmniboxPopupViewGtk::IconForMatch(

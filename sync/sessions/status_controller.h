@@ -92,13 +92,9 @@ class SYNC_EXPORT_PRIVATE StatusController {
   void set_num_successful_bookmark_commits(int value);
 
   // Server communication status tracking.
-  void set_sync_protocol_error(const SyncProtocolError& error);
   void set_last_get_key_result(const SyncerError result);
   void set_last_download_updates_result(const SyncerError result);
   void set_commit_result(const SyncerError result);
-
-  // A very important flag used to inform frontend of need to migrate.
-  void set_types_needing_local_migration(ModelTypeSet types);
 
   void UpdateStartTime();
 

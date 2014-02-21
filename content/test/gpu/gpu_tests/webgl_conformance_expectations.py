@@ -30,14 +30,6 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     self.Skip('conformance/textures/texture-size-limit.html',
         bug=322789)
 
-    # Windows failures.
-    self.Fail('conformance/ogles/GL/atan/atan_001_to_008.html',
-        ['win'], bug=322794)
-    self.Fail('conformance/ogles/GL/atan/atan_009_to_012.html',
-        ['win'], bug=322794)
-    self.Skip('conformance/ogles/GL/control_flow/control_flow_001_to_008.html',
-        ['win'], bug=322795)
-
     # Windows/Intel failures
     self.Fail('conformance/textures/texture-size.html',
         ['win', 'intel'], bug=121139)
@@ -101,14 +93,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['win7', 'intel'])
     self.Fail('conformance/textures/texture-size-cube-maps.html',
         ['win7', 'intel'])
-    self.Fail('conformance/context/context-attribute-preserve-drawing-buffer.html',
-        ['win7', 'intel'], bug=322770)
 
     # Mac failures.
-    self.Fail('conformance/glsl/misc/shaders-with-varyings.html',
-        ['mac'], bug=322760)
-    self.Fail('conformance/context/context-attribute-preserve-drawing-buffer.html',
-        ['mac'], bug=322770)
     self.Skip('conformance/ogles/GL/control_flow/control_flow_001_to_008.html',
         ['mac'], bug=322795)
 
@@ -200,8 +186,6 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['linux', ('nvidia', 0x1040)], bug=325884)
 
     # Android failures
-    self.Fail('conformance/textures/texture-npot-video.html',
-        ['android'], bug=306485)
     # The following test is very slow and therefore times out on Android bot.
     self.Skip('conformance/rendering/multisample-corruption.html',
         ['android'])
@@ -211,6 +195,14 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['android'], bug=315976)
     self.Fail('conformance/glsl/misc/gl_position_unset.vert.html',
         ['android'], bug=315976)
+    self.Skip('conformance/textures/tex-image-and-sub-image-2d-with-video.html',
+        ['android'], bug=341698)
+    self.Skip('conformance/textures/tex-image-and-sub-image-2d-with-video-rgb565.html',
+        ['android'], bug=341698)
+    self.Skip('conformance/textures/tex-image-and-sub-image-2d-with-video-rgba4444.html',
+        ['android'], bug=341698)
+    self.Skip('conformance/textures/tex-image-and-sub-image-2d-with-video-rgba5551.html',
+        ['android'], bug=341698)
 
     # Skip slow tests.
     self.Skip('conformance/context/context-creation-and-destruction.html',

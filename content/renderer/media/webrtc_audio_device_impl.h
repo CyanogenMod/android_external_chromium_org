@@ -299,14 +299,24 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   // Called on the main renderer thread.
   bool SetAudioRenderer(WebRtcAudioRenderer* renderer);
 
-  // Adds the capturer to the ADM.
+  // Adds/Removes the capturer to the ADM.
+  // TODO(xians): Remove these two methods once the ADM does not need to pass
+  // hardware information up to WebRtc.
   void AddAudioCapturer(const scoped_refptr<WebRtcAudioCapturer>& capturer);
+  void RemoveAudioCapturer(const scoped_refptr<WebRtcAudioCapturer>& capturer);
 
-  // Gets the default capturer, which is the capturer in the list with
-  // a valid |device_id|. Microphones are represented by capturers with a valid
-  // |device_id|, since only one microphone is supported today, only one
-  // capturer in the |capturers_| can have a valid |device_id|.
+  // Gets the default capturer, which is the last capturer in |capturers_|.
   scoped_refptr<WebRtcAudioCapturer> GetDefaultCapturer() const;
+
+  // Gets paired device information of the capture device for the audio
+  // renderer. This is used to pass on a session id, sample rate and buffer
+  // size to a webrtc audio renderer (either local or remote), so that audio
+  // will be rendered to a matching output device.
+  // Returns true if the capture device has a paired output device, otherwise
+  // false. Note that if there are more than one open capture device the
+  // function will not be able to pick an appropriate device and return false.
+  bool GetAuthorizedDeviceInfoForAudioRenderer(
+      int* session_id, int* output_sample_rate, int* output_buffer_size);
 
   const scoped_refptr<WebRtcAudioRenderer>& renderer() const {
     return renderer_;
@@ -384,6 +394,10 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   // Protects |recording_|, |output_delay_ms_|, |input_delay_ms_|, |renderer_|
   // |recording_| and |microphone_volume_|.
   mutable base::Lock lock_;
+
+  // Used to protect the racing of calling OnData() since there can be more
+  // than one input stream calling OnData().
+  mutable base::Lock capture_callback_lock_;
 
   bool initialized_;
   bool playing_;

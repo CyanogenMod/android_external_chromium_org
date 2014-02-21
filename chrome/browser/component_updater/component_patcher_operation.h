@@ -8,14 +8,14 @@
 #include <string>
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "chrome/browser/component_updater/component_unpacker.h"
 
 namespace base {
-
-class FilePath;
 class DictionaryValue;
-
 }  // namespace base
+
+namespace component_updater {
 
 class ComponentInstaller;
 class ComponentPatcher;
@@ -29,13 +29,12 @@ class DeltaUpdateOp {
   // Parses, runs, and verifies the operation, returning an error code if an
   // error is encountered, and DELTA_OK otherwise. In case of errors,
   // extended error information can be returned in the |error| parameter.
-  ComponentUnpacker::Error Run(
-      base::DictionaryValue* command_args,
-      const base::FilePath& input_dir,
-      const base::FilePath& unpack_dir,
-      ComponentPatcher* patcher,
-      ComponentInstaller* installer,
-      int* error);
+  ComponentUnpacker::Error Run(base::DictionaryValue* command_args,
+                               const base::FilePath& input_dir,
+                               const base::FilePath& unpack_dir,
+                               ComponentPatcher* patcher,
+                               ComponentInstaller* installer,
+                               int* error);
 
  protected:
   std::string output_sha256_;
@@ -154,5 +153,7 @@ class DeltaUpdateOpPatchCourgette : public DeltaUpdateOp {
 
 // Factory function to create DeltaUpdateOp instances.
 DeltaUpdateOp* CreateDeltaUpdateOp(base::DictionaryValue* command);
+
+}  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_COMPONENT_PATCHER_OPERATION_H_

@@ -16,13 +16,15 @@
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate_impl.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/app_list/app_list_item_model.h"
+#include "ui/app_list/app_list_item.h"
 
 namespace {
 
@@ -46,7 +48,7 @@ scoped_refptr<extensions::Extension> MakeApp(const std::string& name,
                                              const std::string& url,
                                              const std::string& id) {
   std::string err;
-  DictionaryValue value;
+  base::DictionaryValue value;
   value.SetString("name", name);
   value.SetString("version", version);
   value.SetString("app.launch.web_url", url);
@@ -78,6 +80,10 @@ class TestAppListControllerDelegate : public AppListControllerDelegate {
   virtual void DoCreateShortcutsFlow(Profile* profile,
                                      const std::string& extension_id) OVERRIDE {
   }
+  virtual bool CanDoShowAppInfoFlow() OVERRIDE { return false; }
+  virtual void DoShowAppInfoFlow(Profile* profile,
+                                 const std::string& extension_id) OVERRIDE {
+  };
   virtual void CreateNewWindow(Profile* profile, bool incognito) OVERRIDE {}
   virtual void ActivateApp(Profile* profile,
                            const extensions::Extension* extension,
@@ -113,27 +119,38 @@ class ExtensionAppModelBuilderTest : public ExtensionServiceTestBase {
         .AppendASCII("Extensions");
     base::FilePath pref_path = source_install_dir
         .DirName()
-        .AppendASCII("Preferences");
+        .Append(chrome::kPreferencesFilename);
     InitializeInstalledExtensionService(pref_path, source_install_dir);
     service_->Init();
 
     // There should be 4 extensions in the test profile.
-    const ExtensionSet* extensions = service_->extensions();
+    const extensions::ExtensionSet* extensions = service_->extensions();
     ASSERT_EQ(static_cast<size_t>(4),  extensions->size());
 
-    model_.reset(new app_list::AppListModel);
-    controller_.reset(new TestAppListControllerDelegate);
-    builder_.reset(new ExtensionAppModelBuilder(
-        profile_.get(), model_.get(), controller_.get()));
+    CreateBuilder();
   }
 
   virtual void TearDown() OVERRIDE {
+    ResetBuilder();
+  }
+
+ protected:
+  // Creates a new builder, destroying any existing one.
+  void CreateBuilder() {
+    ResetBuilder();  // Destroy any existing builder in the correct order.
+
+    model_.reset(new app_list::AppListModel);
+    controller_.reset(new TestAppListControllerDelegate);
+    builder_.reset(new ExtensionAppModelBuilder(controller_.get()));
+    builder_->InitializeWithProfile(profile_.get(), model_.get());
+  }
+
+  void ResetBuilder() {
     builder_.reset();
     controller_.reset();
     model_.reset();
   }
 
- protected:
   scoped_ptr<app_list::AppListModel> model_;
   scoped_ptr<TestAppListControllerDelegate> controller_;
   scoped_ptr<ExtensionAppModelBuilder> builder_;
@@ -169,8 +186,8 @@ TEST_F(ExtensionAppModelBuilderTest, HideWebStore) {
 
   // Web stores should be present in the AppListModel.
   app_list::AppListModel model1;
-  ExtensionAppModelBuilder builder1(
-      profile_.get(), &model1, controller_.get());
+  ExtensionAppModelBuilder builder1(controller_.get());
+  builder1.InitializeWithProfile(profile_.get(), &model1);
   std::string content = GetModelContent(&model1);
   EXPECT_NE(std::string::npos, content.find("webstore"));
   EXPECT_NE(std::string::npos, content.find("enterprise_webstore"));
@@ -180,8 +197,8 @@ TEST_F(ExtensionAppModelBuilderTest, HideWebStore) {
 
   // Web stores should NOT be in the AppListModel.
   app_list::AppListModel model2;
-  ExtensionAppModelBuilder builder2(
-      profile_.get(), &model2, controller_.get());
+  ExtensionAppModelBuilder builder2(controller_.get());
+  builder2.InitializeWithProfile(profile_.get(), &model2);
   content = GetModelContent(&model2);
   EXPECT_EQ(std::string::npos, content.find("webstore"));
   EXPECT_EQ(std::string::npos, content.find("enterprise_webstore"));
@@ -280,7 +297,7 @@ TEST_F(ExtensionAppModelBuilderTest, InvalidOrdinal) {
   extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
   sorting->ClearOrdinals(kPackagedApp1Id);
 
-  // Creates an corrupted ordinal case.
+  // Creates a corrupted ordinal case.
   extensions::ExtensionScopedPrefs* scoped_prefs = service_->extension_prefs();
   scoped_prefs->UpdateExtensionPref(
       kHostedAppId,
@@ -288,8 +305,7 @@ TEST_F(ExtensionAppModelBuilderTest, InvalidOrdinal) {
       base::Value::CreateStringValue("a corrupted ordinal"));
 
   // This should not assert or crash.
-  ExtensionAppModelBuilder builder1(
-      profile_.get(), model_.get(), controller_.get());
+  CreateBuilder();
 }
 
 TEST_F(ExtensionAppModelBuilderTest, OrdinalConfilicts) {
@@ -308,10 +324,36 @@ TEST_F(ExtensionAppModelBuilderTest, OrdinalConfilicts) {
   sorting->SetAppLaunchOrdinal(kPackagedApp2Id, conflict_ordinal);
 
   // This should not assert or crash.
-  ExtensionAppModelBuilder builder1(
-      profile_.get(), model_.get(), controller_.get());
+  CreateBuilder();
 
   // By default, conflicted items are sorted by their app ids (= order added).
   EXPECT_EQ(std::string("Hosted App,Packaged App 1,Packaged App 2"),
             GetModelContent(model_.get()));
+}
+
+// This test adds a bookmark app to the app list.
+TEST_F(ExtensionAppModelBuilderTest, BookmarkApp) {
+  const std::string kAppName = "Bookmark App";
+  const std::string kAppVersion = "2014.1.24.19748";
+  const std::string kAppUrl = "http://google.com";
+  const std::string kAppId = "podhdnefolignjhecmjkbimfgioanahm";
+  std::string err;
+  base::DictionaryValue value;
+  value.SetString("name", kAppName);
+  value.SetString("version", kAppVersion);
+  value.SetString("app.launch.web_url", kAppUrl);
+  scoped_refptr<extensions::Extension> bookmark_app =
+      extensions::Extension::Create(
+          base::FilePath(),
+          extensions::Manifest::INTERNAL,
+          value,
+          extensions::Extension::WAS_INSTALLED_BY_DEFAULT |
+              extensions::Extension::FROM_BOOKMARK,
+          kAppId,
+          &err);
+  EXPECT_TRUE(err.empty());
+
+  service_->AddExtension(bookmark_app.get());
+  EXPECT_EQ(kDefaultAppCount + 1, model_->item_list()->item_count());
+  EXPECT_NE(std::string::npos, GetModelContent(model_.get()).find(kAppName));
 }

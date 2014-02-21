@@ -88,7 +88,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
-      const ui::LatencyInfo& latency_info) OVERRIDE;
+      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -104,7 +104,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      SkBitmap::Config config) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -132,9 +133,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-  virtual void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params)
-      OVERRIDE;
+  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
 
   // ActiveWindowWatcherXObserver implementation.
   virtual void ActiveWindowChanged(GdkWindow* active_window) OVERRIDE;
@@ -332,7 +331,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
 
   ui::GtkSignalRegistrar signals_;
 
-  ui::LatencyInfo software_latency_info_;
+  std::vector<ui::LatencyInfo> software_latency_info_;
 };
 
 }  // namespace content

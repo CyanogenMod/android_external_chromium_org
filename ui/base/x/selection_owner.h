@@ -14,7 +14,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/base/x/selection_utils.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 
@@ -25,7 +25,7 @@ namespace ui {
 // The selection owner object keeps track of which xwindow is the current
 // owner, and when its |xwindow_|, offers different data types to other
 // processes.
-class UI_EXPORT SelectionOwner {
+class UI_BASE_EXPORT SelectionOwner {
  public:
   SelectionOwner(Display* xdisplay,
                  ::Window xwindow,
@@ -35,7 +35,7 @@ class UI_EXPORT SelectionOwner {
   // Returns the current selection data. Useful for fast paths.
   const SelectionFormatMap& selection_format_map() { return format_map_; }
 
-  // Retrieves a list of types we're offering.
+  // Appends a list of types we're offering to |targets|.
   void RetrieveTargets(std::vector<Atom>* targets);
 
   // Attempts to take ownership of the selection. If we're successful, present

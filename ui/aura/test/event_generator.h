@@ -76,7 +76,7 @@ class EventGeneratorDelegate {
 //    handled in the nested message loop.
 // 3) Similarly, |base::MessagePumpObserver| will not be invoked.
 // 4) Any other code that requires native events, such as
-//    tests for RootWindowHostWin/RootWindowHostX11.
+//    tests for WindowTreeHostWin/WindowTreeHostX11.
 //
 // If one of these applies to your test, please use |ui_controls|
 // package instead.
@@ -213,6 +213,11 @@ class EventGenerator {
   // Generates press, move and release events to move touch
   // to the center of the window.
   void PressMoveAndReleaseTouchToCenterOf(Window* window);
+
+  // Generates and dispatches a Win8 edge-swipe event (swipe up from bottom or
+  // swipe down from top).  Note that it is not possible to distinguish between
+  // the two edges with this event.
+  void GestureEdgeSwipe();
 
   // Generates and dispatches touch-events required to generate a TAP gesture.
   // Note that this can generate a number of other gesture events at the same

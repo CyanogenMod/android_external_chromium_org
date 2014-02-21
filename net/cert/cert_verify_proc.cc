@@ -10,11 +10,13 @@
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/crl_set.h"
 #include "net/cert/x509_certificate.h"
+#include "url/url_canon.h"
 
 #if defined(USE_NSS) || defined(OS_IOS)
 #include "net/cert/cert_verify_proc_nss.h"
@@ -220,6 +222,16 @@ int CertVerifyProc::Verify(X509Certificate* cert,
     rv = MapCertStatusToNetError(verify_result->cert_status);
   }
 
+  std::vector<std::string> dns_names, ip_addrs;
+  cert->GetSubjectAltName(&dns_names, &ip_addrs);
+  if (HasNameConstraintsViolation(verify_result->public_key_hashes,
+                                  cert->subject().common_name,
+                                  dns_names,
+                                  ip_addrs)) {
+    verify_result->cert_status |= CERT_STATUS_NAME_CONSTRAINT_VIOLATION;
+    rv = MapCertStatusToNetError(verify_result->cert_status);
+  }
+
   // Check for weak keys in the entire verified chain.
   bool weak_key = ExaminePublicKeys(verify_result->verified_cert,
                                     verify_result->is_issued_by_known_root);
@@ -249,19 +261,16 @@ int CertVerifyProc::Verify(X509Certificate* cert,
       rv = MapCertStatusToNetError(verify_result->cert_status);
   }
 
-#if !defined(OS_ANDROID)
   // Flag certificates from publicly-trusted CAs that are issued to intranet
   // hosts. While the CA/Browser Forum Baseline Requirements (v1.1) permit
   // these to be issued until 1 November 2015, they represent a real risk for
   // the deployment of gTLDs and are being phased out ahead of the hard
   // deadline.
-  //
-  // TODO(ppi): is_issued_by_known_root is incorrect on Android. Once this is
-  // fixed, re-enable this check for Android. crbug.com/116838
   if (verify_result->is_issued_by_known_root && IsHostnameNonUnique(hostname)) {
     verify_result->cert_status |= CERT_STATUS_NON_UNIQUE_NAME;
+    // CERT_STATUS_NON_UNIQUE_NAME will eventually become a hard error. For
+    // now treat it as a warning and do not map it to an error return value.
   }
-#endif
 
   return rv;
 }
@@ -339,7 +348,7 @@ bool CertVerifyProc::IsBlacklisted(X509Certificate* cert) {
 // NOTE: This implementation assumes and enforces that the hashes are SHA1.
 bool CertVerifyProc::IsPublicKeyBlacklisted(
     const HashValueVector& public_key_hashes) {
-  static const unsigned kNumHashes = 11;
+  static const unsigned kNumHashes = 14;
   static const uint8 kHashes[kNumHashes][base::kSHA1Length] = {
     // Subject: CN=DigiNotar Root CA
     // Issuer: CN=Entrust.net x2 and self-signed
@@ -388,6 +397,15 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // Expires: Jul 18 10:05:28 2014 GMT
     {0x3e, 0xcf, 0x4b, 0xbb, 0xe4, 0x60, 0x96, 0xd5, 0x14, 0xbb,
      0x53, 0x9b, 0xb9, 0x13, 0xd7, 0x7a, 0xa4, 0xef, 0x31, 0xbf},
+    // Three retired intermediate certificates from Symantec. No compromise;
+    // just for robustness. All expire May 17 23:59:59 2018.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=966060
+    {0x68, 0x5e, 0xec, 0x0a, 0x39, 0xf6, 0x68, 0xae, 0x8f, 0xd8,
+     0x96, 0x4f, 0x98, 0x74, 0x76, 0xb4, 0x50, 0x4f, 0xd2, 0xbe},
+    {0x0e, 0x50, 0x2d, 0x4d, 0xd1, 0xe1, 0x60, 0x36, 0x8a, 0x31,
+     0xf0, 0x6a, 0x81, 0x04, 0x31, 0xba, 0x6f, 0x72, 0xc0, 0x41},
+    {0x93, 0xd1, 0x53, 0x22, 0x29, 0xcc, 0x2a, 0xbd, 0x21, 0xdf,
+     0xf5, 0x97, 0xee, 0x32, 0x0f, 0xe4, 0x24, 0x6f, 0x3d, 0x0c},
   };
 
   for (unsigned i = 0; i < kNumHashes; i++) {
@@ -396,6 +414,126 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
       if (j->tag == HASH_VALUE_SHA1 &&
           memcmp(j->data(), kHashes[i], base::kSHA1Length) == 0) {
         return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+static const size_t kMaxTLDLength = 4;
+
+// CheckNameConstraints verifies that every name in |dns_names| is in one of
+// the domains specified by |tlds|. The |tlds| array is terminated by an empty
+// string.
+static bool CheckNameConstraints(const std::vector<std::string>& dns_names,
+                                 const char tlds[][kMaxTLDLength]) {
+  for (std::vector<std::string>::const_iterator i = dns_names.begin();
+       i != dns_names.end(); ++i) {
+    bool ok = false;
+    url_canon::CanonHostInfo host_info;
+    const std::string dns_name = CanonicalizeHost(*i, &host_info);
+    if (host_info.IsIPAddress())
+      continue;
+
+    const size_t registry_len = registry_controlled_domains::GetRegistryLength(
+        dns_name,
+        registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+        registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+    // If the name is not in a known TLD, ignore it. This permits internal
+    // names.
+    if (registry_len == 0)
+      continue;
+
+    for (size_t j = 0; tlds[j][0]; ++j) {
+      const size_t tld_length = strlen(tlds[j]);
+      // The DNS name must have "." + tlds[j] as a suffix.
+      if (i->size() <= (1 /* period before TLD */ + tld_length))
+        continue;
+
+      const char* suffix = &dns_name[i->size() - tld_length - 1];
+      if (suffix[0] != '.')
+        continue;
+      if (memcmp(&suffix[1], tlds[j], tld_length) != 0)
+        continue;
+      ok = true;
+      break;
+    }
+
+    if (!ok)
+      return false;
+  }
+
+  return true;
+}
+
+// PublicKeyTLDLimitation contains a SHA1, SPKI hash and a pointer to an array
+// of fixed-length strings that contain the TLDs that the SPKI is allowed to
+// issue for.
+struct PublicKeyTLDLimitation {
+  uint8 public_key[base::kSHA1Length];
+  const char (*tlds)[kMaxTLDLength];
+};
+
+// static
+bool CertVerifyProc::HasNameConstraintsViolation(
+    const HashValueVector& public_key_hashes,
+    const std::string& common_name,
+    const std::vector<std::string>& dns_names,
+    const std::vector<std::string>& ip_addrs) {
+  static const char kTLDsANSSI[][kMaxTLDLength] = {
+    "fr",  // France
+    "gp",  // Guadeloupe
+    "gf",  // Guyane
+    "mq",  // Martinique
+    "re",  // Réunion
+    "yt",  // Mayotte
+    "pm",  // Saint-Pierre et Miquelon
+    "bl",  // Saint Barthélemy
+    "mf",  // Saint Martin
+    "wf",  // Wallis et Futuna
+    "pf",  // Polynésie française
+    "nc",  // Nouvelle Calédonie
+    "tf",  // Terres australes et antarctiques françaises
+    "",
+  };
+
+  static const char kTLDsTest[][kMaxTLDLength] = {
+    "com",
+    "",
+  };
+
+  static const PublicKeyTLDLimitation kLimits[] = {
+    // C=FR, ST=France, L=Paris, O=PM/SGDN, OU=DCSSI,
+    // CN=IGC/A/emailAddress=igca@sgdn.pm.gouv.fr
+    {
+      {0x79, 0x23, 0xd5, 0x8d, 0x0f, 0xe0, 0x3c, 0xe6, 0xab, 0xad,
+       0xae, 0x27, 0x1a, 0x6d, 0x94, 0xf4, 0x14, 0xd1, 0xa8, 0x73},
+      kTLDsANSSI,
+    },
+    // Not a real certificate - just for testing. This is the SPKI hash of
+    // the keys used in net/data/ssl/certificates/name_constraint_*.crt.
+    {
+      {0x15, 0x45, 0xd7, 0x3b, 0x58, 0x6b, 0x47, 0xcf, 0xc1, 0x44,
+       0xa2, 0xc9, 0xaa, 0xab, 0x98, 0x3d, 0x21, 0xcc, 0x42, 0xde},
+      kTLDsTest,
+    },
+  };
+
+  for (unsigned i = 0; i < arraysize(kLimits); ++i) {
+    for (HashValueVector::const_iterator j = public_key_hashes.begin();
+         j != public_key_hashes.end(); ++j) {
+      if (j->tag == HASH_VALUE_SHA1 &&
+          memcmp(j->data(), kLimits[i].public_key, base::kSHA1Length) == 0) {
+        if (dns_names.empty() && ip_addrs.empty()) {
+          std::vector<std::string> dns_names;
+          dns_names.push_back(common_name);
+          if (!CheckNameConstraints(dns_names, kLimits[i].tlds))
+            return true;
+        } else {
+          if (!CheckNameConstraints(dns_names, kLimits[i].tlds))
+            return true;
+        }
       }
     }
   }

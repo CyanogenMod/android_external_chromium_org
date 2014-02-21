@@ -4,7 +4,7 @@
 
 #include "ash/shell/panel_window.h"
 
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wm/panels/panel_frame_view.h"
 #include "base/strings/utf_string_conversions.h"
@@ -46,7 +46,7 @@ views::Widget* PanelWindow::CreateWidget() {
     params().bounds.set_width(kDefaultWidth);
   if (params().bounds.height() == 0)
     params().bounds.set_height(kDefaultHeight);
-  params().bounds = ScreenAsh::ConvertRectToScreen(
+  params().bounds = ScreenUtil::ConvertRectToScreen(
       Shell::GetTargetRootWindow(),
       params().bounds);
 
@@ -66,7 +66,7 @@ void PanelWindow::OnPaint(gfx::Canvas* canvas) {
 }
 
 base::string16 PanelWindow::GetWindowTitle() const {
-  return ASCIIToUTF16(name_);
+  return base::ASCIIToUTF16(name_);
 }
 
 views::View* PanelWindow::GetContentsView() {

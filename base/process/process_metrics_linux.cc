@@ -187,14 +187,14 @@ double ProcessMetrics::GetCPUUsage() {
     return 0;
   int64 time = TimeValToMicroseconds(now);
 
-  if (last_time_ == 0) {
+  if (last_cpu_time_ == 0) {
     // First call, just set the last values.
-    last_time_ = time;
+    last_cpu_time_ = time;
     last_cpu_ = GetProcessCPU(process_);
     return 0;
   }
 
-  int64 time_delta = time - last_time_;
+  int64 time_delta = time - last_cpu_time_;
   DCHECK_NE(time_delta, 0);
   if (time_delta == 0)
     return 0;
@@ -209,7 +209,7 @@ double ProcessMetrics::GetCPUUsage() {
   int percentage = 100 * (cpu_time - last_cpu_time).InSecondsF() /
       TimeDelta::FromMicroseconds(time_delta).InSecondsF();
 
-  last_time_ = time;
+  last_cpu_time_ = time;
   last_cpu_ = cpu;
 
   return percentage;
@@ -262,7 +262,7 @@ bool ProcessMetrics::GetIOCounters(IoCounters* io_counters) const {
 
 ProcessMetrics::ProcessMetrics(ProcessHandle process)
     : process_(process),
-      last_time_(0),
+      last_cpu_time_(0),
       last_system_time_(0),
       last_cpu_(0) {
   processor_count_ = base::SysInfo::NumberOfProcessors();
@@ -391,16 +391,16 @@ int ParseProcStatCPU(const std::string& input) {
 
   if (proc_stats.size() <= internal::VM_STIME)
     return -1;
-  int utime = GetProcStatsFieldAsInt(proc_stats, internal::VM_UTIME);
-  int stime = GetProcStatsFieldAsInt(proc_stats, internal::VM_STIME);
+  int utime = GetProcStatsFieldAsInt64(proc_stats, internal::VM_UTIME);
+  int stime = GetProcStatsFieldAsInt64(proc_stats, internal::VM_STIME);
   return utime + stime;
 }
 
 const char kProcSelfExe[] = "/proc/self/exe";
 
 int GetNumberOfThreads(ProcessHandle process) {
-  return internal::ReadProcStatsAndGetFieldAsInt(process,
-                                                 internal::VM_NUMTHREADS);
+  return internal::ReadProcStatsAndGetFieldAsInt64(process,
+                                                   internal::VM_NUMTHREADS);
 }
 
 namespace {

@@ -44,11 +44,12 @@ class MediaResourceGetterImpl : public media::MediaResourceGetter {
   virtual void GetCookies(const GURL& url,
                           const GURL& first_party_for_cookies,
                           const GetCookieCB& callback) OVERRIDE;
-  virtual void GetPlatformPathFromFileSystemURL(
+  virtual void GetPlatformPathFromURL(
       const GURL& url,
       const GetPlatformPathCB& callback) OVERRIDE;
   virtual void ExtractMediaMetadata(
       const std::string& url, const std::string& cookies,
+      const std::string& user_agent,
       const ExtractMediaMetadataCB& callback) OVERRIDE;
 
   static bool RegisterMediaResourceGetter(JNIEnv* env);

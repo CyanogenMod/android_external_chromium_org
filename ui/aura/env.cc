@@ -5,6 +5,7 @@
 #include "ui/aura/env.h"
 
 #include "base/command_line.h"
+#include "base/message_loop/message_pump_dispatcher.h"
 #include "ui/aura/env_observer.h"
 #include "ui/aura/input_state_lookup.h"
 #include "ui/aura/window.h"
@@ -75,17 +76,6 @@ bool Env::IsMouseButtonDown() const {
       mouse_button_flags_ != 0;
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
-base::MessageLoop::Dispatcher* Env::GetDispatcher() {
-#if defined(USE_X11)
-  return base::MessagePumpX11::Current();
-#else
-  return dispatcher_.get();
-#endif
-}
-#endif
-
 void Env::RootWindowActivated(RootWindow* root_window) {
   FOR_EACH_OBSERVER(EnvObserver, observers_,
                     OnRootWindowActivated(root_window));
@@ -95,10 +85,6 @@ void Env::RootWindowActivated(RootWindow* root_window) {
 // Env, private:
 
 void Env::Init() {
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(USE_X11) && \
-    !defined(USE_OZONE)
-  dispatcher_.reset(CreateDispatcher());
-#endif
 #if defined(USE_X11)
   // We can't do this with a root window listener because XI_HierarchyChanged
   // messages don't have a target window.

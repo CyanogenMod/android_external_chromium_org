@@ -17,7 +17,7 @@
 namespace ui {
 
 // A common InputMethod implementation shared between IMM32 and TSF.
-class UI_EXPORT InputMethodWin : public InputMethodBase {
+class UI_BASE_EXPORT InputMethodWin : public InputMethodBase {
  public:
   InputMethodWin(internal::InputMethodDelegate* delegate,
                  HWND toplevel_window_handle);
@@ -27,7 +27,6 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
   virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnInputLocaleChanged() OVERRIDE;
   virtual std::string GetInputLocale() OVERRIDE;
-  virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE;
   virtual bool IsActive() OVERRIDE;
 
  protected:
@@ -50,10 +49,6 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
                  WPARAM wparam,
                  LPARAM lparam,
                  BOOL* handled);
-  // For both WM_DEADCHAR and WM_SYSDEADCHAR
-  // TODO(yukawa): Stop handling WM_DEADCHAR and WM_SYSDEADCHAR when non-Aura
-  // build is deprecated.
-  LRESULT OnDeadChar(UINT message, WPARAM wparam, LPARAM lparam, BOOL* handled);
 
   LRESULT OnDocumentFeed(RECONVERTSTRING* reconv);
   LRESULT OnReconvertString(RECONVERTSTRING* reconv);
@@ -83,9 +78,6 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
 
   // Name of the current input locale.
   std::string locale_;
-
-  // The current input text direction.
-  base::i18n::TextDirection direction_;
 
   // The new text direction and layout alignment requested by the user by
   // pressing ctrl-shift. It'll be sent to the text input client when the key

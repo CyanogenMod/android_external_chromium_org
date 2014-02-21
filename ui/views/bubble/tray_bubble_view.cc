@@ -11,6 +11,7 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
+#include "ui/aura/window.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
@@ -22,6 +23,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
+#include "ui/views/bubble/bubble_window_targeter.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
 
@@ -179,7 +181,7 @@ class TrayBubbleContentMask : public ui::LayerDelegate {
   explicit TrayBubbleContentMask(int corner_radius);
   virtual ~TrayBubbleContentMask();
 
-  void set_bounds(gfx::Rect bounds) { bounds_ = bounds; }
+  ui::Layer* layer() { return &layer_; }
 
   // Overridden from LayerDelegate.
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
@@ -187,22 +189,25 @@ class TrayBubbleContentMask : public ui::LayerDelegate {
   virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
 
  private:
-  gfx::Rect bounds_;
+  ui::Layer layer_;
   SkScalar corner_radius_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayBubbleContentMask);
 };
 
 TrayBubbleContentMask::TrayBubbleContentMask(int corner_radius)
-    : corner_radius_(corner_radius) {
+    : layer_(ui::LAYER_TEXTURED),
+      corner_radius_(corner_radius) {
+  layer_.set_delegate(this);
 }
 
 TrayBubbleContentMask::~TrayBubbleContentMask() {
+  layer_.set_delegate(NULL);
 }
 
 void TrayBubbleContentMask::OnPaintLayer(gfx::Canvas* canvas) {
   SkPath path;
-  path.addRoundRect(gfx::RectToSkRect(gfx::Rect(bounds_.size())),
+  path.addRoundRect(gfx::RectToSkRect(gfx::Rect(layer()->bounds().size())),
                     corner_radius_, corner_radius_);
   SkPaint paint;
   paint.setAlpha(255);
@@ -337,10 +342,6 @@ TrayBubbleView::TrayBubbleView(gfx::NativeView parent_window,
 
 TrayBubbleView::~TrayBubbleView() {
   mouse_watcher_.reset();
-
-  if (layer()->parent()->layer_mask_layer())
-    layer()->parent()->layer_mask_layer()->set_delegate(NULL);
-
   // Inform host items (models) that their views are being destroyed.
   if (delegate_)
     delegate_->BubbleViewDestroyed();
@@ -351,23 +352,19 @@ void TrayBubbleView::InitializeAndShowBubble() {
   SetAlignment(params_.arrow_alignment);
   bubble_border_->UpdateArrowOffset();
 
-  if (get_use_acceleration_when_possible()) {
-    scoped_ptr<ui::Layer> mask_layer(new ui::Layer(ui::LAYER_TEXTURED));
-    mask_layer->set_delegate(bubble_content_mask_.get());
-    layer()->parent()->SetMaskLayer(mask_layer.Pass());
-  }
+  if (get_use_acceleration_when_possible())
+    layer()->parent()->SetMaskLayer(bubble_content_mask_->layer());
 
   GetWidget()->Show();
+  GetWidget()->GetNativeWindow()->SetEventTargeter(
+      scoped_ptr<ui::EventTargeter>(new BubbleWindowTargeter(this)));
   UpdateBubble();
 }
 
 void TrayBubbleView::UpdateBubble() {
   SizeToContents();
-  if (get_use_acceleration_when_possible()) {
-    bubble_content_mask_->set_bounds(layer()->bounds());
-    if (layer()->parent()->layer_mask_layer())
-      layer()->parent()->layer_mask_layer()->SetBounds(layer()->bounds());
-  }
+  if (get_use_acceleration_when_possible())
+    bubble_content_mask_->layer()->SetBounds(layer()->bounds());
   GetWidget()->GetRootView()->SchedulePaint();
 }
 
@@ -415,7 +412,7 @@ bool TrayBubbleView::CanActivate() const {
 
 NonClientFrameView* TrayBubbleView::CreateNonClientFrameView(Widget* widget) {
   BubbleFrameView* frame = new BubbleFrameView(margins());
-  frame->SetBubbleBorder(bubble_border_);
+  frame->SetBubbleBorder(scoped_ptr<views::BubbleBorder>(bubble_border_));
   return frame;
 }
 

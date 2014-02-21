@@ -48,9 +48,9 @@ class SYNC_EXPORT_PRIVATE DebugInfoEventListener
       bool success, ModelTypeSet restored_types) OVERRIDE;
   virtual void OnConnectionStatusChange(
       ConnectionStatus connection_status) OVERRIDE;
-  virtual void OnStopSyncingPermanently() OVERRIDE;
   virtual void OnActionableError(
       const SyncProtocolError& sync_error) OVERRIDE;
+  virtual void OnMigrationRequested(ModelTypeSet types) OVERRIDE;
 
   // SyncEncryptionHandler::Observer implementation.
   virtual void OnPassphraseRequired(

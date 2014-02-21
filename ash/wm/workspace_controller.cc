@@ -8,7 +8,6 @@
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/base_layout_manager.h"
 #include "ash/wm/window_animations.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
@@ -31,13 +30,10 @@ namespace {
 // animation (when logging in).
 const int kInitialPauseTimeMS = 750;
 
-// Returns true if the |window| is docked and visible.
-bool IsDockedAndVisible(const aura::Window* window) {
-  return (window->parent()->id() == kShellWindowId_DockedContainer &&
-          window->IsVisible() &&
-          !wm::GetWindowState(window)->IsMinimized() &&
-          window->type() != aura::client::WINDOW_TYPE_POPUP &&
-          !window->transient_parent());
+// Returns true if there are visible docked windows in the same screen as the
+// |shelf|.
+bool IsDockedAreaVisible(const ShelfLayoutManager* shelf) {
+  return shelf->dock_bounds().width() > 0;
 }
 
 }  // namespace
@@ -45,21 +41,18 @@ bool IsDockedAndVisible(const aura::Window* window) {
 WorkspaceController::WorkspaceController(aura::Window* viewport)
     : viewport_(viewport),
       shelf_(NULL),
-      event_handler_(new WorkspaceEventHandler(viewport_)) {
+      event_handler_(new WorkspaceEventHandler),
+      layout_manager_(new WorkspaceLayoutManager(viewport)) {
   SetWindowVisibilityAnimationTransition(
       viewport_, views::corewm::ANIMATE_NONE);
 
-  // The layout-manager cannot be created in the initializer list since it
-  // depends on the window to have been initialized.
-  layout_manager_ = new WorkspaceLayoutManager(viewport_);
   viewport_->SetLayoutManager(layout_manager_);
-
-  viewport_->Show();
+  viewport_->AddPreTargetHandler(event_handler_.get());
+  viewport_->AddPostTargetHandler(event_handler_.get());
 }
 
 WorkspaceController::~WorkspaceController() {
   viewport_->SetLayoutManager(NULL);
-  viewport_->SetEventFilter(NULL);
   viewport_->RemovePreTargetHandler(event_handler_.get());
   viewport_->RemovePostTargetHandler(event_handler_.get());
 }
@@ -97,14 +90,13 @@ WorkspaceWindowState WorkspaceController::GetWindowState() const {
       if (window_state->IsMaximized())
         return WORKSPACE_WINDOW_STATE_MAXIMIZED;
       if (!window_overlaps_launcher &&
-          ((*i)->bounds().Intersects(shelf_bounds) ||
-           IsDockedAndVisible(*i))) {
+          ((*i)->bounds().Intersects(shelf_bounds))) {
         window_overlaps_launcher = true;
       }
     }
   }
 
-  return window_overlaps_launcher ?
+  return (window_overlaps_launcher || IsDockedAreaVisible(shelf_)) ?
       WORKSPACE_WINDOW_STATE_WINDOW_OVERLAPS_SHELF :
       WORKSPACE_WINDOW_STATE_DEFAULT;
 }
@@ -131,12 +123,10 @@ void WorkspaceController::DoInitialAnimation() {
     settings.SetPreemptionStrategy(ui::LayerAnimator::ENQUEUE_NEW_ANIMATION);
     viewport_->layer()->GetAnimator()->SchedulePauseForProperties(
         base::TimeDelta::FromMilliseconds(kInitialPauseTimeMS),
-        ui::LayerAnimationElement::TRANSFORM,
-        ui::LayerAnimationElement::OPACITY,
-        ui::LayerAnimationElement::BRIGHTNESS,
-        ui::LayerAnimationElement::VISIBILITY,
-        -1);
-
+        ui::LayerAnimationElement::TRANSFORM |
+            ui::LayerAnimationElement::OPACITY |
+            ui::LayerAnimationElement::BRIGHTNESS |
+            ui::LayerAnimationElement::VISIBILITY);
     settings.SetTweenType(gfx::Tween::EASE_OUT);
     settings.SetTransitionDuration(
         base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS));

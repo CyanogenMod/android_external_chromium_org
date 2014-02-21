@@ -8,10 +8,12 @@
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/sandbox_file_system_test_helper.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/async_file_test_helper.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/isolated_context.h"
@@ -20,11 +22,11 @@
 #include "webkit/common/quota/quota_types.h"
 
 using base::PlatformFileError;
+using content::SandboxFileSystemTestHelper;
 using fileapi::FileSystemContext;
 using fileapi::FileSystemOperationContext;
 using fileapi::FileSystemURL;
 using fileapi::FileSystemURLSet;
-using fileapi::SandboxFileSystemTestHelper;
 using quota::QuotaManager;
 using quota::QuotaStatusCode;
 
@@ -33,18 +35,20 @@ namespace sync_file_system {
 class SyncableFileSystemTest : public testing::Test {
  public:
   SyncableFileSystemTest()
-      : file_system_(GURL("http://example.com/"),
+      : in_memory_env_(leveldb::NewMemEnv(leveldb::Env::Default())),
+        file_system_(GURL("http://example.com/"),
+                     in_memory_env_.get(),
                      base::MessageLoopProxy::current().get(),
                      base::MessageLoopProxy::current().get()),
         weak_factory_(this) {}
 
   virtual void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-
-    file_system_.SetUp();
+    file_system_.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
 
     sync_context_ =
         new LocalFileSyncContext(data_dir_.path(),
+                                 in_memory_env_.get(),
                                  base::MessageLoopProxy::current().get(),
                                  base::MessageLoopProxy::current().get());
     ASSERT_EQ(
@@ -98,6 +102,7 @@ class SyncableFileSystemTest : public testing::Test {
 
   base::ScopedTempDir data_dir_;
   content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<leveldb::Env> in_memory_env_;
   CannedSyncableFileSystem file_system_;
 
  private:
@@ -111,13 +116,13 @@ class SyncableFileSystemTest : public testing::Test {
 // Brief combined testing. Just see if all the sandbox feature works.
 TEST_F(SyncableFileSystemTest, SyncableLocalSandboxCombined) {
   // Opens a syncable file system.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.OpenFileSystem());
 
   // Do some operations.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateDirectory(URL("dir")));
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateFile(URL("dir/foo")));
 
   const int64 kOriginalQuota = QuotaManager::kSyncableStorageDefaultHostQuota;
@@ -135,10 +140,10 @@ TEST_F(SyncableFileSystemTest, SyncableLocalSandboxCombined) {
 
   // Truncate to extend an existing file and see if the usage reflects it.
   const int64 kFileSizeToExtend = 333;
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateFile(URL("dir/foo")));
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.TruncateFile(URL("dir/foo"), kFileSizeToExtend));
 
   int64 new_usage;
@@ -149,7 +154,7 @@ TEST_F(SyncableFileSystemTest, SyncableLocalSandboxCombined) {
   // Shrink the quota to the current usage, try to extend the file further
   // and see if it fails.
   QuotaManager::kSyncableStorageDefaultHostQuota = new_usage;
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NO_SPACE,
+  EXPECT_EQ(base::File::FILE_ERROR_NO_SPACE,
             file_system_.TruncateFile(URL("dir/foo"), kFileSizeToExtend + 1));
 
   usage = new_usage;
@@ -158,7 +163,7 @@ TEST_F(SyncableFileSystemTest, SyncableLocalSandboxCombined) {
   EXPECT_EQ(usage, new_usage);
 
   // Deletes the file system.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.DeleteFileSystem());
 
   // Now the usage must be zero.
@@ -172,7 +177,7 @@ TEST_F(SyncableFileSystemTest, SyncableLocalSandboxCombined) {
 
 // Combined testing with LocalFileChangeTracker.
 TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.OpenFileSystem());
 
   const char kPath0[] = "dir a";
@@ -181,15 +186,15 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
   const char kPath3[] = "dir b";
 
   // Do some operations.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateDirectory(URL(kPath0)));  // Creates a dir.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateDirectory(URL(kPath1)));  // Creates another.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateFile(URL(kPath2)));       // Creates a file.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.TruncateFile(URL(kPath2), 1));  // Modifies the file.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.TruncateFile(URL(kPath2), 2));  // Modifies it again.
 
   FileSystemURLSet urls;
@@ -211,9 +216,9 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
                                   sync_file_system::SYNC_FILE_TYPE_FILE));
 
   // Creates and removes a same directory.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.CreateDirectory(URL(kPath3)));
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.Remove(URL(kPath3), false /* recursive */));
 
   // The changes will be offset.
@@ -222,7 +227,7 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
   EXPECT_TRUE(urls.empty());
 
   // Recursively removes the kPath0 directory.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.Remove(URL(kPath0), true /* recursive */));
 
   urls.clear();
@@ -249,11 +254,11 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
 TEST_F(SyncableFileSystemTest, DisableDirectoryOperations) {
   bool was_enabled = IsSyncFSDirectoryOperationEnabled();
   SetEnableSyncFSDirectoryOperation(false);
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_.OpenFileSystem());
 
   // Try some directory operations (which should fail).
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION,
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION,
             file_system_.CreateDirectory(URL("dir")));
 
   // Set up another (non-syncable) local file system.
@@ -265,16 +270,16 @@ TEST_F(SyncableFileSystemTest, DisableDirectoryOperations) {
   const FileSystemURL kSrcDir = other_file_system_.CreateURLFromUTF8("/a");
   const FileSystemURL kSrcChild = other_file_system_.CreateURLFromUTF8("/a/b");
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
-            fileapi::AsyncFileTestHelper::CreateDirectory(
+  EXPECT_EQ(base::File::FILE_OK,
+            content::AsyncFileTestHelper::CreateDirectory(
                 other_file_system_.file_system_context(), kSrcDir));
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
-            fileapi::AsyncFileTestHelper::CreateFile(
+  EXPECT_EQ(base::File::FILE_OK,
+            content::AsyncFileTestHelper::CreateFile(
                 other_file_system_.file_system_context(), kSrcChild));
 
   // Now try copying the directory into the syncable file system, which should
   // fail if directory operation is disabled. (http://crbug.com/161442)
-  EXPECT_NE(base::PLATFORM_FILE_OK,
+  EXPECT_NE(base::File::FILE_OK,
             file_system_.Copy(kSrcDir, URL("dest")));
 
   other_file_system_.TearDown();

@@ -9,6 +9,7 @@
 #include "base/process/process_handle.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
@@ -52,11 +53,13 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // deleted.
   virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) {}
 
-  // Only one of the two methods below will be called when a RVH is created for
-  // a WebContents, depending on whether it's for an interstitial or not.
+  // This is called when a RVH is created for a WebContents, but not if it's an
+  // interstitial.
   virtual void RenderViewCreated(RenderViewHost* render_view_host) {}
-  virtual void RenderViewForInterstitialPageCreated(
-      RenderViewHost* render_view_host) {}
+
+  // Called for every RenderFrameHost that's created for an interstitial.
+  virtual void RenderFrameForInterstitialPageCreated(
+      RenderFrameHost* render_frame_host) {}
 
   // This method is invoked when the RenderView of the current RenderViewHost
   // is ready, e.g. because we recreated it after a crash.
@@ -70,9 +73,11 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked when the process for the current RenderView crashes.
   // The WebContents continues to use the RenderViewHost, e.g. when the user
-  // reloads the current page.
-  // When the RenderViewHost is deleted, the RenderViewDeleted method will be
-  // invoked.
+  // reloads the current page. When the RenderViewHost itself is deleted, the
+  // RenderViewDeleted method will be invoked.
+  //
+  // Note that this is equivalent to
+  // RenderProcessHostObserver::RenderProcessExited().
   virtual void RenderProcessGone(base::TerminationStatus status) {}
 
   // This method is invoked when a WebContents swaps its render view host with
@@ -123,7 +128,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // WebContentsObserver::DidGetRedirectForResourceRequest instead.
   virtual void ProvisionalChangeToMainFrameUrl(
       const GURL& url,
-      RenderViewHost* render_view_host) {}
+      RenderFrameHost* render_frame_host) {}
 
   // This method is invoked when the provisional load was successfully
   // committed. The |render_view_host| is now the current RenderViewHost of the
@@ -207,6 +212,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // This method is invoked when a redirect was received while requesting a
   // resource.
   virtual void DidGetRedirectForResourceRequest(
+      RenderViewHost* render_view_host,
       const ResourceRedirectDetails& details) {}
 
   // This method is invoked when a new non-pending navigation entry is created.

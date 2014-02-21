@@ -13,7 +13,9 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "google_apis/gaia/merge_session_helper.h"
 
+class GoogleServiceAuthError;
 class Profile;
 
 namespace policy {
@@ -28,7 +30,7 @@ class CloudPolicyClient;
 //
 // This class implements parts of the sign-in flow, to make sure that policy
 // is available before sign-in completes.
-class SigninManagerAndroid {
+class SigninManagerAndroid : public MergeSessionHelper::Observer {
  public:
   SigninManagerAndroid(JNIEnv* env, jobject obj);
 
@@ -61,6 +63,11 @@ class SigninManagerAndroid {
 
   void OnBrowsingDataRemoverDone();
 
+  // MergeSessionHelper::Observer implementation.
+  virtual void MergeSessionCompleted(
+      const std::string& account_id,
+      const GoogleServiceAuthError& error) OVERRIDE;
+
   Profile* profile_;
 
   // Java-side SigninManager object.
@@ -76,6 +83,9 @@ class SigninManagerAndroid {
   // for the policy dialog, when |username_| corresponds to a managed account.
   std::string username_;
 #endif
+
+  // Helper to merge the signed into account into the cookie jar session.
+  scoped_ptr<MergeSessionHelper> merge_session_helper_;
 
   base::WeakPtrFactory<SigninManagerAndroid> weak_factory_;
 

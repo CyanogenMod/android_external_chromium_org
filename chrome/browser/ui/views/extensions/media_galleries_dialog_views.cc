@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/views/extensions/media_galleries_dialog_views.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
@@ -79,21 +78,27 @@ MediaGalleriesDialogViews::MediaGalleriesDialogViews(
       accepted_(false) {
   InitChildViews();
 
-  // Ownership of |contents_| is handed off by this call. |window_| will take
-  // care of deleting itself after calling DeleteDelegate().
-  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
-      WebContentsModalDialogManager::FromWebContents(
-          controller->web_contents());
-  DCHECK(web_contents_modal_dialog_manager);
-  WebContentsModalDialogManagerDelegate* modal_delegate =
-      web_contents_modal_dialog_manager->delegate();
-  DCHECK(modal_delegate);
-  window_ = views::Widget::CreateWindowAsFramelessChild(
-      this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
-  web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
+  // May be NULL during tests.
+  if (controller->web_contents()) {
+    // Ownership of |contents_| is handed off by this call. |window_| will take
+    // care of deleting itself after calling DeleteDelegate().
+    WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+        WebContentsModalDialogManager::FromWebContents(
+            controller->web_contents());
+    DCHECK(web_contents_modal_dialog_manager);
+    WebContentsModalDialogManagerDelegate* modal_delegate =
+        web_contents_modal_dialog_manager->delegate();
+    DCHECK(modal_delegate);
+    window_ = views::Widget::CreateWindowAsFramelessChild(
+        this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
+    web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
+  }
 }
 
-MediaGalleriesDialogViews::~MediaGalleriesDialogViews() {}
+MediaGalleriesDialogViews::~MediaGalleriesDialogViews() {
+  if (!controller_->web_contents())
+    delete contents_;
+}
 
 void MediaGalleriesDialogViews::InitChildViews() {
   // Outer dialog layout.
@@ -128,11 +133,11 @@ void MediaGalleriesDialogViews::InitChildViews() {
   scroll_container->SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kVertical, 0, 0,
       views::kRelatedControlSmallVerticalSpacing));
-  scroll_container->set_border(views::Border::CreateEmptyBorder(
-      views::kRelatedControlVerticalSpacing,
-      0,
-      views::kRelatedControlVerticalSpacing,
-      0));
+  scroll_container->SetBorder(
+      views::Border::CreateEmptyBorder(views::kRelatedControlVerticalSpacing,
+                                       0,
+                                       views::kRelatedControlVerticalSpacing,
+                                       0));
 
   // Add attached galleries checkboxes.
   checkbox_map_.clear();
@@ -161,11 +166,11 @@ void MediaGalleriesDialogViews::InitChildViews() {
         controller_->GetUnattachedLocationsHeader());
     unattached_text->SetMultiLine(true);
     unattached_text->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    unattached_text->set_border(views::Border::CreateEmptyBorder(
-        views::kRelatedControlVerticalSpacing,
-        views::kPanelHorizMargin,
-        views::kRelatedControlVerticalSpacing,
-        0));
+    unattached_text->SetBorder(
+        views::Border::CreateEmptyBorder(views::kRelatedControlVerticalSpacing,
+                                         views::kPanelHorizMargin,
+                                         views::kRelatedControlVerticalSpacing,
+                                         0));
     scroll_container->AddChildView(unattached_text);
 
     // Add unattached galleries checkboxes.
@@ -232,7 +237,7 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   secondary_text->SetTooltipText(tooltip_text);
   secondary_text->SetEnabledColor(kDeemphasizedTextColor);
   secondary_text->SetTooltipText(tooltip_text);
-  secondary_text->set_border(views::Border::CreateEmptyBorder(
+  secondary_text->SetBorder(views::Border::CreateEmptyBorder(
       0,
       views::kRelatedControlSmallHorizontalSpacing,
       0,
@@ -241,11 +246,8 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   views::View* checkbox_view = new views::View();
   if (gallery.pref_id != kInvalidMediaGalleryPrefId)
     checkbox_view->set_context_menu_controller(this);
-  checkbox_view->set_border(views::Border::CreateEmptyBorder(
-      0,
-      views::kPanelHorizMargin,
-      trailing_vertical_space,
-      0));
+  checkbox_view->SetBorder(views::Border::CreateEmptyBorder(
+      0, views::kPanelHorizMargin, trailing_vertical_space, 0));
   checkbox_view->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
   checkbox_view->AddChildView(checkbox);
@@ -262,7 +264,7 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   return true;
 }
 
-string16 MediaGalleriesDialogViews::GetWindowTitle() const {
+base::string16 MediaGalleriesDialogViews::GetWindowTitle() const {
   return controller_->GetHeader();
 }
 
@@ -282,7 +284,7 @@ views::View* MediaGalleriesDialogViews::GetContentsView() {
   return contents_;
 }
 
-string16 MediaGalleriesDialogViews::GetDialogButtonLabel(
+base::string16 MediaGalleriesDialogViews::GetDialogButtonLabel(
     ui::DialogButton button) const {
   return l10n_util::GetStringUTF16(button == ui::DIALOG_BUTTON_OK ?
       IDS_MEDIA_GALLERIES_DIALOG_CONFIRM :
@@ -306,7 +308,7 @@ views::View* MediaGalleriesDialogViews::CreateExtraView() {
   DCHECK(!add_gallery_button_);
   add_gallery_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_MEDIA_GALLERIES_DIALOG_ADD_GALLERY));
-  add_gallery_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  add_gallery_button_->SetStyle(views::Button::STYLE_BUTTON);
   return add_gallery_button_;
 }
 
@@ -320,19 +322,15 @@ bool MediaGalleriesDialogViews::Accept() {
   return true;
 }
 
-// TODO(wittman): Remove this override once we move to the new style frame view
-// on all dialogs.
-views::NonClientFrameView* MediaGalleriesDialogViews::CreateNonClientFrameView(
-    views::Widget* widget) {
-  return CreateConstrainedStyleNonClientFrameView(
-      widget,
-      controller_->web_contents()->GetBrowserContext());
-}
-
 void MediaGalleriesDialogViews::ButtonPressed(views::Button* sender,
                                               const ui::Event& event) {
-  confirm_available_ = true;
   GetWidget()->client_view()->AsDialogClientView()->UpdateDialogButtons();
+
+  ButtonPressedAction(sender);
+}
+
+void MediaGalleriesDialogViews::ButtonPressedAction(views::Button* sender) {
+  confirm_available_ = true;
 
   if (sender == add_gallery_button_) {
     controller_->OnAddFolderClicked();
@@ -372,7 +370,7 @@ void MediaGalleriesDialogViews::ShowContextMenu(const gfx::Point& point,
                                                 ui::MenuSourceType source_type,
                                                 MediaGalleryPrefId id) {
   context_menu_runner_.reset(new views::MenuRunner(
-      controller_->GetContextMenuModel(id)));
+      controller_->GetContextMenu(id)));
 
   if (context_menu_runner_->RunMenuAt(
           GetWidget(), NULL, gfx::Rect(point.x(), point.y(), 0, 0),

@@ -39,6 +39,7 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/skia_util.h"
@@ -60,8 +61,8 @@
 #include "ui/native_theme/native_theme_aura.h"
 #endif
 
+using base::UserMetricsAction;
 using content::HostZoomMap;
-using content::UserMetricsAction;
 using content::WebContents;
 using ui::MenuModel;
 using views::CustomButton;
@@ -295,7 +296,8 @@ class MenuButtonBackground : public views::Background {
                       const views::View* view,
                       const gfx::Rect& bounds,
                       views::Button::ButtonState state) const {
-    if (state == views::Button::STATE_HOVERED) {
+    if (state == views::Button::STATE_HOVERED ||
+        state == views::Button::STATE_PRESSED) {
       view->GetNativeTheme()->Paint(canvas->sk_canvas(),
                                     ui::NativeTheme::kMenuItemBackground,
                                     ui::NativeTheme::kHovered,
@@ -391,7 +393,7 @@ class WrenchMenuView : public views::View,
         l10n_util::GetStringUTF16(string_id), '&', NULL, NULL));
     button->SetAccessibleName(
         GetAccessibleNameForWrenchMenuItem(menu_model_, index, acc_string_id));
-    button->set_focusable(true);
+    button->SetFocusable(true);
     button->set_request_focus_on_press(false);
     button->set_tag(index);
     button->SetEnabled(menu_model_->IsEnabledAt(index));
@@ -402,10 +404,10 @@ class WrenchMenuView : public views::View,
     button->SetTextColor(views::Button::STATE_NORMAL, menu_config.text_color);
     if (background)
       *background = bg;
-    button->set_border(
-        new MenuButtonBorder(menu_config, menu_->use_new_menu()));
+    button->SetBorder(scoped_ptr<views::Border>(
+        new MenuButtonBorder(menu_config, menu_->use_new_menu())));
     button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    button->SetFont(menu_config.font);
+    button->SetFontList(menu_config.font_list);
     ui::NativeTheme* native_theme = button->GetNativeTheme();
     button->SetTextColor(
         views::Button::STATE_DISABLED,
@@ -624,9 +626,9 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
         menu->use_new_menu());
     zoom_label_->set_background(center_bg);
     const MenuConfig& menu_config(menu->GetMenuConfig());
-    zoom_label_->set_border(
-        new MenuButtonBorder(menu_config, menu->use_new_menu()));
-    zoom_label_->SetFont(menu_config.font);
+    zoom_label_->SetBorder(scoped_ptr<views::Border>(
+        new MenuButtonBorder(menu_config, menu->use_new_menu())));
+    zoom_label_->SetFontList(menu_config.font_list);
 
     AddChildView(zoom_label_);
     zoom_label_width_ = MaxWidthForZoomLabel();
@@ -647,10 +649,14 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
     fullscreen_button_->SetImage(ImageButton::STATE_NORMAL, full_screen_image);
     SkColor fg_color = native_theme->GetSystemColor(
         ui::NativeTheme::kColorId_SelectedMenuItemForegroundColor);
+    gfx::ImageSkia hovered_fullscreen_image(
+        new HoveredImageSource(*full_screen_image, fg_color),
+        full_screen_image->size());
     fullscreen_button_->SetImage(
-        ImageButton::STATE_HOVERED,
-        new gfx::ImageSkia(new HoveredImageSource(*full_screen_image, fg_color),
-                           full_screen_image->size()));
+        ImageButton::STATE_HOVERED, &hovered_fullscreen_image);
+    fullscreen_button_->SetImage(
+        ImageButton::STATE_PRESSED, &hovered_fullscreen_image);
+
     SkColor enabled_text_color = native_theme->GetSystemColor(
         ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor);
     zoom_label_->SetEnabledColor(enabled_text_color);
@@ -664,14 +670,14 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
                                     disabled_text_color);
     increment_button_->SetTextColor(views::Button::STATE_DISABLED,
                                     disabled_text_color);
-    fullscreen_button_->set_focusable(true);
+    fullscreen_button_->SetFocusable(true);
     fullscreen_button_->set_request_focus_on_press(false);
     fullscreen_button_->set_tag(fullscreen_index);
     fullscreen_button_->SetImageAlignment(
         ImageButton::ALIGN_CENTER, ImageButton::ALIGN_MIDDLE);
     int horizontal_padding =
         menu->use_new_menu() ? kHorizontalTouchPadding : kHorizontalPadding;
-    fullscreen_button_->set_border(views::Border::CreateEmptyBorder(
+    fullscreen_button_->SetBorder(views::Border::CreateEmptyBorder(
         0, horizontal_padding, 0, horizontal_padding));
     fullscreen_button_->set_background(
         new MenuButtonBackground(MenuButtonBackground::SINGLE_BUTTON,
@@ -766,7 +772,7 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
 
   // Calculates the max width the zoom string can be.
   int MaxWidthForZoomLabel() {
-    gfx::Font font = zoom_label_->font();
+    const gfx::FontList& font_list = zoom_label_->font_list();
     int border_width =
         zoom_label_->border() ? zoom_label_->border()->GetInsets().width() : 0;
 
@@ -780,13 +786,13 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
 
       int step = (max_percent - min_percent) / 10;
       for (int i = min_percent; i <= max_percent; i += step) {
-        int w = font.GetStringWidth(
-            l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, i));
+        int w = gfx::GetStringWidth(
+            l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, i), font_list);
         max_w = std::max(w, max_w);
       }
     } else {
-      max_w = font.GetStringWidth(
-          l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, 100));
+      max_w = gfx::GetStringWidth(
+          l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, 100), font_list);
     }
 
     return max_w + border_width;
@@ -844,15 +850,15 @@ class WrenchMenu::RecentTabsMenuModelDelegate : public ui::MenuModelDelegate {
         kMaxMenuItemWidth : -1;
   }
 
-  const gfx::Font* GetLabelFontAt(int index) const {
-    return model_->GetLabelFontAt(index);
+  const gfx::FontList* GetLabelFontListAt(int index) const {
+    return model_->GetLabelFontListAt(index);
   }
 
   bool GetForegroundColorAt(int index,
                             bool is_hovered,
                             SkColor* override_color) const {
-    // The items for which we get a font, should be shown in black.
-    if (GetLabelFontAt(index)) {
+    // The items for which we get a font list, should be shown in black.
+    if (GetLabelFontListAt(index)) {
       *override_color = SK_ColorBLACK;
       return true;
     }
@@ -995,9 +1001,9 @@ void WrenchMenu::RemoveObserver(WrenchMenuObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
-const gfx::Font* WrenchMenu::GetLabelFont(int command_id) const {
+const gfx::FontList* WrenchMenu::GetLabelFontList(int command_id) const {
   if (IsRecentTabsCommand(command_id)) {
-    return recent_tabs_menu_model_delegate_->GetLabelFontAt(
+    return recent_tabs_menu_model_delegate_->GetLabelFontListAt(
         ModelIndexFromCommandId(command_id));
   }
   return NULL;

@@ -64,13 +64,13 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_2);
   builder->AddF("createManagedUserIntroText3",
                IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_3,
-               UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
+               base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
 
   builder->Add("createManagedUserPickManagerTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_TITLE);
   builder->AddF("createManagedUserPickManagerTitleExplanation",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_EXPLANATION,
-               UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
+               base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
   builder->Add("createManagedUserManagerPasswordHint",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_MANAGER_PASSWORD_HINT);
   builder->Add("createManagedUserWrongManagerPasswordText",
@@ -185,8 +185,8 @@ void LocallyManagedUserCreationScreenHandler::RegisterMessages() {
 void LocallyManagedUserCreationScreenHandler::PrepareToShow() {}
 
 void LocallyManagedUserCreationScreenHandler::Show() {
-  scoped_ptr<DictionaryValue> data(new base::DictionaryValue());
-  scoped_ptr<ListValue> users_list(new base::ListValue());
+  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  scoped_ptr<base::ListValue> users_list(new base::ListValue());
   const UserList& users = UserManager::Get()->GetUsers();
   std::string owner;
   chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
@@ -195,8 +195,11 @@ void LocallyManagedUserCreationScreenHandler::Show() {
     if ((*it)->GetType() != User::USER_TYPE_REGULAR)
       continue;
     bool is_owner = ((*it)->email() == owner);
-    DictionaryValue* user_dict = new DictionaryValue();
-    SigninScreenHandler::FillUserDictionary(*it, is_owner, user_dict);
+    base::DictionaryValue* user_dict = new base::DictionaryValue();
+    SigninScreenHandler::FillUserDictionary(*it,
+                                            is_owner,
+                                            false /* is_signin_to_add */,
+                                            user_dict);
     users_list->Append(user_dict);
   }
   data->Set("managers", users_list.release());
@@ -259,7 +262,7 @@ void LocallyManagedUserCreationScreenHandler::HandleManagerSelected(
     const std::string& manager_id) {
   if (!delegate_)
     return;
-  WallpaperManager::Get()->SetUserWallpaper(manager_id);
+  WallpaperManager::Get()->SetUserWallpaperNow(manager_id);
 }
 
 void LocallyManagedUserCreationScreenHandler::HandleImportUserSelected(

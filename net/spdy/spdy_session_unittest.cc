@@ -238,9 +238,6 @@ TEST_P(SpdySessionTest, PendingStreamCancellingAnother) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -298,9 +295,6 @@ TEST_P(SpdySessionTest, GoAwayWithNoActiveStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -331,9 +325,6 @@ TEST_P(SpdySessionTest, GoAwayImmediatelyWithNoActiveStreams) {
   DeterministicSocketData data(reads, arraysize(reads), NULL, 0);
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
 
@@ -369,9 +360,6 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -379,7 +367,7 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreams) {
 
   EXPECT_EQ(spdy_util_.spdy_version(), session->GetProtocolVersion());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -453,9 +441,6 @@ TEST_P(SpdySessionTest, GoAwayTwice) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -463,7 +448,7 @@ TEST_P(SpdySessionTest, GoAwayTwice) {
 
   EXPECT_EQ(spdy_util_.spdy_version(), session->GetProtocolVersion());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -535,9 +520,6 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreamsThenClose) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -545,7 +527,7 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreamsThenClose) {
 
   EXPECT_EQ(spdy_util_.spdy_version(), session->GetProtocolVersion());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -594,7 +576,6 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreamsThenClose) {
 // Try to create a stream after receiving a GOAWAY frame. It should
 // fail.
 TEST_P(SpdySessionTest, CreateStreamAfterGoAway) {
-  const char kStreamUrl[] = "http://www.google.com";
   session_deps_.host_resolver->set_synchronous_mode(true);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
@@ -613,9 +594,6 @@ TEST_P(SpdySessionTest, CreateStreamAfterGoAway) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -623,7 +601,7 @@ TEST_P(SpdySessionTest, CreateStreamAfterGoAway) {
 
   EXPECT_EQ(spdy_util_.spdy_version(), session->GetProtocolVersion());
 
-  GURL url(kStreamUrl);
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -662,13 +640,12 @@ TEST_P(SpdySessionTest, CreateStreamAfterGoAway) {
 // Receiving a SYN_STREAM frame after a GOAWAY frame should result in
 // the stream being refused.
 TEST_P(SpdySessionTest, SynStreamAfterGoAway) {
-  const char kStreamUrl[] = "http://www.google.com";
   session_deps_.host_resolver->set_synchronous_mode(true);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
   scoped_ptr<SpdyFrame> goaway(spdy_util_.ConstructSpdyGoAway(1));
   scoped_ptr<SpdyFrame>
-      push(spdy_util_.ConstructSpdyPush(NULL, 0, 2, 1, kStreamUrl));
+      push(spdy_util_.ConstructSpdyPush(NULL, 0, 2, 1, kDefaultURL));
   MockRead reads[] = {
     CreateMockRead(*goaway, 1),
     CreateMockRead(*push, 2),
@@ -687,9 +664,6 @@ TEST_P(SpdySessionTest, SynStreamAfterGoAway) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -697,7 +671,7 @@ TEST_P(SpdySessionTest, SynStreamAfterGoAway) {
 
   EXPECT_EQ(spdy_util_.spdy_version(), session->GetProtocolVersion());
 
-  GURL url(kStreamUrl);
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -728,6 +702,73 @@ TEST_P(SpdySessionTest, SynStreamAfterGoAway) {
   EXPECT_TRUE(session == NULL);
 }
 
+// A session observing a network change with active streams should close
+// when the last active stream is closed.
+TEST_P(SpdySessionTest, NetworkChangeWithActiveStreams) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  MockRead reads[] = {
+    MockRead(ASYNC, 0, 1)  // EOF
+  };
+  scoped_ptr<SpdyFrame> req1(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, MEDIUM, true));
+  MockWrite writes[] = {
+    CreateMockWrite(*req1, 0),
+  };
+  DeterministicSocketData data(reads, arraysize(reads),
+                               writes, arraysize(writes));
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  CreateDeterministicNetworkSession();
+
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  EXPECT_EQ(spdy_util_.spdy_version(), session->GetProtocolVersion());
+
+  base::WeakPtr<SpdyStream> spdy_stream =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session,
+                                GURL(kDefaultURL), MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultURL));
+
+  spdy_stream->SendRequestHeaders(headers.Pass(), NO_MORE_DATA_TO_SEND);
+  EXPECT_TRUE(spdy_stream->HasUrlFromHeaders());
+
+  data.RunFor(1);
+
+  EXPECT_EQ(1u, spdy_stream->stream_id());
+
+  EXPECT_TRUE(HasSpdySession(spdy_session_pool_, key_));
+
+  spdy_session_pool_->OnIPAddressChanged();
+
+  // The SpdySessionPool behavior differs based on how the OSs reacts to
+  // network changes; see comment in SpdySessionPool::OnIPAddressChanged().
+#if defined(OS_ANDROID) || defined(OS_WIN) || defined(OS_IOS)
+  // For OSs where the TCP connections will close upon relevant network
+  // changes, SpdySessionPool doesn't need to force them to close, so in these
+  // cases verify the session has become unavailable but remains open and the
+  // pre-existing stream is still active.
+  EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
+
+  EXPECT_FALSE(session->IsClosed());
+
+  EXPECT_TRUE(session->IsStreamActive(1));
+
+  // Should close the session.
+  spdy_stream->Close();
+#endif
+  EXPECT_EQ(NULL, spdy_stream.get());
+
+  EXPECT_TRUE(session == NULL);
+}
+
 TEST_P(SpdySessionTest, ClientPing) {
   session_deps_.enable_ping = true;
   session_deps_.host_resolver->set_synchronous_mode(true);
@@ -746,9 +787,6 @@ TEST_P(SpdySessionTest, ClientPing) {
       reads, arraysize(reads), writes, arraysize(writes));
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
 
@@ -805,9 +843,6 @@ TEST_P(SpdySessionTest, ServerPing) {
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -857,15 +892,12 @@ TEST_P(SpdySessionTest, PingAndWriteLoop) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, LOWEST, BoundNetLog());
@@ -886,43 +918,47 @@ TEST_P(SpdySessionTest, PingAndWriteLoop) {
 
 TEST_P(SpdySessionTest, DeleteExpiredPushStreams) {
   session_deps_.host_resolver->set_synchronous_mode(true);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
   session_deps_.time_func = TheNearFuture;
 
-  CreateNetworkSession();
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, MEDIUM, true));
+  scoped_ptr<SpdyFrame> rst(
+      spdy_util_.ConstructSpdyRstStream(2, RST_STREAM_REFUSED_STREAM));
 
+  scoped_ptr<SpdyFrame> push_a(spdy_util_.ConstructSpdyPush(
+      NULL, 0, 2, 1, "http://www.google.com/a.dat"));
+  scoped_ptr<SpdyFrame> push_a_body(
+      spdy_util_.ConstructSpdyBodyFrame(2, false));
+  scoped_ptr<SpdyFrame> push_b(spdy_util_.ConstructSpdyPush(
+      NULL, 0, 4, 1, "http://www.google.com/b.dat"));
+  MockWrite writes[] = {CreateMockWrite(*req, 0), CreateMockWrite(*rst, 4)};
+  MockRead reads[] = {
+      CreateMockRead(*push_a, 1), CreateMockRead(*push_a_body, 2),
+      CreateMockRead(*push_b, 3), MockRead(ASYNC, 0, 5),  // EOF
+  };
+  DeterministicSocketData data(
+      reads, arraysize(reads), writes, arraysize(writes));
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  CreateDeterministicNetworkSession();
   base::WeakPtr<SpdySession> session =
-      CreateFakeSpdySession(spdy_session_pool_, key_);
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  session->buffered_spdy_framer_.reset(
-      new BufferedSpdyFramer(spdy_util_.spdy_version(), false));
+  // Process the principal request, and the first push stream request & body.
+  GURL url(kDefaultURL);
+  base::WeakPtr<SpdyStream> spdy_stream = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
 
-  // Create the associated stream and add to active streams.
-  scoped_ptr<SpdyHeaderBlock> request_headers(
-      spdy_util_.ConstructGetHeaderBlock("http://www.google.com/"));
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructGetHeaderBlock(url.spec()));
+  spdy_stream->SendRequestHeaders(headers.Pass(), NO_MORE_DATA_TO_SEND);
 
-  scoped_ptr<SpdyStream> stream(new SpdyStream(SPDY_REQUEST_RESPONSE_STREAM,
-                                               session,
-                                               GURL(),
-                                               DEFAULT_PRIORITY,
-                                               kSpdyStreamInitialWindowSize,
-                                               kSpdyStreamInitialWindowSize,
-                                               session->net_log_));
-  stream->SendRequestHeaders(request_headers.Pass(), NO_MORE_DATA_TO_SEND);
-  SpdyStream* stream_ptr = stream.get();
-  session->InsertCreatedStream(stream.Pass());
-  stream = session->ActivateCreatedStream(stream_ptr);
-  session->InsertActivatedStream(stream.Pass());
-
-  SpdyHeaderBlock headers;
-  spdy_util_.AddUrlToHeaderBlock("http://www.google.com/a.dat", &headers);
-
-  // OnSynStream() expects |in_io_loop_| to be true.
-  session->in_io_loop_ = true;
-  session->OnSynStream(2, 1, 0, 0, true, false, headers);
-  session->in_io_loop_ = false;
+  data.RunFor(3);
 
   // Verify that there is one unclaimed push stream.
   EXPECT_EQ(1u, session->num_unclaimed_pushed_streams());
@@ -931,19 +967,36 @@ TEST_P(SpdySessionTest, DeleteExpiredPushStreams) {
           GURL("http://www.google.com/a.dat"));
   EXPECT_TRUE(session->unclaimed_pushed_streams_.end() != iter);
 
-  // Shift time to expire the push stream.
-  g_time_delta = base::TimeDelta::FromSeconds(301);
+  if (session->flow_control_state_ ==
+      SpdySession::FLOW_CONTROL_STREAM_AND_SESSION) {
+    // Unclaimed push body consumed bytes from the session window.
+    EXPECT_EQ(kSpdySessionInitialWindowSize - kUploadDataSize,
+              session->session_recv_window_size_);
+    EXPECT_EQ(0, session->session_unacked_recv_window_bytes_);
+  }
 
-  spdy_util_.AddUrlToHeaderBlock("http://www.google.com/b.dat", &headers);
-  session->in_io_loop_ = true;
-  session->OnSynStream(4, 1, 0, 0, true, false, headers);
-  session->in_io_loop_ = false;
+  // Shift time to expire the push stream. Read the second SYN_STREAM,
+  // and verify a RST_STREAM was written.
+  g_time_delta = base::TimeDelta::FromSeconds(301);
+  data.RunFor(2);
 
   // Verify that the second pushed stream evicted the first pushed stream.
   EXPECT_EQ(1u, session->num_unclaimed_pushed_streams());
   iter = session->unclaimed_pushed_streams_.find(
       GURL("http://www.google.com/b.dat"));
   EXPECT_TRUE(session->unclaimed_pushed_streams_.end() != iter);
+
+  if (session->flow_control_state_ ==
+      SpdySession::FLOW_CONTROL_STREAM_AND_SESSION) {
+    // Verify that the session window reclaimed the evicted stream body.
+    EXPECT_EQ(kSpdySessionInitialWindowSize,
+              session->session_recv_window_size_);
+    EXPECT_EQ(kUploadDataSize, session->session_unacked_recv_window_bytes_);
+  }
+
+  // Read and process EOF.
+  data.RunFor(1);
+  EXPECT_TRUE(session == NULL);
 }
 
 TEST_P(SpdySessionTest, FailedPing) {
@@ -957,9 +1010,6 @@ TEST_P(SpdySessionTest, FailedPing) {
   DeterministicSocketData data(reads, arraysize(reads), NULL, 0);
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
 
@@ -1025,9 +1075,6 @@ TEST_P(SpdySessionTest, OnSettings) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -1081,9 +1128,6 @@ TEST_P(SpdySessionTest, ClearSettings) {
   MockConnect connect_data(SYNCHRONOUS, OK);
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
 
@@ -1152,9 +1196,6 @@ TEST_P(SpdySessionTest, CancelPendingCreateStream) {
 
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateNetworkSession();
 
@@ -1256,9 +1297,6 @@ TEST_P(SpdySessionTest, SendInitialDataOnNewSession) {
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateNetworkSession();
 
   spdy_session_pool_->http_server_properties()->SetSpdySetting(
@@ -1309,9 +1347,6 @@ TEST_P(SpdySessionTest, Initialize) {
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -1353,9 +1388,6 @@ TEST_P(SpdySessionTest, CloseSessionOnError) {
   StaticSocketDataProvider data(reads, arraysize(reads), NULL, 0);
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateNetworkSession();
 
@@ -1429,15 +1461,12 @@ TEST_P(SpdySessionTest, OutOfOrderSynStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
 
   base::WeakPtr<SpdyStream> spdy_stream_lowest =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
@@ -1502,15 +1531,12 @@ TEST_P(SpdySessionTest, CancelStream) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, HIGHEST, BoundNetLog());
@@ -1519,7 +1545,7 @@ TEST_P(SpdySessionTest, CancelStream) {
   test::StreamDelegateDoNothing delegate1(spdy_stream1);
   spdy_stream1->SetDelegate(&delegate1);
 
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream2 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url2, LOWEST, BoundNetLog());
@@ -1575,22 +1601,19 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoCreatedSelfClosingStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_BIDIRECTIONAL_STREAM,
                                 session, url1, HIGHEST, BoundNetLog());
   ASSERT_TRUE(spdy_stream1.get() != NULL);
   EXPECT_EQ(0u, spdy_stream1->stream_id());
 
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream2 =
       CreateStreamSynchronously(SPDY_BIDIRECTIONAL_STREAM,
                                 session, url2, LOWEST, BoundNetLog());
@@ -1649,22 +1672,19 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoCreatedMutuallyClosingStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_BIDIRECTIONAL_STREAM,
                                 session, url1, HIGHEST, BoundNetLog());
   ASSERT_TRUE(spdy_stream1.get() != NULL);
   EXPECT_EQ(0u, spdy_stream1->stream_id());
 
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream2 =
       CreateStreamSynchronously(SPDY_BIDIRECTIONAL_STREAM,
                                 session, url2, LOWEST, BoundNetLog());
@@ -1730,22 +1750,19 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoActivatedSelfClosingStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, MEDIUM, BoundNetLog());
   ASSERT_TRUE(spdy_stream1.get() != NULL);
   EXPECT_EQ(0u, spdy_stream1->stream_id());
 
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream2 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url2, MEDIUM, BoundNetLog());
@@ -1814,22 +1831,19 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoActivatedMutuallyClosingStreams) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, MEDIUM, BoundNetLog());
   ASSERT_TRUE(spdy_stream1.get() != NULL);
   EXPECT_EQ(0u, spdy_stream1->stream_id());
 
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream2 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url2, MEDIUM, BoundNetLog());
@@ -1914,15 +1928,12 @@ TEST_P(SpdySessionTest, CloseActivatedStreamThatClosesSession) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -2090,9 +2101,6 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -2101,7 +2109,7 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
   // Read the settings frame.
   data.RunFor(1);
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, LOWEST, BoundNetLog());
@@ -2111,7 +2119,7 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
   spdy_stream1->SetDelegate(&delegate1);
 
   TestCompletionCallback callback2;
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   SpdyStreamRequest request2;
   ASSERT_EQ(ERR_IO_PENDING,
             request2.StartRequest(
@@ -2119,7 +2127,7 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
                 session, url2, LOWEST, BoundNetLog(), callback2.callback()));
 
   TestCompletionCallback callback3;
-  GURL url3("http://www.google.com");
+  GURL url3(kDefaultURL);
   SpdyStreamRequest request3;
   ASSERT_EQ(ERR_IO_PENDING,
             request3.StartRequest(
@@ -2213,9 +2221,6 @@ TEST_P(SpdySessionTest, CancelTwoStalledCreateStream) {
   data.set_connect_data(connect_data);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -2229,7 +2234,7 @@ TEST_P(SpdySessionTest, CancelTwoStalledCreateStream) {
     ASSERT_TRUE(spdy_stream != NULL);
   }
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_BIDIRECTIONAL_STREAM,
                                 session, url1, LOWEST, BoundNetLog());
@@ -2237,7 +2242,7 @@ TEST_P(SpdySessionTest, CancelTwoStalledCreateStream) {
   EXPECT_EQ(0u, spdy_stream1->stream_id());
 
   TestCompletionCallback callback2;
-  GURL url2("http://www.google.com");
+  GURL url2(kDefaultURL);
   SpdyStreamRequest request2;
   ASSERT_EQ(ERR_IO_PENDING,
             request2.StartRequest(
@@ -2245,7 +2250,7 @@ TEST_P(SpdySessionTest, CancelTwoStalledCreateStream) {
                 callback2.callback()));
 
   TestCompletionCallback callback3;
-  GURL url3("http://www.google.com");
+  GURL url3(kDefaultURL);
   SpdyStreamRequest request3;
   ASSERT_EQ(ERR_IO_PENDING,
             request3.StartRequest(
@@ -2334,15 +2339,12 @@ TEST_P(SpdySessionTest, ReadDataWithoutYielding) {
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, MEDIUM, BoundNetLog());
@@ -2428,15 +2430,12 @@ TEST_P(SpdySessionTest, TestYieldingDuringReadData) {
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, MEDIUM, BoundNetLog());
@@ -2544,15 +2543,12 @@ TEST_P(SpdySessionTest, TestYieldingDuringAsyncReadData) {
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, MEDIUM, BoundNetLog());
@@ -2618,15 +2614,12 @@ TEST_P(SpdySessionTest, GoAwayWhileInDoReadLoop) {
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream1 =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url1, MEDIUM, BoundNetLog());
@@ -2864,7 +2857,7 @@ TEST_P(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
           HttpNetworkSession::NORMAL_SOCKET_POOL);
 
   // Create a SPDY session.
-  GURL url1("http://www.google.com");
+  GURL url1(kDefaultURL);
   SpdySessionKey key1(HostPortPair(url1.host(), 80),
                       ProxyServer::Direct(), kPrivacyModeDisabled);
   base::WeakPtr<SpdySession> session1 =
@@ -2968,7 +2961,7 @@ class StreamCreatingDelegate : public test::StreamDelegateDoNothing {
   virtual ~StreamCreatingDelegate() {}
 
   virtual void OnClose(int status) OVERRIDE {
-    GURL url("http://www.google.com");
+    GURL url(kDefaultURL);
     ignore_result(
         CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                   session_, url, MEDIUM, BoundNetLog()));
@@ -3003,15 +2996,12 @@ TEST_P(SpdySessionTest, CreateStreamOnStreamReset) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
 
-  GURL url("http://www.google.com");
+  GURL url(kDefaultURL);
   base::WeakPtr<SpdyStream> spdy_stream =
       CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM,
                                 session, url, MEDIUM, BoundNetLog());
@@ -3072,9 +3062,6 @@ TEST_P(SpdySessionTest, UpdateStreamsSendWindowSize) {
   data->set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(data.get());
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -3133,9 +3120,6 @@ TEST_P(SpdySessionTest, AdjustRecvWindowSize) {
                                writes, arraysize(writes));
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
   base::WeakPtr<SpdySession> session =
@@ -3224,9 +3208,6 @@ TEST_P(SpdySessionTest, SessionFlowControlInactiveStream) {
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
@@ -3302,9 +3283,6 @@ TEST_P(SpdySessionTest, SessionFlowControlNoReceiveLeaks) {
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
-
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session =
@@ -3379,9 +3357,6 @@ TEST_P(SpdySessionTest, SessionFlowControlNoSendLeaks) {
   data.set_connect_data(connect_data);
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
 
@@ -3471,9 +3446,6 @@ TEST_P(SpdySessionTest, SessionFlowControlEndToEnd) {
   data.set_connect_data(connect_data);
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
-
-  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
-  session_deps_.deterministic_socket_factory->AddSSLSocketDataProvider(&ssl);
 
   CreateDeterministicNetworkSession();
 
@@ -4139,6 +4111,27 @@ TEST_P(SpdySessionTest, SendWindowSizeIncreaseWithDeletedSession) {
   EXPECT_EQ(std::string(), delegate2.TakeReceivedData());
 
   EXPECT_TRUE(data.at_write_eof());
+}
+
+TEST(MapFramerErrorToProtocolError, MapsValues) {
+  CHECK_EQ(SPDY_ERROR_INVALID_CONTROL_FRAME,
+           MapFramerErrorToProtocolError(
+               SpdyFramer::SPDY_INVALID_CONTROL_FRAME));
+  CHECK_EQ(SPDY_ERROR_INVALID_DATA_FRAME_FLAGS,
+           MapFramerErrorToProtocolError(
+               SpdyFramer::SPDY_INVALID_DATA_FRAME_FLAGS));
+  CHECK_EQ(SPDY_ERROR_GOAWAY_FRAME_CORRUPT,
+           MapFramerErrorToProtocolError(
+               SpdyFramer::SPDY_GOAWAY_FRAME_CORRUPT));
+}
+
+TEST(MapRstStreamStatusToProtocolError, MapsValues) {
+  CHECK_EQ(STATUS_CODE_PROTOCOL_ERROR,
+           MapRstStreamStatusToProtocolError(
+               RST_STREAM_PROTOCOL_ERROR));
+  CHECK_EQ(STATUS_CODE_FRAME_TOO_LARGE,
+           MapRstStreamStatusToProtocolError(
+               RST_STREAM_FRAME_TOO_LARGE));
 }
 
 }  // namespace net

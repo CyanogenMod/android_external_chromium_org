@@ -58,11 +58,6 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
   return event->code().c_str();
 }
 
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  const ui::Event* e = static_cast<const ui::Event*>(native_event);
-  return e->IsMouseEvent();
-}
-
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   const ui::MouseWheelEvent* event =
       static_cast<const ui::MouseWheelEvent*>(native_event);
@@ -143,16 +138,6 @@ bool IsNaturalScrollEnabled() { return false; }
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-base::NativeEvent CreateNoopEvent() {
-  NOTIMPLEMENTED();
-  return NULL;
 }
 
 int GetModifiersFromKeyState() {

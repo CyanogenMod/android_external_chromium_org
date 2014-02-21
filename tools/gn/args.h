@@ -31,6 +31,13 @@ class Args {
   void AddArgOverride(const char* name, const Value& value);
   void AddArgOverrides(const Scope::KeyValueMap& overrides);
 
+  // Returns the value corresponding to the given argument name, or NULL if no
+  // argument is set.
+  const Value* GetArgOverride(const char* name) const;
+
+  // Gets all overrides set on the build.
+  Scope::KeyValueMap GetAllOverrides() const;
+
   // Sets up the root scope for a toolchain. This applies the default system
   // flags, then any overrides stored in this object, then applies any
   // toolchain overrides specified in the argument.
@@ -54,20 +61,27 @@ class Args {
   // arguments. If there are, this returns false and sets the error.
   bool VerifyAllOverridesUsed(Err* err) const;
 
-  // This function is not threadsafe, it must only be used when
-  // single-threaded. It's used to implement the "args" command.
-  const Scope::KeyValueMap& declared_arguments() const {
-    return declared_arguments_;
-  }
+  // Like VerifyAllOverridesUsed but takes the lists of overrides specified and
+  // parameters declared.
+  static bool VerifyAllOverridesUsed(
+      const Scope::KeyValueMap& overrides,
+      const Scope::KeyValueMap& declared_arguments,
+      Err* err);
+
+  // Adds all declared arguments to the given output list. If the values exist
+  // in the list already, their values will be overwriten, but other values
+  // already in the list will remain.
+  void MergeDeclaredArguments(Scope::KeyValueMap* dest) const;
 
  private:
   // Sets the default config based on the current system.
-  void SetSystemVars(Scope* scope) const;
+  void SetSystemVarsLocked(Scope* scope) const;
 
   // Sets the given vars on the given scope.
-  void ApplyOverrides(const Scope::KeyValueMap& values, Scope* scope) const;
+  void ApplyOverridesLocked(const Scope::KeyValueMap& values,
+                            Scope* scope) const;
 
-  void SaveOverrideRecord(const Scope::KeyValueMap& values) const;
+  void SaveOverrideRecordLocked(const Scope::KeyValueMap& values) const;
 
   // Since this is called during setup which we assume is single-threaded,
   // this is not protected by the lock. It should be set only during init.

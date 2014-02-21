@@ -67,8 +67,7 @@ RGBAColor SkColorToRGBAColor(const SkColor& sKColor) {
 
 InstantService::InstantService(Profile* profile)
     : profile_(profile),
-      ntp_prerenderer_(profile, this, profile->GetPrefs()),
-      browser_instant_controller_object_count_(0),
+      omnibox_start_margin_(chrome::kDisableStartMargin),
       weak_ptr_factory_(this) {
   // Stub for unit tests.
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI))
@@ -124,8 +123,6 @@ InstantService::InstantService(Profile* profile)
 
   registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
-                 content::Source<Profile>(profile_));
 }
 
 InstantService::~InstantService() {
@@ -205,37 +202,6 @@ void InstantService::Shutdown() {
   instant_io_context_ = NULL;
 }
 
-scoped_ptr<content::WebContents> InstantService::ReleaseNTPContents() {
-  return ntp_prerenderer_.ReleaseNTPContents();
-}
-
-content::WebContents* InstantService::GetNTPContents() const {
-  return ntp_prerenderer_.GetNTPContents();
-}
-
-void InstantService::OnBrowserInstantControllerCreated() {
-  if (profile_->IsOffTheRecord())
-    return;
-
-  ++browser_instant_controller_object_count_;
-
-  if (browser_instant_controller_object_count_ == 1)
-    ntp_prerenderer_.ReloadInstantNTP();
-}
-
-void InstantService::OnBrowserInstantControllerDestroyed() {
-  if (profile_->IsOffTheRecord())
-    return;
-
-  DCHECK_GT(browser_instant_controller_object_count_, 0U);
-  --browser_instant_controller_object_count_;
-
-  // All browser windows have closed, so release the InstantNTP resources to
-  // work around http://crbug.com/180810.
-  if (browser_instant_controller_object_count_ == 0)
-    ntp_prerenderer_.DeleteNTPContents();
-}
-
 void InstantService::Observe(int type,
                              const content::NotificationSource& source,
                              const content::NotificationDetails& details) {
@@ -263,16 +229,6 @@ void InstantService::Observe(int type,
       break;
     }
 #endif  // defined(ENABLE_THEMES)
-    case chrome::NOTIFICATION_PROFILE_DESTROYED: {
-      // Last chance to delete InstantNTP contents. We generally delete
-      // preloaded InstantNTP when the last BrowserInstantController object is
-      // destroyed. When the browser shutdown happens without closing browsers,
-      // there is a race condition between BrowserInstantController destruction
-      // and Profile destruction.
-      if (GetNTPContents())
-        ntp_prerenderer_.DeleteNTPContents();
-      break;
-    }
     case chrome::NOTIFICATION_GOOGLE_URL_UPDATED: {
       OnGoogleURLUpdated(
           content::Source<Profile>(source).ptr(),
@@ -287,6 +243,12 @@ void InstantService::Observe(int type,
 void InstantService::SendSearchURLsToRenderer(content::RenderProcessHost* rph) {
   rph->Send(new ChromeViewMsg_SetSearchURLs(
       chrome::GetSearchURLs(profile_), chrome::GetNewTabPageURL(profile_)));
+}
+
+void InstantService::OnOmniboxStartMarginChanged(int start_margin) {
+  omnibox_start_margin_ = start_margin;
+  FOR_EACH_OBSERVER(InstantServiceObserver, observers_,
+                    OmniboxStartMarginChanged(omnibox_start_margin_));
 }
 
 void InstantService::OnRendererProcessTerminated(int process_id) {
@@ -474,10 +436,6 @@ void InstantService::OnDefaultSearchProviderChanged(
 
   FOR_EACH_OBSERVER(
       InstantServiceObserver, observers_, DefaultSearchProviderChanged());
-}
-
-InstantNTPPrerenderer* InstantService::ntp_prerenderer() {
-  return &ntp_prerenderer_;
 }
 
 void InstantService::ResetInstantSearchPrerenderer() {

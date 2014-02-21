@@ -27,6 +27,7 @@
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
@@ -84,10 +85,11 @@ const float kWindowAnimation_Bounce_Scale = 1.02f;
 const int kWindowAnimation_Bounce_DurationMS = 180;
 const int kWindowAnimation_Bounce_GrowShrinkDurationPercent = 40;
 
-base::TimeDelta GetWindowVisibilityAnimationDuration(aura::Window* window) {
+base::TimeDelta GetWindowVisibilityAnimationDuration(
+    const aura::Window& window) {
   int duration =
-      window->GetProperty(kWindowVisibilityAnimationDurationKey);
-  if (duration == 0 && window->type() == aura::client::WINDOW_TYPE_MENU) {
+      window.GetProperty(kWindowVisibilityAnimationDurationKey);
+  if (duration == 0 && window.type() == ui::wm::WINDOW_TYPE_MENU) {
     return base::TimeDelta::FromMilliseconds(
         kDefaultAnimationDurationForMenuMS);
   }
@@ -99,10 +101,10 @@ base::TimeDelta GetWindowVisibilityAnimationDuration(aura::Window* window) {
 int GetWindowVisibilityAnimationType(aura::Window* window) {
   int type = window->GetProperty(kWindowVisibilityAnimationTypeKey);
   if (type == WINDOW_VISIBILITY_ANIMATION_TYPE_DEFAULT) {
-    return (window->type() == aura::client::WINDOW_TYPE_MENU ||
-            window->type() == aura::client::WINDOW_TYPE_TOOLTIP) ?
-        WINDOW_VISIBILITY_ANIMATION_TYPE_FADE :
-        WINDOW_VISIBILITY_ANIMATION_TYPE_DROP;
+    return (window->type() == ui::wm::WINDOW_TYPE_MENU ||
+            window->type() == ui::wm::WINDOW_TYPE_TOOLTIP)
+               ? WINDOW_VISIBILITY_ANIMATION_TYPE_FADE
+               : WINDOW_VISIBILITY_ANIMATION_TYPE_DROP;
   }
   return type;
 }
@@ -255,7 +257,7 @@ void AnimateShowWindowCommon(aura::Window* window,
   {
     // Property sets within this scope will be implicitly animated.
     ui::ScopedLayerAnimationSettings settings(window->layer()->GetAnimator());
-    base::TimeDelta duration = GetWindowVisibilityAnimationDuration(window);
+    base::TimeDelta duration = GetWindowVisibilityAnimationDuration(*window);
     if (duration.ToInternalValue() > 0)
       settings.SetTransitionDuration(duration);
 
@@ -275,7 +277,7 @@ void AnimateHideWindowCommon(aura::Window* window,
   ui::ScopedLayerAnimationSettings settings(window->layer()->GetAnimator());
   settings.AddObserver(new HidingWindowAnimationObserver(window));
 
-  base::TimeDelta duration = GetWindowVisibilityAnimationDuration(window);
+  base::TimeDelta duration = GetWindowVisibilityAnimationDuration(*window);
   if (duration.ToInternalValue() > 0)
     settings.SetTransitionDuration(duration);
 
@@ -358,10 +360,8 @@ void AnimateBounce(aura::Window* window) {
   scoped_ptr<ui::LayerAnimationSequence> sequence(
       new ui::LayerAnimationSequence);
   sequence->AddElement(CreateGrowShrinkElement(window, true));
-  ui::LayerAnimationElement::AnimatableProperties paused_properties;
-  paused_properties.insert(ui::LayerAnimationElement::BOUNDS);
   sequence->AddElement(ui::LayerAnimationElement::CreatePauseElement(
-      paused_properties,
+      ui::LayerAnimationElement::BOUNDS,
       base::TimeDelta::FromMilliseconds(
         kWindowAnimation_Bounce_DurationMS *
             (100 - 2 * kWindowAnimation_Bounce_GrowShrinkDurationPercent) /
@@ -382,8 +382,7 @@ void AddLayerAnimationsForRotate(aura::Window* window, bool show) {
     new HidingWindowAnimationObserver(window);
     window->layer()->GetAnimator()->SchedulePauseForProperties(
         duration * (100 - kWindowAnimation_Rotate_OpacityDurationPercent) / 100,
-        ui::LayerAnimationElement::OPACITY,
-        -1);
+        ui::LayerAnimationElement::OPACITY);
   }
   scoped_ptr<ui::LayerAnimationElement> opacity(
       ui::LayerAnimationElement::CreateOpacityElement(
@@ -531,6 +530,12 @@ void SetWindowVisibilityAnimationDuration(aura::Window* window,
                       static_cast<int>(duration.ToInternalValue()));
 }
 
+base::TimeDelta GetWindowVisibilityAnimationDuration(
+    const aura::Window& window) {
+  return base::TimeDelta::FromInternalValue(
+      window.GetProperty(kWindowVisibilityAnimationDurationKey));
+}
+
 void SetWindowVisibilityAnimationVerticalPosition(aura::Window* window,
                                                   float position) {
   window->SetProperty(kWindowVisibilityAnimationVerticalPositionKey, position);
@@ -563,10 +568,10 @@ bool AnimateWindow(aura::Window* window, WindowAnimationType type) {
 }
 
 bool WindowAnimationsDisabled(aura::Window* window) {
-  return (window &&
+  return (!gfx::Animation::ShouldRenderRichAnimation() || (window &&
           window->GetProperty(aura::client::kAnimationsDisabledKey)) ||
       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kWindowAnimationsDisabled);
+          switches::kWindowAnimationsDisabled));
 }
 
 }  // namespace corewm

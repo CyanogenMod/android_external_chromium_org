@@ -27,7 +27,9 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	net/android/cert_verify_result_android.cc \
 	net/android/gurl_utils.cc \
+	net/android/android_private_key.cc \
 	net/android/keystore.cc \
 	net/android/keystore_openssl.cc \
 	net/android/net_jni_registrar.cc \
@@ -36,6 +38,7 @@ LOCAL_SRC_FILES := \
 	net/android/network_change_notifier_factory_android.cc \
 	net/android/network_library.cc \
 	net/base/address_list.cc \
+	net/base/address_tracker_linux.cc \
 	net/base/auth.cc \
 	net/base/backoff_entry.cc \
 	net/base/bandwidth_metrics.cc \
@@ -53,10 +56,7 @@ LOCAL_SRC_FILES := \
 	net/base/file_stream_metrics.cc \
 	net/base/file_stream_metrics_posix.cc \
 	net/base/file_stream_net_log_parameters.cc \
-	net/base/filter.cc \
 	net/base/int128.cc \
-	net/base/gzip_filter.cc \
-	net/base/gzip_header.cc \
 	net/base/hash_value.cc \
 	net/base/host_mapping_rules.cc \
 	net/base/host_port_pair.cc \
@@ -82,12 +82,10 @@ LOCAL_SRC_FILES := \
 	net/base/prioritized_dispatcher.cc \
 	net/base/registry_controlled_domains/registry_controlled_domain.cc \
 	net/base/request_priority.cc \
-	net/base/sdch_filter.cc \
 	net/base/sdch_manager.cc \
 	net/base/static_cookie_policy.cc \
 	net/base/test_data_stream.cc \
 	net/base/upload_bytes_element_reader.cc \
-	net/base/upload_data.cc \
 	net/base/upload_data_stream.cc \
 	net/base/upload_element.cc \
 	net/base/upload_element_reader.cc \
@@ -176,7 +174,11 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/flash/log_store_entry.cc \
 	net/disk_cache/flash/segment.cc \
 	net/disk_cache/flash/storage.cc \
+	net/disk_cache/v3/backend_impl_v3.cc \
 	net/disk_cache/v3/block_bitmaps.cc \
+	net/disk_cache/v3/entry_impl_v3.cc \
+	net/disk_cache/v3/eviction_v3.cc \
+	net/disk_cache/v3/index_table.cc \
 	net/dns/address_sorter_posix.cc \
 	net/dns/dns_client.cc \
 	net/dns/dns_config_service.cc \
@@ -194,6 +196,10 @@ LOCAL_SRC_FILES := \
 	net/dns/mapped_host_resolver.cc \
 	net/dns/serial_worker.cc \
 	net/dns/single_request_host_resolver.cc \
+	net/filter/filter.cc \
+	net/filter/gzip_filter.cc \
+	net/filter/gzip_header.cc \
+	net/filter/sdch_filter.cc \
 	net/ftp/ftp_auth_cache.cc \
 	net/ftp/ftp_ctrl_response_buffer.cc \
 	net/ftp/ftp_directory_listing_parser.cc \
@@ -209,6 +215,8 @@ LOCAL_SRC_FILES := \
 	net/ftp/ftp_server_type_histograms.cc \
 	net/ftp/ftp_util.cc \
 	net/http/des.cc \
+	net/http/disk_cache_based_quic_server_info.cc \
+	net/http/failing_http_transaction_factory.cc \
 	net/http/http_auth.cc \
 	net/http/http_auth_cache.cc \
 	net/http/http_auth_controller.cc \
@@ -308,6 +316,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/common_cert_set.cc \
 	net/quic/crypto/crypto_framer.cc \
 	net/quic/crypto/crypto_handshake.cc \
+	net/quic/crypto/crypto_handshake_message.cc \
 	net/quic/crypto/crypto_secret_boxer.cc \
 	net/quic/crypto/crypto_server_config_protobuf.cc \
 	net/quic/crypto/crypto_utils.cc \
@@ -324,10 +333,12 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/quic_decrypter.cc \
 	net/quic/crypto/quic_encrypter.cc \
 	net/quic/crypto/quic_random.cc \
-	net/quic/crypto/scoped_evp_cipher_ctx.cc \
+	net/quic/crypto/quic_server_info.cc \
+	net/quic/crypto/scoped_evp_aead_ctx.cc \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
 	net/quic/iovector.cc \
+	net/quic/port_suggester.cc \
 	net/quic/quic_ack_notifier.cc \
 	net/quic/quic_ack_notifier_manager.cc \
 	net/quic/quic_alarm.cc \
@@ -343,10 +354,12 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_crypto_server_stream.cc \
 	net/quic/quic_crypto_stream.cc \
 	net/quic/quic_data_reader.cc \
+	net/quic/quic_data_stream.cc \
 	net/quic/quic_data_writer.cc \
 	net/quic/quic_default_packet_writer.cc \
 	net/quic/quic_fec_group.cc \
 	net/quic/quic_framer.cc \
+	net/quic/quic_headers_stream.cc \
 	net/quic/quic_http_stream.cc \
 	net/quic/quic_http_utils.cc \
 	net/quic/quic_packet_creator.cc \
@@ -357,12 +370,14 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_sent_entropy_manager.cc \
 	net/quic/quic_sent_packet_manager.cc \
 	net/quic/quic_session.cc \
+	net/quic/quic_socket_address_coder.cc \
 	net/quic/quic_spdy_compressor.cc \
 	net/quic/quic_spdy_decompressor.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
 	net/quic/quic_time.cc \
 	net/quic/quic_utils.cc \
+	net/quic/quic_write_blocked_list.cc \
 	net/quic/reliable_quic_stream.cc \
 	net/quic/spdy_utils.cc \
 	net/socket/buffered_write_stream_socket.cc \
@@ -398,12 +413,21 @@ LOCAL_SRC_FILES := \
 	net/socket_stream/socket_stream_job_manager.cc \
 	net/socket_stream/socket_stream_metrics.cc \
 	net/spdy/buffered_spdy_framer.cc \
+	net/spdy/hpack_decoder.cc \
+	net/spdy/hpack_encoder.cc \
+	net/spdy/hpack_encoding_context.cc \
+	net/spdy/hpack_entry.cc \
+	net/spdy/hpack_header_table.cc \
+	net/spdy/hpack_input_stream.cc \
+	net/spdy/hpack_output_stream.cc \
+	net/spdy/hpack_string_util.cc \
 	net/spdy/spdy_buffer.cc \
 	net/spdy/spdy_buffer_producer.cc \
 	net/spdy/spdy_frame_builder.cc \
 	net/spdy/spdy_frame_reader.cc \
 	net/spdy/spdy_framer.cc \
 	net/spdy/spdy_header_block.cc \
+	net/spdy/spdy_headers_block_parser.cc \
 	net/spdy/spdy_http_stream.cc \
 	net/spdy/spdy_http_utils.cc \
 	net/spdy/spdy_protocol.cc \
@@ -440,6 +464,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_fetcher_delegate.cc \
 	net/url_request/url_fetcher_impl.cc \
 	net/url_request/url_fetcher_response_writer.cc \
+	net/url_request/url_range_request_job.cc \
 	net/url_request/url_request.cc \
 	net/url_request/url_request_about_job.cc \
 	net/url_request/url_request_context.cc \
@@ -479,6 +504,8 @@ LOCAL_SRC_FILES := \
 	net/websockets/websocket_frame_parser.cc \
 	net/websockets/websocket_handshake_constants.cc \
 	net/websockets/websocket_handshake_handler.cc \
+	net/websockets/websocket_handshake_request_info.cc \
+	net/websockets/websocket_handshake_response_info.cc \
 	net/websockets/websocket_handshake_stream_create_helper.cc \
 	net/websockets/websocket_inflater.cc \
 	net/websockets/websocket_job.cc \
@@ -513,14 +540,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -531,7 +559,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -578,7 +605,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -609,14 +635,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -627,7 +654,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -675,7 +701,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

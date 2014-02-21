@@ -12,15 +12,13 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_propvariant.h"
-#include "chrome/browser/storage_monitor/removable_device_constants.h"
 #include "chrome/common/chrome_constants.h"
-#include "content/public/browser/browser_thread.h"
 
 namespace media_transfer_protocol {
 
@@ -109,7 +107,7 @@ bool IsDirectory(IPortableDeviceValues* properties_values) {
 base::string16 GetObjectName(IPortableDeviceValues* properties_values,
                        bool is_directory) {
   DCHECK(properties_values);
-  base::win::ScopedCoMem<char16> buffer;
+  base::win::ScopedCoMem<base::char16> buffer;
   REFPROPERTYKEY key =
       is_directory ? WPD_OBJECT_NAME : WPD_OBJECT_ORIGINAL_FILE_NAME;
   HRESULT hr = properties_values->GetStringValue(key, &buffer);
@@ -269,7 +267,8 @@ bool GetMTPDeviceObjectEntries(IPortableDevice* device,
   const bool get_all_entries = object_name.empty();
   for (HRESULT hr = S_OK; hr == S_OK;) {
     DWORD num_objects_fetched = 0;
-    scoped_ptr<char16*[]> object_ids(new char16*[num_objects_to_request]);
+    scoped_ptr<base::char16*[]> object_ids(
+        new base::char16*[num_objects_to_request]);
     hr = enum_object_ids->Next(num_objects_to_request,
                                object_ids.get(),
                                &num_objects_fetched);
@@ -315,16 +314,16 @@ base::win::ScopedComPtr<IPortableDevice> OpenDevice(
   return base::win::ScopedComPtr<IPortableDevice>();
 }
 
-base::PlatformFileError GetFileEntryInfo(
+base::File::Error GetFileEntryInfo(
     IPortableDevice* device,
     const base::string16& object_id,
-    base::PlatformFileInfo* file_entry_info) {
+    base::File::Info* file_entry_info) {
   DCHECK(device);
   DCHECK(!object_id.empty());
   DCHECK(file_entry_info);
   MTPDeviceObjectEntry entry;
   if (!GetMTPDeviceObjectEntry(device, object_id, &entry))
-    return base::PLATFORM_FILE_ERROR_NOT_FOUND;
+    return base::File::FILE_ERROR_NOT_FOUND;
 
   file_entry_info->size = entry.size;
   file_entry_info->is_directory = entry.is_directory;
@@ -332,7 +331,7 @@ base::PlatformFileError GetFileEntryInfo(
   file_entry_info->last_modified = entry.last_modified_time;
   file_entry_info->last_accessed = entry.last_modified_time;
   file_entry_info->creation_time = base::Time();
-  return base::PLATFORM_FILE_OK;
+  return base::File::FILE_OK;
 }
 
 bool GetDirectoryEntries(IPortableDevice* device,
@@ -384,9 +383,9 @@ DWORD CopyDataChunkToLocalFile(IStream* stream,
   DCHECK_GT(bytes_read, 0U);
   CHECK_LE(bytes_read, buffer.length());
   int data_len =
-      base::checked_numeric_cast<int>(
+      base::checked_cast<int>(
           std::min(bytes_read,
-                   base::checked_numeric_cast<DWORD>(buffer.length())));
+                   base::checked_cast<DWORD>(buffer.length())));
   if (file_util::AppendToFile(local_path, buffer.c_str(), data_len) != data_len)
     return 0U;
   return data_len;

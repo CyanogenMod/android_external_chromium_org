@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/files/file_path.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/icon_manager.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/url_data_source.h"
 #include "ui/base/layout.h"
 
@@ -28,7 +28,7 @@ class FileIconSource : public content::URLDataSource {
   virtual void StartDataRequest(
       const std::string& path,
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE;
 
@@ -62,7 +62,7 @@ class FileIconSource : public content::URLDataSource {
                                gfx::Image* icon);
 
   // Tracks tasks requesting file icons.
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(FileIconSource);
 };

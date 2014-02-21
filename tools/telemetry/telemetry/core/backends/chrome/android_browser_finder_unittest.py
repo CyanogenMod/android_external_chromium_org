@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 import unittest
 
+from telemetry import test
 from telemetry.core import browser_options
 from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.unittest import system_stub
@@ -71,6 +72,7 @@ class AndroidBrowserFinderTest(unittest.TestCase):
     self.assertEquals(1, len(log_stub.warnings))
     self.assertEquals(0, len(browsers))
 
+  @test.Disabled('chromeos')
   def test_adb_one_device(self):
     finder_options = browser_options.BrowserFinderOptions()
 

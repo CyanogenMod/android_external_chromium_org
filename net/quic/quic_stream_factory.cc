@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -21,6 +22,8 @@
 #include "net/quic/congestion_control/tcp_receiver.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_random.h"
+#include "net/quic/crypto/quic_server_info.h"
+#include "net/quic/port_suggester.h"
 #include "net/quic/quic_client_session.h"
 #include "net/quic/quic_clock.h"
 #include "net/quic/quic_connection.h"
@@ -44,6 +47,7 @@ class QuicStreamFactory::Job {
       HostResolver* host_resolver,
       const HostPortProxyPair& host_port_proxy_pair,
       bool is_https,
+      base::StringPiece method,
       CertVerifier* cert_verifier,
       const BoundNetLog& net_log);
 
@@ -81,6 +85,7 @@ class QuicStreamFactory::Job {
   SingleRequestHostResolver host_resolver_;
   const HostPortProxyPair host_port_proxy_pair_;
   bool is_https_;
+  bool is_post_;
   CertVerifier* cert_verifier_;
   const BoundNetLog net_log_;
   QuicClientSession* session_;
@@ -89,20 +94,21 @@ class QuicStreamFactory::Job {
   DISALLOW_COPY_AND_ASSIGN(Job);
 };
 
-QuicStreamFactory::Job::Job(
-    QuicStreamFactory* factory,
-    HostResolver* host_resolver,
-    const HostPortProxyPair& host_port_proxy_pair,
-    bool is_https,
-    CertVerifier* cert_verifier,
-    const BoundNetLog& net_log)
+QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
+                            HostResolver* host_resolver,
+                            const HostPortProxyPair& host_port_proxy_pair,
+                            bool is_https,
+                            base::StringPiece method,
+                            CertVerifier* cert_verifier,
+                            const BoundNetLog& net_log)
     : factory_(factory),
       host_resolver_(host_resolver),
       host_port_proxy_pair_(host_port_proxy_pair),
       is_https_(is_https),
+      is_post_(method == "POST"),
       cert_verifier_(cert_verifier),
-      net_log_(net_log) {
-}
+      net_log_(net_log),
+      session_(NULL) {}
 
 QuicStreamFactory::Job::~Job() {
 }
@@ -166,6 +172,13 @@ int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
     return rv;
 
   DCHECK(!factory_->HasActiveSession(host_port_proxy_pair_));
+
+  // Inform the factory of this resolution, which will set up
+  // a session alias, if possible.
+  if (factory_->OnResolution(host_port_proxy_pair_, address_list_)) {
+    return OK;
+  }
+
   io_state_ = STATE_CONNECT;
   return OK;
 }
@@ -178,16 +191,17 @@ QuicStreamRequest::~QuicStreamRequest() {
     factory_->CancelRequest(this);
 }
 
-int QuicStreamRequest::Request(
-    const HostPortProxyPair& host_port_proxy_pair,
-    bool is_https,
-    CertVerifier* cert_verifier,
-    const BoundNetLog& net_log,
-    const CompletionCallback& callback) {
+int QuicStreamRequest::Request(const HostPortProxyPair& host_port_proxy_pair,
+                               bool is_https,
+                               base::StringPiece method,
+                               CertVerifier* cert_verifier,
+                               const BoundNetLog& net_log,
+                               const CompletionCallback& callback) {
   DCHECK(!stream_);
   DCHECK(callback_.is_null());
-  int rv = factory_->Create(host_port_proxy_pair, is_https, cert_verifier,
-                            net_log, this);
+  DCHECK(factory_);
+  int rv = factory_->Create(
+      host_port_proxy_pair, is_https, method, cert_verifier, net_log, this);
   if (rv == ERR_IO_PENDING) {
     host_port_proxy_pair_ = host_port_proxy_pair;
     is_https_ = is_https;
@@ -220,10 +234,19 @@ scoped_ptr<QuicHttpStream> QuicStreamRequest::ReleaseStream() {
 int QuicStreamFactory::Job::DoConnect() {
   io_state_ = STATE_CONNECT_COMPLETE;
 
-  session_ = factory_->CreateSession(host_port_proxy_pair_, is_https_,
-                                     cert_verifier_, address_list_, net_log_);
+  int rv = factory_->CreateSession(host_port_proxy_pair_, is_https_,
+      cert_verifier_, address_list_, net_log_, &session_);
+  if (rv != OK) {
+    DCHECK(rv != ERR_IO_PENDING);
+    DCHECK(!session_);
+    return rv;
+  }
+
   session_->StartReading();
-  int rv = session_->CryptoConnect(
+  if (!session_->connection()->connected()) {
+    return ERR_QUIC_PROTOCOL_ERROR;
+  }
+  rv = session_->CryptoConnect(
       factory_->require_confirmation() || is_https_,
       base::Bind(&QuicStreamFactory::Job::OnIOComplete,
                  base::Unretained(this)));
@@ -235,6 +258,15 @@ int QuicStreamFactory::Job::DoConnectComplete(int rv) {
     return rv;
 
   DCHECK(!factory_->HasActiveSession(host_port_proxy_pair_));
+  // There may well now be an active session for this IP.  If so, use the
+  // existing session instead.
+  AddressList address(session_->connection()->peer_address());
+  if (factory_->OnResolution(host_port_proxy_pair_, address)) {
+    session_->connection()->SendConnectionClose(QUIC_NO_ERROR);
+    session_ = NULL;
+    return OK;
+  }
+
   factory_->ActivateSession(host_port_proxy_pair_, session_);
 
   return OK;
@@ -244,26 +276,33 @@ QuicStreamFactory::QuicStreamFactory(
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
     base::WeakPtr<HttpServerProperties> http_server_properties,
+    QuicServerInfoFactory* quic_server_info_factory,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
     QuicClock* clock,
-    size_t max_packet_length)
+    size_t max_packet_length,
+    const QuicVersionVector& supported_versions,
+    bool enable_port_selection)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
       http_server_properties_(http_server_properties),
+      quic_server_info_factory_(quic_server_info_factory),
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
       max_packet_length_(max_packet_length),
+      supported_versions_(supported_versions),
+      enable_port_selection_(enable_port_selection),
+      port_seed_(random_generator_->RandUint64()),
       weak_factory_(this) {
   config_.SetDefaults();
   config_.set_idle_connection_state_lifetime(
       QuicTime::Delta::FromSeconds(30),
       QuicTime::Delta::FromSeconds(30));
 
-  cannoncial_suffixes_.push_back(string(".c.youtube.com"));
-  cannoncial_suffixes_.push_back(string(".googlevideo.com"));
+  canoncial_suffixes_.push_back(string(".c.youtube.com"));
+  canoncial_suffixes_.push_back(string(".googlevideo.com"));
 }
 
 QuicStreamFactory::~QuicStreamFactory() {
@@ -275,6 +314,7 @@ QuicStreamFactory::~QuicStreamFactory() {
 
 int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
                               bool is_https,
+                              base::StringPiece method,
                               CertVerifier* cert_verifier,
                               const BoundNetLog& net_log,
                               QuicStreamRequest* request) {
@@ -290,8 +330,14 @@ int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
     return ERR_IO_PENDING;
   }
 
+  // Create crypto config and start the process of loading QUIC server
+  // information from disk cache.
+  QuicCryptoClientConfig* crypto_config =
+      GetOrCreateCryptoConfig(host_port_proxy_pair);
+  DCHECK(crypto_config);
+
   scoped_ptr<Job> job(new Job(this, host_resolver_, host_port_proxy_pair,
-                              is_https, cert_verifier, net_log));
+                              is_https, method, cert_verifier, net_log));
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
                                base::Unretained(this), job.get()));
 
@@ -305,6 +351,29 @@ int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
     request->set_stream(CreateIfSessionExists(host_port_proxy_pair, net_log));
   }
   return rv;
+}
+
+bool QuicStreamFactory::OnResolution(
+    const HostPortProxyPair& host_port_proxy_pair,
+    const AddressList& address_list) {
+  DCHECK(!HasActiveSession(host_port_proxy_pair));
+  for (size_t i = 0; i < address_list.size(); ++i) {
+    const IPEndPoint& address = address_list[i];
+    if (!ContainsKey(ip_aliases_, address))
+      continue;
+
+    const SessionSet& sessions = ip_aliases_[address];
+    for (SessionSet::const_iterator i = sessions.begin();
+         i != sessions.end(); ++i) {
+      QuicClientSession* session = *i;
+      if (!session->CanPool(host_port_proxy_pair.first.host()))
+        continue;
+      active_sessions_[host_port_proxy_pair] = session;
+      session_aliases_[session].insert(host_port_proxy_pair);
+      return true;
+    }
+  }
+  return false;
 }
 
 void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
@@ -361,13 +430,28 @@ void QuicStreamFactory::OnSessionGoingAway(QuicClientSession* session) {
     DCHECK(active_sessions_.count(*it));
     DCHECK_EQ(session, active_sessions_[*it]);
     active_sessions_.erase(*it);
-    if (!session->IsCryptoHandshakeConfirmed() && http_server_properties_) {
+    if (!http_server_properties_)
+      continue;
+
+    if (!session->IsCryptoHandshakeConfirmed()) {
       // TODO(rch):  In the special case where the session has received no
       // packets from the peer, we should consider blacklisting this
       // differently so that we still race TCP but we don't consider the
       // session connected until the handshake has been confirmed.
       http_server_properties_->SetBrokenAlternateProtocol(it->first);
+    } else {
+      QuicConnectionStats stats = session->connection()->GetStats();
+      HttpServerProperties::NetworkStats network_stats;
+      network_stats.rtt = base::TimeDelta::FromMicroseconds(stats.rtt);
+      network_stats.bandwidth_estimate = stats.estimated_bandwidth;
+      http_server_properties_->SetServerNetworkStats(
+          it->first, network_stats);
     }
+  }
+  IPEndPoint peer_address = session->connection()->peer_address();
+  ip_aliases_[peer_address].erase(session);
+  if (ip_aliases_[peer_address].empty()) {
+    ip_aliases_.erase(peer_address);
   }
   session_aliases_.erase(session);
 }
@@ -406,9 +490,12 @@ base::Value* QuicStreamFactory::QuicStreamFactoryInfoToValue() const {
   for (SessionMap::const_iterator it = active_sessions_.begin();
        it != active_sessions_.end(); ++it) {
     const HostPortProxyPair& pair = it->first;
-    const QuicClientSession* session = it->second;
-
-    list->Append(session->GetInfoAsValue(pair.first));
+    QuicClientSession* session = it->second;
+    const AliasSet& aliases = session_aliases_.find(session)->second;
+    if (pair.first.Equals(aliases.begin()->first) &&
+        pair.second == aliases.begin()->second) {
+      list->Append(session->GetInfoAsValue(aliases));
+    }
   }
   return list;
 }
@@ -440,19 +527,35 @@ bool QuicStreamFactory::HasActiveSession(
   return ContainsKey(active_sessions_, host_port_proxy_pair);
 }
 
-QuicClientSession* QuicStreamFactory::CreateSession(
+int QuicStreamFactory::CreateSession(
     const HostPortProxyPair& host_port_proxy_pair,
     bool is_https,
     CertVerifier* cert_verifier,
     const AddressList& address_list,
-    const BoundNetLog& net_log) {
+    const BoundNetLog& net_log,
+    QuicClientSession** session) {
   QuicGuid guid = random_generator_->RandUint64();
   IPEndPoint addr = *address_list.begin();
+  scoped_refptr<PortSuggester> port_suggester =
+      new PortSuggester(host_port_proxy_pair.first, port_seed_);
+  DatagramSocket::BindType bind_type = enable_port_selection_ ?
+      DatagramSocket::RANDOM_BIND :  // Use our callback.
+      DatagramSocket::DEFAULT_BIND;  // Use OS to randomize.
   scoped_ptr<DatagramClientSocket> socket(
       client_socket_factory_->CreateDatagramClientSocket(
-          DatagramSocket::DEFAULT_BIND, base::Bind(&base::RandInt),
+          bind_type,
+          base::Bind(&PortSuggester::SuggestPort, port_suggester),
           net_log.net_log(), net_log.source()));
-  socket->Connect(addr);
+  int rv = socket->Connect(addr);
+  if (rv != OK)
+    return rv;
+  UMA_HISTOGRAM_COUNTS("Net.QuicEphemeralPortsSuggested",
+                       port_suggester->call_count());
+  if (enable_port_selection_) {
+    DCHECK_LE(1u, port_suggester->call_count());
+  } else {
+    DCHECK_EQ(0u, port_suggester->call_count());
+  }
 
   // We should adaptively set this buffer size, but for now, we'll use a size
   // that is more than large enough for a full receive window, and yet
@@ -476,7 +579,7 @@ QuicClientSession* QuicStreamFactory::CreateSession(
 
   QuicConnection* connection = new QuicConnection(guid, addr, helper_.get(),
                                                   writer.get(), false,
-                                                  QuicSupportedVersions());
+                                                  supported_versions_);
   writer->SetConnection(connection);
   connection->options()->max_packet_length = max_packet_length_;
 
@@ -484,17 +587,27 @@ QuicClientSession* QuicStreamFactory::CreateSession(
       GetOrCreateCryptoConfig(host_port_proxy_pair);
   DCHECK(crypto_config);
 
-  QuicClientSession* session =
-      new QuicClientSession(connection, socket.Pass(), writer.Pass(), this,
-                            quic_crypto_client_stream_factory_,
-                            host_port_proxy_pair.first.host(), config_,
-                            crypto_config, net_log.net_log());
-  all_sessions_.insert(session);  // owning pointer
+  QuicConfig config = config_;
+  if (http_server_properties_) {
+    const HttpServerProperties::NetworkStats* stats =
+        http_server_properties_->GetServerNetworkStats(
+            host_port_proxy_pair.first);
+    if (stats != NULL) {
+      config.set_initial_round_trip_time_us(stats->rtt.InMicroseconds(),
+                                            stats->rtt.InMicroseconds());
+    }
+  }
+
+  *session = new QuicClientSession(
+      connection, socket.Pass(), writer.Pass(), this,
+      quic_crypto_client_stream_factory_, host_port_proxy_pair.first.host(),
+      config, crypto_config, net_log.net_log());
+  all_sessions_.insert(*session);  // owning pointer
   if (is_https) {
     crypto_config->SetProofVerifier(
         new ProofVerifierChromium(cert_verifier, net_log));
   }
-  return session;
+  return OK;
 }
 
 bool QuicStreamFactory::HasActiveJob(
@@ -508,6 +621,9 @@ void QuicStreamFactory::ActivateSession(
   DCHECK(!HasActiveSession(host_port_proxy_pair));
   active_sessions_[host_port_proxy_pair] = session;
   session_aliases_[session].insert(host_port_proxy_pair);
+  DCHECK(!ContainsKey(ip_aliases_[session->connection()->peer_address()],
+                      session));
+  ip_aliases_[session->connection()->peer_address()].insert(session);
 }
 
 QuicCryptoClientConfig* QuicStreamFactory::GetOrCreateCryptoConfig(
@@ -521,6 +637,12 @@ QuicCryptoClientConfig* QuicStreamFactory::GetOrCreateCryptoConfig(
     // TODO(rtenneti): if two quic_sessions for the same host_port_proxy_pair
     // share the same crypto_config, will it cause issues?
     crypto_config = new QuicCryptoClientConfig();
+    if (quic_server_info_factory_) {
+      QuicCryptoClientConfig::CachedState* cached =
+          crypto_config->Create(host_port_proxy_pair.first.host(),
+                                quic_server_info_factory_);
+      DCHECK(cached);
+    }
     crypto_config->SetDefaults();
     all_crypto_configs_[host_port_proxy_pair] = crypto_config;
     PopulateFromCanonicalConfig(host_port_proxy_pair, crypto_config);
@@ -534,15 +656,15 @@ void QuicStreamFactory::PopulateFromCanonicalConfig(
   const string server_hostname = host_port_proxy_pair.first.host();
 
   unsigned i = 0;
-  for (; i < cannoncial_suffixes_.size(); ++i) {
-    if (EndsWith(server_hostname, cannoncial_suffixes_[i], false)) {
+  for (; i < canoncial_suffixes_.size(); ++i) {
+    if (EndsWith(server_hostname, canoncial_suffixes_[i], false)) {
       break;
     }
   }
-  if (i == cannoncial_suffixes_.size())
+  if (i == canoncial_suffixes_.size())
     return;
 
-  HostPortPair canonical_host_port(cannoncial_suffixes_[i],
+  HostPortPair canonical_host_port(canoncial_suffixes_[i],
                                    host_port_proxy_pair.first.port());
   if (!ContainsKey(canonical_hostname_to_origin_map_, canonical_host_port)) {
     // This is the first host we've seen which matches the suffix, so make it

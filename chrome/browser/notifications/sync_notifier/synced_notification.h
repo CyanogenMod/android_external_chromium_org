@@ -14,7 +14,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/notifications/sync_notifier/notification_bitmap_fetcher.h"
+#include "chrome/browser/bitmap_fetcher.h"
 #include "sync/api/sync_data.h"
 #include "sync/protocol/sync.pb.h"
 #include "ui/gfx/image/image.h"
@@ -31,7 +31,7 @@ namespace notifier {
 
 class ChromeNotifierService;
 
-class SyncedNotification : public NotificationBitmapFetcherDelegate {
+class SyncedNotification : public chrome::BitmapFetcherDelegate {
  public:
   explicit SyncedNotification(const syncer::SyncData& sync_data);
 
@@ -75,6 +75,7 @@ class SyncedNotification : public NotificationBitmapFetcherDelegate {
   std::string GetContainedNotificationTitle(int index) const;
   std::string GetContainedNotificationMessage(int index) const;
   std::string GetSendingServiceId() const;
+  const gfx::Image& GetAppIcon() const;
 
   // Use this to prevent toasting a notification.
   void SetToastState(bool toast_state);
@@ -109,29 +110,37 @@ class SyncedNotification : public NotificationBitmapFetcherDelegate {
   // Helper function to mark a notification as read or dismissed.
   void SetReadState(const ReadState& read_state);
 
-  // Method inherited from NotificationBitmapFetcher delegate.
+  // Method inherited from BitmapFetcher delegate.
   virtual void OnFetchComplete(const GURL url, const SkBitmap* bitmap) OVERRIDE;
 
   // If this bitmap has a valid GURL, create a fetcher for it.
   void AddBitmapToFetchQueue(const GURL& gurl);
 
+  // Check to see if we have responses for all the bitmaps we need.
+  bool AreAllBitmapsFetched();
+
   sync_pb::SyncedNotificationSpecifics specifics_;
   NotificationUIManager* notification_manager_;
   ChromeNotifierService* notifier_service_;
   Profile* profile_;
-  ScopedVector<NotificationBitmapFetcher> fetchers_;
-  int active_fetcher_count_;
+  bool toast_state_;
+  ScopedVector<chrome::BitmapFetcher> fetchers_;
   gfx::Image app_icon_bitmap_;
   gfx::Image sender_bitmap_;
   gfx::Image image_bitmap_;
   std::vector<gfx::Image> button_bitmaps_;
-  bool toast_state_;
+  bool app_icon_bitmap_fetch_pending_;
+  bool sender_bitmap_fetch_pending_;
+  bool image_bitmap_fetch_pending_;
+  std::vector<bool> button_bitmaps_fetch_pending_;
+
 
   friend class SyncedNotificationTest;
 
   FRIEND_TEST_ALL_PREFIXES(SyncedNotificationTest, AddBitmapToFetchQueueTest);
   FRIEND_TEST_ALL_PREFIXES(SyncedNotificationTest, OnFetchCompleteTest);
   FRIEND_TEST_ALL_PREFIXES(SyncedNotificationTest, QueueBitmapFetchJobsTest);
+  FRIEND_TEST_ALL_PREFIXES(SyncedNotificationTest, EmptyBitmapTest);
 
   DISALLOW_COPY_AND_ASSIGN(SyncedNotification);
 };

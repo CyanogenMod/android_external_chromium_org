@@ -32,6 +32,7 @@ struct FormData;
 struct FormFieldData;
 struct WebElementDescriptor;
 class PasswordAutofillAgent;
+class PasswordGenerationAgent;
 
 // AutofillAgent deals with Autofill related communications between WebKit and
 // the browser.  There is one AutofillAgent per RenderView.
@@ -46,8 +47,11 @@ class AutofillAgent : public content::RenderViewObserver,
                       public blink::WebAutofillClient {
  public:
   // PasswordAutofillAgent is guaranteed to outlive AutofillAgent.
+  // PasswordGenerationAgent may be NULL. If it is not, then it is also
+  // guaranteed to outlive AutofillAgent.
   AutofillAgent(content::RenderView* render_view,
-                PasswordAutofillAgent* password_autofill_manager);
+                PasswordAutofillAgent* password_autofill_manager,
+                PasswordGenerationAgent* password_generation_agent);
   virtual ~AutofillAgent();
 
  private:
@@ -77,7 +81,6 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void InputElementLostFocus() OVERRIDE;
 
   // blink::WebAutofillClient:
-  virtual void didClearAutofillSelection(const blink::WebNode& node) OVERRIDE;
   virtual void textFieldDidEndEditing(
       const blink::WebInputElement& element) OVERRIDE;
   virtual void textFieldDidChange(
@@ -91,6 +94,7 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void setIgnoreTextChanges(bool ignore) OVERRIDE;
   virtual void didAssociateFormControls(
       const blink::WebVector<blink::WebNode>& nodes) OVERRIDE;
+  virtual void openTextDataListChooser(const blink::WebInputElement& element);
 
   void OnFormDataFilled(int query_id, const FormData& form);
   void OnFieldTypePredictionsAvailable(
@@ -133,15 +137,20 @@ class AutofillAgent : public content::RenderViewObserver,
   // displayed to the user if Autofill has suggestions available, but cannot
   // fill them because it is disabled (e.g. when trying to fill a credit card
   // form on a non-secure website).
+  // |datalist_only| specifies whether all of <datalist> suggestions and no
+  // autofill suggestions are shown. |autofill_on_empty_values| and
+  // |requires_caret_at_end| are ignored if |datalist_only| is true.
   void ShowSuggestions(const blink::WebInputElement& element,
                        bool autofill_on_empty_values,
                        bool requires_caret_at_end,
-                       bool display_warning_if_disabled);
+                       bool display_warning_if_disabled,
+                       bool datalist_only);
 
   // Queries the browser for Autocomplete and Autofill suggestions for the given
   // |element|.
   void QueryAutofillSuggestions(const blink::WebInputElement& element,
-                                bool display_warning_if_disabled);
+                                bool display_warning_if_disabled,
+                                bool datalist_only);
 
   // Sets the element value to reflect the selected |suggested_value|.
   void AcceptDataListSuggestion(const base::string16& suggested_value);
@@ -169,7 +178,8 @@ class AutofillAgent : public content::RenderViewObserver,
 
   FormCache form_cache_;
 
-  PasswordAutofillAgent* password_autofill_agent_;  // WEAK reference.
+  PasswordAutofillAgent* password_autofill_agent_;  // Weak reference.
+  PasswordGenerationAgent* password_generation_agent_;  // Weak reference.
 
   // The ID of the last request sent for form field Autofill.  Used to ignore
   // out of date responses.
@@ -225,6 +235,9 @@ class AutofillAgent : public content::RenderViewObserver,
   FRIEND_TEST_ALL_PREFIXES(PasswordAutofillAgentTest, WaitUsername);
   FRIEND_TEST_ALL_PREFIXES(PasswordAutofillAgentTest, SuggestionAccept);
   FRIEND_TEST_ALL_PREFIXES(PasswordAutofillAgentTest, SuggestionSelect);
+  FRIEND_TEST_ALL_PREFIXES(
+      PasswordAutofillAgentTest,
+      PasswordAutofillTriggersOnChangeEventsWaitForUsername);
 
   DISALLOW_COPY_AND_ASSIGN(AutofillAgent);
 };

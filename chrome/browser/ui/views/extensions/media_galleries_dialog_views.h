@@ -13,10 +13,6 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/window/dialog_delegate.h"
 
-namespace ui {
-class MenuModel;
-}
-
 namespace views {
 class Checkbox;
 class LabelButton;
@@ -51,8 +47,6 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   virtual views::View* CreateExtraView() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView(
-      views::Widget* widget) OVERRIDE;
 
   // views::ButtonListener implementation:
   virtual void ButtonPressed(views::Button* sender,
@@ -64,8 +58,15 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
                                       ui::MenuSourceType source_type) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, InitializeCheckboxes);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ToggleCheckboxes);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, UpdateAdds);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ForgetDeletes);
+
   typedef std::map<MediaGalleryPrefId, views::Checkbox*> CheckboxMap;
   typedef std::map<views::Checkbox*, MediaGalleryPrefInfo> NewCheckboxMap;
+
+  void ButtonPressedAction(views::Button* sender);
 
   void InitChildViews();
 
@@ -85,7 +86,7 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   // The containing window (a weak pointer).
   views::Widget* window_;
 
-  // The contents of the dialog. Owned by |window_|'s RootView.
+  // The contents of the dialog. Owned by |window_|'s RootView except for tests.
   views::View* contents_;
 
   // A map from media gallery ID to views::Checkbox view.

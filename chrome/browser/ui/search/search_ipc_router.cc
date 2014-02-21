@@ -63,6 +63,13 @@ void SearchIPCRouter::SetSuggestionToPrefetch(
                                                           suggestion));
 }
 
+void SearchIPCRouter::SetOmniboxStartMargin(int start_margin) {
+  if (!policy_->ShouldSendSetOmniboxStartMargin())
+    return;
+
+  Send(new ChromeViewMsg_SearchBoxMarginChange(routing_id(), start_margin));
+}
+
 void SearchIPCRouter::SendMostVisitedItems(
     const std::vector<InstantMostVisitedItem>& items) {
   if (!policy_->ShouldSendMostVisitedItems())
@@ -118,6 +125,7 @@ bool SearchIPCRouter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions,
                         OnUndoAllMostVisitedDeletions);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogEvent, OnLogEvent);
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogImpression, OnLogImpression);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_PasteAndOpenDropdown,
                         OnPasteAndOpenDropDown);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ChromeIdentityCheck,
@@ -219,6 +227,29 @@ void SearchIPCRouter::OnLogEvent(int page_id, NTPLoggingEventType event) const {
     return;
 
   delegate_->OnLogEvent(event);
+}
+
+void SearchIPCRouter::OnLogImpression(int page_id,
+                                      int position,
+                                      const base::string16& provider) const {
+  if (!web_contents()->IsActiveEntry(page_id))
+    return;
+
+  // Only allow string of 8 alphanumeric characters or less as providers.
+  if (provider.length() > 8)
+    return;
+  for (base::string16::const_iterator it = provider.begin();
+       it != provider.end(); ++it) {
+    if (!IsAsciiAlpha(*it) && !IsAsciiDigit(*it))
+      return;
+  }
+
+  delegate_->OnInstantSupportDetermined(true);
+  // Logging impressions is controlled by the same policy as logging events.
+  if (!policy_->ShouldProcessLogEvent())
+    return;
+
+  delegate_->OnLogImpression(position, provider);
 }
 
 void SearchIPCRouter::OnPasteAndOpenDropDown(int page_id,

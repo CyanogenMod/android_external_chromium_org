@@ -27,10 +27,10 @@
 #include "net/disk_cache/errors.h"
 #include "net/disk_cache/experiments.h"
 #include "net/disk_cache/file.h"
-
-// This has to be defined before including histogram_macros.h from this file.
-#define NET_DISK_CACHE_BACKEND_IMPL_CC_
 #include "net/disk_cache/histogram_macros.h"
+
+// Provide a BackendImpl object to macros from histogram_macros.h.
+#define CACHE_UMA_BACKEND_IMPL_OBJ this
 
 using base::Time;
 using base::TimeDelta;
@@ -204,14 +204,11 @@ int BackendImpl::SyncInit() {
   num_refs_ = num_pending_io_ = max_refs_ = 0;
   entry_count_ = byte_count_ = 0;
 
+  bool should_create_timer = false;
   if (!restarted_) {
     buffer_bytes_ = 0;
     trace_object_ = TraceObject::GetTraceObject();
-    // Create a recurrent timer of 30 secs.
-    int timer_delay = unit_test_ ? 1000 : 30000;
-    timer_.reset(new base::RepeatingTimer<BackendImpl>());
-    timer_->Start(FROM_HERE, TimeDelta::FromMilliseconds(timer_delay), this,
-                  &BackendImpl::OnStatsTimer);
+    should_create_timer = true;
   }
 
   init_ = true;
@@ -288,6 +285,14 @@ int BackendImpl::SyncInit() {
 
   FlushIndex();
 
+  if (!disabled_ && should_create_timer) {
+    // Create a recurrent timer of 30 secs.
+    int timer_delay = unit_test_ ? 1000 : 30000;
+    timer_.reset(new base::RepeatingTimer<BackendImpl>());
+    timer_->Start(FROM_HERE, TimeDelta::FromMilliseconds(timer_delay), this,
+                  &BackendImpl::OnStatsTimer);
+  }
+
   return disabled_ ? net::ERR_FAILED : net::OK;
 }
 
@@ -305,6 +310,8 @@ void BackendImpl::CleanupCache() {
       // This is a net_unittest, verify that we are not 'leaking' entries.
       File::WaitForPendingIO(&num_pending_io_);
       DCHECK(!num_refs_);
+    } else {
+      File::DropPendingIO();
     }
   }
   block_files_.CloseFiles();
@@ -996,6 +1003,9 @@ void BackendImpl::OnWrite(int32 bytes) {
 }
 
 void BackendImpl::OnStatsTimer() {
+  if (disabled_)
+    return;
+
   stats_.OnEvent(Stats::TIMER);
   int64 time = stats_.GetCounter(Stats::TIMER);
   int64 current = stats_.GetCounter(Stats::OPEN_ENTRIES);
@@ -1085,6 +1095,10 @@ void BackendImpl::TrimForTest(bool empty) {
 void BackendImpl::TrimDeletedListForTest(bool empty) {
   eviction_.SetTestMode();
   eviction_.TrimDeletedList(empty);
+}
+
+base::RepeatingTimer<BackendImpl>* BackendImpl::GetTimerForTest() {
+  return timer_.get();
 }
 
 int BackendImpl::SelfCheck() {

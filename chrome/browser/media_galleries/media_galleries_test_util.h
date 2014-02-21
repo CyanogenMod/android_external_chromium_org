@@ -50,6 +50,11 @@ class EnsureMediaDirectoriesExists {
   base::FilePath GetFakePicasaFoldersRootPath() const;
 #endif
 
+#if defined(OS_MACOSX)
+  base::FilePath GetFakeITunesRootPath() const;
+  base::FilePath GetFakeIPhotoRootPath() const;
+#endif
+
  private:
   void Init();
 
@@ -72,5 +77,7 @@ class EnsureMediaDirectoriesExists {
 
   DISALLOW_COPY_AND_ASSIGN(EnsureMediaDirectoriesExists);
 };
+
+extern base::FilePath MakeMediaGalleriesTestingPath(const std::string& dir);
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_MEDIA_GALLERIES_TEST_UTIL_H_

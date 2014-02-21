@@ -18,7 +18,6 @@
 #include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
@@ -152,9 +151,7 @@ void EnrollmentDialogView::InitDialog() {
   // Create the views and layout manager and set them up.
   views::Label* label = new views::Label(
       l10n_util::GetStringFUTF16(IDS_NETWORK_ENROLLMENT_HANDLER_INSTRUCTIONS,
-                                 UTF8ToUTF16(network_name_)));
-  label->SetFont(ui::ResourceBundle::GetSharedInstance().GetFont(
-      ui::ResourceBundle::BaseFont));
+                                 base::UTF8ToUTF16(network_name_)));
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label->SetMultiLine(true);
   label->SetAllowCharacterBreak(true);
@@ -287,7 +284,7 @@ bool CreateDialog(const std::string& service_path,
 
   Browser* browser = chrome::FindBrowserWithWindow(owning_window);
   Profile* profile = browser ? browser->profile() :
-      ProfileManager::GetPrimaryUserProfileOrOffTheRecord();
+      ProfileManager::GetPrimaryUserProfile();
   DialogEnrollmentDelegate* enrollment =
       new DialogEnrollmentDelegate(owning_window, network->name(), profile);
   return enrollment->Enroll(certificate_pattern.enrollment_uri_list(),

@@ -18,7 +18,7 @@
 #include "components/policy/policy_export.h"
 #include "policy/proto/cloud_policy.pb.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "policy/proto/chrome_extension_policy.pb.h"
 #endif
 
@@ -46,9 +46,9 @@ namespace policy {
 // RunValidation() can be used to perform validation on the current thread.
 class POLICY_EXPORT CloudPolicyValidatorBase {
  public:
-  // Validation result codes. These values are also used for UMA histograms;
-  // they must stay stable, and the UMA counters must be updated if new elements
-  // are appended at the end.
+  // Validation result codes. These values are also used for UMA histograms by
+  // UserCloudPolicyStoreChromeOS and must stay stable - new elements should
+  // be added at the end before VALIDATION_STATUS_SIZE.
   enum Status {
     // Indicates successful validation.
     VALIDATION_OK,
@@ -72,6 +72,10 @@ class POLICY_EXPORT CloudPolicyValidatorBase {
     VALIDATION_BAD_USERNAME,
     // Policy payload protobuf parse error.
     VALIDATION_POLICY_PARSE_ERROR,
+    // Policy key signature could not be verified using the hard-coded
+    // verification key.
+    VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE,
+    VALIDATION_STATUS_SIZE  // MUST BE LAST
   };
 
   enum ValidateDMTokenOption {
@@ -143,19 +147,33 @@ class POLICY_EXPORT CloudPolicyValidatorBase {
   // Validates that the payload can be decoded successfully.
   void ValidatePayload();
 
-  // Verifies that the signature on the policy blob verifies against |key|. If |
+  // Verifies that |cached_key| is valid, by verifying the
+  // |cached_key_signature| using the passed |owning_domain| and
+  // |verification_key|.
+  void ValidateCachedKey(const std::string& cached_key,
+                         const std::string& cached_key_signature,
+                         const std::string& verification_key,
+                         const std::string& owning_domain);
+
+  // Verifies that the signature on the policy blob verifies against |key|. If
   // |allow_key_rotation| is true and there is a key rotation present in the
   // policy blob, this checks the signature on the new key against |key| and the
-  // policy blob against the new key.
-  void ValidateSignature(const std::vector<uint8>& key,
+  // policy blob against the new key. New key is also validated using the passed
+  // |verification_key| and |owning_domain|, and the
+  // |new_public_key_verification_signature| field.
+  void ValidateSignature(const std::string& key,
+                         const std::string& verification_key,
+                         const std::string& owning_domain,
                          bool allow_key_rotation);
 
-  // Similar to StartSignatureVerification(), this checks the signature on the
+  // Similar to ValidateSignature(), this checks the signature on the
   // policy blob. However, this variant expects a new policy key set in the
   // policy blob and makes sure the policy is signed using that key. This should
   // be called at setup time when there is no existing policy key present to
-  // check against.
-  void ValidateInitialKey();
+  // check against. New key is validated using the passed |verification_key| and
+  // the new_public_key_verification_signature field.
+  void ValidateInitialKey(const std::string& verification_key,
+                          const std::string& owning_domain);
 
   // Convenience helper that configures timestamp and token validation based on
   // the current policy blob. |policy_data| may be NULL, in which case the
@@ -195,6 +213,12 @@ class POLICY_EXPORT CloudPolicyValidatorBase {
     VALIDATE_PAYLOAD     = 1 << 6,
     VALIDATE_SIGNATURE   = 1 << 7,
     VALIDATE_INITIAL_KEY = 1 << 8,
+    VALIDATE_CACHED_KEY  = 1 << 9,
+  };
+
+  enum SignatureType {
+    SHA1,
+    SHA256
   };
 
   // Performs validation, called on a background thread.
@@ -210,6 +234,26 @@ class POLICY_EXPORT CloudPolicyValidatorBase {
   // Invokes all the checks and reports the result.
   void RunChecks();
 
+  // Helper routine that verifies that the new public key in the policy blob
+  // is properly signed by the |verification_key_|.
+  bool CheckNewPublicKeyVerificationSignature();
+
+  // Helper routine that performs a verification-key-based signature check,
+  // which includes the domain name associated with this policy. Returns true
+  // if the verification succeeds, or if |signature| is empty.
+  bool CheckVerificationKeySignature(const std::string& key_to_verify,
+                                     const std::string& server_key,
+                                     const std::string& signature);
+
+  // Returns the domain name from the policy being validated. Returns an
+  // empty string if the policy does not contain a username field.
+  std::string ExtractDomainFromPolicy();
+
+  // Sets the key and domain used to verify new public keys, and ensures that
+  // callers don't try to set conflicting values.
+  void set_verification_key_and_domain(const std::string& verification_key,
+                                       const std::string& owning_domain);
+
   // Helper functions implementing individual checks.
   Status CheckTimestamp();
   Status CheckUsername();
@@ -220,11 +264,14 @@ class POLICY_EXPORT CloudPolicyValidatorBase {
   Status CheckPayload();
   Status CheckSignature();
   Status CheckInitialKey();
+  Status CheckCachedKey();
 
-  // Verifies the SHA1/RSA |signature| on |data| against |key|.
+  // Verifies the SHA1/ or SHA256/RSA |signature| on |data| against |key|.
+  // |signature_type| specifies the type of signature (SHA1 or SHA256).
   static bool VerifySignature(const std::string& data,
                               const std::string& key,
-                              const std::string& signature);
+                              const std::string& signature,
+                              SignatureType signature_type);
 
   Status status_;
   scoped_ptr<enterprise_management::PolicyFetchResponse> policy_;
@@ -242,6 +289,10 @@ class POLICY_EXPORT CloudPolicyValidatorBase {
   std::string policy_type_;
   std::string settings_entity_id_;
   std::string key_;
+  std::string cached_key_;
+  std::string cached_key_signature_;
+  std::string verification_key_;
+  std::string owning_domain_;
   bool allow_key_rotation_;
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
 
@@ -300,7 +351,7 @@ class POLICY_EXPORT CloudPolicyValidator : public CloudPolicyValidatorBase {
 typedef CloudPolicyValidator<enterprise_management::CloudPolicySettings>
     UserCloudPolicyValidator;
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 typedef CloudPolicyValidator<enterprise_management::ExternalPolicyData>
     ComponentCloudPolicyValidator;
 #endif

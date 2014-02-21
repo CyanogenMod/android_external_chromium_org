@@ -11,10 +11,15 @@
 #include "base/compiler_specific.h"
 #include "base/process/process_handle.h"
 #include "base/test/multiprocess_test.h"
-#include "mojo/system/platform_channel.h"
+#include "mojo/system/embedder/scoped_platform_handle.h"
 #include "testing/multiprocess_func_list.h"
 
 namespace mojo {
+
+namespace embedder {
+class PlatformChannelPair;
+}
+
 namespace test {
 
 class MultiprocessTestBase : public base::MultiProcessTest {
@@ -40,14 +45,16 @@ class MultiprocessTestBase : public base::MultiProcessTest {
   static void ChildSetup();
 
   // For use in the main process:
-  scoped_ptr<system::PlatformServerChannel> platform_server_channel;
+  embedder::ScopedPlatformHandle server_platform_handle;
 
   // For use (and only valid) in the child process:
-  static scoped_ptr<system::PlatformClientChannel> platform_client_channel;
+  static embedder::ScopedPlatformHandle client_platform_handle;
 
  private:
   virtual CommandLine MakeCmdLine(const std::string& procname,
                                   bool debug_on_start) OVERRIDE;
+
+  scoped_ptr<embedder::PlatformChannelPair> platform_channel_pair_;
 
   // Valid after |StartChild()| and before |WaitForChildShutdown()|.
   base::ProcessHandle test_child_handle_;

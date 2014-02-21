@@ -40,7 +40,6 @@ static scoped_refptr<DecoderBuffer> CreateFakeEncryptedBuffer() {
       std::string(reinterpret_cast<const char*>(kFakeKeyId),
                   arraysize(kFakeKeyId)),
       std::string(reinterpret_cast<const char*>(kFakeIv), arraysize(kFakeIv)),
-      0,
       std::vector<SubsampleEntry>())));
   return buffer;
 }
@@ -82,6 +81,10 @@ class DecryptingAudioDecoderTest : public testing::Test {
         decoded_frame_(NULL),
         end_of_stream_frame_(AudioBuffer::CreateEOSBuffer()),
         decoded_frame_list_() {
+  }
+
+  virtual ~DecryptingAudioDecoderTest() {
+    Stop();
   }
 
   void InitializeAndExpectStatus(const AudioDecoderConfig& config,
@@ -208,12 +211,31 @@ class DecryptingAudioDecoderTest : public testing::Test {
     }
   }
 
+  void AbortAllPendingCBs() {
+    if (!pending_init_cb_.is_null()) {
+      ASSERT_TRUE(pending_audio_decode_cb_.is_null());
+      base::ResetAndReturn(&pending_init_cb_).Run(false);
+      return;
+    }
+
+    AbortPendingAudioDecodeCB();
+  }
+
   void Reset() {
     EXPECT_CALL(*decryptor_, ResetDecoder(Decryptor::kAudio))
         .WillRepeatedly(InvokeWithoutArgs(
             this, &DecryptingAudioDecoderTest::AbortPendingAudioDecodeCB));
 
     decoder_->Reset(NewExpectedClosure());
+    message_loop_.RunUntilIdle();
+  }
+
+  void Stop() {
+    EXPECT_CALL(*decryptor_, DeinitializeDecoder(Decryptor::kAudio))
+        .WillRepeatedly(InvokeWithoutArgs(
+            this, &DecryptingAudioDecoderTest::AbortAllPendingCBs));
+
+    decoder_->Stop(NewExpectedClosure());
     message_loop_.RunUntilIdle();
   }
 

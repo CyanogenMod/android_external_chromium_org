@@ -8,6 +8,7 @@
 #include <vector>
 #include "base/threading/thread.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -39,7 +40,8 @@ class TestingOAuth2TokenServiceConsumer : public OAuth2TokenService::Consumer {
 };
 
 TestingOAuth2TokenServiceConsumer::TestingOAuth2TokenServiceConsumer()
-    : number_of_successful_tokens_(0),
+    : OAuth2TokenService::Consumer("test"),
+      number_of_successful_tokens_(0),
       last_error_(GoogleServiceAuthError::AuthErrorNone()),
       number_of_errors_(0) {
 }
@@ -82,7 +84,7 @@ void ProfileOAuth2TokenServiceRequestTest::SetUp() {
                                                   &ui_loop_));
   TestingProfile::Builder builder;
   builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                            &FakeProfileOAuth2TokenService::Build);
+                            &FakeProfileOAuth2TokenServiceWrapper::Build);
   profile_ = builder.Build();
 
   oauth2_service_ = (FakeProfileOAuth2TokenService*)
@@ -104,9 +106,8 @@ TEST_F(ProfileOAuth2TokenServiceRequestTest,
   EXPECT_EQ(1, consumer_.number_of_errors_);
 }
 
-TEST_F(ProfileOAuth2TokenServiceRequestTest,
-       Success) {
-  oauth2_service_->IssueRefreshToken(kRefreshToken);
+TEST_F(ProfileOAuth2TokenServiceRequestTest, Success) {
+  oauth2_service_->UpdateCredentials(kAccountId, kRefreshToken);
   scoped_ptr<ProfileOAuth2TokenServiceRequest> request(
       ProfileOAuth2TokenServiceRequest::CreateAndStart(
           profile_.get(),
@@ -123,7 +124,7 @@ TEST_F(ProfileOAuth2TokenServiceRequestTest,
 
 TEST_F(ProfileOAuth2TokenServiceRequestTest,
        RequestDeletionBeforeServiceComplete) {
-  oauth2_service_->IssueRefreshToken(kRefreshToken);
+  oauth2_service_->UpdateCredentials(kAccountId, kRefreshToken);
   scoped_ptr<ProfileOAuth2TokenServiceRequest> request(
       ProfileOAuth2TokenServiceRequest::CreateAndStart(
           profile_.get(),
@@ -140,7 +141,7 @@ TEST_F(ProfileOAuth2TokenServiceRequestTest,
 
 TEST_F(ProfileOAuth2TokenServiceRequestTest,
        RequestDeletionAfterServiceComplete) {
-  oauth2_service_->IssueRefreshToken(kRefreshToken);
+  oauth2_service_->UpdateCredentials(kAccountId, kRefreshToken);
   scoped_ptr<ProfileOAuth2TokenServiceRequest> request(
       ProfileOAuth2TokenServiceRequest::CreateAndStart(
           profile_.get(),

@@ -4,47 +4,48 @@
 
 #include "ash/shelf/shelf_util.h"
 
+#include "ash/shelf/shelf_constants.h"
 #include "ui/aura/window_property.h"
 
-DECLARE_WINDOW_PROPERTY_TYPE(ash::LauncherID);
-DECLARE_WINDOW_PROPERTY_TYPE(ash::LauncherItemDetails*);
+DECLARE_WINDOW_PROPERTY_TYPE(ash::ShelfID);
+DECLARE_WINDOW_PROPERTY_TYPE(ash::ShelfItemDetails*);
 
 namespace ash {
 
-DEFINE_LOCAL_WINDOW_PROPERTY_KEY(LauncherID, kLauncherID, kInvalidLauncherID);
+DEFINE_LOCAL_WINDOW_PROPERTY_KEY(ShelfID, kShelfID, kInvalidShelfID);
 
-// ash::LauncherItemDetails for kLauncherItemDetaildKey is owned by the window
+// ShelfItemDetails for kShelfItemDetaildKey is owned by the window
 // and will be freed automatically.
-DEFINE_OWNED_WINDOW_PROPERTY_KEY(LauncherItemDetails,
-                                 kLauncherItemDetailsKey,
+DEFINE_OWNED_WINDOW_PROPERTY_KEY(ShelfItemDetails,
+                                 kShelfItemDetailsKey,
                                  NULL);
 
-void SetLauncherIDForWindow(LauncherID id, aura::Window* window) {
+void SetShelfIDForWindow(ShelfID id, aura::Window* window) {
   if (!window)
     return;
 
-  window->SetProperty(kLauncherID, id);
+  window->SetProperty(kShelfID, id);
 }
 
-LauncherID GetLauncherIDForWindow(aura::Window* window) {
+ShelfID GetShelfIDForWindow(aura::Window* window) {
   DCHECK(window);
-  return window->GetProperty(kLauncherID);
+  return window->GetProperty(kShelfID);
 }
 
-void SetLauncherItemDetailsForWindow(aura::Window* window,
-                                     const LauncherItemDetails& details) {
+void SetShelfItemDetailsForWindow(aura::Window* window,
+                                  const ShelfItemDetails& details) {
   // |item_details| is owned by |window|.
-  LauncherItemDetails* item_details = new LauncherItemDetails(details);
-  window->SetProperty(kLauncherItemDetailsKey, item_details);
+  ShelfItemDetails* item_details = new ShelfItemDetails(details);
+  window->SetProperty(kShelfItemDetailsKey, item_details);
 }
 
-void ClearLauncherItemDetailsForWindow(aura::Window* window) {
-  window->ClearProperty(kLauncherItemDetailsKey);
+void ClearShelfItemDetailsForWindow(aura::Window* window) {
+  window->ClearProperty(kShelfItemDetailsKey);
 }
 
-const LauncherItemDetails* GetLauncherItemDetailsForWindow(
+const ShelfItemDetails* GetShelfItemDetailsForWindow(
     aura::Window* window) {
-  return window->GetProperty(kLauncherItemDetailsKey);
+  return window->GetProperty(kShelfItemDetailsKey);
 }
 
 }  // namespace ash

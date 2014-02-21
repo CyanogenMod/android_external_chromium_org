@@ -12,7 +12,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -43,6 +42,7 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -50,7 +50,7 @@
 #include "base/callback.h"
 #include "base/run_loop.h"
 #include "base/values.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
@@ -122,7 +122,7 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
                         extensions::LaunchType launch_type) {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
-    extensions::SetLaunchType(service->extension_prefs(), app_id, launch_type);
+    extensions::SetLaunchType(service, app_id, launch_type);
   }
 
   Browser* FindOneOtherBrowserForProfile(Profile* profile,

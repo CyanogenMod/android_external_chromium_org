@@ -9,17 +9,22 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/install_observer.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/base/models/list_model_observer.h"
 
 class AppListControllerDelegate;
 class ExtensionAppItem;
-class ExtensionSet;
 class Profile;
+
+namespace app_list {
+class AppListSyncableService;
+}
 
 namespace extensions {
 class Extension;
+class ExtensionSet;
 class InstallTracker;
 }
 
@@ -32,10 +37,15 @@ class ImageSkia;
 class ExtensionAppModelBuilder : public extensions::InstallObserver,
                                  public app_list::AppListItemListObserver {
  public:
-  ExtensionAppModelBuilder(Profile* profile,
-                           app_list::AppListModel* model,
-                           AppListControllerDelegate* controller);
+  explicit ExtensionAppModelBuilder(AppListControllerDelegate* controller);
   virtual ~ExtensionAppModelBuilder();
+
+  // Initialize to use app-list sync and sets |service_| to |service|.
+  void InitializeWithService(app_list::AppListSyncableService* service);
+
+  // Initialize to use extension sync and sets |service_| to NULL. Used in
+  // tests and when AppList sync is not enabled.
+  void InitializeWithProfile(Profile* profile, app_list::AppListModel* model);
 
  private:
   typedef std::vector<ExtensionAppItem*> ExtensionAppList;
@@ -65,10 +75,13 @@ class ExtensionAppModelBuilder : public extensions::InstallObserver,
   // AppListItemListObserver
   virtual void OnListItemMoved(size_t from_index,
                                size_t to_index,
-                               app_list::AppListItemModel* item) OVERRIDE;
+                               app_list::AppListItem* item) OVERRIDE;
 
-  // Adds apps in |extensions| to |apps|.
-  void AddApps(const ExtensionSet* extensions, ExtensionAppList* apps);
+  scoped_ptr<ExtensionAppItem> CreateAppItem(
+      const std::string& extension_id,
+      const std::string& extension_name,
+      const gfx::ImageSkia& installing_icon,
+      bool is_platform_app);
 
   // Populates the model with apps.
   void PopulateApps();
@@ -77,7 +90,7 @@ class ExtensionAppModelBuilder : public extensions::InstallObserver,
   void ResortApps();
 
   // Inserts an app based on app ordinal prefs.
-  void InsertApp(ExtensionAppItem* app);
+  void InsertApp(scoped_ptr<ExtensionAppItem> app);
 
   // Sets which app is intended to be highlighted. Will remove the highlight
   // from a currently highlighted app.
@@ -92,7 +105,20 @@ class ExtensionAppModelBuilder : public extensions::InstallObserver,
   // Returns app instance matching |extension_id| or NULL.
   ExtensionAppItem* GetExtensionAppItem(const std::string& extension_id);
 
+  // Initializes the |extension_pref_change_registrar| to listen for extension
+  // prefs changes. OnExtensionPreferenceChanged() is called when extension
+  // prefs change.
+  void InitializePrefChangeRegistrar();
+
+  // Handles extension prefs changes.
+  void OnExtensionPreferenceChanged();
+
+  // Unowned pointers to the service that owns this and associated profile.
+  app_list::AppListSyncableService* service_;
   Profile* profile_;
+
+  // Registrar used to monitor the extension prefs.
+  PrefChangeRegistrar extension_pref_change_registrar_;
 
   // Unowned pointer to the app list controller.
   AppListControllerDelegate* controller_;

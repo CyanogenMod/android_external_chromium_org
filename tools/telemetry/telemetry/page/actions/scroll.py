@@ -3,11 +3,13 @@
 # found in the LICENSE file.
 import os
 
+from telemetry.page.actions.gesture_action import GestureAction
 from telemetry.page.actions import page_action
 
-class ScrollAction(page_action.PageAction):
+class ScrollAction(GestureAction):
   def __init__(self, attributes=None):
     super(ScrollAction, self).__init__(attributes)
+    self._SetTimelineMarkerBaseName('ScrollAction::RunAction')
 
   def WillRunAction(self, page, tab):
     for js_file in ['gesture_common.js', 'scroll.js']:
@@ -23,16 +25,21 @@ class ScrollAction(page_action.PageAction):
     # Fail if this action requires touch and we can't send touch events.
     # TODO(dominikg): Query synthetic gesture target to check if touch is
     #                 supported.
-    if (hasattr(self, 'scroll_requires_touch') and
-        self.scroll_requires_touch and not
-        tab.EvaluateJavaScript(
+    if hasattr(self, 'scroll_requires_touch'):
+      if (self.scroll_requires_touch and not
+          tab.EvaluateJavaScript(
             'chrome.gpuBenchmarking.smoothScrollBySendsTouch()')):
-      raise page_action.PageActionNotSupported(
-          'Touch scroll not supported for this browser')
+        raise page_action.PageActionNotSupported(
+            'Touch scroll not supported for this browser')
+
+      if (GestureAction.GetGestureSourceTypeFromOptions(tab) ==
+          'chrome.gpuBenchmarking.MOUSE_INPUT'):
+        raise page_action.PageActionNotSupported(
+            'Scroll requires touch on this page but mouse input was requested')
 
     distance_func = 'null'
-    if hasattr(self, 'remaining_scroll_distance_function'):
-      distance_func = self.remaining_scroll_distance_function
+    if hasattr(self, 'scroll_distance_function'):
+      distance_func = self.scroll_distance_function
 
     done_callback = 'function() { window.__scrollActionDone = true; }'
     tab.ExecuteJavaScript("""
@@ -40,7 +47,7 @@ class ScrollAction(page_action.PageAction):
         window.__scrollAction = new __ScrollAction(%s, %s);"""
         % (done_callback, distance_func))
 
-  def RunAction(self, page, tab, previous_action):
+  def RunGesture(self, page, tab, previous_action):
     # scrollable_element_function is a function that passes the scrollable
     # element on the page to a callback. For example:
     #   function (callback) {
@@ -48,11 +55,20 @@ class ScrollAction(page_action.PageAction):
     #   }
     left_start_percentage = 0.5
     top_start_percentage = 0.5
-    gesture_source_type = 'chrome.gpuBenchmarking.DEFAULT_INPUT'
+    direction = 'down'
+    speed = 800
+    gesture_source_type = GestureAction.GetGestureSourceTypeFromOptions(tab)
     if hasattr(self, 'left_start_percentage'):
       left_start_percentage = self.left_start_percentage
     if hasattr(self, 'top_start_percentage'):
       top_start_percentage = self.top_start_percentage
+    if hasattr(self, 'direction'):
+      direction = self.direction
+      if direction not in ['down', 'up', 'left', 'right']:
+        raise page_action.PageActionNotSupported(
+            'Invalid scroll direction: %s' % direction)
+    if hasattr(self, 'speed'):
+      speed = self.speed
     if hasattr(self, 'scroll_requires_touch') and self.scroll_requires_touch:
       gesture_source_type = 'chrome.gpuBenchmarking.TOUCH_INPUT'
     if hasattr(self, 'scrollable_element_function'):
@@ -61,10 +77,14 @@ class ScrollAction(page_action.PageAction):
              { element: element,
                left_start_percentage: %s,
                top_start_percentage: %s,
+               direction: '%s',
+               speed: %s,
                gesture_source_type: %s })
              });""" % (self.scrollable_element_function,
                        left_start_percentage,
                        top_start_percentage,
+                       direction,
+                       speed,
                        gesture_source_type))
     else:
       tab.ExecuteJavaScript("""
@@ -72,16 +92,19 @@ class ScrollAction(page_action.PageAction):
           { element: document.body,
             left_start_percentage: %s,
             top_start_percentage: %s,
+            direction: '%s',
+            speed: %s,
             gesture_source_type: %s });"""
-        % (left_start_percentage, top_start_percentage, gesture_source_type))
+        % (left_start_percentage,
+           top_start_percentage,
+           direction,
+           speed,
+           gesture_source_type))
 
     tab.WaitForJavaScriptExpression('window.__scrollActionDone', 60)
 
   def CanBeBound(self):
     return True
-
-  def CustomizeBrowserOptions(self, options):
-    options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
   def BindMeasurementJavaScript(self, tab, start_js, stop_js):
     # Make the scroll action start and stop measurement automatically.
@@ -89,6 +112,3 @@ class ScrollAction(page_action.PageAction):
         window.__scrollAction.beginMeasuringHook = function() { %s };
         window.__scrollAction.endMeasuringHook = function() { %s };
     """ % (start_js, stop_js))
-
-  def GetTimelineMarkerName(self):
-    return 'SyntheticGestureController::running'

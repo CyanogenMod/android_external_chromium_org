@@ -358,9 +358,10 @@ void PortForwardingController::Connection::OnPrefsChange() {
   bool enabled =
       pref_service->GetBoolean(prefs::kDevToolsPortForwardingEnabled);
   if (enabled) {
-    const DictionaryValue* dict =
+    const base::DictionaryValue* dict =
         pref_service->GetDictionary(prefs::kDevToolsPortForwardingConfig);
-    for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
+    for (base::DictionaryValue::Iterator it(*dict);
+         !it.IsAtEnd(); it.Advance()) {
       int port_num;
       std::string location;
       if (base::StringToInt(it.key(), &port_num) &&
@@ -541,7 +542,7 @@ bool PortForwardingController::Connection::ProcessIncomingMessage(
   if (notification->method() != kTetheringAccepted)
     return false;
 
-  DictionaryValue* params = notification->params();
+  base::DictionaryValue* params = notification->params();
   if (!params)
     return false;
 
@@ -587,8 +588,7 @@ PortForwardingController::UpdateDeviceList(
     Registry::iterator rit = registry_.find(device->GetSerial());
     if (rit == registry_.end()) {
       std::string socket = FindBestSocketForTethering(device->browsers());
-      if (!socket.empty() || device->GetSerial().empty()) {
-        // Will delete itself when disconnected.
+      if (!socket.empty()) {
         new Connection(
           &registry_, device->device(), socket, adb_thread_, pref_service_);
       }

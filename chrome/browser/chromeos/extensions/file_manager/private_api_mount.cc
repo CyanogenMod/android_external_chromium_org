@@ -5,15 +5,12 @@
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_mount.h"
 
 #include "base/format_macros.h"
-#include "base/values.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/drive/logging.h"
-#include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
+#include "chrome/browser/drive/event_logger.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
 #include "chromeos/disks/disk_mount_manager.h"
@@ -31,11 +28,14 @@ bool FileBrowserPrivateAddMountFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  drive::util::Log(logging::LOG_INFO,
-                   "%s[%d] called. (source: '%s')",
-                   name().c_str(),
-                   request_id(),
-                   params->source.empty() ? "(none)" : params->source.c_str());
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+  if (logger) {
+    logger->Log(logging::LOG_INFO,
+                "%s[%d] called. (source: '%s')",
+                name().c_str(),
+                request_id(),
+                params->source.empty() ? "(none)" : params->source.c_str());
+  }
   set_log_on_completion(true);
 
   const base::FilePath path = file_manager::util::GetLocalPathFromURL(
@@ -92,43 +92,36 @@ bool FileBrowserPrivateRemoveMountFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  drive::util::Log(logging::LOG_INFO,
-                   "%s[%d] called. (mount_path: '%s')",
-                   name().c_str(),
-                   request_id(),
-                   params->mount_path.c_str());
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+  if (logger) {
+    logger->Log(logging::LOG_INFO,
+                "%s[%d] called. (volume_id: '%s')",
+                name().c_str(),
+                request_id(),
+                params->volume_id.c_str());
+  }
   set_log_on_completion(true);
 
-  std::vector<GURL> file_paths;
-  file_paths.push_back(GURL(params->mount_path));
-  file_manager::util::GetSelectedFileInfo(
-      render_view_host(),
-      GetProfile(),
-      file_paths,
-      file_manager::util::NEED_LOCAL_PATH_FOR_OPENING,
-      base::Bind(
-          &FileBrowserPrivateRemoveMountFunction::GetSelectedFileInfoResponse,
-          this));
-  return true;
-}
+  using file_manager::VolumeManager;
+  using file_manager::VolumeInfo;
+  VolumeManager* volume_manager = VolumeManager::Get(GetProfile());
+  if (!volume_manager)
+    return false;
 
-void FileBrowserPrivateRemoveMountFunction::GetSelectedFileInfoResponse(
-    const std::vector<ui::SelectedFileInfo>& files) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (files.size() != 1) {
-    SendResponse(false);
-    return;
-  }
+  VolumeInfo volume_info;
+  if (!volume_manager->FindVolumeInfoById(params->volume_id, &volume_info))
+    return false;
 
   // TODO(tbarzic): Send response when callback is received, it would make more
   // sense than remembering issued unmount requests in file manager and showing
   // errors for them when MountCompleted event is received.
   DiskMountManager::GetInstance()->UnmountPath(
-      files[0].local_path.value(),
+      volume_info.mount_path.value(),
       chromeos::UNMOUNT_OPTIONS_NONE,
       DiskMountManager::UnmountPathCallback());
+
   SendResponse(true);
+  return true;
 }
 
 bool FileBrowserPrivateGetVolumeMetadataListFunction::RunImpl() {
@@ -151,10 +144,13 @@ bool FileBrowserPrivateGetVolumeMetadataListFunction::RunImpl() {
     log_string += volume_info_list[i].mount_path.AsUTF8Unsafe();
   }
 
-  drive::util::Log(
-      logging::LOG_INFO,
-      "%s[%d] succeeded. (results: '[%s]', %" PRIuS " mount points)",
-      name().c_str(), request_id(), log_string.c_str(), result.size());
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+  if (logger) {
+    logger->Log(logging::LOG_INFO,
+                "%s[%d] succeeded. (results: '[%s]', %" PRIuS " mount points)",
+                name().c_str(), request_id(), log_string.c_str(),
+                result.size());
+  }
 
   results_ =
       file_browser_private::GetVolumeMetadataList::Results::Create(result);

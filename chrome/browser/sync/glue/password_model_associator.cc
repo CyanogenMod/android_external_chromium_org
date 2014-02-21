@@ -10,9 +10,10 @@
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/read_node.h"
@@ -21,7 +22,20 @@
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/protocol/password_specifics.pb.h"
 
+using base::UTF8ToUTF16;
+using base::UTF16ToUTF8;
 using content::BrowserThread;
+
+namespace {
+
+void AppendChanges(const PasswordStoreChangeList& new_changes,
+                   PasswordStoreChangeList* all_changes) {
+  all_changes->insert(all_changes->end(),
+                      new_changes.begin(),
+                      new_changes.end());
+}
+
+}  // namespace
 
 namespace browser_sync {
 
@@ -38,15 +52,11 @@ PasswordModelAssociator::PasswordModelAssociator(
       expected_loop_(base::MessageLoop::current()),
       error_handler_(error_handler) {
   DCHECK(sync_service_);
-#if defined(OS_MACOSX)
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-#else
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-#endif
+  DCHECK(password_store->GetBackgroundTaskRunner()->RunsTasksOnCurrentThread());
 }
 
 PasswordModelAssociator::~PasswordModelAssociator() {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(thread_checker_.CalledOnValidThread());
 }
 
 syncer::SyncError PasswordModelAssociator::AssociateModels(
@@ -301,32 +311,35 @@ syncer::SyncError PasswordModelAssociator::WriteToPasswordStore(
 
   CHECK(password_store_.get());
 
+  PasswordStoreChangeList changes;
   if (new_passwords) {
     for (PasswordVector::const_iterator password = new_passwords->begin();
          password != new_passwords->end(); ++password) {
-      password_store_->AddLoginImpl(*password);
+      AppendChanges(password_store_->AddLoginImpl(*password),
+                    &changes);
     }
   }
 
   if (updated_passwords) {
     for (PasswordVector::const_iterator password = updated_passwords->begin();
          password != updated_passwords->end(); ++password) {
-      password_store_->UpdateLoginImpl(*password);
+      AppendChanges(password_store_->UpdateLoginImpl(*password),
+                    &changes);
     }
   }
 
   if (deleted_passwords) {
     for (PasswordVector::const_iterator password = deleted_passwords->begin();
          password != deleted_passwords->end(); ++password) {
-      password_store_->RemoveLoginImpl(*password);
+      AppendChanges(password_store_->RemoveLoginImpl(*password),
+                    &changes);
     }
   }
 
-  if (new_passwords || updated_passwords || deleted_passwords) {
-    // We have to notify password store observers of the change by hand since
-    // we use internal password store interfaces to make changes synchronously.
-    password_store_->PostNotifyLoginsChanged();
-  }
+  // We have to notify password store observers of the change by hand since
+  // we use internal password store interfaces to make changes synchronously.
+  password_store_->NotifyLoginsChanged(changes);
+
   return syncer::SyncError();
 }
 

@@ -21,7 +21,6 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -40,6 +39,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "grit/theme_resources.h"
@@ -702,9 +702,7 @@ bool BrowserActionsToolbarGtk::ShouldDisplayBrowserAction(
     const Extension* extension) {
   // Only display incognito-enabled extensions while in incognito mode.
   return (!profile_->IsOffTheRecord() ||
-          extension_util:: IsIncognitoEnabled(
-              extension->id(),
-              extensions::ExtensionSystem::Get(profile_)->extension_service()));
+          extensions::util::IsIncognitoEnabled(extension->id(), profile_));
 }
 
 void BrowserActionsToolbarGtk::HidePopup() {
@@ -795,7 +793,7 @@ bool BrowserActionsToolbarGtk::BrowserActionShowPopup(
   return button->Activate(anchor, false);
 }
 
-void BrowserActionsToolbarGtk::ModelLoaded() {
+void BrowserActionsToolbarGtk::VisibleCountChanged() {
   SetContainerWidth();
 }
 
@@ -1067,7 +1065,8 @@ gboolean BrowserActionsToolbarGtk::OnOverflowButtonPress(
     const Extension* extension = model_->toolbar_items()[model_index].get();
     BrowserActionButton* button = extension_button_map_[extension->id()].get();
 
-    overflow_menu_model_->AddItem(model_index, UTF8ToUTF16(extension->name()));
+    overflow_menu_model_->AddItem(model_index,
+                                  base::UTF8ToUTF16(extension->name()));
     overflow_menu_model_->SetIcon(overflow_menu_model_->GetItemCount() - 1,
                                   button->GetIcon());
 

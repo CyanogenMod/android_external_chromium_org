@@ -34,7 +34,6 @@ using google_apis::AuthStatusCallback;
 using google_apis::AuthorizeAppCallback;
 using google_apis::AuthorizeAppRequest;
 using google_apis::CancelCallback;
-using google_apis::CopyHostedDocumentRequest;
 using google_apis::CreateDirectoryRequest;
 using google_apis::DeleteResourceRequest;
 using google_apis::DownloadActionCallback;
@@ -377,17 +376,30 @@ CancelCallback GDataWapiService::DeleteResource(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
+  NOTIMPLEMENTED();
+  callback.Run(google_apis::GDATA_OTHER_ERROR);
+  return CancelCallback();
+}
+
+CancelCallback GDataWapiService::TrashResource(
+    const std::string& resource_id,
+    const EntryActionCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  const std::string empty_etag;
   return sender_->StartRequestWithRetry(
       new DeleteResourceRequest(sender_.get(),
                                 url_generator_,
                                 callback,
                                 resource_id,
-                                etag));
+                                empty_etag));
 }
 
 CancelCallback GDataWapiService::AddNewDirectory(
     const std::string& parent_resource_id,
     const std::string& directory_title,
+    const AddNewDirectoryOptions& options,
     const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -415,22 +427,6 @@ CancelCallback GDataWapiService::CopyResource(
   // Instead, client code should download the file (if needed) and upload it.
   NOTREACHED();
   return CancelCallback();
-}
-
-CancelCallback GDataWapiService::CopyHostedDocument(
-    const std::string& resource_id,
-    const std::string& new_title,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  return sender_->StartRequestWithRetry(
-      new CopyHostedDocumentRequest(sender_.get(),
-                                    url_generator_,
-                                    base::Bind(&ParseResourceEntryAndRun,
-                                               callback),
-                                    resource_id,
-                                    new_title));
 }
 
 CancelCallback GDataWapiService::UpdateResource(
@@ -501,6 +497,7 @@ CancelCallback GDataWapiService::InitiateUploadNewFile(
     int64 content_length,
     const std::string& parent_resource_id,
     const std::string& title,
+    const InitiateUploadNewFileOptions& options,
     const InitiateUploadCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -520,7 +517,7 @@ CancelCallback GDataWapiService::InitiateUploadExistingFile(
     const std::string& content_type,
     int64 content_length,
     const std::string& resource_id,
-    const std::string& etag,
+    const InitiateUploadExistingFileOptions& options,
     const InitiateUploadCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -533,7 +530,7 @@ CancelCallback GDataWapiService::InitiateUploadExistingFile(
                                             content_type,
                                             content_length,
                                             resource_id,
-                                            etag));
+                                            options.etag));
 }
 
 CancelCallback GDataWapiService::ResumeUpload(
@@ -587,6 +584,18 @@ CancelCallback GDataWapiService::AuthorizeApp(
                               callback,
                               resource_id,
                               app_id));
+}
+
+CancelCallback GDataWapiService::UninstallApp(
+    const std::string& app_id,
+    const EntryActionCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  // GData WAPI doesn't support app uninstallation.
+  // This method should never be called if GData WAPI is enabled.
+  NOTREACHED();
+  return CancelCallback();
 }
 
 CancelCallback GDataWapiService::GetResourceListInDirectoryByWapi(

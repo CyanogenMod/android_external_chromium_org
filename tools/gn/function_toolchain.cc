@@ -9,6 +9,7 @@
 #include "tools/gn/scope.h"
 #include "tools/gn/settings.h"
 #include "tools/gn/toolchain.h"
+#include "tools/gn/variables.h"
 
 namespace functions {
 
@@ -52,7 +53,7 @@ const char kToolchain_Help[] =
     "\n"
     "  By default, when a target depends on another, there is an implicit\n"
     "  toolchain label that is inherited, so the dependee has the same one\n"
-    "  as the dependant.\n"
+    "  as the dependent.\n"
     "\n"
     "  You can override this and refer to any other toolchain by explicitly\n"
     "  labeling the toolchain to use. For example:\n"
@@ -111,6 +112,16 @@ Value RunToolchain(Scope* scope,
   block_scope.SetProperty(&kToolchainPropertyKey, NULL);
   if (err->has_error())
     return Value();
+
+  // Extract the gyp_header contents, if any.
+  const Value* gyp_header_value =
+      block_scope.GetValue(variables::kGypHeader, true);
+  if (gyp_header_value) {
+    if (!gyp_header_value->VerifyTypeIs(Value::STRING, err))
+      return Value();
+    toolchain->set_gyp_header(gyp_header_value->string_value());
+  }
+
   if (!block_scope.CheckForUnusedVars(err))
     return Value();
 

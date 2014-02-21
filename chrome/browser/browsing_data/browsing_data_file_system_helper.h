@@ -46,7 +46,7 @@ class BrowsingDataFileSystemHelper
   // Detailed information about a file system, including it's origin GURL,
   // the amount of data (in bytes) for each sandboxed filesystem type.
   struct FileSystemInfo {
-    FileSystemInfo(const GURL& origin);
+    explicit FileSystemInfo(const GURL& origin);
     ~FileSystemInfo();
 
     // The origin for which the information is relevant.
@@ -144,26 +144,12 @@ class CannedBrowsingDataFileSystemHelper
   CannedBrowsingDataFileSystemHelper();
   virtual ~CannedBrowsingDataFileSystemHelper();
 
-  // Triggers the success callback as the end of a StartFetching workflow. This
-  // must be called on the UI thread.
-  void NotifyOnUIThread();
-
-  // Holds the current list of filesystems returned to the client. Access to
-  // |file_system_info_| is triggered indirectly via the UI thread and guarded
-  // by |is_fetching_|. This means |file_system_info_| is only accessed while
-  // |is_fetching_| is true. The flag |is_fetching_| is only accessed on the UI
-  // thread.
+  // Holds the current list of filesystems returned to the client.
   std::list<FileSystemInfo> file_system_info_;
 
   // The callback passed in at the beginning of the StartFetching workflow so
   // that it can be triggered via NotifyOnUIThread.
   base::Callback<void(const std::list<FileSystemInfo>&)> completion_callback_;
-
-  // Indicates whether or not we're currently fetching information: set to true
-  // when StartFetching is called on the UI thread, and reset to false when
-  // NotifyOnUIThread triggers the success callback.
-  // This property only mutates on the UI thread.
-  bool is_fetching_;
 
   DISALLOW_COPY_AND_ASSIGN(CannedBrowsingDataFileSystemHelper);
 };

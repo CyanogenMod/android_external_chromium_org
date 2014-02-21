@@ -45,6 +45,7 @@
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -159,6 +160,13 @@ GetRendererPreferencesSubpixelRenderingEnum(
   }
 }
 
+void OnIoThreadClientReady(content::RenderFrameHost* rfh) {
+  int render_process_id = rfh->GetProcess()->GetID();
+  int render_frame_id = rfh->GetRoutingID();
+  AwResourceDispatcherHostDelegate::OnIoThreadClientReady(
+      render_process_id, render_frame_id);
+}
+
 }  // namespace
 
 // static
@@ -229,9 +237,7 @@ void AwContents::SetJavaPeers(JNIEnv* env,
           env, intercept_navigation_delegate)));
 
   // Finally, having setup the associations, release any deferred requests
-  int child_id = web_contents_->GetRenderProcessHost()->GetID();
-  int route_id = web_contents_->GetRoutingID();
-  AwResourceDispatcherHostDelegate::OnIoThreadClientReady(child_id, route_id);
+  web_contents_->ForEachFrame(base::Bind(&OnIoThreadClientReady));
 }
 
 void AwContents::SetSaveFormData(bool enabled) {
@@ -429,13 +435,13 @@ void AwContents::AddVisitedLinks(JNIEnv* env,
                                    jobject obj,
                                    jobjectArray jvisited_links) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::vector<string16> visited_link_strings;
+  std::vector<base::string16> visited_link_strings;
   base::android::AppendJavaStringArrayToStringVector(
       env, jvisited_links, &visited_link_strings);
 
   std::vector<GURL> visited_link_gurls;
-  for (std::vector<string16>::const_iterator itr = visited_link_strings.begin();
-       itr != visited_link_strings.end();
+  std::vector<base::string16>::const_iterator itr;
+  for (itr = visited_link_strings.begin(); itr != visited_link_strings.end();
        ++itr) {
     visited_link_gurls.push_back(GURL(*itr));
   }
@@ -737,11 +743,13 @@ void AwContents::SetWindowVisibility(JNIEnv* env, jobject obj, bool visible) {
 void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   browser_view_renderer_->SetIsPaused(paused);
-  if (paused) {
-    ContentViewCore* cvc =
-        ContentViewCore::FromWebContents(web_contents_.get());
-    if (cvc)
+  ContentViewCore* cvc =
+      ContentViewCore::FromWebContents(web_contents_.get());
+  if (cvc) {
+    cvc->PauseOrResumeGeolocation(paused);
+    if (paused) {
       cvc->PauseVideo();
+    }
   }
 }
 
@@ -891,13 +899,20 @@ bool AwContents::IsFlingActive() const {
   return Java_AwContents_isFlingActive(env, obj.obj());
 }
 
-void AwContents::SetPageScaleFactor(float page_scale_factor) {
+void AwContents::SetPageScaleFactorAndLimits(
+    float page_scale_factor,
+    float min_page_scale_factor,
+    float max_page_scale_factor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_AwContents_setPageScaleFactor(env, obj.obj(), page_scale_factor);
+  Java_AwContents_setPageScaleFactorAndLimits(env,
+                                              obj.obj(),
+                                              page_scale_factor,
+                                              min_page_scale_factor,
+                                              max_page_scale_factor);
 }
 
 void AwContents::SetContentsSize(gfx::SizeF contents_size_dip) {
@@ -973,6 +988,11 @@ void AwContents::EnableOnNewPicture(JNIEnv* env,
                                     jboolean enabled) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   browser_view_renderer_->EnableOnNewPicture(enabled);
+}
+
+void AwContents::ClearView(JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  browser_view_renderer_->ClearView();
 }
 
 void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,

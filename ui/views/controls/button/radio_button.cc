@@ -15,7 +15,7 @@ namespace views {
 // static
 const char RadioButton::kViewClassName[] = "RadioButton";
 
-RadioButton::RadioButton(const string16& label, int group_id)
+RadioButton::RadioButton(const base::string16& label, int group_id)
     : Checkbox(label) {
   SetGroup(group_id);
 
@@ -123,7 +123,7 @@ bool RadioButton::IsGroupFocusTraversable() const {
 void RadioButton::OnFocus() {
   Checkbox::OnFocus();
   SetChecked(true);
-  ui::MouseEvent event(ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(), 0);
+  ui::MouseEvent event(ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(), 0, 0);
   LabelButton::NotifyClick(event);
 }
 

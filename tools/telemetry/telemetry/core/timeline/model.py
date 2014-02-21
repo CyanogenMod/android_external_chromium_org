@@ -15,11 +15,13 @@ from telemetry.core import web_contents
 from telemetry.core import browser
 
 # Register importers for data
-from telemetry.core.timeline import inspector_importer
 from telemetry.core.timeline import bounds
+from telemetry.core.timeline import empty_trace_importer
+from telemetry.core.timeline import inspector_importer
 from telemetry.core.timeline import trace_event_importer
 
 _IMPORTERS = [
+    empty_trace_importer.EmptyTraceImporter,
     inspector_importer.InspectorTimelineImporter,
     trace_event_importer.TraceEventTimelineImporter
 ]
@@ -40,11 +42,13 @@ class MarkerOverlapError(Exception):
 class TimelineModel(object):
   def __init__(self, event_data=None, shift_world_to_zero=True):
     self._bounds = bounds.Bounds()
-    self._thread_time_bounds = bounds.Bounds()
+    self._thread_time_bounds = {}
     self._processes = {}
+    self._browser_process = None
     self._frozen = False
     self.import_errors = []
     self.metadata = []
+    self.flow_events = []
     # Use a WeakKeyDictionary, because an ordinary dictionary could keep
     # references to Tab objects around until it gets garbage collected.
     # This would prevent telemetry from navigating to another page.
@@ -65,6 +69,14 @@ class TimelineModel(object):
   def processes(self):
     return self._processes
 
+  @property
+  def browser_process(self):
+    return self._browser_process
+
+  @browser_process.setter
+  def browser_process(self, browser_process):
+    self._browser_process = browser_process
+
   def ImportTraces(self, traces, shift_world_to_zero=True):
     if self._frozen:
       raise Exception("Cannot add events once recording is done")
@@ -78,12 +90,16 @@ class TimelineModel(object):
     for importer in importers:
       # TODO: catch exceptions here and add it to error list
       importer.ImportEvents()
+    self.FinalizeImport(shift_world_to_zero, importers)
 
+  def FinalizeImport(self, shift_world_to_zero=False, importers=None):
+    if importers == None:
+      importers = []
     self.UpdateBounds()
     if not self.bounds.is_empty:
       for process in self._processes.itervalues():
         process.AutoCloseOpenSlices(self.bounds.max,
-                                    self.thread_time_bounds.max)
+                                    self.thread_time_bounds)
 
     for importer in importers:
       importer.FinalizeImport()
@@ -104,22 +120,23 @@ class TimelineModel(object):
     if self._bounds.is_empty:
       return
     shift_amount = self._bounds.min
-    thread_shift_amount = self._thread_time_bounds.min
     for event in self.IterAllEvents():
       event.start -= shift_amount
-      if event.thread_start != None:
-        event.thread_start -= thread_shift_amount
 
   def UpdateBounds(self):
     self._bounds.Reset()
-    self._thread_time_bounds.Reset()
     for event in self.IterAllEvents():
       self._bounds.AddValue(event.start)
       self._bounds.AddValue(event.end)
-      if event.thread_start != None:
-        self._thread_time_bounds.AddValue(event.thread_start)
-      if event.thread_end != None:
-        self._thread_time_bounds.AddValue(event.thread_end)
+
+    self._thread_time_bounds = {}
+    for thread in self.GetAllThreads():
+      self._thread_time_bounds[thread] = bounds.Bounds()
+      for event in thread.IterEventsInThisContainer():
+        if event.thread_start != None:
+          self._thread_time_bounds[thread].AddValue(event.thread_start)
+        if event.thread_end != None:
+          self._thread_time_bounds[thread].AddValue(event.thread_end)
 
   def GetAllContainers(self):
     containers = []
@@ -148,8 +165,21 @@ class TimelineModel(object):
   def GetAllEvents(self):
     return list(self.IterAllEvents())
 
-  def GetAllEventsOfName(self, name):
-    return [e for e in self.IterAllEvents() if e.name == name]
+  def GetAllEventsOfName(self, name, only_root_events=False):
+    events = [e for e in self.IterAllEvents() if e.name == name]
+    if only_root_events:
+      return filter(lambda ev: ev.parent_slice == None, events)
+    else:
+      return events
+
+  def GetEventOfName(self, name, only_root_events=False,
+                     fail_if_more_than_one=False):
+    events = self.GetAllEventsOfName(name, only_root_events)
+    if len(events) == 0:
+      raise Exception('No event of name "%s" found.' % name)
+    if fail_if_more_than_one and len(events) > 1:
+      raise Exception('More than one event of name "%s" found.' % name)
+    return events[0]
 
   def GetOrCreateProcess(self, pid):
     if pid not in self._processes:
@@ -174,8 +204,7 @@ class TimelineModel(object):
     for name in names:
       name_set.add(name)
     for name in name_set:
-      events.extend([s for s in self.GetAllEventsOfName(name)
-                     if s.parent_slice == None])
+      events.extend(self.GetAllEventsOfName(name, True))
     events.sort(key=attrgetter('start'))
 
     # Check if the number and order of events matches the provided names,

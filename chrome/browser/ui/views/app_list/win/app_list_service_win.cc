@@ -23,6 +23,7 @@
 #include "base/win/windows_version.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -116,7 +117,7 @@ int GetAppListIconIndex() {
   return dist->GetIconIndex(BrowserDistribution::SHORTCUT_APP_LAUNCHER);
 }
 
-string16 GetAppListIconPath() {
+base::string16 GetAppListIconPath() {
   base::FilePath icon_path;
   if (!PathService::Get(base::FILE_EXE, &icon_path)) {
     NOTREACHED();
@@ -126,11 +127,11 @@ string16 GetAppListIconPath() {
   std::stringstream ss;
   ss << "," << GetAppListIconIndex();
   base::string16 result = icon_path.value();
-  result.append(UTF8ToUTF16(ss.str()));
+  result.append(base::UTF8ToUTF16(ss.str()));
   return result;
 }
 
-string16 GetAppListShortcutName() {
+base::string16 GetAppListShortcutName() {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   return dist->GetShortcutName(BrowserDistribution::SHORTCUT_APP_LAUNCHER);
 }
@@ -150,7 +151,7 @@ CommandLine GetAppListCommandLine() {
   return command_line;
 }
 
-string16 GetAppModelId() {
+base::string16 GetAppModelId() {
   // The AppModelId should be the same for all profiles in a user data directory
   // but different for different user data directories, so base it on the
   // initial profile in the current user data directory.
@@ -263,15 +264,6 @@ void CreateAppListShortcuts(
 // Customizes the app list |hwnd| for Windows (eg: disable aero peek, set up
 // restart params).
 void SetWindowAttributes(HWND hwnd) {
-  // Vista and lower do not offer pinning to the taskbar, which makes any
-  // presence on the taskbar useless. So, hide the window on the taskbar
-  // for these versions of Windows.
-  if (base::win::GetVersion() <= base::win::VERSION_VISTA) {
-    LONG_PTR ex_styles = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-    ex_styles |= WS_EX_TOOLWINDOW;
-    SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_styles);
-  }
-
   if (base::win::GetVersion() > base::win::VERSION_VISTA) {
     // Disable aero peek. Without this, hovering over the taskbar popup puts
     // Windows into a mode for switching between windows in the same
@@ -433,7 +425,7 @@ void AppListServiceWin::Init(Profile* initial_profile) {
 
   if (enable_app_list_on_next_init_) {
     enable_app_list_on_next_init_ = false;
-    EnableAppList(initial_profile);
+    EnableAppList(initial_profile, ENABLE_ON_REINSTALL);
     CreateShortcut();
   }
 
@@ -464,7 +456,7 @@ void AppListServiceWin::Init(Profile* initial_profile) {
       chrome_launcher_support::UninstallLegacyAppLauncher(
           chrome_launcher_support::USER_LEVEL_INSTALLATION);
     }
-    EnableAppList(initial_profile);
+    EnableAppList(initial_profile, ENABLE_ON_REINSTALL);
     CreateShortcut();
   }
 #endif
@@ -472,8 +464,7 @@ void AppListServiceWin::Init(Profile* initial_profile) {
   ScheduleWarmup();
 
   MigrateAppLauncherEnabledPref();
-  HandleCommandLineFlags(initial_profile);
-  SendUsageStats();
+  PerformStartupChecks(initial_profile);
 }
 
 void AppListServiceWin::CreateForProfile(Profile* profile) {
@@ -516,8 +507,10 @@ void AppListServiceWin::ScheduleWarmup() {
 }
 
 bool AppListServiceWin::IsWarmupNeeded() {
-  if (!g_browser_process || g_browser_process->IsShuttingDown())
+  if (!g_browser_process || g_browser_process->IsShuttingDown() ||
+      browser_shutdown::IsTryingToQuit()) {
     return false;
+  }
 
   // We only need to initialize the view if there's no view already created and
   // there's no profile loading to be shown.

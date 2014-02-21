@@ -44,7 +44,7 @@ BookmarkNode* AsMutable(const BookmarkNode* node) {
 }
 
 // Whitespace characters to strip from bookmark titles.
-const char16 kInvalidChars[] = {
+const base::char16 kInvalidChars[] = {
   '\n', '\r', '\t',
   0x2028,  // Line separator
   0x2029,  // Paragraph separator
@@ -74,7 +74,8 @@ void BookmarkNode::SetTitle(const base::string16& title) {
   // Replace newlines and other problematic whitespace characters in
   // folder/bookmark names with spaces.
   base::string16 trimmed_title;
-  base::ReplaceChars(title, kInvalidChars, ASCIIToUTF16(" "), &trimmed_title);
+  base::ReplaceChars(title, kInvalidChars, base::ASCIIToUTF16(" "),
+                     &trimmed_title);
   ui::TreeNode<BookmarkNode>::SetTitle(trimmed_title);
 }
 
@@ -137,7 +138,7 @@ void BookmarkNode::Initialize(int64 id) {
   type_ = url_.is_empty() ? FOLDER : URL;
   date_added_ = Time::Now();
   favicon_state_ = INVALID_FAVICON;
-  favicon_load_task_id_ = CancelableTaskTracker::kBadTaskId;
+  favicon_load_task_id_ = base::CancelableTaskTracker::kBadTaskId;
   meta_info_map_.reset();
   sync_transaction_version_ = kInvalidSyncTransactionVersion;
 }
@@ -305,9 +306,9 @@ void BookmarkModel::RemoveAll() {
   {
     base::AutoLock url_lock(url_lock_);
     for (int i = 0; i < root_.child_count(); ++i) {
-      const BookmarkNode* permanent_node = root_.GetChild(i);
+      BookmarkNode* permanent_node = root_.GetChild(i);
       for (int j = permanent_node->child_count() - 1; j >= 0; --j) {
-        BookmarkNode* child_node = AsMutable(permanent_node->GetChild(j));
+        BookmarkNode* child_node = permanent_node->GetChild(j);
         removed_nodes.push_back(child_node);
         RemoveNodeAndGetRemovedUrls(child_node, &removed_urls);
       }
@@ -451,15 +452,7 @@ void BookmarkModel::SetURL(const BookmarkNode* node, const GURL& url) {
 
   {
     base::AutoLock url_lock(url_lock_);
-    NodesOrderedByURLSet::iterator i = nodes_ordered_by_url_set_.find(
-        mutable_node);
-    DCHECK(i != nodes_ordered_by_url_set_.end());
-    // i points to the first node with the URL, advance until we find the
-    // node we're removing.
-    while (*i != node)
-      ++i;
-    nodes_ordered_by_url_set_.erase(i);
-
+    RemoveNodeFromURLSet(mutable_node);
     mutable_node->set_url(url);
     nodes_ordered_by_url_set_.insert(mutable_node);
   }
@@ -783,17 +776,8 @@ void BookmarkModel::RemoveNode(BookmarkNode* node,
 
   url_lock_.AssertAcquired();
   if (node->is_url()) {
-    // NOTE: this is called in such a way that url_lock_ is already held. As
-    // such, this doesn't explicitly grab the lock.
-    NodesOrderedByURLSet::iterator i = nodes_ordered_by_url_set_.find(node);
-    DCHECK(i != nodes_ordered_by_url_set_.end());
-    // i points to the first node with the URL, advance until we find the
-    // node we're removing.
-    while (*i != node)
-      ++i;
-    nodes_ordered_by_url_set_.erase(i);
+    RemoveNodeFromURLSet(node);
     removed_urls->insert(node->url());
-
     index_->Remove(node);
   }
 
@@ -849,7 +833,7 @@ void BookmarkModel::DoneLoading(BookmarkLoadDetails* details_delete_me) {
 
   // Notify our direct observers.
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
-                    Loaded(this, details->ids_reassigned()));
+                    BookmarkModelLoaded(this, details->ids_reassigned()));
 }
 
 void BookmarkModel::RemoveAndDeleteNode(BookmarkNode* delete_me) {
@@ -875,6 +859,18 @@ void BookmarkModel::RemoveAndDeleteNode(BookmarkNode* delete_me) {
 
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
                     BookmarkNodeRemoved(this, parent, index, node.get()));
+}
+
+void BookmarkModel::RemoveNodeFromURLSet(BookmarkNode* node) {
+  // NOTE: this is called in such a way that url_lock_ is already held. As
+  // such, this doesn't explicitly grab the lock.
+  NodesOrderedByURLSet::iterator i = nodes_ordered_by_url_set_.find(node);
+  DCHECK(i != nodes_ordered_by_url_set_.end());
+  // i points to the first node with the URL, advance until we find the
+  // node we're removing.
+  while (*i != node)
+    ++i;
+  nodes_ordered_by_url_set_.erase(i);
 }
 
 void BookmarkModel::RemoveNodeAndGetRemovedUrls(BookmarkNode* node,
@@ -991,7 +987,7 @@ void BookmarkModel::OnFaviconDataAvailable(
     BookmarkNode* node,
     const chrome::FaviconImageResult& image_result) {
   DCHECK(node);
-  node->set_favicon_load_task_id(CancelableTaskTracker::kBadTaskId);
+  node->set_favicon_load_task_id(base::CancelableTaskTracker::kBadTaskId);
   node->set_favicon_state(BookmarkNode::LOADED_FAVICON);
   if (!image_result.image.IsEmpty()) {
     node->set_favicon(image_result.image);
@@ -1025,9 +1021,9 @@ void BookmarkModel::FaviconLoaded(const BookmarkNode* node) {
 }
 
 void BookmarkModel::CancelPendingFaviconLoadRequests(BookmarkNode* node) {
-  if (node->favicon_load_task_id() != CancelableTaskTracker::kBadTaskId) {
+  if (node->favicon_load_task_id() != base::CancelableTaskTracker::kBadTaskId) {
     cancelable_task_tracker_.TryCancel(node->favicon_load_task_id());
-    node->set_favicon_load_task_id(CancelableTaskTracker::kBadTaskId);
+    node->set_favicon_load_task_id(base::CancelableTaskTracker::kBadTaskId);
   }
 }
 

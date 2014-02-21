@@ -51,6 +51,11 @@ enum PolicyFetchStatus {
 
 }  // namespace dm_protocol
 
+// Information about the verification key used to verify that policy signing
+// keys are valid.
+POLICY_EXPORT std::string GetPolicyVerificationKey();
+POLICY_EXPORT extern const char kPolicyVerificationKeyHash[];
+
 // Describes the affiliation of a user w.r.t. the device owner.
 enum UserAffiliation {
   // User is on the same domain the device was registered with.
@@ -87,6 +92,8 @@ enum DeviceManagementStatus {
   DM_STATUS_SERVICE_DEVICE_ID_CONFLICT,
   // Service error: The licenses have expired or have been exhausted.
   DM_STATUS_SERVICE_MISSING_LICENSES,
+  // Service error: The administrator has deprovisioned this client.
+  DM_STATUS_SERVICE_DEPROVISIONED,
   // Service error: Policy not found. Error code defined by the DM folks.
   DM_STATUS_SERVICE_POLICY_NOT_FOUND = 902,
 };
@@ -100,7 +107,9 @@ enum DeviceMode {
   DEVICE_MODE_ENTERPRISE,      // The device is enrolled as an enterprise
                                // device.
   DEVICE_MODE_RETAIL_KIOSK,    // The device is enrolled as retail kiosk device.
-  DEVICE_MODE_CONSUMER_KIOSK,  // The device is locally owned as consumer kiosk.
+  DEVICE_MODE_CONSUMER_KIOSK_AUTOLAUNCH,  // The device is locally owned as
+                                          // consumer kiosk with ability to auto
+                                          // launch a kiosk webapp.
 };
 
 // A pair that combines a policy fetch type and entity ID.

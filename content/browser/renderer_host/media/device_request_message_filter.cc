@@ -23,14 +23,17 @@ namespace content {
 DeviceRequestMessageFilter::DeviceRequestMessageFilter(
     ResourceContext* resource_context,
     MediaStreamManager* media_stream_manager)
-    : resource_context_(resource_context),
+    : BrowserMessageFilter(MediaStreamMsgStart),
+      resource_context_(resource_context),
       media_stream_manager_(media_stream_manager) {
   DCHECK(resource_context);
   DCHECK(media_stream_manager);
 }
 
 DeviceRequestMessageFilter::~DeviceRequestMessageFilter() {
-  DCHECK(requests_.empty());
+  // CHECK rather than DCHECK to make sure this never happens in the
+  // wild. We want to be sure due to http://crbug.com/341211
+  CHECK(requests_.empty());
 }
 
 struct DeviceRequestMessageFilter::DeviceRequest {
@@ -55,26 +58,9 @@ struct DeviceRequestMessageFilter::DeviceRequest {
   StreamDeviceInfoArray video_devices;
 };
 
-void DeviceRequestMessageFilter::StreamGenerated(
-    const std::string& label,
-    const StreamDeviceInfoArray& audio_devices,
-    const StreamDeviceInfoArray& video_devices) {
-  NOTIMPLEMENTED();
-}
-
-void DeviceRequestMessageFilter::StreamGenerationFailed(
-    const std::string& label) {
-  NOTIMPLEMENTED();
-}
-
-void DeviceRequestMessageFilter::DeviceStopped(
-    int render_view_id,
-    const std::string& label,
-    const StreamDeviceInfo& device) {
-  NOTIMPLEMENTED();
-}
-
 void DeviceRequestMessageFilter::DevicesEnumerated(
+    int render_view_id,
+    int page_request_id,
     const std::string& label,
     const StreamDeviceInfoArray& new_devices) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -127,12 +113,6 @@ void DeviceRequestMessageFilter::DevicesEnumerated(
   requests_.erase(request_it);
 }
 
-void DeviceRequestMessageFilter::DeviceOpened(
-    const std::string& label,
-    const StreamDeviceInfo& video_device) {
-  NOTIMPLEMENTED();
-}
-
 bool DeviceRequestMessageFilter::OnMessageReceived(const IPC::Message& message,
                                                    bool* message_was_ok) {
   bool handled = true;
@@ -145,8 +125,11 @@ bool DeviceRequestMessageFilter::OnMessageReceived(const IPC::Message& message,
 
 void DeviceRequestMessageFilter::OnChannelClosing() {
   // Since the IPC channel is gone, cancel outstanding device requests.
-  media_stream_manager_->CancelAllRequests(peer_pid());
-
+  for (DeviceRequestList::iterator request_it = requests_.begin();
+       request_it != requests_.end(); ++request_it) {
+    media_stream_manager_->CancelRequest(request_it->audio_devices_label);
+    media_stream_manager_->CancelRequest(request_it->video_devices_label);
+  }
   requests_.clear();
 }
 
@@ -154,14 +137,14 @@ void DeviceRequestMessageFilter::OnGetSources(int request_id,
                                               const GURL& security_origin) {
   // Make request to get audio devices.
   const std::string& audio_label = media_stream_manager_->EnumerateDevices(
-      this, -1, -1, resource_context_, -1, MEDIA_DEVICE_AUDIO_CAPTURE,
-      security_origin);
+      this, -1, -1, resource_context_->GetMediaDeviceIDSalt(), -1,
+      MEDIA_DEVICE_AUDIO_CAPTURE, security_origin);
   DCHECK(!audio_label.empty());
 
   // Make request for video devices.
   const std::string& video_label = media_stream_manager_->EnumerateDevices(
-      this, -1, -1, resource_context_, -1, MEDIA_DEVICE_VIDEO_CAPTURE,
-      security_origin);
+      this, -1, -1, resource_context_->GetMediaDeviceIDSalt(), -1,
+      MEDIA_DEVICE_VIDEO_CAPTURE, security_origin);
   DCHECK(!video_label.empty());
 
   requests_.push_back(DeviceRequest(

@@ -28,6 +28,10 @@ class DriveServiceInterface;
 class DriveNotificationManager;
 }
 
+namespace leveldb {
+class Env;
+}
+
 namespace sync_file_system {
 namespace drive_backend {
 
@@ -91,6 +95,7 @@ class SyncEngine : public RemoteFileSyncService,
       const fileapi::FileSystemURL& url,
       const std::string& version_id,
       const DownloadVersionCallback& callback) OVERRIDE;
+  virtual void PromoteDemotedChanges() OVERRIDE;
 
   // LocalChangeProcessor overrides.
   virtual void ApplyLocalChange(
@@ -125,6 +130,7 @@ class SyncEngine : public RemoteFileSyncService,
   virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE;
 
  private:
+  friend class DriveBackendSyncTest;
   friend class SyncEngineTest;
 
   SyncEngine(const base::FilePath& base_dir,
@@ -133,7 +139,8 @@ class SyncEngine : public RemoteFileSyncService,
              scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
              drive::DriveNotificationManager* notification_manager,
              ExtensionServiceInterface* extension_service,
-             ProfileOAuth2TokenService* auth_token_service);
+             ProfileOAuth2TokenService* auth_token_service,
+             leveldb::Env* env_override);
 
   void DoDisableApp(const std::string& app_id,
                     const SyncStatusCallback& callback);
@@ -164,6 +171,7 @@ class SyncEngine : public RemoteFileSyncService,
   base::FilePath temporary_file_dir_;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  leveldb::Env* env_override_;
 
   scoped_ptr<drive::DriveServiceInterface> drive_service_;
   scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
@@ -185,6 +193,7 @@ class SyncEngine : public RemoteFileSyncService,
 
   bool should_check_conflict_;
   bool should_check_remote_change_;
+  bool listing_remote_changes_;
   base::TimeTicks time_to_check_changes_;
 
   bool sync_enabled_;

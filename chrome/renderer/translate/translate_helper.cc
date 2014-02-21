@@ -14,9 +14,9 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/extensions/extension_groups.h"
 #include "chrome/renderer/isolated_world_ids.h"
-#include "components/translate/common/translate_constants.h"
-#include "components/translate/common/translate_metrics.h"
-#include "components/translate/common/translate_util.h"
+#include "components/translate/core/common/translate_constants.h"
+#include "components/translate/core/common/translate_metrics.h"
+#include "components/translate/core/common/translate_util.h"
 #include "components/translate/language_detection/language_detection_util.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -30,6 +30,7 @@
 #include "url/gurl.h"
 #include "v8/include/v8.h"
 
+using base::ASCIIToUTF16;
 using blink::WebDocument;
 using blink::WebElement;
 using blink::WebFrame;

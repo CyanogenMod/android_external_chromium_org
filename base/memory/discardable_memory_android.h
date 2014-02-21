@@ -15,13 +15,11 @@
 namespace base {
 namespace internal {
 
-size_t AlignToNextPage(size_t size);
-
 bool CreateAshmemRegion(const char* name, size_t size, int* fd, void** address);
 
 bool CloseAshmemRegion(int fd, size_t size, void* address);
 
-LockDiscardableMemoryStatus LockAshmemRegion(int fd,
+DiscardableMemoryLockStatus LockAshmemRegion(int fd,
                                              size_t offset,
                                              size_t size,
                                              const void* address);

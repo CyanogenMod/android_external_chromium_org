@@ -34,11 +34,29 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
     return true;
   }
 
+  virtual int GetAnimationDurationOverride() OVERRIDE {
+    // Return 0 to select the default.
+    return 0;
+  }
+
+  virtual void SetAnimationDurationOverride(
+      int animation_duration_in_ms) OVERRIDE {
+    NOTIMPLEMENTED();
+  }
+
   virtual void UpdateWallpaper() OVERRIDE {
     SkBitmap bitmap;
     bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
     bitmap.allocPixels();
     bitmap.eraseARGB(255, kBackgroundRed, kBackgroundGreen, kBackgroundBlue);
+#if !defined(NDEBUG)
+    // In debug builds we generate a simple pattern that allows visually
+    // notice if transparency is broken.
+    {
+      SkAutoLockPixels alp(bitmap);
+      *bitmap.getAddr32(0,0) = SkColorSetRGB(0, 0, 0);
+    }
+#endif
     gfx::ImageSkia wallpaper = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
     ash::Shell::GetInstance()->desktop_background_controller()->
         SetCustomWallpaper(wallpaper, ash::WALLPAPER_LAYOUT_TILE);

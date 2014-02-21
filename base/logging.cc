@@ -83,6 +83,13 @@ VlogInfo* g_vlog_info_prev = NULL;
 const char* const log_severity_names[LOG_NUM_SEVERITIES] = {
   "INFO", "WARNING", "ERROR", "ERROR_REPORT", "FATAL" };
 
+const char* log_severity_name(int severity)
+{
+  if (severity >= 0 && severity < LOG_NUM_SEVERITIES)
+    return log_severity_names[severity];
+  return "UNKNOWN";
+}
+
 int min_log_level = 0;
 
 LoggingDestination logging_destination = LOG_DEFAULT;
@@ -494,7 +501,7 @@ void DisplayDebugMessageInDialog(const std::string& str) {
     backslash[1] = 0;
   wcscat_s(prog_name, MAX_PATH, L"debug_message.exe");
 
-  std::wstring cmdline = UTF8ToWide(str);
+  std::wstring cmdline = base::UTF8ToWide(str);
   if (cmdline.empty())
     return;
 
@@ -711,7 +718,7 @@ void LogMessage::Init(const char* file, int line) {
   if (log_tickcount)
     stream_ << TickCount() << ':';
   if (severity_ >= 0)
-    stream_ << log_severity_names[severity_];
+    stream_ << log_severity_name(severity_);
   else
     stream_ << "VERBOSE" << -severity_;
 
@@ -862,5 +869,5 @@ std::wstring GetLogFileFullPath() {
 }  // namespace logging
 
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
-  return out << WideToUTF8(std::wstring(wstr));
+  return out << base::WideToUTF8(std::wstring(wstr));
 }

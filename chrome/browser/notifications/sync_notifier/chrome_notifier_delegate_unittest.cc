@@ -95,6 +95,8 @@ TEST_F(ChromeNotifierDelegateTest, ClickTest) {
   scoped_refptr<notifier::ChromeNotifierDelegate> delegate(
       new notifier::ChromeNotifierDelegate(id, notifier()));
 
+  EXPECT_TRUE(delegate->HasClickedListener());
+
   // Set up an observer to wait for the navigation
   content::WindowedNotificationObserver observer(
         chrome::NOTIFICATION_TAB_ADDED,
@@ -143,6 +145,9 @@ TEST_F(ChromeNotifierDelegateTest, ButtonClickTest) {
   GURL url2(kButtonTwoUrl);
   tab = browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_EQ(url2, tab->GetController().GetActiveEntry()->GetVirtualURL());
+
+  // Also verify that the click dismissed the notification.
+  ASSERT_EQ(kTestNotificationId, notifier()->read_id());
 }
 
 TEST_F(ChromeNotifierDelegateTest, CloseTest) {

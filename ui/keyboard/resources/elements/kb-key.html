@@ -5,7 +5,7 @@
   -->
 
 <polymer-element name="kb-key" extends="kb-key-base"
-    attributes="image imageSize keyCode keyName shiftModifier weight">
+    attributes="image keyCode keyName shiftModifier stretch weight">
   <template>
     <style>
       :host {
@@ -13,25 +13,20 @@
          * handling of {{}} in CSS rules. Switch back to
          * "-webkit-box-flex: {{weight}}" once the regression is fixed
          * (https://github.com/Polymer/polymer/issues/270). */
-        -webkit-box-flex: 100;
         background-color: #3b3b3e;
-        /* TODO(rsadam): remove when {{}} regression is fixed */
-        background-image: none;
-        background-position: center center;
-        background-repeat: no-repeat;
-        /* TODO(rsadam): remove when {{}} regression is fixed */
-        background-size: 50%;
-        border-top: 2px solid #4b4b4e;
         border-radius: 2px;
+        border-style: solid;
+        border-width: 1px 0px;
         color: #ffffff;
-        display: -webkit-box;
-        font-family: 'Open Sans', 'Noto Sans UI', sans-serif;
+        font-family: roboto-bold;
         font-weight: 300;
-        margin-left: 0.25em;
-        position: relative;
       }
 
       ::part(key) {
+        background-image: none;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
         bottom: 0;
         height: 1.2em;
         left: 0;
@@ -43,26 +38,31 @@
         top: 0;
       }
 
-      ::part(key)[inverted] {
-        color: #7c7c7c;
+      :host[image]::part(key) {
+        height: 2em;
+        width: 1em;
       }
 
-     ::part(hint) {
-        color: #7c7c7c;
+      ::part(hint) {
+        color: #313131;
         font-size: 70%;
         position: absolute;
         right: 7%;
         top: 5%;
-      } 
+      }
 
-      ::part(hint)[inverted] {
+      :host[invert] ::part(key) {
+        color: #313131;
+      }
+
+      :host[invert] ::part(hint) {
         color: #ffffff;
       }
     </style>
-    <div id="key" part="key" inverted?={{invert}}>
+    <div id="key" part="key">
       <content></content>
     </div>
-    <div part="hint" inverted?={{invert}}>{{hintText}}</div>
+    <div part="hint">{{hintText}}</div>
   </template>
   <script>
     Polymer('kb-key', {
@@ -102,6 +102,12 @@
        * @type {boolean}
        */
       shiftModifier: false,
+
+      /**
+       * Whether the key can be stretched to accomodate pixel rounding errors.
+       */
+      stretch: false,
+
       /**
        * Weighting to use for layout in order to properly size the key.
        * Keys with a high weighting are wider than normal keys.
@@ -116,18 +122,9 @@
        */
       imageChanged: function() {
         if (!this.image)
-          this.style.backgroundImage = "none";
+          this.$.key.style.backgroundImage = "none";
         else
-          this.style.backgroundImage = "url(images/" + this.image + ".svg)";
-      },
-
-      /**
-       * Called when the image attribute changes. This is used to set the
-       * background image of the key.
-       * TODO(rsadam): Remove when polymer {{}} syntax regression is fixed.
-       */
-      imageSizeChanged: function() {
-        this.style.backgroundSize = this.imageSize;
+          this.$.key.style.backgroundImage = "url(images/" + this.image + ".svg)";
       },
 
       /**
@@ -142,17 +139,6 @@
         details.keyName = this.keyName;
         details.shiftModifier = this.shiftModifier;
         return details;
-      },
-
-      /**
-       * Adjusts the CSS rules for rendering the key to reflect the new
-       * weight. The preferred way is to use {{weight}} directly in the CSS
-       * rules; however, this is currently broken in the Polymer library.
-       * TODO(kevers): Cleanup once handling of {{}} in CSS rules is fixed.
-       */
-      weightChanged: function() {
-        if (this.weight > 0)
-          this.style['webkitBoxFlex'] = this.weight;
       },
     });
   </script>
@@ -179,45 +165,17 @@
 </polymer-element>
 
 <polymer-element name="kb-hide-keyboard-key" class="hide-keyboard dark"
-    char="Invalid" extends="kb-key">
+    align="right" char="Invalid" extends="kb-key">
   <script>
     Polymer('kb-hide-keyboard-key', {
-      /**
-       * Timer for a long press event which triggers the display of a keyboard
-       * options menu.
-       * @type {?Function}
-       */
-      longPressTimer: undefined,
-
-      down: function(event) {
-         var self = this;
-         this.longPressTimer = this.asyncMethod(function() {
-           if (self.longPressTimer) {
-             clearTimeout(self.longPressTimer);
-             self.longPressTimer = undefined;
-             var details = {
-               left: this.offsetLeft,
-               top: this.offsetTop,
-               width: this.clientWidth,
-             };
-             this.fire('show-options', details);
-           }
-         }, null, LONGPRESS_DELAY_MSEC);
-      },
-
-      /** @override */
-      ready: function() {
-        this.super();
-        this.image = "keyboard";
-      },
-
       up: function(event) {
-        if (this.longPressTimer) {
-          clearTimeout(this.longPressTimer);
-          hideKeyboard();
-          this.longPressTimer = undefined;
-        }
-      }
+        var details = {
+          left: this.offsetLeft,
+          top: this.offsetTop,
+          width: this.clientWidth,
+        };
+        this.fire('show-options', details);
+      },
     });
   </script>
 </polymer-element>

@@ -4,7 +4,7 @@
 
 #include "ash/wm/overview/scoped_transform_overview_window.h"
 
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wm/overview/scoped_window_copy.h"
 #include "ash/wm/window_state.h"
@@ -14,6 +14,7 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/views/corewm/window_animations.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -30,7 +31,7 @@ class WindowSelectorAnimationSettings
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
     SetTransitionDuration(base::TimeDelta::FromMilliseconds(
         ScopedTransformOverviewWindow::kTransitionMilliseconds));
-    SetTweenType(gfx::Tween::EASE_OUT);
+    SetTweenType(gfx::Tween::EASE_IN_OUT_2);
   }
 
   virtual ~WindowSelectorAnimationSettings() {
@@ -63,7 +64,8 @@ void SetTransformOnWindowAndAllTransientChildren(
     bool animate) {
   SetTransformOnWindow(window, transform, animate);
 
-  aura::Window::Windows transient_children = window->transient_children();
+  aura::Window::Windows transient_children =
+      views::corewm::GetTransientChildren(window);
   for (aura::Window::Windows::iterator iter = transient_children.begin();
        iter != transient_children.end(); ++iter) {
     aura::Window* transient_child = *iter;
@@ -78,7 +80,7 @@ void SetTransformOnWindowAndAllTransientChildren(
 
 aura::Window* GetModalTransientParent(aura::Window* window) {
   if (window->GetProperty(aura::client::kModalKey) == ui::MODAL_TYPE_WINDOW)
-    return window->transient_parent();
+    return views::corewm::GetTransientParent(window);
   return NULL;
 }
 
@@ -137,7 +139,7 @@ gfx::Rect ScopedTransformOverviewWindow::GetBoundsInScreen() const {
   gfx::Rect bounds;
   aura::Window* window = window_;
   while (window) {
-    bounds.Union(ScreenAsh::ConvertRectToScreen(window->parent(),
+    bounds.Union(ScreenUtil::ConvertRectToScreen(window->parent(),
                                                 window->GetTargetBounds()));
     window = GetModalTransientParent(window);
   }
@@ -237,13 +239,13 @@ void ScopedTransformOverviewWindow::SetTransformOnWindowAndTransientChildren(
     bool animate) {
   gfx::Point origin(GetBoundsInScreen().origin());
   aura::Window* window = window_;
-  while (window->transient_parent())
-    window = window->transient_parent();
+  while (views::corewm::GetTransientParent(window))
+    window = views::corewm::GetTransientParent(window);
   for (ScopedVector<ScopedWindowCopy>::const_iterator iter =
       window_copies_.begin(); iter != window_copies_.end(); ++iter) {
     SetTransformOnWindow(
         (*iter)->GetWindow(),
-        TranslateTransformOrigin(ScreenAsh::ConvertRectToScreen(
+        TranslateTransformOrigin(ScreenUtil::ConvertRectToScreen(
             (*iter)->GetWindow()->parent(),
             (*iter)->GetWindow()->GetTargetBounds()).origin() - origin,
             transform),
@@ -251,7 +253,7 @@ void ScopedTransformOverviewWindow::SetTransformOnWindowAndTransientChildren(
   }
   SetTransformOnWindowAndAllTransientChildren(
       window,
-      TranslateTransformOrigin(ScreenAsh::ConvertRectToScreen(
+      TranslateTransformOrigin(ScreenUtil::ConvertRectToScreen(
           window->parent(), window->GetTargetBounds()).origin() - origin,
           transform),
       animate);

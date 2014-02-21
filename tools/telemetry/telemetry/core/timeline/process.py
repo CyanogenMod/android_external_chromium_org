@@ -34,6 +34,11 @@ class Process(event_container.TimelineEventContainer):
       for s in thread.IterAllSlicesOfName(name):
         yield s
 
+  def IterAllAsyncSlicesOfName(self, name):
+    for thread in self._threads.itervalues():
+      for s in thread.IterAllAsyncSlicesOfName(name):
+        yield s
+
   def IterEventsInThisContainer(self):
     return
     yield # pylint: disable=W0101
@@ -61,9 +66,9 @@ class Process(event_container.TimelineEventContainer):
       self._counters[ctr.full_name] = ctr
       return ctr
 
-  def AutoCloseOpenSlices(self, max_timestamp, max_thread_timestamp):
+  def AutoCloseOpenSlices(self, max_timestamp, thread_time_bounds):
     for thread in self._threads.itervalues():
-      thread.AutoCloseOpenSlices(max_timestamp, max_thread_timestamp)
+      thread.AutoCloseOpenSlices(max_timestamp, thread_time_bounds[thread].max)
 
   def FinalizeImport(self):
     for thread in self._threads.itervalues():

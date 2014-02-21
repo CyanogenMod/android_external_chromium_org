@@ -4,10 +4,13 @@
 
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_ui.h"
 
+#include "ash/shell.h"
+#include "base/command_line.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_handler.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
@@ -18,6 +21,9 @@
 namespace {
 
 const char kFirstRunJSPath[] = "first_run.js";
+const char kShelfAlignmentBottom[] = "bottom";
+const char kShelfAlignmentLeft[] = "left";
+const char kShelfAlignmentRight[] = "right";
 
 void SetLocalizedStrings(base::DictionaryValue* localized_strings) {
   localized_strings->SetString(
@@ -40,8 +46,6 @@ void SetLocalizedStrings(base::DictionaryValue* localized_strings) {
   localized_strings->SetString(
       "helpText2", l10n_util::GetStringUTF16(IDS_FIRST_RUN_HELP_STEP_TEXT_2));
   localized_strings->SetString(
-      "helpText3", l10n_util::GetStringUTF16(IDS_FIRST_RUN_HELP_STEP_TEXT_3));
-  localized_strings->SetString(
       "helpKeepExploringButton",
       l10n_util::GetStringUTF16(IDS_FIRST_RUN_HELP_STEP_KEEP_EXPLORING_BUTTON));
   localized_strings->SetString(
@@ -49,6 +53,26 @@ void SetLocalizedStrings(base::DictionaryValue* localized_strings) {
       l10n_util::GetStringUTF16(IDS_FIRST_RUN_HELP_STEP_FINISH_BUTTON));
   localized_strings->SetString(
       "nextButton", l10n_util::GetStringUTF16(IDS_FIRST_RUN_NEXT_BUTTON));
+  localized_strings->SetBoolean(
+      "transitionsEnabled",
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kEnableFirstRunUITransitions));
+  std::string shelf_alignment;
+  ash::Shell* shell = ash::Shell::GetInstance();
+  switch (shell->GetShelfAlignment(shell->GetPrimaryRootWindow())) {
+    case ash::SHELF_ALIGNMENT_BOTTOM:
+      shelf_alignment = kShelfAlignmentBottom;
+      break;
+    case ash::SHELF_ALIGNMENT_LEFT:
+      shelf_alignment = kShelfAlignmentLeft;
+      break;
+    case ash::SHELF_ALIGNMENT_RIGHT:
+      shelf_alignment = kShelfAlignmentRight;
+      break;
+    default:
+      NOTREACHED() << "Unsupported shelf alignment";
+  }
+  localized_strings->SetString("shelfAlignment", shelf_alignment);
 }
 
 content::WebUIDataSource* CreateDataSource() {

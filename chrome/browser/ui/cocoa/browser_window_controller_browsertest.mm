@@ -8,6 +8,7 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,7 +18,7 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
+#import "chrome/browser/ui/cocoa/browser/avatar_base_controller.h"
 #include "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
@@ -141,6 +142,11 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
     return height;
   }
 
+  void SetDevToolsWindowContentsInsets(
+      DevToolsWindow* window, int left, int top, int right, int bottom) {
+    window->SetContentsInsets(left, top, right, bottom);
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserWindowControllerTest);
 };
@@ -169,7 +175,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   EXPECT_TRUE(fullscreen_button);
   EXPECT_FALSE([fullscreen_button isHidden]);
 
-  AvatarButtonController* avatar_controller =
+  AvatarBaseController* avatar_controller =
       [controller() avatarButtonController];
   NSView* avatar = [avatar_controller view];
   EXPECT_TRUE(avatar);
@@ -184,7 +190,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   profile_manager->CreateProfileAsync(
       profile_manager->user_data_dir().Append("test"),
       create_callback,
-      ASCIIToUTF16("avatar_test"),
+      base::ASCIIToUTF16("avatar_test"),
       base::string16(),
       std::string());
 
@@ -365,4 +371,17 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 
   overlay.reset();
   EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+}
+
+// Tests that status bubble's base frame does move when devTools are docked.
+IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
+                       StatusBubblePositioning) {
+  NSPoint origin = [controller() statusBubbleBaseFrame].origin;
+
+  DevToolsWindow* devtools_window = DevToolsWindow::OpenDevToolsWindowForTest(
+      browser(), true);
+  SetDevToolsWindowContentsInsets(devtools_window, 10, 10, 10, 10);
+
+  NSPoint originWithDevTools = [controller() statusBubbleBaseFrame].origin;
+  EXPECT_FALSE(NSEqualPoints(origin, originWithDevTools));
 }

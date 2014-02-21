@@ -29,7 +29,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   explicit PicturePileBase(const PicturePileBase* other);
   PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
-  void Resize(gfx::Size size);
+  void Resize(const gfx::Size& size);
   gfx::Size size() const { return tiling_.total_size(); }
   void SetMinContentsScale(float min_contents_scale);
 
@@ -40,12 +40,12 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   int num_tiles_y() const { return tiling_.num_tiles_y(); }
   gfx::Rect tile_bounds(int x, int y) const { return tiling_.TileBounds(x, y); }
   bool HasRecordingAt(int x, int y);
-  bool CanRaster(float contents_scale, gfx::Rect content_rect);
+  bool CanRaster(float contents_scale, const gfx::Rect& content_rect);
 
-  static void ComputeTileGridInfo(gfx::Size tile_grid_size,
+  static void ComputeTileGridInfo(const gfx::Size& tile_grid_size,
                                   SkTileGridPicture::TileGridInfo* info);
 
-  void SetTileGridSize(gfx::Size tile_grid_size);
+  void SetTileGridSize(const gfx::Size& tile_grid_size);
   TilingData& tiling() { return tiling_; }
 
   scoped_ptr<base::Value> AsValue() const;
@@ -88,12 +88,11 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
     recorded_region_ = recorded_region;
   }
 
-  int num_raster_threads() { return num_raster_threads_; }
   int buffer_pixels() const { return tiling_.border_texels(); }
   void Clear();
 
   gfx::Rect PaddedRect(const PictureMapKey& key);
-  gfx::Rect PadRect(gfx::Rect rect);
+  gfx::Rect PadRect(const gfx::Rect& rect);
 
   // A picture pile is a tiled set of pictures. The picture map is a map of tile
   // indices to picture infos.
@@ -107,7 +106,6 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   bool contents_opaque_;
   bool show_debug_picture_borders_;
   bool clear_canvas_with_debug_color_;
-  int num_raster_threads_;
 
  private:
   void SetBufferPixels(int buffer_pixels);

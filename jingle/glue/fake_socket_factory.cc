@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "jingle/glue/utils.h"
+#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
 #include "third_party/libjingle/source/talk/base/asyncsocket.h"
 
 namespace jingle_glue {
@@ -34,14 +35,14 @@ talk_base::SocketAddress FakeUDPPacketSocket::GetRemoteAddress() const {
 }
 
 int FakeUDPPacketSocket::Send(const void *data, size_t data_size,
-                              talk_base::DiffServCodePoint dscp) {
+                              const talk_base::PacketOptions& options) {
   DCHECK(CalledOnValidThread());
-  return SendTo(data, data_size, remote_address_, dscp);
+  return SendTo(data, data_size, remote_address_, options);
 }
 
 int FakeUDPPacketSocket::SendTo(const void *data, size_t data_size,
                                 const talk_base::SocketAddress& address,
-                                talk_base::DiffServCodePoint dscp) {
+                                const talk_base::PacketOptions& options) {
   DCHECK(CalledOnValidThread());
 
   if (state_ == IS_CLOSED) {
@@ -113,7 +114,8 @@ void FakeUDPPacketSocket::DeliverPacket(const net::IPEndPoint& from,
     return;
   }
 
-  SignalReadPacket(this, &data[0], data.size(), address);
+  SignalReadPacket(this, &data[0], data.size(), address,
+                   talk_base::CreatePacketTime(0));
 }
 
 FakeSocketManager::FakeSocketManager()

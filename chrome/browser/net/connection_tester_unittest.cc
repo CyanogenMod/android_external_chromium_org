@@ -5,9 +5,10 @@
 #include "chrome/browser/net/connection_tester.h"
 
 #include "base/prefs/testing_pref_service.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "net/cert/mock_cert_verifier.h"
-#include "net/cookies/cookie_monster.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
@@ -88,8 +89,7 @@ class ConnectionTesterDelegate : public ConnectionTester::Delegate {
 class ConnectionTesterTest : public PlatformTest {
  public:
   ConnectionTesterTest()
-      : message_loop_(base::MessageLoop::TYPE_IO),
-        io_thread_(BrowserThread::IO, &message_loop_),
+      : io_thread_(BrowserThread::IO, &message_loop_),
         test_server_(net::SpawnedTestServer::TYPE_HTTP,
                      net::SpawnedTestServer::kLocalhost,
                      // Nothing is read in this directory.
@@ -104,7 +104,7 @@ class ConnectionTesterTest : public PlatformTest {
   // SSLClientAuthCache calls RemoveObserver when destroyed, but if the
   // MessageLoop is already destroyed, then the RemoveObserver will be a
   // no-op, and the ObserverList will contain invalid entries.
-  base::MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   content::TestBrowserThread io_thread_;
   net::SpawnedTestServer test_server_;
   ConnectionTesterDelegate test_delegate_;
@@ -148,7 +148,7 @@ class ConnectionTesterTest : public PlatformTest {
         http_transaction_factory_.get());
     // In-memory cookie store.
     proxy_script_fetcher_context_->set_cookie_store(
-        new net::CookieMonster(NULL, NULL));
+        content::CreateCookieStore(content::CookieStoreConfig()));
   }
 };
 

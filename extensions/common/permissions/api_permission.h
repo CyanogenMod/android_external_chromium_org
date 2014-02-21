@@ -40,14 +40,10 @@ class APIPermission {
     kAdView,
     kAlarms,
     kAlwaysOnTopWindows,
-    kAppCurrentWindowInternal,
-    kAppRuntime,
-    kAppWindow,
     kAudio,
     kAudioCapture,
     kAutoTestPrivate,
     kBackground,
-    kBluetooth,
     kBookmark,
     kBookmarkManagerPrivate,
     kBrailleDisplayPrivate,
@@ -93,8 +89,10 @@ class APIPermission {
     kFullscreen,
     kGcm,
     kGeolocation,
+    kHid,
     kHistory,
     kHomepage,
+    kHotwordPrivate,
     kIdentity,
     kIdentityPrivate,
     kIdltest,
@@ -126,13 +124,13 @@ class APIPermission {
     kProxy,
     kPushMessaging,
     kImageWriterPrivate,
+    kReadingListPrivate,
     kRtcPrivate,
     kSearchProvider,
     kSerial,
     kSessions,
     kSignedInDevices,
     kSocket,
-    kSocketsUdp,
     kStartupPages,
     kStorage,
     kStreamsPrivate,
@@ -207,8 +205,9 @@ class APIPermission {
   // Returns true if |rhs| is equal to this.
   virtual bool Equal(const APIPermission* rhs) const = 0;
 
-  // Parses the APIPermission from |value|. Returns false if error happens.
-  virtual bool FromValue(const base::Value* value) = 0;
+  // Parses the APIPermission from |value|. Returns false if an error happens
+  // and optionally set |error| if |error| is not NULL.
+  virtual bool FromValue(const base::Value* value, std::string* error) = 0;
 
   // Stores this into a new created |value|.
   virtual scoped_ptr<base::Value> ToValue() const = 0;
@@ -311,8 +310,7 @@ class APIPermissionInfo {
   }
 
  private:
-  // Instances should only be constructed from within a
-  // PermissionsInfo::Delegate.
+  // Instances should only be constructed from within a PermissionsProvider.
   friend class ChromeAPIPermissions;
   // Implementations of APIPermission will want to get the permission message,
   // but this class's implementation should be hidden from everyone else.

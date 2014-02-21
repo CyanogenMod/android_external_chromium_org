@@ -12,6 +12,7 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringize_macros.h"
@@ -146,7 +147,7 @@ MainRoutineFn SelectMainRoutine(const std::string& process_type) {
   } else if (process_type == kProcessTypeRdpDesktopSession) {
     main_routine = &RdpDesktopSessionMain;
   } else if (process_type == kProcessTypeNativeMessagingHost) {
-    main_routine = &NativeMessagingHostMain;
+    main_routine = &Me2MeNativeMessagingHostMain;
 #endif  // defined(OS_WIN)
   }
 
@@ -217,7 +218,7 @@ int HostMain(int argc, char** argv) {
     CommandLine::StringVector args = command_line->GetArgs();
     if (!args.empty()) {
 #if defined(OS_WIN)
-      std::string origin = UTF16ToUTF8(args[0]);
+      std::string origin = base::UTF16ToUTF8(args[0]);
 #else
       std::string origin = args[0];
 #endif
@@ -234,6 +235,9 @@ int HostMain(int argc, char** argv) {
     Usage(command_line->GetProgram());
     return kUsageExitCode;
   }
+
+  // Required to find the ICU data file, used by some file_util routines.
+  base::i18n::InitializeICU();
 
   remoting::LoadResources("");
 

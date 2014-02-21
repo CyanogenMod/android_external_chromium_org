@@ -6,7 +6,6 @@
 
 #include "base/android/jni_android.h"
 #include "base/command_line.h"
-#include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
@@ -20,6 +19,7 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
+#include "chrome/browser/ui/tab_helpers.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -84,6 +84,13 @@ ChromeWebContentsDelegateAndroid::~ChromeWebContentsDelegateAndroid() {
 // Register native methods.
 bool RegisterChromeWebContentsDelegateAndroid(JNIEnv* env) {
   return RegisterNativesImpl(env);
+}
+
+void ChromeWebContentsDelegateAndroid::LoadingStateChanged(
+    WebContents* source) {
+  bool has_stopped = source == NULL || !source->IsLoading();
+  WebContentsDelegateAndroid::LoadingStateChanged(source);
+  LoadProgressChanged(source, has_stopped ? 1 : 0);
 }
 
 void ChromeWebContentsDelegateAndroid::RunFileChooser(
@@ -298,7 +305,7 @@ void ChromeWebContentsDelegateAndroid::AddNewContents(
   // Can't create a new contents for the current tab - invalid case.
   DCHECK_NE(disposition, CURRENT_TAB);
 
-  TabAndroid::InitTabHelpers(new_contents);
+  TabHelpers::AttachTabHelpers(new_contents);
 
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
@@ -316,21 +323,6 @@ void ChromeWebContentsDelegateAndroid::AddNewContents(
 
   if (!handled)
     delete new_contents;
-}
-
-void
-ChromeWebContentsDelegateAndroid::RequestProtectedMediaIdentifierPermission(
-    const WebContents* web_contents,
-    const GURL& frame_url,
-    const base::Callback<void(bool)>& callback) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(profile)->
-      RequestProtectedMediaIdentifierPermission(
-            web_contents->GetRenderProcessHost()->GetID(),
-            web_contents->GetRenderViewHost()->GetRoutingID(),
-            frame_url,
-            callback);
 }
 
 }  // namespace android

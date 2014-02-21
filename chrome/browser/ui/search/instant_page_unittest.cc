@@ -43,7 +43,6 @@ class FakePageDelegate : public InstantPage::Delegate {
                     content::PageTransition transition,
                     WindowOpenDisposition disposition,
                     bool is_search_type));
-  MOCK_METHOD1(InstantPageLoadFailed, void(content::WebContents* contents));
 };
 
 }  // namespace
@@ -159,10 +158,6 @@ TEST_F(InstantPageTest, AppropriateMessagesSentToIncognitoPages) {
   page->SetContents(web_contents());
   NavigateAndCommit(GURL(chrome::kChromeSearchLocalNtpUrl));
   process()->sink().ClearMessages();
-
-  // Incognito pages should get these messages.
-  page->sender()->SetOmniboxBounds(gfx::Rect());
-  EXPECT_TRUE(MessageWasSent(ChromeViewMsg_SearchBoxMarginChange::ID));
 
   // Incognito pages should not get any others.
   page->sender()->FocusChanged(

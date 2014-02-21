@@ -14,7 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/chromeos/drive/file_system/update_operation.h"
+#include "chrome/browser/chromeos/drive/resource_metadata.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -30,13 +30,14 @@ struct ClientContext;
 namespace file_system {
 class DownloadOperation;
 class OperationObserver;
-class UpdateOperation;
 }
 
 namespace internal {
 
+class ChangeListLoader;
 class EntryUpdatePerformer;
 class FileCache;
+class LoaderController;
 class ResourceMetadata;
 
 // The SyncClient is used to synchronize pinned files on Drive and the
@@ -52,6 +53,7 @@ class SyncClient {
              JobScheduler* scheduler,
              ResourceMetadata* metadata,
              FileCache* cache,
+             LoaderController* loader_controller,
              const base::FilePath& temporary_file_directory);
   virtual ~SyncClient();
 
@@ -61,11 +63,8 @@ class SyncClient {
   // Removes a fetch task.
   void RemoveFetchTask(const std::string& local_id);
 
-  // Adds an upload task.
-  void AddUploadTask(const ClientContext& context, const std::string& local_id);
-
   // Adds a update task.
-  void AddUpdateTask(const std::string& local_id);
+  void AddUpdateTask(const ClientContext& context, const std::string& local_id);
 
   // Starts processing the backlog (i.e. pinned-but-not-filed files and
   // dirty-but-not-uploaded files). Kicks off retrieval of the local
@@ -89,8 +88,7 @@ class SyncClient {
   // Types of sync tasks.
   enum SyncType {
     FETCH,  // Fetch a file from the Drive server.
-    UPLOAD,  // Upload a file to the Drive server.
-    UPDATE,  // Updates an entry's metadata on the Drive server.
+    UPDATE,  // Updates an entry's metadata or content on the Drive server.
   };
 
   // States of sync tasks.
@@ -105,6 +103,7 @@ class SyncClient {
     SyncState state;
     base::Closure task;
     bool should_run_again;
+    base::Closure cancel_closure;
   };
 
   typedef std::map<std::pair<SyncType, std::string>, SyncTask> SyncTasks;
@@ -113,15 +112,9 @@ class SyncClient {
   void AddFetchTaskInternal(const std::string& local_id,
                             const base::TimeDelta& delay);
 
-  // Adds a UPLOAD task.
-  void AddUploadTaskInternal(
-      const ClientContext& context,
-      const std::string& local_id,
-      file_system::UpdateOperation::ContentCheckMode content_check_mode,
-      const base::TimeDelta& delay);
-
   // Adds a UPDATE task.
-  void AddUpdateTaskInternal(const std::string& local_id,
+  void AddUpdateTaskInternal(const ClientContext& context,
+                             const std::string& local_id,
                              const base::TimeDelta& delay);
 
   // Adds the given task. If the same task is found, does nothing.
@@ -134,38 +127,41 @@ class SyncClient {
 
   // Called when the local IDs of files in the backlog are obtained.
   void OnGetLocalIdsOfBacklog(const std::vector<std::string>* to_fetch,
-                              const std::vector<std::string>* to_upload,
                               const std::vector<std::string>* to_update);
 
   // Adds fetch tasks.
   void AddFetchTasks(const std::vector<std::string>* local_ids);
 
+  // Used as GetFileContentInitializedCallback.
+  void OnGetFileContentInitialized(
+      FileError error,
+      scoped_ptr<ResourceEntry> entry,
+      const base::FilePath& local_cache_file_path,
+      const base::Closure& cancel_download_closure);
+
   // Erases the task and returns true if task is completed.
   bool OnTaskComplete(SyncType type, const std::string& local_id);
 
   // Called when the file for |local_id| is fetched.
-  // Calls DoSyncLoop() to go back to the sync loop.
   void OnFetchFileComplete(const std::string& local_id,
                            FileError error,
                            const base::FilePath& local_path,
                            scoped_ptr<ResourceEntry> entry);
 
-  // Called when the file for |local_id| is uploaded.
-  // Calls DoSyncLoop() to go back to the sync loop.
-  void OnUploadFileComplete(const std::string& local_id, FileError error);
-
   // Called when the entry is updated.
   void OnUpdateComplete(const std::string& local_id, FileError error);
 
+  // Adds update tasks for |entries|.
+  void AddChildUpdateTasks(const ResourceEntryVector* entries,
+                           FileError error);
+
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  file_system::OperationObserver* operation_observer_;
   ResourceMetadata* metadata_;
   FileCache* cache_;
 
   // Used to fetch pinned files.
   scoped_ptr<file_system::DownloadOperation> download_operation_;
-
-  // Used to upload committed files.
-  scoped_ptr<file_system::UpdateOperation> update_operation_;
 
   // Used to update entry metadata.
   scoped_ptr<EntryUpdatePerformer> entry_update_performer_;

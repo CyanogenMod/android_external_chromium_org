@@ -53,10 +53,15 @@ class CdmWrapper {
   virtual ~CdmWrapper() {};
 
   virtual void CreateSession(uint32_t session_id,
-                             const char* type,
-                             uint32_t type_size,
+                             const char* content_type,
+                             uint32_t content_type_size,
                              const uint8_t* init_data,
                              uint32_t init_data_size) = 0;
+  // Returns whether LoadSesson() is supported by the CDM.
+  // TODO(xhwang): Remove the return value when CDM_1 and CDM_2 are deprecated.
+  virtual bool LoadSession(uint32_t session_id,
+                           const char* web_session_id,
+                           uint32_t web_session_id_size) = 0;
   virtual Result UpdateSession(uint32_t session_id,
                                const uint8_t* response,
                                uint32_t response_size) = 0;
@@ -148,11 +153,19 @@ class CdmWrapperImpl : public CdmWrapper {
   }
 
   virtual void CreateSession(uint32_t session_id,
-                             const char* type,
-                             uint32_t type_size,
+                             const char* content_type,
+                             uint32_t content_type_size,
                              const uint8_t* init_data,
                              uint32_t init_data_size) OVERRIDE {
-    cdm_->CreateSession(session_id, type, type_size, init_data, init_data_size);
+    cdm_->CreateSession(
+        session_id, content_type, content_type_size, init_data, init_data_size);
+  }
+
+  virtual bool LoadSession(uint32_t session_id,
+                           const char* web_session_id,
+                           uint32_t web_session_id_size) OVERRIDE {
+    cdm_->LoadSession(session_id, web_session_id, web_session_id_size);
+    return true;
   }
 
   virtual Result UpdateSession(uint32_t session_id,
@@ -251,7 +264,8 @@ class CdmWrapperImpl : public CdmWrapper {
   }
 
   const std::string LookupWebSessionId(uint32_t session_id) {
-    // Session may not exist if error happens during CreateSession().
+    // Session may not exist if error happens during CreateSession() or
+    // LoadSession().
     SessionMap::iterator it = session_map_.find(session_id);
     return (it != session_map_.end()) ? it->second : std::string();
   }
@@ -267,24 +281,24 @@ class CdmWrapperImpl : public CdmWrapper {
 };
 
 // For ContentDecryptionModule_1 and ContentDecryptionModule_2,
-// CreateSession(), UpdateSession(), and ReleaseSession() call methods
-// are incompatible with ContentDecryptionModule_3. Use the following
+// CreateSession(), LoadSession(), UpdateSession(), and ReleaseSession() call
+// methods are incompatible with ContentDecryptionModule_4. Use the following
 // templated functions to handle this.
 
 template <class CdmInterface>
 void PrefixedGenerateKeyRequest(CdmWrapper* wrapper,
                                 CdmInterface* cdm,
                                 uint32_t session_id,
-                                const char* type,
-                                uint32_t type_size,
+                                const char* content_type,
+                                uint32_t content_type_size,
                                 const uint8_t* init_data,
                                 uint32_t init_data_size) {
   // As it is possible for CDMs to reply synchronously during the call to
   // GenerateKeyRequest(), keep track of |session_id|.
   wrapper->current_key_request_session_id_ = session_id;
 
-  cdm::Status status =
-      cdm->GenerateKeyRequest(type, type_size, init_data, init_data_size);
+  cdm::Status status = cdm->GenerateKeyRequest(
+      content_type, content_type_size, init_data, init_data_size);
   PP_DCHECK(status == cdm::kSuccess || status == cdm::kSessionError);
   if (status != cdm::kSuccess) {
     // If GenerateKeyRequest() failed, no subsequent asynchronous replies
@@ -361,12 +375,25 @@ CdmWrapper::Result PrefixedCancelKeyRequest(CdmWrapper* wrapper,
 template <>
 void CdmWrapperImpl<cdm::ContentDecryptionModule_1>::CreateSession(
     uint32_t session_id,
-    const char* type,
-    uint32_t type_size,
+    const char* content_type,
+    uint32_t content_type_size,
     const uint8_t* init_data,
     uint32_t init_data_size) {
-  PrefixedGenerateKeyRequest(
-      this, cdm_, session_id, type, type_size, init_data, init_data_size);
+  PrefixedGenerateKeyRequest(this,
+                             cdm_,
+                             session_id,
+                             content_type,
+                             content_type_size,
+                             init_data,
+                             init_data_size);
+}
+
+template <>
+bool CdmWrapperImpl<cdm::ContentDecryptionModule_1>::LoadSession(
+    uint32_t session_id,
+    const char* web_session_id,
+    uint32_t web_session_id_size) {
+  return false;
 }
 
 template <>
@@ -414,12 +441,25 @@ template <> cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_1>::
 template <>
 void CdmWrapperImpl<cdm::ContentDecryptionModule_2>::CreateSession(
     uint32_t session_id,
-    const char* type,
-    uint32_t type_size,
+    const char* content_type,
+    uint32_t content_type_size,
     const uint8_t* init_data,
     uint32_t init_data_size) {
-  PrefixedGenerateKeyRequest(
-      this, cdm_, session_id, type, type_size, init_data, init_data_size);
+  PrefixedGenerateKeyRequest(this,
+                             cdm_,
+                             session_id,
+                             content_type,
+                             content_type_size,
+                             init_data,
+                             init_data_size);
+}
+
+template <>
+bool CdmWrapperImpl<cdm::ContentDecryptionModule_2>::LoadSession(
+    uint32_t session_id,
+    const char* web_session_id,
+    uint32_t web_session_id_size) {
+  return false;
 }
 
 template <>
@@ -441,13 +481,13 @@ CdmWrapper* CdmWrapper::Create(const char* key_system,
                                GetCdmHostFunc get_cdm_host_func,
                                void* user_data) {
   COMPILE_ASSERT(cdm::ContentDecryptionModule::kVersion ==
-                 cdm::ContentDecryptionModule_3::kVersion,
+                 cdm::ContentDecryptionModule_4::kVersion,
                  update_code_below);
 
-  // Ensure IsSupportedCdmInterfaceVersion matches this implementation.
+  // Ensure IsSupportedCdmInterfaceVersion() matches this implementation.
   // Always update this DCHECK when updating this function.
   // If this check fails, update this function and DCHECK or update
-  // IsSupportedCdmInterfaceVersion.
+  // IsSupportedCdmInterfaceVersion().
   PP_DCHECK(
       !IsSupportedCdmInterfaceVersion(
           cdm::ContentDecryptionModule::kVersion + 1) &&
@@ -482,7 +522,7 @@ CdmWrapper* CdmWrapper::Create(const char* key_system,
 // does not have.
 // Also update supported_cdm_versions.h.
 COMPILE_ASSERT(cdm::ContentDecryptionModule::kVersion ==
-                   cdm::ContentDecryptionModule_3::kVersion,
+                   cdm::ContentDecryptionModule_4::kVersion,
                ensure_cdm_wrapper_templates_have_old_version_support);
 
 }  // namespace media

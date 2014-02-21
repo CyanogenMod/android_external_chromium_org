@@ -74,15 +74,17 @@ class CopyOperation {
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback);
 
- private:
   // Params for Copy().
   struct CopyParams;
 
-  // Part of Copy(). Called after prepartion is done.
-  void CopyAfterPrepare(const CopyParams& params,
-                        ResourceEntry* src_entry,
-                        std::string* parent_resource_id,
-                        FileError error);
+ private:
+  // Part of Copy(). Called after trying to copy locally.
+  void CopyAfterTryToCopyLocally(
+      const CopyParams* params,
+      const std::vector<std::string>* updated_local_ids,
+      const bool* directory_changed,
+      const bool* should_copy_on_server,
+      FileError error);
 
   // Part of TransferFileFromLocalToRemote(). Called after preparation is done.
   // |gdoc_resource_id| and |parent_resource_id| is available only if the file
@@ -122,24 +124,6 @@ class CopyOperation {
                                    const base::FilePath& remote_dest_path,
                                    const FileOperationCallback& callback);
 
-  // Part of ScheduleTransferRegularFile(). Called after GetFileSize() is
-  // completed.
-  void ScheduleTransferRegularFileAfterGetFileSize(
-      const base::FilePath& local_src_path,
-      const base::FilePath& remote_dest_path,
-      const FileOperationCallback& callback,
-      int64 local_file_size);
-
-  // Part of ScheduleTransferRegularFile(). Called after GetAboutResource()
-  // is completed.
-  void ScheduleTransferRegularFileAfterGetAboutResource(
-      const base::FilePath& local_src_path,
-      const base::FilePath& remote_dest_path,
-      const FileOperationCallback& callback,
-      int64 local_file_size,
-      google_apis::GDataErrorCode status,
-      scoped_ptr<google_apis::AboutResource> about_resource);
-
   // Part of ScheduleTransferRegularFile(). Called after file creation.
   void ScheduleTransferRegularFileAfterCreate(
       const base::FilePath& local_src_path,
@@ -151,6 +135,7 @@ class CopyOperation {
   // is completed.
   void ScheduleTransferRegularFileAfterUpdateLocalState(
       const FileOperationCallback& callback,
+      const base::FilePath& remote_dest_path,
       std::string* local_id,
       FileError error);
 

@@ -23,7 +23,6 @@
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
@@ -35,6 +34,7 @@
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/filter/filter.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_file_dir_job.h"
@@ -197,11 +197,11 @@ URLRequestFileJob::~URLRequestFileJob() {
 
 void URLRequestFileJob::FetchMetaInfo(const base::FilePath& file_path,
                                       FileMetaInfo* meta_info) {
-  base::PlatformFileInfo platform_info;
-  meta_info->file_exists = base::GetFileInfo(file_path, &platform_info);
+  base::File::Info file_info;
+  meta_info->file_exists = base::GetFileInfo(file_path, &file_info);
   if (meta_info->file_exists) {
-    meta_info->file_size = platform_info.size;
-    meta_info->is_directory = platform_info.is_directory;
+    meta_info->file_size = file_info.size;
+    meta_info->is_directory = file_info.is_directory;
   }
   // On Windows GetMimeTypeFromFile() goes to the registry. Thus it should be
   // done in WorkerPool.

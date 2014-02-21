@@ -20,7 +20,7 @@
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
-#include "chrome/browser/undo/undo_manager_utils.h"
+#include "chrome/browser/undo/bookmark_undo_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/delete_journal.h"
@@ -131,7 +131,7 @@ const BookmarkNode* BookmarkNodeFinder::FindBookmarkNode(
     const GURL& url, const std::string& title, bool is_folder) {
   // Create a bookmark node from the given bookmark attributes.
   BookmarkNode temp_node(url);
-  temp_node.SetTitle(UTF8ToUTF16(title));
+  temp_node.SetTitle(base::UTF8ToUTF16(title));
   if (is_folder)
     temp_node.set_type(BookmarkNode::FOLDER);
   else
@@ -326,7 +326,7 @@ bool BookmarkModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
 bool BookmarkModelAssociator::NodesMatch(
     const BookmarkNode* bookmark,
     const syncer::BaseNode* sync_node) const {
-  if (bookmark->GetTitle() != UTF8ToUTF16(sync_node->GetTitle()))
+  if (bookmark->GetTitle() != base::UTF8ToUTF16(sync_node->GetTitle()))
     return false;
   if (bookmark->is_folder() != sync_node->GetIsFolder())
     return false;
@@ -369,8 +369,7 @@ syncer::SyncError BookmarkModelAssociator::AssociateModels(
   // Since any changes to the bookmark model made here are not user initiated,
   // these change should not be undoable and so suspend the undo tracking.
 #if !defined(OS_ANDROID)
-  ScopedSuspendUndoTracking suspend_undo(
-      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager());
+  ScopedSuspendBookmarkUndo suspend_undo(profile_);
 #endif
   syncer::SyncError error = CheckModelSyncState(local_merge_result,
                                                 syncer_merge_result);

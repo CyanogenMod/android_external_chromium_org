@@ -5,6 +5,7 @@
 import copy
 import logging
 import os
+import posixpath
 
 from environment import IsPreviewServer
 from extensions_paths import (
@@ -78,9 +79,9 @@ class _JSCModel(object):
     self._disable_refs = disable_refs
     self._availability_finder = availability_finder
     self._api_availabilities = json_cache.GetFromFile(
-        '%s/api_availabilities.json' % JSON_TEMPLATES)
+        posixpath.join(JSON_TEMPLATES, 'api_availabilities.json'))
     self._intro_tables = json_cache.GetFromFile(
-        '%s/intro_tables.json' % JSON_TEMPLATES)
+        posixpath.join(JSON_TEMPLATES, 'intro_tables.json'))
     self._api_features = json_cache.GetFromFile(API_FEATURES)
     self._template_cache = template_cache
     self._event_byname_function = event_byname_function
@@ -115,6 +116,8 @@ class _JSCModel(object):
       'domEvents': self._GenerateDomEvents(self._namespace.events),
       'properties': self._GenerateProperties(self._namespace.properties),
     }
+    if self._namespace.deprecated:
+      as_dict['deprecated'] = self._namespace.deprecated
     # Rendering the intro list is really expensive and there's no point doing it
     # unless we're rending the page - and disable_refs=True implies we're not.
     if not self._disable_refs:
@@ -296,6 +299,7 @@ class _JSCModel(object):
       'name': callback.simple_name,
       'description': self._FormatDescription(callback.description),
       'optional': callback.optional,
+      'is_callback': True,
       'id': _CreateId(callback, 'property'),
       'simple_type': 'function',
     }
@@ -323,9 +327,9 @@ class _JSCModel(object):
       if len(dst_dict['enum_values']) > 0:
         dst_dict['enum_values'][-1]['last'] = True
     elif type_.instance_of is not None:
-      dst_dict['simple_type'] = type_.instance_of.lower()
+      dst_dict['simple_type'] = type_.instance_of
     else:
-      dst_dict['simple_type'] = type_.property_type.name.lower()
+      dst_dict['simple_type'] = type_.property_type.name
 
   def _GetIntroTableList(self):
     '''Create a generic data structure that can be traversed by the templates
@@ -371,8 +375,9 @@ class _JSCModel(object):
       'title': 'Availability',
       'content': [{
         'partial': self._template_cache.GetFromFile(
-                       '%s/intro_tables/%s_message.html' %
-                           (PRIVATE_TEMPLATES, status)).Get(),
+          posixpath.join(PRIVATE_TEMPLATES,
+                         'intro_tables',
+                         '%s_message.html' % status)).Get(),
         'version': version
       }]
     }
@@ -444,8 +449,8 @@ class _JSCModel(object):
         # If there is a 'partial' argument and it hasn't already been
         # converted to a Handlebar object, transform it to a template.
         if 'partial' in node:
-          node['partial'] = self._template_cache.GetFromFile('%s/%s' %
-              (PRIVATE_TEMPLATES, node['partial'])).Get()
+          node['partial'] = self._template_cache.GetFromFile(
+              posixpath.join(PRIVATE_TEMPLATES, node['partial'])).Get()
       misc_rows.append({ 'title': category, 'content': content })
     return misc_rows
 

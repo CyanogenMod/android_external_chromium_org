@@ -47,7 +47,8 @@ class Action : public base::RefCountedThreadSafe<Action> {
   Action(const std::string& extension_id,
          const base::Time& time,
          const ActionType action_type,
-         const std::string& api_name);
+         const std::string& api_name,
+         int64 action_id = -1);
 
   // Creates and returns a mutable copy of an Action.
   scoped_refptr<Action> Clone() const;
@@ -72,9 +73,9 @@ class Action : public base::RefCountedThreadSafe<Action> {
   // mutable_args() returns a pointer to the list stored in the Action which
   // can be modified in place; if the list was null an empty list is created
   // first.
-  const ListValue* args() const { return args_.get(); }
-  void set_args(scoped_ptr<ListValue> args);
-  ListValue* mutable_args();
+  const base::ListValue* args() const { return args_.get(); }
+  void set_args(scoped_ptr<base::ListValue> args);
+  base::ListValue* mutable_args();
 
   // The URL of the page which was modified or accessed.
   const GURL& page_url() const { return page_url_; }
@@ -96,9 +97,14 @@ class Action : public base::RefCountedThreadSafe<Action> {
   void set_arg_incognito(bool incognito) { arg_incognito_ = incognito; }
 
   // A dictionary where any additional data can be stored.
-  const DictionaryValue* other() const { return other_.get(); }
-  void set_other(scoped_ptr<DictionaryValue> other);
-  DictionaryValue* mutable_other();
+  const base::DictionaryValue* other() const { return other_.get(); }
+  void set_other(scoped_ptr<base::DictionaryValue> other);
+  base::DictionaryValue* mutable_other();
+
+  // An ID that identifies an action stored in the Activity Log database. If the
+  // action is not retrieved from the database, e.g., live stream, then the ID
+  // is set to -1.
+  int64 action_id() const { return action_id_; }
 
   // Helper methods for serializing and deserializing URLs into strings.  If
   // the URL is marked as incognito, then the string is prefixed with
@@ -129,14 +135,15 @@ class Action : public base::RefCountedThreadSafe<Action> {
   base::Time time_;
   ActionType action_type_;
   std::string api_name_;
-  scoped_ptr<ListValue> args_;
+  scoped_ptr<base::ListValue> args_;
   GURL page_url_;
   std::string page_title_;
   bool page_incognito_;
   GURL arg_url_;
   bool arg_incognito_;
-  scoped_ptr<DictionaryValue> other_;
+  scoped_ptr<base::DictionaryValue> other_;
   int count_;
+  int64 action_id_;
 
   DISALLOW_COPY_AND_ASSIGN(Action);
 };
@@ -150,8 +157,9 @@ struct ActionComparator {
                   const scoped_refptr<Action>& rhs) const;
 };
 
-// Like ActionComparator, but ignores the time field in comparisons.
-struct ActionComparatorExcludingTime {
+// Like ActionComparator, but ignores the time field and the action ID field in
+// comparisons.
+struct ActionComparatorExcludingTimeAndActionId {
   // Evaluates the comparison lhs < rhs.
   bool operator()(const scoped_refptr<Action>& lhs,
                   const scoped_refptr<Action>& rhs) const;

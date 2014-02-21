@@ -55,8 +55,9 @@ class DesktopMediaPickerControllerTest : public CocoaTest {
     controller_.reset(
         [[DesktopMediaPickerController alloc]
             initWithMediaList:scoped_ptr<DesktopMediaList>(media_list_)
+                       parent:nil
                      callback:callback
-                      appName:ASCIIToUTF16("Screenshare Test")]);
+                      appName:base::ASCIIToUTF16("Screenshare Test")]);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -185,9 +186,25 @@ TEST_F(DesktopMediaPickerControllerTest, RemoveSource) {
   media_list_->AddSource(0);
   media_list_->AddSource(1);
   media_list_->AddSource(2);
-  media_list_->SetSourceName(1, ASCIIToUTF16("foo"));
+  media_list_->SetSourceName(1, base::ASCIIToUTF16("foo"));
 
   NSArray* items = [controller_ items];
   EXPECT_EQ(3U, [items count]);
+  EXPECT_NSEQ(@"foo", [[items objectAtIndex:1] imageTitle]);
+}
+
+TEST_F(DesktopMediaPickerControllerTest, MoveSource) {
+  [controller_ showWindow:nil];
+
+  media_list_->AddSource(0);
+  media_list_->AddSource(1);
+  media_list_->SetSourceName(1, base::ASCIIToUTF16("foo"));
+  NSArray* items = [controller_ items];
+  EXPECT_NSEQ(@"foo", [[items objectAtIndex:1] imageTitle]);
+
+  media_list_->MoveSource(1, 0);
+  EXPECT_NSEQ(@"foo", [[items objectAtIndex:0] imageTitle]);
+
+  media_list_->MoveSource(0, 1);
   EXPECT_NSEQ(@"foo", [[items objectAtIndex:1] imageTitle]);
 }

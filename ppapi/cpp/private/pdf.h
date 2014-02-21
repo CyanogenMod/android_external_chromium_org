@@ -65,6 +65,10 @@ class PDF {
   static Var ModalPromptForPassword(const InstanceHandle& instance,
                                     Var message);
   static bool IsOutOfProcess(const InstanceHandle& instance);
+  static void SetSelectedText(const InstanceHandle& instance,
+                              const char* selected_text);
+  static void SetLinkUnderCursor(const InstanceHandle& instance,
+                                 const char* url);
 };
 
 }  // namespace pp

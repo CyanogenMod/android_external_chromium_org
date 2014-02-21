@@ -8,7 +8,6 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
@@ -138,7 +137,14 @@ ValidityMessages::~ValidityMessages() {}
 
 void ValidityMessages::Set(
     ServerFieldType field, const ValidityMessage& message) {
-  messages_.erase(field);
+  MessageMap::iterator iter = messages_.find(field);
+  if (iter != messages_.end()) {
+    if (!iter->second.text.empty())
+      return;
+
+    messages_.erase(iter);
+  }
+
   messages_.insert(MessageMap::value_type(field, message));
 }
 

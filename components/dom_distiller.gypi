@@ -10,10 +10,10 @@
           'target_name': 'dom_distiller_webui',
           'type': 'static_library',
           'dependencies': [
+            'component_resources.gyp:component_resources',
             'component_strings.gyp:component_strings',
             'distilled_page_proto',
             'dom_distiller_core',
-            'dom_distiller_resources',
             '../base/base.gyp:base',
             '../content/content.gyp:content_browser',
             '../skia/skia.gyp:skia',
@@ -30,28 +30,11 @@
           ],
         },
         {
-          'target_name': 'dom_distiller_resources',
-          'type': 'none',
-          'variables': {
-            'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/components',
-          },
-          'actions': [
-            {
-              'action_name': 'dom_distiller_resources',
-              'variables': {
-                'grit_grd_file': 'dom_distiller_resources.grd',
-              },
-              'includes': [ '../build/grit_action.gypi' ],
-            },
-          ],
-          'includes': [ '../build/grit_target.gypi' ],
-        },
-        {
           'target_name': 'dom_distiller_core',
           'type': 'static_library',
           'dependencies': [
+            'component_resources.gyp:component_resources',
             'distilled_page_proto',
-            'dom_distiller_resources',
             '../base/base.gyp:base',
             '../skia/skia.gyp:skia',
             '../sync/sync.gyp:sync',
@@ -60,6 +43,9 @@
           ],
           'include_dirs': [
             '..',
+          ],
+          'export_dependent_settings': [
+            'distilled_page_proto',
           ],
           'sources': [
             'dom_distiller/core/article_entry.cc',
@@ -81,14 +67,37 @@
             'dom_distiller/core/dom_distiller_service.h',
             'dom_distiller/core/dom_distiller_store.cc',
             'dom_distiller/core/dom_distiller_store.h',
+            'dom_distiller/core/page_distiller.cc',
+            'dom_distiller/core/page_distiller.h',
             'dom_distiller/core/task_tracker.cc',
             'dom_distiller/core/task_tracker.h',
+          ],
+        },
+        {
+          'target_name': 'dom_distiller_test_support',
+          'type': 'static_library',
+          'dependencies': [
+            'dom_distiller_core',
+            '../sync/sync.gyp:sync',
+            '../testing/gmock.gyp:gmock',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'dom_distiller/core/dom_distiller_test_util.cc',
+            'dom_distiller/core/dom_distiller_test_util.h',
+            'dom_distiller/core/fake_db.cc',
+            'dom_distiller/core/fake_db.h',
+            'dom_distiller/core/fake_distiller.cc',
+            'dom_distiller/core/fake_distiller.h',
           ],
         },
         {
           'target_name': 'distilled_page_proto',
           'type': 'static_library',
           'sources': [
+            'dom_distiller/core/proto/distilled_article.proto',
             'dom_distiller/core/proto/distilled_page.proto',
           ],
           'variables': {
@@ -105,7 +114,10 @@
               'target_name': 'dom_distiller_content',
               'type': 'static_library',
               'dependencies': [
+                'component_resources.gyp:component_resources',
+                'component_strings.gyp:component_strings',
                 'dom_distiller_core',
+                '../net/net.gyp:net',
                 '../skia/skia.gyp:skia',
                 '../sync/sync.gyp:sync',
               ],
@@ -115,6 +127,8 @@
               'sources': [
                 'dom_distiller/content/distiller_page_web_contents.cc',
                 'dom_distiller/content/distiller_page_web_contents.h',
+                'dom_distiller/content/dom_distiller_viewer_source.cc',
+                'dom_distiller/content/dom_distiller_viewer_source.h',
               ],
             },
           ],

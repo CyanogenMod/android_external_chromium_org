@@ -13,9 +13,9 @@
 #include "chrome/browser/extensions/api/socket/socket.h"
 #include "chrome/browser/extensions/api/socket/tcp_socket.h"
 #include "chrome/browser/extensions/api/socket/udp_socket.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "net/base/host_port_pair.h"
@@ -259,7 +259,7 @@ void SocketDisconnectFunction::Work() {
     socket->Disconnect();
   else
     error_ = kSocketNotFoundError;
-  SetResult(Value::CreateNullValue());
+  SetResult(base::Value::CreateNullValue());
 }
 
 bool SocketBindFunction::Prepare() {
@@ -661,7 +661,8 @@ bool SocketGetNetworkListFunction::RunImpl() {
 
 void SocketGetNetworkListFunction::GetNetworkListOnFileThread() {
   net::NetworkInterfaceList interface_list;
-  if (GetNetworkList(&interface_list)) {
+  if (GetNetworkList(&interface_list,
+                     net::INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES)) {
     content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
         base::Bind(&SocketGetNetworkListFunction::SendResponseOnUIThread,
             this, interface_list));

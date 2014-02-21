@@ -18,6 +18,8 @@
 #include "testing/platform_test.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+using base::ASCIIToUTF16;
+
 class BookmarkEditorBaseControllerTest : public CocoaProfileTest {
  public:
   BookmarkEditorBaseController* controller_;  // weak
@@ -75,7 +77,7 @@ class BookmarkEditorBaseControllerTest : public CocoaProfileTest {
                          profile:profile()
                           parent:folder_b_0_
                              url:GURL()
-                           title:string16()
+                           title:base::string16()
                    configuration:BookmarkEditor::SHOW_TREE];
   }
 

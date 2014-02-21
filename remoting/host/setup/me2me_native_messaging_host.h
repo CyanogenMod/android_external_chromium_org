@@ -24,75 +24,81 @@ class GaiaOAuthClient;
 
 namespace remoting {
 
+const char kElevatingSwitchName[] = "elevate";
+const char kInputSwitchName[] = "input";
+const char kOutputSwitchName[] = "output";
+
 namespace protocol {
 class PairingRegistry;
 }  // namespace protocol
 
-// Implementation of the native messaging host process.
-class NativeMessagingHost : public NativeMessagingChannel::Delegate {
+// Implementation of the me2me native messaging host.
+class Me2MeNativeMessagingHost {
  public:
   typedef NativeMessagingChannel::SendMessageCallback SendMessageCallback;
 
-  NativeMessagingHost(
+  Me2MeNativeMessagingHost(
+      bool needs_elevation,
+      scoped_ptr<NativeMessagingChannel> channel,
       scoped_refptr<DaemonController> daemon_controller,
       scoped_refptr<protocol::PairingRegistry> pairing_registry,
       scoped_ptr<OAuthClient> oauth_client);
-  virtual ~NativeMessagingHost();
+  virtual ~Me2MeNativeMessagingHost();
 
-  // NativeMessagingChannel::Delegate interface.
-  virtual void SetSendMessageCallback(
-      const SendMessageCallback& send_message) OVERRIDE;
-  virtual void ProcessMessage(
-      scoped_ptr<base::DictionaryValue> message) OVERRIDE;
+  void Start(const base::Closure& quit_closure);
 
  private:
+  // Callback to process messages from the native messaging client through
+  // |channel_|.
+  void ProcessRequest(scoped_ptr<base::DictionaryValue> message);
+
   // These "Process.." methods handle specific request types. The |response|
   // dictionary is pre-filled by ProcessMessage() with the parts of the
   // response already known ("id" and "type" fields).
-  bool ProcessHello(
-      const base::DictionaryValue& message,
+  void ProcessHello(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessClearPairedClients(
-      const base::DictionaryValue& message,
+  void ProcessClearPairedClients(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessDeletePairedClient(
-      const base::DictionaryValue& message,
+  void ProcessDeletePairedClient(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetHostName(
-      const base::DictionaryValue& message,
+  void ProcessGetHostName(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetPinHash(
-      const base::DictionaryValue& message,
+  void ProcessGetPinHash(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGenerateKeyPair(
-      const base::DictionaryValue& message,
+  void ProcessGenerateKeyPair(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessUpdateDaemonConfig(
-      const base::DictionaryValue& message,
+  void ProcessUpdateDaemonConfig(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetDaemonConfig(
-      const base::DictionaryValue& message,
+  void ProcessGetDaemonConfig(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetPairedClients(
-      const base::DictionaryValue& message,
+  void ProcessGetPairedClients(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetUsageStatsConsent(
-      const base::DictionaryValue& message,
+  void ProcessGetUsageStatsConsent(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessStartDaemon(
-      const base::DictionaryValue& message,
+  void ProcessStartDaemon(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessStopDaemon(
-      const base::DictionaryValue& message,
+  void ProcessStopDaemon(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetDaemonState(
-      const base::DictionaryValue& message,
+  void ProcessGetDaemonState(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetHostClientId(
-      const base::DictionaryValue& message,
+  void ProcessGetHostClientId(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
-  bool ProcessGetCredentialsFromAuthCode(
-      const base::DictionaryValue& message,
+  void ProcessGetCredentialsFromAuthCode(
+      scoped_ptr<base::DictionaryValue> message,
       scoped_ptr<base::DictionaryValue> response);
 
   // These Send... methods get called on the DaemonController's internal thread,
@@ -114,6 +120,34 @@ class NativeMessagingHost : public NativeMessagingChannel::Delegate {
                                const std::string& user_email,
                                const std::string& refresh_token);
 
+  void OnError();
+
+  void Stop();
+
+  // Returns true if the request was successfully delegated to the elevated
+  // host and false otherwise.
+  bool DelegateToElevatedHost(scoped_ptr<base::DictionaryValue> message);
+
+#if defined(OS_WIN)
+  // Create and connect to an elevated host process if necessary.
+  // |elevated_channel_| will contain the native messaging channel to the
+  // elevated host if the function succeeds.
+  void Me2MeNativeMessagingHost::EnsureElevatedHostCreated();
+
+  // Callback to process messages from the elevated host through
+  // |elevated_channel_|.
+  void ProcessDelegateResponse(scoped_ptr<base::DictionaryValue> message);
+
+  // Native messaging channel used to communicate with the elevated host.
+  scoped_ptr<NativeMessagingChannel> elevated_channel_;
+#endif  // defined(OS_WIN)
+
+  bool needs_elevation_;
+  base::Closure quit_closure_;
+
+  // Native messaging channel used to communicate with the native message
+  // client.
+  scoped_ptr<NativeMessagingChannel> channel_;
   scoped_refptr<DaemonController> daemon_controller_;
 
   // Used to load and update the paired clients for this host.
@@ -124,16 +158,15 @@ class NativeMessagingHost : public NativeMessagingChannel::Delegate {
 
   base::ThreadChecker thread_checker_;
 
-  SendMessageCallback send_message_;
-  base::WeakPtr<NativeMessagingHost> weak_ptr_;
-  base::WeakPtrFactory<NativeMessagingHost> weak_factory_;
+  base::WeakPtr<Me2MeNativeMessagingHost> weak_ptr_;
+  base::WeakPtrFactory<Me2MeNativeMessagingHost> weak_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(NativeMessagingHost);
+  DISALLOW_COPY_AND_ASSIGN(Me2MeNativeMessagingHost);
 };
 
-// Creates a NativeMessagingHost instance, attaches it to stdin/stdout and runs
-// the message loop until NativeMessagingHost signals shutdown.
-int NativeMessagingHostMain();
+// Creates a Me2MeNativeMessagingHost instance, attaches it to stdin/stdout and
+// runs the message loop until Me2MeNativeMessagingHost signals shutdown.
+int Me2MeNativeMessagingHostMain();
 
 }  // namespace remoting
 

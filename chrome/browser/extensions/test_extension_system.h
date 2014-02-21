@@ -5,9 +5,11 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_TEST_EXTENSION_SYSTEM_H_
 #define CHROME_BROWSER_EXTENSIONS_TEST_EXTENSION_SYSTEM_H_
 
-#include "chrome/browser/extensions/extension_system.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/one_shot_event.h"
 
 class CommandLine;
+class Profile;
 class TestingValueStore;
 
 namespace base {
@@ -21,6 +23,8 @@ class BrowserContext;
 
 namespace extensions {
 class ExtensionPrefs;
+class RuntimeData;
+class StandardManagementPolicyProvider;
 
 // Test ExtensionSystem, for use with TestingProfile.
 class TestExtensionSystem : public ExtensionSystem {
@@ -56,6 +60,7 @@ class TestExtensionSystem : public ExtensionSystem {
   virtual void InitForRegularProfile(bool extensions_enabled) OVERRIDE {}
   void SetExtensionService(ExtensionService* service);
   virtual ExtensionService* extension_service() OVERRIDE;
+  virtual RuntimeData* runtime_data() OVERRIDE;
   virtual ManagementPolicy* management_policy() OVERRIDE;
   virtual UserScriptMaster* user_script_master() OVERRIDE;
   virtual ProcessManager* process_manager() OVERRIDE;
@@ -67,9 +72,10 @@ class TestExtensionSystem : public ExtensionSystem {
   virtual EventRouter* event_router() OVERRIDE;
   virtual ExtensionWarningService* warning_service() OVERRIDE;
   virtual Blacklist* blacklist() OVERRIDE;
-  virtual const OneShotEvent& ready() const OVERRIDE;
   virtual ErrorConsole* error_console() OVERRIDE;
   virtual InstallVerifier* install_verifier() OVERRIDE;
+  virtual QuotaService* quota_service() OVERRIDE;
+  virtual const OneShotEvent& ready() const OVERRIDE;
 
   void SetReady() {
     LOG(INFO) << "SetReady()";
@@ -90,11 +96,13 @@ class TestExtensionSystem : public ExtensionSystem {
   scoped_ptr<StandardManagementPolicyProvider>
       standard_management_policy_provider_;
   scoped_ptr<ManagementPolicy> management_policy_;
+  scoped_ptr<RuntimeData> runtime_data_;
   scoped_ptr<ExtensionService> extension_service_;
   scoped_ptr<ProcessManager> process_manager_;
   scoped_refptr<InfoMap> info_map_;
   scoped_ptr<ErrorConsole> error_console_;
   scoped_ptr<InstallVerifier> install_verifier_;
+  scoped_ptr<QuotaService> quota_service_;
   OneShotEvent ready_;
 };
 

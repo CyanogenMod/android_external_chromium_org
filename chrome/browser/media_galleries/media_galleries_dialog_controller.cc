@@ -10,16 +10,17 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_galleries_histograms.h"
+#include "chrome/browser/media_galleries/media_gallery_context_menu.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/storage_monitor/storage_info.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission.h"
+#include "components/storage_monitor/storage_info.h"
+#include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
@@ -47,50 +48,17 @@ bool GalleriesVectorComparator(
 
 }  // namespace
 
-class GalleryContextMenuModel : public ui::SimpleMenuModel::Delegate {
- public:
-  explicit GalleryContextMenuModel(MediaGalleriesDialogController* controller)
-      : controller_(controller), id_(kInvalidMediaGalleryPrefId) {}
-  virtual ~GalleryContextMenuModel() {}
-
-  void set_media_gallery_pref_id(MediaGalleryPrefId id) {
-    id_ = id;
-  }
-
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
-    return false;
-  }
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
-    return true;
-  }
-  virtual bool IsCommandIdVisible(int command_id) const OVERRIDE {
-    return true;
-  }
-
-  virtual bool GetAcceleratorForCommandId(
-      int command_id, ui::Accelerator* accelerator) OVERRIDE {
-    return false;
-  }
-
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
-    controller_->DidForgetGallery(id_);
-  }
-
- private:
-  MediaGalleriesDialogController* controller_;
-  MediaGalleryPrefId id_;
-};
-
 MediaGalleriesDialogController::MediaGalleriesDialogController(
     content::WebContents* web_contents,
     const Extension& extension,
     const base::Closure& on_finish)
       : web_contents_(web_contents),
         extension_(&extension),
-        on_finish_(on_finish) {
-  preferences_ =
-      g_browser_process->media_file_system_registry()->GetPreferences(
-          GetProfile());
+        on_finish_(on_finish),
+        preferences_(
+            g_browser_process->media_file_system_registry()->GetPreferences(
+                GetProfile())),
+        create_dialog_callback_(base::Bind(&MediaGalleriesDialog::Create)) {
   // Passing unretained pointer is safe, since the dialog controller
   // is self-deleting, and so won't be deleted until it can be shown
   // and then closed.
@@ -98,44 +66,57 @@ MediaGalleriesDialogController::MediaGalleriesDialogController(
       base::Bind(&MediaGalleriesDialogController::OnPreferencesInitialized,
                  base::Unretained(this)));
 
-  gallery_menu_model_.reset(new GalleryContextMenuModel(this));
-  ui::SimpleMenuModel* menu_model =
-      new ui::SimpleMenuModel(gallery_menu_model_.get());
-  menu_model->AddItem(
-      1, l10n_util::GetStringUTF16(IDS_MEDIA_GALLERIES_DIALOG_DELETE));
-  context_menu_model_.reset(menu_model);
+  // Unretained is safe because |this| owns |context_menu_|.
+  context_menu_.reset(
+      new MediaGalleryContextMenu(
+          base::Bind(&MediaGalleriesDialogController::DidForgetGallery,
+                     base::Unretained(this))));
 }
 
 void MediaGalleriesDialogController::OnPreferencesInitialized() {
-  InitializePermissions();
+  if (StorageMonitor::GetInstance())
+    StorageMonitor::GetInstance()->AddObserver(this);
 
-  dialog_.reset(MediaGalleriesDialog::Create(this));
+  // |preferences_| may be NULL in tests.
+  if (preferences_) {
+    preferences_->AddGalleryChangeObserver(this);
+    InitializePermissions();
+  }
 
-  StorageMonitor::GetInstance()->AddObserver(this);
-
-  preferences_->AddGalleryChangeObserver(this);
+  dialog_.reset(create_dialog_callback_.Run(this));
 }
 
 MediaGalleriesDialogController::MediaGalleriesDialogController(
-    const extensions::Extension& extension)
+    const extensions::Extension& extension,
+    MediaGalleriesPreferences* preferences,
+    const CreateDialogCallback& create_dialog_callback,
+    const base::Closure& on_finish)
     : web_contents_(NULL),
       extension_(&extension),
-      preferences_(NULL) {}
+      on_finish_(on_finish),
+      preferences_(preferences),
+      create_dialog_callback_(create_dialog_callback) {
+  OnPreferencesInitialized();
+}
 
 MediaGalleriesDialogController::~MediaGalleriesDialogController() {
   if (StorageMonitor::GetInstance())
     StorageMonitor::GetInstance()->RemoveObserver(this);
 
+  // |preferences_| may be NULL in tests.
+  if (preferences_)
+    preferences_->RemoveGalleryChangeObserver(this);
+
   if (select_folder_dialog_.get())
     select_folder_dialog_->ListenerDestroyed();
 }
 
-string16 MediaGalleriesDialogController::GetHeader() const {
+base::string16 MediaGalleriesDialogController::GetHeader() const {
   return l10n_util::GetStringFUTF16(IDS_MEDIA_GALLERIES_DIALOG_HEADER,
-                                    UTF8ToUTF16(extension_->name()));
+                                    base::UTF8ToUTF16(extension_->name()));
 }
 
-string16 MediaGalleriesDialogController::GetSubtext() const {
+base::string16 MediaGalleriesDialogController::GetSubtext() const {
   extensions::MediaGalleriesPermission::CheckParam copy_to_param(
       extensions::MediaGalleriesPermission::kCopyToPermission);
   extensions::MediaGalleriesPermission::CheckParam delete_param(
@@ -155,10 +136,11 @@ string16 MediaGalleriesDialogController::GetSubtext() const {
   else
     id = IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_ONLY;
 
-  return l10n_util::GetStringFUTF16(id, UTF8ToUTF16(extension_->name()));
+  return l10n_util::GetStringFUTF16(id, base::UTF8ToUTF16(extension_->name()));
 }
 
-string16 MediaGalleriesDialogController::GetUnattachedLocationsHeader() const {
+base::string16 MediaGalleriesDialogController::GetUnattachedLocationsHeader()
+    const {
   return l10n_util::GetStringUTF16(IDS_MEDIA_GALLERIES_UNATTACHED_LOCATIONS);
 }
 
@@ -185,13 +167,16 @@ void MediaGalleriesDialogController::FillPermissions(
     const {
   for (KnownGalleryPermissions::const_iterator iter = known_galleries_.begin();
        iter != known_galleries_.end(); ++iter) {
-    if (attached == iter->second.pref_info.IsGalleryAvailable())
+    if (!ContainsKey(forgotten_gallery_ids_, iter->first) &&
+        attached == iter->second.pref_info.IsGalleryAvailable()) {
       permissions->push_back(iter->second);
+    }
   }
   for (GalleryPermissionsVector::const_iterator iter = new_galleries_.begin();
        iter != new_galleries_.end(); ++iter) {
-    if (attached == iter->pref_info.IsGalleryAvailable())
+    if (attached == iter->pref_info.IsGalleryAvailable()) {
       permissions->push_back(*iter);
+    }
   }
 
   std::sort(permissions->begin(), permissions->end(),
@@ -269,21 +254,25 @@ void MediaGalleriesDialogController::DidToggleNewGallery(
 
 void MediaGalleriesDialogController::DidForgetGallery(
     MediaGalleryPrefId pref_id) {
-  DCHECK(preferences_);
-  preferences_->ForgetGalleryById(pref_id);
+  // TODO(scr): remove from new_galleries_ if it's in there.  Should
+  // new_galleries be a set? Why don't new_galleries allow context clicking?
+  DCHECK(ContainsKey(known_galleries_, pref_id));
+  forgotten_gallery_ids_.insert(pref_id);
+  dialog_->UpdateGalleries();
 }
 
 void MediaGalleriesDialogController::DialogFinished(bool accepted) {
   // The dialog has finished, so there is no need to watch for more updates
-  // from |preferences_|. Do this here and not in the dtor since this is the
-  // only non-test code path that deletes |this|. The test ctor never adds
-  // this observer in the first place.
-  preferences_->RemoveGalleryChangeObserver(this);
+  // from |preferences_|.
+  // |preferences_| may be NULL in tests.
+  if (preferences_)
+    preferences_->RemoveGalleryChangeObserver(this);
 
   if (accepted)
     SavePermissions();
 
   on_finish_.Run();
+
   delete this;
 }
 
@@ -301,12 +290,14 @@ void MediaGalleriesDialogController::FileSelected(const base::FilePath& path,
 
   // Try to find it in the prefs.
   MediaGalleryPrefInfo gallery;
+  DCHECK(preferences_);
   bool gallery_exists = preferences_->LookUpGalleryByPath(path, &gallery);
-  if (gallery_exists && gallery.type != MediaGalleryPrefInfo::kBlackListed) {
+  if (gallery_exists && !gallery.IsBlackListedType()) {
     // The prefs are in sync with |known_galleries_|, so it should exist in
     // |known_galleries_| as well. User selecting a known gallery effectively
     // just sets the gallery to permitted.
     DCHECK(ContainsKey(known_galleries_, gallery.pref_id));
+    forgotten_gallery_ids_.erase(gallery.pref_id);
     dialog_->UpdateGalleries();
     return;
   }
@@ -371,6 +362,7 @@ void MediaGalleriesDialogController::OnGalleryRemoved(
 void MediaGalleriesDialogController::OnGalleryInfoUpdated(
     MediaGalleriesPreferences* prefs,
     MediaGalleryPrefId pref_id) {
+  DCHECK(preferences_);
   const MediaGalleriesPrefInfoMap& pref_galleries =
       preferences_->known_galleries();
   MediaGalleriesPrefInfoMap::const_iterator pref_it =
@@ -383,14 +375,14 @@ void MediaGalleriesDialogController::OnGalleryInfoUpdated(
 
 void MediaGalleriesDialogController::InitializePermissions() {
   known_galleries_.clear();
+  DCHECK(preferences_);
   const MediaGalleriesPrefInfoMap& galleries = preferences_->known_galleries();
   for (MediaGalleriesPrefInfoMap::const_iterator iter = galleries.begin();
        iter != galleries.end();
        ++iter) {
     const MediaGalleryPrefInfo& gallery = iter->second;
-    if (gallery.type == MediaGalleryPrefInfo::kBlackListed) {
+    if (gallery.IsBlackListedType())
       continue;
-    }
 
     known_galleries_[iter->first] = GalleryPermission(gallery, false);
   }
@@ -408,16 +400,24 @@ void MediaGalleriesDialogController::InitializePermissions() {
 }
 
 void MediaGalleriesDialogController::SavePermissions() {
+  DCHECK(preferences_);
   media_galleries::UsageCount(media_galleries::SAVE_DIALOG);
   for (KnownGalleryPermissions::const_iterator iter = known_galleries_.begin();
        iter != known_galleries_.end(); ++iter) {
-    bool changed = preferences_->SetGalleryPermissionForExtension(
-        *extension_, iter->first, iter->second.allowed);
-    if (changed) {
-      if (iter->second.allowed)
-        media_galleries::UsageCount(media_galleries::DIALOG_PERMISSION_ADDED);
-      else
-        media_galleries::UsageCount(media_galleries::DIALOG_PERMISSION_REMOVED);
+    if (ContainsKey(forgotten_gallery_ids_, iter->first)) {
+      preferences_->ForgetGalleryById(iter->first);
+    } else {
+      bool changed = preferences_->SetGalleryPermissionForExtension(
+          *extension_, iter->first, iter->second.allowed);
+      if (changed) {
+        if (iter->second.allowed) {
+          media_galleries::UsageCount(
+              media_galleries::DIALOG_PERMISSION_ADDED);
+        } else {
+          media_galleries::UsageCount(
+              media_galleries::DIALOG_PERMISSION_REMOVED);
+        }
+      }
     }
   }
 
@@ -431,9 +431,9 @@ void MediaGalleriesDialogController::SavePermissions() {
     // TODO(gbillock): Should be adding volume metadata during FileSelected.
     const MediaGalleryPrefInfo& gallery = iter->pref_info;
     MediaGalleryPrefId id = preferences_->AddGallery(
-        gallery.device_id, gallery.path, true,
+        gallery.device_id, gallery.path, MediaGalleryPrefInfo::kUserAdded,
         gallery.volume_label, gallery.vendor_name, gallery.model_name,
-        gallery.total_size_in_bytes, gallery.last_attach_time);
+        gallery.total_size_in_bytes, gallery.last_attach_time, 0, 0, 0);
     preferences_->SetGalleryPermissionForExtension(*extension_, id, true);
   }
 }
@@ -472,10 +472,10 @@ void MediaGalleriesDialogController::UpdateGalleriesOnDeviceEvent(
   dialog_->UpdateGalleries();
 }
 
-ui::MenuModel* MediaGalleriesDialogController::GetContextMenuModel(
+ui::MenuModel* MediaGalleriesDialogController::GetContextMenu(
     MediaGalleryPrefId id) {
-  gallery_menu_model_->set_media_gallery_pref_id(id);
-  return context_menu_model_.get();
+  context_menu_->set_pref_id(id);
+  return context_menu_.get();
 }
 
 Profile* MediaGalleriesDialogController::GetProfile() {

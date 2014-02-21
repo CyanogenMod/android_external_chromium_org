@@ -13,7 +13,6 @@
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
-#include "gpu/command_buffer/service/stream_texture_manager.h"
 
 namespace gpu {
 namespace gles2 {
@@ -117,7 +116,6 @@ Texture::Texture(GLuint service_id)
       npot_(false),
       has_been_bound_(false),
       framebuffer_attachment_count_(0),
-      stream_texture_(false),
       immutable_(false),
       has_images_(false),
       estimated_size_(0),
@@ -519,7 +517,6 @@ bool Texture::ValidForTexture(
     GLint yoffset,
     GLsizei width,
     GLsizei height,
-    GLenum format,
     GLenum type) const {
   size_t face_index = GLTargetToFaceIndex(target);
   if (level >= 0 && face_index < level_infos_.size() &&
@@ -533,7 +530,6 @@ bool Texture::ValidForTexture(
            yoffset >= 0 &&
            right <= info.width &&
            top <= info.height &&
-           format == info.internal_format &&
            type == info.type;
   }
   return false;
@@ -827,8 +823,7 @@ TextureRef::TextureRef(TextureManager* manager,
                        Texture* texture)
     : manager_(manager),
       texture_(texture),
-      client_id_(client_id),
-      is_stream_texture_owner_(false) {
+      client_id_(client_id) {
   DCHECK(manager_);
   DCHECK(texture_);
   texture_->AddTextureRef(this);
@@ -857,7 +852,6 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
       feature_info_(feature_info),
       framebuffer_manager_(NULL),
-      stream_texture_manager_(NULL),
       max_texture_size_(max_texture_size),
       max_cube_map_texture_size_(max_cube_map_texture_size),
       max_levels_(ComputeMipMapCount(GL_TEXTURE_2D,
@@ -1004,19 +998,6 @@ void TextureManager::SetTarget(TextureRef* ref, GLenum target) {
   DCHECK(ref);
   ref->texture()
       ->SetTarget(feature_info_.get(), target, MaxLevelsForTarget(target));
-}
-
-void TextureManager::SetStreamTexture(TextureRef* ref, bool stream_texture) {
-  DCHECK(ref);
-  // Only the owner can mark as non-stream texture.
-  DCHECK_EQ(stream_texture, !ref->is_stream_texture_owner_);
-  ref->texture()->SetStreamTexture(stream_texture);
-  ref->set_is_stream_texture_owner(stream_texture);
-}
-
-bool TextureManager::IsStreamTextureOwner(TextureRef* ref) {
-  DCHECK(ref);
-  return ref->is_stream_texture_owner();
 }
 
 void TextureManager::SetLevelCleared(TextureRef* ref,
@@ -1167,10 +1148,6 @@ void TextureManager::StopTracking(TextureRef* ref) {
                     OnTextureRefDestroying(ref));
 
   Texture* texture = ref->texture();
-  if (ref->is_stream_texture_owner_ && stream_texture_manager_) {
-    DCHECK(texture->IsStreamTexture());
-    stream_texture_manager_->DestroyStreamTexture(texture->service_id());
-  }
 
   --texture_count_;
   if (texture->HasImages()) {
@@ -1280,20 +1257,10 @@ void TextureManager::IncFramebufferStateChangeCount() {
     framebuffer_manager_->IncFramebufferStateChangeCount();
 }
 
-bool TextureManager::ValidateTextureParameters(
-    ErrorState* error_state, const char* function_name,
-    GLenum target, GLenum format, GLenum type, GLint level) {
+bool TextureManager::ValidateFormatAndTypeCombination(
+    ErrorState* error_state, const char* function_name, GLenum format,
+    GLenum type) {
   if (!feature_info_->GetTextureFormatValidator(format).IsValid(type)) {
-      ERRORSTATE_SET_GL_ERROR(
-          error_state, GL_INVALID_OPERATION, function_name,
-          (std::string("invalid type ") +
-           GLES2Util::GetStringEnum(type) + " for format " +
-           GLES2Util::GetStringEnum(format)).c_str());
-      return false;
-  }
-
-  uint32 channels = GLES2Util::GetChannelsForFormat(format);
-  if ((channels & (GLES2Util::kDepth | GLES2Util::kStencil)) != 0 && level) {
     ERRORSTATE_SET_GL_ERROR(
         error_state, GL_INVALID_OPERATION, function_name,
         (std::string("invalid type ") +
@@ -1302,6 +1269,40 @@ bool TextureManager::ValidateTextureParameters(
     return false;
   }
   return true;
+}
+
+bool TextureManager::ValidateTextureParameters(
+    ErrorState* error_state, const char* function_name,
+    GLenum format, GLenum type, GLenum internal_format, GLint level) {
+  const Validators* validators = feature_info_->validators();
+  if (!validators->texture_format.IsValid(format)) {
+    ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
+        error_state, function_name, format, "format");
+    return false;
+  }
+  if (!validators->pixel_type.IsValid(type)) {
+    ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
+        error_state, function_name, type, "type");
+    return false;
+  }
+  if (format != internal_format &&
+      !((internal_format == GL_RGBA32F && format == GL_RGBA) ||
+        (internal_format == GL_RGB32F && format == GL_RGB))) {
+    ERRORSTATE_SET_GL_ERROR(
+        error_state, GL_INVALID_OPERATION, function_name,
+        "format != internalformat");
+    return false;
+  }
+  uint32 channels = GLES2Util::GetChannelsForFormat(format);
+  if ((channels & (GLES2Util::kDepth | GLES2Util::kStencil)) != 0 && level) {
+    ERRORSTATE_SET_GL_ERROR(
+        error_state, GL_INVALID_OPERATION, function_name,
+        (std::string("invalid format ") + GLES2Util::GetStringEnum(format) +
+         " for level != 0").c_str());
+    return false;
+  }
+  return ValidateFormatAndTypeCombination(error_state, function_name,
+      format, type);
 }
 
 // Gets the texture id for a given target.
@@ -1357,31 +1358,15 @@ bool TextureManager::ValidateTexImage2D(
         error_state, function_name, args.target, "target");
     return false;
   }
-  if (!validators->texture_format.IsValid(args.internal_format)) {
+  if (!validators->texture_internal_format.IsValid(args.internal_format)) {
     ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
         error_state, function_name, args.internal_format,
-        "internal_format");
-    return false;
-  }
-  if (!validators->texture_format.IsValid(args.format)) {
-    ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
-        error_state, function_name, args.format, "format");
-    return false;
-  }
-  if (!validators->pixel_type.IsValid(args.type)) {
-    ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(
-        error_state, function_name, args.type, "type");
-    return false;
-  }
-  if (args.format != args.internal_format) {
-    ERRORSTATE_SET_GL_ERROR(
-        error_state, GL_INVALID_OPERATION, function_name,
-        "format != internalFormat");
+        "internalformat");
     return false;
   }
   if (!ValidateTextureParameters(
-      error_state, function_name, args.target, args.format, args.type,
-      args.level)) {
+      error_state, function_name, args.format, args.type,
+      args.internal_format, args.level)) {
     return false;
   }
   if (!ValidForTarget(args.target, args.level, args.width, args.height, 1) ||
@@ -1417,7 +1402,7 @@ bool TextureManager::ValidateTexImage2D(
   // They both use the same MemoryTracker, and this call just re-routes
   // to it.
   if (!memory_tracker_managed_->EnsureGPUMemoryAvailable(args.pixels_size)) {
-    ERRORSTATE_SET_GL_ERROR(error_state, GL_OUT_OF_MEMORY, "glTexImage2D",
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_OUT_OF_MEMORY, function_name,
                             "out of memory");
     return false;
   }

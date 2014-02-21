@@ -61,6 +61,7 @@ extern const base::FilePath::CharType kExtensionActivityLogFilename[];
 extern const base::FilePath::CharType kExtensionsCookieFilename[];
 extern const base::FilePath::CharType kFaviconsFilename[];
 extern const base::FilePath::CharType kFirstRunSentinel[];
+extern const base::FilePath::CharType kGCMStoreDirname[];
 extern const base::FilePath::CharType kHistoryFilename[];
 extern const base::FilePath::CharType kJumpListIconDirname[];
 extern const base::FilePath::CharType kLocalStateFilename[];
@@ -153,6 +154,11 @@ extern const char kTestUserProfileDir[];
 
 // Used to identify the application to the system AV function in Windows.
 extern const char kApplicationClientIDStringForAVScanning[];
+
+#if defined(OS_ANDROID)
+// The largest reasonable length we'd assume for a meta tag attribute.
+extern const size_t kMaxMetaTagAttributeLength;
+#endif
 
 }  // namespace chrome
 

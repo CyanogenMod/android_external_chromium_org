@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "chrome/browser/media_galleries/linux/snapshot_file_details.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
+#include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -28,9 +28,9 @@ uint32 WriteDataChunkIntoSnapshotFileOnFileThread(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   int bytes_written =
       file_util::AppendToFile(snapshot_file_path, data.data(),
-                              base::checked_numeric_cast<int>(data.size()));
+                              base::checked_cast<int>(data.size()));
   return (static_cast<int>(data.size()) == bytes_written) ?
-      base::checked_numeric_cast<uint32>(bytes_written) : 0;
+      base::checked_cast<uint32>(bytes_written) : 0;
 }
 
 }  // namespace
@@ -47,7 +47,7 @@ MTPReadFileWorker::~MTPReadFileWorker() {
 
 void MTPReadFileWorker::WriteDataIntoSnapshotFile(
     const SnapshotRequestInfo& request_info,
-    const base::PlatformFileInfo& snapshot_file_info) {
+    const base::File::Info& snapshot_file_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   ReadDataChunkFromDeviceFile(
       make_scoped_ptr(new SnapshotFileDetails(request_info,
@@ -128,7 +128,7 @@ void MTPReadFileWorker::OnDidWriteIntoSnapshotFile(
         content::BrowserThread::IO,
         FROM_HERE,
         base::Bind(snapshot_file_details->error_callback(),
-                   base::PLATFORM_FILE_ERROR_FAILED));
+                   base::File::FILE_ERROR_FAILED));
     return;
   }
   content::BrowserThread::PostTask(

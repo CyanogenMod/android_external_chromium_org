@@ -21,13 +21,11 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
-const size_t IntranetRedirectDetector::kNumCharsInHostnames = 10;
-
 IntranetRedirectDetector::IntranetRedirectDetector()
     : redirect_origin_(g_browser_process->local_state()->GetString(
           prefs::kLastKnownIntranetRedirectOrigin)),
-      weak_factory_(this),
-      in_sleep_(true) {
+      in_sleep_(true),
+      weak_ptr_factory_(this) {
   // Because this function can be called during startup, when kicking off a URL
   // fetch can eat up 20 ms of time, we delay seven seconds, which is hopefully
   // long enough to be after startup, but still get results back quickly.
@@ -37,7 +35,7 @@ IntranetRedirectDetector::IntranetRedirectDetector()
   static const int kStartFetchDelaySeconds = 7;
   base::MessageLoop::current()->PostDelayedTask(FROM_HERE,
       base::Bind(&IntranetRedirectDetector::FinishSleep,
-                 weak_factory_.GetWeakPtr()),
+                 weak_ptr_factory_.GetWeakPtr()),
       base::TimeDelta::FromSeconds(kStartFetchDelaySeconds));
 
   net::NetworkChangeNotifier::AddIPAddressObserver(this);
@@ -68,10 +66,8 @@ void IntranetRedirectDetector::FinishSleep() {
   STLDeleteElements(&fetchers_);
   resulting_origins_.clear();
 
-  // The detector is not needed in Chrome Frame since we have no omnibox there.
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kDisableBackgroundNetworking) ||
-      cmd_line->HasSwitch(switches::kChromeFrame))
+  if (cmd_line->HasSwitch(switches::kDisableBackgroundNetworking))
     return;
 
   DCHECK(fetchers_.empty() && resulting_origins_.empty());
@@ -79,7 +75,9 @@ void IntranetRedirectDetector::FinishSleep() {
   // Start three fetchers on random hostnames.
   for (size_t i = 0; i < 3; ++i) {
     std::string url_string("http://");
-    for (size_t j = 0; j < kNumCharsInHostnames; ++j)
+    // We generate a random hostname with between 7 and 15 characters.
+    const int num_chars = base::RandInt(7, 15);
+    for (int j = 0; j < num_chars; ++j)
       url_string += ('a' + base::RandInt(0, 'z' - 'a'));
     GURL random_url(url_string + '/');
     net::URLFetcher* fetcher = net::URLFetcher::Create(
@@ -161,29 +159,6 @@ void IntranetRedirectDetector::OnIPAddressChanged() {
   static const int kNetworkSwitchDelayMS = 1000;
   base::MessageLoop::current()->PostDelayedTask(FROM_HERE,
       base::Bind(&IntranetRedirectDetector::FinishSleep,
-                 weak_factory_.GetWeakPtr()),
+                 weak_ptr_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(kNetworkSwitchDelayMS));
-}
-
-IntranetRedirectHostResolverProc::IntranetRedirectHostResolverProc(
-    net::HostResolverProc* previous)
-    : net::HostResolverProc(previous) {
-}
-
-int IntranetRedirectHostResolverProc::Resolve(
-    const std::string& host,
-    net::AddressFamily address_family,
-    net::HostResolverFlags host_resolver_flags,
-    net::AddressList* addrlist,
-    int* os_error) {
-  // We'd love to just ask the IntranetRedirectDetector, but we may not be on
-  // the same thread.  So just use the heuristic that any all-lowercase a-z
-  // hostname with the right number of characters is likely from the detector
-  // (and thus should be blocked).
-  return ((host.length() == IntranetRedirectDetector::kNumCharsInHostnames) &&
-      (host.find_first_not_of("abcdefghijklmnopqrstuvwxyz") ==
-          std::string::npos)) ?
-      net::ERR_NAME_NOT_RESOLVED :
-      ResolveUsingPrevious(host, address_family, host_resolver_flags, addrlist,
-                           os_error);
 }

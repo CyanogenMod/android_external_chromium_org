@@ -29,7 +29,7 @@ PaintedScrollbarLayerImpl::PaintedScrollbarLayerImpl(
     LayerTreeImpl* tree_impl,
     int id,
     ScrollbarOrientation orientation)
-    : ScrollbarLayerImplBase(tree_impl, id, orientation, false),
+    : ScrollbarLayerImplBase(tree_impl, id, orientation, false, false),
       track_ui_resource_id_(0),
       thumb_ui_resource_id_(0),
       thumb_thickness_(0),
@@ -167,6 +167,10 @@ void PaintedScrollbarLayerImpl::SetTrackLength(int track_length) {
 
 float PaintedScrollbarLayerImpl::TrackLength() const {
   return track_length_ + (orientation() == VERTICAL ? vertical_adjust() : 0);
+}
+
+bool PaintedScrollbarLayerImpl::IsThumbResizable() const {
+  return false;
 }
 
 const char* PaintedScrollbarLayerImpl::LayerTypeAsString() const {

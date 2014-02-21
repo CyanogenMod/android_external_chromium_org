@@ -15,6 +15,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/point_conversions.h"
 
 namespace gfx {
 class Transform;
@@ -124,6 +125,7 @@ class EVENTS_EXPORT Event {
       case ET_GESTURE_LONG_TAP:
       case ET_GESTURE_MULTIFINGER_SWIPE:
       case ET_GESTURE_SHOW_PRESS:
+      case ET_GESTURE_WIN8_EDGE_SWIPE:
         // When adding a gesture event which is paired with an event which
         // occurs earlier, add the event to |IsEndingEvent|.
         return true;
@@ -213,8 +215,6 @@ class EVENTS_EXPORT Event {
 
   void set_name(const std::string& name) { name_ = name; }
 
-  void InitLatencyInfo();
-
  private:
   friend class EventTestApi;
 
@@ -245,14 +245,19 @@ class EVENTS_EXPORT LocatedEvent : public Event {
  public:
   virtual ~LocatedEvent();
 
-  int x() const { return location_.x(); }
-  int y() const { return location_.y(); }
-  void set_location(const gfx::Point& location) { location_ = location; }
-  gfx::Point location() const { return location_; }
-  void set_root_location(const gfx::Point& root_location) {
+  float x() const { return location_.x(); }
+  float y() const { return location_.y(); }
+  void set_location(const gfx::PointF& location) { location_ = location; }
+  // TODO(tdresser): Always return floating point location. See
+  // crbug.com/337824.
+  gfx::Point location() const { return gfx::ToFlooredPoint(location_); }
+  gfx::PointF location_f() const { return location_; }
+  void set_root_location(const gfx::PointF& root_location) {
     root_location_ = root_location;
   }
-  gfx::Point root_location() const { return root_location_; }
+  gfx::Point root_location() const {
+    return gfx::ToFlooredPoint(root_location_);
+  }
 
   // Transform the locations using |inverted_root_transform|.
   // This is applied to both |location_| and |root_location_|.
@@ -260,8 +265,14 @@ class EVENTS_EXPORT LocatedEvent : public Event {
       const gfx::Transform& inverted_root_transform);
 
   template <class T> void ConvertLocationToTarget(T* source, T* target) {
-    if (target && target != source)
-      T::ConvertPointToTarget(source, target, &location_);
+    if (!target || target == source)
+      return;
+    // TODO(tdresser): Rewrite ConvertPointToTarget to use PointF. See
+    // crbug.com/337824.
+    gfx::Point offset = gfx::ToFlooredPoint(location_);
+    T::ConvertPointToTarget(source, target, &offset);
+    gfx::Vector2d diff = gfx::ToFlooredPoint(location_) - offset;
+    location_= location_ - diff;
   }
 
  protected:
@@ -281,16 +292,16 @@ class EVENTS_EXPORT LocatedEvent : public Event {
 
   // Used for synthetic events in testing.
   LocatedEvent(EventType type,
-               const gfx::Point& location,
-               const gfx::Point& root_location,
+               const gfx::PointF& location,
+               const gfx::PointF& root_location,
                base::TimeDelta time_stamp,
                int flags);
 
-  gfx::Point location_;
+  gfx::PointF location_;
 
   // |location_| multiplied by an optional transformation matrix for
   // rotations, animations and skews.
-  gfx::Point root_location_;
+  gfx::PointF root_location_;
 };
 
 class EVENTS_EXPORT MouseEvent : public LocatedEvent {
@@ -321,9 +332,10 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
 
   // Used for synthetic events in testing and by the gesture recognizer.
   MouseEvent(EventType type,
-             const gfx::Point& location,
-             const gfx::Point& root_location,
-             int flags);
+             const gfx::PointF& location,
+             const gfx::PointF& root_location,
+             int flags,
+             int changed_button_flags);
 
   // Conveniences to quickly test what button is down
   bool IsOnlyLeftMouseButton() const {
@@ -438,16 +450,17 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
         radius_x_(model.radius_x_),
         radius_y_(model.radius_y_),
         rotation_angle_(model.rotation_angle_),
-        force_(model.force_) {
+        force_(model.force_),
+        source_device_id_(model.source_device_id_) {
   }
 
   TouchEvent(EventType type,
-             const gfx::Point& root_location,
+             const gfx::PointF& location,
              int touch_id,
              base::TimeDelta time_stamp);
 
   TouchEvent(EventType type,
-             const gfx::Point& location,
+             const gfx::PointF& location,
              int flags,
              int touch_id,
              base::TimeDelta timestamp,
@@ -463,6 +476,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   float radius_y() const { return radius_y_; }
   float rotation_angle() const { return rotation_angle_; }
   float force() const { return force_; }
+  int source_device_id() const { return source_device_id_; }
 
   // Relocate the touch-point to a new |origin|.
   // This is useful when touch event is in X Root Window coordinates,
@@ -472,6 +486,9 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   // Used for unit tests.
   void set_radius_x(const float r) { radius_x_ = r; }
   void set_radius_y(const float r) { radius_y_ = r; }
+  void set_source_device_id(int source_device_id) {
+    source_device_id_ = source_device_id;
+  }
 
   // Overridden from LocatedEvent.
   virtual void UpdateForRootTransform(
@@ -505,6 +522,9 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
 
   // Force (pressure) of the touch. Normalized to be [0, 1]. Default to be 0.0.
   float force_;
+
+  // The device id of the screen the event came from. Default to be -1.
+  int source_device_id_;
 };
 
 class EVENTS_EXPORT KeyEvent : public Event {
@@ -547,6 +567,10 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // in http://crbug.com/127142#c8, the normalization is necessary.
   void NormalizeFlags();
 
+ protected:
+  // This allows a subclass TranslatedKeyEvent to be a non character event.
+  void set_is_char(bool is_char) { is_char_ = is_char; }
+
  private:
   KeyboardCode key_code_;
 
@@ -577,6 +601,8 @@ class EVENTS_EXPORT TranslatedKeyEvent : public KeyEvent {
   // Used for synthetic events such as a VKEY_PROCESSKEY key event.
   TranslatedKeyEvent(bool is_press, KeyboardCode key_code, int flags);
 
+  explicit TranslatedKeyEvent(const KeyEvent& key_event);
+
   // Changes the type() of the object from ET_TRANSLATED_KEY_* to ET_KEY_* so
   // that RenderWidgetHostViewAura and NativeWidgetAura could handle the event.
   void ConvertToKeyEvent();
@@ -602,7 +628,7 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
 
   // Used for tests.
   ScrollEvent(EventType type,
-              const gfx::Point& location,
+              const gfx::PointF& location,
               base::TimeDelta time_stamp,
               int flags,
               float x_offset,
@@ -636,8 +662,8 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
 class EVENTS_EXPORT GestureEvent : public LocatedEvent {
  public:
   GestureEvent(EventType type,
-               int x,
-               int y,
+               float x,
+               float y,
                int flags,
                base::TimeDelta time_stamp,
                const GestureEventDetails& details,

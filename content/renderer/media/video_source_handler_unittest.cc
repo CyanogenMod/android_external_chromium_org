@@ -44,7 +44,6 @@ class VideoSourceHandlerTest : public ::testing::Test {
  public:
   VideoSourceHandlerTest() : registry_(&dependency_factory_) {
     handler_.reset(new VideoSourceHandler(&registry_));
-    dependency_factory_.EnsurePeerConnectionFactory();
     registry_.Init(kTestStreamUrl);
     registry_.AddVideoTrack(kTestVideoTrackId);
   }
@@ -82,8 +81,14 @@ TEST_F(VideoSourceHandlerTest, OpenClose) {
   EXPECT_EQ(test_frame.GetUPlane(), frame->GetUPlane());
   EXPECT_EQ(test_frame.GetVPlane(), frame->GetVPlane());
 
-  EXPECT_TRUE(handler_->Close(kTestStreamUrl, &reader));
+  EXPECT_FALSE(handler_->Close(NULL));
+  EXPECT_TRUE(handler_->Close(&reader));
   EXPECT_TRUE(handler_->GetReceiver(&reader) == NULL);
+}
+
+TEST_F(VideoSourceHandlerTest, OpenWithoutClose) {
+  FakeFrameReader reader;
+  EXPECT_TRUE(handler_->Open(kTestStreamUrl, &reader));
 }
 
 }  // namespace content

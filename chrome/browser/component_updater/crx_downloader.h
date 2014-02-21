@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_COMPONENT_UPDATER_CRX_DOWNLOADER_H_
 
 #include <vector>
+
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
@@ -32,15 +33,33 @@ namespace component_updater {
 // The members of this class expect to be called from the UI thread only.
 class CrxDownloader {
  public:
+  struct DownloadMetrics {
+    enum Downloader {
+      kNone = 0,
+      kUrlFetcher,
+      kBits
+    };
+
+    DownloadMetrics();
+
+    GURL url;
+
+    Downloader downloader;
+
+    int error;
+
+    int64 bytes_downloaded;   // -1 means that the byte count is unknown.
+    int64 bytes_total;
+
+    uint64 download_time_ms;
+  };
+
   // Contains the outcome of the download.
   struct Result {
-    Result() : error(0), is_background_download(0) {}
+    Result();
 
     // Download error: 0 indicates success.
     int error;
-
-    // True if the download has been completed using the background downloader.
-    int is_background_download;
 
     // Path of the downloaded file if the download was successful.
     base::FilePath response;
@@ -64,11 +83,13 @@ class CrxDownloader {
   virtual ~CrxDownloader();
 
   // Starts the download. One instance of the class handles one download only.
-  // Returns true if success or false in case of errors. One instance of
-  // CrxDownloader can only be started once, otherwise the behavior is
-  // undefined.
-  bool StartDownloadFromUrl(const GURL& url);
-  bool StartDownload(const std::vector<GURL>& urls);
+  // One instance of CrxDownloader can only be started once, otherwise the
+  // behavior is undefined. The callback gets invoked if the download can't
+  // be started.
+  void StartDownloadFromUrl(const GURL& url);
+  void StartDownload(const std::vector<GURL>& urls);
+
+  const std::vector<DownloadMetrics> download_metrics() const;
 
  protected:
   CrxDownloader(scoped_ptr<CrxDownloader> successor,
@@ -82,7 +103,12 @@ class CrxDownloader {
   // occured for the current url and the url should not be retried down
   // the chain to avoid DDOS of the server. This url will be removed from the
   // list of url and never tried again.
-  void OnDownloadComplete(bool is_handled, const Result& result);
+  void OnDownloadComplete(bool is_handled,
+                          const Result& result,
+                          const DownloadMetrics& download_metrics);
+
+  // Returns the url which is currently downloaded from.
+  GURL url() const;
 
  private:
   virtual void DoStartDownload(const GURL& url) = 0;
@@ -92,6 +118,8 @@ class CrxDownloader {
   DownloadCallback download_callback_;
 
   std::vector<GURL>::iterator current_url_;
+
+  std::vector<DownloadMetrics> download_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(CrxDownloader);
 };

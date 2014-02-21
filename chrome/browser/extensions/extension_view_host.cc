@@ -6,8 +6,6 @@
 
 #include "base/strings/string_piece.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/platform_util.h"
@@ -19,6 +17,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/runtime_data.h"
 #include "grit/browser_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -139,8 +139,8 @@ void ExtensionViewHost::OnDocumentAvailable() {
 }
 
 void ExtensionViewHost::LoadInitialURL() {
-  if (!ExtensionSystem::GetForBrowserContext(browser_context())->
-          extension_service()->IsBackgroundPageReady(extension())) {
+  if (!ExtensionSystem::Get(browser_context())->
+          runtime_data()->IsBackgroundPageReady(extension())) {
     // Make sure the background page loads before any others.
     registrar()->Add(this,
                      chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
@@ -320,8 +320,8 @@ void ExtensionViewHost::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   if (type == chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY) {
-    DCHECK(ExtensionSystem::GetForBrowserContext(browser_context())->
-               extension_service()->IsBackgroundPageReady(extension()));
+    DCHECK(ExtensionSystem::Get(browser_context())->
+               runtime_data()->IsBackgroundPageReady(extension()));
     LoadInitialURL();
     return;
   }
@@ -333,7 +333,7 @@ void ExtensionViewHost::InsertInfobarCSS() {
       ResourceBundle::GetSharedInstance().GetRawDataResource(
       IDR_EXTENSIONS_INFOBAR_CSS));
 
-  render_view_host()->InsertCSS(string16(), css.as_string());
+  render_view_host()->InsertCSS(base::string16(), css.as_string());
 }
 
 }  // namespace extensions

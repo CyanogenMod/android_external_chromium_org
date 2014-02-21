@@ -22,6 +22,8 @@
 namespace syncer {
 
 class CancelationSignal;
+class CommitProcessor;
+class GetUpdatesProcessor;
 
 // A Syncer provides a control interface for driving the sync cycle.  These
 // cycles consist of downloading updates, parsing the response (aka. process
@@ -65,13 +67,15 @@ class SYNC_EXPORT_PRIVATE Syncer {
   // in sync despite bugs or transient failures.
   virtual bool PollSyncShare(ModelTypeSet request_types,
                              sessions::SyncSession* session);
+  virtual bool RetrySyncShare(ModelTypeSet request_types,
+                              sessions::SyncSession* session);
 
  private:
-  void ApplyUpdates(sessions::SyncSession* session);
   bool DownloadAndApplyUpdates(
       ModelTypeSet request_types,
       sessions::SyncSession* session,
-      base::Callback<void(sync_pb::ClientToServerMessage*)> build_fn);
+      GetUpdatesProcessor* get_updates_processor,
+      bool create_mobile_bookmarks_folder);
 
   // This function will commit batches of unsynced items to the server until the
   // number of unsynced and ready to commit items reaches zero or an error is
@@ -79,7 +83,8 @@ class SYNC_EXPORT_PRIVATE Syncer {
   // abort any blocking operations.
   SyncerError BuildAndPostCommits(
       ModelTypeSet request_types,
-      sessions::SyncSession* session);
+      sessions::SyncSession* session,
+      CommitProcessor* commit_processor);
 
   void HandleCycleBegin(sessions::SyncSession* session);
   bool HandleCycleEnd(

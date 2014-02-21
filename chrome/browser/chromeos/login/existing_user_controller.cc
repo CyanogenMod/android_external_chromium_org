@@ -26,6 +26,7 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/customization_document.h"
+#include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
@@ -178,8 +179,6 @@ void ExistingUserController::Init(const UserList& users) {
   time_init_ = base::Time::Now();
   UpdateLoginDisplay(users);
   ConfigurePublicSessionAutoLogin();
-
-  DBusThreadManager::Get()->GetSessionManagerClient()->EmitLoginPromptReady();
 }
 
 void ExistingUserController::UpdateLoginDisplay(const UserList& users) {
@@ -195,7 +194,7 @@ void ExistingUserController::UpdateLoginDisplay(const UserList& users) {
           (*it)->GetType() != User::USER_TYPE_LOCALLY_MANAGED ||
           UserManager::Get()->AreLocallyManagedUsersAllowed();
       bool meets_whitelist_requirements =
-          LoginUtils::IsWhitelisted((*it)->email()) ||
+          LoginUtils::IsWhitelisted((*it)->email(), NULL) ||
           (*it)->GetType() != User::USER_TYPE_REGULAR;
       if (meets_locally_managed_requirements && meets_whitelist_requirements) {
         filtered_users.push_back(*it);
@@ -302,7 +301,7 @@ void ExistingUserController::CancelPasswordChangedFlow() {
 }
 
 void ExistingUserController::CreateAccount() {
-  content::RecordAction(content::UserMetricsAction("Login.CreateAccount"));
+  content::RecordAction(base::UserMetricsAction("Login.CreateAccount"));
   guest_mode_url_ =
       google_util::AppendGoogleLocaleParam(GURL(kCreateAccountURL));
   LoginAsGuest();
@@ -557,8 +556,9 @@ void ExistingUserController::LoginAsPublicAccount(
       l10n_util::GetStringUTF8(IDS_CHROMEOS_ACC_LOGIN_SIGNIN_PUBLIC_ACCOUNT));
 }
 
-void ExistingUserController::LoginAsKioskApp(const std::string& app_id) {
-  host_->StartAppLaunch(app_id);
+void ExistingUserController::LoginAsKioskApp(const std::string& app_id,
+                                             bool diagnostic_mode) {
+  host_->StartAppLaunch(app_id, diagnostic_mode);
 }
 
 void ExistingUserController::OnSigninScreenReady() {
@@ -578,9 +578,10 @@ void ExistingUserController::OnStartEnterpriseEnrollment() {
 }
 
 void ExistingUserController::OnStartKioskEnableScreen() {
-  KioskAppManager::Get()->GetConsumerKioskModeStatus(
-      base::Bind(&ExistingUserController::OnConsumerKioskModeCheckCompleted,
-                 weak_factory_.GetWeakPtr()));
+  KioskAppManager::Get()->GetConsumerKioskAutoLaunchStatus(
+      base::Bind(
+          &ExistingUserController::OnConsumerKioskAutoLaunchCheckCompleted,
+          weak_factory_.GetWeakPtr()));
 }
 
 void ExistingUserController::OnStartDeviceReset() {
@@ -602,7 +603,7 @@ void ExistingUserController::SetDisplayEmail(const std::string& email) {
 }
 
 void ExistingUserController::ShowWrongHWIDScreen() {
-  scoped_ptr<DictionaryValue> params;
+  scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kWrongHWIDScreenName, params.Pass());
   login_display_->OnFadeOut();
 }
@@ -611,9 +612,9 @@ void ExistingUserController::Signout() {
   NOTREACHED();
 }
 
-void ExistingUserController::OnConsumerKioskModeCheckCompleted(
-    KioskAppManager::ConsumerKioskModeStatus status) {
-  if (status == KioskAppManager::CONSUMER_KIOSK_MODE_CONFIGURABLE)
+void ExistingUserController::OnConsumerKioskAutoLaunchCheckCompleted(
+    KioskAppManager::ConsumerKioskAutoLaunchStatus status) {
+  if (status == KioskAppManager::CONSUMER_KIOSK_AUTO_LAUNCH_CONFIGURABLE)
     ShowKioskEnableScreen();
 }
 
@@ -641,9 +642,9 @@ void ExistingUserController::OnEnrollmentOwnershipCheckCompleted(
 
 void ExistingUserController::ShowEnrollmentScreen(bool is_auto_enrollment,
                                                   const std::string& user) {
-  scoped_ptr<DictionaryValue> params;
+  scoped_ptr<base::DictionaryValue> params;
   if (is_auto_enrollment) {
-    params.reset(new DictionaryValue());
+    params.reset(new base::DictionaryValue());
     params->SetBoolean("is_auto_enrollment", true);
     params->SetString("user", user);
   }
@@ -653,19 +654,19 @@ void ExistingUserController::ShowEnrollmentScreen(bool is_auto_enrollment,
 }
 
 void ExistingUserController::ShowResetScreen() {
-  scoped_ptr<DictionaryValue> params;
+  scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kResetScreenName, params.Pass());
   login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowKioskEnableScreen() {
-  scoped_ptr<DictionaryValue> params;
+  scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kKioskEnableScreenName, params.Pass());
   login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowKioskAutolaunchScreen() {
-  scoped_ptr<DictionaryValue> params;
+  scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kKioskAutolaunchScreenName,
                      params.Pass());
   login_display_->OnFadeOut();
@@ -928,7 +929,7 @@ void ExistingUserController::DeviceSettingsChanged() {
 }
 
 void ExistingUserController::ActivateWizard(const std::string& screen_name) {
-  scoped_ptr<DictionaryValue> params;
+  scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(screen_name, params.Pass());
 }
 
@@ -1053,9 +1054,11 @@ void ExistingUserController::InitializeStartUrls() const {
       UserManager::Get()->IsCurrentUserNew();
 
   if (can_show_getstarted_guide && should_show_getstarted_guide) {
-    // Don't open default Chrome window if we're going to launch the GS app.
-    // Because we dont' want the GS app to be hidden in the background.
+    // Don't open default Chrome window if we're going to launch the first-run
+    // app. Because we dont' want the first-run app to be hidden in the
+    // background.
     CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kSilentLaunch);
+    first_run::MaybeLaunchDialogAfterSessionStart();
   } else {
     for (size_t i = 0; i < start_urls.size(); ++i) {
       CommandLine::ForCurrentProcess()->AppendArg(start_urls[i]);

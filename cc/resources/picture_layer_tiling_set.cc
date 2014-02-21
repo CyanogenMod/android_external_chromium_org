@@ -22,7 +22,7 @@ class LargestToSmallestScaleFunctor {
 
 PictureLayerTilingSet::PictureLayerTilingSet(
     PictureLayerTilingClient* client,
-    gfx::Size layer_bounds)
+    const gfx::Size& layer_bounds)
     : client_(client),
       layer_bounds_(layer_bounds) {
 }
@@ -38,7 +38,7 @@ void PictureLayerTilingSet::SetClient(PictureLayerTilingClient* client) {
 
 void PictureLayerTilingSet::SyncTilings(
     const PictureLayerTilingSet& other,
-    gfx::Size new_layer_bounds,
+    const gfx::Size& new_layer_bounds,
     const Region& layer_invalidation,
     float minimum_contents_scale) {
   if (new_layer_bounds.IsEmpty()) {
@@ -147,7 +147,7 @@ void PictureLayerTilingSet::RemoveAllTiles() {
 PictureLayerTilingSet::CoverageIterator::CoverageIterator(
     const PictureLayerTilingSet* set,
     float contents_scale,
-    gfx::Rect content_rect,
+    const gfx::Rect& content_rect,
     float ideal_contents_scale)
     : set_(set),
       contents_scale_(contents_scale),
@@ -210,12 +210,6 @@ Tile* PictureLayerTilingSet::CoverageIterator::operator*() const {
   if (!tiling_iter_)
     return NULL;
   return *tiling_iter_;
-}
-
-TilePriority PictureLayerTilingSet::CoverageIterator::priority() {
-  if (!tiling_iter_)
-    return TilePriority();
-  return tiling_iter_.priority();
 }
 
 PictureLayerTiling* PictureLayerTilingSet::CoverageIterator::CurrentTiling() {
@@ -309,38 +303,17 @@ PictureLayerTilingSet::CoverageIterator::operator bool() const {
 
 void PictureLayerTilingSet::UpdateTilePriorities(
     WhichTree tree,
-    gfx::Size device_viewport,
-    gfx::Rect viewport_in_content_space,
-    gfx::Rect visible_content_rect,
-    gfx::Size last_layer_bounds,
-    gfx::Size current_layer_bounds,
-    float last_layer_contents_scale,
-    float current_layer_contents_scale,
-    const gfx::Transform& last_screen_transform,
-    const gfx::Transform& current_screen_transform,
-    double current_frame_time_in_seconds,
-    size_t max_tiles_for_interest_area) {
-  gfx::Rect viewport_in_layer_space = gfx::ScaleToEnclosingRect(
-      viewport_in_content_space,
-      1.f / current_layer_contents_scale);
+    const gfx::Rect& visible_content_rect,
+    float layer_contents_scale,
+    double current_frame_time_in_seconds) {
   gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_content_rect,
-      1.f / current_layer_contents_scale);
+      visible_content_rect, 1.f / layer_contents_scale);
 
   for (size_t i = 0; i < tilings_.size(); ++i) {
-    tilings_[i]->UpdateTilePriorities(
-        tree,
-        device_viewport,
-        viewport_in_layer_space,
-        visible_layer_rect,
-        last_layer_bounds,
-        current_layer_bounds,
-        last_layer_contents_scale,
-        current_layer_contents_scale,
-        last_screen_transform,
-        current_screen_transform,
-        current_frame_time_in_seconds,
-        max_tiles_for_interest_area);
+    tilings_[i]->UpdateTilePriorities(tree,
+                                      visible_layer_rect,
+                                      layer_contents_scale,
+                                      current_frame_time_in_seconds);
   }
 }
 

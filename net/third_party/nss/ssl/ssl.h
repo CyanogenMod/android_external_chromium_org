@@ -161,9 +161,29 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
  */
 #define SSL_CBC_RANDOM_IV 23
 #define SSL_ENABLE_OCSP_STAPLING       24 /* Request OCSP stapling (client) */
+
+/* SSL_ENABLE_NPN controls whether the NPN extension is enabled for the initial
+ * handshake when protocol negotiation is used. SSL_SetNextProtoCallback
+ * or SSL_SetNextProtoNego must be used to control the protocol negotiation;
+ * otherwise, the NPN extension will not be negotiated. SSL_ENABLE_NPN is
+ * currently enabled by default but this may change in future versions.
+ */
+#define SSL_ENABLE_NPN 25
+
+/* SSL_ENABLE_ALPN controls whether the ALPN extension is enabled for the
+ * initial handshake when protocol negotiation is used. SSL_SetNextProtoNego
+ * (not SSL_SetNextProtoCallback) must be used to control the protocol
+ * negotiation; otherwise, the ALPN extension will not be negotiated. ALPN is
+ * not negotiated for renegotiation handshakes, even though the ALPN
+ * specification defines a way to use ALPN during renegotiations.
+ * SSL_ENABLE_ALPN is currently disabled by default, but this may change in
+ * future versions.
+ */
+#define SSL_ENABLE_ALPN 26
+
 /* Request Signed Certificate Timestamps via TLS extension (client) */
-#define SSL_ENABLE_SIGNED_CERT_TIMESTAMPS 25
-#define SSL_ENABLE_FALLBACK_SCSV       26 /* Send fallback SCSV in
+#define SSL_ENABLE_SIGNED_CERT_TIMESTAMPS 27
+#define SSL_ENABLE_FALLBACK_SCSV       28 /* Send fallback SCSV in
                                            * handshakes. */
 
 #ifdef SSL_DEPRECATED_FUNCTION 
@@ -366,7 +386,7 @@ SSL_IMPORT SECStatus SSL_VersionRangeSet(PRFileDesc *fd,
 					 const SSLVersionRange *vrange);
 
 
-/* Values for "policy" argument to SSL_PolicySet */
+/* Values for "policy" argument to SSL_CipherPolicySet */
 /* Values returned by SSL_CipherPolicyGet. */
 #define SSL_NOT_ALLOWED		 0	      /* or invalid or unimplemented */
 #define SSL_ALLOWED		 1
@@ -872,6 +892,18 @@ SSL_IMPORT int SSL_DataPending(PRFileDesc *fd);
 SSL_IMPORT SECStatus SSL_InvalidateSession(PRFileDesc *fd);
 
 /*
+** Cache the SSL session associated with fd, if it has not already been cached.
+*/
+SSL_IMPORT SECStatus SSL_CacheSession(PRFileDesc *fd);
+
+/*
+** Cache the SSL session associated with fd, if it has not already been cached.
+** This function may only be called when processing within a callback assigned
+** via SSL_HandshakeCallback
+*/
+SSL_IMPORT SECStatus SSL_CacheSessionUnlocked(PRFileDesc *fd);
+
+/*
 ** Return a SECItem containing the SSL session ID associated with the fd.
 */
 SSL_IMPORT SECItem *SSL_GetSessionID(PRFileDesc *fd);
@@ -952,24 +984,20 @@ SSL_IMPORT SECStatus NSS_CmpCertChainWCANames(CERTCertificate *cert,
 SSL_IMPORT SSLKEAType NSS_FindCertKEAType(CERTCertificate * cert);
 
 /* Set cipher policies to a predefined Domestic (U.S.A.) policy.
- * This essentially enables all supported ciphers.
+ * This essentially allows all supported ciphers.
  */
 SSL_IMPORT SECStatus NSS_SetDomesticPolicy(void);
 
 /* Set cipher policies to a predefined Policy that is exportable from the USA
  *   according to present U.S. policies as we understand them.
- * See documentation for the list.
- * Note that your particular application program may be able to obtain
- *   an export license with more or fewer capabilities than those allowed
- *   by this function.  In that case, you should use SSL_SetPolicy()
- *   to explicitly allow those ciphers you may legally export.
+ * It is the same as NSS_SetDomesticPolicy now.
  */
 SSL_IMPORT SECStatus NSS_SetExportPolicy(void);
 
 /* Set cipher policies to a predefined Policy that is exportable from the USA
  *   according to present U.S. policies as we understand them, and that the 
  *   nation of France will permit to be imported into their country.
- * See documentation for the list.
+ * It is the same as NSS_SetDomesticPolicy now.
  */
 SSL_IMPORT SECStatus NSS_SetFrancePolicy(void);
 

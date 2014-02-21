@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/at_exit.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -20,8 +21,9 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_receiver.h"
 #include "media/cast/logging/logging_defines.h"
-#include "media/cast/test/transport/transport.h"
-#include "media/cast/test/utility/input_helper.h"
+#include "media/cast/test/utility/input_builder.h"
+#include "media/cast/transport/transport/udp_transport.h"
+#include "net/base/net_util.h"
 
 #if defined(OS_LINUX)
 #include "media/cast/test/linux_output_window.h"
@@ -30,9 +32,9 @@
 namespace media {
 namespace cast {
 // Settings chosen to match default sender settings.
-#define DEFAULT_SEND_PORT "2346"
+#define DEFAULT_SEND_PORT "0"
 #define DEFAULT_RECEIVE_PORT "2344"
-#define DEFAULT_SEND_IP "127.0.0.1"
+#define DEFAULT_SEND_IP "0.0.0.0"
 #define DEFAULT_RESTART "0"
 #define DEFAULT_AUDIO_FEEDBACK_SSRC "1"
 #define DEFAULT_AUDIO_INCOMING_SSRC "2"
@@ -51,51 +53,52 @@ const int kVideoWindowHeight = 720;
 #endif  // OS_LINUX
 static const int kFrameTimerMs = 33;
 
-
 void GetPorts(int* tx_port, int* rx_port) {
-  test::InputBuilder tx_input("Enter send port.",
-      DEFAULT_SEND_PORT, 1, INT_MAX);
+  test::InputBuilder tx_input(
+      "Enter send port.", DEFAULT_SEND_PORT, 1, INT_MAX);
   *tx_port = tx_input.GetIntInput();
 
-  test::InputBuilder rx_input("Enter receive port.",
-      DEFAULT_RECEIVE_PORT, 1, INT_MAX);
+  test::InputBuilder rx_input(
+      "Enter receive port.", DEFAULT_RECEIVE_PORT, 1, INT_MAX);
   *rx_port = rx_input.GetIntInput();
 }
 
 std::string GetIpAddress(const std::string display_text) {
- test::InputBuilder input(display_text, DEFAULT_SEND_IP,
-      INT_MIN, INT_MAX);
+  test::InputBuilder input(display_text, DEFAULT_SEND_IP, INT_MIN, INT_MAX);
   std::string ip_address = input.GetStringInput();
-  // Ensure correct form:
-  while (std::count(ip_address.begin(), ip_address.end(), '.') != 3) {
+  // Ensure IP address is either the default value or in correct form.
+  while (ip_address != DEFAULT_SEND_IP &&
+         std::count(ip_address.begin(), ip_address.end(), '.') != 3) {
     ip_address = input.GetStringInput();
   }
   return ip_address;
 }
 
 void GetSsrcs(AudioReceiverConfig* audio_config) {
-  test::InputBuilder input_tx("Choose audio sender SSRC.",
-      DEFAULT_AUDIO_FEEDBACK_SSRC, 1, INT_MAX);
+  test::InputBuilder input_tx(
+      "Choose audio sender SSRC.", DEFAULT_AUDIO_FEEDBACK_SSRC, 1, INT_MAX);
   audio_config->feedback_ssrc = input_tx.GetIntInput();
 
-  test::InputBuilder input_rx("Choose audio receiver SSRC.",
-      DEFAULT_AUDIO_INCOMING_SSRC, 1, INT_MAX);
+  test::InputBuilder input_rx(
+      "Choose audio receiver SSRC.", DEFAULT_AUDIO_INCOMING_SSRC, 1, INT_MAX);
   audio_config->incoming_ssrc = input_tx.GetIntInput();
 }
 
 void GetSsrcs(VideoReceiverConfig* video_config) {
-  test::InputBuilder input_tx("Choose video sender SSRC.",
-      DEFAULT_VIDEO_FEEDBACK_SSRC, 1, INT_MAX);
+  test::InputBuilder input_tx(
+      "Choose video sender SSRC.", DEFAULT_VIDEO_FEEDBACK_SSRC, 1, INT_MAX);
   video_config->feedback_ssrc = input_tx.GetIntInput();
 
-  test::InputBuilder input_rx("Choose video receiver SSRC.",
-      DEFAULT_VIDEO_INCOMING_SSRC, 1, INT_MAX);
+  test::InputBuilder input_rx(
+      "Choose video receiver SSRC.", DEFAULT_VIDEO_INCOMING_SSRC, 1, INT_MAX);
   video_config->incoming_ssrc = input_rx.GetIntInput();
 }
 
 void GetPayloadtype(AudioReceiverConfig* audio_config) {
   test::InputBuilder input("Choose audio receiver payload type.",
-      DEFAULT_AUDIO_PAYLOAD_TYPE, 96, 127);
+                           DEFAULT_AUDIO_PAYLOAD_TYPE,
+                           96,
+                           127);
   audio_config->rtp_payload_type = input.GetIntInput();
 }
 
@@ -111,13 +114,15 @@ AudioReceiverConfig GetAudioReceiverConfig() {
   audio_config.use_external_decoder = false;
   audio_config.frequency = 48000;
   audio_config.channels = 2;
-  audio_config.codec = kOpus;
+  audio_config.codec = transport::kOpus;
   return audio_config;
 }
 
 void GetPayloadtype(VideoReceiverConfig* video_config) {
   test::InputBuilder input("Choose video receiver payload type.",
-      DEFAULT_VIDEO_PAYLOAD_TYPE, 96, 127);
+                           DEFAULT_VIDEO_PAYLOAD_TYPE,
+                           96,
+                           127);
   video_config->rtp_payload_type = input.GetIntInput();
 }
 
@@ -132,20 +137,24 @@ VideoReceiverConfig GetVideoReceiverConfig() {
   video_config.use_external_decoder = false;
 
   VLOG(1) << "Using VP8";
-  video_config.codec = kVp8;
+  video_config.codec = transport::kVp8;
   return video_config;
 }
 
+static void UpdateCastTransportStatus(transport::CastTransportStatus status) {
+  VLOG(1) << "CastTransportStatus = " << status;
+}
 
 class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
  public:
   explicit ReceiveProcess(scoped_refptr<FrameReceiver> frame_receiver)
-    : frame_receiver_(frame_receiver),
+      : frame_receiver_(frame_receiver),
 #if defined(OS_LINUX)
-      render_(0, 0, kVideoWindowWidth, kVideoWindowHeight, "Cast_receiver"),
-#endif // OS_LINUX
-      last_playout_time_(),
-      last_render_time_() {}
+        render_(0, 0, kVideoWindowWidth, kVideoWindowHeight, "Cast_receiver"),
+#endif  // OS_LINUX
+        last_playout_time_(),
+        last_render_time_() {
+  }
 
   void Start() {
     GetAudioFrame(base::TimeDelta::FromMilliseconds(kFrameTimerMs));
@@ -159,14 +168,14 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
   friend class base::RefCountedThreadSafe<ReceiveProcess>;
 
   void DisplayFrame(const scoped_refptr<media::VideoFrame>& video_frame,
-      const base::TimeTicks& render_time) {
+                    const base::TimeTicks& render_time) {
 #ifdef OS_LINUX
     render_.RenderFrame(video_frame);
-#endif // OS_LINUX
+#endif  // OS_LINUX
     // Print out the delta between frames.
-    if (!last_render_time_.is_null()){
-        base::TimeDelta time_diff = render_time - last_render_time_;
-        VLOG(0) << " RenderDelay[mS] =  " << time_diff.InMilliseconds();
+    if (!last_render_time_.is_null()) {
+      base::TimeDelta time_diff = render_time - last_render_time_;
+      VLOG(0) << " RenderDelay[mS] =  " << time_diff.InMilliseconds();
     }
     last_render_time_ = render_time;
     GetVideoFrame();
@@ -178,9 +187,9 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
     // Default diff time is kFrameTimerMs.
     base::TimeDelta time_diff =
         base::TimeDelta::FromMilliseconds(kFrameTimerMs);
-    if (!last_playout_time_.is_null()){
-        time_diff = playout_time - last_playout_time_;
-        VLOG(0) << " ***PlayoutDelay[mS] =  " << time_diff.InMilliseconds();
+    if (!last_playout_time_.is_null()) {
+      time_diff = playout_time - last_playout_time_;
+      VLOG(0) << " ***PlayoutDelay[mS] =  " << time_diff.InMilliseconds();
     }
     last_playout_time_ = playout_time;
     GetAudioFrame(time_diff);
@@ -188,7 +197,9 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
 
   void GetAudioFrame(base::TimeDelta playout_diff) {
     int num_10ms_blocks = playout_diff.InMilliseconds() / 10;
-    frame_receiver_->GetRawAudioFrame(num_10ms_blocks, kAudioSamplingFrequency,
+    frame_receiver_->GetRawAudioFrame(
+        num_10ms_blocks,
+        kAudioSamplingFrequency,
         base::Bind(&ReceiveProcess::ReceiveAudioFrame, this));
   }
 
@@ -200,7 +211,7 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
   scoped_refptr<FrameReceiver> frame_receiver_;
 #ifdef OS_LINUX
   test::LinuxOutputWindow render_;
-#endif // OS_LINUX
+#endif  // OS_LINUX
   base::TimeTicks last_playout_time_;
   base::TimeTicks last_render_time_;
 };
@@ -211,54 +222,76 @@ class ReceiveProcess : public base::RefCountedThreadSafe<ReceiveProcess> {
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
   base::MessageLoopForIO main_message_loop;
+  CommandLine::Init(argc, argv);
+  InitLogging(logging::LoggingSettings());
+
   VLOG(1) << "Cast Receiver";
-  base::Thread main_thread("Cast main send thread");
   base::Thread audio_thread("Cast audio decoder thread");
   base::Thread video_thread("Cast video decoder thread");
-  main_thread.Start();
   audio_thread.Start();
   video_thread.Start();
 
-  base::DefaultTickClock clock;
+  scoped_ptr<base::TickClock> clock(new base::DefaultTickClock());
+
   // Enable receiver side threads, and disable logging.
-  scoped_refptr<media::cast::CastEnvironment> cast_environment(new
-      media::cast::CastEnvironment(&clock,
-                                   main_thread.message_loop_proxy(),
-                                   NULL,
-                                   audio_thread.message_loop_proxy(),
-                                   NULL,
-                                   video_thread.message_loop_proxy(),
-                                   media::cast::GetDefaultCastLoggingConfig()));
+  // Running transport on main thread.
+  scoped_refptr<media::cast::CastEnvironment> cast_environment(
+      new media::cast::CastEnvironment(
+          clock.Pass(),
+          main_message_loop.message_loop_proxy(),
+          NULL,
+          audio_thread.message_loop_proxy(),
+          NULL,
+          video_thread.message_loop_proxy(),
+          main_message_loop.message_loop_proxy(),
+          media::cast::GetDefaultCastReceiverLoggingConfig()));
 
   media::cast::AudioReceiverConfig audio_config =
       media::cast::GetAudioReceiverConfig();
   media::cast::VideoReceiverConfig video_config =
       media::cast::GetVideoReceiverConfig();
 
-  scoped_ptr<media::cast::test::Transport> transport(
-      new media::cast::test::Transport(main_message_loop.message_loop_proxy()));
+  int remote_port, local_port;
+  media::cast::GetPorts(&remote_port, &local_port);
+  if (!local_port) {
+    LOG(ERROR) << "Invalid local port.";
+    return 1;
+  }
+
+  std::string remote_ip_address = media::cast::GetIpAddress("Enter remote IP.");
+  std::string local_ip_address = media::cast::GetIpAddress("Enter local IP.");
+  net::IPAddressNumber remote_ip_number;
+  net::IPAddressNumber local_ip_number;
+
+  if (!net::ParseIPLiteralToNumber(remote_ip_address, &remote_ip_number)) {
+    LOG(ERROR) << "Invalid remote IP address.";
+    return 1;
+  }
+
+  if (!net::ParseIPLiteralToNumber(local_ip_address, &local_ip_number)) {
+    LOG(ERROR) << "Invalid local IP address.";
+    return 1;
+  }
+
+  net::IPEndPoint remote_end_point(remote_ip_number, remote_port);
+  net::IPEndPoint local_end_point(local_ip_number, local_port);
+
+  scoped_ptr<media::cast::transport::UdpTransport> transport(
+      new media::cast::transport::UdpTransport(
+          main_message_loop.message_loop_proxy(),
+          local_end_point,
+          remote_end_point,
+          base::Bind(&media::cast::UpdateCastTransportStatus)));
   scoped_ptr<media::cast::CastReceiver> cast_receiver(
       media::cast::CastReceiver::CreateCastReceiver(
-      cast_environment,
-      audio_config,
-      video_config,
-      transport->packet_sender()));
+          cast_environment, audio_config, video_config, transport.get()));
 
-  media::cast::PacketReceiver* packet_receiver =
-      cast_receiver->packet_receiver();
-
-  int send_to_port, receive_port;
-  media::cast::GetPorts(&send_to_port, &receive_port);
-  std::string ip_address = media::cast::GetIpAddress("Enter destination IP.");
-  std::string local_ip_address = media::cast::GetIpAddress("Enter local IP.");
-  transport->SetLocalReceiver(packet_receiver, ip_address, local_ip_address,
-                              receive_port);
-  transport->SetSendDestination(ip_address, send_to_port);
+  // TODO(hubbe): Make the cast receiver do this automatically.
+  transport->StartReceiving(cast_receiver->packet_receiver());
 
   scoped_refptr<media::cast::ReceiveProcess> receive_process(
       new media::cast::ReceiveProcess(cast_receiver->frame_receiver()));
   receive_process->Start();
   main_message_loop.Run();
-  transport->StopReceiving();
   return 0;
 }

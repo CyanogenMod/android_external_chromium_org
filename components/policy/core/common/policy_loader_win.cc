@@ -1,10 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/policy/core/common/policy_loader_win.h"
 
 #include <windows.h>
+#include <lm.h>       // For limits.
+#include <ntdsapi.h>  // For Ds[Un]Bind
 #include <rpc.h>      // For struct GUID
 #include <shlwapi.h>  // For PathIsUNC()
 #include <userenv.h>  // For GPO functions
@@ -16,19 +18,26 @@
 #pragma comment(lib, "shlwapi.lib")
 // userenv.dll is required for various GPO functions.
 #pragma comment(lib, "userenv.lib")
+// ntdsapi.dll is required for Ds[Un]Bind calls.
+#pragma comment(lib, "ntdsapi.lib")
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
 #include "base/scoped_native_library.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "components/json_schema/json_schema_constants.h"
 #include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/core/common/policy_load_status.h"
@@ -37,6 +46,7 @@
 #include "components/policy/core/common/preg_parser_win.h"
 #include "components/policy/core/common/registry_dict_win.h"
 #include "components/policy/core/common/schema.h"
+#include "policy/policy_constants.h"
 
 namespace schema = json_schema_constants;
 
@@ -56,8 +66,22 @@ const char kKeyThirdParty[] = "3rdparty";
 const char kLegacyBrowserSupportExtensionId[] =
     "heildphpnddilhkemkielfhnkaagiabh";
 
+// The web store url that is the only trusted source for extensions.
+const char kExpectedWebStoreUrl[] =
+    ";https://clients2.google.com/service/update2/crx";
+// String to be prepended to each blocked entry.
+const char kBlockedExtensionPrefix[] = "[BLOCKED]";
+
 // The GUID of the registry settings group policy extension.
 GUID kRegistrySettingsCSEGUID = REGISTRY_EXTENSION_GUID;
+
+// The list of possible errors that can occur while collecting information about
+// the current enterprise environment.
+enum DomainCheckErrors {
+  DOMAIN_CHECK_ERROR_GET_JOIN_INFO = 0,
+  DOMAIN_CHECK_ERROR_DS_BIND,
+  DOMAIN_CHECK_ERROR_LAST,
+};
 
 // If the LBS extension is found and contains a schema in the registry then this
 // function is used to patch it, and make it compliant. The fix is to
@@ -90,6 +114,46 @@ std::string PatchSchema(const std::string& schema) {
   std::string serialized;
   base::JSONWriter::Write(json.get(), &serialized);
   return serialized;
+}
+
+// Verifies that untrusted policies contain only safe values. Modifies the
+// |policy| in place.
+void FilterUntrustedPolicy(PolicyMap* policy) {
+  if (base::win::IsEnrolledToDomain())
+    return;
+
+  const PolicyMap::Entry* map_entry =
+      policy->Get(policy::key::kExtensionInstallForcelist);
+  if (map_entry && map_entry->value) {
+    int invalid_policies = 0;
+    const base::ListValue* policy_list_value = NULL;
+    if (!map_entry->value->GetAsList(&policy_list_value))
+      return;
+
+    scoped_ptr<base::ListValue> filtered_values(new base::ListValue);
+    for (base::ListValue::const_iterator list_entry(policy_list_value->begin());
+         list_entry != policy_list_value->end(); ++list_entry) {
+      std::string entry;
+      if (!(*list_entry)->GetAsString(&entry))
+        continue;
+      size_t pos = entry.find(';');
+      if (pos == std::string::npos)
+        continue;
+      // Only allow custom update urls in enterprise environments.
+      if (!LowerCaseEqualsASCII(entry.substr(pos), kExpectedWebStoreUrl)) {
+        entry = kBlockedExtensionPrefix + entry;
+        invalid_policies++;
+      }
+
+      filtered_values->AppendString(entry);
+    }
+    policy->Set(policy::key::kExtensionInstallForcelist,
+                map_entry->level, map_entry->scope,
+                filtered_values.release(),
+                map_entry->external_data_fetcher);
+    UMA_HISTOGRAM_COUNTS("EnterpriseCheck.InvalidPoliciesDetected",
+                         invalid_policies);
+  }
 }
 
 // A helper class encapsulating run-time-linked function calls to Wow64 APIs.
@@ -226,6 +290,42 @@ void ParsePolicy(const RegistryDict* gpo_dict,
   policy->LoadFrom(policy_dict, level, scope);
 }
 
+// Collects stats about the enterprise environment that can be used to decide
+// how to parse the existing policy information.
+void CollectEntepriseUMAs() {
+  // Collect statistics about the windows suite.
+  UMA_HISTOGRAM_ENUMERATION("EnterpriseCheck.OSType",
+                            base::win::OSInfo::GetInstance()->version_type(),
+                            base::win::SUITE_LAST);
+
+  // Get the computer's domain status.
+  LPWSTR domain;
+  NETSETUP_JOIN_STATUS join_status;
+  if(NERR_Success != ::NetGetJoinInformation(NULL, &domain, &join_status)) {
+    UMA_HISTOGRAM_ENUMERATION("EnterpriseCheck.DomainCheckFailed",
+                              DOMAIN_CHECK_ERROR_GET_JOIN_INFO,
+                              DOMAIN_CHECK_ERROR_LAST);
+    return;
+  }
+  ::NetApiBufferFree(domain);
+
+  bool in_domain = join_status == NetSetupDomainName;
+  UMA_HISTOGRAM_BOOLEAN("EnterpriseCheck.InDomain", in_domain);
+  if (in_domain) {
+    // This check will tell us how often are domain computers actually
+    // connected to the enterprise network while Chrome is running.
+    HANDLE server_bind;
+    if (ERROR_SUCCESS == ::DsBind(NULL, NULL, &server_bind)) {
+      UMA_HISTOGRAM_COUNTS("EnterpriseCheck.DomainBindSucceeded", 1);
+      ::DsUnBind(&server_bind);
+    } else {
+      UMA_HISTOGRAM_ENUMERATION("EnterpriseCheck.DomainCheckFailed",
+                                DOMAIN_CHECK_ERROR_DS_BIND,
+                                DOMAIN_CHECK_ERROR_LAST);
+    }
+  }
+}
+
 }  // namespace
 
 const base::FilePath::CharType PolicyLoaderWin::kPRegFileName[] =
@@ -233,7 +333,7 @@ const base::FilePath::CharType PolicyLoaderWin::kPRegFileName[] =
 
 PolicyLoaderWin::PolicyLoaderWin(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const string16& chrome_policy_key,
+    const base::string16& chrome_policy_key,
     AppliedGPOListProvider* gpo_provider)
     : AsyncPolicyLoader(task_runner),
       is_initialized_(false),
@@ -267,7 +367,7 @@ PolicyLoaderWin::~PolicyLoaderWin() {
 // static
 scoped_ptr<PolicyLoaderWin> PolicyLoaderWin::Create(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const string16& chrome_policy_key) {
+    const base::string16& chrome_policy_key) {
   return make_scoped_ptr(
       new PolicyLoaderWin(task_runner,
                           chrome_policy_key,
@@ -277,6 +377,7 @@ scoped_ptr<PolicyLoaderWin> PolicyLoaderWin::Create(
 void PolicyLoaderWin::InitOnBackgroundThread() {
   is_initialized_ = true;
   SetupWatches();
+  CollectEntepriseUMAs();
 }
 
 scoped_ptr<PolicyBundle> PolicyLoaderWin::Load() {
@@ -448,6 +549,7 @@ void PolicyLoaderWin::LoadChromePolicy(const RegistryDict* gpo_dict,
   const Schema* chrome_schema =
       schema_map()->GetSchema(PolicyNamespace(POLICY_DOMAIN_CHROME, ""));
   ParsePolicy(gpo_dict, level, scope, *chrome_schema, &policy);
+  FilterUntrustedPolicy(&policy);
   chrome_policy_map->MergeFrom(policy);
 }
 

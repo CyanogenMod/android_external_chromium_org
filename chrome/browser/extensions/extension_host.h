@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/elapsed_timer.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -72,11 +71,6 @@ class ExtensionHost : public content::WebContentsDelegate,
   // (can be NULL). This happens delayed to avoid locking the UI.
   void CreateRenderViewSoon();
 
-  // Notifications from the JavaScriptDialogManager when a dialog is being
-  // opened/closed.
-  void WillRunJavaScriptDialog();
-  void DidCloseJavaScriptDialog();
-
   // content::WebContentsObserver
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void RenderViewCreated(
@@ -103,6 +97,9 @@ class ExtensionHost : public content::WebContentsDelegate,
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback) OVERRIDE;
+  virtual bool PreHandleGestureEvent(
+      content::WebContents* source,
+      const blink::WebGestureEvent& event) OVERRIDE;
 
   // content::NotificationObserver
   virtual void Observe(int type,
@@ -153,11 +150,6 @@ class ExtensionHost : public content::WebContentsDelegate,
 
   // The browser context that this host is tied to.
   content::BrowserContext* browser_context_;
-
-  // Used to create dialog boxes.
-  // It must outlive host_contents_ as host_contents_ will access it
-  // during destruction.
-  scoped_ptr<content::JavaScriptDialogManager> dialog_manager_;
 
   // The host for our HTML content.
   scoped_ptr<content::WebContents> host_contents_;

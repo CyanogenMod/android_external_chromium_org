@@ -15,7 +15,6 @@ from pylib import constants
 
 SLAVE_SCRIPTS_DIR = os.path.join(bb_utils.BB_BUILD_DIR, 'scripts', 'slave')
 VALID_HOST_TESTS = set(['check_webview_licenses', 'findbugs'])
-EXPERIMENTAL_TARGETS = ['android_experimental']
 
 DIR_BUILD_ROOT = os.path.dirname(constants.DIR_SOURCE_ROOT)
 
@@ -57,18 +56,11 @@ def Compile(options):
          '--compiler=goma',
          '--target=%s' % options.target,
          '--goma-dir=%s' % bb_utils.GOMA_DIR]
-  build_targets = options.build_targets.split(',')
   bb_annotations.PrintNamedStep('compile')
-  for build_target in build_targets:
-    RunCmd(cmd + ['--build-args=%s' % build_target],
-        halt_on_failure=True,
-        cwd=DIR_BUILD_ROOT)
-  if options.experimental:
-    for compile_target in EXPERIMENTAL_TARGETS:
-      bb_annotations.PrintNamedStep('Experimental Compile %s' % compile_target)
-      RunCmd(cmd + ['--build-args=%s' % compile_target],
-             flunk_on_failure=False,
-             cwd=DIR_BUILD_ROOT)
+  if options.build_targets:
+    build_targets = options.build_targets.split(',')
+    cmd += ['--build-args', ' '.join(build_targets)]
+  RunCmd(cmd, halt_on_failure=True, cwd=DIR_BUILD_ROOT)
 
 
 def ZipBuild(options):
@@ -119,7 +111,7 @@ def GetHostStepCmds():
 def GetHostStepsOptParser():
   parser = bb_utils.GetParser()
   parser.add_option('--steps', help='Comma separated list of host tests.')
-  parser.add_option('--build-targets', default='All',
+  parser.add_option('--build-targets', default='',
                     help='Comma separated list of build targets.')
   parser.add_option('--experimental', action='store_true',
                     help='Indicate whether to compile experimental targets.')

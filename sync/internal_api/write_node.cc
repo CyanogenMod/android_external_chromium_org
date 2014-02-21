@@ -57,7 +57,7 @@ void WriteNode::SetTitle(const std::wstring& title) {
   if (type != BOOKMARKS && needs_encryption) {
     new_legal_title = kEncryptedString;
   } else {
-    SyncAPINameToServerName(WideToUTF8(title), &new_legal_title);
+    SyncAPINameToServerName(base::WideToUTF8(title), &new_legal_title);
     base::TruncateUTF8ToByteSize(new_legal_title, 255, &new_legal_title);
   }
 
@@ -183,20 +183,6 @@ void WriteNode::SetSessionSpecifics(
     const sync_pb::SessionSpecifics& new_value) {
   sync_pb::EntitySpecifics entity_specifics;
   entity_specifics.mutable_session()->CopyFrom(new_value);
-  SetEntitySpecifics(entity_specifics);
-}
-
-void WriteNode::SetManagedUserSettingSpecifics(
-    const sync_pb::ManagedUserSettingSpecifics& new_value) {
-  sync_pb::EntitySpecifics entity_specifics;
-  entity_specifics.mutable_managed_user_setting()->CopyFrom(new_value);
-  SetEntitySpecifics(entity_specifics);
-}
-
-void WriteNode::SetManagedUserSpecifics(
-    const sync_pb::ManagedUserSpecifics& new_value) {
-  sync_pb::EntitySpecifics entity_specifics;
-  entity_specifics.mutable_managed_user()->CopyFrom(new_value);
   SetEntitySpecifics(entity_specifics);
 }
 

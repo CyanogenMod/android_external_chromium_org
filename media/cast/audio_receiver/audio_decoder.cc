@@ -17,15 +17,18 @@ AudioDecoder::AudioDecoder(scoped_refptr<CastEnvironment> cast_environment,
     : cast_environment_(cast_environment),
       audio_decoder_(webrtc::AudioCodingModule::Create(0)),
       cast_message_builder_(cast_environment->Clock(),
-          incoming_payload_feedback, &frame_id_map_, audio_config.incoming_ssrc,
-          true, 0),
+                            incoming_payload_feedback,
+                            &frame_id_map_,
+                            audio_config.incoming_ssrc,
+                            true,
+                            0),
       have_received_packets_(false),
       last_played_out_timestamp_(0) {
   audio_decoder_->InitializeReceiver();
 
   webrtc::CodecInst receive_codec;
   switch (audio_config.codec) {
-    case kPcm16:
+    case transport::kPcm16:
       receive_codec.pltype = audio_config.rtp_payload_type;
       strncpy(receive_codec.plname, "L16", 4);
       receive_codec.plfreq = audio_config.frequency;
@@ -33,7 +36,7 @@ AudioDecoder::AudioDecoder(scoped_refptr<CastEnvironment> cast_environment,
       receive_codec.channels = audio_config.channels;
       receive_codec.rate = -1;
       break;
-    case kOpus:
+    case transport::kOpus:
       receive_codec.pltype = audio_config.rtp_payload_type;
       strncpy(receive_codec.plname, "opus", 5);
       receive_codec.plfreq = audio_config.frequency;
@@ -41,7 +44,7 @@ AudioDecoder::AudioDecoder(scoped_refptr<CastEnvironment> cast_environment,
       receive_codec.channels = audio_config.channels;
       receive_codec.rate = -1;
       break;
-    case kExternalAudio:
+    case transport::kExternalAudio:
       NOTREACHED() << "Codec must be specified for audio decoder";
       break;
   }
@@ -68,7 +71,8 @@ bool AudioDecoder::GetRawAudioFrame(int number_of_10ms_blocks,
   bool have_received_packets = have_received_packets_;
   lock_.Release();
 
-  if (!have_received_packets) return false;
+  if (!have_received_packets)
+    return false;
 
   audio_frame->samples.clear();
 
@@ -109,17 +113,17 @@ void AudioDecoder::IncomingParsedRtpPacket(const uint8* payload_data,
                                            size_t payload_size,
                                            const RtpCastHeader& rtp_header) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK_LE(payload_size, kIpPacketSize);
-  audio_decoder_->IncomingPacket(payload_data, static_cast<int32>(payload_size),
-                                 rtp_header.webrtc);
+  DCHECK_LE(payload_size, kMaxIpPacketSize);
+  audio_decoder_->IncomingPacket(
+      payload_data, static_cast<int32>(payload_size), rtp_header.webrtc);
   lock_.Acquire();
   have_received_packets_ = true;
   uint32 last_played_out_timestamp = last_played_out_timestamp_;
   lock_.Release();
 
-  bool complete = false;
-  if (!frame_id_map_.InsertPacket(rtp_header, &complete)) return;
-  if (!complete) return;
+  PacketType packet_type = frame_id_map_.InsertPacket(rtp_header);
+  if (packet_type != kNewPacketCompletingFrame)
+    return;
 
   cast_message_builder_.CompleteFrameReceived(rtp_header.frame_id,
                                               rtp_header.is_key_frame);
@@ -127,7 +131,8 @@ void AudioDecoder::IncomingParsedRtpPacket(const uint8* payload_data,
   frame_id_rtp_timestamp_map_[rtp_header.frame_id] =
       rtp_header.webrtc.header.timestamp;
 
-  if (last_played_out_timestamp == 0) return;  // Nothing is played out yet.
+  if (last_played_out_timestamp == 0)
+    return;  // Nothing is played out yet.
 
   uint32 latest_frame_id_to_remove = 0;
   bool frame_to_remove = false;
@@ -142,7 +147,8 @@ void AudioDecoder::IncomingParsedRtpPacket(const uint8* payload_data,
     frame_id_rtp_timestamp_map_.erase(it);
     it = frame_id_rtp_timestamp_map_.begin();
   }
-  if (!frame_to_remove) return;
+  if (!frame_to_remove)
+    return;
 
   frame_id_map_.RemoveOldFrames(latest_frame_id_to_remove);
 }

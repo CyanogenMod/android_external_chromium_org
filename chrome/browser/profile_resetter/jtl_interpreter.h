@@ -29,26 +29,30 @@ class JtlInterpreter {
   // |input| is a dictionary on which the program is evaluated.
   JtlInterpreter(const std::string& hasher_seed,
                  const std::string& program,
-                 const DictionaryValue* input);
+                 const base::DictionaryValue* input);
   ~JtlInterpreter();
 
   void Execute();
 
   Result result() const { return result_; }
-  const DictionaryValue* working_memory() const {
+  const base::DictionaryValue* working_memory() const {
     return working_memory_.get();
   }
   bool GetOutputBoolean(const std::string& unhashed_key, bool* output) const;
   bool GetOutputString(const std::string& unhashed_key,
                        std::string* output) const;
 
+  // Generates a checksum of the loaded program, defined as the first 3 bytes of
+  // the program's SHA-256 hash interpreted as a big-endian integer.
+  int CalculateProgramChecksum() const;
+
  private:
   // Input.
   std::string hasher_seed_;
   std::string program_;
-  const DictionaryValue* input_;
+  const base::DictionaryValue* input_;
   // Output.
-  scoped_ptr<DictionaryValue> working_memory_;
+  scoped_ptr<base::DictionaryValue> working_memory_;
   Result result_;
 
   DISALLOW_COPY_AND_ASSIGN(JtlInterpreter);

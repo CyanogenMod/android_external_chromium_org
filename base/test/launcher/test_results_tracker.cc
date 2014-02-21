@@ -4,12 +4,15 @@
 
 #include "base/test/launcher/test_results_tracker.h"
 
+#include "base/base64.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/format_macros.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/json/string_escape.h"
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/launcher/test_launcher.h"
 #include "base/values.h"
@@ -43,6 +46,12 @@ void PrintTests(InputIterator first,
   for (InputIterator i = first; i != last; ++i)
     fprintf(stdout, "    %s\n", (*i).c_str());
   fflush(stdout);
+}
+
+std::string TestNameWithoutDisabledPrefix(const std::string& test_name) {
+  std::string test_name_no_disabled(test_name);
+  ReplaceSubstringsAfterOffset(&test_name_no_disabled, 0, "DISABLED_", "");
+  return test_name_no_disabled;
 }
 
 }  // namespace
@@ -153,6 +162,18 @@ void TestResultsTracker::OnTestIterationStarting() {
   per_iteration_data_.push_back(PerIterationData());
 }
 
+void TestResultsTracker::AddTest(const std::string& test_name) {
+  // Record disabled test names without DISABLED_ prefix so that they are easy
+  // to compare with regular test names, e.g. before or after disabling.
+  all_tests_.insert(TestNameWithoutDisabledPrefix(test_name));
+}
+
+void TestResultsTracker::AddDisabledTest(const std::string& test_name) {
+  // Record disabled test names without DISABLED_ prefix so that they are easy
+  // to compare with regular test names, e.g. before or after disabling.
+  disabled_tests_.insert(TestNameWithoutDisabledPrefix(test_name));
+}
+
 void TestResultsTracker::AddTestResult(const TestResult& result) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -208,7 +229,7 @@ void TestResultsTracker::PrintSummaryOfAllIterations() const {
     }
   }
 
-  fprintf(stdout, "Summary of all itest iterations:\n");
+  fprintf(stdout, "Summary of all test iterations:\n");
   fflush(stdout);
 
   PrintTests(tests_by_status[TestResult::TEST_FAILURE].begin(),
@@ -250,6 +271,24 @@ bool TestResultsTracker::SaveSummaryAsJSON(const FilePath& path) const {
     global_tags->AppendString(*i);
   }
 
+  ListValue* all_tests = new ListValue;
+  summary_root->Set("all_tests", all_tests);
+
+  for (std::set<std::string>::const_iterator i = all_tests_.begin();
+       i != all_tests_.end();
+       ++i) {
+    all_tests->AppendString(*i);
+  }
+
+  ListValue* disabled_tests = new ListValue;
+  summary_root->Set("disabled_tests", disabled_tests);
+
+  for (std::set<std::string>::const_iterator i = disabled_tests_.begin();
+       i != disabled_tests_.end();
+       ++i) {
+    disabled_tests->AppendString(*i);
+  }
+
   ListValue* per_iteration_data = new ListValue;
   summary_root->Set("per_iteration_data", per_iteration_data);
 
@@ -273,8 +312,26 @@ bool TestResultsTracker::SaveSummaryAsJSON(const FilePath& path) const {
         test_result_value->SetString("status", test_result.StatusAsString());
         test_result_value->SetInteger(
             "elapsed_time_ms", test_result.elapsed_time.InMilliseconds());
+
+        // There are no guarantees about character encoding of the output
+        // snippet. Escape it and record whether it was losless.
+        // It's useful to have the output snippet as string in the summary
+        // for easy viewing.
+        std::string escaped_output_snippet;
+        bool losless_snippet = EscapeJSONString(
+            test_result.output_snippet, false, &escaped_output_snippet);
         test_result_value->SetString("output_snippet",
-                                     test_result.output_snippet);
+                                     escaped_output_snippet);
+        test_result_value->SetBoolean("losless_snippet", losless_snippet);
+
+        // Also include the raw version (base64-encoded so that it can be safely
+        // JSON-serialized - there are no guarantees about character encoding
+        // of the snippet). This can be very useful piece of information when
+        // debugging a test failure related to character encoding.
+        std::string base64_output_snippet;
+        Base64Encode(test_result.output_snippet, &base64_output_snippet);
+        test_result_value->SetString("output_snippet_base64",
+                                     base64_output_snippet);
       }
     }
   }

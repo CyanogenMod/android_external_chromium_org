@@ -8,11 +8,13 @@
 // calls back |callback| with an array with numbers in the [0, 32768] range.
 function gatherAudioLevelSamples(peerConnection, numSamples, frequency,
                                  callback) {
+  console.log('Gathering ' + numSamples + ' audio samples...');
   var audioLevelSamples = []
   var gatherSamples = setInterval(function() {
     peerConnection.getStats(function(response) {
       audioLevelSamples.push(getAudioLevelFromStats_(response));
       if (audioLevelSamples.length == numSamples) {
+        console.log('Gathered all samples.');
         clearInterval(gatherSamples);
         callback(audioLevelSamples);
       }
@@ -40,9 +42,9 @@ function verifyAudioIsPlaying(samples) {
   if (average < 3000 || average > 8000)
     throw 'Unexpected avg audio level: got ' + average + ', expected it ' +
           'to be 4000 < avg < 8000.'
-  if (largest < 30000)
+  if (largest < 25000)
     throw 'Too low max audio level: got ' + largest + ', expected > 30000.';
-};
+}
 
 // If silent (like when muted), we should get very near zero audio level.
 function verifyIsSilent(samples) {

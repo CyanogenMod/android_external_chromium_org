@@ -56,9 +56,6 @@
           # Enable HiDPI support.
           'enable_hidpi%': 0,
 
-          # Enable touch optimized art assets and metrics.
-          'enable_touch_ui%': 0,
-
           # Override buildtype to select the desired build flavor.
           # Dev - everyday build for development/testing
           # Official - release build (generally implies additional processing)
@@ -84,6 +81,14 @@
               'use_aura%': 1,
             }],
 
+            # ToT Linux should be aura.
+            #
+            # TODO(erg): Merge this into the previous block once compiling with
+            # aura safely implies including ash capabilities.
+            ['OS=="linux"', {
+              'use_aura%': 1,
+            }],
+
             # Whether we're a traditional desktop unix.
             ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and chromeos==0', {
               'desktop_linux%': 1,
@@ -95,12 +100,7 @@
             ['OS=="win" or OS=="mac" or OS=="ios"', {
               'host_arch%': 'ia32',
             }, {
-              # This handles the Unix platforms for which there is some support.
-              # Anything else gets passed through, which probably won't work
-              # very well; such hosts should pass an explicit target_arch to
-              # gyp.
-              'host_arch%':
-                '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/arm/;s/i86pc/ia32/")',
+              'host_arch%': '<!(python <(DEPTH)/build/linux/detect_host_arch.py)',
             }],
 
             # Embedded implies ozone.
@@ -108,10 +108,10 @@
               'use_ozone%': 1,
             }],
 
-            ['OS=="android"', {
-              'android_goma_dir%': '<!(echo "${GOMA_DIR}")',
+            ['embedded==1', {
+              'use_system_fontconfig%': 0,
             }, {
-              'android_goma_dir%': ''
+              'use_system_fontconfig%': 1,
             }],
           ],
         },
@@ -124,16 +124,17 @@
         'use_ozone%': '<(use_ozone)',
         'embedded%': '<(embedded)',
         'use_openssl%': '<(use_openssl)',
+        'use_system_fontconfig%': '<(use_system_fontconfig)',
         'enable_viewport%': '<(enable_viewport)',
         'enable_hidpi%': '<(enable_hidpi)',
-        'enable_touch_ui%': '<(enable_touch_ui)',
         'buildtype%': '<(buildtype)',
         'branding%': '<(branding)',
         'host_arch%': '<(host_arch)',
 
         # Default architecture we're building for is the architecture we're
-        # building on.
+        # building on, and possibly sub-architecture (for iOS builds).
         'target_arch%': '<(host_arch)',
+        'target_subarch%': '',
 
         # This is set when building the Android WebView inside the Android
         # build system, using the 'android' gyp backend. The WebView code is
@@ -141,11 +142,11 @@
         # build system.
         'android_webview_build%': 0,
 
-        # Sets whether chrome is built for google tv device.
-        'google_tv%': 0,
-
         # Set ARM architecture version.
         'arm_version%': 7,
+
+        # Use aurax11 for clipboard implementation. This is true on linux_aura.
+        'use_clipboard_aurax11%': 0,
 
         # goma settings.
         # 1 to use goma.
@@ -185,11 +186,6 @@
             'enable_hidpi%': 1,
           }],
 
-          # Enable touch UI on Metro.
-          ['OS=="win"', {
-            'enable_touch_ui%': 1,
-          }],
-
           # Enable App Launcher on ChromeOS, Windows and OSX.
           # On Linux, enable App Launcher for the Aura build.
           ['use_ash==1 or OS=="win" or OS=="mac" or (desktop_linux==1 and use_aura==1)', {
@@ -213,13 +209,20 @@
           # Set default gomadir.
           ['OS=="win"', {
             'gomadir': 'c:\\goma\\goma-win',
-          }],
-          ['android_goma_dir!=""', {
-            'use_goma': 1,
-            'gomadir': '<(android_goma_dir)',
-          }],
-          ['OS!="win" and android_goma_dir==""', {
+          }, {
             'gomadir': '<!(/bin/echo -n ${HOME}/goma)',
+          }],
+
+          # Set the default "target_subarch" on iOS. Valid values are "arm32",
+          # "arm64" and "both" (meaning a fat binary).
+          #
+          # TODO(sdefresne): change the default from "arm32" to "both" for
+          # "target_subarch" once http://crbug.com/339477 is fixed.
+          #
+          # TODO(sdefresne): set the "target_arch" to "arm" once compilation
+          # of skia has been fixed for simulator. http://crbug.com/342377
+          ['OS=="ios"', {
+            'target_subarch%': 'arm32',
           }],
         ],
       },
@@ -228,6 +231,7 @@
       'chromeos%': '<(chromeos)',
       'host_arch%': '<(host_arch)',
       'target_arch%': '<(target_arch)',
+      'target_subarch%': '<(target_subarch)',
       'toolkit_views%': '<(toolkit_views)',
       'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
       'desktop_linux%': '<(desktop_linux)',
@@ -236,13 +240,13 @@
       'use_cras%': '<(use_cras)',
       'use_ozone%': '<(use_ozone)',
       'use_ozone_evdev%': '<(use_ozone_evdev)',
+      'use_clipboard_aurax11%': '<(use_clipboard_aurax11)',
       'embedded%': '<(embedded)',
       'use_openssl%': '<(use_openssl)',
+      'use_system_fontconfig%': '<(use_system_fontconfig)',
       'enable_viewport%': '<(enable_viewport)',
       'enable_hidpi%': '<(enable_hidpi)',
-      'enable_touch_ui%': '<(enable_touch_ui)',
       'android_webview_build%': '<(android_webview_build)',
-      'google_tv%': '<(google_tv)',
       'use_goma%': '<(use_goma)',
       'gomadir%': '<(gomadir)',
       'enable_app_list%': '<(enable_app_list)',
@@ -269,9 +273,6 @@
       # Note: this setting is ignored if buildtype=="Official".
       'tracing_like_official_build%': 0,
 
-      # Disable file manager component extension by default.
-      'file_manager_extension%': 0,
-
       # Disable image loader component extension by default.
       'image_loader_extension%': 0,
 
@@ -286,6 +287,7 @@
 
       # The system root for cross-compiles. Default: none.
       'sysroot%': '',
+      'chroot_cmd%': '',
 
       # The system libdir used for this ABI.
       'system_libdir%': 'lib',
@@ -345,6 +347,13 @@
       # -fsanitize=address only works with clang, but asan=1 implies clang=1
       # See https://sites.google.com/a/chromium.org/dev/developers/testing/addresssanitizer
       'asan%': 0,
+      # Enable coverage gathering instrumentation in ASan. This flag also
+      # controls coverage granularity (experimental).
+      'asan_coverage%': 0,
+
+      # Enable building with SyzyAsan.
+      # See https://code.google.com/p/sawbuck/wiki/SyzyASanHowTo
+      'syzyasan%': 0,
 
       # Enable building with LSan (Clang's -fsanitize=leak option).
       # -fsanitize=leak only works with clang, but lsan=1 implies clang=1
@@ -361,10 +370,16 @@
       # MemorySanitizer only works with clang, but msan=1 implies clang=1
       # See http://clang.llvm.org/docs/MemorySanitizer.html
       'msan%': 0,
+      'msan_blacklist%': '<(PRODUCT_DIR)/../../tools/msan/blacklist.txt',
 
       # Use the dynamic libraries instrumented by one of the sanitizers
       # instead of the standard system libraries.
       'use_instrumented_libraries%': 0,
+
+      # Use libc++ (third_party/libc++ and third_party/libc++abi) instead of
+      # stdlibc++ as standard library. This is intended to use for instrumented
+      # builds.
+      'use_custom_libcxx%': 0,
 
       # Use a modified version of Clang to intercept allocated types and sizes
       # for allocated objects. clang_type_profiler=1 implies clang=1.
@@ -496,12 +511,14 @@
       'native_memory_pressure_signals%': 0,
 
       'data_reduction_fallback_host%' : '',
+      'data_reduction_dev_host%' : '',
       'spdy_proxy_auth_origin%' : '',
       'spdy_proxy_auth_property%' : '',
       'spdy_proxy_auth_value%' : '',
       'data_reduction_proxy_probe_url%' : '',
       'enable_mdns%' : 0,
       'enable_enhanced_bookmarks%': 0,
+      'enable_hangout_services_extension%': 0,
 
       'conditions': [
         # A flag for POSIX platforms
@@ -516,15 +533,6 @@
           'os_bsd%': 1,
         }, {
           'os_bsd%': 0,
-        }],
-
-        # Set armv7 for backward compatibility.
-        # TODO(mostynb@opera.com): remove armv7 once all uses are
-        # removed http://crbug.com/234135
-        ['arm_version==7', {
-          'armv7': 1,
-        }, {
-          'armv7': 0,
         }],
 
         # NSS usage.
@@ -593,12 +601,10 @@
           'use_titlecase_in_grd_files%': 1,
         }],
 
-        # Enable file manager and image loader extensions on Chrome OS.
+        # Enable loader extensions on Chrome OS.
         ['chromeos==1', {
-          'file_manager_extension%': 1,
           'image_loader_extension%': 1,
         }, {
-          'file_manager_extension%': 0,
           'image_loader_extension%': 0,
         }],
 
@@ -619,6 +625,10 @@
           'native_discardable_memory%': 1,
           'native_memory_pressure_signals%': 1,
           'enable_printing%': 2,
+          'enable_task_manager%':0,
+           # Set to 1 once we have a notification system for Android.
+           # http://crbug.com/115320
+          'notifications%': 0,
         }],
 
         # Android OS includes support for proprietary codecs regardless of
@@ -630,7 +640,7 @@
           'proprietary_codecs%': 0,
         }],
 
-        ['OS=="mac"', {
+        ['OS=="mac" or OS=="ios"', {
           'native_discardable_memory%': 1,
           'native_memory_pressure_signals%': 1,
         }],
@@ -652,7 +662,6 @@
         }],
 
         ['OS=="ios"', {
-          'configuration_policy%': 0,
           'disable_ftp_support%': 1,
           'enable_automation%': 0,
           'enable_extensions%': 0,
@@ -666,6 +675,7 @@
           'remoting%': 0,
           'safe_browsing%': 0,
           'enable_managed_users%': 0,
+          'enable_task_manager%': 0,
         }],
 
         # Use GPU accelerated cross process image transport by default
@@ -687,7 +697,7 @@
           'enable_plugin_installation%': 1,
         }],
 
-        ['(OS=="android" and google_tv!=1) or OS=="ios" or embedded==1', {
+        ['OS=="android" or OS=="ios" or embedded==1', {
           'enable_plugins%': 0,
         }, {
           'enable_plugins%': 1,
@@ -776,12 +786,10 @@
         # overriden with GYP_DEFINES.
         # TODO(maruel): Remove the conditions as more configurations are
         # supported.
-        # TODO(csharp): Remove OS!="mac" once xcode can run the isolate code
-        # again.
         # NOTE: The check for disable_nacl==0 and component=="static_library"
         # can't be used here because these variables are not defined yet, but it
         # is still not supported.
-        ['OS!="mac" and OS!="ios" and OS!="android" and chromeos==0', {
+        ['OS!="ios" and OS!="android" and chromeos==0', {
           'test_isolation_mode%': 'check',
         }, {
           'test_isolation_mode%': 'noop',
@@ -871,6 +879,7 @@
     'branding%': '<(branding)',
     'buildtype%': '<(buildtype)',
     'target_arch%': '<(target_arch)',
+    'target_subarch%': '<(target_subarch)',
     'host_arch%': '<(host_arch)',
     'toolkit_views%': '<(toolkit_views)',
     'ui_compositor_image_transport%': '<(ui_compositor_image_transport)',
@@ -888,6 +897,8 @@
     'use_cairo%': '<(use_cairo)',
     'use_ozone%': '<(use_ozone)',
     'use_ozone_evdev%': '<(use_ozone_evdev)',
+    'use_clipboard_aurax11%': '<(use_clipboard_aurax11)',
+    'use_system_fontconfig%': '<(use_system_fontconfig)',
     'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
     'desktop_linux%': '<(desktop_linux)',
     'use_x11%': '<(use_x11)',
@@ -896,9 +907,7 @@
     'chromeos%': '<(chromeos)',
     'enable_viewport%': '<(enable_viewport)',
     'enable_hidpi%': '<(enable_hidpi)',
-    'enable_touch_ui%': '<(enable_touch_ui)',
     'use_xi2_mt%':'<(use_xi2_mt)',
-    'file_manager_extension%': '<(file_manager_extension)',
     'image_loader_extension%': '<(image_loader_extension)',
     'fastbuild%': '<(fastbuild)',
     'dcheck_always_on%': '<(dcheck_always_on)',
@@ -906,10 +915,10 @@
     'tracing_like_official_build%': '<(tracing_like_official_build)',
     'python_ver%': '<(python_ver)',
     'arm_version%': '<(arm_version)',
-    'armv7%': '<(armv7)',
     'arm_neon%': '<(arm_neon)',
     'arm_neon_optional%': '<(arm_neon_optional)',
     'sysroot%': '<(sysroot)',
+    'chroot_cmd%': '<(chroot_cmd)',
     'system_libdir%': '<(system_libdir)',
     'component%': '<(component)',
     'use_titlecase_in_grd_files%': '<(use_titlecase_in_grd_files)',
@@ -925,11 +934,15 @@
     'clang_use_chrome_plugins%': '<(clang_use_chrome_plugins)',
     'mac_want_real_dsym%': '<(mac_want_real_dsym)',
     'asan%': '<(asan)',
+    'asan_coverage%': '<(asan_coverage)',
+    'syzyasan%': '<(syzyasan)',
     'lsan%': '<(lsan)',
     'msan%': '<(msan)',
+    'msan_blacklist%': '<(msan_blacklist)',
     'tsan%': '<(tsan)',
     'tsan_blacklist%': '<(tsan_blacklist)',
     'use_instrumented_libraries%': '<(use_instrumented_libraries)',
+    'use_custom_libcxx%': '<(use_custom_libcxx)',
     'clang_type_profiler%': '<(clang_type_profiler)',
     'order_profiling%': '<(order_profiling)',
     'order_text_section%': '<(order_text_section)',
@@ -961,7 +974,6 @@
     'android_webview_build%': '<(android_webview_build)',
     'gyp_managed_install%': 0,
     'create_standalone_apk%': 1,
-    'google_tv%': '<(google_tv)',
     'enable_app_list%': '<(enable_app_list)',
     'use_default_render_theme%': '<(use_default_render_theme)',
     'enable_settings_app%': '<(enable_settings_app)',
@@ -972,19 +984,18 @@
     'native_discardable_memory%': '<(native_discardable_memory)',
     'native_memory_pressure_signals%': '<(native_memory_pressure_signals)',
     'data_reduction_fallback_host%': '<(data_reduction_fallback_host)',
+    'data_reduction_dev_host%': '<(data_reduction_dev_host)',
     'spdy_proxy_auth_origin%': '<(spdy_proxy_auth_origin)',
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'data_reduction_proxy_probe_url%': '<(data_reduction_proxy_probe_url)',
     'enable_mdns%' : '<(enable_mdns)',
     'enable_enhanced_bookmarks%' : '<(enable_enhanced_bookmarks)',
+    'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'v8_optimized_debug%': '<(v8_optimized_debug)',
     'proprietary_codecs%': '<(proprietary_codecs)',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
-
-    # Use system nspr instead of the bundled one.
-    'use_system_nspr%': 0,
 
     # Use system protobuf instead of bundled one.
     'use_system_protobuf%': 0,
@@ -1084,6 +1095,13 @@
     'clang%': '<(clang)',
     'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
 
+    # Control which version of clang to use when 'clang' is set to 1 when
+    # building for iOS (Apple has not yet open-sourced support for "arm64"
+    # so when building for that 'target_arch' we have to use clang shipped
+    # with Xcode that does not supports some flags).
+    # TODO(sdefresne): remove this once http://crbug.com/341453 is fixed.
+    'clang_xcode%': 0,
+
     # These two variables can be set in GYP_DEFINES while running
     # |gclient runhooks| to let clang run a plugin in every compilation.
     # Only has an effect if 'clang=1' is in GYP_DEFINES as well.
@@ -1092,6 +1110,11 @@
 
     'clang_load%': '',
     'clang_add_plugin%': '',
+
+    # Tell ld64 to write map files describing binary layout. Useful
+    # for looking at what contributes to binary size, e.g. with
+    # https://github.com/nico/bloat
+    'mac_write_linker_maps%': 0,
 
     # The default type of gtest.
     'gtest_target_type%': 'executable',
@@ -1108,17 +1131,13 @@
     'linux_strip_binary%': 0,
     # Strip the test binaries needed for Linux reliability tests.
     'linux_strip_reliability_tests%': 0,
+    # If we want stack unwind support for backtrace().
+    'debug_unwind_tables%': 1,
+    'release_unwind_tables%': 1,
 
     # Enable TCMalloc.
     'linux_use_tcmalloc%': 1,
     'android_use_tcmalloc%': 0,
-
-    # Disable TCMalloc's heapchecker.
-    'linux_use_heapchecker%': 0,
-
-    # Disable shadow stack keeping used by heapcheck to unwind the stacks
-    # better.
-    'linux_keep_shadow_stacks%': 0,
 
     # Set to 1 to link against libgnome-keyring instead of using dlopen().
     'linux_link_gnome_keyring%': 0,
@@ -1126,7 +1145,7 @@
     'linux_link_gsettings%': 0,
 
     # Default arch variant for MIPS.
-    'mips_arch_variant%': 'mips32r2',
+    'mips_arch_variant%': 'mips32r1',
 
     # Enable use of OpenMAX DL FFT routines.
     'use_openmax_dl_fft%': '<(use_openmax_dl_fft)',
@@ -1147,6 +1166,9 @@
 
     # TODO(thakis): Make this a blacklist instead, http://crbug.com/101600
     'enable_wexit_time_destructors%': 0,
+
+    # Build libpeerconnection as a static library by default.
+    'libpeer_target_type%': 'static_library',
 
     # Set to 1 to compile with the built in pdf viewer.
     'internal_pdf%': 0,
@@ -1197,9 +1219,6 @@
     # Disable Dart by default.
     'enable_dart%': 0,
 
-    # The desired version of Windows SDK can be set in ~/.gyp/include.gypi.
-    'msbuild_toolset%': '',
-
     # Native Client is enabled by default.
     'disable_nacl%': 0,
 
@@ -1233,6 +1252,9 @@
     # Turns on the i18n support in V8.
     'v8_enable_i18n_support': 1,
 
+    # Compile d8 for the host toolset.
+    'v8_toolset_for_d8': 'host',
+
     # Use the chromium skia by default.
     'use_system_skia%': '0',
 
@@ -1249,6 +1271,9 @@
     # Do not use it by default.
     'icu_use_data_file_flag%': 0,
 
+    # Force disable libstdc++ debug mode.
+    'disable_glibcxx_debug%': 0,
+
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
       # not explicitly chosen to build with clang. Currently, this means all
@@ -1256,7 +1281,14 @@
       # TODO(glider): set clang to 1 earlier for ASan and TSan builds so that
       # it takes effect here.
       ['os_posix==1 and OS!="mac" and OS!="ios" and clang==0 and asan==0 and lsan==0 and tsan==0 and msan==0', {
-        'gcc_version%': '<!(python <(DEPTH)/build/compiler_version.py)',
+        'conditions': [
+          ['OS=="android"', {
+            # We directly set the gcc_version since we know what we use.
+            'gcc_version%': 46,
+          }, {
+            'gcc_version%': '<!(python <(DEPTH)/build/compiler_version.py)',
+          }],
+        ],
       }, {
         'gcc_version%': 0,
       }],
@@ -1272,13 +1304,9 @@
       }],
       ['OS=="win"', {
         'windows_driver_kit_path%': '$(WDK_DIR)',
-        # Set the python arch to prevent conflicts with pyauto on Win64 build.
-        # TODO(jschuh): crbug.com/177664 Investigate Win64 pyauto build.
-        'python_arch%': 'ia32',
+        'icu_use_data_file_flag%': 1,
       }],
       ['os_posix==1 and OS!="mac" and OS!="ios"', {
-        # Figure out the python architecture to decide if we build pyauto.
-        'python_arch%': '<!(<(DEPTH)/build/linux/python_arch.sh <(sysroot)/usr/<(system_libdir)/libpython<(python_ver).so.1.0)',
         'conditions': [
           ['target_arch=="mipsel"', {
             'werror%': '',
@@ -1294,13 +1322,25 @@
           # symbols from official builds.
           ['(branding=="Chrome" and buildtype=="Official")', {
             'linux_dump_symbols%': 1,
+
+            # Omit unwind support in official release builds to save space. We
+            # can use breakpad for these builds.
+            'release_unwind_tables%': 0,
+          }],
+          # TODO(jungshik): Turn this on on Android.
+          # For ChromeOS, this should be turned on in chromeos-chrome.ebuild
+          # file as well by adding icu_use_data_file_flag=1 to BUILD_DEFINES.
+          ['OS!="android"', {
+            'icu_use_data_file_flag%': 1,
           }],
         ],
       }],  # os_posix==1 and OS!="mac" and OS!="ios"
+      ['OS=="mac"', {
+        'icu_use_data_file_flag%': 1,
+      }],  # os=="mac"
       ['OS=="ios"', {
         'disable_nacl%': 1,
         'enable_background%': 0,
-        'enable_task_manager%': 0,
         'icu_use_data_file_flag%': 1,
         'use_system_libxml%': 1,
         'use_system_sqlite%': 1,
@@ -1351,18 +1391,20 @@
              'android_sdk_root%': '<!(cd <(DEPTH) && pwd -P)/third_party/android_tools/sdk/',
              'android_host_arch%': '<!(uname -m)',
              # Android API-level of the SDK used for compilation.
-             'android_sdk_version%': '<!(/bin/echo -n ${ANDROID_SDK_VERSION})',
-             # Android SDK build tools (e.g. dx, aapt, aidl)
-             'android_sdk_tools%': '<!(/bin/echo -n ${ANDROID_SDK_TOOLS})',
+             'android_sdk_version%': '19',
+             'android_sdk_build_tools_version%': '19.0.0',
+             'host_os%': "<!(uname -s | sed -e 's/Linux/linux/;s/Darwin/mac/')",
           },
           # Copy conditionally-set variables out one scope.
           'android_ndk_root%': '<(android_ndk_root)',
           'android_sdk_root%': '<(android_sdk_root)',
           'android_sdk_version%': '<(android_sdk_version)',
-          'android_sdk_tools%': '<(android_sdk_tools)',
           'android_stlport_root': '<(android_ndk_root)/sources/cxx-stl/stlport',
+          'host_os%': '<(host_os)',
 
           'android_sdk%': '<(android_sdk_root)/platforms/android-<(android_sdk_version)',
+          # Android SDK build tools (e.g. dx, aapt, aidl)
+          'android_sdk_tools%': '<(android_sdk_root)/build-tools/<(android_sdk_build_tools_version)',
 
           # Android API level 14 is ICS (Android 4.0) which is the minimum
           # platform requirement for Chrome on Android, we use it for native
@@ -1412,6 +1454,7 @@
         'android_stlport_root': '<(android_stlport_root)',
         'android_stlport_include': '<(android_stlport_root)/stlport',
         'android_stlport_libs_dir': '<(android_stlport_root)/libs/<(android_app_abi)',
+        'host_os%': '<(host_os)',
 
         # Location of the "strip" binary, used by both gyp and scripts.
         'android_strip%' : '<!(/bin/echo -n <(android_toolchain)/*-strip)',
@@ -1429,7 +1472,6 @@
         'use_openssl%': 1,
 
         'proprietary_codecs%': '<(proprietary_codecs)',
-        'enable_task_manager%': 0,
         'safe_browsing%': 2,
         'input_speech%': 0,
         'enable_automation%': 0,
@@ -1445,10 +1487,6 @@
 
         # Sessions are store separately in the Java side.
         'enable_session_service%': 0,
-
-        # Set to 1 once we have a notification system for Android.
-        # http://crbug.com/115320
-        'notifications%': 0,
 
         'p2p_apis%' : 0,
 
@@ -1577,7 +1615,7 @@
           },{
             'msvs_large_module_debug_link_mode%': '2',  # Yes
           }],
-          ['MSVS_VERSION=="2012e" or MSVS_VERSION=="2010e"', {
+          ['MSVS_VERSION=="2013e" or MSVS_VERSION=="2012e" or MSVS_VERSION=="2010e"', {
             'msvs_express%': 1,
             'secure_atl%': 0,
           },{
@@ -1598,7 +1636,7 @@
         'use_cups%': 0,
       }],
 
-      ['enable_plugins==1 and (OS=="linux" or OS=="mac" or OS=="win" or google_tv==1)', {
+      ['enable_plugins==1 and (OS=="linux" or OS=="mac" or OS=="win")', {
         'enable_pepper_cdms%': 1,
       }, {
         'enable_pepper_cdms%': 0,
@@ -1657,6 +1695,9 @@
       ['toolkit_views==1', {
         'grit_defines': ['-D', 'toolkit_views'],
       }],
+      ['toolkit_uses_gtk==1', {
+        'grit_defines': ['-D', 'toolkit_uses_gtk'],
+      }],
       ['use_aura==1', {
         'grit_defines': ['-D', 'use_aura'],
       }],
@@ -1668,9 +1709,6 @@
       }],
       ['use_ozone==1', {
         'grit_defines': ['-D', 'use_ozone'],
-      }],
-      ['file_manager_extension==1', {
-        'grit_defines': ['-D', 'file_manager_extension'],
       }],
       ['image_loader_extension==1', {
         'grit_defines': ['-D', 'image_loader_extension'],
@@ -1696,11 +1734,6 @@
       ['OS=="android"', {
         'grit_defines': ['-t', 'android',
                          '-E', 'ANDROID_JAVA_TAGGED_ONLY=true'],
-        'conditions': [
-          ['google_tv==1', {
-            'grit_defines': ['-D', 'google_tv'],
-          }],
-        ],
       }],
       ['OS=="mac" or OS=="ios"', {
         'grit_defines': ['-D', 'scale_factors=2x'],
@@ -1717,18 +1750,26 @@
           ['"<(GENERATOR)"=="ninja"', {
             'clang%': 1,
             'host_os%': "mac",
-          }]
+          }],
+          # Apple has not upstreamed the support for "arm64" yet, so when
+          # building for "arm64" or "both", we need to use the clang that
+          # is provided with Xcode.
+          ['target_subarch!="arm32"', {
+            'clang_xcode%': 1,
+          }],
         ],
       }],
       ['enable_extensions==1', {
         'grit_defines': ['-D', 'enable_extensions'],
       }],
       ['enable_plugins!=0', {
-
         'grit_defines': ['-D', 'enable_plugins'],
       }],
       ['enable_printing!=0', {
         'grit_defines': ['-D', 'enable_printing'],
+      }],
+      ['enable_printing==1', {
+        'grit_defines': ['-D', 'enable_full_printing'],
       }],
       ['enable_themes==1', {
         'grit_defines': ['-D', 'enable_themes'],
@@ -1754,13 +1795,27 @@
       ['enable_enhanced_bookmarks==1', {
         'grit_defines': ['-D', 'enable_enhanced_bookmarks'],
       }],
+      ['enable_hangout_services_extension==1', {
+        'grit_defines': ['-D', 'enable_hangout_services_extension'],
+      }],
+      ['enable_task_manager==1', {
+        'grit_defines': ['-D', 'enable_task_manager'],
+      }],
+      ['notifications==1', {
+        'grit_defines': ['-D', 'enable_notifications'],
+      }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
         'clang_chrome_plugins_flags': [
           '<!@(<(DEPTH)/tools/clang/scripts/plugin_flags.sh)'
         ],
       }],
 
+      ['asan==1 and OS=="win"', {
+        # TODO(hans): Remove once users set syzyasan (crbug.com/343960).
+        'syzyasan%': 1,
+      }],
       ['asan==1 and OS!="win"', {
+        # TODO(hans): Windows should use Clang-based ASan (crbug.com/343960).
         'clang%': 1,
       }],
       ['asan==1 and OS=="mac"', {
@@ -1857,13 +1912,13 @@
       ['arm_version==6 and android_webview_build==0', {
         'arm_arch%': 'armv6',
         'arm_tune%': '',
-        'arm_fpu%': '',
-        'arm_float_abi%': 'soft',
+        'arm_fpu%': 'vfp',
+        'arm_float_abi%': 'softfp',
         'arm_thumb%': 0,
       }],
       ['arm_version==7 and android_webview_build==0', {
         'arm_arch%': 'armv7-a',
-        'arm_tune%': 'cortex-a8',
+        'arm_tune%': '',
         'conditions': [
           ['arm_neon==1', {
             'arm_fpu%': 'neon',
@@ -1901,6 +1956,11 @@
         'ozone_platform_dri%': 0,
         'ozone_platform_test%': 0,
       }],
+
+      ['desktop_linux==1 and use_aura==1 and use_x11==1', {
+        'use_clipboard_aurax11%': 1,
+      }],
+
       ['OS=="win" and use_goma==1', {
         # goma doesn't support pch yet.
         'chromium_win_pch': 0,
@@ -1911,13 +1971,26 @@
           }],
         ],
       }],
+
+      ['OS=="win" and clang==1', {
+        'chromium_win_pch': 0,
+      }],
+
+      # The seccomp-bpf sandbox is only supported on three architectures
+      # currently.
+      # Do not disable seccomp_bpf anywhere without talking to
+      # security@chromium.org!
+      ['((OS=="linux" or OS=="android") and '
+           '(target_arch=="ia32" or target_arch=="x64" or '
+             'target_arch=="arm"))', {
+         'use_seccomp_bpf%': 1,
+      }, {
+         'use_seccomp_bpf%': 0,
+      }],
     ],
 
-
-    # The path to the ANGLE library. TODO(apatrick): This is to help
-    # transition to a new version of ANGLE at a new location. After the
-    # transition is complete, this can be removed.
-    'angle_path': '<(DEPTH)/third_party/angle_dx11',
+    # The path to the ANGLE library.
+    'angle_path': '<(DEPTH)/third_party/angle',
 
     # List of default apps to install in new profiles.  The first list contains
     # the source files as found in svn.  The second list, used only for linux,
@@ -2039,13 +2112,12 @@
           'mac_release_optimization%': '3', # Use -O3 unless overridden
           'mac_debug_optimization%': '0',   # Use -O0 unless overridden
         }],
+        ['OS=="android"', {
+          'host_os%': '<(host_os)',  # See comment above chromium_code.
+        }],
       ],
     },
     'defines': [
-      # Set this to use the new DX11 version of ANGLE.
-      # TODO(apatrick): Remove this when the transition is complete.
-      'ANGLE_DX11',
-
       # Don't use deprecated V8 APIs anywhere.
       'V8_DEPRECATION_WARNINGS',
     ],
@@ -2071,9 +2143,6 @@
         # TODO(dmikurube): Remove -Wno-sentinel when Clang/LLVM is fixed.
         # See http://crbug.com/162818.
         'cflags+': ['-Wno-sentinel'],
-      }],
-      ['OS=="win" and "<(msbuild_toolset)"!=""', {
-        'msbuild_toolset': '<(msbuild_toolset)',
       }],
       ['branding=="Chrome"', {
         'defines': ['GOOGLE_CHROME_BUILD'],
@@ -2133,6 +2202,9 @@
       ['use_x11==1', {
         'defines': ['USE_X11=1'],
       }],
+      ['use_clipboard_aurax11==1', {
+        'defines': ['USE_CLIPBOARD_AURAX11=1'],
+      }],
       ['enable_one_click_signin==1', {
         'defines': ['ENABLE_ONE_CLICK_SIGNIN'],
       }],
@@ -2144,14 +2216,8 @@
       ['chromeos==1', {
         'defines': ['OS_CHROMEOS=1'],
       }],
-      ['google_tv==1', {
-        'defines': ['GOOGLE_TV=1'],
-      }],
       ['use_xi2_mt!=0 and use_x11==1', {
         'defines': ['USE_XI2_MT=<(use_xi2_mt)'],
-      }],
-      ['file_manager_extension==1', {
-        'defines': ['FILE_MANAGER_EXTENSION=1'],
       }],
       ['image_loader_extension==1', {
         'defines': ['IMAGE_LOADER_EXTENSION=1'],
@@ -2194,17 +2260,6 @@
       }],
       ['use_udev==1', {
         'defines': ['USE_UDEV'],
-      }],
-      ['icu_use_data_file_flag==1', {
-        'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE'],
-      }, { # else icu_use_data_file_flag !=1
-        'conditions': [
-          ['OS=="win"', {
-            'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_SHARED'],
-          }, {
-            'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC'],
-          }],
-        ],
       }],
       ['fastbuild!=0', {
         'xcode_settings': {
@@ -2307,9 +2362,8 @@
           'ENABLE_EGLIMAGE=1',
         ],
       }],
-      ['asan==1 and OS=="win"', {
-        # Since asan on windows uses Syzygy, we need /PROFILE turned on to
-        # produce appropriate pdbs.
+      ['syzyasan==1', {
+        # SyzyAsan needs /PROFILE turned on to produce appropriate pdbs.
         'msvs_settings': {
           'VCLinkerTool': {
             'Profile': 'true',
@@ -2319,7 +2373,7 @@
             'ADDRESS_SANITIZER',
             'MEMORY_TOOL_REPLACES_ALLOCATOR',
         ],
-      }],  # asan==1 and OS=="win"
+      }],
       ['OS=="win"', {
         'defines': [
           '__STD_C',
@@ -2346,16 +2400,6 @@
                 'DebugInformationFormat': '1',
               }
             }
-          }],
-          ['"<(GENERATOR)"=="msvs"', {
-            'msvs_settings': {
-              'VCLinkerTool': {
-                # Make the pdb name sane. Otherwise foo.exe and foo.dll both
-                # have foo.pdb. The ninja generator already defaults to this and
-                # can't handle the $(TargetPath) macro.
-                'ProgramDatabaseFile': '$(TargetPath).pdb',
-              }
-            },
           }],
         ],  # win_z7!=0
       }],  # OS==win
@@ -2430,6 +2474,10 @@
         'defines': [
           'DATA_REDUCTION_FALLBACK_HOST="<(data_reduction_fallback_host)"'],
       }],
+      ['data_reduction_dev_host != ""', {
+        'defines': [
+          'DATA_REDUCTION_DEV_HOST="<(data_reduction_dev_host)"'],
+      }],
       ['spdy_proxy_auth_origin != ""', {
         'defines': ['SPDY_PROXY_AUTH_ORIGIN="<(spdy_proxy_auth_origin)"'],
       }],
@@ -2449,8 +2497,18 @@
       ['enable_enhanced_bookmarks==1', {
         'defines': ['ENABLE_ENHANCED_BOOKMARKS=1'],
       }],
+      ['enable_hangout_services_extension==1', {
+        'defines': ['ENABLE_HANGOUT_SERVICES_EXTENSION=1'],
+      }],
       ['enable_ipc_fuzzer==1', {
         'defines': ['ENABLE_IPC_FUZZER=1'],
+      }],
+      ['OS=="win" and component=="shared_library"', {
+        'dependencies': [
+          # All targets in a component build must depend on chrome_redirects,
+          # to ensure that certain calls go through it.
+          '<(DEPTH)/chrome_elf/chrome_elf.gyp:chrome_redirects',
+         ],
       }],
     ],  # conditions for 'target_defaults'
     'target_conditions': [
@@ -2523,6 +2581,11 @@
             },
             'conditions': [
               ['buildtype=="Official"', {
+                'msvs_settings': {
+                  'VCCLCompilerTool': { 'WarnAsError': 'false' },
+                }
+              }],
+              ['clang==1', {
                 'msvs_settings': {
                   'VCCLCompilerTool': { 'WarnAsError': 'false' },
                 }
@@ -2632,6 +2695,7 @@
         'abstract': 1,
         'msvs_settings': {
           'VCLinkerTool': {
+            'MinimumRequiredVersion': '5.01',  # XP.
             'TargetMachine': '1',
           },
           'VCLibrarianTool': {
@@ -2737,7 +2801,7 @@
               }],
             ],
           }],
-          ['OS=="linux" and target_arch!="ia32"', {
+          ['OS=="linux" and target_arch!="ia32" and disable_glibcxx_debug==0', {
             # Enable libstdc++ debugging facilities to help catch problems
             # early, see http://crbug.com/65151 .
             # TODO(phajdan.jr): Should we enable this for all of POSIX?
@@ -2834,7 +2898,11 @@
           ['win_use_allocator_shim==0', {
             'defines': ['NO_TCMALLOC'],
           }],
-          ['os_posix==1', {
+          # _FORTIFY_SOURCE isn't really supported by Clang now, see
+          # http://llvm.org/bugs/show_bug.cgi?id=16821.
+          # TODO(glider): once the bug is fixed, disable source fortification
+          # under the sanitizer tools only.
+          ['os_posix==1 and (OS!="linux" or clang!=1)', {
             'target_conditions': [
               ['chromium_code==1', {
                 # Non-chromium code is not guaranteed to compile cleanly
@@ -2996,6 +3064,11 @@
                   '-Wl,--no-as-needed',
                 ],
               }],
+              ['debug_unwind_tables==1', {
+                'cflags': ['-funwind-tables'],
+              }, {
+                'cflags': ['-fno-unwind-tables', '-fno-asynchronous-unwind-tables'],
+              }],
             ],
           },
           'Release_Base': {
@@ -3067,13 +3140,10 @@
                   }],
                 ],
               }],
-              # Can be omitted to reduce output size. Does not seem to affect
-              # crash reporting.
-              ['target_arch=="ia32"', {
-                'cflags': [
-                  '-fno-unwind-tables',
-                  '-fno-asynchronous-unwind-tables',
-                ],
+              ['release_unwind_tables==1', {
+                'cflags': ['-funwind-tables'],
+              }, {
+                'cflags': ['-fno-unwind-tables', '-fno-asynchronous-unwind-tables'],
               }],
             ],
           },
@@ -3242,9 +3312,25 @@
                           '-fuse-ld=gold',
                           '-Wno-psabi',
                         ],
+                        'cflags': [
+                          # TODO(hans) Enable integrated-as (crbug.com/124610).
+                          '-no-integrated-as',
+                          '-B<(android_toolchain)',  # Else /usr/bin/as gets picked up.
+                        ],
+
                         'ldflags!': [
                           # Clang does not support the following options.
                           '-fuse-ld=gold',
+                        ],
+                        'ldflags': [
+                          # As long as -fuse-ld=gold doesn't work, add a dummy directory
+                          # with an 'ld' that redirects to gold, so that clang uses gold.
+                          '-B<(PRODUCT_DIR)/../../build/android/arm-linux-androideabi-gold',
+                        ],
+                      }],
+                      ['asan==1', {
+                        'cflags': [
+                          '-marm', # Required for frame pointer based stack traces.
                         ],
                       }],
                     ],
@@ -3390,6 +3476,9 @@
                   '-fno-omit-frame-pointer',
                   '-gline-tables-only',
                 ],
+                'cflags!': [
+                  '-fomit-frame-pointer',
+                ],
                 'ldflags!': [
                   # Functions interposed by the sanitizers can make ld think
                   # that some libraries aren't needed when they actually are,
@@ -3398,12 +3487,6 @@
                 ],
                 'defines': [
                   'MEMORY_TOOL_REPLACES_ALLOCATOR',
-                ],
-              }],
-              ['_toolset=="target" and OS=="linux"', {
-                'ldflags': [
-                  # http://crbug.com/234010.
-                  '-lrt',
                 ],
               }],
             ],
@@ -3420,6 +3503,15 @@
                 ],
                 'defines': [
                   'ADDRESS_SANITIZER',
+                ],
+              }],
+            ],
+          }],
+          ['asan_coverage!=0', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
+                  '-mllvm -asan-coverage=<(asan_coverage)',
                 ],
               }],
             ],
@@ -3473,6 +3565,7 @@
                   '-fsanitize=memory',
                   '-fsanitize-memory-track-origins',
                   '-fPIC',
+                  '-fsanitize-blacklist=<(msan_blacklist)',
                 ],
                 'ldflags': [
                   '-fsanitize=memory',
@@ -3518,6 +3611,12 @@
               }],
             ],
           }],
+          ['use_custom_libcxx==1', {
+            'dependencies': [
+              '<(DEPTH)/third_party/libc++/libc++.gyp:libc++',
+              '<(DEPTH)/third_party/libc++abi/libc++abi.gyp:libc++abi',
+            ],
+          }],
           ['order_profiling!=0 and (chromeos==1 or OS=="linux" or OS=="android")', {
             'target_conditions' : [
               ['_toolset=="target"', {
@@ -3552,31 +3651,8 @@
               }],
             ],
           }],
-          ['linux_use_heapchecker==1', {
-            'variables': {'linux_use_tcmalloc%': 1},
-            'defines': [
-                'USE_HEAPCHECKER',
-                'MEMORY_TOOL_REPLACES_ALLOCATOR',
-            ],
-            'conditions': [
-              ['component=="shared_library"', {
-                # See crbug.com/112389
-                # TODO(glider): replace with --dynamic-list or something
-                'ldflags': ['-rdynamic'],
-              }],
-            ],
-          }],
           ['linux_use_tcmalloc==0 and android_use_tcmalloc==0', {
             'defines': ['NO_TCMALLOC'],
-          }],
-          ['linux_keep_shadow_stacks==1', {
-            'defines': ['KEEP_SHADOW_STACKS'],
-            'cflags': [
-              '-finstrument-functions',
-              # Allow mmx intrinsics to inline, so that the compiler can expand
-              # the intrinsics.
-              '-finstrument-functions-exclude-file-list=mmintrin.h',
-            ],
           }],
           ['linux_use_gold_flags==1', {
             'target_conditions': [
@@ -3587,8 +3663,10 @@
                   # https://groups.google.com/a/chromium.org/group/chromium-dev/browse_thread/thread/281527606915bb36
                   # Only apply this to the target linker, since the host
                   # linker might not be gold, but isn't used much anyway.
-                  '-Wl,--threads',
-                  '-Wl,--thread-count=4',
+                  # TODO(raymes): Disable threading because gold is frequently
+                  # crashing on the bots: crbug.com/161942.
+                  # '-Wl,--threads',
+                  # '-Wl,--thread-count=4',
                 ],
               }],
             ],
@@ -3828,13 +3906,9 @@
                   '-Wno-extra', # Enabled by -Wextra, but no specific flag
                   '-Wno-ignored-qualifiers',
                   '-Wno-type-limits',
+                  '-Wno-unused-but-set-variable',
                 ],
                 'cflags_cc': [
-                  # Disabling c++0x-compat should be handled in WebKit, but
-                  # this currently doesn't work because gcc_version is not set
-                  # correctly when building with the Android build system.
-                  # TODO(torne): Fix this in WebKit.
-                  '-Wno-error=c++0x-compat',
                   # Other things unrelated to -Wextra:
                   '-Wno-non-virtual-dtor',
                   '-Wno-sign-promo',
@@ -3939,14 +4013,6 @@
                   }],
                 ],
               }],
-              # ndk-build copies .a's around the filesystem, breaking
-              # relative paths in thin archives.  Disable using thin
-              # archives to avoid problems until one of these is fixed:
-              # http://code.google.com/p/android/issues/detail?id=40302
-              # http://code.google.com/p/android/issues/detail?id=40303
-              ['_type=="static_library"', {
-                'standalone_static_library': 1,
-              }],
             ],
           }],
           # Settings for building host targets using the system toolchain.
@@ -4021,9 +4087,6 @@
             # Note that the prebuilt Clang binaries should not be used for iOS
             # development except for ASan builds.
             ['clang==1', {
-              'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
-              'LDPLUSPLUS': '$(SOURCE_ROOT)/<(clang_dir)/clang++',
-
               # gnu++11 instead of c++11 is needed because some code uses
               # typeof() (a GNU extension).
               # TODO(thakis): Eventually switch this to c++11 instead of
@@ -4058,24 +4121,37 @@
 
                 # Warns when a const char[] is converted to bool.
                 '-Wstring-conversion',
+              ],
 
-                # Clang considers the `register` keyword as deprecated, but e.g.
-                # code generated by flex (used in angle) contains that keyword.
-                # http://crbug.com/255186
-                '-Wno-deprecated-register',
+              'conditions': [
+                ['clang_xcode==0', {
+                  'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
+                  'LDPLUSPLUS': '$(SOURCE_ROOT)/<(clang_dir)/clang++',
+
+                  'WARNING_CFLAGS': [
+                    # Clang considers the `register` keyword as deprecated, but
+                    # e.g. code generated by flex (used in angle) contains that
+                    # keyword. http://crbug.com/255186
+                    #
+                    # Note: clang as shipped with Xcode is older and does not
+                    # treat the `register` as deprecated and does not define
+                    # this flag, so don't enable it if "clang_xcode" is "1".
+                    '-Wno-deprecated-register',
+                  ],
+                }],
               ],
             }],
-            ['clang==1 and clang_use_chrome_plugins==1', {
+            ['clang==1 and clang_xcode==0 and clang_use_chrome_plugins==1', {
               'OTHER_CFLAGS': [
                 '<@(clang_chrome_plugins_flags)',
               ],
             }],
-            ['clang==1 and clang_load!=""', {
+            ['clang==1 and clang_xcode==0 and clang_load!=""', {
               'OTHER_CFLAGS': [
                 '-Xclang', '-load', '-Xclang', '<(clang_load)',
               ],
             }],
-            ['clang==1 and clang_add_plugin!=""', {
+            ['clang==1 and clang_xcode==0 and clang_add_plugin!=""', {
               'OTHER_CFLAGS': [
                 '-Xclang', '-add-plugin', '-Xclang', '<(clang_add_plugin)',
               ],
@@ -4106,6 +4182,15 @@
               'MEMORY_TOOL_REPLACES_ALLOCATOR',
             ],
           }],
+          ['asan_coverage!=0', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
+                  '-mllvm -asan-coverage=<(asan_coverage)',
+                ],
+              }],
+            ],
+          }],
         ],
         'target_conditions': [
           ['_type!="static_library"', {
@@ -4115,6 +4200,13 @@
                 'xcode_settings': {
                   'OTHER_LDFLAGS': [
                     '-fsanitize=address',
+                  ],
+                },
+              }],
+              ['mac_write_linker_maps==1', {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-Wl,-map,>(_target_name).map',
                   ],
                 },
               }],
@@ -4340,14 +4432,32 @@
             # Match OS X clang C++11 warning settings.
             '-Wno-c++11-narrowing',
           ],
+
+          # Limit the valid architectures depending on "target_subarch".
+          # This need to include the "arm" architectures but also the "x86"
+          # ones (they are used when building for the simulator).
+          'conditions': [
+            ['target_subarch=="arm32"', {
+              'VALID_ARCHS': ['armv7', 'i386'],
+            }],
+            ['target_subarch=="arm64"', {
+              'VALID_ARCHS': ['arm64', 'x86_64'],
+            }],
+            ['target_subarch=="both"', {
+              'VALID_ARCHS': ['arm64', 'armv7', 'x86_64', 'i386'],
+            }],
+          ],
         },
         'target_conditions': [
           ['_toolset=="host"', {
             'xcode_settings': {
               'SDKROOT': 'macosx<(mac_sdk)',  # -isysroot
               'MACOSX_DEPLOYMENT_TARGET': '<(mac_deployment_target)',
+              'VALID_ARCHS': [
+                'x86_64',
+              ],
               'ARCHS': [
-                'x86_64'
+                'x86_64',
               ],
             },
           }],
@@ -4357,6 +4467,7 @@
               # since we can't negate the iphone deployment target above, we
               # instead set it here for target only.
               'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_deployment_target)',
+              'ARCHS': ['$(ARCHS_STANDARD_INCLUDING_64_BIT)'],
             },
           }],
           ['_type=="executable"', {
@@ -4511,12 +4622,14 @@
               '<(windows_driver_kit_path)/inc/mfc42',
             ],
             'target_conditions': [
-              ['chromium_code', {
+              ['chromium_code and MSVS_VERSION=="2010e"', {
                 # Workaround for intsafe in 2010 Express + WDK.
                 # ATL code uses intsafe.h and both intsafe.h and stdint.h
                 # define INT8_MIN et al.
                 # We can't use this workaround in third_party code because
                 # it has various levels of intolerance for including stdint.h.
+                # This is not necessary in 2013e, and should be removed once
+                # mainline is switched: http://crbug.com/340358.
                 'msvs_system_include_dirs': [
                   '<(DEPTH)/build',
                 ],
@@ -4535,7 +4648,6 @@
           '<(windows_sdk_path)/Include/winrt',
           '$(VSInstallDir)/VC/atlmfc/include',
         ],
-        'msvs_cygwin_dirs': ['<(DEPTH)/third_party/cygwin'],
         'msvs_cygwin_shell': 0,
         'msvs_disabled_warnings': [4351, 4355, 4396, 4503, 4819,
           # TODO(maruel): These warnings are level 4. They will be slowly
@@ -4631,6 +4743,75 @@
               }
             }],
           ],
+          'conditions': [
+            ['clang==1', {
+              # Building with Clang on Windows is a work in progress and very
+              # experimental. See crbug.com/82385.
+              'VCCLCompilerTool': {
+                'WarnAsError': 'false',
+                'RuntimeTypeInfo': 'false',
+                'AdditionalOptions': [
+                  '/fallback',
+
+                  # Many files use intrinsics without including this header.
+                  # TODO(hans): Fix those files, or move this to sub-GYPs.
+                  '/FIIntrin.h',
+
+                  # TODO(hans): Make this list shorter eventually.
+                  '-Qunused-arguments',
+                  '-Wno-c++11-compat-deprecated-writable-strings',
+                  '-Wno-char-subscripts',
+                  '-Wno-deprecated-declarations',
+                  '-Wno-deprecated-register',
+                  '-Wno-empty-body',
+                  '-Wno-enum-conversion',
+                  '-Wno-extra-tokens',
+                  '-Wno-ignored-attributes',
+                  '-Wno-incompatible-pointer-types',
+                  '-Wno-int-to-void-pointer-cast',
+                  '-Wno-invalid-noreturn',
+                  '-Wno-logical-op-parentheses',
+                  '-Wno-microsoft',
+                  '-Wno-missing-braces',
+                  '-Wno-missing-declarations',
+                  '-Wno-msvc-include',
+                  '-Wno-null-dereference',
+                  '-Wno-overloaded-virtual',
+                  '-Wno-parentheses',
+                  '-Wno-pointer-sign',
+                  '-Wno-reorder',
+                  '-Wno-return-type-c-linkage',
+                  '-Wno-self-assign',
+                  '-Wno-sometimes-uninitialized',
+                  '-Wno-switch',
+                  '-Wno-tautological-compare',
+                  '-Wno-unknown-pragmas',
+                  '-Wno-unsequenced',
+                  '-Wno-unused-function',
+                  '-Wno-unused-private-field',
+                  '-Wno-unused-value',
+                  '-Wno-unused-variable',
+                  '-ferror-limit=1',
+                ],
+              },
+              'conditions': [
+                ['MSVS_VERSION=="2013" or MSVS_VERSION=="2013e"', {
+                  'VCCLCompilerTool': {
+                    'AdditionalOptions': [
+                      '-fmsc-version=1800',
+                    ],
+                  },
+                }],
+                ['MSVS_VERSION=="2010" or MSVS_VERSION=="2010e"', {
+                  'VCCLCompilerTool': {
+                    'AdditionalOptions': [
+                      '-fmsc-version=1600',
+                    ],
+                  },
+                }],
+              ],
+            }],
+          ],
         },
       },
     }],
@@ -4665,7 +4846,7 @@
                   '/nxcompat',
                 ],
                 'conditions': [
-                  ['asan==0', {
+                  ['syzyasan==0', {
                     'AdditionalOptions': ['/largeaddressaware'],
                   }],
                 ],
@@ -4705,12 +4886,19 @@
         ],
       },
     }],
-    ['clang==1', {
+    ['clang==1 and ((OS!="mac" and OS!="ios") or clang_xcode==0) '
+        'and OS!="win"', {
       'make_global_settings': [
         ['CC', '<(make_clang_dir)/bin/clang'],
         ['CXX', '<(make_clang_dir)/bin/clang++'],
         ['CC.host', '$(CC)'],
         ['CXX.host', '$(CXX)'],
+      ],
+    }],
+    ['clang==1 and OS=="win"', {
+      'make_global_settings': [
+        # On Windows, gyp's ninja generator only looks at CC.
+        ['CC', '<(make_clang_dir)/bin/clang-cl'],
       ],
     }],
     ['OS=="android" and clang==0', {
@@ -4735,7 +4923,8 @@
     # TODO(yyanagisawa): supports GENERATOR==make
     #  make generator doesn't support CC_wrapper without CC
     #  in make_global_settings yet.
-    ['use_goma==1 and ("<(GENERATOR)"=="ninja" or clang==1)', {
+    ['use_goma==1 and ((OS!="mac" and OS!="ios") or clang_xcode==0) and '
+        '("<(GENERATOR)"=="ninja" or clang==1)', {
       'make_global_settings': [
        ['CC_wrapper', '<(gomadir)/gomacc'],
        ['CXX_wrapper', '<(gomadir)/gomacc'],
@@ -4783,7 +4972,6 @@
       ['OS=="ios"', {
         # Target both iPhone and iPad.
         'TARGETED_DEVICE_FAMILY': '1,2',
-        'VALID_ARCHS': 'armv7 i386',
       }, {  # OS!="ios"
         'conditions': [
           ['target_arch=="x64"', {

@@ -172,7 +172,6 @@
         'capi_util.cc',
         'capi_util.h',
         'crypto_export.h',
-        'crypto_module_blocking_password_delegate.h',
         'cssm_init.cc',
         'cssm_init.h',
         'curve25519.cc',
@@ -204,6 +203,7 @@
         'mock_apple_keychain_mac.cc',
         'p224_spake.cc',
         'p224_spake.h',
+        'nss_crypto_module_delegate.h',
         'nss_util.cc',
         'nss_util.h',
         'nss_util_internal.h',
@@ -327,7 +327,7 @@
           # for the helper.
           'type': '<(component)',
           'dependencies': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
           ],
           'sources': [

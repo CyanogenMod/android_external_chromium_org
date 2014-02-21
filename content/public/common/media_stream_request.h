@@ -106,14 +106,15 @@ struct CONTENT_EXPORT MediaStreamDevice {
   // in media::AudioParameters.
   struct AudioDeviceParameters {
     AudioDeviceParameters()
-        : sample_rate(), channel_layout(), frames_per_buffer() {
+        : sample_rate(), channel_layout(), frames_per_buffer(), effects() {
     }
 
     AudioDeviceParameters(int sample_rate, int channel_layout,
-                          int frames_per_buffer)
+        int frames_per_buffer)
         : sample_rate(sample_rate),
           channel_layout(channel_layout),
-          frames_per_buffer(frames_per_buffer) {
+          frames_per_buffer(frames_per_buffer),
+          effects() {
     }
 
     // Preferred sample rate in samples per second for the device.
@@ -129,6 +130,9 @@ struct CONTENT_EXPORT MediaStreamDevice {
     // expected browser side settings and avoid unnecessary buffering.
     // See media::AudioParameters for more.
     int frames_per_buffer;
+
+    // See media::AudioParameters::PlatformEffectsMask.
+    int effects;
   };
 
   // These below two member variables are valid only when the type of device is
@@ -149,9 +153,6 @@ typedef std::vector<MediaStreamDevice> MediaStreamDevices;
 typedef std::map<MediaStreamType, MediaStreamDevices> MediaStreamDeviceMap;
 
 // Represents a request for media streams (audio/video).
-// It looks like the last 4 parameters should use StreamOptions instead, but
-// StreamOption depends on media_stream_request.h because it needs
-// MediaStreamDevice.
 // TODO(vrk): Decouple MediaStreamDevice from this header file so that
 // media_stream_options.h no longer depends on this file.
 // TODO(vrk,justinlin,wjia): Figure out a way to share this code cleanly between

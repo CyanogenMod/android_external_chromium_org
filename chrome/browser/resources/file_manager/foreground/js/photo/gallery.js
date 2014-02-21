@@ -47,7 +47,7 @@ function Gallery(context, volumeManager) {
 
   this.dataModel_ = new cr.ui.ArrayDataModel([]);
   this.selectionModel_ = new cr.ui.ListSelectionModel();
-  this.displayStringFunction_ = context.displayStringFunction;
+  loadTimeData.data = context.loadTimeData;
 
   this.initDom_();
   this.initListeners_();
@@ -165,6 +165,10 @@ Gallery.prototype.onUnload = function(exiting) {
  * @private
  */
 Gallery.prototype.initDom_ = function() {
+  // Initialize the dialog label.
+  cr.ui.dialogs.BaseDialog.OK_LABEL = str('GALLERY_OK_LABEL');
+  cr.ui.dialogs.BaseDialog.CANCEL_LABEL = str('GALLERY_CANCEL_LABEL');
+
   var content = util.createChild(this.container_, 'content');
   content.addEventListener('click', this.onContentClick_.bind(this));
 
@@ -208,8 +212,7 @@ Gallery.prototype.initDom_ = function() {
 
   util.createChild(this.toolbar_, 'button-spacer');
 
-  this.prompt_ = new ImageEditor.Prompt(
-      this.container_, this.displayStringFunction_);
+  this.prompt_ = new ImageEditor.Prompt(this.container_, str);
 
   this.modeButton_ = util.createChild(this.toolbar_, 'button mode', 'button');
   this.modeButton_.addEventListener('click',
@@ -219,6 +222,7 @@ Gallery.prototype.initDom_ = function() {
                                     this.dataModel_,
                                     this.selectionModel_,
                                     this.metadataCache_,
+                                    this.volumeManager_,
                                     this.toggleMode_.bind(this, null));
 
   this.slideMode_ = new SlideMode(this.container_,
@@ -229,7 +233,7 @@ Gallery.prototype.initDom_ = function() {
                                   this.selectionModel_,
                                   this.context_,
                                   this.toggleMode_.bind(this),
-                                  this.displayStringFunction_);
+                                  str);
 
   this.slideMode_.addEventListener('image-displayed', function() {
     cr.dispatchSimpleEvent(this, 'image-displayed');
@@ -266,7 +270,7 @@ Gallery.prototype.initDom_ = function() {
  */
 Gallery.prototype.createToolbarButton_ = function(className, title) {
   var button = util.createChild(this.toolbar_, className, 'button');
-  button.title = this.displayStringFunction_(title);
+  button.title = str(title);
   return button;
 };
 
@@ -274,8 +278,7 @@ Gallery.prototype.createToolbarButton_ = function(className, title) {
  * Loads the content.
  *
  * @param {Array.<Entry>} entries Array of entries.
- * @param {Array.<Entry>} selectedEntries Array of selected entries. Must be a
- *     subset of {@code entries}.
+ * @param {Array.<Entry>} selectedEntries Array of selected entries.
  */
 Gallery.prototype.load = function(entries, selectedEntries) {
   var items = [];
@@ -286,9 +289,15 @@ Gallery.prototype.load = function(entries, selectedEntries) {
 
   this.selectionModel_.adjustLength(this.dataModel_.length);
 
+  // Comparing Entries by reference is not safe. Therefore we have to use URLs.
+  var entryIndexesByURLs = {};
+  for (var index = 0; index < entries.length; index++) {
+    entryIndexesByURLs[entries[index].toURL()] = index;
+  }
+
   for (var i = 0; i !== selectedEntries.length; i++) {
-    var selectedIndex = entries.indexOf(selectedEntries[i]);
-    if (selectedIndex >= 0)
+    var selectedIndex = entryIndexesByURLs[selectedEntries[i].toURL()];
+    if (selectedIndex !== undefined)
       this.selectionModel_.setIndexSelected(selectedIndex, true);
     else
       console.error('Cannot select ' + selectedEntries[i]);
@@ -493,7 +502,7 @@ Gallery.prototype.delete_ = function() {
     // TODO(hirono): Use fileOperationManager.
     var entry = itemsToRemove.pop().getEntry();
     entry.remove(deleteNext, function() {
-      util.flog('Error deleting: ' + entry.fullPath, deleteNext);
+      util.flog('Error deleting: ' + entry.name, deleteNext);
     });
   }
 
@@ -503,14 +512,10 @@ Gallery.prototype.delete_ = function() {
     this.document_.body.addEventListener('keydown', this.keyDownBound_);
   }.bind(this);
 
-  cr.ui.dialogs.BaseDialog.OK_LABEL = this.displayStringFunction_(
-      'GALLERY_OK_LABEL');
-  cr.ui.dialogs.BaseDialog.CANCEL_LABEL =
-      this.displayStringFunction_('GALLERY_CANCEL_LABEL');
+
   var confirm = new cr.ui.dialogs.ConfirmDialog(this.container_);
-  confirm.show(
-      this.displayStringFunction_(plural ? 'GALLERY_CONFIRM_DELETE_SOME' :
-          'GALLERY_CONFIRM_DELETE_ONE', param),
+  confirm.show(str(plural ?
+      'GALLERY_CONFIRM_DELETE_SOME' : 'GALLERY_CONFIRM_DELETE_ONE', param),
       function() {
         restoreListener();
         this.selectionModel_.unselectAll();
@@ -631,43 +636,39 @@ Gallery.prototype.onKeyDown_ = function(event) {
  * @private
  */
 Gallery.prototype.updateSelectionAndState_ = function() {
-  var path;
+  var numSelectedItems = this.selectionModel_.selectedIndexes.length;
   var displayName = '';
+  var selectedEntryURL = null;
 
-  var selectedItems = this.getSelectedItems();
-  if (selectedItems.length === 1) {
-    var item = selectedItems[0];
-    var entry = item.getEntry();
-    window.top.document.title = entry.name;
-    displayName = ImageUtil.getDisplayNameFromName(entry.name);
-  } else if (selectedItems.length > 1 && this.context_.curDirEntry) {
-    // If the Gallery was opened on search results the search query will not be
-    // recorded in the app state and the relaunch will just open the gallery
-    // in the curDirEntry directory.
-    path = this.context_.curDirEntry.fullPath;
-    window.top.document.title = this.context_.curDirEntry.name;
-    displayName =
-        this.displayStringFunction_('GALLERY_ITEMS_SELECTED',
-                                    selectedItems.length);
+  // If it's selecting something, update the variable values.
+  if (numSelectedItems) {
+    var selectedItem =
+        this.dataModel_.item(this.selectionModel_.selectedIndex);
+    this.selectedEntry_ = selectedItem.getEntry();
+    selectedEntryURL = this.selectedEntry_.toURL();
+
+    if (numSelectedItems === 1) {
+      window.top.document.title = this.selectedEntry_.name;
+      displayName = ImageUtil.getDisplayNameFromName(this.selectedEntry_.name);
+    } else if (this.context_.curDirEntry) {
+      // If the Gallery was opened on search results the search query will not
+      // be recorded in the app state and the relaunch will just open the
+      // gallery in the curDirEntry directory.
+      window.top.document.title = this.context_.curDirEntry.name;
+      displayName = str('GALLERY_ITEMS_SELECTED', numSelectedItems);
+    }
   }
 
-  window.top.util.updateAppState(path,
+  window.top.util.updateAppState(
+      null,  // Keep the current directory.
+      selectedEntryURL,  // Update the selection.
       {gallery: (this.currentMode_ === this.mosaicMode_ ? 'mosaic' : 'slide')});
 
   // We can't rename files in readonly directory.
   // We can only rename a single file.
-  this.filenameEdit_.disabled = selectedItems.length !== 1 ||
+  this.filenameEdit_.disabled = numSelectedItems !== 1 ||
                                 this.context_.readonlyDirName;
-
   this.filenameEdit_.value = displayName;
-
-  // Resolve real filesystem path of the current file.
-  if (this.selectionModel_.selectedIndexes.length) {
-    var selectedIndex = this.selectionModel_.selectedIndex;
-    var selectedItem =
-        this.dataModel_.item(this.selectionModel_.selectedIndex);
-    this.selectedEntry_ = selectedItem.getEntry();
-  }
 };
 
 /**
@@ -819,7 +820,20 @@ Gallery.prototype.updateShareMenu_ = function() {
       item.style.backgroundImage = 'url(' + task.iconUrl + ')';
       item.addEventListener('click', function(taskId) {
         this.toggleShare_();  // Hide the menu.
-        this.executeWhenReady(api.executeTask.bind(api, taskId, entries));
+        // TODO(hirono): Use entries instead of URLs.
+        this.executeWhenReady(
+            api.executeTask.bind(
+                api,
+                taskId,
+                util.entriesToURLs(entries),
+                function(result) {
+                  var alertDialog =
+                      new cr.ui.dialogs.AlertDialog(this.container_);
+                  util.isTeleported(window).then(function(teleported) {
+                    if (teleported)
+                      util.showOpenInOtherDesktopAlert(alertDialog, entries);
+                  }.bind(this));
+                }.bind(this)));
       }.bind(this, task.taskId));
     }
 
@@ -861,7 +875,6 @@ Gallery.prototype.updateButtons_ = function() {
     var oppositeMode =
         this.currentMode_ === this.slideMode_ ? this.mosaicMode_ :
                                                 this.slideMode_;
-    this.modeButton_.title =
-        this.displayStringFunction_(oppositeMode.getTitle());
+    this.modeButton_.title = str(oppositeMode.getTitle());
   }
 };

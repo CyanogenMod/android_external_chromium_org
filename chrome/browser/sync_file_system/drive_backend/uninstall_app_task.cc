@@ -9,6 +9,7 @@
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
@@ -70,7 +71,8 @@ void UninstallAppTask::Run(const SyncStatusCallback& callback) {
 void UninstallAppTask::DidDeleteAppRoot(const SyncStatusCallback& callback,
                                         int64 change_id,
                                         google_apis::GDataErrorCode error) {
-  if (error != google_apis::HTTP_SUCCESS &&
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK &&
       error != google_apis::HTTP_NOT_FOUND) {
     callback.Run(SYNC_STATUS_FAILED);
     return;

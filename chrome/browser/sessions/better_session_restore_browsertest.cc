@@ -125,10 +125,10 @@ class BetterSessionRestoreTest : public InProcessBrowserTest {
   BetterSessionRestoreTest()
       : fake_server_address_("http://www.test.com/"),
         test_path_("session_restore/"),
-        title_pass_(ASCIIToUTF16("PASS")),
-        title_storing_(ASCIIToUTF16("STORING")),
-        title_error_write_failed_(ASCIIToUTF16("ERROR_WRITE_FAILED")),
-        title_error_empty_(ASCIIToUTF16("ERROR_EMPTY")) {
+        title_pass_(base::ASCIIToUTF16("PASS")),
+        title_storing_(base::ASCIIToUTF16("STORING")),
+        title_error_write_failed_(base::ASCIIToUTF16("ERROR_WRITE_FAILED")),
+        title_error_empty_(base::ASCIIToUTF16("ERROR_EMPTY")) {
     // Set up the URL request filtering.
     std::vector<std::string> test_files;
     test_files.push_back("common.js");
@@ -473,6 +473,26 @@ IN_PROC_BROWSER_TEST_F(ContinueWhereILeftOffTest, SessionCookiesBrowserClose) {
   CheckReloadedPageRestored(new_browser);
 }
 
+// Test that leaving a popup open will not prevent session restore.
+IN_PROC_BROWSER_TEST_F(ContinueWhereILeftOffTest,
+                       SessionCookiesBrowserCloseWithPopupOpen) {
+  if (browser_defaults::kRestorePopups)
+    return;
+
+  // Set the startup preference to "continue where I left off" and visit a page
+  // which stores a session cookie.
+  StoreDataWithPage("session_cookies.html");
+  Browser* popup = new Browser(Browser::CreateParams(
+      Browser::TYPE_POPUP,
+      browser()->profile(),
+      chrome::HOST_DESKTOP_TYPE_NATIVE));
+  popup->window()->Show();
+
+  Browser* new_browser = QuitBrowserAndRestore(browser(), false);
+  // The browsing session will be continued; just wait for the page to reload
+  // and check the stored data.
+  CheckReloadedPageRestored(new_browser);
+}
 IN_PROC_BROWSER_TEST_F(ContinueWhereILeftOffTest,
                        CookiesClearedOnBrowserClose) {
   StoreDataWithPage("cookies.html");
@@ -738,6 +758,37 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, SessionCookiesBrowserClose) {
   NavigateAndCheckStoredData(new_browser, "session_cookies.html");
   DisableBackgroundMode();
   new_browser = QuitBrowserAndRestore(new_browser, false);
+  if (browser_defaults::kBrowserAliveWithNoWindows)
+    NavigateAndCheckStoredData(new_browser, "session_cookies.html");
+  else
+    StoreDataWithPage(new_browser, "session_cookies.html");
+}
+
+// Tests that session cookies are not cleared when only a popup window is open.
+IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest,
+                       SessionCookiesBrowserCloseWithPopupOpen) {
+  StoreDataWithPage("session_cookies.html");
+  Browser* popup = new Browser(Browser::CreateParams(
+      Browser::TYPE_POPUP,
+      browser()->profile(),
+      chrome::HOST_DESKTOP_TYPE_NATIVE));
+  popup->window()->Show();
+  Browser* new_browser = QuitBrowserAndRestore(browser(), false);
+  NavigateAndCheckStoredData(new_browser, "session_cookies.html");
+}
+
+// Tests that session cookies are cleared if the last window to close is a
+// popup.
+IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest,
+                       SessionCookiesBrowserClosePopupLast) {
+  StoreDataWithPage("session_cookies.html");
+  Browser* popup = new Browser(Browser::CreateParams(
+      Browser::TYPE_POPUP,
+      browser()->profile(),
+      chrome::HOST_DESKTOP_TYPE_NATIVE));
+  popup->window()->Show();
+  CloseBrowserSynchronously(browser(), false);
+  Browser* new_browser = QuitBrowserAndRestore(popup, false);
   if (browser_defaults::kBrowserAliveWithNoWindows)
     NavigateAndCheckStoredData(new_browser, "session_cookies.html");
   else

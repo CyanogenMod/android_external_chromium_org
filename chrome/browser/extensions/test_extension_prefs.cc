@@ -16,13 +16,14 @@
 #include "base/sequenced_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_pref_store.h"
-#include "chrome/browser/extensions/extension_pref_value_map.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/prefs/pref_service_mock_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/common/chrome_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_pref_store.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
@@ -61,7 +62,7 @@ class IncrementalTimeProvider : public ExtensionPrefs::TimeProvider {
 TestExtensionPrefs::TestExtensionPrefs(base::SequencedTaskRunner* task_runner)
     : task_runner_(task_runner), extensions_disabled_(false) {
   EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
-  preferences_file_ = temp_dir_.path().AppendASCII("Preferences");
+  preferences_file_ = temp_dir_.path().Append(chrome::kPreferencesFilename);
   extensions_dir_ = temp_dir_.path().AppendASCII("Extensions");
   EXPECT_TRUE(base::CreateDirectory(extensions_dir_));
 
@@ -123,14 +124,14 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtension(std::string name) {
-  DictionaryValue dictionary;
+  base::DictionaryValue dictionary;
   dictionary.SetString(manifest_keys::kName, name);
   dictionary.SetString(manifest_keys::kVersion, "0.1");
   return AddExtensionWithManifest(dictionary, Manifest::INTERNAL);
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddApp(std::string name) {
-  DictionaryValue dictionary;
+  base::DictionaryValue dictionary;
   dictionary.SetString(manifest_keys::kName, name);
   dictionary.SetString(manifest_keys::kVersion, "0.1");
   dictionary.SetString(manifest_keys::kApp, "true");
@@ -140,13 +141,13 @@ scoped_refptr<Extension> TestExtensionPrefs::AddApp(std::string name) {
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifest(
-    const DictionaryValue& manifest, Manifest::Location location) {
+    const base::DictionaryValue& manifest, Manifest::Location location) {
   return AddExtensionWithManifestAndFlags(manifest, location,
                                           Extension::NO_FLAGS);
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
-    const DictionaryValue& manifest,
+    const base::DictionaryValue& manifest,
     Manifest::Location location,
     int extra_flags) {
   std::string name;

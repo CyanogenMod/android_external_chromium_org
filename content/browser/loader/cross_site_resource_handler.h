@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "content/browser/loader/layered_resource_handler.h"
+#include "content/common/content_export.h"
 #include "net/url_request/url_request_status.h"
 
 namespace net {
@@ -46,6 +47,11 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   // WebContentsImpl to swap in the new renderer and destroy the old one.
   void ResumeResponse();
 
+  // When set to true, requests are leaked when they can't be passed to a
+  // RenderViewHost, for unit tests.
+  CONTENT_EXPORT static void SetLeakRequestsForTesting(
+      bool leak_requests_for_testing);
+
  private:
   // Prepare to render the cross-site response in a new RenderViewHost, by
   // telling the old RenderViewHost to run its onunload handler.
@@ -54,6 +60,10 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
                                 bool should_transfer);
 
   void ResumeIfDeferred();
+
+  // Called when about to defer a request.  Sets |did_defer_| and logs the
+  // defferral
+  void OnDidDefer();
 
   bool has_started_response_;
   bool in_cross_site_transition_;

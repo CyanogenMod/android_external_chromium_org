@@ -61,17 +61,7 @@ void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
                                     LoginUtils::Delegate* delegate) {
   UserManager::Get()->UserLoggedIn(
       user_context.username, user_context.username_hash, false);
-  Profile* profile;
-  if (should_launch_browser_) {
-    profile = CreateProfile(user_context.username);
-  } else {
-    TestingProfile* testing_profile = new TestingProfile();
-    testing_profile->set_profile_name(user_context.username);
-
-    profile = testing_profile;
-    g_browser_process->profile_manager()->
-        RegisterTestingProfile(profile, false, false);
-  }
+  Profile* profile = CreateProfile(user_context.username);
 
   if (UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
     User* active_user = UserManager::Get()->GetActiveUser();
@@ -116,6 +106,10 @@ void FakeLoginUtils::RestoreAuthenticationSession(Profile* profile) {
 }
 
 void FakeLoginUtils::InitRlzDelayed(Profile* user_profile) {
+  NOTREACHED() << "Method not implemented.";
+}
+
+void FakeLoginUtils::StartCertLoader(Profile* user_profile) {
   NOTREACHED() << "Method not implemented.";
 }
 

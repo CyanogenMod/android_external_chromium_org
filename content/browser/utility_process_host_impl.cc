@@ -73,6 +73,9 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
       is_batch_mode_(false),
       is_mdns_enabled_(false),
       no_sandbox_(false),
+#if defined(OS_WIN)
+      run_elevated_(false),
+#endif
 #if defined(OS_LINUX)
       child_flags_(ChildProcessHost::CHILD_ALLOW_SELF),
 #else
@@ -119,6 +122,13 @@ void UtilityProcessHostImpl::DisableSandbox() {
   no_sandbox_ = true;
 }
 
+#if defined(OS_WIN)
+void UtilityProcessHostImpl::ElevatePrivileges() {
+  no_sandbox_ = true;
+  run_elevated_ = true;
+}
+#endif
+
 const ChildProcessData& UtilityProcessHostImpl::GetData() {
   return process_->GetData();
 }
@@ -142,7 +152,7 @@ bool UtilityProcessHostImpl::StartProcess() {
   // Name must be set or metrics_service will crash in any test which
   // launches a UtilityProcessHost.
   process_.reset(new BrowserChildProcessHostImpl(PROCESS_TYPE_UTILITY, this));
-  process_->SetName(ASCIIToUTF16("utility process"));
+  process_->SetName(base::ASCIIToUTF16("utility process"));
 
   std::string channel_id = process_->GetHost()->CreateChannel();
   if (channel_id.empty())
@@ -210,6 +220,12 @@ bool UtilityProcessHostImpl::StartProcess() {
     if (is_mdns_enabled_)
       cmd_line->AppendSwitch(switches::kUtilityProcessEnableMDns);
 
+#if defined(OS_WIN)
+    // Let the utility process know if it is intended to be elevated.
+    if (run_elevated_)
+      cmd_line->AppendSwitch(switches::kUtilityProcessRunningElevated);
+#endif
+
     bool use_zygote = false;
 
 #if defined(OS_LINUX)
@@ -221,6 +237,7 @@ bool UtilityProcessHostImpl::StartProcess() {
     process_->Launch(
 #if defined(OS_WIN)
         new UtilitySandboxedProcessLauncherDelegate(exposed_dir_),
+        run_elevated_,
 #elif defined(OS_POSIX)
         use_zygote,
         env_,
@@ -238,6 +255,13 @@ bool UtilityProcessHostImpl::OnMessageReceived(const IPC::Message& message) {
           &UtilityProcessHostClient::OnMessageReceived), client_.get(),
           message));
   return true;
+}
+
+void UtilityProcessHostImpl::OnProcessLaunchFailed() {
+  client_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&UtilityProcessHostClient::OnProcessLaunchFailed,
+                 client_.get()));
 }
 
 void UtilityProcessHostImpl::OnProcessCrashed(int exit_code) {

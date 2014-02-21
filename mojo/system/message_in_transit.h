@@ -6,9 +6,8 @@
 #define MOJO_SYSTEM_MESSAGE_IN_TRANSIT_H_
 
 #include <stdint.h>
-#include <stdlib.h>  // For |free()|.
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "mojo/system/system_impl_export.h"
 
 namespace mojo {
@@ -24,7 +23,7 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // Messages that are forwarded to |MessagePipe|s.
   static const Type kTypeMessagePipe = 1;
   // Messages that are consumed by the channel.
-  static const Type TYPE_CHANNEL = 2;
+  static const Type kTypeChannel = 2;
 
   typedef uint16_t Subtype;
   // Subtypes for type |kTypeMessagePipeEndpoint|:
@@ -40,29 +39,46 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // quantity (which must be a power of 2).
   static const size_t kMessageAlignment = 8;
 
-  // Creates a |MessageInTransit| of the given |type| and |subtype|, with the
-  // data given by |bytes|/|num_bytes|.
-  static MessageInTransit* Create(Type type, Subtype subtype,
-                                  const void* bytes, uint32_t num_bytes);
+  // Creates a |MessageInTransit| of the given |type| and |subtype|, with
+  // message data given by |bytes|/|num_bytes|.
+  // TODO(vtl): Add ability to tack on handle information.
+  static MessageInTransit* Create(Type type,
+                                  Subtype subtype,
+                                  const void* bytes,
+                                  uint32_t num_bytes,
+                                  uint32_t num_handles);
 
   // Destroys a |MessageInTransit| created using |Create()|.
-  inline void Destroy() {
-    // No need to call the destructor, since we're POD.
-    free(this);
-  }
+  void Destroy();
 
-  // Gets the size of the data (in number of bytes).
+  // Gets the size of the data (in number of bytes). This is the full size of
+  // the data that follows the header, and may include data other than the
+  // message data. (See also |num_bytes()|.)
   uint32_t data_size() const {
-    return size_;
+    return data_size_;
   }
 
-  // Gets the data (of size |size()| bytes).
+  // Gets the data (of size |data_size()| bytes).
   const void* data() const {
     return reinterpret_cast<const char*>(this) + sizeof(*this);
   }
 
+  // Gets the size of the message data.
+  uint32_t num_bytes() const {
+    return num_bytes_;
+  }
+
+  // Gets the message data (of size |num_bytes()| bytes).
+  const void* bytes() const {
+    return reinterpret_cast<const char*>(this) + sizeof(*this);
+  }
+
+  uint32_t num_handles() const {
+    return num_handles_;
+  }
+
   size_t size_with_header_and_padding() const {
-    return RoundUpMessageAlignment(sizeof(*this) + size_);
+    return RoundUpMessageAlignment(sizeof(*this) + data_size_);
   }
 
   Type type() const { return type_; }
@@ -83,19 +99,27 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   }
 
  private:
-  explicit MessageInTransit(uint32_t size, Type type, Subtype subtype)
-      : size_(size),
-        type_(type),
-        subtype_(subtype),
-        source_id_(kInvalidEndpointId),
-        destination_id_(kInvalidEndpointId) {}
+  MessageInTransit(uint32_t data_size,
+                   Type type,
+                   Subtype subtype,
+                   uint32_t num_bytes,
+                   uint32_t num_handles);
 
-  // "Header" for the data.
-  uint32_t size_;
+  // "Header" for the data. Must be a multiple of |kMessageAlignment| bytes in
+  // size.
+  // Total size of data following the "header".
+  uint32_t data_size_;
   Type type_;
   Subtype subtype_;
   EndpointId source_id_;
   EndpointId destination_id_;
+  // Size of actual message data.
+  uint32_t num_bytes_;
+  // Number of handles "attached".
+  uint32_t num_handles_;
+  // To be used soon.
+  uint32_t reserved0_;
+  uint32_t reserved1_;
 
   // Intentionally unimplemented (and private): Use |Destroy()| instead (which
   // simply frees the memory).
@@ -106,7 +130,8 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
 
 // The size of |MessageInTransit| must be appropriate to maintain alignment of
 // the following data.
-COMPILE_ASSERT(sizeof(MessageInTransit) == 16, MessageInTransit_has_wrong_size);
+COMPILE_ASSERT(sizeof(MessageInTransit) % MessageInTransit::kMessageAlignment ==
+                   0, MessageInTransit_has_wrong_size);
 
 }  // namespace system
 }  // namespace mojo

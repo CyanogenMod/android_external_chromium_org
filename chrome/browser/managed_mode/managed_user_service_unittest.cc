@@ -15,6 +15,7 @@
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_paths.h"
@@ -74,7 +75,7 @@ class ManagedUserServiceTest : public ::testing::Test {
   virtual void SetUp() OVERRIDE {
     TestingProfile::Builder builder;
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenService::Build);
+                              FakeProfileOAuth2TokenServiceWrapper::Build);
     profile_ = builder.Build();
     managed_user_service_ =
         ManagedUserServiceFactory::GetForProfile(profile_.get());
@@ -187,9 +188,9 @@ class ManagedUserServiceExtensionTestBase : public ExtensionServiceTestBase {
   }
 
   scoped_refptr<extensions::Extension> MakeThemeExtension() {
-    scoped_ptr<DictionaryValue> source(new DictionaryValue());
+    scoped_ptr<base::DictionaryValue> source(new base::DictionaryValue());
     source->SetString(extensions::manifest_keys::kName, "Theme");
-    source->Set(extensions::manifest_keys::kTheme, new DictionaryValue());
+    source->Set(extensions::manifest_keys::kTheme, new base::DictionaryValue());
     source->SetString(extensions::manifest_keys::kVersion, "1.0");
     extensions::ExtensionBuilder builder;
     scoped_refptr<extensions::Extension> extension =
@@ -198,7 +199,7 @@ class ManagedUserServiceExtensionTestBase : public ExtensionServiceTestBase {
   }
 
   scoped_refptr<extensions::Extension> MakeExtension() {
-    scoped_ptr<DictionaryValue> manifest = extensions::DictionaryBuilder()
+    scoped_ptr<base::DictionaryValue> manifest = extensions::DictionaryBuilder()
       .Set(extensions::manifest_keys::kName, "Extension")
       .Set(extensions::manifest_keys::kVersion, "1.0")
       .Build();
@@ -235,12 +236,12 @@ TEST_F(ManagedUserServiceExtensionTestUnmanaged,
   scoped_refptr<extensions::Extension> extension = MakeExtension();
   base::string16 error_1;
   EXPECT_TRUE(managed_user_service->UserMayLoad(extension.get(), &error_1));
-  EXPECT_EQ(string16(), error_1);
+  EXPECT_EQ(base::string16(), error_1);
 
   base::string16 error_2;
   EXPECT_TRUE(
       managed_user_service->UserMayModifySettings(extension.get(), &error_2));
-  EXPECT_EQ(string16(), error_2);
+  EXPECT_EQ(base::string16(), error_2);
 }
 
 TEST_F(ManagedUserServiceExtensionTest, ExtensionManagementPolicyProvider) {
@@ -341,9 +342,9 @@ TEST_F(ManagedUserServiceExtensionTest, InstallContentPacks) {
   std::vector<ManagedModeSiteList::Site> sites;
   site_lists[0]->GetSites(&sites);
   ASSERT_EQ(3u, sites.size());
-  EXPECT_EQ(ASCIIToUTF16("YouTube"), sites[0].name);
-  EXPECT_EQ(ASCIIToUTF16("Homestar Runner"), sites[1].name);
-  EXPECT_EQ(string16(), sites[2].name);
+  EXPECT_EQ(base::ASCIIToUTF16("YouTube"), sites[0].name);
+  EXPECT_EQ(base::ASCIIToUTF16("Homestar Runner"), sites[1].name);
+  EXPECT_EQ(base::string16(), sites[2].name);
 
   EXPECT_EQ(ManagedModeURLFilter::ALLOW,
             url_filter->GetFilteringBehaviorForURL(example_url));
@@ -367,7 +368,7 @@ TEST_F(ManagedUserServiceExtensionTest, InstallContentPacks) {
   std::set<std::string> site_names;
   for (std::vector<ManagedModeSiteList::Site>::const_iterator it =
       sites.begin(); it != sites.end(); ++it) {
-    site_names.insert(UTF16ToUTF8(it->name));
+    site_names.insert(base::UTF16ToUTF8(it->name));
   }
   EXPECT_TRUE(site_names.count("YouTube") == 1u);
   EXPECT_TRUE(site_names.count("Homestar Runner") == 1u);
@@ -389,7 +390,7 @@ TEST_F(ManagedUserServiceExtensionTest, InstallContentPacks) {
   sites.clear();
   site_lists[0]->GetSites(&sites);
   ASSERT_EQ(1u, sites.size());
-  EXPECT_EQ(ASCIIToUTF16("Moose"), sites[0].name);
+  EXPECT_EQ(base::ASCIIToUTF16("Moose"), sites[0].name);
 
   EXPECT_EQ(ManagedModeURLFilter::WARN,
             url_filter->GetFilteringBehaviorForURL(example_url));

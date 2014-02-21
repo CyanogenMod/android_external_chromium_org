@@ -13,13 +13,8 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
-#include "media/cast/cast_environment.h"
 #include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtp_sender/rtp_sender.h"
-
-namespace crypto {
-  class Encryptor;
-}
+#include "media/cast/transport/rtp_sender/rtp_sender.h"
 
 namespace media {
 class AudioBus;
@@ -31,7 +26,6 @@ namespace cast {
 class AudioEncoder;
 class LocalRtcpAudioSenderFeedback;
 class LocalRtpSenderStatistics;
-class PacedPacketSender;
 
 // This class is not thread safe.
 // It's only called from the main cast thread.
@@ -40,9 +34,13 @@ class AudioSender : public base::NonThreadSafe,
  public:
   AudioSender(scoped_refptr<CastEnvironment> cast_environment,
               const AudioSenderConfig& audio_config,
-              PacedPacketSender* const paced_packet_sender);
+              transport::CastTransportSender* const transport_sender);
 
   virtual ~AudioSender();
+
+  CastInitializationStatus InitializationResult() const {
+    return initialization_status_;
+  }
 
   // The |audio_bus| must be valid until the |done_callback| is called.
   // The callback is called from the main cast thread as soon as the encoder is
@@ -52,32 +50,26 @@ class AudioSender : public base::NonThreadSafe,
                    const base::TimeTicks& recorded_time,
                    const base::Closure& done_callback);
 
-  // The audio_frame must be valid until the closure callback is called.
-  // The closure callback is called from the main cast thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                             const base::TimeTicks& recorded_time,
-                             const base::Closure callback);
-
   // Only called from the main cast thread.
-  void IncomingRtcpPacket(const uint8* packet, size_t length,
-                          const base::Closure callback);
+  void IncomingRtcpPacket(scoped_ptr<Packet> packet);
 
  protected:
-  void SendEncodedAudioFrame(scoped_ptr<EncodedAudioFrame> audio_frame,
-                             const base::TimeTicks& recorded_time);
+  void SendEncodedAudioFrame(
+      scoped_ptr<transport::EncodedAudioFrame> audio_frame,
+      const base::TimeTicks& recorded_time);
 
  private:
   friend class LocalRtcpAudioSenderFeedback;
 
+  void SendEncodedAudioFrameToTransport(
+      scoped_ptr<transport::EncodedAudioFrame> audio_frame,
+      const base::TimeTicks& recorded_time);
+
   void ResendPackets(
       const MissingFramesAndPacketsMap& missing_frames_and_packets);
 
-  // Caller must allocate the destination |encrypted_frame|. The data member
-  // will be resized to hold the encrypted size.
-  bool EncryptAudioFrame(const EncodedAudioFrame& audio_frame,
-                         EncodedAudioFrame* encrypted_frame);
+  void ResendPacketsOnTransportThread(
+      const transport::MissingFramesAndPacketsMap& missing_packets);
 
   void ScheduleNextRtcpReport();
   void SendRtcpReport();
@@ -87,14 +79,13 @@ class AudioSender : public base::NonThreadSafe,
   base::WeakPtrFactory<AudioSender> weak_factory_;
 
   scoped_refptr<CastEnvironment> cast_environment_;
+  transport::CastTransportSender* const transport_sender_;
   scoped_refptr<AudioEncoder> audio_encoder_;
-  RtpSender rtp_sender_;
   scoped_ptr<LocalRtpSenderStatistics> rtp_audio_sender_statistics_;
   scoped_ptr<LocalRtcpAudioSenderFeedback> rtcp_feedback_;
   Rtcp rtcp_;
-  bool initialized_;
-  scoped_ptr<crypto::Encryptor> encryptor_;
-  std::string iv_mask_;
+  bool timers_initialized_;
+  CastInitializationStatus initialization_status_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioSender);
 };

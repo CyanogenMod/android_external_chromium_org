@@ -16,7 +16,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
-#include "chrome/browser/signin/signin_manager_cookie_helper.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -67,6 +66,10 @@ const std::string& SigninManagerBase::GetAuthenticatedUsername() const {
   return authenticated_username_;
 }
 
+const std::string& SigninManagerBase::GetAuthenticatedAccountId() const {
+  return GetAuthenticatedUsername();
+}
+
 void SigninManagerBase::SetAuthenticatedUsername(const std::string& username) {
   if (!authenticated_username_.empty()) {
     DLOG_IF(ERROR, !gaia::AreEmailsSame(username, authenticated_username_)) <<
@@ -109,6 +112,14 @@ bool SigninManagerBase::AuthInProgress() const {
 }
 
 void SigninManagerBase::Shutdown() {
+}
+
+void SigninManagerBase::AddObserver(Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void SigninManagerBase::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
 }
 
 void SigninManagerBase::AddSigninDiagnosticsObserver(

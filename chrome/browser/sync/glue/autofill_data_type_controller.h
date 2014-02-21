@@ -43,17 +43,11 @@ class AutofillDataTypeController
       const tracked_objects::Location& from_here,
       const base::Closure& task) OVERRIDE;
   virtual bool StartModels() OVERRIDE;
-  virtual void StopModels() OVERRIDE;
 
  private:
   friend class AutofillDataTypeControllerTest;
   FRIEND_TEST_ALL_PREFIXES(AutofillDataTypeControllerTest, StartWDSReady);
   FRIEND_TEST_ALL_PREFIXES(AutofillDataTypeControllerTest, StartWDSNotReady);
-
-  // Self-invoked on the DB thread to call the AutocompleteSyncableService with
-  // an updated value of autofill culling settings.
-  void UpdateAutofillCullingSettings(bool cull_expired_entries,
-      scoped_refptr<autofill::AutofillWebDataService> web_data_service);
 
   // Callback once WebDatabase has loaded.
   void WebDatabaseLoaded();

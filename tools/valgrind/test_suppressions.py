@@ -50,16 +50,15 @@ def ReadReportsFromFile(filename):
 def Demangle(names):
   """ Demangle a list of C++ symbols, return a list of human-readable symbols.
   """
+  # -n is not the default on Mac.
   args = ['c++filt', '-n']
-  args.extend(names)
   pipe = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-  stdout, _ = pipe.communicate()
+  stdout, _ = pipe.communicate(input='\n'.join(names))
   demangled = stdout.split("\n")
-
   # Each line ends with a newline, so the final entry of the split output
   # will always be ''.
-  assert len(demangled) == len(names) + 1
-  return demangled[:-1]
+  assert len(demangled) == len(names)
+  return demangled
 
 def GetSymbolsFromReport(report):
   """Extract all symbols from a suppression report."""
@@ -129,10 +128,6 @@ def main(argv):
       cur_supp += supp['win_suppressions']
     elif all([re.search("Linux%20", url) for url in all_reports[r]]):
       cur_supp += supp['linux_suppressions']
-    # Separate from OS matches as we want to match "Linux%20Heapcheck" twice:
-    if all([re.search("%20Heapcheck", url)
-              for url in all_reports[r]]):
-      cur_supp += supp['heapcheck_suppressions']
     if all(["DrMemory" in url for url in all_reports[r]]):
       cur_supp += supp['drmem_suppressions']
     if all(["DrMemory%20full" in url for url in all_reports[r]]):

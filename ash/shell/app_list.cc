@@ -17,17 +17,17 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_item_list.h"
-#include "ui/app_list/app_list_item_model.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/search_result.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/rect.h"
 #include "ui/views/examples/examples_window_with_content.h"
 
 namespace ash {
@@ -35,9 +35,9 @@ namespace shell {
 
 namespace {
 
-// WindowTypeLauncherItem is an app item of app list. It carries a window
+// WindowTypeShelfItem is an app item of app list. It carries a window
 // launch type and launches corresponding example window when activated.
-class WindowTypeLauncherItem : public app_list::AppListItemModel {
+class WindowTypeShelfItem : public app_list::AppListItem {
  public:
   enum Type {
     TOPLEVEL_WINDOW = 0,
@@ -48,8 +48,8 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     LAST_TYPE,
   };
 
-  explicit WindowTypeLauncherItem(const std::string& id, Type type)
-      : app_list::AppListItemModel(id),
+  explicit WindowTypeShelfItem(const std::string& id, Type type)
+      : app_list::AppListItem(id),
         type_(type) {
     std::string title(GetTitle(type));
     SetIcon(GetIcon(type), false);
@@ -128,7 +128,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
       case EXAMPLES_WINDOW: {
         views::examples::ShowExamplesWindowWithContent(
             views::examples::DO_NOTHING_ON_CLOSE,
-            Shell::GetInstance()->delegate()->GetCurrentBrowserContext(),
+            Shell::GetInstance()->delegate()->GetActiveBrowserContext(),
             NULL);
         break;
       }
@@ -137,7 +137,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     }
   }
 
-  // AppListItemModel
+  // AppListItem
   virtual void Activate(int event_flags) OVERRIDE {
     ActivateItem(type_, event_flags);
   }
@@ -145,7 +145,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
  private:
   Type type_;
 
-  DISALLOW_COPY_AND_ASSIGN(WindowTypeLauncherItem);
+  DISALLOW_COPY_AND_ASSIGN(WindowTypeShelfItem);
 };
 
 // ExampleSearchResult is an app list search result. It provides what icon to
@@ -154,12 +154,13 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
 // it.
 class ExampleSearchResult : public app_list::SearchResult {
  public:
-  ExampleSearchResult(WindowTypeLauncherItem::Type type,
+  ExampleSearchResult(WindowTypeShelfItem::Type type,
                       const base::string16& query)
       : type_(type) {
-    SetIcon(WindowTypeLauncherItem::GetIcon(type_));
+    SetIcon(WindowTypeShelfItem::GetIcon(type_));
 
-    base::string16 title = UTF8ToUTF16(WindowTypeLauncherItem::GetTitle(type_));
+    base::string16 title =
+        base::UTF8ToUTF16(WindowTypeShelfItem::GetTitle(type_));
     set_title(title);
 
     Tags title_tags;
@@ -178,17 +179,17 @@ class ExampleSearchResult : public app_list::SearchResult {
     set_title_tags(title_tags);
 
     base::string16 details =
-        UTF8ToUTF16(WindowTypeLauncherItem::GetDetails(type_));
+        base::UTF8ToUTF16(WindowTypeShelfItem::GetDetails(type_));
     set_details(details);
     Tags details_tags;
     details_tags.push_back(Tag(Tag::DIM, 0, details.length()));
     set_details_tags(details_tags);
   }
 
-  WindowTypeLauncherItem::Type type() const { return type_; }
+  WindowTypeShelfItem::Type type() const { return type_; }
 
  private:
-  WindowTypeLauncherItem::Type type_;
+  WindowTypeShelfItem::Type type_;
 
   DISALLOW_COPY_AND_ASSIGN(ExampleSearchResult);
 };
@@ -196,41 +197,42 @@ class ExampleSearchResult : public app_list::SearchResult {
 class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
  public:
   ExampleAppListViewDelegate()
-      : model_(new app_list::AppListModel) {
-    PopulateApps(model_->item_list());
+      : model_(new app_list::AppListModel),
+        speech_ui_(app_list::SPEECH_RECOGNITION_OFF) {
+    PopulateApps();
     DecorateSearchBox(model_->search_box());
   }
 
  private:
-  void PopulateApps(app_list::AppListItemList* item_list) {
-    for (int i = 0;
-         i < static_cast<int>(WindowTypeLauncherItem::LAST_TYPE);
-         ++i) {
-      WindowTypeLauncherItem::Type type =
-          static_cast<WindowTypeLauncherItem::Type>(i);
+  void PopulateApps() {
+    for (int i = 0; i < static_cast<int>(WindowTypeShelfItem::LAST_TYPE); ++i) {
+      WindowTypeShelfItem::Type type =
+          static_cast<WindowTypeShelfItem::Type>(i);
       std::string id = base::StringPrintf("%d", i);
-      item_list->AddItem(new WindowTypeLauncherItem(id, type));
+      scoped_ptr<WindowTypeShelfItem> shelf_item(
+          new WindowTypeShelfItem(id, type));
+      model_->AddItem(shelf_item.PassAs<app_list::AppListItem>());
     }
   }
 
   gfx::ImageSkia CreateSearchBoxIcon() {
-    const base::string16 icon_text = ASCIIToUTF16("ash");
+    const base::string16 icon_text = base::ASCIIToUTF16("ash");
     const gfx::Size icon_size(32, 32);
 
     gfx::Canvas canvas(icon_size, 1.0f, false /* is_opaque */);
-    canvas.DrawStringInt(icon_text,
-                         gfx::Font(),
-                         SK_ColorBLACK,
-                         0, 0, icon_size.width(), icon_size.height(),
-                         gfx::Canvas::TEXT_ALIGN_CENTER |
-                             gfx::Canvas::NO_SUBPIXEL_RENDERING);
+    canvas.DrawStringRectWithFlags(
+        icon_text,
+        gfx::FontList(),
+        SK_ColorBLACK,
+        gfx::Rect(icon_size),
+        gfx::Canvas::TEXT_ALIGN_CENTER | gfx::Canvas::NO_SUBPIXEL_RENDERING);
 
     return gfx::ImageSkia(canvas.ExtractImageRep());
   }
 
   void DecorateSearchBox(app_list::SearchBoxModel* search_box_model) {
     search_box_model->SetIcon(CreateSearchBoxIcon());
-    search_box_model->SetHintText(ASCIIToUTF16("Type to search..."));
+    search_box_model->SetHintText(base::ASCIIToUTF16("Type to search..."));
   }
 
   // Overridden from app_list::AppListViewDelegate:
@@ -263,16 +265,24 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual void OpenSearchResult(app_list::SearchResult* result,
+                                bool auto_launch,
                                 int event_flags) OVERRIDE {
     const ExampleSearchResult* example_result =
         static_cast<const ExampleSearchResult*>(result);
-    WindowTypeLauncherItem::ActivateItem(example_result->type(), event_flags);
+    WindowTypeShelfItem::ActivateItem(example_result->type(), event_flags);
   }
 
   virtual void InvokeSearchResultAction(app_list::SearchResult* result,
                                         int action_index,
                                         int event_flags) OVERRIDE {
     NOTIMPLEMENTED();
+  }
+
+  virtual base::TimeDelta GetAutoLaunchTimeout() OVERRIDE {
+    return base::TimeDelta();
+  }
+
+  virtual void AutoLaunchCanceled() OVERRIDE {
   }
 
   virtual void StartSearch() OVERRIDE {
@@ -284,14 +294,12 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     if (query.empty())
       return;
 
-    for (int i = 0;
-         i < static_cast<int>(WindowTypeLauncherItem::LAST_TYPE);
-         ++i) {
-      WindowTypeLauncherItem::Type type =
-          static_cast<WindowTypeLauncherItem::Type>(i);
+    for (int i = 0; i < static_cast<int>(WindowTypeShelfItem::LAST_TYPE); ++i) {
+      WindowTypeShelfItem::Type type =
+          static_cast<WindowTypeShelfItem::Type>(i);
 
       base::string16 title =
-          UTF8ToUTF16(WindowTypeLauncherItem::GetTitle(type));
+          base::UTF8ToUTF16(WindowTypeShelfItem::GetTitle(type));
       if (base::i18n::StringSearchIgnoringCaseAndAccents(
               query, title, NULL, NULL)) {
         model_->results()->Add(new ExampleSearchResult(type, query));
@@ -300,6 +308,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual void StopSearch() OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual void ViewInitialized() OVERRIDE {
     // Nothing needs to be done.
   }
 
@@ -339,6 +351,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual content::WebContents* GetStartPageContents() OVERRIDE {
+    return NULL;
+  }
+
+  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE {
     return NULL;
   }
 

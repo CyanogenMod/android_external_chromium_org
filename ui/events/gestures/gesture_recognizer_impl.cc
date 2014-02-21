@@ -78,16 +78,18 @@ GestureConsumer* GestureRecognizerImpl::GetTargetForGestureEvent(
 }
 
 GestureConsumer* GestureRecognizerImpl::GetTargetForLocation(
-    const gfx::Point& location) {
+    const gfx::PointF& location, int source_device_id) {
   const GesturePoint* closest_point = NULL;
   int64 closest_distance_squared = 0;
   std::map<GestureConsumer*, GestureSequence*>::iterator i;
   for (i = consumer_sequence_.begin(); i != consumer_sequence_.end(); ++i) {
     const GesturePoint* points = i->second->points();
     for (int j = 0; j < GestureSequence::kMaxGesturePoints; ++j) {
-      if (!points[j].in_use())
+      if (!points[j].in_use() ||
+          source_device_id != points[j].source_device_id()) {
         continue;
-      gfx::Vector2d delta = points[j].last_touch_position() - location;
+      }
+      gfx::Vector2dF delta = points[j].last_touch_position() - location;
       // Relative distance is all we need here, so LengthSquared() is
       // appropriate, and cheaper than Length().
       int64 distance_squared = delta.LengthSquared();
@@ -140,7 +142,7 @@ void GestureRecognizerImpl::TransferEventsTo(GestureConsumer* current_consumer,
 
 bool GestureRecognizerImpl::GetLastTouchPointForTarget(
     GestureConsumer* consumer,
-    gfx::Point* point) {
+    gfx::PointF* point) {
   if (consumer_sequence_.count(consumer) == 0)
     return false;
 
@@ -197,7 +199,7 @@ void GestureRecognizerImpl::CancelTouches(
   while (!touches->empty()) {
     int touch_id = touches->begin()->first;
     GestureConsumer* target = touches->begin()->second;
-    TouchEvent touch_event(ui::ET_TOUCH_CANCELLED, gfx::Point(0, 0),
+    TouchEvent touch_event(ui::ET_TOUCH_CANCELLED, gfx::PointF(0, 0),
                            ui::EF_IS_SYNTHESIZED, touch_id,
                            ui::EventTimeForNow(), 0.0f, 0.0f, 0.0f, 0.0f);
     GestureEventHelper* helper = FindDispatchHelperForConsumer(target);
@@ -269,6 +271,12 @@ GestureRecognizer* GestureRecognizer::Get() {
   if (!g_gesture_recognizer_instance)
     g_gesture_recognizer_instance = new GestureRecognizerImpl();
   return g_gesture_recognizer_instance;
+}
+
+// GestureRecognizer, static
+void GestureRecognizer::Reset() {
+  delete g_gesture_recognizer_instance;
+  g_gesture_recognizer_instance = NULL;
 }
 
 void SetGestureRecognizerForTesting(GestureRecognizer* gesture_recognizer) {

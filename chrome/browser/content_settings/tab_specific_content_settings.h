@@ -86,13 +86,17 @@ class TabSpecificContentSettings
   static TabSpecificContentSettings* Get(int render_process_id,
                                          int render_view_id);
 
+  // Returns the object given a render frame's id.
+  static TabSpecificContentSettings* GetForFrame(int render_process_id,
+                                                 int render_view_id);
+
   // Static methods called on the UI threads.
   // Called when cookies for the given URL were read either from within the
   // current page or while loading it. |blocked_by_policy| should be true, if
   // reading cookies was blocked due to the user's content settings. In that
   // case, this function should invoke OnContentBlocked.
   static void CookiesRead(int render_process_id,
-                          int render_view_id,
+                          int render_frame_id,
                           const GURL& url,
                           const GURL& first_party_url,
                           const net::CookieList& cookie_list,
@@ -103,7 +107,7 @@ class TabSpecificContentSettings
   // user's content settings. In that case, this function should invoke
   // OnContentBlocked.
   static void CookieChanged(int render_process_id,
-                            int render_view_id,
+                            int render_frame_id,
                             const GURL& url,
                             const GURL& first_party_url,
                             const std::string& cookie_line,
@@ -115,7 +119,7 @@ class TabSpecificContentSettings
   // |blocked_by_policy| should be true, and this function should invoke
   // OnContentBlocked.
   static void WebDatabaseAccessed(int render_process_id,
-                                  int render_view_id,
+                                  int render_frame_id,
                                   const GURL& url,
                                   const base::string16& name,
                                   const base::string16& display_name,
@@ -126,7 +130,7 @@ class TabSpecificContentSettings
   // |blocked_by_policy| should be true, and this function should invoke
   // OnContentBlocked.
   static void DOMStorageAccessed(int render_process_id,
-                                 int render_view_id,
+                                 int render_frame_id,
                                  const GURL& url,
                                  bool local,
                                  bool blocked_by_policy);
@@ -136,7 +140,7 @@ class TabSpecificContentSettings
   // |blocked_by_policy| should be true, and this function should invoke
   // OnContentBlocked.
   static void IndexedDBAccessed(int render_process_id,
-                                int render_view_id,
+                                int render_frame_id,
                                 const GURL& url,
                                 const base::string16& description,
                                 bool blocked_by_policy);
@@ -146,7 +150,7 @@ class TabSpecificContentSettings
   // |blocked_by_policy| should be true, and this function should invoke
   // OnContentBlocked.
   static void FileSystemAccessed(int render_process_id,
-                                 int render_view_id,
+                                 int render_frame_id,
                                  const GURL& url,
                                  bool blocked_by_policy);
 
@@ -161,7 +165,7 @@ class TabSpecificContentSettings
   void ClearGeolocationContentSettings();
 
   // Clears the MIDI settings.
-  void ClearMIDIContentSettings();
+  void ClearMidiContentSettings();
 
   // Changes the |content_blocked_| entry for popups.
   void SetPopupsBlocked(bool blocked);
@@ -174,7 +178,7 @@ class TabSpecificContentSettings
       const content::LoadCommittedDetails& details);
 
   // Updates MIDI settings on navigation.
-  void MIDIDidNavigate(const content::LoadCommittedDetails& details);
+  void MidiDidNavigate(const content::LoadCommittedDetails& details);
 
   // Returns whether a particular kind of content has been blocked for this
   // page.
@@ -272,8 +276,8 @@ class TabSpecificContentSettings
   void SetPepperBrokerAllowed(bool allowed);
 
   // content::WebContentsObserver overrides.
-  virtual void RenderViewForInterstitialPageCreated(
-      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderFrameForInterstitialPageCreated(
+      content::RenderFrameHost* render_frame_host) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
@@ -332,8 +336,8 @@ class TabSpecificContentSettings
           request_permissions);
 
   // There methods are called to update the status about MIDI access.
-  void OnMIDISysExAccessed(const GURL& reqesting_origin);
-  void OnMIDISysExAccessBlocked(const GURL& requesting_origin);
+  void OnMidiSysExAccessed(const GURL& reqesting_origin);
+  void OnMidiSysExAccessBlocked(const GURL& requesting_origin);
 
   // Adds the given |SiteDataObserver|. The |observer| is notified when a
   // locale shared object, like for example a cookie, is accessed.

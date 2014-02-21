@@ -8,7 +8,7 @@
 #include <limits>
 #include <vector>
 
-#include "apps/shell_window.h"
+#include "apps/app_window.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -58,8 +58,8 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
+#include "components/translate/core/common/language_detection_details.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -90,12 +90,12 @@
 #endif  // OS_WIN
 
 #if defined(USE_ASH)
-#include "apps/shell_window_registry.h"
+#include "apps/app_window_registry.h"
 #include "ash/ash_switches.h"
 #include "chrome/browser/extensions/api/tabs/ash_panel_contents.h"
 #endif
 
-using apps::ShellWindow;
+using apps::AppWindow;
 using content::BrowserThread;
 using content::NavigationController;
 using content::NavigationEntry;
@@ -523,15 +523,14 @@ bool WindowsCreateFunction::RunImpl() {
 
 #if defined(USE_ASH)
     if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH) {
-      ShellWindow::CreateParams create_params;
-      create_params.window_type = ShellWindow::WINDOW_TYPE_V1_PANEL;
+      AppWindow::CreateParams create_params;
+      create_params.window_type = AppWindow::WINDOW_TYPE_V1_PANEL;
       create_params.bounds = window_bounds;
       create_params.focused = saw_focus_key && focused;
-      ShellWindow* shell_window = new ShellWindow(
-          window_profile, new ChromeShellWindowDelegate(),
-          GetExtension());
-      AshPanelContents* ash_panel_contents = new AshPanelContents(shell_window);
-      shell_window->Init(urls[0], ash_panel_contents, create_params);
+      AppWindow* app_window = new AppWindow(
+          window_profile, new ChromeShellWindowDelegate(), GetExtension());
+      AshPanelContents* ash_panel_contents = new AshPanelContents(app_window);
+      app_window->Init(urls[0], ash_panel_contents, create_params);
       SetResult(ash_panel_contents->GetExtensionWindowController()->
                 CreateWindowValueWithTabs(GetExtension()));
       return true;
@@ -618,7 +617,7 @@ bool WindowsCreateFunction::RunImpl() {
       !GetProfile()->IsOffTheRecord() && !include_incognito()) {
     // Don't expose incognito windows if extension itself works in non-incognito
     // profile and CanCrossIncognito isn't allowed.
-    SetResult(Value::CreateNullValue());
+    SetResult(base::Value::CreateNullValue());
   } else {
     SetResult(
         new_window->extension_window_controller()->CreateWindowValueWithTabs(
@@ -927,7 +926,7 @@ bool TabsQueryFunction::RunImpl() {
       }
 
       if (!title.empty() && !MatchPattern(web_contents->GetTitle(),
-                                          UTF8ToUTF16(title)))
+                                          base::UTF8ToUTF16(title)))
         continue;
 
       if (!url_pattern.MatchesURL(web_contents->GetURL()))
@@ -1449,7 +1448,7 @@ bool TabsMoveFunction::RunImpl() {
   if (num_tabs > 1) {
     SetResult(tab_values.DeepCopy());
   } else {
-    Value* value = NULL;
+    base::Value* value = NULL;
     CHECK(tab_values.Get(0, &value));
     SetResult(value->DeepCopy());
   }
@@ -1676,20 +1675,7 @@ WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(int window_id) {
     return NULL;
   }
 
-  // Use the last committed URL rather than the active URL for permissions
-  // checking, since the visible page won't be updated until it has been
-  // committed. A canonical example of this is interstitials, which show the
-  // URL of the new/loading page (active) but would capture the content of the
-  // old page (last committed).
-  //
-  // TODO(creis): Use WebContents::GetLastCommittedURL instead.
-  // http://crbug.com/237908.
-  NavigationEntry* last_committed_entry =
-      contents->GetController().GetLastCommittedEntry();
-  GURL last_committed_url = last_committed_entry ?
-      last_committed_entry->GetURL() : GURL();
   if (!PermissionsData::CanCaptureVisiblePage(GetExtension(),
-                                              last_committed_url,
                                               SessionID::IdForTab(contents),
                                               &error_)) {
     return NULL;
@@ -1754,12 +1740,12 @@ bool TabsDetectLanguageFunction::RunImpl() {
 
   TranslateTabHelper* translate_tab_helper =
       TranslateTabHelper::FromWebContents(contents);
-  if (!translate_tab_helper->language_state().original_language().empty()) {
+  if (!translate_tab_helper->GetLanguageState().original_language().empty()) {
     // Delay the callback invocation until after the current JS call has
     // returned.
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &TabsDetectLanguageFunction::GotLanguage, this,
-        translate_tab_helper->language_state().original_language()));
+        translate_tab_helper->GetLanguageState().original_language()));
     return true;
   }
   // The tab contents does not know its language yet.  Let's wait until it

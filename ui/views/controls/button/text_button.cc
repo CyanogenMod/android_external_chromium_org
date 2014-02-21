@@ -88,14 +88,6 @@ void TextButtonBorder::SetInsets(const gfx::Insets& insets) {
   insets_ = insets;
 }
 
-TextButtonBorder* TextButtonBorder::AsTextButtonBorder() {
-  return this;
-}
-
-const TextButtonBorder* TextButtonBorder::AsTextButtonBorder() const {
-  return this;
-}
-
 
 // TextButtonDefaultBorder ----------------------------------------------------
 
@@ -199,11 +191,10 @@ void TextButtonNativeThemeBorder::Paint(const View& view, gfx::Canvas* canvas) {
 
 // TextButtonBase -------------------------------------------------------------
 
-TextButtonBase::TextButtonBase(ButtonListener* listener, const string16& text)
+TextButtonBase::TextButtonBase(ButtonListener* listener,
+                               const base::string16& text)
     : CustomButton(listener),
       alignment_(ALIGN_LEFT),
-      font_(ResourceBundle::GetSharedInstance().GetFont(
-          ResourceBundle::BaseFont)),
       has_text_shadow_(false),
       active_text_shadow_color_(0),
       inactive_text_shadow_color_(0),
@@ -239,7 +230,7 @@ void TextButtonBase::SetIsDefault(bool is_default) {
   SchedulePaint();
 }
 
-void TextButtonBase::SetText(const string16& text) {
+void TextButtonBase::SetText(const base::string16& text) {
   if (text == text_)
     return;
   text_ = text;
@@ -247,8 +238,8 @@ void TextButtonBase::SetText(const string16& text) {
   UpdateTextSize();
 }
 
-void TextButtonBase::SetFont(const gfx::Font& font) {
-  font_ = font;
+void TextButtonBase::SetFontList(const gfx::FontList& font_list) {
+  font_list_ = font_list;
   UpdateTextSize();
 }
 
@@ -378,13 +369,13 @@ void TextButtonBase::UpdateTextSize() {
 }
 
 void TextButtonBase::CalculateTextSize(gfx::Size* text_size, int max_width) {
-  int h = font_.GetHeight();
+  int h = font_list_.GetHeight();
   int w = multi_line_ ? max_width : 0;
   int flags = ComputeCanvasStringFlags();
   if (!multi_line_)
     flags |= gfx::Canvas::NO_ELLIPSIS;
 
-  gfx::Canvas::SizeStringInt(text_, font_, &w, &h, 0, flags);
+  gfx::Canvas::SizeStringInt(text_, font_list_, &w, &h, 0, flags);
   text_size->SetSize(w, h);
 }
 
@@ -497,23 +488,9 @@ void TextButtonBase::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
     if (mode == PB_FOR_DRAG) {
       // Disable sub-pixel rendering as background is transparent.
       draw_string_flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
-
-#if defined(OS_WIN)
-      // TODO(erg): Either port DrawStringWithHalo to linux or find an
-      // alternative here.
-      canvas->DrawStringWithHalo(text_, font_, SK_ColorBLACK, SK_ColorWHITE,
-          text_bounds.x(), text_bounds.y(), text_bounds.width(),
-          text_bounds.height(), draw_string_flags);
-#else
-      canvas->DrawStringInt(text_,
-                            font_,
-                            text_color,
-                            text_bounds.x(),
-                            text_bounds.y(),
-                            text_bounds.width(),
-                            text_bounds.height(),
-                            draw_string_flags);
-#endif
+      canvas->DrawStringRectWithHalo(text_, font_list_,
+                                     SK_ColorBLACK, SK_ColorWHITE,
+                                     text_bounds, draw_string_flags);
     } else {
       gfx::ShadowValues shadows;
       if (has_text_shadow_) {
@@ -521,8 +498,9 @@ void TextButtonBase::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
                                                   inactive_text_shadow_color_;
         shadows.push_back(gfx::ShadowValue(text_shadow_offset_, 0, color));
       }
-      canvas->DrawStringWithShadows(text_, font_, text_color, text_bounds,
-                                    0, draw_string_flags, shadows);
+      canvas->DrawStringRectWithShadows(text_, font_list_, text_color,
+                                        text_bounds, 0, draw_string_flags,
+                                        shadows);
     }
   }
 }
@@ -609,14 +587,15 @@ ui::NativeTheme::State TextButtonBase::GetForegroundThemeState(
 
 // TextButton -----------------------------------------------------------------
 
-TextButton::TextButton(ButtonListener* listener, const string16& text)
+TextButton::TextButton(ButtonListener* listener, const base::string16& text)
     : TextButtonBase(listener, text),
       icon_placement_(ICON_ON_LEFT),
       has_hover_icon_(false),
       has_pushed_icon_(false),
       icon_text_spacing_(kDefaultIconTextSpacing),
-      ignore_minimum_size_(true) {
-  set_border(new TextButtonDefaultBorder);
+      ignore_minimum_size_(true),
+      full_justification_(false) {
+  SetBorder(scoped_ptr<Border>(new TextButtonDefaultBorder));
   SetFocusPainter(Painter::CreateDashedFocusPainterWithInsets(
                       gfx::Insets(kFocusRectInset, kFocusRectInset,
                                   kFocusRectInset, kFocusRectInset)));
@@ -657,8 +636,8 @@ gfx::Size TextButton::GetPreferredSize() {
 #if defined(OS_WIN)
   // Clamp the size returned to at least the minimum size.
   if (!ignore_minimum_size_) {
-    gfx::PlatformFontWin* platform_font =
-        static_cast<gfx::PlatformFontWin*>(font_.platform_font());
+    gfx::PlatformFontWin* platform_font = static_cast<gfx::PlatformFontWin*>(
+        font_list_.GetPrimaryFont().platform_font());
     prefsize.set_width(std::max(
         prefsize.width(),
         platform_font->horizontal_dlus_to_pixels(kMinWidthDLUs)));
@@ -675,22 +654,34 @@ gfx::Size TextButton::GetPreferredSize() {
 }
 
 void TextButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
+  if (full_justification_ && icon_placement_ == ICON_ON_LEFT)
+      set_alignment(ALIGN_RIGHT);
+
   TextButtonBase::PaintButton(canvas, mode);
 
   const gfx::ImageSkia& icon = GetImageToPaint();
 
   if (icon.width() > 0) {
     gfx::Rect text_bounds = GetTextBounds();
-    int icon_x;
+    int icon_x = 0;
     int spacing = text_.empty() ? 0 : icon_text_spacing_;
     gfx::Insets insets = GetInsets();
-    if (icon_placement_ == ICON_ON_LEFT) {
-      icon_x = text_bounds.x() - icon.width() - spacing;
-    } else if (icon_placement_ == ICON_ON_RIGHT) {
-      icon_x = text_bounds.right() + spacing;
-    } else {  // ICON_CENTERED
-      DCHECK(text_.empty());
-      icon_x = (width() - insets.width() - icon.width()) / 2 + insets.left();
+    switch (icon_placement_) {
+      case ICON_ON_LEFT:
+        icon_x = full_justification_ ? insets.left()
+                                     : text_bounds.x() - icon.width() - spacing;
+        break;
+      case ICON_ON_RIGHT:
+        icon_x = full_justification_ ? width() - insets.right() - icon.width()
+                                     : text_bounds.right() + spacing;
+        break;
+      case ICON_CENTERED:
+        DCHECK(text_.empty());
+        icon_x = (width() - insets.width() - icon.width()) / 2 + insets.left();
+        break;
+      default:
+        NOTREACHED();
+        break;
     }
 
     int available_height = height() - insets.height();
@@ -705,6 +696,10 @@ void TextButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 
 void TextButton::set_ignore_minimum_size(bool ignore_minimum_size) {
   ignore_minimum_size_ = ignore_minimum_size;
+}
+
+void TextButton::set_full_justification(bool full_justification) {
+  full_justification_ = full_justification;
 }
 
 const char* TextButton::GetClassName() const {

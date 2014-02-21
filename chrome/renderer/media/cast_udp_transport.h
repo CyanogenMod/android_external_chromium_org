@@ -7,7 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "net/base/host_port_pair.h"
+#include "base/memory/weak_ptr.h"
+#include "net/base/ip_endpoint.h"
 
 class CastSession;
 
@@ -17,14 +18,15 @@ class CastSession;
 class CastUdpTransport {
  public:
   explicit CastUdpTransport(const scoped_refptr<CastSession>& session);
-  ~CastUdpTransport();
+  virtual ~CastUdpTransport();
 
-  // Begin the transport by specifying the remote IP address.
-  // The transport will use UDP.
-  void Start(const net::IPEndPoint& remote_address);
+  // Specify the remote IP address and port.
+  void SetDestination(const net::IPEndPoint& remote_address);
 
  private:
   const scoped_refptr<CastSession> cast_session_;
+  net::IPEndPoint remote_address_;
+  base::WeakPtrFactory<CastUdpTransport> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CastUdpTransport);
 };

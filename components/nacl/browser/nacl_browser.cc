@@ -61,9 +61,6 @@ const base::FilePath::StringType NaClIrtName() {
     irt_name.append(FILE_PATH_LITERAL("x86_32"));
 
 #elif defined(ARCH_CPU_ARMEL)
-  // TODO(mcgrathr): Eventually we'll need to distinguish arm32 vs thumb2.
-  // That may need to be based on the actual nexe rather than a static
-  // choice, which would require substantial refactoring.
   irt_name.append(FILE_PATH_LITERAL("arm"));
 #elif defined(ARCH_CPU_MIPSEL)
   irt_name.append(FILE_PATH_LITERAL("mips32"));
@@ -266,13 +263,13 @@ void NaClBrowser::EnsureIrtAvailable() {
   }
 }
 
-void NaClBrowser::OnIrtOpened(base::PlatformFileError error_code,
+void NaClBrowser::OnIrtOpened(base::File::Error error_code,
                               base::PassPlatformFile file,
                               bool created) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   DCHECK_EQ(irt_state_, NaClResourceRequested);
   DCHECK(!created);
-  if (error_code == base::PLATFORM_FILE_OK) {
+  if (error_code == base::File::FILE_OK) {
     irt_platform_file_ = file.ReleaseValue();
   } else {
     LOG(ERROR) << "Failed to open NaCl IRT file \""

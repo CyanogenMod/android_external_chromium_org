@@ -157,7 +157,9 @@ TEST(ExternalDataPolicyHandlerTest, InvalidHash) {
 TEST(ExternalDataPolicyHandlerTest, Valid) {
   scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
   dict->SetString("url", "http://localhost/");
-  dict->SetString("hash", "1234567890123456789012345678901234567890");
+  dict->SetString(
+      "hash",
+      "1234567890123456789012345678901234567890123456789012345678901234");
   PolicyMap policy_map;
   policy_map.Set(key::kUserAvatarImage,
                  POLICY_LEVEL_MANDATORY,
@@ -222,7 +224,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, ValidONC) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 Value::CreateStringValue(kTestONC),
+                 base::Value::CreateStringValue(kTestONC),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -236,7 +238,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, WrongType) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 Value::CreateBooleanValue(false),
+                 base::Value::CreateBooleanValue(false),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -251,7 +253,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, JSONParseError) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 Value::CreateStringValue(kTestONC),
+                 base::Value::CreateStringValue(kTestONC),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -279,13 +281,14 @@ TEST(NetworkConfigurationPolicyHandlerTest, Sanitization) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 Value::CreateStringValue(kTestONC),
+                 base::Value::CreateStringValue(kTestONC),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
   PolicyErrorMap errors;
   handler->PrepareForDisplaying(&policy_map);
-  const Value* sanitized = policy_map.GetValue(key::kOpenNetworkConfiguration);
+  const base::Value* sanitized =
+      policy_map.GetValue(key::kOpenNetworkConfiguration);
   ASSERT_TRUE(sanitized);
   std::string sanitized_onc;
   EXPECT_TRUE(sanitized->GetAsString(&sanitized_onc));
@@ -330,11 +333,12 @@ TEST(LoginScreenPowerManagementPolicyHandlerTest, Empty) {
 
 TEST(LoginScreenPowerManagementPolicyHandlerTest, ValidPolicy) {
   PolicyMap policy_map;
-  policy_map.Set(key::kDeviceLoginScreenPowerManagement,
-                 POLICY_LEVEL_MANDATORY,
-                 POLICY_SCOPE_USER,
-                 Value::CreateStringValue(kLoginScreenPowerManagementPolicy),
-                 NULL);
+  policy_map.Set(
+      key::kDeviceLoginScreenPowerManagement,
+      POLICY_LEVEL_MANDATORY,
+      POLICY_SCOPE_USER,
+      base::Value::CreateStringValue(kLoginScreenPowerManagementPolicy),
+      NULL);
   LoginScreenPowerManagementPolicyHandler handler;
   PolicyErrorMap errors;
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
@@ -346,7 +350,7 @@ TEST(LoginScreenPowerManagementPolicyHandlerTest, WrongType) {
   policy_map.Set(key::kDeviceLoginScreenPowerManagement,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 Value::CreateBooleanValue(false),
+                 base::Value::CreateBooleanValue(false),
                  NULL);
   LoginScreenPowerManagementPolicyHandler handler;
   PolicyErrorMap errors;
@@ -361,7 +365,7 @@ TEST(LoginScreenPowerManagementPolicyHandlerTest, JSONParseError) {
   policy_map.Set(key::kDeviceLoginScreenPowerManagement,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 Value::CreateStringValue(policy),
+                 base::Value::CreateStringValue(policy),
                  NULL);
   LoginScreenPowerManagementPolicyHandler handler;
   PolicyErrorMap errors;

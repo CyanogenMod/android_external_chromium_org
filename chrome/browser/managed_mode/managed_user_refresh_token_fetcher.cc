@@ -108,7 +108,8 @@ ManagedUserRefreshTokenFetcherImpl::ManagedUserRefreshTokenFetcherImpl(
     OAuth2TokenService* oauth2_token_service,
     const std::string& account_id,
     URLRequestContextGetter* context)
-    : oauth2_token_service_(oauth2_token_service),
+    : OAuth2TokenService::Consumer("managed_user"),
+      oauth2_token_service_(oauth2_token_service),
       account_id_(account_id),
       context_(context),
       access_token_expired_(false) {}
@@ -204,7 +205,7 @@ void ManagedUserRefreshTokenFetcherImpl::OnURLFetchComplete(
   std::string response_body;
   source->GetResponseAsString(&response_body);
   scoped_ptr<base::Value> value(base::JSONReader::Read(response_body));
-  DictionaryValue* dict = NULL;
+  base::DictionaryValue* dict = NULL;
   if (!value.get() || !value->GetAsDictionary(&dict)) {
     DispatchNetworkError(net::ERR_INVALID_RESPONSE);
     return;

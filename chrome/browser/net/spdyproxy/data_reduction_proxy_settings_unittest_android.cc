@@ -26,6 +26,7 @@
 #include "url/gurl.h"
 
 const char kDataReductionProxyOrigin[] = "https://foo.com:443/";
+const char kDataReductionProxyDevHost[] = "http://foo-dev.com:80";
 const char kDataReductionProxyOriginPAC[] = "HTTPS foo.com:443;";
 const char kDataReductionProxyFallbackPAC[] = "PROXY bar.com:80;";
 
@@ -42,7 +43,8 @@ class DataReductionProxySettingsAndroidTest
 
   void CheckProxyPacPref(const std::string& expected_pac_url,
                          const std::string& expected_mode) {
-    const DictionaryValue* dict = pref_service_.GetDictionary(prefs::kProxy);
+    const base::DictionaryValue* dict =
+        pref_service_.GetDictionary(prefs::kProxy);
     std::string mode;
     std::string pac_url;
     dict->GetString("mode", &mode);
@@ -68,6 +70,18 @@ TEST_F(DataReductionProxySettingsAndroidTest, TestGetDataReductionProxyOrigin) {
   EXPECT_EQ(kDataReductionProxyOrigin, ConvertJavaStringToUTF8(str_ref));
 }
 
+TEST_F(DataReductionProxySettingsAndroidTest,
+       TestGetDataReductionProxyDevOrigin) {
+  AddProxyToCommandLine();
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kSpdyProxyDevAuthOrigin, kDataReductionProxyDevHost);
+  ScopedJavaLocalRef<jstring> result =
+      Settings()->GetDataReductionProxyOrigin(env_, NULL);
+  ASSERT_TRUE(result.obj());
+  const base::android::JavaRef<jstring>& str_ref = result;
+  EXPECT_EQ(kDataReductionProxyDevHost, ConvertJavaStringToUTF8(str_ref));
+}
+
 // Confirm that the bypass rule functions generate the intended JavaScript
 // code for the Proxy PAC.
 TEST_F(DataReductionProxySettingsAndroidTest, TestBypassPACRules) {
@@ -85,18 +99,35 @@ TEST_F(DataReductionProxySettingsAndroidTest, TestBypassPACRules) {
 TEST_F(DataReductionProxySettingsAndroidTest, TestSetProxyPac) {
   AddProxyToCommandLine();
   Settings()->AddDefaultProxyBypassRules();
-  std::string raw_pac = Settings()->GetProxyPacScript();
+
+  // First check without restriction.
+  std::string raw_pac = Settings()->GetProxyPacScript(false);
   EXPECT_NE(raw_pac.find(kDataReductionProxyOriginPAC), std::string::npos);
   EXPECT_NE(raw_pac.find(kDataReductionProxyFallbackPAC), std::string::npos);
   std::string pac;
   base::Base64Encode(raw_pac, &pac);
   std::string expected_pac_url =
       "data:application/x-ns-proxy-autoconfig;base64," + pac;
-  Settings()->SetProxyConfigs(true, false);
+  Settings()->SetProxyConfigs(true, false, false);
   CheckProxyPacPref(expected_pac_url,
                     ProxyModeToString(ProxyPrefs::MODE_PAC_SCRIPT));
 
-  Settings()->SetProxyConfigs(false, false);
+  // Now check with restriction.
+  raw_pac = Settings()->GetProxyPacScript(true);
+  // Primary proxy origin should not appear.
+  EXPECT_EQ(raw_pac.find(kDataReductionProxyOriginPAC), std::string::npos);
+  EXPECT_NE(raw_pac.find(kDataReductionProxyFallbackPAC), std::string::npos);
+  base::Base64Encode(raw_pac, &pac);
+  expected_pac_url = "data:application/x-ns-proxy-autoconfig;base64," + pac;
+  Settings()->SetProxyConfigs(true, true, false);
+  CheckProxyPacPref(expected_pac_url,
+                    ProxyModeToString(ProxyPrefs::MODE_PAC_SCRIPT));
+
+  Settings()->SetProxyConfigs(false, false, false);
+  CheckProxyPacPref(std::string(), ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
+
+  // Restriction is irrelevant when the proxy is disabled.
+  Settings()->SetProxyConfigs(false, false, false);
   CheckProxyPacPref(std::string(), ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
 }
 

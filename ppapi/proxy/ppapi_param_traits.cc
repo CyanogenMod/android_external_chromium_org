@@ -235,7 +235,6 @@ void ParamTraits<ppapi::proxy::SerializedHandle>::Write(Message* m,
       ParamTraits<base::SharedMemoryHandle>::Write(m, p.shmem());
       break;
     case ppapi::proxy::SerializedHandle::SOCKET:
-    case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE:
     case ppapi::proxy::SerializedHandle::FILE:
       ParamTraits<IPC::PlatformFileForTransit>::Write(m, p.descriptor());
       break;
@@ -269,18 +268,10 @@ bool ParamTraits<ppapi::proxy::SerializedHandle>::Read(const Message* m,
       }
       break;
     }
-    case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE: {
-      IPC::PlatformFileForTransit desc;
-      if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
-        r->set_channel_handle(desc);
-        return true;
-      }
-      break;
-    }
     case ppapi::proxy::SerializedHandle::FILE: {
       IPC::PlatformFileForTransit desc;
       if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
-        r->set_file_handle(desc, header.open_flag);
+        r->set_file_handle(desc, header.open_flags, header.file_io);
         return true;
       }
       break;

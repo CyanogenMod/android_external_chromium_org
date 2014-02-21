@@ -225,10 +225,6 @@ double GetTouchParamFromXEvent(XEvent* xev,
   return default_value;
 }
 
-Atom GetNoopEventAtom() {
-  return XInternAtom(gfx::GetXDisplay(), "noop", False);
-}
-
 }  // namespace
 
 namespace ui {
@@ -277,10 +273,19 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
       XIDeviceEvent* xievent =
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
 
+      // This check works only for master and floating slave devices. That is
+      // why it is necessary to check for the XI_Touch* events in the following
+      // switch statement to account for attached-slave touchscreens.
       if (factory->IsTouchDevice(xievent->sourceid))
         return GetTouchEventType(native_event);
 
       switch (xievent->evtype) {
+        case XI_TouchBegin:
+          return ui::ET_TOUCH_PRESSED;
+        case XI_TouchUpdate:
+          return ui::ET_TOUCH_MOVED;
+        case XI_TouchEnd:
+          return ui::ET_TOUCH_RELEASED;
         case XI_ButtonPress: {
           int button = EventButtonFromNative(native_event);
           if (button >= kMinWheelButton && button <= kMaxWheelButton)
@@ -333,6 +338,9 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
         flags |= GetEventFlagsForButton(native_event->xbutton.button);
       return flags;
     }
+    case EnterNotify:
+    case LeaveNotify:
+      return GetEventFlagsFromXState(native_event->xcrossing.state);
     case MotionNotify:
       return GetEventFlagsFromXState(native_event->xmotion.state);
     case GenericEvent: {
@@ -426,8 +434,8 @@ gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
     case GenericEvent: {
       XIDeviceEvent* xievent =
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-      return gfx::Point(round(xievent->event_x),
-                        round(xievent->event_y));
+      return gfx::Point(static_cast<int>(xievent->event_x),
+                        static_cast<int>(xievent->event_y));
     }
   }
   return gfx::Point();
@@ -476,23 +484,6 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
 
 const char* CodeFromNative(const base::NativeEvent& native_event) {
   return CodeFromXEvent(native_event);
-}
-
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  if (native_event->type == EnterNotify ||
-      native_event->type == LeaveNotify ||
-      native_event->type == ButtonPress ||
-      native_event->type == ButtonRelease ||
-      native_event->type == MotionNotify)
-    return true;
-  if (native_event->type == GenericEvent) {
-    XIDeviceEvent* xievent =
-        static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-    return xievent->evtype == XI_ButtonPress ||
-           xievent->evtype == XI_ButtonRelease ||
-           xievent->evtype == XI_Motion;
-  }
-  return false;
 }
 
 int GetChangedMouseButtonFlagsFromNative(
@@ -683,27 +674,6 @@ bool IsNaturalScrollEnabled() {
 
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   return DeviceDataManager::GetInstance()->IsTouchpadXInputEvent(event);
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  return (event->type == ClientMessage &&
-      event->xclient.message_type == GetNoopEventAtom());
-}
-
-base::NativeEvent CreateNoopEvent() {
-  static XEvent* noop = NULL;
-  if (!noop) {
-    noop = new XEvent();
-    memset(noop, 0, sizeof(XEvent));
-    noop->xclient.type = ClientMessage;
-    noop->xclient.window = None;
-    noop->xclient.format = 8;
-    DCHECK(!noop->xclient.display);
-  }
-  // Make sure we use atom from current xdisplay, which may
-  // change during the test.
-  noop->xclient.message_type = GetNoopEventAtom();
-  return noop;
 }
 
 }  // namespace ui

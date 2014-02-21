@@ -8,9 +8,9 @@
 #include "ui/aura/root_window.h"
 
 #if defined(USE_X11)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #elif defined(OS_WIN)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 #endif
 
 // static
@@ -39,14 +39,14 @@ chrome::HostDesktopType ActiveDesktopMonitor::GetLastActivatedDesktopType() {
 
 // static
 bool ActiveDesktopMonitor::IsDesktopWindow(aura::RootWindow* root_window) {
-  // Only windows hosted by a DesktopRootWindowHost implementation can be mapped
+  // Only windows hosted by a DesktopWindowTreeHost implementation can be mapped
   // back to a content Window. All others, therefore, must be the root window
   // for an Ash display.
 #if defined(OS_WIN)
-  return views::DesktopRootWindowHostWin::GetContentWindowForHWND(
+  return views::DesktopWindowTreeHostWin::GetContentWindowForHWND(
       root_window->host()->GetAcceleratedWidget()) != NULL;
 #elif defined(USE_X11)
-  return views::DesktopRootWindowHostX11::GetContentWindowForXID(
+  return views::DesktopWindowTreeHostX11::GetContentWindowForXID(
       root_window->host()->GetAcceleratedWidget()) != NULL;
 #else
   NOTREACHED();

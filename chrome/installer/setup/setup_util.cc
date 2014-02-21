@@ -323,33 +323,12 @@ bool WillProductBePresentAfterSetup(
       machine_state.GetProductState(installer_state.system_install(), type);
 
   // Determine if the product is present prior to the current operation.
-  bool is_present = false;
-  if (product_state != NULL) {
-    if (type == BrowserDistribution::CHROME_FRAME) {
-      is_present = !product_state->uninstall_command().HasSwitch(
-                        switches::kChromeFrameReadyMode);
-    } else {
-      is_present = true;
-    }
-  }
-
+  bool is_present = (product_state != NULL);
   bool is_uninstall = installer_state.operation() == InstallerState::UNINSTALL;
 
   // Determine if current operation affects the product.
-  bool is_affected = false;
   const Product* product = installer_state.FindProduct(type);
-  if (product != NULL) {
-    if (type == BrowserDistribution::CHROME_FRAME) {
-      // If Chrome Frame is being uninstalled, we don't bother to check
-      // !HasOption(kOptionReadyMode) since CF would not have been installed
-      // in the first place. If for some odd reason it weren't, we would be
-      // conservative, and cause false to be retruned since CF should not be
-      // installed then (so is_uninstall = true and is_affected = true).
-      is_affected = is_uninstall || !product->HasOption(kOptionReadyMode);
-    } else {
-      is_affected = true;
-    }
-  }
+  bool is_affected = (product != NULL);
 
   // Decide among {(1),(2),(3),(4)}.
   return is_affected ? !is_uninstall : is_present;
@@ -448,6 +427,26 @@ bool IsUninstallSuccess(InstallStatus install_status) {
   // 21: UNINSTALL_CANCELLED
   return (install_status == UNINSTALL_SUCCESSFUL ||
           install_status == UNINSTALL_REQUIRES_REBOOT);
+}
+
+bool ContainsUnsupportedSwitch(const CommandLine& cmd_line) {
+  static const char* const kLegacySwitches[] = {
+    // Chrome Frame ready-mode.
+    "ready-mode",
+    "ready-mode-opt-in",
+    "ready-mode-temp-opt-out",
+    "ready-mode-end-temp-opt-out",
+    // Chrome Frame quick-enable.
+    "quick-enable-cf",
+    // Installation of Chrome Frame.
+    "chrome-frame",
+    "migrate-chrome-frame",
+  };
+  for (size_t i = 0; i < arraysize(kLegacySwitches); ++i) {
+    if (cmd_line.HasSwitch(kLegacySwitches[i]))
+      return true;
+  }
+  return false;
 }
 
 ScopedTokenPrivilege::ScopedTokenPrivilege(const wchar_t* privilege_name)

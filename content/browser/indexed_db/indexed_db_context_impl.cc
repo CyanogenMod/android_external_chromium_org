@@ -30,7 +30,7 @@
 #include "content/public/common/content_switches.h"
 #include "ui/base/text/bytes_formatting.h"
 #include "webkit/browser/database/database_util.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/database/database_identifier.h"
 
@@ -162,19 +162,19 @@ static bool HostNameComparator(const GURL& i, const GURL& j) {
   return i.host() < j.host();
 }
 
-ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
+base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   std::vector<GURL> origins = GetAllOrigins();
 
   std::sort(origins.begin(), origins.end(), HostNameComparator);
 
-  scoped_ptr<ListValue> list(new ListValue());
+  scoped_ptr<base::ListValue> list(new base::ListValue());
   for (std::vector<GURL>::const_iterator iter = origins.begin();
        iter != origins.end();
        ++iter) {
     const GURL& origin_url = *iter;
 
-    scoped_ptr<DictionaryValue> info(new DictionaryValue());
+    scoped_ptr<base::DictionaryValue> info(new base::DictionaryValue());
     info->SetString("url", origin_url.spec());
     info->SetString("size", ui::FormatBytes(GetOriginDiskUsage(origin_url)));
     info->SetDouble("last_modified",
@@ -187,17 +187,18 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
     // origins in the outer loop.
 
     if (factory_) {
-      std::vector<IndexedDBDatabase*> databases =
+      std::pair<IndexedDBFactory::OriginDBMapIterator,
+                IndexedDBFactory::OriginDBMapIterator> range =
           factory_->GetOpenDatabasesForOrigin(origin_url);
       // TODO(jsbell): Sort by name?
-      scoped_ptr<ListValue> database_list(new ListValue());
+      scoped_ptr<base::ListValue> database_list(new base::ListValue());
 
-      for (std::vector<IndexedDBDatabase*>::iterator it = databases.begin();
-           it != databases.end();
+      for (IndexedDBFactory::OriginDBMapIterator it = range.first;
+           it != range.second;
            ++it) {
 
-        const IndexedDBDatabase* db = *it;
-        scoped_ptr<DictionaryValue> db_info(new DictionaryValue());
+        const IndexedDBDatabase* db = it->second;
+        scoped_ptr<base::DictionaryValue> db_info(new base::DictionaryValue());
 
         db_info->SetString("name", db->name());
         db_info->SetDouble("pending_opens", db->PendingOpenCount());
@@ -208,7 +209,7 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
                            db->ConnectionCount() - db->PendingUpgradeCount() -
                                db->RunningUpgradeCount());
 
-        scoped_ptr<ListValue> transaction_list(new ListValue());
+        scoped_ptr<base::ListValue> transaction_list(new base::ListValue());
         std::vector<const IndexedDBTransaction*> transactions =
             db->transaction_coordinator().GetTransactions();
         for (std::vector<const IndexedDBTransaction*>::iterator trans_it =
@@ -217,7 +218,8 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
              ++trans_it) {
 
           const IndexedDBTransaction* transaction = *trans_it;
-          scoped_ptr<DictionaryValue> transaction_info(new DictionaryValue());
+          scoped_ptr<base::DictionaryValue> transaction_info(
+              new base::DictionaryValue());
 
           const char* kModes[] = { "readonly", "readwrite", "versionchange" };
           transaction_info->SetString("mode", kModes[transaction->mode()]);
@@ -257,7 +259,7 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
           transaction_info->SetDouble(
               "tasks_completed", transaction->diagnostics().tasks_completed);
 
-          scoped_ptr<ListValue> scope(new ListValue());
+          scoped_ptr<base::ListValue> scope(new base::ListValue());
           for (std::set<int64>::const_iterator scope_it =
                    transaction->scope().begin();
                scope_it != transaction->scope().end();
@@ -296,7 +298,7 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return base::Time();
   base::FilePath idb_directory = GetFilePath(origin_url);
-  base::PlatformFileInfo file_info;
+  base::File::Info file_info;
   if (!base::GetFileInfo(idb_directory, &file_info))
     return base::Time();
   return file_info.last_modified;
@@ -335,21 +337,9 @@ void IndexedDBContextImpl::ForceClose(const GURL origin_url) {
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
-  if (connections_.find(origin_url) != connections_.end()) {
-    ConnectionSet& connections = connections_[origin_url];
-    ConnectionSet::iterator it = connections.begin();
-    while (it != connections.end()) {
-      // Remove before closing so callbacks don't double-erase
-      IndexedDBConnection* connection = *it;
-      DCHECK(connection->IsConnected());
-      connections.erase(it++);
-      connection->ForceClose();
-    }
-    DCHECK_EQ(connections_[origin_url].size(), 0UL);
-    connections_.erase(origin_url);
-  }
   if (factory_)
     factory_->ForceClose(origin_url);
+  DCHECK_EQ(0UL, GetConnectionCount(origin_url));
 }
 
 size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {
@@ -357,10 +347,10 @@ size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return 0;
 
-  if (connections_.find(origin_url) == connections_.end())
+  if (!factory_)
     return 0;
 
-  return connections_[origin_url].size();
+  return factory_->GetConnectionCount(origin_url);
 }
 
 base::FilePath IndexedDBContextImpl::GetFilePath(const GURL& origin_url) const {
@@ -382,14 +372,12 @@ void IndexedDBContextImpl::SetTaskRunnerForTesting(
 void IndexedDBContextImpl::ConnectionOpened(const GURL& origin_url,
                                             IndexedDBConnection* connection) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
-  DCHECK_EQ(connections_[origin_url].count(connection), 0UL);
   if (quota_manager_proxy()) {
     quota_manager_proxy()->NotifyStorageAccessed(
         quota::QuotaClient::kIndexedDatabase,
         origin_url,
         quota::kStorageTypeTemporary);
   }
-  connections_[origin_url].insert(connection);
   if (AddToOriginSet(origin_url)) {
     // A newly created db, notify the quota system.
     QueryDiskAndUpdateQuotaUsage(origin_url);
@@ -402,26 +390,24 @@ void IndexedDBContextImpl::ConnectionOpened(const GURL& origin_url,
 void IndexedDBContextImpl::ConnectionClosed(const GURL& origin_url,
                                             IndexedDBConnection* connection) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
-  // May not be in the map if connection was forced to close
-  if (connections_.find(origin_url) == connections_.end() ||
-      connections_[origin_url].count(connection) != 1)
-    return;
   if (quota_manager_proxy()) {
     quota_manager_proxy()->NotifyStorageAccessed(
         quota::QuotaClient::kIndexedDatabase,
         origin_url,
         quota::kStorageTypeTemporary);
   }
-  connections_[origin_url].erase(connection);
-  if (connections_[origin_url].size() == 0) {
+  if (factory_ && factory_->GetConnectionCount(origin_url) == 0)
     QueryDiskAndUpdateQuotaUsage(origin_url);
-    connections_.erase(origin_url);
-  }
 }
 
 void IndexedDBContextImpl::TransactionComplete(const GURL& origin_url) {
-  DCHECK(connections_.find(origin_url) != connections_.end() &&
-         connections_[origin_url].size() > 0);
+  DCHECK(!factory_ || factory_->GetConnectionCount(origin_url) > 0);
+  QueryDiskAndUpdateQuotaUsage(origin_url);
+  QueryAvailableQuota(origin_url);
+}
+
+void IndexedDBContextImpl::DatabaseDeleted(const GURL& origin_url) {
+  AddToOriginSet(origin_url);
   QueryDiskAndUpdateQuotaUsage(origin_url);
   QueryAvailableQuota(origin_url);
 }

@@ -6,9 +6,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
+#include "content/browser/renderer_host/cross_site_transferring_request.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/interstitial_page_delegate.h"
@@ -21,8 +23,8 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "content/public/test/mock_render_process_host.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
@@ -150,7 +152,7 @@ class TestInterstitialPage : public InterstitialPageImpl {
   }
 
   void TestDidNavigate(int page_id, const GURL& url) {
-    ViewHostMsg_FrameNavigate_Params params;
+    FrameHostMsg_DidCommitProvisionalLoad_Params params;
     InitNavigateParams(&params, page_id, url, PAGE_TRANSITION_TYPED);
     DidNavigate(GetRenderViewHostForTesting(), params);
   }
@@ -180,12 +182,6 @@ class TestInterstitialPage : public InterstitialPageImpl {
   }
 
  protected:
-  virtual RenderViewHost* CreateRenderViewHost() OVERRIDE {
-    return new TestRenderViewHost(
-        SiteInstance::Create(web_contents()->GetBrowserContext()),
-        this, this, this, MSG_ROUTING_NONE, MSG_ROUTING_NONE, false);
-  }
-
   virtual WebContentsView* CreateWebContentsView() OVERRIDE {
     return NULL;
   }
@@ -303,15 +299,16 @@ class TestWebContentsObserver : public WebContentsObserver {
 TEST_F(WebContentsImplTest, UpdateTitle) {
   NavigationControllerImpl& cont =
       static_cast<NavigationControllerImpl&>(controller());
-  ViewHostMsg_FrameNavigate_Params params;
+  FrameHostMsg_DidCommitProvisionalLoad_Params params;
   InitNavigateParams(&params, 0, GURL(kAboutBlankURL), PAGE_TRANSITION_TYPED);
 
   LoadCommittedDetails details;
-  cont.RendererDidNavigate(params, &details);
+  cont.RendererDidNavigate(test_rvh(), params, &details);
 
-  contents()->UpdateTitle(rvh(), 0, ASCIIToUTF16("    Lots O' Whitespace\n"),
+  contents()->UpdateTitle(rvh(), 0,
+                          base::ASCIIToUTF16("    Lots O' Whitespace\n"),
                           base::i18n::LEFT_TO_RIGHT);
-  EXPECT_EQ(ASCIIToUTF16("Lots O' Whitespace"), contents()->GetTitle());
+  EXPECT_EQ(base::ASCIIToUTF16("Lots O' Whitespace"), contents()->GetTitle());
 }
 
 TEST_F(WebContentsImplTest, DontUseTitleFromPendingEntry) {
@@ -323,7 +320,7 @@ TEST_F(WebContentsImplTest, DontUseTitleFromPendingEntry) {
 
 TEST_F(WebContentsImplTest, UseTitleFromPendingEntryIfSet) {
   const GURL kGURL("chrome://blah");
-  const base::string16 title = ASCIIToUTF16("My Title");
+  const base::string16 title = base::ASCIIToUTF16("My Title");
   controller().LoadURL(
       kGURL, Referrer(), PAGE_TRANSITION_TYPED, std::string());
 
@@ -350,12 +347,12 @@ TEST_F(WebContentsImplTest, NTPViewSource) {
   EXPECT_TRUE(process()->sink().GetFirstMessageMatching(
       ViewMsg_EnableViewSourceMode::ID));
 
-  ViewHostMsg_FrameNavigate_Params params;
+  FrameHostMsg_DidCommitProvisionalLoad_Params params;
   InitNavigateParams(&params, 0, kGURL, PAGE_TRANSITION_TYPED);
   LoadCommittedDetails details;
-  cont.RendererDidNavigate(params, &details);
+  cont.RendererDidNavigate(test_rvh(), params, &details);
   // Also check title and url.
-  EXPECT_EQ(ASCIIToUTF16(kUrl), contents()->GetTitle());
+  EXPECT_EQ(base::ASCIIToUTF16(kUrl), contents()->GetTitle());
 }
 
 // Test to ensure UpdateMaxPageID is working properly.
@@ -416,7 +413,7 @@ TEST_F(WebContentsImplTest, SimpleNavigation) {
 TEST_F(WebContentsImplTest, NavigateToExcessivelyLongURL) {
   // Construct a URL that's kMaxURLChars + 1 long of all 'a's.
   const GURL url(std::string("http://example.org/").append(
-      kMaxURLChars + 1, 'a'));
+      GetMaxURLChars() + 1, 'a'));
 
   controller().LoadURL(
       url, Referrer(), PAGE_TRANSITION_GENERATED, std::string());
@@ -428,6 +425,8 @@ TEST_F(WebContentsImplTest, NavigateToExcessivelyLongURL) {
 TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
+  RenderFrameHostImpl* orig_rfh =
+      contents()->GetFrameTree()->root()->current_frame_host();
   int orig_rvh_delete_count = 0;
   orig_rvh->set_delete_counter(&orig_rvh_delete_count);
   SiteInstance* instance1 = contents()->GetSiteInstance();
@@ -460,6 +459,8 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
       static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost());
   int pending_rvh_delete_count = 0;
   pending_rvh->set_delete_counter(&pending_rvh_delete_count);
+  RenderFrameHostImpl* pending_rfh = contents()->GetFrameTree()->root()->
+      render_manager()->pending_frame_host();
 
   // Navigations should be suspended in pending_rvh until ShouldCloseACK.
   EXPECT_TRUE(pending_rvh->are_navigations_suspended());
@@ -483,9 +484,9 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_EQ(url2, contents()->GetVisibleURL());
   EXPECT_NE(instance1, instance2);
   EXPECT_TRUE(contents()->GetPendingRenderViewHost() == NULL);
-  // We keep the original RVH around, swapped out.
+  // We keep the original RFH around, swapped out.
   EXPECT_TRUE(contents()->GetRenderManagerForTesting()->IsOnSwappedOutList(
-      orig_rvh));
+      orig_rfh));
   EXPECT_EQ(orig_rvh_delete_count, 0);
 
   // Going back should switch SiteInstances again.  The first SiteInstance is
@@ -508,10 +509,11 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_FALSE(contents()->cross_navigation_pending());
   EXPECT_EQ(goback_rvh, contents()->GetRenderViewHost());
   EXPECT_EQ(instance1, contents()->GetSiteInstance());
-  // The pending RVH should now be swapped out, not deleted.
+  // The pending RFH should now be swapped out, not deleted.
   EXPECT_TRUE(contents()->GetRenderManagerForTesting()->
-      IsOnSwappedOutList(pending_rvh));
+      IsOnSwappedOutList(pending_rfh));
   EXPECT_EQ(pending_rvh_delete_count, 0);
+  pending_rvh->OnSwappedOut(false);
 
   // Close contents and ensure RVHs are deleted.
   DeleteContents();
@@ -633,6 +635,8 @@ TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
 
   contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
+  RenderFrameHostImpl* orig_rfh =
+      contents()->GetFrameTree()->root()->current_frame_host();
   int orig_rvh_delete_count = 0;
   orig_rvh->set_delete_counter(&orig_rvh_delete_count);
   SiteInstanceImpl* orig_instance =
@@ -703,10 +707,11 @@ TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
   EXPECT_EQ(url2, contents()->GetVisibleURL());
   EXPECT_NE(new_instance, orig_instance);
   EXPECT_FALSE(contents()->GetPendingRenderViewHost());
-  // We keep the original RVH around, swapped out.
+  // We keep the original RFH around, swapped out.
   EXPECT_TRUE(contents()->GetRenderManagerForTesting()->IsOnSwappedOutList(
-      orig_rvh));
+      orig_rfh));
   EXPECT_EQ(orig_rvh_delete_count, 0);
+  orig_rvh->OnSwappedOut(false);
 
   // Close contents and ensure RVHs are deleted.
   DeleteContents();
@@ -1084,14 +1089,15 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
   std::vector<GURL> url_chain;
   url_chain.push_back(GURL());
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
-      pending_rvh, GlobalRequestID(0, 0), false, url_chain, Referrer(),
-      PAGE_TRANSITION_TYPED, 1, false);
+      pending_rvh, GlobalRequestID(0, 0),
+      scoped_ptr<CrossSiteTransferringRequest>(), url_chain,
+      Referrer(), PAGE_TRANSITION_TYPED, 1, false);
 
   // Suppose the original renderer navigates now, while the unload request is in
   // flight.  We should ignore it, wait for the unload ack, and let the pending
   // request continue.  Otherwise, the contents may close spontaneously or stop
   // responding to navigation requests.  (See bug 23942.)
-  ViewHostMsg_FrameNavigate_Params params1a;
+  FrameHostMsg_DidCommitProvisionalLoad_Params params1a;
   InitNavigateParams(&params1a, 2, GURL("http://www.google.com/foo"),
                      PAGE_TRANSITION_TYPED);
   orig_rvh->SendNavigate(2, GURL("http://www.google.com/foo"));
@@ -1134,7 +1140,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationCanceled) {
   EXPECT_TRUE(contents()->cross_navigation_pending());
 
   // Simulate swap out message when the response arrives.
-  orig_rvh->set_is_swapped_out(true);
+  orig_rvh->OnSwappedOut(false);
 
   // Suppose the navigation doesn't get a chance to commit, and the user
   // navigates in the current RVH's SiteInstance.
@@ -1146,7 +1152,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationCanceled) {
   SiteInstance* instance2 = contents()->GetSiteInstance();
   EXPECT_FALSE(contents()->cross_navigation_pending());
   EXPECT_EQ(orig_rvh, rvh());
-  EXPECT_FALSE(orig_rvh->is_swapped_out());
+  EXPECT_EQ(RenderViewHostImpl::STATE_DEFAULT, orig_rvh->rvh_state());
   EXPECT_EQ(instance1, instance2);
   EXPECT_TRUE(contents()->GetPendingRenderViewHost() == NULL);
 }
@@ -2036,7 +2042,8 @@ TEST_F(WebContentsImplTest, NoJSMessageOnInterstitials) {
   IPC::Message* dummy_message = new IPC::Message;
   bool did_suppress_message = false;
   contents()->RunJavaScriptMessage(contents()->GetRenderViewHost(),
-      ASCIIToUTF16("This is an informative message"), ASCIIToUTF16("OK"),
+      base::ASCIIToUTF16("This is an informative message"),
+      base::ASCIIToUTF16("OK"),
       kGURL, JAVASCRIPT_MESSAGE_TYPE_ALERT, dummy_message,
       &did_suppress_message);
   EXPECT_TRUE(did_suppress_message);
@@ -2077,7 +2084,7 @@ TEST_F(WebContentsImplTest, CopyStateFromAndPruneSourceInterstitial) {
       NavigationEntryImpl::FromNavigationEntry(
           other_controller.GetEntryAtIndex(0))->site_instance(), 1,
       other_controller.GetEntryAtIndex(0)->GetPageID());
-  other_controller.CopyStateFromAndPrune(&controller());
+  other_controller.CopyStateFromAndPrune(&controller(), false);
 
   // The merged controller should only have two entries: url1 and url2.
   ASSERT_EQ(2, other_controller.GetEntryCount());
@@ -2165,6 +2172,64 @@ TEST_F(WebContentsImplTest, PendingContents) {
   int route_id = other_contents->GetRenderViewHost()->GetRoutingID();
   other_contents.reset();
   EXPECT_EQ(NULL, contents()->GetCreatedWindow(route_id));
+}
+
+TEST_F(WebContentsImplTest, CapturerOverridesPreferredSize) {
+  const gfx::Size original_preferred_size(1024, 768);
+  contents()->UpdatePreferredSize(original_preferred_size);
+
+  // With no capturers, expect the preferred size to be the one propagated into
+  // WebContentsImpl via the RenderViewHostDelegate interface.
+  EXPECT_EQ(contents()->GetCapturerCount(), 0);
+  EXPECT_EQ(original_preferred_size, contents()->GetPreferredSize());
+
+  // Increment capturer count, but without specifying a capture size.  Expect
+  // a "not set" preferred size.
+  contents()->IncrementCapturerCount(gfx::Size());
+  EXPECT_EQ(1, contents()->GetCapturerCount());
+  EXPECT_EQ(gfx::Size(), contents()->GetPreferredSize());
+
+  // Increment capturer count again, but with an overriding capture size.
+  // Expect preferred size to now be overridden to the capture size.
+  const gfx::Size capture_size(1280, 720);
+  contents()->IncrementCapturerCount(capture_size);
+  EXPECT_EQ(2, contents()->GetCapturerCount());
+  EXPECT_EQ(capture_size, contents()->GetPreferredSize());
+
+  // Increment capturer count a third time, but the expect that the preferred
+  // size is still the first capture size.
+  const gfx::Size another_capture_size(720, 480);
+  contents()->IncrementCapturerCount(another_capture_size);
+  EXPECT_EQ(3, contents()->GetCapturerCount());
+  EXPECT_EQ(capture_size, contents()->GetPreferredSize());
+
+  // Decrement capturer count twice, but expect the preferred size to still be
+  // overridden.
+  contents()->DecrementCapturerCount();
+  contents()->DecrementCapturerCount();
+  EXPECT_EQ(1, contents()->GetCapturerCount());
+  EXPECT_EQ(capture_size, contents()->GetPreferredSize());
+
+  // Decrement capturer count, and since the count has dropped to zero, the
+  // original preferred size should be restored.
+  contents()->DecrementCapturerCount();
+  EXPECT_EQ(0, contents()->GetCapturerCount());
+  EXPECT_EQ(original_preferred_size, contents()->GetPreferredSize());
+}
+
+// Tests that GetLastActiveTime starts with a real, non-zero time and updates
+// on activity.
+TEST_F(WebContentsImplTest, GetLastActiveTime) {
+  // The WebContents starts with a valid creation time.
+  EXPECT_FALSE(contents()->GetLastActiveTime().is_null());
+
+  // Reset the last active time to a known-bad value.
+  contents()->last_active_time_ = base::TimeTicks();
+  ASSERT_TRUE(contents()->GetLastActiveTime().is_null());
+
+  // Simulate activating the WebContents. The active time should update.
+  contents()->WasShown();
+  EXPECT_FALSE(contents()->GetLastActiveTime().is_null());
 }
 
 }  // namespace content

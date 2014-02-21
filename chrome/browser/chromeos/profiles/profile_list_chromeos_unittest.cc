@@ -7,7 +7,6 @@
 #include "ash/ash_switches.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/metrics/field_trial.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/login/fake_user_manager.h"
@@ -21,9 +20,10 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "components/variations/entropy_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -68,12 +68,6 @@ class ProfileListChromeOSTest : public testing::Test {
     CommandLine* cl = CommandLine::ForCurrentProcess();
     cl->AppendSwitch(switches::kMultiProfiles);
 
-    field_trial_list_.reset(new base::FieldTrialList(
-        new metrics::SHA1EntropyProvider("42")));
-    base::FieldTrialList::CreateTrialsFromString(
-        "ChromeOSUseMultiProfiles/Enable/",
-        base::FieldTrialList::ACTIVATE_TRIALS);
-
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
     user_manager_enabler_.reset(
         new ScopedUserManagerEnabler(new FakeUserManager));
@@ -83,7 +77,7 @@ class ProfileListChromeOSTest : public testing::Test {
     return static_cast<FakeUserManager*>(UserManager::Get());
   }
 
-  void AddProfile(string16 name, bool log_in) {
+  void AddProfile(base::string16 name, bool log_in) {
     std::string email_string = UTF16ToASCII(name) + "@example.com";
 
     // Add a user to the fake user manager.
@@ -133,7 +127,6 @@ class ProfileListChromeOSTest : public testing::Test {
   scoped_ptr<ScopedUserManagerEnabler> user_manager_enabler_;
   scoped_ptr<AvatarMenu> avatar_menu_;
   ChromeShellDelegate chrome_shell_delegate_;
-  scoped_ptr<base::FieldTrialList> field_trial_list_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileListChromeOSTest);
 };
@@ -327,24 +320,6 @@ TEST_F(ProfileListChromeOSTest, DontShowAvatarMenu) {
   AddProfile(name2, false);
 
   EXPECT_FALSE(AvatarMenu::ShouldShowAvatarMenu());
-}
-
-TEST_F(ProfileListChromeOSTest, ShowAvatarMenuInM31) {
-  // In M-31 mode, the menu will get shown.
-  CommandLine* cl = CommandLine::ForCurrentProcess();
-  cl->AppendSwitch(ash::switches::kAshEnableFullMultiProfileMode);
-
-  base::string16 name1(ASCIIToUTF16("p1"));
-  base::string16 name2(ASCIIToUTF16("p2"));
-
-  AddProfile(name1, true);
-
-  // Should only show avatar menu with multiple users.
-  EXPECT_FALSE(AvatarMenu::ShouldShowAvatarMenu());
-
-  AddProfile(name2, false);
-
-  EXPECT_TRUE(AvatarMenu::ShouldShowAvatarMenu());
 }
 
 }  // namespace chromeos

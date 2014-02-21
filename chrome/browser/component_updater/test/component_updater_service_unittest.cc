@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,10 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/component_updater/component_updater_utils.h"
 #include "chrome/browser/component_updater/test/test_installer.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
@@ -37,6 +39,10 @@ MockComponentObserver::MockComponentObserver() {
 }
 
 MockComponentObserver::~MockComponentObserver() {
+}
+
+bool PartialMatch::Match(const std::string& actual) const {
+  return actual.find(expected_) != std::string::npos;
 }
 
 TestConfigurator::TestConfigurator()
@@ -91,7 +97,7 @@ GURL TestConfigurator::PingUrl() {
   return UpdateUrl();
 }
 
-const char* TestConfigurator::ExtraRequestParams() { return "extra=foo"; }
+std::string TestConfigurator::ExtraRequestParams() { return "extra=\"foo\""; }
 
 size_t TestConfigurator::UrlSizeLimit() { return 256; }
 
@@ -147,19 +153,6 @@ URLRequestPostInterceptor* InterceptorFactory::CreateInterceptor() {
   return URLRequestPostInterceptorFactory::CreateInterceptor(
     base::FilePath::FromUTF8Unsafe(POST_INTERCEPT_PATH));
 }
-
-class PartialMatch : public URLRequestPostInterceptor::RequestMatcher {
- public:
-  explicit PartialMatch(const std::string& expected) : expected_(expected) {}
-  virtual bool Match(const std::string& actual) const OVERRIDE {
-    return actual.find(expected_) != std::string::npos;
-  }
-
- private:
-  const std::string expected_;
-
-  DISALLOW_COPY_AND_ASSIGN(PartialMatch);
-};
 
 ComponentUpdaterTest::ComponentUpdaterTest()
     : test_config_(NULL),
@@ -462,7 +455,7 @@ TEST_F(ComponentUpdaterTest, InstallCrx) {
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[1].find(
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" "
       "version=\"0.9\" nextversion=\"1.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\"/></app>"))
+      "<event eventtype=\"3\" eventresult=\"1\"/>"))
       << post_interceptor_->GetRequestsAsString();
 
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[2].find(
@@ -472,6 +465,37 @@ TEST_F(ComponentUpdaterTest, InstallCrx) {
       "<app appid=\"abagagagagagagagagagagagagagagag\" version=\"2.2\">"
       "<updatecheck /></app>"))
       << post_interceptor_->GetRequestsAsString();
+
+  // Test the protocol version is correct and the extra request attributes
+  // are included in the request.
+  EXPECT_NE(string::npos, post_interceptor_->GetRequests()[0].find(
+      "request protocol=\"3.0\" extra=\"foo\""))
+      << post_interceptor_->GetRequestsAsString();
+
+  // Tokenize the request string to look for specific attributes, which
+  // are important for backward compatibility with the version v2 of the update
+  // protocol. In this case, inspect the <request>, which is the first element
+  // after the xml declaration of the update request body.
+  // Expect to find the |os|, |arch|, |prodchannel|, and |prodversion|
+  // attributes:
+  // <?xml version="1.0" encoding="UTF-8"?>
+  // <request... os=... arch=... prodchannel=... prodversion=...>
+  // ...
+  // </request>
+  const std::string update_request(post_interceptor_->GetRequests()[0]);
+  std::vector<base::StringPiece> elements;
+  Tokenize(update_request, "<>", &elements);
+  EXPECT_NE(string::npos, elements[1].find(" os="));
+  EXPECT_NE(string::npos, elements[1].find(" arch="));
+  EXPECT_NE(string::npos, elements[1].find(" prodchannel="));
+  EXPECT_NE(string::npos, elements[1].find(" prodversion="));
+
+  // Look for additional attributes of the request, such as |version|,
+  // |requestid|, |lang|, and |nacl_arch|.
+  EXPECT_NE(string::npos, elements[1].find(" version="));
+  EXPECT_NE(string::npos, elements[1].find(" requestid="));
+  EXPECT_NE(string::npos, elements[1].find(" lang="));
+  EXPECT_NE(string::npos, elements[1].find(" nacl_arch="));
 
   component_updater()->Stop();
 }
@@ -636,7 +660,7 @@ TEST_F(ComponentUpdaterTest, OnDemandUpdate) {
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[1].find(
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" "
       "version=\"0.9\" nextversion=\"1.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\"/></app>"))
+      "<event eventtype=\"3\" eventresult=\"1\"/>"))
       << post_interceptor_->GetRequestsAsString();
 
   // Also check what happens if previous check too soon.
@@ -832,7 +856,7 @@ TEST_F(ComponentUpdaterTest, CheckReRegistration) {
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[1].find(
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" "
       "version=\"0.9\" nextversion=\"1.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\"/></app>"))
+      "<event eventtype=\"3\" eventresult=\"1\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[2].find(
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" version=\"1.0\">"
@@ -958,7 +982,7 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdate) {
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[1].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" "
       "version=\"0.0\" nextversion=\"1.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\" nextfp=\"1\"/></app>"))
+      "<event eventtype=\"3\" eventresult=\"1\" nextfp=\"1\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[2].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" version=\"1.0\">"
@@ -968,7 +992,7 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdate) {
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" "
       "version=\"1.0\" nextversion=\"2.0\">"
       "<event eventtype=\"3\" eventresult=\"1\" diffresult=\"1\" "
-      "previousfp=\"1\" nextfp=\"22\"/></app>"))
+      "previousfp=\"1\" nextfp=\"22\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[4].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" version=\"2.0\">"
@@ -1031,7 +1055,7 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdateFails) {
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" "
       "version=\"1.0\" nextversion=\"2.0\">"
       "<event eventtype=\"3\" eventresult=\"1\" diffresult=\"0\" "
-      "differrorcat=\"2\" differrorcode=\"16\" nextfp=\"22\"/></app>"))
+      "differrorcat=\"2\" differrorcode=\"16\" nextfp=\"22\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[2].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" version=\"2.0\">"
@@ -1041,8 +1065,14 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdateFails) {
   component_updater()->Stop();
 }
 
+// Test is flakey on Android bots. See crbug.com/331420.
+#if defined(OS_ANDROID)
+#define MAYBE_CheckFailedInstallPing DISABLED_CheckFailedInstallPing
+#else
+#define MAYBE_CheckFailedInstallPing CheckFailedInstallPing
+#endif
 // Verify that a failed installation causes an install failure ping.
-TEST_F(ComponentUpdaterTest, CheckFailedInstallPing) {
+  TEST_F(ComponentUpdaterTest, MAYBE_CheckFailedInstallPing) {
   // This test installer reports installation failure.
   class : public TestInstaller {
     virtual bool Install(const base::DictionaryValue& manifest,
@@ -1085,7 +1115,7 @@ TEST_F(ComponentUpdaterTest, CheckFailedInstallPing) {
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" "
       "version=\"0.9\" nextversion=\"1.0\">"
       "<event eventtype=\"3\" eventresult=\"0\" "
-      "errorcat=\"3\" errorcode=\"9\"/></app>"))
+      "errorcat=\"3\" errorcode=\"9\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[2].find(
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" version=\"0.9\">"
@@ -1095,7 +1125,7 @@ TEST_F(ComponentUpdaterTest, CheckFailedInstallPing) {
       "<app appid=\"jebgalgnebhfojomionfpkfelancnnkf\" "
       "version=\"0.9\" nextversion=\"1.0\">"
       "<event eventtype=\"3\" eventresult=\"0\" "
-      "errorcat=\"3\" errorcode=\"9\"/></app>"))
+      "errorcat=\"3\" errorcode=\"9\"/>"))
       << post_interceptor_->GetRequestsAsString();
 
   // Loop once more, but expect no ping because a noupdate response is issued.
@@ -1178,7 +1208,7 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdateFailErrorcode) {
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[1].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" "
       "version=\"0.0\" nextversion=\"1.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\" nextfp=\"1\"/></app>"))
+      "<event eventtype=\"3\" eventresult=\"1\" nextfp=\"1\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[2].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" version=\"1.0\">"
@@ -1190,7 +1220,7 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdateFailErrorcode) {
       "<event eventtype=\"3\" eventresult=\"1\" "
       "diffresult=\"0\" differrorcat=\"2\" "
       "differrorcode=\"14\" diffextracode1=\"305\" "
-      "previousfp=\"1\" nextfp=\"22\"/></app>"))
+      "previousfp=\"1\" nextfp=\"22\"/>"))
       << post_interceptor_->GetRequestsAsString();
   EXPECT_NE(string::npos, post_interceptor_->GetRequests()[4].find(
       "<app appid=\"ihfokbkgjpifnbbojhneepfflplebdkc\" version=\"2.0\">"
@@ -1198,19 +1228,15 @@ TEST_F(ComponentUpdaterTest, DifferentialUpdateFailErrorcode) {
       << post_interceptor_->GetRequestsAsString();
 }
 
-void RequestAndDeleteResourceThrottle(
-    ComponentUpdateService* cus, const char* crx_id) {
-  // By requesting a throttle and deleting it immediately we ensure that we
-  // hit the case where the component updater tries to use the weak
-  // pointer to a dead Resource throttle.
-  class  NoCallResourceController : public content::ResourceController {
-   public:
-    virtual ~NoCallResourceController() {}
-    virtual void Cancel() OVERRIDE { CHECK(false); }
-    virtual void CancelAndIgnore() OVERRIDE { CHECK(false); }
-    virtual void CancelWithError(int error_code) OVERRIDE { CHECK(false); }
-    virtual void Resume() OVERRIDE { CHECK(false); }
-  };
+class TestResourceController : public content::ResourceController {
+ public:
+  virtual void SetThrottle(content::ResourceThrottle* throttle) {}
+};
+
+content::ResourceThrottle* RequestTestResourceThrottle(
+    ComponentUpdateService* cus,
+    TestResourceController* controller,
+    const char* crx_id) {
 
   net::TestURLRequestContext context;
   net::TestURLRequest url_request(
@@ -1221,12 +1247,29 @@ void RequestAndDeleteResourceThrottle(
 
   content::ResourceThrottle* rt =
       cus->GetOnDemandResourceThrottle(&url_request, crx_id);
-  NoCallResourceController controller;
-  rt->set_controller_for_testing(&controller);
-  delete rt;
+  rt->set_controller_for_testing(controller);
+  controller->SetThrottle(rt);
+  return rt;
 }
 
-TEST_F(ComponentUpdaterTest, ResourceThrottleNoUpdate) {
+void RequestAndDeleteResourceThrottle(
+    ComponentUpdateService* cus, const char* crx_id) {
+  // By requesting a throttle and deleting it immediately we ensure that we
+  // hit the case where the component updater tries to use the weak
+  // pointer to a dead Resource throttle.
+  class  NoCallResourceController : public TestResourceController {
+   public:
+    virtual ~NoCallResourceController() {}
+    virtual void Cancel() OVERRIDE { CHECK(false); }
+    virtual void CancelAndIgnore() OVERRIDE { CHECK(false); }
+    virtual void CancelWithError(int error_code) OVERRIDE { CHECK(false); }
+    virtual void Resume() OVERRIDE { CHECK(false); }
+  } controller;
+
+  delete RequestTestResourceThrottle(cus, &controller, crx_id);
+}
+
+TEST_F(ComponentUpdaterTest, ResourceThrottleDeletedNoUpdate) {
   MockComponentObserver observer;
   EXPECT_CALL(observer,
               OnEvent(ComponentObserver::COMPONENT_UPDATER_STARTED, 0))
@@ -1234,10 +1277,12 @@ TEST_F(ComponentUpdaterTest, ResourceThrottleNoUpdate) {
   EXPECT_CALL(observer,
               OnEvent(ComponentObserver::COMPONENT_UPDATER_SLEEPING, 0))
               .Times(1);
-
   EXPECT_CALL(observer,
               OnEvent(ComponentObserver::COMPONENT_NOT_UPDATED, 0))
               .Times(1);
+
+  EXPECT_TRUE(post_interceptor_->ExpectRequest(new PartialMatch(
+      "updatecheck"), test_file("updatecheck_reply_1.xml")));
 
   TestInstaller installer;
   CrxComponent com;
@@ -1247,11 +1292,6 @@ TEST_F(ComponentUpdaterTest, ResourceThrottleNoUpdate) {
                               kTestComponent_abag,
                               Version("1.1"),
                               &installer));
-
-  const GURL expected_update_url(
-      "http://localhost/upd?extra=foo"
-      "&x=id%3Dabagagagagagagagagagagagagagagag%26v%3D1.1%26fp%3D%26uc"
-      "%26installsource%3Dondemand");
   // The following two calls ensure that we don't do an update check via the
   // timer, so the only update check should be the on-demand one.
   test_configurator()->SetInitialDelay(1000000);
@@ -1262,9 +1302,6 @@ TEST_F(ComponentUpdaterTest, ResourceThrottleNoUpdate) {
   RunThreadsUntilIdle();
 
   EXPECT_EQ(0, post_interceptor_->GetHitCount());
-
-  EXPECT_TRUE(post_interceptor_->ExpectRequest(new PartialMatch(
-      "updatecheck"), test_file("updatecheck_reply_1.xml")));
 
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -1281,6 +1318,95 @@ TEST_F(ComponentUpdaterTest, ResourceThrottleNoUpdate) {
 
   component_updater()->Stop();
 }
+
+class  CancelResourceController: public TestResourceController {
+  public:
+  CancelResourceController() : throttle_(NULL), resume_called_(0) {}
+  virtual ~CancelResourceController() {
+    // Check that the throttle has been resumed by the time we
+    // exit the test.
+    CHECK(resume_called_ == 1);
+    delete throttle_;
+  }
+  virtual void Cancel() OVERRIDE { CHECK(false); }
+  virtual void CancelAndIgnore() OVERRIDE { CHECK(false); }
+  virtual void CancelWithError(int error_code) OVERRIDE { CHECK(false); }
+  virtual void Resume() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&CancelResourceController::ResumeCalled,
+                    base::Unretained(this)));
+  }
+  virtual void SetThrottle(content::ResourceThrottle* throttle) OVERRIDE {
+    throttle_ = throttle;
+    bool defer = false;
+    // Initially the throttle is blocked. The CUS needs to run a
+    // task on the UI thread to  decide if it should unblock.
+    throttle_->WillStartRequest(&defer);
+    CHECK(defer);
+  }
+
+  private:
+  void ResumeCalled() { ++resume_called_; }
+
+  content::ResourceThrottle* throttle_;
+  int resume_called_;
+};
+
+TEST_F(ComponentUpdaterTest, ResourceThrottleLiveNoUpdate) {
+  MockComponentObserver observer;
+  EXPECT_CALL(observer,
+              OnEvent(ComponentObserver::COMPONENT_UPDATER_STARTED, 0))
+              .Times(1);
+  EXPECT_CALL(observer,
+              OnEvent(ComponentObserver::COMPONENT_UPDATER_SLEEPING, 0))
+              .Times(1);
+  EXPECT_CALL(observer,
+              OnEvent(ComponentObserver::COMPONENT_NOT_UPDATED, 0))
+              .Times(1);
+
+  EXPECT_TRUE(post_interceptor_->ExpectRequest(new PartialMatch(
+      "updatecheck"), test_file("updatecheck_reply_1.xml")));
+
+  TestInstaller installer;
+  CrxComponent com;
+  com.observer = &observer;
+  EXPECT_EQ(ComponentUpdateService::kOk,
+            RegisterComponent(&com,
+                              kTestComponent_abag,
+                              Version("1.1"),
+                              &installer));
+  // The following two calls ensure that we don't do an update check via the
+  // timer, so the only update check should be the on-demand one.
+  test_configurator()->SetInitialDelay(1000000);
+  test_configurator()->SetRecheckTime(1000000);
+  test_configurator()->SetLoopCount(1);
+  component_updater()->Start();
+
+  RunThreadsUntilIdle();
+
+  EXPECT_EQ(0, post_interceptor_->GetHitCount());
+
+  CancelResourceController controller;
+
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(base::IgnoreResult(&RequestTestResourceThrottle),
+                 component_updater(),
+                 &controller,
+                 "abagagagagagagagagagagagagagagag"));
+
+  RunThreads();
+
+  EXPECT_EQ(1, post_interceptor_->GetHitCount());
+  EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->error());
+  EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->install_count());
+
+  component_updater()->Stop();
+}
+
 
 }  // namespace component_updater
 

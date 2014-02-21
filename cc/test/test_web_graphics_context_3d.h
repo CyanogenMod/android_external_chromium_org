@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
@@ -16,7 +17,6 @@
 #include "base/stl_util.h"
 #include "base/synchronization/lock.h"
 #include "cc/output/context_provider.h"
-#include "cc/test/fake_web_graphics_context_3d.h"
 #include "cc/test/ordered_texture_map.h"
 #include "cc/test/test_texture.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -25,134 +25,230 @@
 namespace cc {
 class TestContextSupport;
 
-class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
+class TestWebGraphicsContext3D {
  public:
   static scoped_ptr<TestWebGraphicsContext3D> Create();
 
   virtual ~TestWebGraphicsContext3D();
 
-  virtual void reshapeWithScaleFactor(
-      int width, int height, float scale_factor);
+  void set_context_lost_callback(const base::Closure& callback) {
+    context_lost_callback_ = callback;
+  }
+
+  virtual void reshapeWithScaleFactor(int width,
+                                      int height,
+                                      float scale_factor);
 
   virtual bool isContextLost();
 
-  virtual void attachShader(blink::WebGLId program, blink::WebGLId shader);
-  virtual void bindFramebuffer(
-      blink::WGC3Denum target, blink::WebGLId framebuffer);
-  virtual void bindRenderbuffer(
-      blink::WGC3Denum target, blink::WebGLId renderbuffer);
-  virtual void bindTexture(
-      blink::WGC3Denum target,
-      blink::WebGLId texture_id);
+  virtual void discardFramebufferEXT(GLenum target,
+                                     GLsizei num_attachments,
+                                     const GLenum* attachments) {}
 
-  virtual void texParameteri(blink::WGC3Denum target,
-                             blink::WGC3Denum pname,
-                             blink::WGC3Dint param);
-  virtual void getTexParameteriv(blink::WGC3Denum target,
-                                 blink::WGC3Denum pname,
-                                 blink::WGC3Dint* value);
+  virtual void activeTexture(GLenum texture) {}
+  virtual void attachShader(GLuint program, GLuint shader);
+  virtual void bindFramebuffer(GLenum target, GLuint framebuffer);
+  virtual void bindRenderbuffer(GLenum target, GLuint renderbuffer);
+  virtual void bindTexture(GLenum target, GLuint texture_id);
 
-  virtual blink::WGC3Denum checkFramebufferStatus(blink::WGC3Denum target);
+  virtual void texParameteri(GLenum target, GLenum pname, GLint param);
+  virtual void getTexParameteriv(GLenum target, GLenum pname, GLint* value);
+  virtual void asyncTexImage2DCHROMIUM(GLenum target,
+                                       GLint level,
+                                       GLenum internalformat,
+                                       GLsizei width,
+                                       GLsizei height,
+                                       GLint border,
+                                       GLenum format,
+                                       GLenum type,
+                                       const void* pixels) {}
+  virtual void asyncTexSubImage2DCHROMIUM(GLenum target,
+                                          GLint level,
+                                          GLint xoffset,
+                                          GLint yoffset,
+                                          GLsizei width,
+                                          GLsizei height,
+                                          GLenum format,
+                                          GLenum type,
+                                          const void* pixels) {}
+  virtual void waitAsyncTexImage2DCHROMIUM(GLenum target) {}
+  virtual void releaseTexImage2DCHROMIUM(GLenum target, GLint image_id) {}
 
-  virtual Attributes getContextAttributes();
+  virtual GLenum checkFramebufferStatus(GLenum target);
 
-  virtual blink::WebString getString(blink::WGC3Denum name);
-  virtual blink::WGC3Dint getUniformLocation(
-      blink::WebGLId program,
-      const blink::WGC3Dchar* name);
-  virtual blink::WGC3Dsizeiptr getVertexAttribOffset(
-      blink::WGC3Duint index,
-      blink::WGC3Denum pname);
+  virtual void clear(GLbitfield mask) {}
+  virtual void clearColor(GLclampf red,
+                          GLclampf green,
+                          GLclampf blue,
+                          GLclampf alpha) {}
+  virtual void clearStencil(GLint s) {}
+  virtual void compressedTexImage2D(GLenum target,
+                                    GLint level,
+                                    GLenum internal_format,
+                                    GLsizei width,
+                                    GLsizei height,
+                                    GLint border,
+                                    GLsizei image_size,
+                                    const void* data) {}
+  virtual GLint getUniformLocation(GLuint program, const GLchar* name);
+  virtual GLsizeiptr getVertexAttribOffset(GLuint index, GLenum pname);
 
-  virtual blink::WGC3Dboolean isBuffer(blink::WebGLId buffer);
-  virtual blink::WGC3Dboolean isEnabled(blink::WGC3Denum cap);
-  virtual blink::WGC3Dboolean isFramebuffer(blink::WebGLId framebuffer);
-  virtual blink::WGC3Dboolean isProgram(blink::WebGLId program);
-  virtual blink::WGC3Dboolean isRenderbuffer(blink::WebGLId renderbuffer);
-  virtual blink::WGC3Dboolean isShader(blink::WebGLId shader);
-  virtual blink::WGC3Dboolean isTexture(blink::WebGLId texture);
+  virtual GLboolean isBuffer(GLuint buffer);
+  virtual GLboolean isEnabled(GLenum cap);
+  virtual GLboolean isFramebuffer(GLuint framebuffer);
+  virtual GLboolean isProgram(GLuint program);
+  virtual GLboolean isRenderbuffer(GLuint renderbuffer);
+  virtual GLboolean isShader(GLuint shader);
+  virtual GLboolean isTexture(GLuint texture);
 
-  virtual void useProgram(blink::WebGLId program);
+  virtual void useProgram(GLuint program);
 
-  virtual void genBuffers(blink::WGC3Dsizei count, blink::WebGLId* ids);
-  virtual void genFramebuffers(blink::WGC3Dsizei count, blink::WebGLId* ids);
-  virtual void genRenderbuffers(blink::WGC3Dsizei count, blink::WebGLId* ids);
-  virtual void genTextures(blink::WGC3Dsizei count, blink::WebGLId* ids);
+  virtual void viewport(GLint x, GLint y, GLsizei width, GLsizei height) {}
 
-  virtual void deleteBuffers(blink::WGC3Dsizei count, blink::WebGLId* ids);
-  virtual void deleteFramebuffers(
-      blink::WGC3Dsizei count, blink::WebGLId* ids);
-  virtual void deleteRenderbuffers(
-      blink::WGC3Dsizei count, blink::WebGLId* ids);
-  virtual void deleteTextures(blink::WGC3Dsizei count, blink::WebGLId* ids);
+  virtual void genBuffers(GLsizei count, GLuint* ids);
+  virtual void genFramebuffers(GLsizei count, GLuint* ids);
+  virtual void genRenderbuffers(GLsizei count, GLuint* ids);
+  virtual void genTextures(GLsizei count, GLuint* ids);
 
-  virtual blink::WebGLId createBuffer();
-  virtual blink::WebGLId createFramebuffer();
-  virtual blink::WebGLId createRenderbuffer();
-  virtual blink::WebGLId createTexture();
+  virtual void deleteBuffers(GLsizei count, GLuint* ids);
+  virtual void deleteFramebuffers(GLsizei count, GLuint* ids);
+  virtual void deleteRenderbuffers(GLsizei count, GLuint* ids);
+  virtual void deleteTextures(GLsizei count, GLuint* ids);
 
-  virtual void deleteBuffer(blink::WebGLId id);
-  virtual void deleteFramebuffer(blink::WebGLId id);
-  virtual void deleteRenderbuffer(blink::WebGLId id);
-  virtual void deleteTexture(blink::WebGLId id);
+  virtual GLuint createBuffer();
+  virtual GLuint createFramebuffer();
+  virtual GLuint createRenderbuffer();
+  virtual GLuint createTexture();
 
-  virtual blink::WebGLId createProgram();
-  virtual blink::WebGLId createShader(blink::WGC3Denum);
-  virtual blink::WebGLId createExternalTexture();
+  virtual void deleteBuffer(GLuint id);
+  virtual void deleteFramebuffer(GLuint id);
+  virtual void deleteRenderbuffer(GLuint id);
+  virtual void deleteTexture(GLuint id);
 
-  virtual void deleteProgram(blink::WebGLId id);
-  virtual void deleteShader(blink::WebGLId id);
+  virtual GLuint createProgram();
+  virtual GLuint createShader(GLenum);
+  virtual GLuint createExternalTexture();
 
-  virtual void endQueryEXT(blink::WGC3Denum target);
-  virtual void getQueryObjectuivEXT(
-      blink::WebGLId query,
-      blink::WGC3Denum pname,
-      blink::WGC3Duint* params);
+  virtual void deleteProgram(GLuint id);
+  virtual void deleteShader(GLuint id);
 
-  virtual void getIntegerv(
-      blink::WGC3Denum pname,
-      blink::WGC3Dint* value);
+  virtual void texStorage2DEXT(GLenum target,
+                               GLint levels,
+                               GLuint internalformat,
+                               GLint width,
+                               GLint height) {}
 
-  virtual void genMailboxCHROMIUM(blink::WGC3Dbyte* mailbox);
-  virtual void produceTextureCHROMIUM(blink::WGC3Denum target,
-                                      const blink::WGC3Dbyte* mailbox) { }
-  virtual void consumeTextureCHROMIUM(blink::WGC3Denum target,
-                                      const blink::WGC3Dbyte* mailbox) { }
+  virtual GLuint createQueryEXT();
+  virtual void deleteQueryEXT(GLuint query) {}
+  virtual void beginQueryEXT(GLenum target, GLuint query) {}
+  virtual void endQueryEXT(GLenum target);
+  virtual void getQueryObjectuivEXT(GLuint query, GLenum pname, GLuint* params);
 
-  virtual void setContextLostCallback(
-      WebGraphicsContextLostCallback* callback);
+  virtual void scissor(GLint x, GLint y, GLsizei width, GLsizei height) {}
 
-  virtual void loseContextCHROMIUM(blink::WGC3Denum current,
-                                   blink::WGC3Denum other);
+  virtual void texImage2D(GLenum target,
+                          GLint level,
+                          GLenum internalformat,
+                          GLsizei width,
+                          GLsizei height,
+                          GLint border,
+                          GLenum format,
+                          GLenum type,
+                          const void* pixels) {}
 
+  virtual void texSubImage2D(GLenum target,
+                             GLint level,
+                             GLint xoffset,
+                             GLint yoffset,
+                             GLsizei width,
+                             GLsizei height,
+                             GLenum format,
+                             GLenum type,
+                             const void* pixels) {}
+
+  virtual void genMailboxCHROMIUM(GLbyte* mailbox);
+  virtual void produceTextureCHROMIUM(GLenum target,
+                                      const GLbyte* mailbox) { }
+  virtual void consumeTextureCHROMIUM(GLenum target,
+                                      const GLbyte* mailbox) { }
+
+  virtual void loseContextCHROMIUM(GLenum current, GLenum other);
+
+  virtual void bindTexImage2DCHROMIUM(GLenum target, GLint image_id) {}
+
+  virtual void drawArrays(GLenum mode, GLint first, GLsizei count) {}
+  virtual void drawElements(GLenum mode,
+                            GLsizei count,
+                            GLenum type,
+                            GLintptr offset) {}
+  virtual void disable(GLenum cap) {}
+  virtual void enable(GLenum cap) {}
   virtual void finish();
   virtual void flush();
+  virtual void shallowFlushCHROMIUM() {}
 
-  virtual void bindBuffer(blink::WGC3Denum target, blink::WebGLId buffer);
-  virtual void bufferData(blink::WGC3Denum target,
-                          blink::WGC3Dsizeiptr size,
+  virtual void getAttachedShaders(GLuint program,
+                                  GLsizei max_count,
+                                  GLsizei* count,
+                                  GLuint* shaders) {}
+  virtual GLint getAttribLocation(GLuint program, const GLchar* name);
+  virtual void getBooleanv(GLenum pname, GLboolean* value) {}
+  virtual void getBufferParameteriv(GLenum target, GLenum pname, GLint* value) {
+  }
+  virtual GLenum getError();
+  virtual void getFloatv(GLenum pname, GLfloat* value) {}
+  virtual void getFramebufferAttachmentParameteriv(GLenum target,
+                                                   GLenum attachment,
+                                                   GLenum pname,
+                                                   GLint* value) {}
+
+  virtual void getIntegerv(GLenum pname, GLint* value);
+
+  virtual void getProgramiv(GLuint program, GLenum pname, GLint* value);
+
+  virtual void getRenderbufferParameteriv(GLenum target,
+                                          GLenum pname,
+                                          GLint* value) {}
+
+  virtual void getShaderiv(GLuint shader, GLenum pname, GLint* value);
+
+  virtual void getShaderPrecisionFormat(GLenum shadertype,
+                                        GLenum precisiontype,
+                                        GLint* range,
+                                        GLint* precision);
+
+  virtual void getTexParameterfv(GLenum target, GLenum pname, GLfloat* value) {}
+  virtual void getUniformfv(GLuint program, GLint location, GLfloat* value) {}
+  virtual void getUniformiv(GLuint program, GLint location, GLint* value) {}
+  virtual void getVertexAttribfv(GLuint index, GLenum pname, GLfloat* value) {}
+  virtual void getVertexAttribiv(GLuint index, GLenum pname, GLint* value) {}
+
+  virtual void bindBuffer(GLenum target, GLuint buffer);
+  virtual void bufferData(GLenum target,
+                          GLsizeiptr size,
                           const void* data,
-                          blink::WGC3Denum usage);
-  virtual void* mapBufferCHROMIUM(blink::WGC3Denum target,
-                                  blink::WGC3Denum access);
-  virtual blink::WGC3Dboolean unmapBufferCHROMIUM(blink::WGC3Denum target);
+                          GLenum usage);
+  virtual void* mapBufferCHROMIUM(GLenum target,
+                                  GLenum access);
+  virtual GLboolean unmapBufferCHROMIUM(GLenum target);
 
-  virtual blink::WGC3Duint createImageCHROMIUM(
-      blink::WGC3Dsizei width,
-      blink::WGC3Dsizei height,
-      blink::WGC3Denum internalformat);
-  virtual void destroyImageCHROMIUM(blink::WGC3Duint image_id);
-  virtual void getImageParameterivCHROMIUM(
-      blink::WGC3Duint image_id,
-      blink::WGC3Denum pname,
-      blink::WGC3Dint* params);
-  virtual void* mapImageCHROMIUM(
-      blink::WGC3Duint image_id,
-      blink::WGC3Denum access);
-  virtual void unmapImageCHROMIUM(blink::WGC3Duint image_id);
+  virtual GLuint createImageCHROMIUM(GLsizei width,
+                                     GLsizei height,
+                                     GLenum internalformat);
+  virtual void destroyImageCHROMIUM(GLuint image_id);
+  virtual void getImageParameterivCHROMIUM(GLuint image_id,
+                                           GLenum pname,
+                                           GLint* params);
+  virtual void* mapImageCHROMIUM(GLuint image_id, GLenum access);
+  virtual void unmapImageCHROMIUM(GLuint image_id);
+  virtual void texImageIOSurface2DCHROMIUM(GLenum target,
+                                           GLsizei width,
+                                           GLsizei height,
+                                           GLuint io_surface_id,
+                                           GLuint plane) {}
 
-  virtual unsigned insertSyncPoint() OVERRIDE;
-  virtual void waitSyncPoint(unsigned sync_point) OVERRIDE;
+  virtual unsigned insertSyncPoint();
+  virtual void waitSyncPoint(unsigned sync_point);
 
   unsigned last_waited_sync_point() const { return last_waited_sync_point_; }
 
@@ -167,9 +263,6 @@ class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   void set_times_end_query_succeeds(int times) {
     times_end_query_succeeds_ = times;
   }
-  void set_times_gen_mailbox_succeeds(int times) {
-    times_gen_mailbox_succeeds_ = times;
-  }
 
   // When set, mapImageCHROMIUM and mapBufferCHROMIUM will return NULL after
   // this many times.
@@ -181,7 +274,7 @@ class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   }
 
   size_t NumTextures() const;
-  blink::WebGLId TextureAt(int i) const;
+  GLuint TextureAt(int i) const;
 
   size_t NumUsedTextures() const { return used_textures_.size(); }
   bool UsedTexture(int texture) const {
@@ -190,41 +283,41 @@ class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   void ResetUsedTextures() { used_textures_.clear(); }
 
   void set_have_extension_io_surface(bool have) {
-    test_capabilities_.iosurface = have;
-    test_capabilities_.texture_rectangle = have;
+    test_capabilities_.gpu.iosurface = have;
+    test_capabilities_.gpu.texture_rectangle = have;
   }
   void set_have_extension_egl_image(bool have) {
-    test_capabilities_.egl_image_external = have;
+    test_capabilities_.gpu.egl_image_external = have;
   }
   void set_have_post_sub_buffer(bool have) {
-    test_capabilities_.post_sub_buffer = have;
+    test_capabilities_.gpu.post_sub_buffer = have;
   }
   void set_have_discard_framebuffer(bool have) {
-    test_capabilities_.discard_framebuffer = have;
+    test_capabilities_.gpu.discard_framebuffer = have;
   }
   void set_support_compressed_texture_etc1(bool support) {
-    test_capabilities_.texture_format_etc1 = support;
+    test_capabilities_.gpu.texture_format_etc1 = support;
   }
   void set_support_texture_storage(bool support) {
-    test_capabilities_.texture_storage = support;
+    test_capabilities_.gpu.texture_storage = support;
   }
 
   // When this context is lost, all contexts in its share group are also lost.
-  void add_share_group_context(blink::WebGraphicsContext3D* context3d) {
+  void add_share_group_context(TestWebGraphicsContext3D* context3d) {
     shared_contexts_.push_back(context3d);
   }
 
   void set_max_texture_size(int size) { max_texture_size_ = size; }
 
-  static const blink::WebGLId kExternalTextureId;
-  virtual blink::WebGLId NextTextureId();
-  virtual void RetireTextureId(blink::WebGLId id);
+  static const GLuint kExternalTextureId;
+  virtual GLuint NextTextureId();
+  virtual void RetireTextureId(GLuint id);
 
-  virtual blink::WebGLId NextBufferId();
-  virtual void RetireBufferId(blink::WebGLId id);
+  virtual GLuint NextBufferId();
+  virtual void RetireBufferId(GLuint id);
 
-  virtual blink::WebGLId NextImageId();
-  virtual void RetireImageId(blink::WebGLId id);
+  virtual GLuint NextImageId();
+  virtual void RetireImageId(GLuint id);
 
   size_t GetTransferBufferMemoryUsedBytes() const;
   void SetMaxTransferBufferUsageBytes(size_t max_transfer_buffer_usage_bytes);
@@ -250,22 +343,20 @@ class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
 
   gfx::Rect update_rect() const { return update_rect_; }
 
-  UpdateType last_update_type() {
-    return last_update_type_;
-  }
+  UpdateType last_update_type() { return last_update_type_; }
 
  protected:
   struct TextureTargets {
     TextureTargets();
     ~TextureTargets();
 
-    void BindTexture(blink::WGC3Denum target, blink::WebGLId id);
-    void UnbindTexture(blink::WebGLId id);
+    void BindTexture(GLenum target, GLuint id);
+    void UnbindTexture(GLuint id);
 
-    blink::WebGLId BoundTexture(blink::WGC3Denum target);
+    GLuint BoundTexture(GLenum target);
 
    private:
-    typedef base::hash_map<blink::WGC3Denum, blink::WebGLId> TargetTextureMap;
+    typedef base::hash_map<GLenum, GLuint> TargetTextureMap;
     TargetTextureMap bound_textures_;
   };
 
@@ -273,7 +364,7 @@ class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
     Buffer();
     ~Buffer();
 
-    blink::WGC3Denum target;
+    GLenum target;
     scoped_ptr<uint8[]> pixels;
     size_t size;
 
@@ -312,26 +403,24 @@ class TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   TestWebGraphicsContext3D();
 
   void CreateNamespace();
-  blink::WebGLId BoundTextureId(blink::WGC3Denum target);
-  scoped_refptr<TestTexture> BoundTexture(blink::WGC3Denum target);
-  void CheckTextureIsBound(blink::WGC3Denum target);
+  GLuint BoundTextureId(GLenum target);
+  scoped_refptr<TestTexture> BoundTexture(GLenum target);
+  void CheckTextureIsBound(GLenum target);
 
   unsigned context_id_;
-  Attributes attributes_;
   ContextProvider::Capabilities test_capabilities_;
   int times_bind_texture_succeeds_;
   int times_end_query_succeeds_;
-  int times_gen_mailbox_succeeds_;
   bool context_lost_;
   int times_map_image_chromium_succeeds_;
   int times_map_buffer_chromium_succeeds_;
-  WebGraphicsContextLostCallback* context_lost_callback_;
+  base::Closure context_lost_callback_;
   base::hash_set<unsigned> used_textures_;
   unsigned next_program_id_;
   base::hash_set<unsigned> program_set_;
   unsigned next_shader_id_;
   base::hash_set<unsigned> shader_set_;
-  std::vector<blink::WebGraphicsContext3D*> shared_contexts_;
+  std::vector<TestWebGraphicsContext3D*> shared_contexts_;
   int max_texture_size_;
   bool reshape_called_;
   int width_;

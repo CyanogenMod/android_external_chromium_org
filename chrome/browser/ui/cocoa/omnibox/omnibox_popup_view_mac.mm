@@ -19,14 +19,14 @@
 #include "chrome/common/autocomplete_match_type.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #import "ui/base/cocoa/cocoa_event_utils.h"
 #import "ui/base/cocoa/flipped_view.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/rect.h"
-#include "ui/gfx/text_elider.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
+#include "ui/gfx/text_elider.h"
 
 namespace {
 
@@ -321,7 +321,8 @@ NSMutableAttributedString* OmniboxPopupViewMac::ElideString(
 
   // If ElideText() decides to do nothing, nothing to be done.
   const base::string16 elided =
-      gfx::ElideText(original_string, font, width, gfx::ELIDE_AT_END);
+      gfx::ElideText(original_string, gfx::FontList(font), width,
+                     gfx::ELIDE_AT_END);
   if (0 == elided.compare(original_string)) {
     return a_string;
   }
@@ -497,5 +498,6 @@ void OmniboxPopupViewMac::OpenURLForRow(size_t row,
   size_t start_match = model_->result().ShouldHideTopMatch() ? 1 : 0;
   row += start_match;
   DCHECK_LT(row, GetResult().size());
-  omnibox_view_->OpenMatch(GetResult().match_at(row), disposition, GURL(), row);
+  omnibox_view_->OpenMatch(GetResult().match_at(row), disposition, GURL(),
+                           base::string16(), row);
 }

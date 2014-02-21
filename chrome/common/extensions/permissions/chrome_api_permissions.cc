@@ -4,7 +4,6 @@
 
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 
-#include "chrome/common/extensions/permissions/bluetooth_permission.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
 #include "chrome/common/extensions/permissions/usb_device_permission.h"
@@ -192,6 +191,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kFileBrowserPrivate, "fileBrowserPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kHotwordPrivate, "hotwordPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kIdentityPrivate, "identityPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kLogPrivate, "logPrivate"},
@@ -221,6 +222,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kFeedbackPrivate, "feedbackPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kImageWriterPrivate, "imageWriterPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kReadingListPrivate, "readingListPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kRtcPrivate, "rtcPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
@@ -287,10 +290,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kSocket, "socket",
       APIPermissionInfo::kFlagCannotBeOptional, 0,
       PermissionMessage::kNone, &CreateAPIPermission<SocketPermission> },
-    { APIPermission::kSocketsUdp, "sockets.udp" },
-    { APIPermission::kAppCurrentWindowInternal, "app.currentWindowInternal" },
-    { APIPermission::kAppRuntime, "app.runtime" },
-    { APIPermission::kAppWindow, "app.window" },
     { APIPermission::kAlwaysOnTopWindows, "alwaysOnTopWindows" },
     { APIPermission::kAudioCapture, "audioCapture",
       APIPermissionInfo::kFlagNone,
@@ -320,6 +319,9 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE_DIRECTORY,
       PermissionMessage::kFileSystemWriteDirectory },
+    { APIPermission::kHid, "hid", APIPermissionInfo::kFlagNone,
+      IDS_EXTENSION_PROMPT_WARNING_HID,
+      PermissionMessage::kHid },
     // Because warning messages for the "mediaGalleries" permission vary based
     // on the permissions parameters, no message ID or message text is
     // specified here.
@@ -331,13 +333,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       &CreateAPIPermission<MediaGalleriesPermission> },
     { APIPermission::kPushMessaging, "pushMessaging",
       APIPermissionInfo::kFlagCannotBeOptional },
-    // Because warning messages for the "bluetooth" permission vary based on
-    // the permissions parameters, no message ID or message text is specified
-    // here. The message ID and text used will be determined at run-time in the
-    // |BluetoothPermission| class.
-    { APIPermission::kBluetooth, "bluetooth", APIPermissionInfo::kFlagNone,
-      0, PermissionMessage::kNone,
-      &CreateAPIPermission<BluetoothPermission> },
     { APIPermission::kUsb, "usb", APIPermissionInfo::kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_USB,
       PermissionMessage::kUsb },

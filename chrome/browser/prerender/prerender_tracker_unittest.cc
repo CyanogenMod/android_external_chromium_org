@@ -20,6 +20,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/test/net/url_request_mock_http_job.h"
+#include "ipc/ipc_message.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
@@ -40,11 +41,13 @@ class TestPrerenderContents : public PrerenderContents {
                           PrerenderManager::kNoExperiment),
         child_id_(child_id),
         route_id_(route_id) {
+    PrerenderResourceThrottle::OverridePrerenderContentsForTesting(this);
   }
 
   virtual ~TestPrerenderContents() {
     if (final_status() == FINAL_STATUS_MAX)
       SetFinalStatus(FINAL_STATUS_USED);
+    PrerenderResourceThrottle::OverridePrerenderContentsForTesting(NULL);
   }
 
   virtual bool GetChildId(int* child_id) const OVERRIDE {
@@ -58,7 +61,6 @@ class TestPrerenderContents : public PrerenderContents {
   }
 
   void Start() {
-    AddObserver(prerender_manager()->prerender_tracker());
     prerendering_has_started_ = true;
     NotifyPrerenderStart();
   }
@@ -68,7 +70,6 @@ class TestPrerenderContents : public PrerenderContents {
   }
 
   void Use() {
-    SetFinalStatus(FINAL_STATUS_USED);
     PrepareForUse();
   }
 
@@ -84,24 +85,11 @@ class TestPrerenderManager : public PrerenderManager {
     mutable_config().rate_limit_enabled = false;
   }
 
-  virtual void DestroyPrerenderForRenderView(
-      int process_id, int view_id, FinalStatus final_status) OVERRIDE {
-    cancelled_id_pairs_.insert(std::make_pair(process_id, view_id));
-  }
-
   // We never allocate our PrerenderContents in PrerenderManager, so we don't
   // ever want the default pending delete behaviour.
   virtual void MoveEntryToPendingDelete(PrerenderContents* entry,
                                         FinalStatus final_status) OVERRIDE {
   }
-
-  bool WasPrerenderCancelled(int child_id, int route_id) {
-    std::pair<int, int> child_route_id_pair(child_id, route_id);
-    return cancelled_id_pairs_.count(child_route_id_pair) != 0;
-  }
-
-  // Set of all the RenderViews that have been cancelled.
-  std::set<std::pair<int, int> > cancelled_id_pairs_;
 };
 
 class DeferredRedirectDelegate : public net::URLRequest::Delegate,
@@ -209,15 +197,6 @@ class PrerenderTrackerTest : public testing::Test {
     return &test_contents_;
   }
 
-  int GetCurrentStatus(int child_id, int route_id) {
-    FinalStatus final_status;
-    if (!prerender_tracker()->GetFinalStatus(child_id, route_id,
-                                             &final_status)) {
-      return -1;
-    }
-    return final_status;
-  }
-
   // Runs any tasks queued on either thread.
   void RunEvents() {
     message_loop_.RunUntilIdle();
@@ -232,297 +211,13 @@ class PrerenderTrackerTest : public testing::Test {
   TestPrerenderContents test_contents_;
 };
 
-// Check that a non-existant RenderView is handled correctly.
-TEST_F(PrerenderTrackerTest, PrerenderTrackerNull) {
-  EXPECT_FALSE(prerender_tracker()->TryUse(kDefaultChildId, kDefaultRouteId));
-  EXPECT_FALSE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_FALSE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-  FinalStatus final_status;
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId, kDefaultRouteId, &final_status));
-  EXPECT_FALSE(prerender_manager()->WasPrerenderCancelled(
-      kDefaultChildId, kDefaultRouteId));
-}
-
-// Check that a page that is used is handled correctly.
-TEST_F(PrerenderTrackerTest, PrerenderTrackerUsed) {
-  test_contents()->Start();
-
-  EXPECT_EQ(FINAL_STATUS_MAX,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // This calls AddPrerenderOnIOThreadTask().
-  RunEvents();
-
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-  EXPECT_EQ(FINAL_STATUS_MAX,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // Display the prerendered RenderView.
-  EXPECT_TRUE(prerender_tracker()->TryUse(kDefaultChildId, kDefaultRouteId));
-
-  // Make sure the page can't be destroyed or claim it was destroyed after
-  // it's been used.
-  EXPECT_FALSE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_FALSE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_EQ(FINAL_STATUS_USED,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // This would call DestroyPrerenderForChildRouteIdPair(), if the prerender
-  // were cancelled.
-  RunEvents();
-
-  // These functions should all behave as before.
-  EXPECT_FALSE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_FALSE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_EQ(FINAL_STATUS_USED, GetCurrentStatus(
-      kDefaultChildId, kDefaultRouteId));
-
-  // This calls DestroyPrerenderForChildRouteIdPair().
-  test_contents()->Use();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-
-  // This calls RemovePrerenderOnIOThreadTask().
-  RunEvents();
-
-  FinalStatus final_status;
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId, kDefaultRouteId, &final_status));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-  EXPECT_FALSE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_FALSE(prerender_manager()->WasPrerenderCancelled(
-      kDefaultChildId, kDefaultRouteId));
-}
-
-// Check that a prerendered page cancelled by TryCancel() is handled correctly.
-TEST_F(PrerenderTrackerTest, PrerenderTrackerCancelled) {
-  test_contents()->Start();
-  EXPECT_EQ(FINAL_STATUS_MAX,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // This calls AddPrerenderOnIOThreadTask().
-  RunEvents();
-
-  // Cancel the prerender.
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-
-  EXPECT_FALSE(prerender_tracker()->TryUse(kDefaultChildId, kDefaultRouteId));
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_EQ(FINAL_STATUS_CANCELLED,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // This calls DestroyPrerenderForChildRouteIdPair().
-  RunEvents();
-  EXPECT_TRUE(prerender_manager()->WasPrerenderCancelled(
-      kDefaultChildId, kDefaultRouteId));
-
-  // These should all work until the prerendering RenderViewHost is destroyed.
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_EQ(FINAL_STATUS_CANCELLED,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  test_contents()->Cancel();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-
-  // This calls RemovePrerenderOnIOThreadTask().
-  RunEvents();
-
-  FinalStatus final_status;
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId, kDefaultRouteId, &final_status));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-}
-
-// Check that a prerendered page cancelled on the IO thread by
-// TryCancelOnIOThread() is handled correctly.
-TEST_F(PrerenderTrackerTest, PrerenderTrackerCancelledOnIO) {
-  test_contents()->Start();
-  EXPECT_EQ(FINAL_STATUS_MAX,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // This calls AddPrerenderOnIOThreadTask().
-  RunEvents();
-
-  // Cancel the prerender.
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-
-  EXPECT_FALSE(prerender_tracker()->TryUse(kDefaultChildId, kDefaultRouteId));
-  EXPECT_TRUE(prerender_tracker()->TryCancel(kDefaultChildId, kDefaultRouteId,
-                                             FINAL_STATUS_CANCELLED));
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_EQ(FINAL_STATUS_TIMED_OUT,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  // This calls DestroyPrerenderForChildRouteIdPair().
-  RunEvents();
-  EXPECT_TRUE(prerender_manager()->WasPrerenderCancelled(
-      kDefaultChildId, kDefaultRouteId));
-
-  // These should all work until the prerendering RenderViewHost is destroyed.
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_EQ(FINAL_STATUS_TIMED_OUT,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  test_contents()->Cancel();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-
-  // This calls RemovePrerenderOnIOThreadTask().
-  RunEvents();
-
-  FinalStatus final_status;
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId, kDefaultRouteId, &final_status));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-}
-
-// Check that a prerendered page cancelled before it reaches the IO thread is
-// handled correctly.
-TEST_F(PrerenderTrackerTest, PrerenderTrackerCancelledFast) {
-  test_contents()->Start();
-
-  // Cancel the prerender.
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-
-  EXPECT_FALSE(prerender_tracker()->TryUse(kDefaultChildId, kDefaultRouteId));
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-
-  // This calls AddPrerenderOnIOThreadTask() and
-  // DestroyPrerenderForChildRouteIdPair().
-  RunEvents();
-  EXPECT_TRUE(prerender_manager()->WasPrerenderCancelled(
-      kDefaultChildId, kDefaultRouteId));
-
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_TIMED_OUT));
-  EXPECT_EQ(FINAL_STATUS_CANCELLED, GetCurrentStatus(
-      kDefaultChildId, kDefaultRouteId));
-
-  test_contents()->Cancel();
-
-  // This calls RemovePrerenderOnIOThreadTask().
-  RunEvents();
-
-  FinalStatus final_status;
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId, kDefaultRouteId, &final_status));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-}
-
-// Check that handling two pages at once works.
-TEST_F(PrerenderTrackerTest, PrerenderTrackerMultiple) {
-  test_contents()->Start();
-
-  // This calls AddPrerenderOnIOThreadTask().
-  RunEvents();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId + 1, kDefaultRouteId + 1));
-  EXPECT_FALSE(prerender_tracker()->TryUse(
-      kDefaultChildId + 1, kDefaultRouteId + 1));
-  EXPECT_FALSE(prerender_tracker()->TryCancel(
-      kDefaultChildId + 1, kDefaultRouteId + 1, FINAL_STATUS_CANCELLED));
-
-  // Start second prerender.
-  TestPrerenderContents second_test_contents(prerender_manager(),
-                                             kDefaultChildId + 1,
-                                             kDefaultRouteId + 1);
-
-  second_test_contents.Start();
-  // This calls AddPrerenderOnIOThreadTask().
-  RunEvents();
-
-  // Use (kDefaultChildId, kDefaultRouteId).
-  EXPECT_TRUE(prerender_tracker()->TryUse(kDefaultChildId, kDefaultRouteId));
-  EXPECT_EQ(FINAL_STATUS_USED, GetCurrentStatus(
-      kDefaultChildId, kDefaultRouteId));
-  EXPECT_EQ(FINAL_STATUS_MAX,
-            GetCurrentStatus(kDefaultChildId + 1, kDefaultRouteId + 1));
-
-  // Cancel (kDefaultChildId + 1, kDefaultRouteId + 1).
-  EXPECT_TRUE(prerender_tracker()->TryCancelOnIOThread(
-      kDefaultChildId + 1, kDefaultRouteId + 1, FINAL_STATUS_CANCELLED));
-
-  EXPECT_FALSE(prerender_tracker()->TryCancel(
-      kDefaultChildId, kDefaultRouteId, FINAL_STATUS_CANCELLED));
-  EXPECT_EQ(FINAL_STATUS_USED,
-            GetCurrentStatus(kDefaultChildId, kDefaultRouteId));
-
-  EXPECT_FALSE(prerender_tracker()->TryUse(
-      kDefaultChildId + 1, kDefaultRouteId + 1));
-  EXPECT_TRUE(prerender_tracker()->TryCancel(
-      kDefaultChildId + 1, kDefaultRouteId + 1, FINAL_STATUS_CANCELLED));
-  EXPECT_EQ(FINAL_STATUS_CANCELLED,
-            GetCurrentStatus(kDefaultChildId + 1, kDefaultRouteId + 1));
-
-  // This calls DestroyPrerenderForChildRouteIdPair().
-  RunEvents();
-  EXPECT_FALSE(prerender_manager()->WasPrerenderCancelled(kDefaultChildId,
-                                                          kDefaultRouteId));
-  EXPECT_TRUE(prerender_manager()->WasPrerenderCancelled(kDefaultChildId + 1,
-                                                         kDefaultRouteId + 1));
-
-  test_contents()->Cancel();
-  second_test_contents.Cancel();
-
-  // This calls RemovePrerenderOnIOThreadTask().
-  RunEvents();
-
-  FinalStatus final_status;
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId, kDefaultRouteId, &final_status));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-
-  EXPECT_FALSE(prerender_tracker()->GetFinalStatus(
-      kDefaultChildId + 1, kDefaultRouteId + 1, &final_status));
-  EXPECT_FALSE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId + 1, kDefaultRouteId + 1));
-}
-
 // Checks that deferred redirects are throttled and resumed correctly.
 TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectResume) {
   const base::FilePath::CharType kRedirectPath[] =
       FILE_PATH_LITERAL("prerender/image-deferred.png");
 
   test_contents()->Start();
-  // This calls AddPrerenderOnIOThreadTask().
   RunEvents();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
 
   // Fake a request.
   net::TestURLRequestContext url_request_context;
@@ -534,16 +229,18 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectResume) {
       &url_request_context);
   content::ResourceRequestInfo::AllocateForTesting(
       &request, ResourceType::IMAGE, NULL,
-      kDefaultChildId, kDefaultRouteId, true);
+      kDefaultChildId, kDefaultRouteId, MSG_ROUTING_NONE, true);
 
   // Install a prerender throttle.
-  PrerenderResourceThrottle throttle(&request, prerender_tracker());
+  PrerenderResourceThrottle throttle(&request);
   delegate.SetThrottle(&throttle);
 
   // Start the request and wait for a redirect.
   request.Start();
   delegate.Run();
   EXPECT_TRUE(delegate.was_deferred());
+  // This calls WillRedirectRequestOnUI().
+  RunEvents();
 
   // Display the prerendered RenderView and wait for the throttle to
   // notice.
@@ -553,56 +250,13 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectResume) {
   EXPECT_FALSE(delegate.cancel_called());
 }
 
-// Checks that deferred redirects are cancelled on prerender cancel.
-TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectCancel) {
-  const base::FilePath::CharType kRedirectPath[] =
-      FILE_PATH_LITERAL("prerender/image-deferred.png");
-
-  test_contents()->Start();
-  // This calls AddPrerenderOnIOThreadTask().
-  RunEvents();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
-
-  // Fake a request.
-  net::TestURLRequestContext url_request_context;
-  DeferredRedirectDelegate delegate;
-  net::URLRequest request(
-      content::URLRequestMockHTTPJob::GetMockUrl(base::FilePath(kRedirectPath)),
-      net::DEFAULT_PRIORITY,
-      &delegate,
-      &url_request_context);
-  content::ResourceRequestInfo::AllocateForTesting(
-      &request, ResourceType::IMAGE, NULL,
-      kDefaultChildId, kDefaultRouteId, true);
-
-  // Install a prerender throttle.
-  PrerenderResourceThrottle throttle(&request, prerender_tracker());
-  delegate.SetThrottle(&throttle);
-
-  // Start the request and wait for a redirect.
-  request.Start();
-  delegate.Run();
-  EXPECT_TRUE(delegate.was_deferred());
-
-  // Display the prerendered RenderView and wait for the throttle to
-  // notice.
-  test_contents()->Cancel();
-  delegate.Run();
-  EXPECT_FALSE(delegate.resume_called());
-  EXPECT_TRUE(delegate.cancel_called());
-}
-
 // Checks that redirects in main frame loads are not deferred.
 TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectMainFrame) {
   const base::FilePath::CharType kRedirectPath[] =
       FILE_PATH_LITERAL("prerender/image-deferred.png");
 
   test_contents()->Start();
-  // This calls AddPrerenderOnIOThreadTask().
   RunEvents();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
 
   // Fake a request.
   net::TestURLRequestContext url_request_context;
@@ -614,17 +268,18 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectMainFrame) {
       &url_request_context);
   content::ResourceRequestInfo::AllocateForTesting(
       &request, ResourceType::MAIN_FRAME, NULL,
-      kDefaultChildId, kDefaultRouteId, true);
+      kDefaultChildId, kDefaultRouteId, MSG_ROUTING_NONE, true);
 
   // Install a prerender throttle.
-  PrerenderResourceThrottle throttle(&request, prerender_tracker());
+  PrerenderResourceThrottle throttle(&request);
   delegate.SetThrottle(&throttle);
 
   // Start the request and wait for a redirect. This time, it should
   // not be deferred.
   request.Start();
   delegate.Run();
-  EXPECT_FALSE(delegate.was_deferred());
+  // This calls WillRedirectRequestOnUI().
+  RunEvents();
 
   // Cleanup work so the prerender is gone.
   test_contents()->Cancel();
@@ -638,10 +293,7 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectSyncXHR) {
       FILE_PATH_LITERAL("prerender/image-deferred.png");
 
   test_contents()->Start();
-  // This calls AddPrerenderOnIOThreadTask().
   RunEvents();
-  EXPECT_TRUE(prerender_tracker()->IsPrerenderingOnIOThread(
-      kDefaultChildId, kDefaultRouteId));
 
   // Fake a request.
   net::TestURLRequestContext url_request_context;
@@ -653,20 +305,21 @@ TEST_F(PrerenderTrackerTest, PrerenderThrottledRedirectSyncXHR) {
       &url_request_context);
   content::ResourceRequestInfo::AllocateForTesting(
       &request, ResourceType::XHR, NULL,
-      kDefaultChildId, kDefaultRouteId, false);
+      kDefaultChildId, kDefaultRouteId, MSG_ROUTING_NONE, false);
 
   // Install a prerender throttle.
-  PrerenderResourceThrottle throttle(&request, prerender_tracker());
+  PrerenderResourceThrottle throttle(&request);
   delegate.SetThrottle(&throttle);
 
   // Start the request and wait for a redirect.
   request.Start();
   delegate.Run();
-  EXPECT_FALSE(delegate.was_deferred());
+  // This calls WillRedirectRequestOnUI().
+  RunEvents();
 
   // We should have cancelled the prerender.
-  EXPECT_EQ(FINAL_STATUS_BAD_DEFERRED_REDIRECT, GetCurrentStatus(
-      kDefaultChildId, kDefaultRouteId));
+  EXPECT_EQ(FINAL_STATUS_BAD_DEFERRED_REDIRECT,
+            test_contents()->final_status());
 
   // Cleanup work so the prerender is gone.
   test_contents()->Cancel();

@@ -250,7 +250,7 @@ HRESULT WriteConfig(const char* content, size_t length, HWND owner_window) {
   base::DictionaryValue unprivileged_config_dict;
   for (int i = 0; i < arraysize(kUnprivilegedConfigKeys); ++i) {
     const char* key = kUnprivilegedConfigKeys[i];
-    string16 value;
+    base::string16 value;
     if (config_dict->GetString(key, &value)) {
       unprivileged_config_dict.SetString(key, value);
     }
@@ -322,7 +322,7 @@ STDMETHODIMP ElevatedController::GetConfig(BSTR* config_out) {
   std::string file_content;
   base::JSONWriter::Write(config.get(), &file_content);
 
-  *config_out = ::SysAllocString(UTF8ToUTF16(file_content).c_str());
+  *config_out = ::SysAllocString(base::UTF8ToUTF16(file_content).c_str());
   if (config_out == NULL) {
     return E_OUTOFMEMORY;
   }
@@ -338,7 +338,7 @@ STDMETHODIMP ElevatedController::GetVersion(BSTR* version_out) {
   scoped_ptr<FileVersionInfo> version_info(
       FileVersionInfo::CreateFileVersionInfoForModule(binary));
 
-  string16 version;
+  base::string16 version;
   if (version_info.get()) {
     version = version_info->product_version();
   }
@@ -358,8 +358,8 @@ STDMETHODIMP ElevatedController::SetConfig(BSTR config) {
     return HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED);
   }
 
-  std::string file_content = UTF16ToUTF8(
-    string16(static_cast<char16*>(config), ::SysStringLen(config)));
+  std::string file_content = base::UTF16ToUTF8(
+    base::string16(static_cast<base::char16*>(config), ::SysStringLen(config)));
 
   return WriteConfig(file_content.c_str(), file_content.size(), owner_window_);
 }
@@ -451,8 +451,8 @@ STDMETHODIMP ElevatedController::StopDaemon() {
 
 STDMETHODIMP ElevatedController::UpdateConfig(BSTR config) {
   // Parse the config.
-  std::string config_str = UTF16ToUTF8(
-    string16(static_cast<char16*>(config), ::SysStringLen(config)));
+  std::string config_str = base::UTF16ToUTF8(
+    base::string16(static_cast<base::char16*>(config), ::SysStringLen(config)));
   scoped_ptr<base::Value> config_value(base::JSONReader::Read(config_str));
   if (!config_value.get()) {
     return E_FAIL;

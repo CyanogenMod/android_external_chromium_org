@@ -7,6 +7,7 @@
 
 #include <map>
 #include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/time/time.h"
@@ -87,8 +88,18 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
 
   ~LatencyInfo();
 
-  // Merges the contents of another LatencyInfo into this one.
-  void MergeWith(const LatencyInfo& other);
+  // Returns true if the vector |latency_info| is valid. Returns false
+  // if it is not valid and log the |referring_msg|.
+  // This function is mainly used to check the latency_info vector that
+  // is passed between processes using IPC message has reasonable size
+  // so that we are confident the IPC message is not corrupted/compromised.
+  // This check will go away once the IPC system has better built-in scheme
+  // for corruption/compromise detection.
+  static bool Verify(const std::vector<LatencyInfo>& latency_info,
+                     const char* referring_msg);
+
+  // Copy LatencyComponents with type |type| from |other| into |this|.
+  void CopyLatencyFrom(const LatencyInfo& other, LatencyComponentType type);
 
   // Add LatencyComponents that are in |other| but not in |this|.
   void AddNewLatencyFrom(const LatencyInfo& other);
@@ -101,13 +112,11 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
 
   // Modifies the current sequence number and adds a certain number of events
   // for a specific component.
-  // TODO(miletus): Remove the |dump_to_trace| once we remove MergeWith().
   void AddLatencyNumberWithTimestamp(LatencyComponentType component,
                                      int64 id,
                                      int64 component_sequence_number,
                                      base::TimeTicks time,
-                                     uint32 event_count,
-                                     bool dump_to_trace);
+                                     uint32 event_count);
 
   // Returns true if the a component with |type| and |id| is found in
   // the latency_components and the component is stored to |output| if
@@ -119,6 +128,9 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
   void RemoveLatency(LatencyComponentType type);
 
   void Clear();
+
+  // Records the |event_type| in trace buffer as TRACE_EVENT_ASYNC_STEP.
+  void TraceEventType(const char* event_type);
 
   LatencyMap latency_components;
   // The unique id for matching the ASYNC_BEGIN/END trace event.

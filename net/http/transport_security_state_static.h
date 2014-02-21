@@ -214,6 +214,18 @@ static const char kSPKIHash_Libertylavabitcom[] =
     "\x41\xbb\x3b\x8b\xc7\xcf\x3d\x13\x3f\x17"
     "\xb3\x25\x7e\xe4\x03\xca\x8a\x5c\x6d\x36";
 
+static const char kSPKIHash_GlobalSignRootCA[] =
+    "\x87\xdb\xd4\x5f\xb0\x92\x8d\x4e\x1d\xf8"
+    "\x15\x67\xe7\xf2\xab\xaf\xd6\x2b\x67\x75";
+
+static const char kSPKIHash_GlobalSignRootCA_R2[] =
+    "\xa5\x06\x8a\x78\xcf\x84\xbd\x74\x32\xdd"
+    "\x58\xf9\x65\xeb\x3a\x55\xe7\xc7\x80\xdc";
+
+static const char kSPKIHash_GlobalSignRootCA_R3[] =
+    "\xf7\x93\x19\xef\xdf\xc1\xf5\x20\xfb\xac"
+    "\x85\x55\x2c\xf2\xd2\x8f\x5a\xb9\xca\x0b";
+
 // The following is static data describing the hosts that are hardcoded with
 // certificate pins or HSTS information.
 
@@ -325,6 +337,9 @@ static const char* const kTwitterCDNAcceptableCerts[] = {
   kSPKIHash_UTNUSERFirstObject,
   kSPKIHash_GTECyberTrustGlobalRoot,
   kSPKIHash_BaltimoreCyberTrustRoot,
+  kSPKIHash_GlobalSignRootCA,
+  kSPKIHash_GlobalSignRootCA_R2,
+  kSPKIHash_GlobalSignRootCA_R3,
   NULL,
 };
 #define kTwitterCDNPins { \
@@ -390,7 +405,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, true, "\004goto\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {18, true, "\005cloud\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {18, true, "\005glass\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
-  {17, true, "\004play\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {17, false, "\004play\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {20, true, "\006market\007android\003com", true, kGooglePins, DOMAIN_ANDROID_COM },
   {26, true, "\003ssl\020google-analytics\003com", true, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
   {18, true, "\005drive\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -414,13 +429,14 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {13, true, "\007appspot\003com", false, kGooglePins, DOMAIN_APPSPOT_COM },
   {23, true, "\021googlesyndication\003com", false, kGooglePins, DOMAIN_GOOGLESYNDICATION_COM },
   {17, true, "\013doubleclick\003net", false, kGooglePins, DOMAIN_DOUBLECLICK_NET },
-  {17, true, "\003ssl\007gstatic\003com", false, kGooglePins, DOMAIN_GSTATIC_COM },
+  {13, true, "\007gstatic\003com", false, kGooglePins, DOMAIN_GSTATIC_COM },
   {10, true, "\005youtu\002be", false, kGooglePins, DOMAIN_YOUTU_BE },
   {13, true, "\007android\003com", false, kGooglePins, DOMAIN_ANDROID_COM },
   {20, true, "\016googlecommerce\003com", false, kGooglePins, DOMAIN_GOOGLECOMMERCE_COM },
   {12, true, "\006urchin\003com", false, kGooglePins, DOMAIN_URCHIN_COM },
   {8, true, "\003goo\002gl", false, kGooglePins, DOMAIN_GOO_GL },
   {6, true, "\001g\002co", false, kGooglePins, DOMAIN_G_CO },
+  {22, true, "\020googletagmanager\003com", false, kGooglePins, DOMAIN_GOOGLETAGMANAGER_COM },
   {11, true, "\006google\002ac", false, kGooglePins, DOMAIN_GOOGLE_AC },
   {11, true, "\006google\002ad", false, kGooglePins, DOMAIN_GOOGLE_AD },
   {11, true, "\006google\002ae", false, kGooglePins, DOMAIN_GOOGLE_AE },
@@ -714,8 +730,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, true, "\003dev\007twitter\003com", false, kTwitterComPins, DOMAIN_TWITTER_COM },
   {22, true, "\010business\007twitter\003com", false, kTwitterComPins, DOMAIN_TWITTER_COM },
   {22, true, "\010platform\007twitter\003com", false, kTwitterCDNPins, DOMAIN_TWITTER_COM },
-  {15, true, "\003si0\005twimg\003com", false, kTwitterCDNPins, DOMAIN_TWIMG_COM },
-  {23, true, "\010twimg0-a\010akamaihd\003net", false, kTwitterCDNPins, DOMAIN_AKAMAIHD_NET },
+  {11, true, "\005twimg\003com", false, kTwitterCDNPins, DOMAIN_TWIMG_COM },
   {22, true, "\020braintreegateway\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {23, false, "\021braintreepayments\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {27, false, "\003www\021braintreepayments\003com", true, kNoPins, DOMAIN_NOT_PINNED },
@@ -867,6 +882,29 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {18, true, "\007payroll\004xero\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {13, true, "\002in\004xero\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {14, true, "\003api\004xero\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {9, true, "\003eff\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {9, true, "\004mail\002de", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002ru", true, kNoPins, DOMAIN_NOT_PINNED },
+  {21, false, "\010passport\006yandex\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002ua", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002by", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002kz", true, kNoPins, DOMAIN_NOT_PINNED },
+  {24, false, "\010passport\006yandex\003com\002tr", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\006mnsure\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, false, "\010getcloak\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003www\010getcloak\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {23, true, "\020matteomarescotti\004name", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, true, "\003www\011heliosnet\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, false, "\007opsmate\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\003www\007opsmate\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, true, "\007f-droid\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003www\010evernote\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003app\010yinxiang\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\011neilwynne\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\016calyxinstitute\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {24, false, "\003www\016calyxinstitute\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, true, "\011blacklane\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, true, "\012boxcryptor\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 
@@ -877,6 +915,7 @@ static const struct HSTSPreload kPreloadedSNISTS[] = {
   {20, false, "\003www\012googlemail\003com", true, kGooglePins, DOMAIN_GOOGLEMAIL_COM },
   {22, true, "\020google-analytics\003com", false, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
   {18, true, "\014googlegroups\003com", false, kGooglePins, DOMAIN_GOOGLEGROUPS_COM },
+  {13, true, "\007mykolab\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSNISTS = ARRAYSIZE_UNSAFE(kPreloadedSNISTS);
 

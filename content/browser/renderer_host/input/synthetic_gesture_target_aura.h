@@ -9,9 +9,17 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
 #include "content/common/input/synthetic_gesture_params.h"
 
-namespace content {
+namespace aura {
+class RootWindow;
+typedef RootWindow WindowEventDispatcher;
+class Window;
 
-class InputEvent;
+namespace client {
+class ScreenPositionClient;
+}
+}  // namespace aura
+
+namespace content {
 
 // SyntheticGestureTarget implementation for aura
 class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
@@ -21,6 +29,12 @@ class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
   // SyntheticGestureTargetBase:
   virtual void DispatchWebTouchEventToPlatform(
       const blink::WebTouchEvent& web_touch,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
+  virtual void DispatchWebMouseWheelEventToPlatform(
+      const blink::WebMouseWheelEvent& web_wheel,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
+  virtual void DispatchWebMouseEventToPlatform(
+      const blink::WebMouseEvent& web_mouse,
       const ui::LatencyInfo& latency_info) OVERRIDE;
 
   // SyntheticGestureTarget:
@@ -33,6 +47,10 @@ class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
   virtual int GetTouchSlopInDips() const OVERRIDE;
 
  private:
+  aura::Window* GetWindow() const;
+  aura::WindowEventDispatcher* GetWindowEventDispatcher() const;
+  aura::client::ScreenPositionClient* GetScreenPositionClient() const;
+
   DISALLOW_COPY_AND_ASSIGN(SyntheticGestureTargetAura);
 };
 

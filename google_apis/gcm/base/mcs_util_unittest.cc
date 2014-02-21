@@ -24,6 +24,8 @@ TEST(MCSUtilTest, BuildLoginRequest) {
   ASSERT_EQ(base::Uint64ToString(kAuthToken), login_request->auth_token());
   ASSERT_EQ(base::Uint64ToString(kAuthId), login_request->user());
   ASSERT_EQ("android-3d5c23dac2a1fa7c", login_request->device_id());
+  ASSERT_EQ("new_vc", login_request->setting(0).name());
+  ASSERT_EQ("1", login_request->setting(0).value());
   // TODO(zea): test the other fields once they have valid values.
 }
 

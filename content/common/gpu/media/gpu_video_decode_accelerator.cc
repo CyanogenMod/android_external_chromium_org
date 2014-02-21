@@ -26,10 +26,12 @@
 #include "base/win/windows_version.h"
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-#include "content/common/gpu/media/exynos_video_decode_accelerator.h"
+#include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
+#include "content/common/gpu/media/v4l2_video_device.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-#include "ui/gl/gl_context_glx.h"
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
+#include "ui/gl/gl_context_glx.h"
+#include "ui/gl/gl_implementation.h"
 #elif defined(OS_ANDROID)
 #include "content/common/gpu/media/android_video_decode_accelerator.h"
 #endif
@@ -132,6 +134,7 @@ GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
       host_route_id_(host_route_id),
       stub_(stub),
       texture_target_(0),
+      filter_removed_(true, false),
       io_message_loop_(io_message_loop),
       weak_factory_for_io_(this) {
   DCHECK(stub_);
@@ -143,14 +146,15 @@ GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
 }
 
 GpuVideoDecodeAccelerator::~GpuVideoDecodeAccelerator() {
-  if (video_decode_accelerator_)
-    video_decode_accelerator_.release()->Destroy();
+  // This class can only be self-deleted from OnWillDestroyStub(), which means
+  // the VDA has already been destroyed in there.
+  CHECK(!video_decode_accelerator_.get());
 }
 
 bool GpuVideoDecodeAccelerator::OnMessageReceived(const IPC::Message& msg) {
-  DCHECK(stub_);
   if (!video_decode_accelerator_)
     return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(GpuVideoDecodeAccelerator, msg)
     IPC_MESSAGE_HANDLER(AcceleratedVideoDecoderMsg_Decode, OnDecode)
@@ -245,7 +249,6 @@ void GpuVideoDecodeAccelerator::NotifyError(
 void GpuVideoDecodeAccelerator::Initialize(
     const media::VideoCodecProfile profile,
     IPC::Message* init_done_msg) {
-  DCHECK(stub_);
   DCHECK(!video_decode_accelerator_.get());
   DCHECK(!init_done_msg_);
   DCHECK(init_done_msg);
@@ -270,21 +273,29 @@ void GpuVideoDecodeAccelerator::Initialize(
   video_decode_accelerator_.reset(new DXVAVideoDecodeAccelerator(
       this, make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-  video_decode_accelerator_.reset(new ExynosVideoDecodeAccelerator(
-      gfx::GLSurfaceEGL::GetHardwareDisplay(),
-      stub_->decoder()->GetGLContext()->GetHandle(),
-      this,
-      weak_factory_for_io_.GetWeakPtr(),
-      make_context_current_,
-      io_message_loop_));
+  scoped_ptr<V4L2Device> device = V4L2Device::Create();
+  if (!device.get()) {
+    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    return;
+  }
+  video_decode_accelerator_.reset(
+      new V4L2VideoDecodeAccelerator(gfx::GLSurfaceEGL::GetHardwareDisplay(),
+                                     this,
+                                     weak_factory_for_io_.GetWeakPtr(),
+                                     make_context_current_,
+                                     device.Pass(),
+                                     io_message_loop_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
+  if (gfx::GetGLImplementation() != gfx::kGLImplementationDesktopGL) {
+    VLOG(1) << "HW video decode acceleration not available without "
+               "DesktopGL (GLX).";
+    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    return;
+  }
   gfx::GLContextGLX* glx_context =
       static_cast<gfx::GLContextGLX*>(stub_->decoder()->GetGLContext());
-  GLXContext glx_context_handle =
-      static_cast<GLXContext>(glx_context->GetHandle());
   video_decode_accelerator_.reset(new VaapiVideoDecodeAccelerator(
-      glx_context->display(), glx_context_handle, this,
-      make_context_current_));
+      glx_context->display(), this, make_context_current_));
 #elif defined(OS_ANDROID)
   video_decode_accelerator_.reset(new AndroidVideoDecodeAccelerator(
       this,
@@ -329,7 +340,6 @@ void GpuVideoDecodeAccelerator::OnDecode(
 void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
     const std::vector<int32>& buffer_ids,
     const std::vector<uint32>& texture_ids) {
-  DCHECK(stub_);
   if (buffer_ids.size() != texture_ids.size()) {
     NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
     return;
@@ -427,7 +437,7 @@ void GpuVideoDecodeAccelerator::OnDestroy() {
 void GpuVideoDecodeAccelerator::OnFilterRemoved() {
   // We're destroying; cancel all callbacks.
   weak_factory_for_io_.InvalidateWeakPtrs();
-  child_message_loop_->DeleteSoon(FROM_HERE, this);
+  filter_removed_.Signal();
 }
 
 void GpuVideoDecodeAccelerator::NotifyEndOfBitstreamBuffer(
@@ -459,24 +469,29 @@ void GpuVideoDecodeAccelerator::NotifyResetDone() {
 }
 
 void GpuVideoDecodeAccelerator::OnWillDestroyStub() {
-  DCHECK(stub_);
+  // The stub is going away, so we have to stop and destroy VDA here, before
+  // returning, because the VDA may need the GL context to run and/or do its
+  // cleanup. We cannot destroy the VDA before the IO thread message filter is
+  // removed however, since we cannot service incoming messages with VDA gone.
+  // We cannot simply check for existence of VDA on IO thread though, because
+  // we don't want to synchronize the IO thread with the ChildThread.
+  // So we have to wait for the RemoveFilter callback here instead and remove
+  // the VDA after it arrives and before returning.
+  if (filter_.get()) {
+    stub_->channel()->RemoveFilter(filter_.get());
+    filter_removed_.Wait();
+  }
+
   stub_->channel()->RemoveRoute(host_route_id_);
   stub_->RemoveDestructionObserver(this);
-  {
-    DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
-    uncleared_textures_.clear();
-  }
-  if (filter_.get()) {
-    // Remove the filter first because the member variables can be accessed on
-    // IO thread. When filter is removed, OnFilterRemoved will delete |this|.
-    stub_->channel()->RemoveFilter(filter_.get());
-  } else {
-    delete this;
-  }
+
+  if (video_decode_accelerator_)
+    video_decode_accelerator_.release()->Destroy();
+
+  delete this;
 }
 
 bool GpuVideoDecodeAccelerator::Send(IPC::Message* message) {
-  DCHECK(stub_);
   if (filter_.get() && io_message_loop_->BelongsToCurrentThread())
     return filter_->SendOnIOThread(message);
   DCHECK(child_message_loop_->BelongsToCurrentThread());

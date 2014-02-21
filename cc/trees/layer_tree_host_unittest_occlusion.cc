@@ -86,8 +86,8 @@ class LayerTreeHostOcclusionTest : public LayerTreeTest {
   void SetLayerPropertiesForTesting(TestLayer* layer,
                                     TestLayer* parent,
                                     const gfx::Transform& transform,
-                                    gfx::PointF position,
-                                    gfx::Size bounds,
+                                    const gfx::PointF& position,
+                                    const gfx::Size& bounds,
                                     bool opaque) const {
     layer->RemoveAllChildren();
     if (parent)

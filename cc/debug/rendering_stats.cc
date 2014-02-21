@@ -47,24 +47,8 @@ ImplThreadRenderingStats::AsTraceableData() const {
 void ImplThreadRenderingStats::Add(const ImplThreadRenderingStats& other) {
   frame_count += other.frame_count;
   rasterize_time += other.rasterize_time;
+  analysis_time += other.analysis_time;
   rasterized_pixel_count += other.rasterized_pixel_count;
-}
-
-void RenderingStats::EnumerateFields(Enumerator* enumerator) const {
-  enumerator->AddInt64("frameCount",
-                       main_stats.frame_count + impl_stats.frame_count);
-  enumerator->AddDouble("paintTime",
-                        main_stats.paint_time.InSecondsF());
-  enumerator->AddInt64("paintedPixelCount",
-                       main_stats.painted_pixel_count);
-  enumerator->AddDouble("recordTime",
-                        main_stats.record_time.InSecondsF());
-  enumerator->AddInt64("recordedPixelCount",
-                       main_stats.recorded_pixel_count);
-  enumerator->AddDouble("rasterizeTime",
-                        impl_stats.rasterize_time.InSecondsF());
-  enumerator->AddInt64("rasterizedPixelCount",
-                       impl_stats.rasterized_pixel_count);
 }
 
 void RenderingStats::Add(const RenderingStats& other) {

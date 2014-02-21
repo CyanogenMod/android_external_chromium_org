@@ -4,16 +4,19 @@
 
 import os
 
+from telemetry import decorators
 from telemetry.core import browser_credentials
 from telemetry.core import exceptions
 from telemetry.core import extension_dict
+from telemetry.core import local_server
+from telemetry.core import memory_cache_http_server
 from telemetry.core import platform
 from telemetry.core import tab_list
-from telemetry.core import temporary_http_server
 from telemetry.core import wpr_modes
 from telemetry.core import wpr_server
 from telemetry.core.backends import browser_backend
 from telemetry.core.platform.profiler import profiler_finder
+
 
 class Browser(object):
   """A running browser instance that can be controlled in a limited way.
@@ -30,27 +33,31 @@ class Browser(object):
     self._browser_backend = backend
     self._http_server = None
     self._wpr_server = None
-    self._platform = platform.Platform(platform_backend)
     self._platform_backend = platform_backend
-    self._tabs = tab_list.TabList(backend.tab_list_backend)
+    self._active_profilers = []
+    self._profilers_states = {}
+
     self._extensions = None
     if backend.supports_extensions:
       self._extensions = extension_dict.ExtensionDict(
           backend.extension_dict_backend)
+
+    self._local_server_controller = local_server.LocalServerController(backend)
+    self._tabs = tab_list.TabList(backend.tab_list_backend)
     self.credentials = browser_credentials.BrowserCredentials()
-    self._platform.SetFullPerformanceModeEnabled(True)
-    self._active_profilers = []
-    self._profilers_states = {}
+    self.platform.SetFullPerformanceModeEnabled(True)
 
   def __enter__(self):
+    self.Start()
     return self
 
   def __exit__(self, *args):
     self.Close()
 
   @property
+  @decorators.Cache
   def platform(self):
-    return self._platform
+    return platform.Platform(self._platform_backend)
 
   @property
   def browser_type(self):
@@ -70,8 +77,24 @@ class Browser(object):
     return self._browser_backend.supports_tab_control
 
   @property
+  def synthetic_gesture_source_type(self):
+    return self._browser_backend.browser_options.synthetic_gesture_source_type
+
+  @property
   def tabs(self):
     return self._tabs
+
+  @property
+  def foreground_tab(self):
+    for i in xrange(len(self._tabs)):
+      # The foreground tab is the first (only) one that isn't hidden.
+      # This only works through luck on Android, due to crbug.com/322544
+      # which means that tabs that have never been in the foreground return
+      # document.hidden as false; however in current code the Android foreground
+      # tab is always tab 0, which will be the first one that isn't hidden
+      if self._tabs[i].EvaluateJavaScript('!document.hidden'):
+        return self._tabs[i]
+    raise Exception("No foreground tab found")
 
   @property
   def extensions(self):
@@ -134,37 +157,41 @@ class Browser(object):
   def memory_stats(self):
     """Returns a dict of memory statistics for the browser:
     { 'Browser': {
-        'VM': S,
-        'VMPeak': T,
-        'WorkingSetSize': U,
-        'WorkingSetSizePeak': V,
-        'ProportionalSetSize': W,
-        'PrivateDirty': X
+        'VM': R,
+        'VMPeak': S,
+        'WorkingSetSize': T,
+        'WorkingSetSizePeak': U,
+        'ProportionalSetSize': V,
+        'PrivateDirty': W
       },
       'Gpu': {
-        'VM': S,
-        'VMPeak': T,
-        'WorkingSetSize': U,
-        'WorkingSetSizePeak': V,
-        'ProportionalSetSize': W,
-        'PrivateDirty': X
+        'VM': R,
+        'VMPeak': S,
+        'WorkingSetSize': T,
+        'WorkingSetSizePeak': U,
+        'ProportionalSetSize': V,
+        'PrivateDirty': W
       },
       'Renderer': {
-        'VM': S,
-        'VMPeak': T,
-        'WorkingSetSize': U,
-        'WorkingSetSizePeak': V,
-        'ProportionalSetSize': W,
-        'PrivateDirty': X
+        'VM': R,
+        'VMPeak': S,
+        'WorkingSetSize': T,
+        'WorkingSetSizePeak': U,
+        'ProportionalSetSize': V,
+        'PrivateDirty': W
       },
-      'SystemCommitCharge': Y,
+      'SystemCommitCharge': X,
+      'SystemTotalPhysicalMemory': Y,
       'ProcessCount': Z,
     }
     Any of the above keys may be missing on a per-platform basis.
     """
+    self._platform_backend.PurgeUnpinnedMemory()
     result = self._GetStatsCommon(self._platform_backend.GetMemoryStats)
     result['SystemCommitCharge'] = \
         self._platform_backend.GetSystemCommitCharge()
+    result['SystemTotalPhysicalMemory'] = \
+        self._platform_backend.GetSystemTotalPhysicalMemory()
     return result
 
   @property
@@ -262,13 +289,13 @@ class Browser(object):
   def Start(self):
     browser_options = self._browser_backend.browser_options
     if browser_options.clear_sytem_cache_for_browser_and_profile_on_start:
-      if self._platform.CanFlushIndividualFilesFromSystemCache():
-        self._platform.FlushSystemCacheForDirectory(
+      if self.platform.CanFlushIndividualFilesFromSystemCache():
+        self.platform.FlushSystemCacheForDirectory(
             self._browser_backend.profile_directory)
-        self._platform.FlushSystemCacheForDirectory(
+        self.platform.FlushSystemCacheForDirectory(
             self._browser_backend.browser_directory)
       else:
-        self._platform.FlushEntireSystemCache()
+        self.platform.FlushEntireSystemCache()
 
     self._browser_backend.Start()
     self._browser_backend.SetBrowser(self)
@@ -279,7 +306,7 @@ class Browser(object):
       profiler_class.WillCloseBrowser(self._browser_backend,
                                       self._platform_backend)
 
-    self._platform.SetFullPerformanceModeEnabled(False)
+    self.platform.SetFullPerformanceModeEnabled(False)
 
     if self._wpr_server:
       self._wpr_server.Close()
@@ -289,12 +316,14 @@ class Browser(object):
       self._http_server.Close()
       self._http_server = None
 
+    self._local_server_controller.Close()
     self._browser_backend.Close()
     self.credentials = None
 
   @property
   def http_server(self):
-    return self._http_server
+    return self._local_server_controller.GetRunningServer(
+      memory_cache_http_server.MemoryCacheHTTPServer, None)
 
   def SetHTTPServerDirectories(self, paths):
     """Returns True if the HTTP server was started, False otherwise."""
@@ -312,20 +341,30 @@ class Browser(object):
           duplicates.add(sub_path)
     paths -= duplicates
 
-    if self._http_server:
-      if paths and self._http_server.paths == paths:
+    if self.http_server:
+      if paths and self.http_server.paths == paths:
         return False
 
-      self._http_server.Close()
-      self._http_server = None
+      self.http_server.Close()
 
     if not paths:
       return False
 
-    self._http_server = temporary_http_server.TemporaryHTTPServer(
-      self._browser_backend, paths)
-
+    server = memory_cache_http_server.MemoryCacheHTTPServer(paths)
+    self.StartLocalServer(server)
     return True
+
+  def StartLocalServer(self, server):
+    """Starts a LocalServer and associates it with this browser.
+
+    It will be closed when the browser closes.
+    """
+    self._local_server_controller.StartServer(server)
+
+  @property
+  def local_servers(self):
+    """Returns the currently running local servers."""
+    return self._local_server_controller.local_servers
 
   def SetReplayArchivePath(self, archive_path, append_to_existing_wpr=False,
                            make_javascript_deterministic=True):
@@ -365,3 +404,4 @@ class Browser(object):
 
        See the documentation of the SystemInfo class for more details."""
     return self._browser_backend.GetSystemInfo()
+

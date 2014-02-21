@@ -15,6 +15,8 @@
 #include "components/autofill/core/browser/field_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+
 namespace {
 
 const char kFullWalletValidResponse[] =
@@ -35,8 +37,10 @@ const char kFullWalletValidResponse[] =
     "        \"address_line_2\""
     "      ],"
     "      \"locality_name\":\"locality_name\","
+    "      \"dependent_locality_name\":\"dependent_locality_name\","
     "      \"administrative_area_name\":\"admin_area_name\","
     "      \"postal_code_number\":\"postal_code_number\","
+    "      \"sorting_code\":\"sorting_code\","
     "      \"country_name_code\":\"US\""
     "    }"
     "  },"
@@ -53,8 +57,10 @@ const char kFullWalletValidResponse[] =
     "        \"ship_address_line_2\""
     "      ],"
     "      \"locality_name\":\"ship_locality_name\","
+    "      \"dependent_locality_name\":\"ship_dependent_locality_name\","
     "      \"administrative_area_name\":\"ship_admin_area_name\","
     "      \"postal_code_number\":\"ship_postal_code_number\","
+    "      \"sorting_code\":\"ship_sorting_code\","
     "      \"country_name_code\":\"US\""
     "    }"
     "  },"
@@ -355,12 +361,12 @@ class FullWalletTest : public testing::Test {
   FullWalletTest() {}
  protected:
   void SetUpDictionary(const std::string& json) {
-    scoped_ptr<Value> value(base::JSONReader::Read(json));
+    scoped_ptr<base::Value> value(base::JSONReader::Read(json));
     ASSERT_TRUE(value.get());
-    ASSERT_TRUE(value->IsType(Value::TYPE_DICTIONARY));
-    dict.reset(static_cast<DictionaryValue*>(value.release()));
+    ASSERT_TRUE(value->IsType(base::Value::TYPE_DICTIONARY));
+    dict.reset(static_cast<base::DictionaryValue*>(value.release()));
   }
-  scoped_ptr<DictionaryValue> dict;
+  scoped_ptr<base::DictionaryValue> dict;
 };
 
 TEST_F(FullWalletTest, CreateFullWalletMissingExpirationMonth) {
@@ -454,9 +460,10 @@ TEST_F(FullWalletTest, RestLengthCorrectDecryptionTest) {
   EXPECT_TRUE(base::HexStringToBytes("5F04A8704183", &one_time_pad));
   full_wallet.set_one_time_pad(one_time_pad);
   EXPECT_EQ(ASCIIToUTF16("5285121925598459"),
-            full_wallet.GetInfo(AutofillType(CREDIT_CARD_NUMBER)));
+            full_wallet.GetInfo("", AutofillType(CREDIT_CARD_NUMBER)));
   EXPECT_EQ(ASCIIToUTF16("989"),
-            full_wallet.GetInfo(AutofillType(CREDIT_CARD_VERIFICATION_CODE)));
+            full_wallet.GetInfo(
+                "", AutofillType(CREDIT_CARD_VERIFICATION_CODE)));
 }
 
 TEST_F(FullWalletTest, RestLengthUnderDecryptionTest) {
@@ -472,9 +479,10 @@ TEST_F(FullWalletTest, RestLengthUnderDecryptionTest) {
   EXPECT_TRUE(base::HexStringToBytes("063AD35324BF", &one_time_pad));
   full_wallet.set_one_time_pad(one_time_pad);
   EXPECT_EQ(ASCIIToUTF16("5285127106109719"),
-            full_wallet.GetInfo(AutofillType(CREDIT_CARD_NUMBER)));
+            full_wallet.GetInfo("", AutofillType(CREDIT_CARD_NUMBER)));
   EXPECT_EQ(ASCIIToUTF16("385"),
-            full_wallet.GetInfo(AutofillType(CREDIT_CARD_VERIFICATION_CODE)));
+            full_wallet.GetInfo(
+                "", AutofillType(CREDIT_CARD_VERIFICATION_CODE)));
 }
 
 TEST_F(FullWalletTest, GetCreditCardInfo) {
@@ -488,21 +496,22 @@ TEST_F(FullWalletTest, GetCreditCardInfo) {
                          required_actions);
 
   EXPECT_EQ(ASCIIToUTF16("15"),
-            full_wallet.GetInfo(AutofillType(CREDIT_CARD_EXP_2_DIGIT_YEAR)));
+            full_wallet.GetInfo(
+                "", AutofillType(CREDIT_CARD_EXP_2_DIGIT_YEAR)));
 
   EXPECT_EQ(ASCIIToUTF16("12/15"),
             full_wallet.GetInfo(
-                AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR)));
+                "", AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR)));
 
   EXPECT_EQ(ASCIIToUTF16("12/2015"),
             full_wallet.GetInfo(
-                AutofillType(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR)));
+                "", AutofillType(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR)));
 
   std::vector<uint8> one_time_pad;
   EXPECT_TRUE(base::HexStringToBytes("075DA779F98B", &one_time_pad));
   full_wallet.set_one_time_pad(one_time_pad);
   EXPECT_EQ(ASCIIToUTF16("MasterCard"),
-            full_wallet.GetInfo(AutofillType(CREDIT_CARD_TYPE)));
+            full_wallet.GetInfo("", AutofillType(CREDIT_CARD_TYPE)));
 }
 
 TEST_F(FullWalletTest, CreateFullWalletFromClearTextData) {
@@ -512,14 +521,15 @@ TEST_F(FullWalletTest, CreateFullWalletFromClearTextData) {
           "5555555555554444", "123",
           GetTestAddress(), GetTestShippingAddress());
   EXPECT_EQ(ASCIIToUTF16("5555555555554444"),
-            full_wallet->GetInfo(AutofillType(CREDIT_CARD_NUMBER)));
+            full_wallet->GetInfo("", AutofillType(CREDIT_CARD_NUMBER)));
   EXPECT_EQ(ASCIIToUTF16("MasterCard"),
-            full_wallet->GetInfo(AutofillType(CREDIT_CARD_TYPE)));
+            full_wallet->GetInfo("", AutofillType(CREDIT_CARD_TYPE)));
   EXPECT_EQ(ASCIIToUTF16("123"),
-            full_wallet->GetInfo(AutofillType(CREDIT_CARD_VERIFICATION_CODE)));
+            full_wallet->GetInfo(
+                "", AutofillType(CREDIT_CARD_VERIFICATION_CODE)));
   EXPECT_EQ(ASCIIToUTF16("11/12"),
             full_wallet->GetInfo(
-                AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR)));
+                "", AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR)));
   EXPECT_TRUE(GetTestAddress()->EqualsIgnoreID(
       *full_wallet->billing_address()));
   EXPECT_TRUE(GetTestShippingAddress()->EqualsIgnoreID(

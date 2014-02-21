@@ -6,9 +6,6 @@
 #define UI_VIEWS_WIN_HWND_MESSAGE_HANDLER_H_
 
 #include <windows.h>
-#include <atlbase.h>
-#include <atlapp.h>
-#include <atlmisc.h>
 
 #include <set>
 #include <vector>
@@ -17,7 +14,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
@@ -103,13 +99,12 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
 // An object that handles messages for a HWND that implements the views
 // "Custom Frame" look. The purpose of this class is to isolate the windows-
 // specific message handling from the code that wraps it. It is intended to be
-// used by both a views::NativeWidget and an aura::RootWindowHost
+// used by both a views::NativeWidget and an aura::WindowTreeHost
 // implementation.
 // TODO(beng): This object should eventually *become* the WindowImpl.
 class VIEWS_EXPORT HWNDMessageHandler :
     public gfx::WindowImpl,
-    public internal::InputMethodDelegate,
-    public base::MessageLoopForUI::Observer {
+    public internal::InputMethodDelegate {
  public:
   explicit HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate);
   ~HWNDMessageHandler();
@@ -123,6 +118,9 @@ class VIEWS_EXPORT HWNDMessageHandler :
   gfx::Rect GetWindowBoundsInScreen() const;
   gfx::Rect GetClientAreaBoundsInScreen() const;
   gfx::Rect GetRestoredBounds() const;
+  // This accounts for the case where the widget size is the client size.
+  gfx::Rect GetClientAreaBounds() const;
+
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* show_state) const;
 
@@ -137,8 +135,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   void Show();
   void ShowWindowWithState(ui::WindowShowState show_state);
-  // TODO(beng): distinguish from ShowWindowWithState().
-  void Show(int show_state);
   void ShowMaximizedWithBounds(const gfx::Rect& bounds);
   void Hide();
 
@@ -176,7 +172,7 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void SetVisibilityChangedAnimationsEnabled(bool enabled);
 
   // Returns true if the title changed.
-  bool SetTitle(const string16& title);
+  bool SetTitle(const base::string16& title);
 
   void SetCursor(HCURSOR cursor);
 
@@ -207,11 +203,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
   virtual LRESULT OnWndProc(UINT message,
                             WPARAM w_param,
                             LPARAM l_param) OVERRIDE;
-
-  // Overridden from MessageLoopForUI::Observer:
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE;
-  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE;
 
   // Returns the auto-hide edges of the appbar. See Appbar::GetAutohideEdges()
   // for details. If the edges change OnAppbarAutohideEdgesChanged() is called.
@@ -276,96 +267,104 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Stops ignoring SetWindowPos() requests (see below).
   void StopIgnoringPosChanges() { ignore_window_pos_changes_ = false; }
 
-  // Synchronously paints the invalid contents of the Widget.
-  void RedrawInvalidRect();
-
   // Synchronously updates the invalid contents of the Widget. Valid for
   // layered windows only.
   void RedrawLayeredWindowContents();
+
+  // Attempts to force the window to be redrawn, ensuring that it gets
+  // onscreen.
+  void ForceRedrawWindow(int attempts);
 
   // Message Handlers ----------------------------------------------------------
 
   BEGIN_SAFE_MSG_MAP_EX(HWNDMessageHandler)
     // Range handlers must go first!
-    MESSAGE_RANGE_HANDLER_EX(WM_MOUSEFIRST, WM_MOUSELAST, OnMouseRange)
-    MESSAGE_RANGE_HANDLER_EX(WM_NCMOUSEMOVE, WM_NCXBUTTONDBLCLK, OnMouseRange)
+    CR_MESSAGE_RANGE_HANDLER_EX(WM_MOUSEFIRST, WM_MOUSELAST, OnMouseRange)
+    CR_MESSAGE_RANGE_HANDLER_EX(WM_NCMOUSEMOVE,
+                                WM_NCXBUTTONDBLCLK,
+                                OnMouseRange)
 
     // CustomFrameWindow hacks
-    MESSAGE_HANDLER_EX(WM_NCUAHDRAWCAPTION, OnNCUAHDrawCaption)
-    MESSAGE_HANDLER_EX(WM_NCUAHDRAWFRAME, OnNCUAHDrawFrame)
+    CR_MESSAGE_HANDLER_EX(WM_NCUAHDRAWCAPTION, OnNCUAHDrawCaption)
+    CR_MESSAGE_HANDLER_EX(WM_NCUAHDRAWFRAME, OnNCUAHDrawFrame)
 
     // Vista and newer
-    MESSAGE_HANDLER_EX(WM_DWMCOMPOSITIONCHANGED, OnDwmCompositionChanged)
+    CR_MESSAGE_HANDLER_EX(WM_DWMCOMPOSITIONCHANGED, OnDwmCompositionChanged)
 
     // Non-atlcrack.h handlers
-    MESSAGE_HANDLER_EX(WM_GETOBJECT, OnGetObject)
+    CR_MESSAGE_HANDLER_EX(WM_GETOBJECT, OnGetObject)
 
     // Mouse events.
-    MESSAGE_HANDLER_EX(WM_MOUSEACTIVATE, OnMouseActivate)
-    MESSAGE_HANDLER_EX(WM_MOUSELEAVE, OnMouseRange)
-    MESSAGE_HANDLER_EX(WM_NCMOUSELEAVE, OnMouseRange)
-    MESSAGE_HANDLER_EX(WM_SETCURSOR, OnSetCursor);
+    CR_MESSAGE_HANDLER_EX(WM_MOUSEACTIVATE, OnMouseActivate)
+    CR_MESSAGE_HANDLER_EX(WM_MOUSELEAVE, OnMouseRange)
+    CR_MESSAGE_HANDLER_EX(WM_NCMOUSELEAVE, OnMouseRange)
+    CR_MESSAGE_HANDLER_EX(WM_SETCURSOR, OnSetCursor);
 
     // Key events.
-    MESSAGE_HANDLER_EX(WM_KEYDOWN, OnKeyEvent)
-    MESSAGE_HANDLER_EX(WM_KEYUP, OnKeyEvent)
-    MESSAGE_HANDLER_EX(WM_SYSKEYDOWN, OnKeyEvent)
-    MESSAGE_HANDLER_EX(WM_SYSKEYUP, OnKeyEvent)
+    CR_MESSAGE_HANDLER_EX(WM_KEYDOWN, OnKeyEvent)
+    CR_MESSAGE_HANDLER_EX(WM_KEYUP, OnKeyEvent)
+    CR_MESSAGE_HANDLER_EX(WM_SYSKEYDOWN, OnKeyEvent)
+    CR_MESSAGE_HANDLER_EX(WM_SYSKEYUP, OnKeyEvent)
 
     // IME Events.
-    MESSAGE_HANDLER_EX(WM_IME_SETCONTEXT, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_IME_STARTCOMPOSITION, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_IME_COMPOSITION, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_IME_ENDCOMPOSITION, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_IME_REQUEST, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_IME_NOTIFY, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_CHAR, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_SYSCHAR, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_DEADCHAR, OnImeMessages)
-    MESSAGE_HANDLER_EX(WM_SYSDEADCHAR, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_IME_SETCONTEXT, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_IME_STARTCOMPOSITION, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_IME_COMPOSITION, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_IME_ENDCOMPOSITION, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_IME_REQUEST, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_IME_NOTIFY, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_CHAR, OnImeMessages)
+    CR_MESSAGE_HANDLER_EX(WM_SYSCHAR, OnImeMessages)
+
+    // Scroll events
+    CR_MESSAGE_HANDLER_EX(WM_VSCROLL, OnScrollMessage)
+    CR_MESSAGE_HANDLER_EX(WM_HSCROLL, OnScrollMessage)
 
     // Touch Events.
-    MESSAGE_HANDLER_EX(WM_TOUCH, OnTouchEvent)
+    CR_MESSAGE_HANDLER_EX(WM_TOUCH, OnTouchEvent)
 
     // Uses the general handler macro since the specific handler macro
     // MSG_WM_NCACTIVATE would convert WPARAM type to BOOL type. The high
     // word of WPARAM could be set when the window is minimized or restored.
-    MESSAGE_HANDLER_EX(WM_NCACTIVATE, OnNCActivate)
+    CR_MESSAGE_HANDLER_EX(WM_NCACTIVATE, OnNCActivate)
 
     // This list is in _ALPHABETICAL_ order! OR I WILL HURT YOU.
-    MSG_WM_ACTIVATEAPP(OnActivateApp)
-    MSG_WM_APPCOMMAND(OnAppCommand)
-    MSG_WM_CANCELMODE(OnCancelMode)
-    MSG_WM_CAPTURECHANGED(OnCaptureChanged)
-    MSG_WM_CLOSE(OnClose)
-    MSG_WM_COMMAND(OnCommand)
-    MSG_WM_CREATE(OnCreate)
-    MSG_WM_DESTROY(OnDestroy)
-    MSG_WM_DISPLAYCHANGE(OnDisplayChange)
-    MSG_WM_ENTERSIZEMOVE(OnEnterSizeMove)
-    MSG_WM_ERASEBKGND(OnEraseBkgnd)
-    MSG_WM_EXITSIZEMOVE(OnExitSizeMove)
-    MSG_WM_GETMINMAXINFO(OnGetMinMaxInfo)
-    MSG_WM_INITMENU(OnInitMenu)
-    MSG_WM_INPUTLANGCHANGE(OnInputLangChange)
-    MSG_WM_KILLFOCUS(OnKillFocus)
-    MSG_WM_MOVE(OnMove)
-    MSG_WM_MOVING(OnMoving)
-    MSG_WM_NCCALCSIZE(OnNCCalcSize)
-    MSG_WM_NCHITTEST(OnNCHitTest)
-    MSG_WM_NCPAINT(OnNCPaint)
-    MSG_WM_NOTIFY(OnNotify)
-    MSG_WM_PAINT(OnPaint)
-    MSG_WM_SETFOCUS(OnSetFocus)
-    MSG_WM_SETICON(OnSetIcon)
-    MSG_WM_SETTEXT(OnSetText)
-    MSG_WM_SETTINGCHANGE(OnSettingChange)
-    MSG_WM_SIZE(OnSize)
-    MSG_WM_SYSCOMMAND(OnSysCommand)
-    MSG_WM_THEMECHANGED(OnThemeChanged)
-    MSG_WM_WINDOWPOSCHANGED(OnWindowPosChanged)
-    MSG_WM_WINDOWPOSCHANGING(OnWindowPosChanging)
-  END_MSG_MAP()
+    CR_MSG_WM_ACTIVATEAPP(OnActivateApp)
+    CR_MSG_WM_APPCOMMAND(OnAppCommand)
+    CR_MSG_WM_CANCELMODE(OnCancelMode)
+    CR_MSG_WM_CAPTURECHANGED(OnCaptureChanged)
+    CR_MSG_WM_CLOSE(OnClose)
+    CR_MSG_WM_COMMAND(OnCommand)
+    CR_MSG_WM_CREATE(OnCreate)
+    CR_MSG_WM_DESTROY(OnDestroy)
+    CR_MSG_WM_DISPLAYCHANGE(OnDisplayChange)
+    CR_MSG_WM_ENTERMENULOOP(OnEnterMenuLoop)
+    CR_MSG_WM_EXITMENULOOP(OnExitMenuLoop)
+    CR_MSG_WM_ENTERSIZEMOVE(OnEnterSizeMove)
+    CR_MSG_WM_ERASEBKGND(OnEraseBkgnd)
+    CR_MSG_WM_EXITSIZEMOVE(OnExitSizeMove)
+    CR_MSG_WM_GETMINMAXINFO(OnGetMinMaxInfo)
+    CR_MSG_WM_INITMENU(OnInitMenu)
+    CR_MSG_WM_INPUTLANGCHANGE(OnInputLangChange)
+    CR_MSG_WM_KILLFOCUS(OnKillFocus)
+    CR_MSG_WM_MOVE(OnMove)
+    CR_MSG_WM_MOVING(OnMoving)
+    CR_MSG_WM_NCCALCSIZE(OnNCCalcSize)
+    CR_MSG_WM_NCHITTEST(OnNCHitTest)
+    CR_MSG_WM_NCPAINT(OnNCPaint)
+    CR_MSG_WM_NOTIFY(OnNotify)
+    CR_MSG_WM_PAINT(OnPaint)
+    CR_MSG_WM_SETFOCUS(OnSetFocus)
+    CR_MSG_WM_SETICON(OnSetIcon)
+    CR_MSG_WM_SETTEXT(OnSetText)
+    CR_MSG_WM_SETTINGCHANGE(OnSettingChange)
+    CR_MSG_WM_SIZE(OnSize)
+    CR_MSG_WM_SYSCOMMAND(OnSysCommand)
+    CR_MSG_WM_THEMECHANGED(OnThemeChanged)
+    CR_MSG_WM_WINDOWPOSCHANGED(OnWindowPosChanged)
+    CR_MSG_WM_WINDOWPOSCHANGING(OnWindowPosChanging)
+    CR_MSG_WM_WTSSESSION_CHANGE(OnSessionChange)
+  CR_END_MSG_MAP()
 
   // Message Handlers.
   // This list is in _ALPHABETICAL_ order!
@@ -381,10 +380,12 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void OnCommand(UINT notification_code, int command, HWND window);
   LRESULT OnCreate(CREATESTRUCT* create_struct);
   void OnDestroy();
-  void OnDisplayChange(UINT bits_per_pixel, const CSize& screen_size);
+  void OnDisplayChange(UINT bits_per_pixel, const gfx::Size& screen_size);
   LRESULT OnDwmCompositionChanged(UINT msg, WPARAM w_param, LPARAM l_param);
+  void OnEnterMenuLoop(BOOL from_track_popup_menu);
   void OnEnterSizeMove();
   LRESULT OnEraseBkgnd(HDC dc);
+  void OnExitMenuLoop(BOOL is_shortcut_menu);
   void OnExitSizeMove();
   void OnGetMinMaxInfo(MINMAXINFO* minmax_info);
   LRESULT OnGetObject(UINT message, WPARAM w_param, LPARAM l_param);
@@ -395,24 +396,26 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void OnKillFocus(HWND focused_window);
   LRESULT OnMouseActivate(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnMouseRange(UINT message, WPARAM w_param, LPARAM l_param);
-  void OnMove(const CPoint& point);
+  void OnMove(const gfx::Point& point);
   void OnMoving(UINT param, const RECT* new_bounds);
   LRESULT OnNCActivate(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnNCCalcSize(BOOL mode, LPARAM l_param);
-  LRESULT OnNCHitTest(const CPoint& point);
+  LRESULT OnNCHitTest(const gfx::Point& point);
   void OnNCPaint(HRGN rgn);
   LRESULT OnNCUAHDrawCaption(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnNCUAHDrawFrame(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnNotify(int w_param, NMHDR* l_param);
   void OnPaint(HDC dc);
   LRESULT OnReflectedMessage(UINT message, WPARAM w_param, LPARAM l_param);
+  LRESULT OnScrollMessage(UINT message, WPARAM w_param, LPARAM l_param);
+  void OnSessionChange(WPARAM status_code, PWTSSESSION_NOTIFICATION session_id);
   LRESULT OnSetCursor(UINT message, WPARAM w_param, LPARAM l_param);
   void OnSetFocus(HWND last_focused_window);
   LRESULT OnSetIcon(UINT size_type, HICON new_icon);
   LRESULT OnSetText(const wchar_t* text);
   void OnSettingChange(UINT flags, const wchar_t* section);
-  void OnSize(UINT param, const CSize& size);
-  void OnSysCommand(UINT notification_code, const CPoint& point);
+  void OnSize(UINT param, const gfx::Size& size);
+  void OnSysCommand(UINT notification_code, const gfx::Point& point);
   void OnThemeChanged();
   LRESULT OnTouchEvent(UINT message, WPARAM w_param, LPARAM l_param);
   void OnWindowPosChanging(WINDOWPOS* window_pos);
@@ -521,11 +524,20 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Copy of custom window region specified via SetRegion(), if any.
   base::win::ScopedRegion custom_window_region_;
 
+  // If > 0 indicates a menu is running (we're showing a native menu).
+  int menu_depth_;
+
   // A factory used to lookup appbar autohide edges.
   base::WeakPtrFactory<HWNDMessageHandler> autohide_factory_;
 
   // Generates touch-ids for touch-events.
   ui::SequentialIDGenerator id_generator_;
+
+  // Indicates if the window needs the WS_VSCROLL and WS_HSCROLL styles.
+  bool needs_scroll_styles_;
+
+  // Set to true if we are in the context of a sizing operation.
+  bool in_size_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };

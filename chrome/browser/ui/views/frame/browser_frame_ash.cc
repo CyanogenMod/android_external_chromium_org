@@ -9,6 +9,7 @@
 #include "ash/wm/window_util.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/views/frame/browser_shutdown.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
@@ -73,8 +74,8 @@ BrowserFrameAsh::BrowserFrameAsh(BrowserFrame* browser_frame,
     // Animating to immersive fullscreen does not look good. Immersive
     // fullscreen is the default fullscreen type on ChromeOS for tabbed browser
     // windows. The WindowState constructor disables animating to fullscreen
-    // completely when the kAshEnableImmersiveFullscreenForAllWindows command
-    // line flag is set.
+    // completely when switches::UseImmersiveFullscreenForAllWindows() returns
+    // true.
     window_state->set_animate_to_fullscreen(false);
   }
 
@@ -87,6 +88,14 @@ BrowserFrameAsh::BrowserFrameAsh(BrowserFrame* browser_frame,
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserFrameAsh, views::NativeWidgetAura overrides:
+
+void BrowserFrameAsh::OnWindowDestroying() {
+  // Destroy any remaining WebContents early on. Doing so may result in
+  // calling back to one of the Views/LayoutManagers or supporting classes of
+  // BrowserView. By destroying here we ensure all said classes are valid.
+  DestroyBrowserWebContents(browser_view_->browser());
+  NativeWidgetAura::OnWindowDestroying();
+}
 
 void BrowserFrameAsh::OnWindowTargetVisibilityChanged(bool visible) {
   if (visible) {

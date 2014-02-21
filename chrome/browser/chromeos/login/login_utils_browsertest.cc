@@ -22,19 +22,19 @@
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -50,6 +50,7 @@
 #include "chromeos/system/statistics_provider.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/policy_service.h"
+#include "components/policy/core/common/policy_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -147,7 +148,6 @@ class LoginUtilsTest : public testing::Test,
   LoginUtilsTest()
       : fake_io_thread_completion_(false, false),
         fake_io_thread_("fake_io_thread"),
-        loop_(base::MessageLoop::TYPE_IO),
         browser_process_(TestingBrowserProcess::GetGlobal()),
         local_state_(browser_process_),
         ui_thread_(BrowserThread::UI, &loop_),
@@ -192,7 +192,7 @@ class LoginUtilsTest : public testing::Test,
 
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(
-        ::switches::kDeviceManagementUrl, kDMServer);
+        policy::switches::kDeviceManagementUrl, kDMServer);
     command_line->AppendSwitchASCII(switches::kLoginProfile, "user");
 
     // DBusThreadManager should be initialized before io_thread_state_, as
@@ -232,7 +232,8 @@ class LoginUtilsTest : public testing::Test,
     browser_process_->SetSystemRequestContext(
         new net::TestURLRequestContextGetter(
             base::MessageLoopProxy::current()));
-    connector_ = browser_process_->browser_policy_connector();
+    connector_ =
+        browser_process_->platform_part()->browser_policy_connector_chromeos();
     connector_->Init(local_state_.Get(),
                      browser_process_->system_request_context());
 
@@ -361,7 +362,6 @@ class LoginUtilsTest : public testing::Test,
     // we need to trigger creation of Profile-related services.
     ChromeBrowserMainExtraPartsProfiles::
         EnsureBrowserContextKeyedServiceFactoriesBuilt();
-    ProfileManager::AllowGetDefaultProfile();
 
     DeviceSettingsTestHelper device_settings_test_helper;
     DeviceSettingsService::Get()->SetSessionManager(
@@ -374,7 +374,7 @@ class LoginUtilsTest : public testing::Test,
 
     scoped_refptr<Authenticator> authenticator =
         LoginUtils::Get()->CreateAuthenticator(this);
-    authenticator->CompleteLogin(ProfileManager::GetDefaultProfile(),
+    authenticator->CompleteLogin(ProfileHelper::GetSigninProfile(),
                                  UserContext(username,
                                              "password",
                                              std::string(),
@@ -386,7 +386,12 @@ class LoginUtilsTest : public testing::Test,
     const bool kHasCookies = false;
     const bool kHasActiveSession = false;
     LoginUtils::Get()->PrepareProfile(
-        UserContext(username, "password", std::string(), username, kUsingOAuth),
+        UserContext(username,
+                    "password",
+                    std::string(),
+                    username,
+                    kUsingOAuth,
+                    UserContext::AUTH_FLOW_GAIA_WITHOUT_SAML),
         std::string(), kHasCookies, kHasActiveSession, this);
     device_settings_test_helper.Flush();
     RunUntilIdle();
@@ -455,7 +460,7 @@ class LoginUtilsTest : public testing::Test,
   base::WaitableEvent fake_io_thread_completion_;
   base::Thread fake_io_thread_;
 
-  base::MessageLoop loop_;
+  base::MessageLoopForIO loop_;
   TestingBrowserProcess* browser_process_;
   ScopedTestingLocalState local_state_;
 
@@ -473,7 +478,7 @@ class LoginUtilsTest : public testing::Test,
 
   chromeos::system::MockStatisticsProvider mock_statistics_provider_;
 
-  policy::BrowserPolicyConnector* connector_;
+  policy::BrowserPolicyConnectorChromeOS* connector_;
 
   scoped_ptr<ScopedTestDeviceSettingsService> test_device_settings_service_;
   scoped_ptr<ScopedTestCrosSettings> test_cros_settings_;
@@ -558,7 +563,7 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
   base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
       RLZTracker::CHROME_HOME_PAGE, &rlz_string));
-  EXPECT_EQ(string16(), rlz_string);
+  EXPECT_EQ(base::string16(), rlz_string);
 }
 #endif
 

@@ -37,8 +37,7 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(FaviconTabHelper);
 
 FaviconTabHelper::FaviconTabHelper(WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
-      profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
-      should_fetch_icons_(true) {
+      profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())) {
   favicon_handler_.reset(new FaviconHandler(profile_, this,
                                             FaviconHandler::FAVICON));
   if (chrome::kEnableTouchIcon)
@@ -50,9 +49,6 @@ FaviconTabHelper::~FaviconTabHelper() {
 }
 
 void FaviconTabHelper::FetchFavicon(const GURL& url) {
-  if (!should_fetch_icons_)
-    return;
-
   favicon_handler_->FetchFavicon(url);
   if (touch_icon_handler_.get())
     touch_icon_handler_->FetchFavicon(url);
@@ -92,7 +88,7 @@ bool FaviconTabHelper::ShouldDisplayFavicon() {
     return true;
 
   GURL url = web_contents()->GetURL();
-  if (url.SchemeIs(chrome::kChromeUIScheme) &&
+  if (url.SchemeIs(content::kChromeUIScheme) &&
       url.host() == chrome::kChromeUINewTabHost) {
     return false;
   }
@@ -175,6 +171,7 @@ void FaviconTabHelper::DidStartNavigationToPendingEntry(
 void FaviconTabHelper::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
     const content::FrameNavigateParams& params) {
+  favicon_urls_.clear();
   // Get the favicon, either from history or request it from the net.
   FetchFavicon(details.entry->GetURL());
 }
@@ -182,6 +179,9 @@ void FaviconTabHelper::DidNavigateMainFrame(
 void FaviconTabHelper::DidUpdateFaviconURL(
     int32 page_id,
     const std::vector<content::FaviconURL>& candidates) {
+  DCHECK(!candidates.empty());
+  favicon_urls_ = candidates;
+
   favicon_handler_->OnUpdateFaviconURL(page_id, candidates);
   if (touch_icon_handler_.get())
     touch_icon_handler_->OnUpdateFaviconURL(page_id, candidates);

@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/options/wimax_config_view.h"
 
 #include "ash/system/chromeos/network/network_connect.h"
+#include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -69,7 +70,7 @@ WimaxConfigView::~WimaxConfigView() {
   RemoveAllChildViews(true);  // Destroy children before models
 }
 
-string16 WimaxConfigView::GetTitle() const {
+base::string16 WimaxConfigView::GetTitle() const {
   return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS);
 }
 
@@ -129,11 +130,13 @@ bool WimaxConfigView::HandleKeyEvent(views::Textfield* sender,
 
 void WimaxConfigView::ButtonPressed(views::Button* sender,
                                    const ui::Event& event) {
-  if (sender == passphrase_visible_button_) {
-    if (passphrase_textfield_) {
-      passphrase_textfield_->SetObscured(!passphrase_textfield_->IsObscured());
-      passphrase_visible_button_->SetToggled(
-          !passphrase_textfield_->IsObscured());
+  if (sender == passphrase_visible_button_ && passphrase_textfield_) {
+    if (passphrase_textfield_->GetTextInputType() == ui::TEXT_INPUT_TYPE_TEXT) {
+      passphrase_textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
+      passphrase_visible_button_->SetToggled(false);
+    } else {
+      passphrase_textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_TEXT);
+      passphrase_visible_button_->SetToggled(true);
     }
   } else {
     NOTREACHED();
@@ -174,11 +177,12 @@ bool WimaxConfigView::Login() {
 
 std::string WimaxConfigView::GetEapIdentity() const {
   DCHECK(identity_textfield_);
-  return UTF16ToUTF8(identity_textfield_->text());
+  return base::UTF16ToUTF8(identity_textfield_->text());
 }
 
 std::string WimaxConfigView::GetEapPassphrase() const {
-  return passphrase_textfield_ ? UTF16ToUTF8(passphrase_textfield_->text()) :
+  return passphrase_textfield_ ? base::UTF16ToUTF8(
+                                     passphrase_textfield_->text()) :
                                  std::string();
 }
 
@@ -230,7 +234,7 @@ void WimaxConfigView::Init() {
   layout->StartRow(0, column_view_set_id);
   layout->AddView(new views::Label(l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_INTERNET_TAB_NETWORK)));
-  views::Label* label = new views::Label(UTF8ToUTF16(wimax->name()));
+  views::Label* label = new views::Label(base::UTF8ToUTF16(wimax->name()));
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   layout->AddView(label);
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
@@ -241,10 +245,9 @@ void WimaxConfigView::Init() {
       IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY);
   identity_label_ = new views::Label(identity_label_text);
   layout->AddView(identity_label_);
-  identity_textfield_ = new views::Textfield(
-      views::Textfield::STYLE_DEFAULT);
+  identity_textfield_ = new views::Textfield();
   identity_textfield_->SetAccessibleName(identity_label_text);
-  identity_textfield_->SetController(this);
+  identity_textfield_->set_controller(this);
   identity_textfield_->SetEnabled(identity_ui_data_.IsEditable());
   layout->AddView(identity_textfield_);
   layout->AddView(new ControlledSettingIndicatorView(identity_ui_data_));
@@ -256,9 +259,9 @@ void WimaxConfigView::Init() {
       IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE);
   passphrase_label_ = new views::Label(passphrase_label_text);
   layout->AddView(passphrase_label_);
-  passphrase_textfield_ = new views::Textfield(
-      views::Textfield::STYLE_OBSCURED);
-  passphrase_textfield_->SetController(this);
+  passphrase_textfield_ = new views::Textfield();
+  passphrase_textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
+  passphrase_textfield_->set_controller(this);
   passphrase_label_->SetEnabled(true);
   passphrase_textfield_->SetEnabled(passphrase_ui_data_.IsEditable());
   passphrase_textfield_->SetAccessibleName(passphrase_label_text);
@@ -269,7 +272,7 @@ void WimaxConfigView::Init() {
   } else {
     // Password visible button.
     passphrase_visible_button_ = new views::ToggleImageButton(this);
-    passphrase_visible_button_->set_focusable(true);
+    passphrase_visible_button_->SetFocusable(true);
     passphrase_visible_button_->SetTooltipText(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_SHOW));
@@ -360,7 +363,7 @@ void WimaxConfigView::InitFromProperties(
   std::string eap_identity;
   properties.GetStringWithoutPathExpansion(
       shill::kEapIdentityProperty, &eap_identity);
-  identity_textfield_->SetText(UTF8ToUTF16(eap_identity));
+  identity_textfield_->SetText(base::UTF8ToUTF16(eap_identity));
 
   // Save credentials
   if (save_credentials_checkbox_) {

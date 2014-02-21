@@ -13,6 +13,7 @@
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/task_manager/task_manager_util.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
@@ -61,7 +62,7 @@ Resource::Type GuestResource::GetType() const {
   return GUEST;
 }
 
-string16 GuestResource::GetTitle() const {
+base::string16 GuestResource::GetTitle() const {
   WebContents* web_contents = GetWebContents();
   const int message_id = IDS_TASK_MANAGER_WEBVIEW_TAG_PREFIX;
   if (web_contents) {
@@ -71,7 +72,7 @@ string16 GuestResource::GetTitle() const {
   return l10n_util::GetStringFUTF16(message_id, base::string16());
 }
 
-string16 GuestResource::GetProfileName() const {
+base::string16 GuestResource::GetProfileName() const {
   WebContents* web_contents = GetWebContents();
   if (web_contents) {
     Profile* profile = Profile::FromBrowserContext(
@@ -108,21 +109,23 @@ GuestResourceProvider::~GuestResourceProvider() {
 
 Resource* GuestResourceProvider::GetResource(
     int origin_pid,
-    int render_process_host_id,
-    int routing_id) {
+    int child_id,
+    int route_id) {
   // If an origin PID was specified then the request originated in a plugin
   // working on the WebContents's behalf, so ignore it.
   if (origin_pid)
     return NULL;
 
+  content::RenderFrameHost* rfh =
+      content::RenderFrameHost::FromID(child_id, route_id);
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderFrameHost(rfh);
+
   for (GuestResourceMap::iterator i = resources_.begin();
        i != resources_.end(); ++i) {
-    WebContents* contents = WebContents::FromRenderViewHost(i->first);
-    if (contents &&
-        contents->GetRenderProcessHost()->GetID() == render_process_host_id &&
-        contents->GetRenderViewHost()->GetRoutingID() == routing_id) {
+    WebContents* guest_contents = WebContents::FromRenderViewHost(i->first);
+    if (web_contents == guest_contents)
       return i->second;
-    }
   }
 
   return NULL;
@@ -138,7 +141,8 @@ void GuestResourceProvider::StartUpdating() {
   while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
     if (widget->IsRenderView()) {
       RenderViewHost* rvh = RenderViewHost::From(widget);
-      if (rvh->IsSubframe())
+      WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
+      if (web_contents && web_contents->IsSubframe())
         Add(rvh);
     }
   }
@@ -190,7 +194,7 @@ void GuestResourceProvider::Observe(int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   WebContents* web_contents = content::Source<WebContents>(source).ptr();
-  if (!web_contents || !web_contents->GetRenderViewHost()->IsSubframe())
+  if (!web_contents || !web_contents->IsSubframe())
     return;
 
   switch (type) {

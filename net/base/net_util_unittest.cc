@@ -30,6 +30,9 @@
 #include <net/if.h>
 #endif  // OS_WIN
 
+using base::ASCIIToUTF16;
+using base::WideToUTF16;
+
 namespace net {
 
 namespace {
@@ -493,7 +496,7 @@ std::string DumpIPNumber(const IPAddressNumber& v) {
 }
 
 void RunGenerateFileNameTestCase(const GenerateFilenameCase* test_case) {
-  std::string default_filename(WideToUTF8(test_case->default_filename));
+  std::string default_filename(base::WideToUTF8(test_case->default_filename));
   base::FilePath file_path = GenerateFileName(
       GURL(test_case->url), test_case->content_disp_header,
       test_case->referrer_charset, test_case->suggested_filename,
@@ -2260,8 +2263,8 @@ TEST(NetUtilTest, GetDirectoryListingEntry) {
      false,
      10000,
      base::Time(),
-     "<script>addRow(\"\\uD55C\\uAE00.txt\",\"%ED%95%9C%EA%B8%80.txt\""
-         ",0,\"9.8 kB\",\"\");</script>\n"},
+     "<script>addRow(\"\xED\x95\x9C\xEA\xB8\x80.txt\","
+         "\"%ED%95%9C%EA%B8%80.txt\",0,\"9.8 kB\",\"\");</script>\n"},
     // U+D55C0 U+AE00. raw_bytes is the corresponding EUC-KR sequence:
     // a local or remote file in EUC-KR.
     {L"\xD55C\xAE00.txt",
@@ -2269,7 +2272,7 @@ TEST(NetUtilTest, GetDirectoryListingEntry) {
      false,
      10000,
      base::Time(),
-     "<script>addRow(\"\\uD55C\\uAE00.txt\",\"%C7%D1%B1%DB.txt\""
+     "<script>addRow(\"\xED\x95\x9C\xEA\xB8\x80.txt\",\"%C7%D1%B1%DB.txt\""
          ",0,\"9.8 kB\",\"\");</script>\n"},
   };
 
@@ -3299,7 +3302,7 @@ TEST(NetUtilTest, IsLocalhost) {
 // Verify GetNetworkList().
 TEST(NetUtilTest, GetNetworkList) {
   NetworkInterfaceList list;
-  ASSERT_TRUE(GetNetworkList(&list));
+  ASSERT_TRUE(GetNetworkList(&list, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES));
   for (NetworkInterfaceList::iterator it = list.begin();
        it != list.end(); ++it) {
     // Verify that the name is not empty.
@@ -3344,7 +3347,7 @@ TEST(NetUtilTest, GetNetworkList) {
       EXPECT_EQ(luid_to_guid(&luid, &guid), NO_ERROR);
       LPOLESTR name;
       StringFromCLSID(guid, &name);
-      EXPECT_STREQ(UTF8ToWide(it->name).c_str(), name);
+      EXPECT_STREQ(base::UTF8ToWide(it->name).c_str(), name);
       CoTaskMemFree(name);
       continue;
     } else {

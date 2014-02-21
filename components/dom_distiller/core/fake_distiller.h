@@ -8,7 +8,6 @@
 #include "components/dom_distiller/core/article_entry.h"
 #include "components/dom_distiller/core/distiller.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 class GURL;
@@ -28,27 +27,23 @@ class MockDistillerFactory : public DistillerFactory {
 
 class FakeDistiller : public Distiller {
  public:
-  FakeDistiller();
+  explicit FakeDistiller(bool execute_callback);
   virtual ~FakeDistiller();
   MOCK_METHOD0(Die, void());
 
   virtual void DistillPage(const GURL& url,
-                           const DistillerCallback& callback) OVERRIDE {
-    url_ = url;
-    callback_ = callback;
-  }
+                           const DistillerCallback& callback) OVERRIDE;
 
-  void RunDistillerCallback(scoped_ptr<DistilledPageProto> proto) {
-    EXPECT_FALSE(callback_.is_null());
-    callback_.Run(proto.Pass());
-    callback_.Reset();
-  }
+  void RunDistillerCallback(scoped_ptr<DistilledArticleProto> proto);
 
   GURL GetUrl() { return url_; }
 
   DistillerCallback GetCallback() { return callback_; }
 
  private:
+  void RunDistillerCallbackInternal(scoped_ptr<DistilledArticleProto> proto);
+
+  bool execute_callback_;
   GURL url_;
   DistillerCallback callback_;
 };

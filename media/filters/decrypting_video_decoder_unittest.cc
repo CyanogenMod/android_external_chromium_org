@@ -37,7 +37,6 @@ static scoped_refptr<DecoderBuffer> CreateFakeEncryptedBuffer() {
       std::string(reinterpret_cast<const char*>(kFakeKeyId),
                   arraysize(kFakeKeyId)),
       std::string(reinterpret_cast<const char*>(kFakeIv), arraysize(kFakeIv)),
-      0,
       std::vector<SubsampleEntry>())));
   return buffer;
 }
@@ -83,23 +82,32 @@ class DecryptingVideoDecoderTest : public testing::Test {
     Stop();
   }
 
+  // Initializes the |decoder_| and expects |status|. Note the initialization
+  // can succeed or fail.
   void InitializeAndExpectStatus(const VideoDecoderConfig& config,
                                  PipelineStatus status) {
     decoder_->Initialize(config, NewExpectedStatusCB(status));
     message_loop_.RunUntilIdle();
   }
 
+  // Initialize the |decoder_| and expects it to succeed.
   void Initialize() {
     EXPECT_CALL(*decryptor_, InitializeVideoDecoder(_, _))
-        .WillRepeatedly(RunCallback<1>(true));
+        .WillOnce(RunCallback<1>(true));
     EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kVideo, _))
-        .WillRepeatedly(SaveArg<1>(&key_added_cb_));
+        .WillOnce(SaveArg<1>(&key_added_cb_));
 
     InitializeAndExpectStatus(TestVideoConfig::NormalEncrypted(), PIPELINE_OK);
   }
 
+  // Reinitialize the |decoder_| and expects it to succeed.
   void Reinitialize() {
     EXPECT_CALL(*decryptor_, DeinitializeDecoder(Decryptor::kVideo));
+    EXPECT_CALL(*decryptor_, InitializeVideoDecoder(_, _))
+        .WillOnce(RunCallback<1>(true));
+    EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kVideo, _))
+        .WillOnce(SaveArg<1>(&key_added_cb_));
+
     InitializeAndExpectStatus(TestVideoConfig::LargeEncrypted(), PIPELINE_OK);
   }
 
@@ -191,9 +199,6 @@ class DecryptingVideoDecoderTest : public testing::Test {
   }
 
   void Stop() {
-    EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kVideo,
-                                              IsNullCallback()))
-        .Times(AtMost(1));
     EXPECT_CALL(*decryptor_, DeinitializeDecoder(Decryptor::kVideo))
         .WillRepeatedly(InvokeWithoutArgs(
             this, &DecryptingVideoDecoderTest::AbortAllPendingCBs));
@@ -260,6 +265,8 @@ TEST_F(DecryptingVideoDecoderTest, Reinitialize_Failure) {
   EXPECT_CALL(*decryptor_, InitializeVideoDecoder(_, _))
       .WillOnce(RunCallback<1>(false));
 
+  // Reinitialize() expects the reinitialization to succeed. Call
+  // InitializeAndExpectStatus() directly to test the reinitialization failure.
   InitializeAndExpectStatus(TestVideoConfig::NormalEncrypted(),
                             DECODER_ERROR_NOT_SUPPORTED);
 }
@@ -363,7 +370,7 @@ TEST_F(DecryptingVideoDecoderTest, Reset_DuringPendingDecode) {
   Initialize();
   EnterPendingDecodeState();
 
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
+  EXPECT_CALL(*this, FrameReady(VideoDecoder::kAborted, IsNull()));
 
   Reset();
 }
@@ -373,7 +380,7 @@ TEST_F(DecryptingVideoDecoderTest, Reset_DuringWaitingForKey) {
   Initialize();
   EnterWaitingForKeyState();
 
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
+  EXPECT_CALL(*this, FrameReady(VideoDecoder::kAborted, IsNull()));
 
   Reset();
 }
@@ -446,7 +453,7 @@ TEST_F(DecryptingVideoDecoderTest, Stop_DuringPendingDecode) {
   Initialize();
   EnterPendingDecodeState();
 
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
+  EXPECT_CALL(*this, FrameReady(VideoDecoder::kAborted, IsNull()));
 
   Stop();
 }
@@ -456,7 +463,7 @@ TEST_F(DecryptingVideoDecoderTest, Stop_DuringWaitingForKey) {
   Initialize();
   EnterWaitingForKeyState();
 
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
+  EXPECT_CALL(*this, FrameReady(VideoDecoder::kAborted, IsNull()));
 
   Stop();
 }
@@ -478,7 +485,7 @@ TEST_F(DecryptingVideoDecoderTest, Stop_DuringPendingReset) {
   EnterPendingDecodeState();
 
   EXPECT_CALL(*decryptor_, ResetDecoder(Decryptor::kVideo));
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
+  EXPECT_CALL(*this, FrameReady(VideoDecoder::kAborted, IsNull()));
 
   decoder_->Reset(NewExpectedClosure());
   Stop();

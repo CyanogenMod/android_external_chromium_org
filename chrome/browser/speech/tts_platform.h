@@ -56,6 +56,11 @@ class TtsPlatformImpl {
   // Resume speaking the current utterance, if it was paused.
   virtual void Resume() = 0;
 
+  // Allows the platform to monitor speech commands and the voices used
+  // for each one.
+  virtual void WillSpeakUtteranceWithVoice(const Utterance* utterance,
+                                           const VoiceData& voice_data);
+
   virtual std::string error();
   virtual void clear_error();
   virtual void set_error(const std::string& error);

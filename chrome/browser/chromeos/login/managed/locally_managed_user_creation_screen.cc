@@ -87,7 +87,8 @@ LocallyManagedUserCreationScreen::LocallyManagedUserCreationScreen(
       last_page_(kNameOfIntroScreen),
       image_decoder_(NULL),
       apply_photo_after_decoding_(false),
-      selected_image_(0) {
+      selected_image_(0),
+      was_camera_present_(false) {
   DCHECK(actor_);
   if (actor_)
     actor_->SetDelegate(this);
@@ -209,7 +210,7 @@ void LocallyManagedUserCreationScreen::ImportManagedUser(
   DCHECK(controller_.get());
   DCHECK(existing_users_.get());
   VLOG(1) << "Importing user " << user_id;
-  DictionaryValue* user_info;
+  base::DictionaryValue* user_info;
   if (!existing_users_->GetDictionary(user_id, &user_info)) {
     LOG(ERROR) << "Can not import non-existing user " << user_id;
     return;
@@ -253,7 +254,7 @@ void LocallyManagedUserCreationScreen::ImportManagedUserWithPassword(
   DCHECK(controller_.get());
   DCHECK(existing_users_.get());
   VLOG(1) << "Importing user " << user_id;
-  DictionaryValue* user_info;
+  base::DictionaryValue* user_info;
   if (!existing_users_->GetDictionary(user_id, &user_info)) {
     LOG(ERROR) << "Can not import non-existing user " << user_id;
     return;
@@ -405,9 +406,9 @@ bool LocallyManagedUserCreationScreen::FindUserByDisplayName(
 // It should be removed by issue 251179.
 
 void LocallyManagedUserCreationScreen::ApplyPicture() {
-  UserManager* user_manager = UserManager::Get();
-  UserImageManager* image_manager = user_manager->GetUserImageManager();
   std::string user_id = controller_->GetManagedUserId();
+  UserManager* user_manager = UserManager::Get();
+  UserImageManager* image_manager = user_manager->GetUserImageManager(user_id);
   switch (selected_image_) {
     case User::kExternalImageIndex:
       // Photo decoding may not have been finished yet.
@@ -415,15 +416,14 @@ void LocallyManagedUserCreationScreen::ApplyPicture() {
         apply_photo_after_decoding_ = true;
         return;
       }
-      image_manager->
-          SaveUserImage(user_id, UserImage::CreateAndEncode(user_photo_));
+      image_manager->SaveUserImage(UserImage::CreateAndEncode(user_photo_));
       break;
     case User::kProfileImageIndex:
       NOTREACHED() << "Supervised users have no profile pictures";
       break;
     default:
       DCHECK(selected_image_ >= 0 && selected_image_ < kDefaultImagesCount);
-      image_manager->SaveUserDefaultImageIndex(user_id, selected_image_);
+      image_manager->SaveUserDefaultImageIndex(selected_image_);
       break;
   }
   // Proceed to tutorial.
@@ -441,9 +441,13 @@ void LocallyManagedUserCreationScreen::CheckCameraPresence() {
 }
 
 void LocallyManagedUserCreationScreen::OnCameraPresenceCheckDone() {
+  bool is_camera_present = CameraDetector::camera_presence() ==
+                           CameraDetector::kCameraPresent;
   if (actor_) {
-    actor_->SetCameraPresent(
-        CameraDetector::camera_presence() == CameraDetector::kCameraPresent);
+    if (is_camera_present != was_camera_present_) {
+      actor_->SetCameraPresent(is_camera_present);
+      was_camera_present_ = is_camera_present;
+    }
   }
 }
 

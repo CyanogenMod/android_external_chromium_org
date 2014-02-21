@@ -38,6 +38,9 @@ class PrerenderHandle : public base::NonThreadSafe,
     // Signals that the prerender has had its load event.
     virtual void OnPrerenderStopLoading(PrerenderHandle* handle) = 0;
 
+    // Signals that the prerender has had its 'DOMContentLoaded' event.
+    virtual void OnPrerenderDomContentLoaded(PrerenderHandle* handle) = 0;
+
     // Signals that the prerender has stopped running.
     virtual void OnPrerenderStop(PrerenderHandle* handle) = 0;
 
@@ -96,12 +99,12 @@ class PrerenderHandle : public base::NonThreadSafe,
 
   explicit PrerenderHandle(PrerenderManager::PrerenderData* prerender_data);
 
-  void AdoptPrerenderDataFrom(PrerenderHandle* other_handle);
-
   // From PrerenderContents::Observer:
   virtual void OnPrerenderStart(PrerenderContents* prerender_contents) OVERRIDE;
   virtual void OnPrerenderStopLoading(PrerenderContents* prerender_contents)
       OVERRIDE;
+  virtual void OnPrerenderDomContentLoaded(
+      PrerenderContents* prerender_contents) OVERRIDE;
   virtual void OnPrerenderStop(PrerenderContents* prerender_contents) OVERRIDE;
   virtual void OnPrerenderCreatedMatchCompleteReplacement(
       PrerenderContents* contents, PrerenderContents* replacement) OVERRIDE;

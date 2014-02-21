@@ -27,6 +27,8 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 
 using content::BrowserThread;
@@ -69,9 +71,9 @@ void AssignValueAndQuit(base::RunLoop* run_loop,
 
 // This is called on IO thread.
 void VerifyFileError(base::RunLoop* run_loop,
-                     base::PlatformFileError error) {
+                     base::File::Error error) {
   DCHECK(run_loop);
-  EXPECT_EQ(base::PLATFORM_FILE_OK, error);
+  EXPECT_EQ(base::File::FILE_OK, error);
   run_loop->Quit();
 }
 
@@ -122,12 +124,15 @@ class SyncFileSystemServiceTest : public testing::Test {
                        content::TestBrowserThreadBundle::REAL_IO_THREAD) {}
 
   virtual void SetUp() OVERRIDE {
+    in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
     file_system_.reset(new CannedSyncableFileSystem(
         GURL(kOrigin),
+        in_memory_env_.get(),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
 
-    local_service_ = new LocalFileSyncService(&profile_);
+    scoped_ptr<LocalFileSyncService> local_service =
+        LocalFileSyncService::CreateForTesting(&profile_, in_memory_env_.get());
     remote_service_ = new StrictMock<MockRemoteFileSyncService>;
     sync_service_.reset(new SyncFileSystemService(&profile_));
 
@@ -139,17 +144,17 @@ class SyncFileSystemServiceTest : public testing::Test {
                 GetLocalChangeProcessor())
         .WillRepeatedly(Return(&local_change_processor_));
     EXPECT_CALL(*mock_remote_service(),
-                SetRemoteChangeProcessor(local_service_)).Times(1);
+                SetRemoteChangeProcessor(local_service.get())).Times(1);
 
     sync_service_->Initialize(
-        make_scoped_ptr(local_service_),
+        local_service.Pass(),
         scoped_ptr<RemoteFileSyncService>(remote_service_));
 
     // Disable auto sync by default.
     EXPECT_CALL(*mock_remote_service(), SetSyncEnabled(false)).Times(1);
     sync_service_->SetSyncEnabledForTesting(false);
 
-    file_system_->SetUp();
+    file_system_->SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -179,7 +184,7 @@ class SyncFileSystemServiceTest : public testing::Test {
     run_loop.Run();
 
     EXPECT_EQ(SYNC_STATUS_OK, status);
-    EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->OpenFileSystem());
+    EXPECT_EQ(base::File::FILE_OK, file_system_->OpenFileSystem());
   }
 
   // Calls InitializeForApp after setting up the mock remote service to
@@ -251,11 +256,11 @@ class SyncFileSystemServiceTest : public testing::Test {
   ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;
 
   content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<leveldb::Env> in_memory_env_;
   TestingProfile profile_;
   scoped_ptr<CannedSyncableFileSystem> file_system_;
 
   // Their ownerships are transferred to SyncFileSystemService.
-  LocalFileSyncService* local_service_;
   StrictMock<MockRemoteFileSyncService>* remote_service_;
   StrictMock<MockLocalChangeProcessor> local_change_processor_;
 
@@ -344,7 +349,7 @@ TEST_F(SyncFileSystemServiceTest, SimpleLocalSyncFlow) {
               ApplyLocalChange(change, _, _, kFile, _))
       .WillOnce(MockStatusCallback(SYNC_STATUS_OK));
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile));
 
   run_loop.Run();
 
@@ -472,7 +477,7 @@ TEST_F(SyncFileSystemServiceTest, MAYBE_GetFileSyncStatus) {
 
   // 3. The file has pending local changes.
   {
-    EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile));
+    EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile));
 
     base::RunLoop run_loop;
     EXPECT_CALL(*mock_remote_service(), IsConflicting(kFile))
@@ -493,7 +498,7 @@ TEST_F(SyncFileSystemServiceTest, MAYBE_GetFileSyncStatus) {
   // 4. The file has a conflict and pending local changes. In this case
   // we return SYNC_FILE_STATUS_CONFLICTING.
   {
-    EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->TruncateFile(kFile, 1U));
+    EXPECT_EQ(base::File::FILE_OK, file_system_->TruncateFile(kFile, 1U));
 
     base::RunLoop run_loop;
     EXPECT_CALL(*mock_remote_service(), IsConflicting(kFile))

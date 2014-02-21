@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
 #include "ash/system/tray/fixed_sized_scroll_view.h"
 #include "ash/system/tray/hover_highlight_view.h"
@@ -161,9 +162,11 @@ class DriveDetailedView : public TrayDetailsView,
       label_container_->SetLayoutManager(new views::BoxLayout(
           views::BoxLayout::kVertical, 0, 0, kVerticalPadding));
 #if defined(OS_POSIX)
-      base::string16 file_label = UTF8ToUTF16(file_path.BaseName().value());
+      base::string16 file_label =
+          base::UTF8ToUTF16(file_path.BaseName().value());
 #elif defined(OS_WIN)
-      base::string16 file_label = WideToUTF16(file_path.BaseName().value());
+      base::string16 file_label =
+          base::WideToUTF16(file_path.BaseName().value());
 #endif
       views::Label* label = new views::Label(file_label);
       label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -253,6 +256,8 @@ class DriveDetailedView : public TrayDetailsView,
     virtual void ButtonPressed(views::Button* sender,
                                const ui::Event& event) OVERRIDE {
       DCHECK(sender == cancel_button_);
+      Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+          ash::UMA_STATUS_AREA_DRIVE_CANCEL_OPERATION);
       container_->OnCancelOperation(operation_id_);
     }
 
@@ -425,6 +430,8 @@ views::View* TrayDrive::CreateDetailedView(user::LoginStatus status) {
   if (list->empty() && !tray_view()->visible())
     return NULL;
 
+  Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+      ash::UMA_STATUS_AREA_DETAILED_DRIVE_VIEW);
   detailed_ = new tray::DriveDetailedView(this, list.get());
   return detailed_;
 }

@@ -6,11 +6,13 @@
 
 #include <fcntl.h>
 #include <io.h>
+#include <shellapi.h>
 #include <windows.h>
 #include <userenv.h>
 #include <psapi.h>
 
 #include <ios>
+#include <limits>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -108,13 +110,49 @@ bool LaunchProcess(const string16& cmdline,
   win::StartupInformation startup_info_wrapper;
   STARTUPINFO* startup_info = startup_info_wrapper.startup_info();
 
+  bool inherit_handles = options.inherit_handles;
+  DWORD flags = 0;
+  if (options.handles_to_inherit) {
+    if (options.handles_to_inherit->empty()) {
+      inherit_handles = false;
+    } else {
+      if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+        DLOG(ERROR) << "Specifying handles to inherit requires Vista or later.";
+        return false;
+      }
+
+      if (options.handles_to_inherit->size() >
+              std::numeric_limits<DWORD>::max() / sizeof(HANDLE)) {
+        DLOG(ERROR) << "Too many handles to inherit.";
+        return false;
+      }
+
+      if (!startup_info_wrapper.InitializeProcThreadAttributeList(1)) {
+        DPLOG(ERROR);
+        return false;
+      }
+
+      if (!startup_info_wrapper.UpdateProcThreadAttribute(
+              PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+              const_cast<HANDLE*>(&options.handles_to_inherit->at(0)),
+              static_cast<DWORD>(options.handles_to_inherit->size() *
+                  sizeof(HANDLE)))) {
+        DPLOG(ERROR);
+        return false;
+      }
+
+      inherit_handles = true;
+      flags |= EXTENDED_STARTUPINFO_PRESENT;
+    }
+  }
+
   if (options.empty_desktop_name)
     startup_info->lpDesktop = L"";
   startup_info->dwFlags = STARTF_USESHOWWINDOW;
   startup_info->wShowWindow = options.start_hidden ? SW_HIDE : SW_SHOW;
 
   if (options.stdin_handle || options.stdout_handle || options.stderr_handle) {
-    DCHECK(options.inherit_handles);
+    DCHECK(inherit_handles);
     DCHECK(options.stdin_handle);
     DCHECK(options.stdout_handle);
     DCHECK(options.stderr_handle);
@@ -123,8 +161,6 @@ bool LaunchProcess(const string16& cmdline,
     startup_info->hStdOutput = options.stdout_handle;
     startup_info->hStdError = options.stderr_handle;
   }
-
-  DWORD flags = 0;
 
   if (options.job_handle) {
     flags |= CREATE_SUSPENDED;
@@ -152,7 +188,7 @@ bool LaunchProcess(const string16& cmdline,
     BOOL launched =
         CreateProcessAsUser(options.as_user, NULL,
                             const_cast<wchar_t*>(cmdline.c_str()),
-                            NULL, NULL, options.inherit_handles, flags,
+                            NULL, NULL, inherit_handles, flags,
                             enviroment_block, NULL, startup_info,
                             &temp_process_info);
     DestroyEnvironmentBlock(enviroment_block);
@@ -163,7 +199,7 @@ bool LaunchProcess(const string16& cmdline,
   } else {
     if (!CreateProcess(NULL,
                        const_cast<wchar_t*>(cmdline.c_str()), NULL, NULL,
-                       options.inherit_handles, flags, NULL, NULL,
+                       inherit_handles, flags, NULL, NULL,
                        startup_info, &temp_process_info)) {
       DPLOG(ERROR);
       return false;
@@ -202,6 +238,41 @@ bool LaunchProcess(const CommandLine& cmdline,
   bool rv = LaunchProcess(cmdline.GetCommandLineString(), options, &process);
   *process_handle = process.Take();
   return rv;
+}
+
+bool LaunchElevatedProcess(const CommandLine& cmdline,
+                           const LaunchOptions& options,
+                           ProcessHandle* process_handle) {
+  const string16 file = cmdline.GetProgram().value();
+  const string16 arguments = cmdline.GetArgumentsString();
+
+  SHELLEXECUTEINFO shex_info = {0};
+  shex_info.cbSize = sizeof(shex_info);
+  shex_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  shex_info.hwnd = GetActiveWindow();
+  shex_info.lpVerb = L"runas";
+  shex_info.lpFile = file.c_str();
+  shex_info.lpParameters = arguments.c_str();
+  shex_info.lpDirectory = NULL;
+  shex_info.nShow = options.start_hidden ? SW_HIDE : SW_SHOW;
+  shex_info.hInstApp = NULL;
+
+  if (!ShellExecuteEx(&shex_info)) {
+    DPLOG(ERROR);
+    return false;
+  }
+
+  if (options.wait)
+    WaitForSingleObject(shex_info.hProcess, INFINITE);
+
+  // If the caller wants the process handle give it to them, otherwise just
+  // close it.  Closing it does not terminate the process.
+  if (process_handle)
+    *process_handle = shex_info.hProcess;
+  else
+    CloseHandle(shex_info.hProcess);
+
+  return true;
 }
 
 bool SetJobObjectLimitFlags(HANDLE job_object, DWORD limit_flags) {

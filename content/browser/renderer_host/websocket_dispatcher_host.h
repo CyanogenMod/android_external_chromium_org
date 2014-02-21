@@ -81,7 +81,7 @@ class CONTENT_EXPORT WebSocketDispatcherHost : public BrowserMessageFilter {
   WebSocketHostState SendFlowControl(int routing_id,
                                      int64 quota) WARN_UNUSED_RESULT;
 
-  // Sends a WebSocketMsg_SendClosing IPC
+  // Sends a WebSocketMsg_NotifyClosing IPC
   WebSocketHostState SendClosing(int routing_id) WARN_UNUSED_RESULT;
 
   // Sends a WebSocketMsg_NotifyStartOpeningHandshake IPC.
@@ -94,10 +94,17 @@ class CONTENT_EXPORT WebSocketDispatcherHost : public BrowserMessageFilter {
       int routing_id,
       const WebSocketHandshakeResponse& response) WARN_UNUSED_RESULT;
 
+  // Sends a WebSocketMsg_NotifyFailure IPC and deletes and unregisters the
+  // channel.
+  WebSocketHostState NotifyFailure(
+      int routing_id,
+      const std::string& message) WARN_UNUSED_RESULT;
+
   // Sends a WebSocketMsg_DropChannel IPC and deletes and unregisters the
   // channel.
   WebSocketHostState DoDropChannel(
       int routing_id,
+      bool was_clean,
       uint16 code,
       const std::string& reason) WARN_UNUSED_RESULT;
 

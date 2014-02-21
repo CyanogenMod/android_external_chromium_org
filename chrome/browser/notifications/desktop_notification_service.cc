@@ -15,7 +15,6 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/api/notifications/notifications_api.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -27,6 +26,8 @@
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_request.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
@@ -38,8 +39,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/show_desktop_notification_params.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -56,6 +60,117 @@ using content::RenderViewHost;
 using content::WebContents;
 using message_center::NotifierId;
 using blink::WebTextDirection;
+
+const char kChromeNowExtensionID[] = "pafkbggdmjlpgkdkcbjmhmfcdpncadgh";
+
+// NotificationPermissionRequest ---------------------------------------
+
+class NotificationPermissionRequest : public PermissionBubbleRequest {
+ public:
+  NotificationPermissionRequest(
+      DesktopNotificationService* notification_service,
+      const GURL& origin,
+      base::string16 display_name,
+      int process_id,
+      int route_id,
+      int callback_context);
+  virtual ~NotificationPermissionRequest();
+
+  // PermissionBubbleDelegate:
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageTextFragment() const OVERRIDE;
+  virtual base::string16 GetAlternateAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetAlternateDenyButtonText() const OVERRIDE;
+  virtual void PermissionGranted() OVERRIDE;
+  virtual void PermissionDenied() OVERRIDE;
+  virtual void Cancelled() OVERRIDE;
+  virtual void RequestFinished() OVERRIDE;
+
+ private:
+  // The notification service to be used.
+  DesktopNotificationService* notification_service_;
+
+  // The origin we are asking for permissions on.
+  GURL origin_;
+
+  // The display name for the origin to be displayed.  Will be different from
+  // origin_ for extensions.
+  base::string16 display_name_;
+
+  // The callback information that tells us how to respond to javascript via
+  // the correct RenderView.
+  int process_id_;
+  int route_id_;
+  int callback_context_;
+
+  // Whether the user clicked one of the buttons.
+  bool action_taken_;
+
+  DISALLOW_COPY_AND_ASSIGN(NotificationPermissionRequest);
+};
+
+NotificationPermissionRequest::NotificationPermissionRequest(
+    DesktopNotificationService* notification_service,
+    const GURL& origin,
+    base::string16 display_name,
+    int process_id,
+    int route_id,
+    int callback_context)
+    : notification_service_(notification_service),
+      origin_(origin),
+      display_name_(display_name),
+      process_id_(process_id),
+      route_id_(route_id),
+      callback_context_(callback_context),
+      action_taken_(false) {}
+
+NotificationPermissionRequest::~NotificationPermissionRequest() {}
+
+base::string16 NotificationPermissionRequest::GetMessageText() const {
+  return l10n_util::GetStringFUTF16(IDS_NOTIFICATION_PERMISSIONS,
+                                    display_name_);
+}
+
+base::string16
+NotificationPermissionRequest::GetMessageTextFragment() const {
+  return l10n_util::GetStringUTF16(IDS_NOTIFICATION_PERMISSIONS_FRAGMENT);
+}
+
+base::string16
+NotificationPermissionRequest::GetAlternateAcceptButtonText() const {
+  return l10n_util::GetStringUTF16(IDS_NOTIFICATION_PERMISSION_YES);
+}
+
+base::string16
+NotificationPermissionRequest::GetAlternateDenyButtonText() const {
+  return l10n_util::GetStringUTF16(IDS_NOTIFICATION_PERMISSION_NO);
+}
+
+void NotificationPermissionRequest::PermissionGranted() {
+  action_taken_ = true;
+  UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Allowed", 1);
+  notification_service_->GrantPermission(origin_);
+}
+
+void NotificationPermissionRequest::PermissionDenied() {
+  action_taken_ = true;
+  UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Denied", 1);
+  notification_service_->DenyPermission(origin_);
+}
+
+void NotificationPermissionRequest::Cancelled() {
+}
+
+void NotificationPermissionRequest::RequestFinished() {
+  if (!action_taken_)
+    UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Ignored", 1);
+
+  RenderViewHost* host = RenderViewHost::FromID(process_id_, route_id_);
+  if (host)
+    host->DesktopNotificationPermissionRequestDone(callback_context_);
+
+  delete this;
+}
 
 
 // NotificationPermissionInfoBarDelegate --------------------------------------
@@ -206,7 +321,7 @@ void DesktopNotificationService::RegisterProfilePrefs(
   registry->RegisterListPref(
       prefs::kMessageCenterEnabledSyncNotifierIds,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  WelcomeNotification::RegisterProfilePrefs(registry);
+  ExtensionWelcomeNotification::RegisterProfilePrefs(registry);
 }
 
 // static
@@ -220,8 +335,8 @@ base::string16 DesktopNotificationService::CreateDataUrl(
   if (icon_url.is_valid()) {
     resource = IDR_NOTIFICATION_ICON_HTML;
     subst.push_back(icon_url.spec());
-    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(title)));
-    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(body)));
+    subst.push_back(net::EscapeForHTML(base::UTF16ToUTF8(title)));
+    subst.push_back(net::EscapeForHTML(base::UTF16ToUTF8(body)));
     // icon float position
     subst.push_back(dir == blink::WebTextDirectionRightToLeft ?
                     "right" : "left");
@@ -229,14 +344,15 @@ base::string16 DesktopNotificationService::CreateDataUrl(
     resource = IDR_NOTIFICATION_1LINE_HTML;
     base::string16 line = title.empty() ? body : title;
     // Strings are div names in the template file.
-    base::string16 line_name = title.empty() ? ASCIIToUTF16("description")
-                                       : ASCIIToUTF16("title");
-    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(line_name)));
-    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(line)));
+    base::string16 line_name =
+        title.empty() ? base::ASCIIToUTF16("description")
+                      : base::ASCIIToUTF16("title");
+    subst.push_back(net::EscapeForHTML(base::UTF16ToUTF8(line_name)));
+    subst.push_back(net::EscapeForHTML(base::UTF16ToUTF8(line)));
   } else {
     resource = IDR_NOTIFICATION_2LINE_HTML;
-    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(title)));
-    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(body)));
+    subst.push_back(net::EscapeForHTML(base::UTF16ToUTF8(title)));
+    subst.push_back(net::EscapeForHTML(base::UTF16ToUTF8(body)));
   }
   // body text direction
   subst.push_back(dir == blink::WebTextDirectionRightToLeft ?
@@ -258,8 +374,8 @@ base::string16 DesktopNotificationService::CreateDataUrl(
   }
 
   std::string data = ReplaceStringPlaceholders(template_html, subst, NULL);
-  return UTF8ToUTF16("data:text/html;charset=utf-8," +
-                      net::EscapeQueryParamValue(data, false));
+  return base::UTF8ToUTF16("data:text/html;charset=utf-8," +
+                               net::EscapeQueryParamValue(data, false));
 }
 
 // static
@@ -443,6 +559,15 @@ void DesktopNotificationService::RequestPermission(
   // so don't ask the cache.
   ContentSetting setting = GetContentSetting(origin);
   if (setting == CONTENT_SETTING_ASK) {
+    if (PermissionBubbleManager::Enabled()) {
+      PermissionBubbleManager* bubble_manager =
+          PermissionBubbleManager::FromWebContents(contents);
+      bubble_manager->AddRequest(new NotificationPermissionRequest(this,
+              origin, DisplayNameForOriginInProcessId(origin, process_id),
+              process_id, route_id, callback_context));
+      return;
+    }
+
     // Show an info bar requesting permission.
     InfoBarService* infobar_service =
         InfoBarService::FromWebContents(contents);
@@ -451,9 +576,7 @@ void DesktopNotificationService::RequestPermission(
     // outside of a tab.
     if (infobar_service) {
       NotificationPermissionInfoBarDelegate::Create(
-          infobar_service,
-          DesktopNotificationServiceFactory::GetForProfile(
-              Profile::FromBrowserContext(contents->GetBrowserContext())),
+          infobar_service, this,
           origin, DisplayNameForOriginInProcessId(origin, process_id),
           process_id, route_id, callback_context);
       return;
@@ -514,19 +637,19 @@ base::string16 DesktopNotificationService::DisplayNameForOriginInProcessId(
     extensions::InfoMap* extension_info_map =
         extensions::ExtensionSystem::Get(profile_)->info_map();
     if (extension_info_map) {
-      ExtensionSet extensions;
+      extensions::ExtensionSet extensions;
       extension_info_map->GetExtensionsWithAPIPermissionForSecurityOrigin(
           origin, process_id, extensions::APIPermission::kNotification,
           &extensions);
-      for (ExtensionSet::const_iterator iter = extensions.begin();
+      for (extensions::ExtensionSet::const_iterator iter = extensions.begin();
            iter != extensions.end(); ++iter) {
         NotifierId notifier_id(NotifierId::APPLICATION, (*iter)->id());
         if (IsNotifierEnabled(notifier_id))
-          return UTF8ToUTF16((*iter)->name());
+          return base::UTF8ToUTF16((*iter)->name());
       }
     }
   }
-  return UTF8ToUTF16(origin.host());
+  return base::UTF8ToUTF16(origin.host());
 }
 
 void DesktopNotificationService::NotifySettingsChange() {
@@ -618,19 +741,25 @@ void DesktopNotificationService::SetNotifierEnabled(
 
 void DesktopNotificationService::ShowWelcomeNotificationIfNecessary(
     const Notification& notification) {
-  if (!welcome_notification && message_center::IsRichNotificationEnabled()) {
-    welcome_notification.reset(
-        new WelcomeNotification(profile_, g_browser_process->message_center()));
+  if (!chrome_now_welcome_notification_ &&
+      message_center::IsRichNotificationEnabled()) {
+    chrome_now_welcome_notification_ =
+        ExtensionWelcomeNotification::Create(kChromeNowExtensionID, profile_);
   }
 
-  if (welcome_notification)
-    welcome_notification->ShowWelcomeNotificationIfNecessary(notification);
+  if (chrome_now_welcome_notification_) {
+    chrome_now_welcome_notification_->ShowWelcomeNotificationIfNecessary(
+        notification);
+  }
 }
 
 void DesktopNotificationService::OnStringListPrefChanged(
     const char* pref_name, std::set<std::string>* ids_field) {
   ids_field->clear();
-  const base::ListValue* pref_list = profile_->GetPrefs()->GetList(pref_name);
+  // Separate GetPrefs()->GetList() to analyze the crash. See crbug.com/322320
+  const PrefService* pref_service = profile_->GetPrefs();
+  CHECK(pref_service);
+  const base::ListValue* pref_list = pref_service->GetList(pref_name);
   for (size_t i = 0; i < pref_list->GetSize(); ++i) {
     std::string element;
     if (pref_list->GetString(i, &element) && !element.empty())
@@ -650,6 +779,10 @@ void DesktopNotificationService::Observe(
       content::Details<extensions::Extension>(details).ptr();
   NotifierId notifier_id(NotifierId::APPLICATION, extension->id());
   if (IsNotifierEnabled(notifier_id))
+    return;
+
+  // The settings for ephemeral apps will be persisted across cache evictions.
+  if (extension->is_ephemeral())
     return;
 
   SetNotifierEnabled(notifier_id, true);

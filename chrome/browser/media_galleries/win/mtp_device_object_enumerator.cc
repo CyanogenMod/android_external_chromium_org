@@ -6,8 +6,8 @@
 
 #include "chrome/browser/media_galleries/win/mtp_device_object_enumerator.h"
 
+#include "base/logging.h"
 #include "base/threading/thread_restrictions.h"
-#include "content/public/browser/browser_thread.h"
 
 MTPDeviceObjectEnumerator::MTPDeviceObjectEnumerator(
     const MTPDeviceObjectEntries& entries)
@@ -54,7 +54,7 @@ base::Time MTPDeviceObjectEnumerator::LastModifiedTime() {
   return object_entries_[index_].last_modified_time;
 }
 
-string16 MTPDeviceObjectEnumerator::GetObjectId() const {
+base::string16 MTPDeviceObjectEnumerator::GetObjectId() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!IsIndexReadyAndInRange())
     return base::string16();

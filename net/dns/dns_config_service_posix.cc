@@ -21,93 +21,69 @@
 #include "net/dns/notify_watcher_mac.h"
 #include "net/dns/serial_worker.h"
 
-#if defined(OS_MACOSX)
-#include <dlfcn.h>
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "net/dns/dns_config_watcher_mac.h"
+#endif
 
-#include "third_party/apple_apsl/dnsinfo.h"
-
-namespace {
-
-// dnsinfo symbols are available via libSystem.dylib, but can also be present in
-// SystemConfiguration.framework. To avoid confusion, load them explicitly from
-// libSystem.dylib.
-class DnsInfoApi {
- public:
-  typedef const char* (*dns_configuration_notify_key_t)();
-  typedef dns_config_t* (*dns_configuration_copy_t)();
-  typedef void (*dns_configuration_free_t)(dns_config_t*);
-
-  DnsInfoApi()
-      : dns_configuration_notify_key(NULL),
-        dns_configuration_copy(NULL),
-        dns_configuration_free(NULL) {
-    handle_ = dlopen("/usr/lib/libSystem.dylib",
-                     RTLD_LAZY | RTLD_NOLOAD);
-    if (!handle_)
-      return;
-    dns_configuration_notify_key =
-        reinterpret_cast<dns_configuration_notify_key_t>(
-            dlsym(handle_, "dns_configuration_notify_key"));
-    dns_configuration_copy =
-        reinterpret_cast<dns_configuration_copy_t>(
-            dlsym(handle_, "dns_configuration_copy"));
-    dns_configuration_free =
-        reinterpret_cast<dns_configuration_free_t>(
-            dlsym(handle_, "dns_configuration_free"));
-  }
-
-  ~DnsInfoApi() {
-    if (handle_)
-      dlclose(handle_);
-  }
-
-  dns_configuration_notify_key_t dns_configuration_notify_key;
-  dns_configuration_copy_t dns_configuration_copy;
-  dns_configuration_free_t dns_configuration_free;
-
- private:
-  void* handle_;
-};
-
-const DnsInfoApi& GetDnsInfoApi() {
-  static base::LazyInstance<DnsInfoApi>::Leaky api = LAZY_INSTANCE_INITIALIZER;
-  return api.Get();
-}
-
-struct DnsConfigTDeleter {
-  inline void operator()(dns_config_t* ptr) const {
-    if (GetDnsInfoApi().dns_configuration_free)
-      GetDnsInfoApi().dns_configuration_free(ptr);
-  }
-};
-
-}  // namespace
-#endif  // defined(OS_MACOSX)
+#if defined(OS_ANDROID)
+#include <sys/system_properties.h>
+#include "net/base/network_change_notifier.h"
+#endif
 
 namespace net {
 
-#if !defined(OS_ANDROID)
 namespace internal {
 
 namespace {
 
+#if !defined(OS_ANDROID)
 const base::FilePath::CharType* kFilePathHosts =
     FILE_PATH_LITERAL("/etc/hosts");
+#else
+const base::FilePath::CharType* kFilePathHosts =
+    FILE_PATH_LITERAL("/system/etc/hosts");
+#endif
 
-#if defined(OS_MACOSX)
-class ConfigWatcher {
+#if defined(OS_IOS)
+
+// There is no public API to watch the DNS configuration on iOS.
+class DnsConfigWatcher {
  public:
+  typedef base::Callback<void(bool succeeded)> CallbackType;
+
+  bool Watch(const CallbackType& callback) {
+    return false;
+  }
+};
+
+#elif defined(OS_ANDROID)
+// On Android, assume DNS config may have changed on every network change.
+class DnsConfigWatcher : public NetworkChangeNotifier::NetworkChangeObserver {
+ public:
+  DnsConfigWatcher() {
+    NetworkChangeNotifier::AddNetworkChangeObserver(this);
+  }
+
+  virtual ~DnsConfigWatcher() {
+    NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
+  }
+
   bool Watch(const base::Callback<void(bool succeeded)>& callback) {
-    if (!GetDnsInfoApi().dns_configuration_notify_key)
-      return false;
-    return watcher_.Watch(GetDnsInfoApi().dns_configuration_notify_key(),
-                          callback);
+    callback_ = callback;
+    return true;
+  }
+
+  virtual void OnNetworkChanged(NetworkChangeNotifier::ConnectionType type)
+      OVERRIDE {
+    if (!callback_.is_null() && type != NetworkChangeNotifier::CONNECTION_NONE)
+      callback_.Run(true);
   }
 
  private:
-  NotifyWatcherMac watcher_;
+  base::Callback<void(bool succeeded)> callback_;
 };
-#else
+#elif !defined(OS_MACOSX)
+// DnsConfigWatcher for OS_MACOSX is in dns_config_watcher_mac.{hh,cc}.
 
 #ifndef _PATH_RESCONF  // Normally defined in <resolv.h>
 #define _PATH_RESCONF "/etc/resolv.conf"
@@ -116,14 +92,14 @@ class ConfigWatcher {
 static const base::FilePath::CharType* kFilePathConfig =
     FILE_PATH_LITERAL(_PATH_RESCONF);
 
-class ConfigWatcher {
+class DnsConfigWatcher {
  public:
   typedef base::Callback<void(bool succeeded)> CallbackType;
 
   bool Watch(const CallbackType& callback) {
     callback_ = callback;
     return watcher_.Watch(base::FilePath(kFilePathConfig), false,
-                          base::Bind(&ConfigWatcher::OnCallback,
+                          base::Bind(&DnsConfigWatcher::OnCallback,
                                      base::Unretained(this)));
   }
 
@@ -137,6 +113,7 @@ class ConfigWatcher {
 };
 #endif
 
+#if !defined(OS_ANDROID)
 ConfigParsePosixResult ReadDnsConfig(DnsConfig* config) {
   ConfigParsePosixResult result;
   config->unhandled_options = false;
@@ -165,35 +142,60 @@ ConfigParsePosixResult ReadDnsConfig(DnsConfig* config) {
 #endif
 #endif
 
-#if defined(OS_MACOSX)
-  if (!GetDnsInfoApi().dns_configuration_copy)
-    return CONFIG_PARSE_POSIX_NO_DNSINFO;
-  scoped_ptr<dns_config_t, DnsConfigTDeleter> dns_config(
-      GetDnsInfoApi().dns_configuration_copy());
-  if (!dns_config)
-    return CONFIG_PARSE_POSIX_NO_DNSINFO;
-
-  // TODO(szym): Parse dns_config_t for resolvers rather than res_state.
-  // DnsClient can't handle domain-specific unscoped resolvers.
-  unsigned num_resolvers = 0;
-  for (int i = 0; i < dns_config->n_resolver; ++i) {
-    dns_resolver_t* resolver = dns_config->resolver[i];
-    if (!resolver->n_nameserver)
-      continue;
-    if (resolver->options && !strcmp(resolver->options, "mdns"))
-      continue;
-    ++num_resolvers;
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  ConfigParsePosixResult error = DnsConfigWatcher::CheckDnsConfig();
+  switch (error) {
+    case CONFIG_PARSE_POSIX_OK:
+      break;
+    case CONFIG_PARSE_POSIX_UNHANDLED_OPTIONS:
+      LOG(WARNING) << "dns_config has unhandled options!";
+      config->unhandled_options = true;
+    default:
+      return error;
   }
-  if (num_resolvers > 1) {
-    LOG(WARNING) << "dns_config has unhandled options!";
-    config->unhandled_options = true;
-    return CONFIG_PARSE_POSIX_UNHANDLED_OPTIONS;
-  }
-#endif  // defined(OS_MACOSX)
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
   // Override timeout value to match default setting on Windows.
   config->timeout = base::TimeDelta::FromSeconds(kDnsTimeoutSeconds);
   return result;
 }
+#else  // defined(OS_ANDROID)
+// Theoretically, this is bad. __system_property_get is not a supported API
+// (but it's currently visible to anyone using Bionic), and the properties
+// are implementation details that may disappear in future Android releases.
+// Practically, libcutils provides property_get, which is a public API, and the
+// DNS code (and its clients) are already robust against failing to get the DNS
+// config for whatever reason, so the properties can disappear and the world
+// won't end.
+// TODO(ttuttle): Depend on libcutils, then switch this (and other uses of
+//                __system_property_get) to property_get.
+ConfigParsePosixResult ReadDnsConfig(DnsConfig* dns_config) {
+   std::string dns1_string, dns2_string;
+  char property_value[PROP_VALUE_MAX];
+  __system_property_get("net.dns1", property_value);
+  dns1_string = property_value;
+  __system_property_get("net.dns2", property_value);
+  dns2_string = property_value;
+  if (dns1_string.length() == 0 && dns2_string.length() == 0)
+    return CONFIG_PARSE_POSIX_NO_NAMESERVERS;
+
+  IPAddressNumber dns1_number, dns2_number;
+  bool parsed1 = ParseIPLiteralToNumber(dns1_string, &dns1_number);
+  bool parsed2 = ParseIPLiteralToNumber(dns2_string, &dns2_number);
+  if (!parsed1 && !parsed2)
+    return CONFIG_PARSE_POSIX_BAD_ADDRESS;
+
+  if (parsed1) {
+    IPEndPoint dns1(dns1_number, dns_protocol::kDefaultPort);
+    dns_config->nameservers.push_back(dns1);
+  }
+  if (parsed2) {
+    IPEndPoint dns2(dns2_number, dns_protocol::kDefaultPort);
+    dns_config->nameservers.push_back(dns2);
+  }
+
+  return CONFIG_PARSE_POSIX_OK;
+}
+#endif
 
 }  // namespace
 
@@ -246,14 +248,15 @@ class DnsConfigServicePosix::Watcher {
 
   base::WeakPtrFactory<Watcher> weak_factory_;
   DnsConfigServicePosix* service_;
-  ConfigWatcher config_watcher_;
+  DnsConfigWatcher config_watcher_;
   base::FilePathWatcher hosts_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(Watcher);
 };
 
 // A SerialWorker that uses libresolv to initialize res_state and converts
-// it to DnsConfig.
+// it to DnsConfig (except on Android, where it reads system properties
+// net.dns1 and net.dns2; see #if around ReadDnsConfig above.)
 class DnsConfigServicePosix::ConfigReader : public SerialWorker {
  public:
   explicit ConfigReader(DnsConfigServicePosix* service)
@@ -383,6 +386,7 @@ void DnsConfigServicePosix::OnHostsChanged(bool succeeded) {
   }
 }
 
+#if !defined(OS_ANDROID)
 ConfigParsePosixResult ConvertResStateToDnsConfig(const struct __res_state& res,
                                                   DnsConfig* dns_config) {
   CHECK(dns_config != NULL);
@@ -482,6 +486,7 @@ ConfigParsePosixResult ConvertResStateToDnsConfig(const struct __res_state& res,
   }
   return CONFIG_PARSE_POSIX_OK;
 }
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace internal
 
@@ -489,21 +494,5 @@ ConfigParsePosixResult ConvertResStateToDnsConfig(const struct __res_state& res,
 scoped_ptr<DnsConfigService> DnsConfigService::CreateSystemService() {
   return scoped_ptr<DnsConfigService>(new internal::DnsConfigServicePosix());
 }
-
-#else  // defined(OS_ANDROID)
-// Android NDK provides only a stub <resolv.h> header.
-class StubDnsConfigService : public DnsConfigService {
- public:
-  StubDnsConfigService() {}
-  virtual ~StubDnsConfigService() {}
- private:
-  virtual void ReadNow() OVERRIDE {}
-  virtual bool StartWatching() OVERRIDE { return false; }
-};
-// static
-scoped_ptr<DnsConfigService> DnsConfigService::CreateSystemService() {
-  return scoped_ptr<DnsConfigService>(new StubDnsConfigService());
-}
-#endif
 
 }  // namespace net

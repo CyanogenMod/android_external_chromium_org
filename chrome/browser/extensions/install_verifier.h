@@ -41,17 +41,27 @@ class InstallVerifier : public ManagementPolicy::Provider {
                   net::URLRequestContextGetter* context_getter);
   virtual ~InstallVerifier();
 
+  // Returns whether |extension| is of a type that needs verification.
+  static bool NeedsVerification(const Extension& extension);
+
   // Initializes this object for use, including reading preferences and
   // validating the stored signature.
   void Init();
+
+  // Do we need to be bootstrapped? (i.e. do we have a signature already). If
+  // this is true, then consumers of this class should use Add/AddMany to get
+  // an initial one so that MustRemainDisabled can actually check against it.
+  bool NeedsBootstrap();
+
+  // Returns the timestamp of our InstallSignature, if we have one.
+  base::Time SignatureTimestamp();
 
   // A callback for indicating success/failure of adding new ids.
   typedef base::Callback<void(bool)> AddResultCallback;
 
   // Try adding a new |id| (or set of ids) to the list of verified ids. When
-  // this process is finished |callback| will be run with success/failure. In
-  // case of success, subsequent calls to IsVerified will begin returning true
-  // for |id|.
+  // this process is finished |callback| will be run with success/failure of
+  // the signature request (not necessarily whether the ids were verified).
   void Add(const std::string& id, const AddResultCallback& callback);
   void AddMany(const ExtensionIdSet& ids,
                const AddResultCallback& callback);
@@ -99,6 +109,10 @@ class InstallVerifier : public ManagementPolicy::Provider {
 
   // Returns whether the given |id| is included in our verified signature.
   bool IsVerified(const std::string& id) const;
+
+  // Returns true if the extension with |id| was installed later than the
+  // timestamp of our signature.
+  bool WasInstalledAfterSignature(const std::string& id) const;
 
   // Begins the process of fetching a new signature, based on applying the
   // operation at the head of the queue to the current set of ids in

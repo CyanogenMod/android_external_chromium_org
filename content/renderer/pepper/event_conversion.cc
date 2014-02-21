@@ -127,7 +127,6 @@ InputEventData GetEventWithCommonFieldsAndType(const WebInputEvent& web_event) {
   InputEventData result;
   result.event_type = ConvertEventTypes(web_event.type);
   result.event_time_stamp = EventTimeToPPTimeTicks(web_event.timeStampSeconds);
-  result.usb_key_code = 0;
   return result;
 }
 
@@ -138,7 +137,6 @@ void AppendKeyEvent(const WebInputEvent& event,
   InputEventData result = GetEventWithCommonFieldsAndType(event);
   result.event_modifiers = key_event.modifiers;
   result.key_code = key_event.windowsKeyCode;
-  result.usb_key_code = UsbKeyCodeForKeyboardEvent(key_event);
   result.code = CodeForKeyboardEvent(key_event);
   result_events->push_back(result);
 }
@@ -370,7 +368,7 @@ WebKeyboardEvent* BuildCharEvent(const InputEventData& event) {
   // Make sure to not read beyond the buffer in case some bad code doesn't
   // NULL-terminate it (this is called from plugins).
   size_t text_length_cap = WebKeyboardEvent::textLengthCap;
-  base::string16 text16 = UTF8ToUTF16(event.character_text);
+  base::string16 text16 = base::UTF8ToUTF16(event.character_text);
 
   memset(key_event->text, 0, text_length_cap);
   memset(key_event->unmodifiedText, 0, text_length_cap);

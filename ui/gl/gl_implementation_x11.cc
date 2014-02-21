@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/threading/thread_restrictions.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_glx_api_implementation.h"
@@ -38,12 +39,11 @@ void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
   impls->push_back(kGLImplementationOSMesaGL);
 }
 
-bool InitializeGLBindings(GLImplementation implementation) {
+bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
-  if (GetGLImplementation() != kGLImplementationNone)
-    return true;
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   // Allow the main thread or another to initialize these bindings
   // after instituting restrictions on I/O. Going forward they will
@@ -53,7 +53,7 @@ bool InitializeGLBindings(GLImplementation implementation) {
 
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      return InitializeGLBindingsOSMesaGL();
+      return InitializeStaticGLBindingsOSMesaGL();
     case kGLImplementationDesktopGL: {
       base::NativeLibrary library = NULL;
       const CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -87,8 +87,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(library);
       SetGLImplementation(kGLImplementationDesktopGL);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsGLX();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsGLX();
       break;
     }
     case kGLImplementationEGLGLES2: {
@@ -117,8 +117,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(gles_library);
       SetGLImplementation(kGLImplementationEGLGLES2);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsEGL();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsEGL();
 
       // These two functions take single precision float rather than double
       // precision float parameters in GLES.
@@ -127,9 +127,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       break;
     }
     case kGLImplementationMockGL: {
-      SetGLGetProcAddressProc(GetMockGLProcAddress);
       SetGLImplementation(kGLImplementationMockGL);
-      InitializeGLBindingsGL();
+      InitializeStaticGLBindingsGL();
       break;
     }
     default:
@@ -140,23 +139,29 @@ bool InitializeGLBindings(GLImplementation implementation) {
   return true;
 }
 
-bool InitializeGLExtensionBindings(GLImplementation implementation,
+bool InitializeDynamicGLBindings(GLImplementation implementation,
     GLContext* context) {
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsOSMESA(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsOSMESA(context);
       break;
     case kGLImplementationDesktopGL:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsGLX(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsGLX(context);
       break;
     case kGLImplementationEGLGLES2:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsEGL(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsEGL(context);
       break;
     case kGLImplementationMockGL:
-      InitializeGLExtensionBindingsGL(context);
+      if (!context) {
+        scoped_refptr<GLContextStubWithExtensions> mock_context(
+            new GLContextStubWithExtensions());
+        mock_context->SetGLVersionString("3.0");
+        InitializeDynamicGLBindingsGL(mock_context.get());
+      } else
+        InitializeDynamicGLBindingsGL(context);
       break;
     default:
       return false;

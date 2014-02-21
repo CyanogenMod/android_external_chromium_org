@@ -14,12 +14,13 @@
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
+#include "ipc/ipc_platform_file.h"
 #include "ui/surface/transport_dib.h"
 
 class CommandLine;
@@ -36,6 +37,7 @@ class Size;
 namespace content {
 class AudioRendererHost;
 class BrowserDemuxerAndroid;
+class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
 class PeerConnectionTrackerHost;
@@ -116,8 +118,16 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
-  virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
+  virtual void FilterURL(bool empty_allowed, GURL* url) OVERRIDE;
+#if defined(ENABLE_WEBRTC)
+  virtual void EnableAecDump(const base::FilePath& file) OVERRIDE;
+  virtual void DisableAecDump() OVERRIDE;
+  virtual void SetWebRtcLogMessageCallback(
+      base::Callback<void(const std::string&)> callback) OVERRIDE;
+#endif
+  virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
+      OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -131,10 +141,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void OnProcessLaunched() OVERRIDE;
 
   scoped_refptr<AudioRendererHost> audio_renderer_host() const;
-
-  // Tells the ResourceDispatcherHost to resume a deferred navigation without
-  // transferring it to a new renderer process.
-  void ResumeDeferredNavigation(const GlobalRequestID& request_id);
 
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
@@ -153,10 +159,23 @@ class CONTENT_EXPORT RenderProcessHostImpl
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription(int route_id);
 
+  scoped_refptr<GeolocationDispatcherHost>
+      geolocation_dispatcher_host() const {
+    return make_scoped_refptr(geolocation_dispatcher_host_);
+  }
+
+#if defined(ENABLE_WEBRTC)
+  // Fires the webrtc log message callback with |message|, if callback is set.
+  void WebRtcLogMessage(const std::string& message);
+#endif
+
   // Register/unregister the host identified by the host id in the global host
   // list.
   static void RegisterHost(int host_id, RenderProcessHost* host);
   static void UnregisterHost(int host_id);
+
+  // Implementation of FilterURL below that can be shared with the mock class.
+  static void FilterURL(RenderProcessHost* rph, bool empty_allowed, GURL* url);
 
   // Returns true if |host| is suitable for launching a new view with |site_url|
   // in the given |browser_context|.
@@ -197,6 +216,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   MessagePortMessageFilter* message_port_message_filter() const {
     return message_port_message_filter_;
+  }
+
+  void SetIsGuestForTesting(bool is_guest) {
+    is_guest_ = is_guest;
   }
 
  protected:
@@ -254,6 +277,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ProcessDied(bool already_dead);
 
   virtual void OnGpuSwitching() OVERRIDE;
+
+#if defined(ENABLE_WEBRTC)
+  // Sends |file_for_transit| to the render process.
+  void SendAecDumpFileToRenderer(IPC::PlatformFileForTransit file_for_transit);
+  void SendDisableAecDumpToRenderer();
+#endif
 
   // The registered IPC listener objects. When this list is empty, we should
   // delete ourselves.
@@ -352,6 +381,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // than once.
   bool gpu_observer_registered_;
 
+  // Set if a call to Cleanup is required once the RenderProcessHostImpl is no
+  // longer within the RenderProcessHostObserver::RenderProcessExited callbacks.
+  bool delayed_cleanup_needed_;
+
+  // Indicates whether RenderProcessHostImpl is currently iterating and calling
+  // through RenderProcessHostObserver::RenderProcessExited.
+  bool within_process_died_observer_;
+
   // Forwards power state messages to the renderer process.
   PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
 
@@ -360,6 +397,16 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
 #endif
+
+  // Message filter for geolocation messages.
+  GeolocationDispatcherHost* geolocation_dispatcher_host_;
+
+#if defined(ENABLE_WEBRTC)
+  base::Callback<void(const std::string&)> webrtc_log_message_callback_;
+#endif
+
+  // Lives on the browser's ChildThread.
+  base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

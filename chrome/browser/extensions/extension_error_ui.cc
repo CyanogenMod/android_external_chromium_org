@@ -33,7 +33,7 @@ void ExtensionErrorUI::AddBlacklistedExtension(const std::string& id) {
   blacklisted_extension_ids_->insert(id);
 }
 
-string16 ExtensionErrorUI::GenerateMessageSection(
+base::string16 ExtensionErrorUI::GenerateMessageSection(
     const ExtensionIdSet* extensions,
     int extension_template_message_id,
     int app_template_message_id) {
@@ -48,12 +48,12 @@ string16 ExtensionErrorUI::GenerateMessageSection(
         extension_service_->GetInstalledExtension(*iter);
     message += l10n_util::GetStringFUTF16(
         e->is_app() ? app_template_message_id : extension_template_message_id,
-        UTF8ToUTF16(e->name())) + char16('\n');
+        base::UTF8ToUTF16(e->name())) + base::char16('\n');
   }
   return message;
 }
 
-string16 ExtensionErrorUI::GenerateMessage() {
+base::string16 ExtensionErrorUI::GenerateMessage() {
   return GenerateMessageSection(external_extension_ids_.get(),
                                 IDS_EXTENSION_ALERT_ITEM_EXTERNAL,
                                 IDS_APP_ALERT_ITEM_EXTERNAL) +
@@ -62,24 +62,24 @@ string16 ExtensionErrorUI::GenerateMessage() {
                                 IDS_APP_ALERT_ITEM_BLACKLISTED);
 }
 
-std::vector<string16> ExtensionErrorUI::GetBubbleViewMessages() {
+std::vector<base::string16> ExtensionErrorUI::GetBubbleViewMessages() {
   if (message_.empty()) {
     message_ = GenerateMessage();
     if (message_[message_.size()-1] == '\n')
       message_.resize(message_.size()-1);
   }
-  return std::vector<string16>(1, message_);
+  return std::vector<base::string16>(1, message_);
 }
 
-string16 ExtensionErrorUI::GetBubbleViewTitle() {
+base::string16 ExtensionErrorUI::GetBubbleViewTitle() {
   return l10n_util::GetStringUTF16(IDS_EXTENSION_ALERT_TITLE);
 }
 
-string16 ExtensionErrorUI::GetBubbleViewAcceptButtonLabel() {
+base::string16 ExtensionErrorUI::GetBubbleViewAcceptButtonLabel() {
   return l10n_util::GetStringUTF16(IDS_EXTENSION_ALERT_ITEM_OK);
 }
 
-string16 ExtensionErrorUI::GetBubbleViewCancelButtonLabel() {
+base::string16 ExtensionErrorUI::GetBubbleViewCancelButtonLabel() {
   return l10n_util::GetStringUTF16(IDS_EXTENSION_ALERT_ITEM_DETAILS);
 }
 

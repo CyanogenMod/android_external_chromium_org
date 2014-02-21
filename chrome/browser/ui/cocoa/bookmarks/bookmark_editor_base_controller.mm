@@ -119,7 +119,8 @@ class BookmarkEditorBaseControllerBridge : public BookmarkModelObserver {
         importing_(false)
   { }
 
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE {
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE {
     [controller_ modelChangedPreserveSelection:YES];
   }
 
@@ -194,7 +195,6 @@ class BookmarkEditorBaseControllerBridge : public BookmarkModelObserver {
 
 @synthesize initialName = initialName_;
 @synthesize displayName = displayName_;
-@synthesize okEnabled = okEnabled_;
 
 - (id)initWithParentWindow:(NSWindow*)parentWindow
                    nibName:(NSString*)nibName
@@ -277,6 +277,8 @@ class BookmarkEditorBaseControllerBridge : public BookmarkModelObserver {
         contextInfo:nil];
 }
 
+// This constant has to match the name of the method after it.
+NSString* const kOkEnabledName = @"okEnabled";
 - (BOOL)okEnabled {
   return YES;
 }
@@ -453,9 +455,9 @@ class BookmarkEditorBaseControllerBridge : public BookmarkModelObserver {
 - (void)selectNodeInBrowser:(const BookmarkNode*)node {
   DCHECK(configuration_ == BookmarkEditor::SHOW_TREE);
   NSIndexPath* selectionPath = [self selectionPathForNode:node];
-  [self willChangeValueForKey:@"okEnabled"];
+  [self willChangeValueForKey:kOkEnabledName];
   [self setTableSelectionPath:selectionPath];
-  [self didChangeValueForKey:@"okEnabled"];
+  [self didChangeValueForKey:kOkEnabledName];
 }
 
 - (NSIndexPath*)selectionPathForNode:(const BookmarkNode*)desiredNode {

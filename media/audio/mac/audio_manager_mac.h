@@ -10,9 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "media/audio/audio_manager_base.h"
-#include "media/audio/mac/aggregate_device_manager.h"
 #include "media/audio/mac/audio_device_listener_mac.h"
 
 namespace media {
@@ -41,8 +39,7 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLowLatencyInputStream(
@@ -62,6 +59,17 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   static int HardwareSampleRateForDevice(AudioDeviceID device_id);
   static int HardwareSampleRate();
 
+  // OSX has issues with starting streams as the sytem goes into suspend and
+  // immediately after it wakes up from resume.  See http://crbug.com/160920.
+  // As a workaround we delay Start() when it occurs after suspend and for a
+  // small amount of time after resume.
+  //
+  // Output streams should consult ShouldDeferOutputStreamStart() and if true
+  // check the value again after |kStartDelayInSecsForPowerEvents| has elapsed.
+  // If false, the stream may be started immediately.
+  enum { kStartDelayInSecsForPowerEvents = 1 };
+  bool ShouldDeferOutputStreamStart();
+
  protected:
   virtual ~AudioManagerMac();
 
@@ -70,11 +78,8 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
       const AudioParameters& input_params) OVERRIDE;
 
  private:
-  bool HasUnifiedDefaultIO();
-
-  // Helper methods for constructing AudioDeviceListenerMac on the audio thread.
-  void CreateDeviceListener();
-  void DestroyDeviceListener();
+  void InitializeOnAudioThread();
+  void ShutdownOnAudioThread();
 
   int ChooseBufferSize(int output_sample_rate);
 
@@ -89,7 +94,11 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   int current_sample_rate_;
   AudioDeviceID current_output_device_;
 
-  AggregateDeviceManager aggregate_device_manager_;
+  // Helper class which monitors power events to determine if output streams
+  // should defer Start() calls.  Required to workaround an OSX bug.  See
+  // http://crbug.com/160920 for more details.
+  class AudioPowerObserver;
+  scoped_ptr<AudioPowerObserver> power_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerMac);
 };

@@ -65,7 +65,7 @@ bool CanSpecifyHostPermission(const Extension* extension,
                               const URLPattern& pattern,
                               const APIPermissionSet& permissions) {
   if (!pattern.match_all_urls() &&
-      pattern.MatchesScheme(chrome::kChromeUIScheme)) {
+      pattern.MatchesScheme(content::kChromeUIScheme)) {
     URLPatternSet chrome_scheme_hosts = ExtensionsClient::Get()->
         GetPermittedChromeSchemeHosts(extension, permissions);
     if (chrome_scheme_hosts.ContainsPattern(pattern))
@@ -95,7 +95,7 @@ bool ParseHelper(Extension* extension,
                  const char* key,
                  APIPermissionSet* api_permissions,
                  URLPatternSet* host_permissions,
-                 string16* error) {
+                 base::string16* error) {
   if (!extension->manifest()->HasKey(key))
     return true;
 
@@ -152,7 +152,7 @@ bool ParseHelper(Extension* extension,
 
     if (iter->id() == APIPermission::kExperimental) {
       if (!CanSpecifyExperimentalPermission(extension)) {
-        *error = ASCIIToUTF16(errors::kExperimentalFlagRequired);
+        *error = base::ASCIIToUTF16(errors::kExperimentalFlagRequired);
         return false;
       }
     }
@@ -183,14 +183,14 @@ bool ParseHelper(Extension* extension,
       // to match all paths.
       pattern.SetPath("/*");
       int valid_schemes = pattern.valid_schemes();
-      if (pattern.MatchesScheme(chrome::kFileScheme) &&
+      if (pattern.MatchesScheme(content::kFileScheme) &&
           !PermissionsData::CanExecuteScriptEverywhere(extension)) {
         extension->set_wants_file_access(true);
         if (!(extension->creation_flags() & Extension::ALLOW_FILE_ACCESS))
           valid_schemes &= ~URLPattern::SCHEME_FILE;
       }
 
-      if (pattern.scheme() != chrome::kChromeUIScheme &&
+      if (pattern.scheme() != content::kChromeUIScheme &&
           !PermissionsData::CanExecuteScriptEverywhere(extension)) {
         // Keep chrome:// in allowed schemes only if it's explicitly requested
         // or CanExecuteScriptEverywhere is true. If the
@@ -429,11 +429,11 @@ PermissionMessages PermissionsData::GetPermissionMessages(
 }
 
 // static
-std::vector<string16> PermissionsData::GetPermissionMessageStrings(
+std::vector<base::string16> PermissionsData::GetPermissionMessageStrings(
     const Extension* extension) {
   base::AutoLock auto_lock(extension->permissions_data()->runtime_lock_);
   if (ShouldSkipPermissionWarnings(extension)) {
-    return std::vector<string16>();
+    return std::vector<base::string16>();
   } else {
     return PermissionMessageProvider::Get()->GetWarningMessages(
         GetActivePermissions(extension), extension->GetType());
@@ -441,11 +441,11 @@ std::vector<string16> PermissionsData::GetPermissionMessageStrings(
 }
 
 // static
-std::vector<string16> PermissionsData::GetPermissionMessageDetailsStrings(
+std::vector<base::string16> PermissionsData::GetPermissionMessageDetailsStrings(
     const Extension* extension) {
   base::AutoLock auto_lock(extension->permissions_data()->runtime_lock_);
   if (ShouldSkipPermissionWarnings(extension)) {
-    return std::vector<string16>();
+    return std::vector<base::string16>();
   } else {
     return PermissionMessageProvider::Get()->GetWarningMessagesDetails(
         GetActivePermissions(extension), extension->GetType());
@@ -476,7 +476,7 @@ bool PermissionsData::CanExecuteScriptOnPage(const Extension* extension,
   }
 
   if (!command_line->HasSwitch(switches::kExtensionsOnChromeURLs)) {
-    if (document_url.SchemeIs(chrome::kChromeUIScheme) &&
+    if (document_url.SchemeIs(content::kChromeUIScheme) &&
         !can_execute_everywhere) {
       if (error)
         *error = errors::kCannotAccessChromeUrl;
@@ -537,31 +537,34 @@ bool PermissionsData::CanExecuteScriptEverywhere(const Extension* extension) {
 
 // static
 bool PermissionsData::CanCaptureVisiblePage(const Extension* extension,
-                                            const GURL& page_url,
                                             int tab_id,
                                             std::string* error) {
+  scoped_refptr<const PermissionSet> active_permissions =
+      GetActivePermissions(extension);
+  const URLPattern all_urls(URLPattern::SCHEME_ALL,
+                            URLPattern::kAllUrlsPattern);
+  if (active_permissions->explicit_hosts().ContainsPattern(all_urls))
+    return true;
+
   if (tab_id >= 0) {
     scoped_refptr<const PermissionSet> tab_permissions =
         GetTabSpecificPermissions(extension, tab_id);
-    if (tab_permissions.get() &&
-        tab_permissions->explicit_hosts().MatchesSecurityOrigin(page_url)) {
+    if (tab_permissions &&
+        tab_permissions->HasAPIPermission(APIPermission::kTab)) {
       return true;
     }
+    if (error)
+      *error = errors::kActiveTabPermissionNotGranted;
+    return false;
   }
 
-  if (HasHostPermission(extension, page_url) ||
-      page_url.GetOrigin() == extension->url()) {
-    return true;
-  }
-
-  if (error) {
-    *error = ErrorUtils::FormatErrorMessage(errors::kCannotAccessPage,
-                                            page_url.spec());
-  }
+  if (error)
+    *error = errors::kAllURLOrActiveTabNeeded;
   return false;
 }
 
-bool PermissionsData::ParsePermissions(Extension* extension, string16* error) {
+bool PermissionsData::ParsePermissions(Extension* extension,
+                                       base::string16* error) {
   initial_required_permissions_.reset(new InitialPermissions);
   if (!ParseHelper(extension,
                    keys::kPermissions,
@@ -569,18 +572,6 @@ bool PermissionsData::ParsePermissions(Extension* extension, string16* error) {
                    &initial_required_permissions_->host_permissions,
                    error)) {
     return false;
-  }
-
-  // TODO(jeremya/kalman) do this via the features system by exposing the
-  // app.window API to platform apps, with no dependency on any permissions.
-  // See http://crbug.com/120069.
-  if (extension->is_platform_app()) {
-    initial_required_permissions_->api_permissions.insert(
-        APIPermission::kAppCurrentWindowInternal);
-    initial_required_permissions_->api_permissions.insert(
-        APIPermission::kAppRuntime);
-    initial_required_permissions_->api_permissions.insert(
-        APIPermission::kAppWindow);
   }
 
   initial_optional_permissions_.reset(new InitialPermissions);

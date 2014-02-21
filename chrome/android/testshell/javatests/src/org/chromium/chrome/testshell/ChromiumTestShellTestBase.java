@@ -12,13 +12,15 @@ import android.test.ActivityInstrumentationTestCase2;
 import android.text.TextUtils;
 import android.util.Log;
 
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
 import org.chromium.base.CommandLine;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.chrome.test.util.ApplicationData;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
-import org.chromium.content.common.ProcessInitException;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -28,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ChromiumTestShellTestBase extends
         ActivityInstrumentationTestCase2<ChromiumTestShellActivity> {
     /** The maximum time the waitForActiveShellToBeDoneLoading method will wait. */
-    private static final long WAIT_FOR_ACTIVE_SHELL_LOADING_TIMEOUT = 10000;
+    private static final long WAIT_FOR_ACTIVE_SHELL_LOADING_TIMEOUT = scaleTimeout(10000);
     private static final String TAG = "ChromiumTestShellTestBase";
 
     public ChromiumTestShellTestBase() {

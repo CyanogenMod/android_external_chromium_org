@@ -27,8 +27,8 @@ gfx::Point GetOrigin(const aura::Window* root_window) {
 // Returns true if bounds passed to window are treated as though they are in
 // screen coordinates.
 bool PositionWindowInScreenCoordinates(aura::Window* window) {
-  if (window->type() == aura::client::WINDOW_TYPE_POPUP ||
-      window->type() == aura::client::WINDOW_TYPE_TOOLTIP)
+  if (window->type() == ui::wm::WINDOW_TYPE_POPUP ||
+      window->type() == ui::wm::WINDOW_TYPE_TOOLTIP)
     return true;
 
   Widget* widget = Widget::GetWidgetForNativeView(window);
@@ -86,11 +86,13 @@ void DesktopScreenPositionClient::SetBounds(
     return;
   }
 
-  DesktopNativeWidgetAura* desktop_native_widget =
-      DesktopNativeWidgetAura::ForWindow(window);
-  if (desktop_native_widget) {
-    root->GetDispatcher()->SetHostBounds(bounds);
+  internal::NativeWidgetPrivate* desktop_native_widget =
+      DesktopNativeWidgetAura::ForWindow(root);
+  if (desktop_native_widget &&
+      desktop_native_widget->GetNativeView() == window) {
+    // |window| is the content_window.
     // Setting bounds of root resizes |window|.
+    root->GetDispatcher()->host()->SetBounds(bounds);
   } else {
     window->SetBounds(bounds);
   }

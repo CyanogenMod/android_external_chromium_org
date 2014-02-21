@@ -11,6 +11,8 @@
 #include "chrome/browser/history/scored_history_match.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+
 namespace history {
 
 // Returns a VisitInfoVector that includes |num_visits| spread over the
@@ -226,6 +228,29 @@ TEST_F(ScoredHistoryMatchTest, ScoringBookmarks) {
   EXPECT_GT(scored_with_bookmark.raw_score(), scored.raw_score());
 }
 
+TEST_F(ScoredHistoryMatchTest, ScoringDiscountFrecency) {
+  // We use NowFromSystemTime() because MakeURLRow uses the same function
+  // to calculate last visit time when building a row.
+  base::Time now = base::Time::NowFromSystemTime();
+
+  std::string url_string("http://fedcba.com/");
+  const GURL url(url_string);
+  URLRow row(MakeURLRow(url_string.c_str(), "", 1, 1, 1));
+  RowWordStarts word_starts;
+  PopulateWordStarts(row, &word_starts);
+  VisitInfoVector visits = CreateVisitInfoVector(1, 1, now);
+  ScoredHistoryMatch scored(row, visits, std::string(), ASCIIToUTF16("fed"),
+                            Make1Term("fed"), word_starts, now, NULL);
+
+  // With properly discounted scores, the final raw_score should be lower.
+  base::AutoReset<bool> reset(
+      &ScoredHistoryMatch::discount_frecency_when_few_visits_, true);
+  ScoredHistoryMatch scored_with_discount_frecency(
+      row, visits, std::string(), ASCIIToUTF16("fed"),
+      Make1Term("fed"), word_starts, now, NULL);
+  EXPECT_LT(scored_with_discount_frecency.raw_score(), scored.raw_score());
+}
+
 TEST_F(ScoredHistoryMatchTest, ScoringTLD) {
   // We use NowFromSystemTime() because MakeURLRow uses the same function
   // to calculate last visit time when building a row.
@@ -285,6 +310,7 @@ TEST_F(ScoredHistoryMatchTest, Inlining) {
 
   {
     URLRow row(MakeURLRow("http://www.google.com", "abcdef", 3, 30, 1));
+    PopulateWordStarts(row, &word_starts);
     ScoredHistoryMatch scored_a(row, visits, std::string(),
                                 ASCIIToUTF16("g"), Make1Term("g"),
                                 word_starts, now, NULL);
@@ -309,6 +335,7 @@ TEST_F(ScoredHistoryMatchTest, Inlining) {
 
   {
     URLRow row(MakeURLRow("http://teams.foo.com", "abcdef", 3, 30, 1));
+    PopulateWordStarts(row, &word_starts);
     ScoredHistoryMatch scored_a(row, visits, std::string(),
                                 ASCIIToUTF16("t"), Make1Term("t"),
                                 word_starts, now, NULL);
@@ -328,6 +355,7 @@ TEST_F(ScoredHistoryMatchTest, Inlining) {
 
   {
     URLRow row(MakeURLRow("https://www.testing.com", "abcdef", 3, 30, 1));
+    PopulateWordStarts(row, &word_starts);
     ScoredHistoryMatch scored_a(row, visits, std::string(),
                                 ASCIIToUTF16("t"), Make1Term("t"),
                                 word_starts, now, NULL);

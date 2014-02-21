@@ -7,6 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/host/win/chromoting_module.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 
 namespace remoting {
 
@@ -25,8 +26,8 @@ STDMETHODIMP RdpDesktopSession::Connect(
   DCHECK(task_runner->BelongsToCurrentThread());
 
   client_.reset(new RdpClient(task_runner, task_runner,
-                              SkISize::Make(width, height),
-                              UTF16ToUTF8(terminal_id), this));
+                              webrtc::DesktopSize(width, height),
+                              base::UTF16ToUTF8(terminal_id), this));
   return S_OK;
 }
 

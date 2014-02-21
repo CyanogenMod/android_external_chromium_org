@@ -6,7 +6,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/lazy_background_page_test_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -15,7 +14,9 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/common/context_menu_params.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/test_management_policy.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "ui/base/models/menu_model.h"
@@ -30,9 +31,9 @@ namespace {
 // RenderViewContextMenu where extension items get added and executed.
 class TestRenderViewContextMenu : public RenderViewContextMenu {
  public:
-  TestRenderViewContextMenu(WebContents* web_contents,
+  TestRenderViewContextMenu(content::RenderFrameHost* render_frame_host,
                             const content::ContextMenuParams& params)
-      : RenderViewContextMenu(web_contents, params) {}
+      : RenderViewContextMenu(render_frame_host, params) {}
 
   virtual ~TestRenderViewContextMenu() {}
 
@@ -120,7 +121,7 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
     params.link_url = link_url;
     params.frame_url = frame_url;
     TestRenderViewContextMenu* menu =
-        new TestRenderViewContextMenu(web_contents, params);
+        new TestRenderViewContextMenu(web_contents->GetMainFrame(), params);
     menu->Init();
     return menu;
   }
@@ -133,10 +134,10 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
   // Returns a pointer to the currently loaded extension with |name|, or null
   // if not found.
   const extensions::Extension* GetExtensionNamed(std::string name) {
-    const ExtensionSet* extensions =
+    const extensions::ExtensionSet* extensions =
         browser()->profile()->GetExtensionService()->extensions();
-    ExtensionSet::const_iterator i;
-    for (i = extensions->begin(); i != extensions->end(); ++i) {
+    for (extensions::ExtensionSet::const_iterator i = extensions->begin();
+         i != extensions->end(); ++i) {
       if ((*i)->name() == name) {
         return i->get();
       }
@@ -204,8 +205,8 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
   }
 
  bool MenuHasExtensionItemWithLabel(TestRenderViewContextMenu* menu,
-                                     const std::string& label) {
-    base::string16 label16 = UTF8ToUTF16(label);
+                                    const std::string& label) {
+    base::string16 label16 = base::UTF8ToUTF16(label);
     std::map<int, MenuItem::Id>::iterator i;
     for (i = menu->extension_items().extension_item_map_.begin();
          i != menu->extension_items().extension_item_map_.end(); ++i) {
@@ -390,16 +391,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, MAYBE_TopLevel) {
 
   ASSERT_TRUE(menu->GetMenuModelAndItemIndex(
       IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST, &model, &index));
-  EXPECT_EQ(UTF8ToUTF16("An Extension with multiple Context Menus"),
-                        model->GetLabelAt(index++));
-  EXPECT_EQ(UTF8ToUTF16("Context Menu #1 - Extension #2"),
-                        model->GetLabelAt(index++));
-  EXPECT_EQ(UTF8ToUTF16("Context Menu #2 - Extension #3"),
-                        model->GetLabelAt(index++));
-  EXPECT_EQ(UTF8ToUTF16("Context Menu #3 - Extension #1"),
-                        model->GetLabelAt(index++));
-  EXPECT_EQ(UTF8ToUTF16("Ze Extension with multiple Context Menus"),
-                        model->GetLabelAt(index++));
+  EXPECT_EQ(base::UTF8ToUTF16("An Extension with multiple Context Menus"),
+                              model->GetLabelAt(index++));
+  EXPECT_EQ(base::UTF8ToUTF16("Context Menu #1 - Extension #2"),
+                              model->GetLabelAt(index++));
+  EXPECT_EQ(base::UTF8ToUTF16("Context Menu #2 - Extension #3"),
+                              model->GetLabelAt(index++));
+  EXPECT_EQ(base::UTF8ToUTF16("Context Menu #3 - Extension #1"),
+                              model->GetLabelAt(index++));
+  EXPECT_EQ(base::UTF8ToUTF16("Ze Extension with multiple Context Menus"),
+                              model->GetLabelAt(index++));
 }
 
 // Checks that in |menu|, the item at |index| has type |expected_type| and a
@@ -409,7 +410,7 @@ static void ExpectLabelAndType(const char* expected_label,
                                const MenuModel& menu,
                                int index) {
   EXPECT_EQ(expected_type, menu.GetTypeAt(index));
-  EXPECT_EQ(UTF8ToUTF16(expected_label), menu.GetLabelAt(index));
+  EXPECT_EQ(base::UTF8ToUTF16(expected_label), menu.GetLabelAt(index));
 }
 
 // In the separators test we build a submenu with items and separators in two
@@ -475,7 +476,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Separators) {
   base::string16 label;
   ASSERT_TRUE(menu->GetMenuModelAndItemIndex(
       IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST, &model, &index));
-  EXPECT_EQ(UTF8ToUTF16(extension->name()), model->GetLabelAt(index));
+  EXPECT_EQ(base::UTF8ToUTF16(extension->name()), model->GetLabelAt(index));
   ASSERT_EQ(MenuModel::TYPE_SUBMENU, model->GetTypeAt(index));
 
   // Get the submenu and verify the items there.
@@ -492,7 +493,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Separators) {
   menu.reset(CreateMenu(browser(), url, GURL(), GURL()));
   ASSERT_TRUE(menu->GetMenuModelAndItemIndex(
       IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST, &model, &index));
-  EXPECT_EQ(UTF8ToUTF16("parent"), model->GetLabelAt(index));
+  EXPECT_EQ(base::UTF8ToUTF16("parent"), model->GetLabelAt(index));
   submenu = model->GetSubmenuModelAt(index);
   ASSERT_TRUE(submenu != NULL);
   VerifyMenuForSeparatorsTest(*submenu);

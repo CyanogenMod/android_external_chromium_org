@@ -17,6 +17,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
+// For SetHardwareKeyboardLayoutForTesting.
+#include "chromeos/ime/fake_input_method_delegate.h"
 #include "chromeos/ime/input_method_delegate.h"
 // TODO(nona): move this header from this file.
 #include "grit/generated_resources.h"
@@ -30,17 +32,6 @@ const struct {
   const char* input_method_id;
   const char* indicator_text;
 } kMappingFromIdToIndicatorText[] = {
-  // To distinguish from "xkb:us::eng"
-  { "xkb:us:altgr-intl:eng", "EXTD" },
-  { "xkb:us:dvorak:eng", "DV" },
-  { "xkb:us:intl:eng", "INTL" },
-  { "xkb:us:colemak:eng", "CO" },
-  { "english-m", "??" },
-  { "xkb:de:neo:ger", "NEO" },
-  // To distinguish from "xkb:es::spa"
-  { "xkb:es:cat:cat", "CAS" },
-  // To distinguish from "xkb:gb::eng"
-  { "xkb:gb:dvorak:eng", "DV" },
   // To distinguish from "xkb:jp::jpn"
   // TODO(nona): Make following variables configurable. http://crbug.com/232260.
   { "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us", "\xe3\x81\x82" },
@@ -337,7 +328,7 @@ base::string16 InputMethodUtil::TranslateString(
   if (TranslateStringInternal(english_string, &localized_string)) {
     return localized_string;
   }
-  return UTF8ToUTF16(english_string);
+  return base::UTF8ToUTF16(english_string);
 }
 
 bool InputMethodUtil::IsValidInputMethodId(
@@ -380,7 +371,7 @@ std::string InputMethodUtil::GetInputMethodDisplayNameFromId(
   base::string16 display_name;
   if (!extension_ime_util::IsExtensionIME(input_method_id) &&
       TranslateStringInternal(input_method_id, &display_name)) {
-    return UTF16ToUTF8(display_name);
+    return base::UTF16ToUTF8(display_name);
   }
   // Return an empty string if the display name is not found.
   return "";
@@ -390,12 +381,18 @@ base::string16 InputMethodUtil::GetInputMethodShortName(
     const InputMethodDescriptor& input_method) const {
   // For the status area, we use two-letter, upper-case language code like
   // "US" and "JP".
-  base::string16 text;
 
+  // Use the indicator string if set.
+  if (!input_method.indicator().empty()) {
+    return base::UTF8ToUTF16(input_method.indicator());
+  }
+
+  base::string16 text;
   // Check special cases first.
   for (size_t i = 0; i < kMappingFromIdToIndicatorTextLen; ++i) {
-    if (kMappingFromIdToIndicatorText[i].input_method_id == input_method.id()) {
-      text = UTF8ToUTF16(kMappingFromIdToIndicatorText[i].indicator_text);
+    if (kMappingFromIdToIndicatorText[i].input_method_id ==
+        input_method.id()) {
+      text = base::UTF8ToUTF16(kMappingFromIdToIndicatorText[i].indicator_text);
       break;
     }
   }
@@ -405,7 +402,7 @@ base::string16 InputMethodUtil::GetInputMethodShortName(
       IsKeyboardLayout(input_method.id())) {
     const size_t kMaxKeyboardLayoutNameLen = 2;
     const base::string16 keyboard_layout =
-        UTF8ToUTF16(GetKeyboardLayoutName(input_method.id()));
+        base::UTF8ToUTF16(GetKeyboardLayoutName(input_method.id()));
     text = StringToUpperASCII(keyboard_layout).substr(
         0, kMaxKeyboardLayoutNameLen);
   }
@@ -420,10 +417,10 @@ base::string16 InputMethodUtil::GetInputMethodShortName(
     const size_t kMaxLanguageNameLen = 2;
     DCHECK(!input_method.language_codes().empty());
     const std::string language_code = input_method.language_codes().at(0);
-    text = StringToUpperASCII(UTF8ToUTF16(language_code)).substr(
+    text = StringToUpperASCII(base::UTF8ToUTF16(language_code)).substr(
         0, kMaxLanguageNameLen);
   }
-  DCHECK(!text.empty());
+  DCHECK(!text.empty()) << input_method.id();
   return text;
 }
 
@@ -446,7 +443,7 @@ base::string16 InputMethodUtil::GetInputMethodLongName(
     const InputMethodDescriptor& input_method) const {
   if (!input_method.name().empty()) {
     // If the descriptor has a name, use it.
-    return UTF8ToUTF16(input_method.name());
+    return base::UTF8ToUTF16(input_method.name());
   }
 
   // We don't show language here.  Name of keyboard layout or input method
@@ -470,7 +467,7 @@ base::string16 InputMethodUtil::GetInputMethodLongName(
     const base::string16 language_name = delegate_->GetDisplayLanguageName(
         language_code);
 
-    text = language_name + UTF8ToUTF16(" - ") + text;
+    text = language_name + base::UTF8ToUTF16(" - ") + text;
   }
 
   DCHECK(!text.empty());
@@ -603,16 +600,67 @@ void InputMethodUtil::GetLanguageCodesFromInputMethodIds(
   }
 }
 
-std::string InputMethodUtil::GetHardwareInputMethodId() const {
-  const std::string input_method_id = delegate_->GetHardwareKeyboardLayout();
+std::string InputMethodUtil::GetLanguageDefaultInputMethodId(
+    const std::string& language_code) {
+  std::vector<std::string> candidates;
+  GetInputMethodIdsFromLanguageCode(
+      language_code, input_method::kKeyboardLayoutsOnly, &candidates);
+  if (candidates.size())
+    return candidates.front();
 
-  if (input_method_id.empty()) {
+  return std::string();
+}
+
+void InputMethodUtil::UpdateHardwareLayoutCache() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  hardware_layouts_.clear();
+  hardware_login_layouts_.clear();
+  Tokenize(delegate_->GetHardwareKeyboardLayouts(), ",", &hardware_layouts_);
+
+  for (size_t i = 0; i < hardware_layouts_.size(); ++i) {
+    if (IsLoginKeyboard(hardware_layouts_[i]))
+      hardware_login_layouts_.push_back(hardware_layouts_[i]);
+  }
+  if (hardware_layouts_.empty()) {
     // This is totally fine if it's empty. The hardware keyboard layout is
     // not stored if startup_manifest.json (OEM customization data) is not
     // present (ex. Cr48 doen't have that file).
-    return GetFallbackInputMethodDescriptor().id();
+    hardware_layouts_.push_back(GetFallbackInputMethodDescriptor().id());
   }
-  return input_method_id;
+
+  if (hardware_login_layouts_.empty())
+    hardware_login_layouts_.push_back(GetFallbackInputMethodDescriptor().id());
+}
+
+void InputMethodUtil::SetHardwareKeyboardLayoutForTesting(
+    const std::string& layout) {
+  delegate_->SetHardwareKeyboardLayoutForTesting(layout);
+  UpdateHardwareLayoutCache();
+}
+
+const std::vector<std::string>&
+    InputMethodUtil::GetHardwareInputMethodIds() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  // Once the initialization is done, at least one input method should be set.
+  if (hardware_layouts_.empty())
+    UpdateHardwareLayoutCache();
+  return hardware_layouts_;
+}
+
+const std::vector<std::string>&
+    InputMethodUtil::GetHardwareLoginInputMethodIds() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  // Once the initialization is done, at least one input method should be set.
+  if (hardware_login_layouts_.empty())
+    UpdateHardwareLayoutCache();
+  return hardware_login_layouts_;
+}
+
+bool InputMethodUtil::IsLoginKeyboard(const std::string& input_method_id)
+    const {
+  const InputMethodDescriptor* ime =
+      GetInputMethodDescriptorFromId(input_method_id);
+  return ime ? ime->is_login_keyboard() : false;
 }
 
 void InputMethodUtil::SetComponentExtensions(
@@ -636,6 +684,7 @@ InputMethodDescriptor InputMethodUtil::GetFallbackInputMethodDescriptor() {
   languages.push_back("en-US");
   return InputMethodDescriptor("xkb:us::eng",
                                "",
+                               "US",
                                layouts,
                                languages,
                                true,  // login keyboard.

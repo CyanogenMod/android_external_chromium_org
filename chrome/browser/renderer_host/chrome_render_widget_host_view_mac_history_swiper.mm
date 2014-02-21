@@ -11,6 +11,11 @@
 #import "base/mac/sdk_forward_declarations.h"
 #import "chrome/browser/ui/cocoa/history_overlay_controller.h"
 
+// Once we call `[NSEvent trackSwipeEventWithOptions:]`, we cannot reliably
+// expect NSTouch callbacks. We set this variable to YES and ignore NSTouch
+// callbacks.
+static BOOL forceMagicMouse = NO;
+
 @implementation HistorySwiper
 @synthesize delegate = delegate_;
 
@@ -49,6 +54,11 @@
   hasHorizontalScrollbar_ = hasHorizontalScrollbar;
 }
 
+// Is is theoretically possible for multiple simultaneous gestures to occur, if
+// the user has multiple input devices. There will be 2 beginGesture events, but
+// only 1 endGesture event. The unfinished gesture will continue to send
+// touchesMoved events, but when the gesture finishes there is not endGesture
+// callback. We ignore this case, because it is sufficiently unlikely to occur.
 - (void)beginGestureWithEvent:(NSEvent*)event {
   inGesture_ = YES;
   ++currentGestureId_;
@@ -56,6 +66,8 @@
   historySwipeCancelled_ = NO;
   gestureStartPointValid_ = NO;
   gotUnhandledWheelEvent_ = NO;
+  receivedTouch_ = NO;
+  mouseScrollDelta_ = NSZeroSize;
 }
 
 - (void)endGestureWithEvent:(NSEvent*)event {
@@ -102,10 +114,12 @@
 // called before the gesture begins, and the touches in an event are only
 // available after the gesture begins.
 - (void)touchesBeganWithEvent:(NSEvent*)event {
+  receivedTouch_ = YES;
   // Do nothing.
 }
 
 - (void)touchesMovedWithEvent:(NSEvent*)event {
+  receivedTouch_ = YES;
   if (![self shouldProcessEventForHistorySwiping:event])
     return;
 
@@ -123,6 +137,7 @@
   }
 }
 - (void)touchesCancelledWithEvent:(NSEvent*)event {
+  receivedTouch_ = YES;
   if (![self shouldProcessEventForHistorySwiping:event])
     return;
 
@@ -130,6 +145,7 @@
     [self cancelHistorySwipe];
 }
 - (void)touchesEndedWithEvent:(NSEvent*)event {
+  receivedTouch_ = YES;
   if (![self shouldProcessEventForHistorySwiping:event])
     return;
 
@@ -225,15 +241,17 @@
 - (void)beginHistorySwipeInDirection:
         (history_swiper::NavigationDirection)direction
                                event:(NSEvent*)event {
-  // There shouldn't be an existing history overlay.
-  DCHECK(historyOverlay_ == nil);
+  // We cannot make any assumptions about the current state of the
+  // historyOverlay_, since users may attempt to use multiple gesture input
+  // devices simultaneously, which confuses Cocoa.
+  [self endHistorySwipe];
 
   HistoryOverlayController* historyOverlay = [[HistoryOverlayController alloc]
       initForMode:(direction == history_swiper::kForwards)
                      ? kHistoryOverlayModeForward
                      : kHistoryOverlayModeBack];
   [historyOverlay showPanelForView:[delegate_ viewThatWantsHistoryOverlay]];
-  historyOverlay_ = [historyOverlay retain];
+  historyOverlay_ = historyOverlay;
 
   // Record whether the user was swiping forwards or backwards.
   historySwipeDirection_ = direction;
@@ -274,15 +292,160 @@
   }
 }
 
+// We use an entirely different set of logic for magic mouse swipe events,
+// since we do not get NSTouch callbacks.
+- (BOOL)maybeHandleMagicMouseHistorySwiping:(NSEvent*)theEvent {
+  // The 'trackSwipeEventWithOptions:' api doesn't handle momentum events.
+  if ([theEvent phase] == NSEventPhaseNone)
+    return NO;
+
+  mouseScrollDelta_.width += [theEvent scrollingDeltaX];
+  mouseScrollDelta_.height += [theEvent scrollingDeltaY];
+
+  BOOL isHorizontalGesture =
+    std::abs(mouseScrollDelta_.width) > std::abs(mouseScrollDelta_.height);
+  if (!isHorizontalGesture)
+    return NO;
+
+  BOOL isRightScroll = [theEvent scrollingDeltaX] < 0;
+  history_swiper::NavigationDirection direction =
+      isRightScroll ? history_swiper::kForwards : history_swiper::kBackwards;
+  BOOL browserCanMove =
+      [self browserCanNavigateInDirection:direction event:theEvent];
+  if (!browserCanMove)
+    return NO;
+
+  if (isRightScroll) {
+    if (hasHorizontalScrollbar_ && !isPinnedRight_)
+      return NO;
+  } else {
+    if (hasHorizontalScrollbar_ && !isPinnedLeft_)
+      return NO;
+  }
+
+  [self initiateMagicMouseHistorySwipe:isRightScroll event:theEvent];
+  return YES;
+}
+
+- (void)initiateMagicMouseHistorySwipe:(BOOL)isRightScroll
+                                 event:(NSEvent*)event {
+  // Released by the tracking handler once the gesture is complete.
+  HistoryOverlayController* historyOverlay = [[HistoryOverlayController alloc]
+      initForMode:isRightScroll ? kHistoryOverlayModeForward
+                                : kHistoryOverlayModeBack];
+
+  // The way this API works: gestureAmount is between -1 and 1 (float).  If
+  // the user does the gesture for more than about 30% (i.e. < -0.3 or >
+  // 0.3) and then lets go, it is accepted, we get a NSEventPhaseEnded,
+  // and after that the block is called with amounts animating towards 1
+  // (or -1, depending on the direction).  If the user lets go below that
+  // threshold, we get NSEventPhaseCancelled, and the amount animates
+  // toward 0.  When gestureAmount has reaches its final value, i.e. the
+  // track animation is done, the handler is called with |isComplete| set
+  // to |YES|.
+  // When starting a backwards navigation gesture (swipe from left to right,
+  // gestureAmount will go from 0 to 1), if the user swipes from left to
+  // right and then quickly back to the left, this call can send
+  // NSEventPhaseEnded and then animate to gestureAmount of -1. For a
+  // picture viewer, that makes sense, but for back/forward navigation users
+  // find it confusing. There are two ways to prevent this:
+  // 1. Set Options to NSEventSwipeTrackingLockDirection. This way,
+  //    gestureAmount will always stay > 0.
+  // 2. Pass min:0 max:1 (instead of min:-1 max:1). This way, gestureAmount
+  //    will become less than 0, but on the quick swipe back to the left,
+  //    NSEventPhaseCancelled is sent instead.
+  // The current UI looks nicer with (1) so that swiping the opposite
+  // direction after the initial swipe doesn't cause the shield to move
+  // in the wrong direction.
+  forceMagicMouse = YES;
+  [event trackSwipeEventWithOptions:NSEventSwipeTrackingLockDirection
+    dampenAmountThresholdMin:-1
+    max:1
+    usingHandler:^(CGFloat gestureAmount,
+                   NSEventPhase phase,
+                   BOOL isComplete,
+                   BOOL *stop) {
+        if (phase == NSEventPhaseBegan) {
+          [historyOverlay
+              showPanelForView:[delegate_ viewThatWantsHistoryOverlay]];
+          return;
+        }
+
+        BOOL ended = phase == NSEventPhaseEnded;
+
+        // Dismiss the panel before navigation for immediate visual feedback.
+        CGFloat progress = std::abs(gestureAmount) / 0.3;
+        BOOL finished = progress >= 1.0;
+        progress = MAX(0.0, progress);
+        progress = MIN(1.0, progress);
+        [historyOverlay setProgress:progress finished:finished];
+
+        // |gestureAmount| obeys -[NSEvent isDirectionInvertedFromDevice]
+        // automatically.
+        Browser* browser =
+            chrome::FindBrowserWithWindow(historyOverlay.view.window);
+        if (ended && browser) {
+          if (isRightScroll)
+            chrome::GoForward(browser, CURRENT_TAB);
+          else
+            chrome::GoBack(browser, CURRENT_TAB);
+        }
+
+        if (isComplete) {
+          [historyOverlay dismiss];
+          [historyOverlay release];
+        }
+  }];
+}
+
 // Checks if |theEvent| should trigger history swiping, and if so, does
 // history swiping. Returns YES if the event was consumed or NO if it should
 // be passed on to the renderer.
+//
+// There are 4 types of scroll wheel events:
+// 1. Magic mouse swipe events.
+//      These are identical to magic trackpad events, except that there are no
+//      NSTouch callbacks.  The only way to accurately track these events is
+//      with the  `trackSwipeEventWithOptions:` API. scrollingDelta{X,Y} is not
+//      accurate over long distances (it is computed using the speed of the
+//      swipe, rather than just the distance moved by the fingers).
+// 2. Magic trackpad swipe events.
+//      These are the most common history swipe events. Our logic is
+//      predominantly designed to handle this use case.
+// 3. Traditional mouse scrollwheel events.
+//      These should not initiate scrolling. They can be distinguished by the
+//      fact that `phase` and `momentumPhase` both return NSEventPhaseNone.
+// 4. Momentum swipe events.
+//      After a user finishes a swipe, the system continues to generate
+//      artificial callbacks. `phase` returns NSEventPhaseNone, but
+//      `momentumPhase` does not. Unfortunately, the callbacks don't work
+//      properly (OSX 10.9). Sometimes, the system start sending momentum swipe
+//      events instead of trackpad swipe events while the user is still
+//      2-finger swiping.
 - (BOOL)maybeHandleHistorySwiping:(NSEvent*)theEvent {
+  if (![theEvent respondsToSelector:@selector(phase)])
+    return NO;
+
+  // Check for regular mouse wheel scroll events.
+  if ([theEvent phase] == NSEventPhaseNone &&
+      [theEvent momentumPhase] == NSEventPhaseNone) {
+    return NO;
+  }
+
   // We've already processed this gesture.
   if (lastProcessedGestureId_ == currentGestureId_) {
+    // A new event may come in before it's recognized as a gesture.
+    // We have not yet reset the state from the last gesture.
+    // Let it pass through.
+    if ([theEvent phase] == NSEventPhaseBegan ||
+        [theEvent phase] == NSEventPhaseMayBegin) {
+      return NO;
+    }
+
     // The user cancelled the history swiper. Ignore all events.
     if (historySwipeCancelled_)
       return NO;
+
     // The user completed the history swiper. Swallow all events.
     return YES;
   }
@@ -299,11 +462,20 @@
   if (!gotUnhandledWheelEvent_)
     return NO;
 
-  if (![theEvent respondsToSelector:@selector(phase)])
+  // If the window has a horizontal scroll bar, sometimes Cocoa gets confused
+  // and sends us momentum scroll wheel events instead of gesture scroll events
+  // (even though the user is still actively swiping).
+  if ([theEvent phase] != NSEventPhaseChanged &&
+      [theEvent momentumPhase] != NSEventPhaseChanged) {
+    return NO;
+  }
+
+  if (!inGesture_)
     return NO;
 
-  if ([theEvent phase] != NSEventPhaseChanged)
-    return NO;
+  if (!receivedTouch_ || forceMagicMouse) {
+    return [self maybeHandleMagicMouseHistorySwiping:theEvent];
+  }
 
   CGFloat yDelta = gestureCurrentPoint_.y - gestureStartPoint_.y;
   CGFloat xDelta = gestureCurrentPoint_.x - gestureStartPoint_.x;
@@ -342,5 +514,10 @@
   [self beginHistorySwipeInDirection:direction event:theEvent];
   return YES;
 }
+@end
 
+@implementation HistorySwiper (PrivateExposedForTesting)
++ (void)resetMagicMouseState {
+  forceMagicMouse = NO;
+}
 @end

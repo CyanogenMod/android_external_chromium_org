@@ -31,6 +31,11 @@ FakeSafeBrowsingDatabaseManager& FakeSafeBrowsingDatabaseManager::Enable() {
   return *this;
 }
 
+FakeSafeBrowsingDatabaseManager& FakeSafeBrowsingDatabaseManager::Disable() {
+  enabled_ = false;
+  return *this;
+}
+
 FakeSafeBrowsingDatabaseManager&
 FakeSafeBrowsingDatabaseManager::ClearUnsafe() {
   unsafe_ids_.clear();
@@ -55,6 +60,26 @@ FakeSafeBrowsingDatabaseManager& FakeSafeBrowsingDatabaseManager::SetUnsafe(
     const std::string& a, const std::string& b, const std::string& c) {
   SetUnsafe(a, b);
   unsafe_ids_.insert(c);
+  return *this;
+}
+
+FakeSafeBrowsingDatabaseManager& FakeSafeBrowsingDatabaseManager::SetUnsafe(
+    const std::string& a, const std::string& b, const std::string& c,
+    const std::string& d) {
+  SetUnsafe(a, b, c);
+  unsafe_ids_.insert(d);
+  return *this;
+}
+
+FakeSafeBrowsingDatabaseManager& FakeSafeBrowsingDatabaseManager::AddUnsafe(
+    const std::string& a) {
+  unsafe_ids_.insert(a);
+  return *this;
+}
+
+FakeSafeBrowsingDatabaseManager& FakeSafeBrowsingDatabaseManager::RemoveUnsafe(
+    const std::string& a) {
+  unsafe_ids_.erase(a);
   return *this;
 }
 

@@ -43,7 +43,7 @@ OverflowButton::OverflowButton(views::ButtonListener* listener)
   bottom_image_ = rb.GetImageNamed(IDR_AURA_LAUNCHER_OVERFLOW).ToImageSkia();
 
 
-  set_accessibility_focusable(true);
+  SetAccessibilityFocusable(true);
   SetAccessibleName(l10n_util::GetStringUTF16(IDS_ASH_SHELF_OVERFLOW_NAME));
 }
 
@@ -57,7 +57,7 @@ void OverflowButton::PaintBackground(gfx::Canvas* canvas, int alpha) {
   gfx::Rect bounds(GetContentsBounds());
   gfx::Rect rect(0, 0, kButtonHoverSize, kButtonHoverSize);
   ShelfLayoutManager* shelf =
-      ShelfLayoutManager::ForLauncher(GetWidget()->GetNativeView());
+      ShelfLayoutManager::ForShelf(GetWidget()->GetNativeView());
 
   // Nudge the background a little to line up right.
   if (shelf->IsHorizontalAlignment()) {
@@ -85,15 +85,15 @@ void OverflowButton::PaintBackground(gfx::Canvas* canvas, int alpha) {
 }
 
 void OverflowButton::OnPaint(gfx::Canvas* canvas) {
-  ShelfLayoutManager* layout_manager = ShelfLayoutManager::ForLauncher(
-      GetWidget()->GetNativeView());
+  ShelfLayoutManager* layout_manager =
+      ShelfLayoutManager::ForShelf(GetWidget()->GetNativeView());
   ShelfAlignment alignment = layout_manager->GetAlignment();
 
   gfx::Rect bounds(GetContentsBounds());
   if (ash::switches::UseAlternateShelfLayout()) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     int background_image_id = 0;
-    if (layout_manager->shelf_widget()->launcher()->IsShowingOverflowBubble())
+    if (layout_manager->shelf_widget()->shelf()->IsShowingOverflowBubble())
       background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_PRESSED;
     else if(layout_manager->shelf_widget()->GetDimsShelf())
       background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_ON_BLACK;

@@ -2,11 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
-
-from telemetry import test
-
 from measurements import smoothness
+from telemetry import test
 
 
 class SmoothnessTop25(test.Test):
@@ -17,9 +14,9 @@ class SmoothnessTop25(test.Test):
   page_set = 'page_sets/top_25.json'
 
 
+@test.Disabled('mac')
 class SmoothnessToughCanvasCases(test.Test):
   test = smoothness.Smoothness
-  enabled = sys.platform != 'darwin'
   page_set = 'page_sets/tough_canvas_cases.json'
 
 
@@ -31,11 +28,40 @@ class SmoothnessKeyMobileSites(test.Test):
   page_set = 'page_sets/key_mobile_sites.json'
 
 
-class SmoothnessToughSchedulingCases(test.Test):
-  """Measures rendering statistics while interacting with pages that have
-  challenging scheduling properties.
-
-  https://docs.google.com/a/chromium.org/document/d/
-      17yhE5Po9By0sCdM1yZT3LiUECaUr_94rQt9j-4tOQIM/view"""
+class SmoothnessToughAnimationCases(test.Test):
   test = smoothness.Smoothness
-  page_set = 'page_sets/tough_scheduling_cases.json'
+  page_set = 'page_sets/tough_animation_cases.json'
+
+
+class SmoothnessKeySilkCases(test.Test):
+  """Measures rendering statistics for the key silk cases without GPU
+  rasterization
+  """
+  test = smoothness.Smoothness
+  page_set = 'page_sets/key_silk_cases.json'
+
+class SmoothnessThreadedRasterizationKeySilkCases(test.Test):
+  """Measures rendering statistics for the key silk cases without GPU
+  rasterization
+  """
+  tag = 'disable_gpu_rasterization'
+  test = smoothness.Smoothness
+  page_set = 'page_sets/key_silk_cases.json'
+  def CustomizeBrowserOptions(self, options):
+    options.AppendExtraBrowserArgs('--enable-threaded-compositing')
+    options.AppendExtraBrowserArgs('--force-compositing-mode')
+    options.AppendExtraBrowserArgs('--enable-impl-side-painting')
+    options.AppendExtraBrowserArgs('--disable-gpu-rasterization')
+
+
+class SmoothnessGpuRasterizationKeySilkCases(test.Test):
+  """Measures rendering statistics for the key silk cases with GPU rasterization
+  """
+  tag = 'enable_gpu_rasterization'
+  test = smoothness.Smoothness
+  page_set = 'page_sets/key_silk_cases.json'
+  def CustomizeBrowserOptions(self, options):
+    options.AppendExtraBrowserArgs('--enable-threaded-compositing')
+    options.AppendExtraBrowserArgs('--force-compositing-mode')
+    options.AppendExtraBrowserArgs('--enable-impl-side-painting')
+    options.AppendExtraBrowserArgs('--enable-gpu-rasterization')

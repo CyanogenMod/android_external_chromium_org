@@ -5,6 +5,7 @@
 #include "net/tools/quic/quic_server_session.h"
 
 #include "base/logging.h"
+#include "net/quic/quic_connection.h"
 #include "net/quic/reliable_quic_stream.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
 
@@ -14,13 +15,11 @@ namespace tools {
 QuicServerSession::QuicServerSession(
     const QuicConfig& config,
     QuicConnection* connection,
-    QuicSessionOwner* owner)
-    : QuicSession(connection, config, true),
-      owner_(owner) {
-}
+    QuicServerSessionVisitor* visitor)
+    : QuicSession(connection, config),
+      visitor_(visitor) {}
 
-QuicServerSession::~QuicServerSession() {
-}
+QuicServerSession::~QuicServerSession() {}
 
 void QuicServerSession::InitializeSession(
     const QuicCryptoServerConfig& crypto_config) {
@@ -35,34 +34,39 @@ QuicCryptoServerStream* QuicServerSession::CreateQuicCryptoServerStream(
 void QuicServerSession::OnConnectionClosed(QuicErrorCode error,
                                            bool from_peer) {
   QuicSession::OnConnectionClosed(error, from_peer);
-  owner_->OnConnectionClosed(connection()->guid(), error);
+  visitor_->OnConnectionClosed(connection()->guid(), error);
 }
 
-bool QuicServerSession::ShouldCreateIncomingReliableStream(QuicStreamId id) {
+void QuicServerSession::OnWriteBlocked() {
+  QuicSession::OnWriteBlocked();
+  visitor_->OnWriteBlocked(connection());
+}
+
+bool QuicServerSession::ShouldCreateIncomingDataStream(QuicStreamId id) {
   if (id % 2 == 0) {
-    DLOG(INFO) << "Invalid incoming even stream_id:" << id;
+    DVLOG(1) << "Invalid incoming even stream_id:" << id;
     connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);
     return false;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
-    DLOG(INFO) << "Failed to create a new incoming stream with id:" << id
-               << " Already " << GetNumOpenStreams() << " open.";
+    DVLOG(1) << "Failed to create a new incoming stream with id:" << id
+             << " Already " << GetNumOpenStreams() << " open.";
     connection()->SendConnectionClose(QUIC_TOO_MANY_OPEN_STREAMS);
     return false;
   }
   return true;
 }
 
-ReliableQuicStream* QuicServerSession::CreateIncomingReliableStream(
+QuicDataStream* QuicServerSession::CreateIncomingDataStream(
     QuicStreamId id) {
-  if (!ShouldCreateIncomingReliableStream(id)) {
+  if (!ShouldCreateIncomingDataStream(id)) {
     return NULL;
   }
 
   return new QuicSpdyServerStream(id, this);
 }
 
-ReliableQuicStream* QuicServerSession::CreateOutgoingReliableStream() {
+QuicDataStream* QuicServerSession::CreateOutgoingDataStream() {
   DLOG(ERROR) << "Server push not yet supported";
   return NULL;
 }

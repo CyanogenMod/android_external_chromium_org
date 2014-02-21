@@ -21,6 +21,7 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
@@ -44,15 +45,16 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
@@ -60,6 +62,7 @@
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/breakpad/app/breakpad_linux.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_types.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -89,6 +92,9 @@ const char WizardController::kLocallyManagedUserCreationScreenName[] =
   "locally-managed-user-creation-flow";
 const char WizardController::kAppLaunchSplashScreenName[] =
   "app-launch-splash";
+
+// static
+const int WizardController::kMinAudibleOutputVolumePercent = 10;
 
 // Passing this parameter as a "first screen" initiates full OOBE flow.
 const char WizardController::kOutOfBoxScreenName[] = "oobe";
@@ -130,6 +136,11 @@ WizardController::WizardController(chromeos::LoginDisplayHost* host,
       weak_factory_(this) {
   DCHECK(default_controller_ == NULL);
   default_controller_ = this;
+
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
+      content::NotificationService::AllSources());
 }
 
 WizardController::~WizardController() {
@@ -162,7 +173,9 @@ void WizardController::Init(
   //
   // TODO (ygorshenin@): remove IsEnterpriseManaged() check once
   // crbug.com/241313 will be fixed.
-  if (!g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  if (!connector->IsEnterpriseManaged()) {
     const PrefService::PrefInitializationStatus status =
         GetLocalState()->GetInitializationStatus();
     if (status == PrefService::INITIALIZATION_STATUS_ERROR) {
@@ -387,8 +400,8 @@ void WizardController::ShowTermsOfServiceScreen() {
   // of Service have been specified through policy. In all other cases, advance
   // to the user image screen immediately.
   if (!chromeos::UserManager::Get()->IsLoggedInAsPublicAccount() ||
-      !ProfileManager::GetDefaultProfile()->GetPrefs()->IsManagedPreference(
-          prefs::kTermsOfServiceURL)) {
+      !ProfileManager::GetActiveUserProfile()->GetPrefs()->
+          IsManagedPreference(prefs::kTermsOfServiceURL)) {
     ShowUserImageScreen();
     return;
   }
@@ -530,9 +543,8 @@ void WizardController::OnUserImageSelected() {
       FROM_HERE,
       base::Bind(&chromeos::LoginUtils::DoBrowserLaunch,
                  base::Unretained(chromeos::LoginUtils::Get()),
-                 ProfileManager::GetDefaultProfile(), host_));
+                 ProfileManager::GetActiveUserProfile(), host_));
   host_ = NULL;
-  // TODO(avayvod): Sync image with Google Sync.
 }
 
 void WizardController::OnUserImageSkipped() {
@@ -814,12 +826,32 @@ void WizardController::HideErrorScreen(WizardScreen* parent_screen) {
   SetCurrentScreen(parent_screen);
 }
 
+void WizardController::Observe(int type,
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
+  if (type != chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK) {
+    NOTREACHED();
+    return;
+  }
+  const AccessibilityStatusEventDetails* a11y_details =
+      content::Details<const AccessibilityStatusEventDetails>(details).ptr();
+  CrasAudioHandler* cras = CrasAudioHandler::Get();
+  if (!a11y_details->enabled)
+    return;
+  if (cras->IsOutputMuted()) {
+    cras->SetOutputMute(false);
+    cras->SetOutputVolumePercent(kMinAudibleOutputVolumePercent);
+  } else if (cras->GetOutputVolumePercent() < kMinAudibleOutputVolumePercent) {
+    cras->SetOutputVolumePercent(kMinAudibleOutputVolumePercent);
+  }
+}
+
 void WizardController::AutoLaunchKioskApp() {
   KioskAppManager::App app_data;
   std::string app_id = KioskAppManager::Get()->GetAutoLaunchApp();
   CHECK(KioskAppManager::Get()->GetApp(app_id, &app_data));
 
-  host_->StartAppLaunch(app_id);
+  host_->StartAppLaunch(app_id, false /* diagnostic_mode */);
 }
 
 // static
@@ -840,13 +872,15 @@ void WizardController::SkipPostLoginScreensForTesting() {
 
 // static
 bool WizardController::ShouldAutoStartEnrollment() {
-  return g_browser_process->browser_policy_connector()->
-      GetDeviceCloudPolicyManager()->ShouldAutoStartEnrollment();
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  return connector->GetDeviceCloudPolicyManager()->ShouldAutoStartEnrollment();
 }
 
 bool WizardController::CanExitEnrollment() const {
-  return g_browser_process->browser_policy_connector()->
-      GetDeviceCloudPolicyManager()->CanExitEnrollment();
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  return connector->GetDeviceCloudPolicyManager()->CanExitEnrollment();
 }
 
 void WizardController::OnLocalStateInitialized(bool /* succeeded */) {

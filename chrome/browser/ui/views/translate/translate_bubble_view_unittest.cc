@@ -42,11 +42,7 @@ class MockTranslateBubbleModel : public TranslateBubbleModel {
     view_state_transition_.SetViewState(view_state);
   }
 
-  virtual TranslateErrors::Type GetErrorType() const OVERRIDE {
-    return error_type_;
-  }
-
-  virtual void SetErrorType(TranslateErrors::Type error_type) OVERRIDE {
+  virtual void ShowError(TranslateErrors::Type error_type) OVERRIDE {
     error_type_ = error_type;
   }
 
@@ -105,7 +101,7 @@ class MockTranslateBubbleModel : public TranslateBubbleModel {
     revert_translation_called_ = true;
   }
 
-  virtual void TranslationDeclined() OVERRIDE {
+  virtual void TranslationDeclined(bool explicitly_closed) OVERRIDE {
     translation_declined_called_ = true;
   }
 
@@ -155,7 +151,7 @@ class TranslateBubbleViewTest : public views::ViewsTestBase {
     scoped_ptr<TranslateBubbleModel> model(mock_model_);
     bubble_ = new TranslateBubbleView(anchor_widget_->GetContentsView(),
                                       model.Pass(),
-                                      NULL,
+                                      TranslateErrors::NONE,
                                       NULL);
     views::BubbleDelegateView::CreateBubble(bubble_)->Show();
   }
@@ -199,10 +195,9 @@ TEST_F(TranslateBubbleViewTest, ShowOriginalButton) {
 }
 
 TEST_F(TranslateBubbleViewTest, TryAgainButton) {
-  bubble_->SwitchView(TranslateBubbleModel::VIEW_STATE_ERROR);
-  bubble_->model()->SetErrorType(TranslateErrors::NETWORK);
+  bubble_->SwitchToErrorView(TranslateErrors::NETWORK);
 
-  EXPECT_EQ(TranslateErrors::NETWORK, bubble_->model()->GetErrorType());
+  EXPECT_EQ(TranslateErrors::NETWORK, mock_model_->error_type_);
 
   // Click the "Try again" button to translate.
   EXPECT_FALSE(mock_model_->translate_called_);
@@ -263,10 +258,10 @@ TEST_F(TranslateBubbleViewTest, DoneButton) {
   // are applied.
   EXPECT_FALSE(mock_model_->translate_called_);
   bubble_->source_language_combobox_->SetSelectedIndex(10);
-  bubble_->HandleComboboxSelectedIndexChanged(
+  bubble_->HandleComboboxPerformAction(
       TranslateBubbleView::COMBOBOX_ID_SOURCE_LANGUAGE);
   bubble_->target_language_combobox_->SetSelectedIndex(20);
-  bubble_->HandleComboboxSelectedIndexChanged(
+  bubble_->HandleComboboxPerformAction(
       TranslateBubbleView::COMBOBOX_ID_TARGET_LANGUAGE);
   bubble_->HandleButtonPressed(TranslateBubbleView::BUTTON_ID_DONE);
   EXPECT_TRUE(mock_model_->translate_called_);

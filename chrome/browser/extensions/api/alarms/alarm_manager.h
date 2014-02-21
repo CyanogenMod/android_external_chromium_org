@@ -122,6 +122,10 @@ class AlarmManager
                            ReleasedExtensionPollsInfrequently);
   FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest, TimerRunning);
   FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest, MinimumGranularity);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest,
+                           DifferentMinimumGranularities);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest,
+                           RepeatingAlarmsScheduledPredictably);
   friend class ProfileKeyedAPIFactory<AlarmManager>;
 
   typedef std::string ExtensionId;
@@ -180,6 +184,10 @@ class AlarmManager
   void ReadFromStorage(const std::string& extension_id,
                        scoped_ptr<base::Value> value);
 
+  // Set the timer to go off at the specified |time|, and set |next_poll_time|
+  // appropriately.
+  void SetNextPollTime(const base::Time& time);
+
   // Schedules the next poll of alarms for when the next soonest alarm runs,
   // but not more often than the minimum granularity of all alarms.
   void ScheduleNextPoll();
@@ -222,8 +230,8 @@ class AlarmManager
   // The previous time that alarms were run.
   base::Time last_poll_time_;
 
-  // Next poll's time. Used only by unit tests.
-  base::Time test_next_poll_time_;
+  // Next poll's time.
+  base::Time next_poll_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AlarmManager);
 };

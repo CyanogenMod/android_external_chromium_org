@@ -11,7 +11,8 @@
 namespace content {
 
 FileUtilitiesMessageFilter::FileUtilitiesMessageFilter(int process_id)
-    : process_id_(process_id) {
+    : BrowserMessageFilter(FileUtilitiesMsgStart),
+      process_id_(process_id) {
 }
 
 FileUtilitiesMessageFilter::~FileUtilitiesMessageFilter() {
@@ -36,10 +37,10 @@ bool FileUtilitiesMessageFilter::OnMessageReceived(const IPC::Message& message,
 
 void FileUtilitiesMessageFilter::OnGetFileInfo(
     const base::FilePath& path,
-    base::PlatformFileInfo* result,
-    base::PlatformFileError* status) {
-  *result = base::PlatformFileInfo();
-  *status = base::PLATFORM_FILE_OK;
+    base::File::Info* result,
+    base::File::Error* status) {
+  *result = base::File::Info();
+  *status = base::File::FILE_OK;
 
   // Get file metadata only when the child process has been granted
   // permission to read the file.
@@ -49,7 +50,7 @@ void FileUtilitiesMessageFilter::OnGetFileInfo(
   }
 
   if (!base::GetFileInfo(path, result))
-    *status = base::PLATFORM_FILE_ERROR_FAILED;
+    *status = base::File::FILE_ERROR_FAILED;
 }
 
 }  // namespace content

@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_DOM_DISTILLER_CORE_DOM_TASK_TRACKER_H_
-#define COMPONENTS_DOM_DISTILLER_CORE_DOM_TASK_TRACKER_H_
+#ifndef COMPONENTS_DOM_DISTILLER_CORE_TASK_TRACKER_H_
+#define COMPONENTS_DOM_DISTILLER_CORE_TASK_TRACKER_H_
+
+#include <string>
+#include <vector>
 
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "components/dom_distiller/core/article_entry.h"
 #include "components/dom_distiller/core/distiller.h"
@@ -15,7 +19,7 @@ class GURL;
 
 namespace dom_distiller {
 
-class DistilledPageProto;
+class DistilledArticleProto;
 
 // A handle to a request to view a DOM distiller entry or URL. The request will
 // be cancelled when the handle is destroyed.
@@ -37,10 +41,10 @@ class ViewRequestDelegate {
  public:
   virtual ~ViewRequestDelegate() {}
   // Called when the distilled article contents are available. The
-  // DistilledPageProto is owned by a TaskTracker instance and is invalidated
+  // DistilledArticleProto is owned by a TaskTracker instance and is invalidated
   // when the corresponding ViewerHandle is destroyed (or when the
   // DomDistillerService is destroyed).
-  virtual void OnArticleReady(DistilledPageProto* proto) = 0;
+  virtual void OnArticleReady(const DistilledArticleProto* article_proto) = 0;
 };
 
 // A TaskTracker manages the various tasks related to viewing, saving,
@@ -64,7 +68,8 @@ class ViewRequestDelegate {
 class TaskTracker {
  public:
   typedef base::Callback<void(TaskTracker*)> CancelCallback;
-  typedef base::Callback<void(const ArticleEntry&, DistilledPageProto*)>
+  typedef base::Callback<
+      void(const ArticleEntry&, const DistilledArticleProto*, bool)>
       SaveCallback;
 
   TaskTracker(const ArticleEntry& entry, CancelCallback callback);
@@ -74,17 +79,26 @@ class TaskTracker {
   void StartDistiller(DistillerFactory* factory);
   void StartBlobFetcher();
 
-  void SetSaveCallback(SaveCallback callback);
+  void AddSaveCallback(const SaveCallback& callback);
+
+  void CancelSaveCallbacks();
 
   // The ViewerHandle should be destroyed before the ViewRequestDelegate.
   scoped_ptr<ViewerHandle> AddViewer(ViewRequestDelegate* delegate);
 
-  bool HasEntryId(const std::string& entry_id);
-  bool HasUrl(const GURL& url);
+  const std::string& GetEntryId() const;
+  bool HasEntryId(const std::string& entry_id) const;
+  bool HasUrl(const GURL& url) const;
 
  private:
-  void OnDistilledDataReady(scoped_ptr<DistilledPageProto> distilled_page);
-  void DoSaveCallback();
+  void OnDistilledDataReady(
+      scoped_ptr<DistilledArticleProto> distilled_article);
+  // Posts a task to run DoSaveCallbacks with |distillation_succeeded|.
+  void ScheduleSaveCallbacks(bool distillation_succeeded);
+
+  // Runs all callbacks passing |distillation_succeeded| and clears them. Should
+  // be called through ScheduleSaveCallbacks.
+  void DoSaveCallbacks(bool distillation_succeeded);
 
   void RemoveViewer(ViewRequestDelegate* delegate);
   void NotifyViewer(ViewRequestDelegate* delegate);
@@ -92,7 +106,7 @@ class TaskTracker {
   void MaybeCancel();
 
   CancelCallback cancel_callback_;
-  SaveCallback save_callback_;
+  std::vector<SaveCallback> save_callbacks_;
 
   scoped_ptr<Distiller> distiller_;
 
@@ -101,7 +115,8 @@ class TaskTracker {
   std::vector<ViewRequestDelegate*> viewers_;
 
   ArticleEntry entry_;
-  scoped_ptr<DistilledPageProto> distilled_page_;
+  scoped_ptr<DistilledArticleProto> distilled_article_;
+  bool distillation_complete_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

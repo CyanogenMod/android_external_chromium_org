@@ -23,7 +23,8 @@ namespace content {
 DOMStorageMessageFilter::DOMStorageMessageFilter(
     int render_process_id,
     DOMStorageContextWrapper* context)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(DOMStorageMsgStart),
+      render_process_id_(render_process_id),
       context_(context->context()),
       connection_dispatching_message_for_(0) {
 }
@@ -94,7 +95,7 @@ void DOMStorageMessageFilter::OnOpenStorageArea(int connection_id,
                                                 const GURL& origin) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!host_->OpenStorageArea(connection_id, namespace_id, origin)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DSMF_1"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DSMF_1"));
     BadMessageReceived();
   }
 }
@@ -109,7 +110,7 @@ void DOMStorageMessageFilter::OnLoadStorageArea(int connection_id,
                                                 bool* send_log_get_messages) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!host_->ExtractAreaValues(connection_id, map, send_log_get_messages)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DSMF_2"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DSMF_2"));
     BadMessageReceived();
   }
   Send(new DOMStorageMsg_AsyncOperationComplete(true));

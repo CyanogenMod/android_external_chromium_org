@@ -13,6 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/ui/elide_url.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/rounded_window.h"
@@ -33,7 +34,7 @@ const int kInternalLeftRightPadding = 2;
 const int kCornerSize = 3;
 
 // Milliseconds before we hide the status bubble widget when you mouseout.
-const int kHideDelay = 250;
+const int kHideDelayMS = 250;
 
 // How close the mouse can get to the infobubble before it starts sliding
 // off-screen.
@@ -64,7 +65,7 @@ StatusBubbleGtk::~StatusBubbleGtk() {
 }
 
 void StatusBubbleGtk::SetStatus(const base::string16& status_text_wide) {
-  std::string status_text = UTF16ToUTF8(status_text_wide);
+  std::string status_text = base::UTF16ToUTF8(status_text_wide);
   if (status_text_ == status_text)
     return;
 
@@ -104,18 +105,19 @@ void StatusBubbleGtk::SetStatusTextToURL() {
   int desired_width = allocation.width;
   if (!expanded()) {
     expand_timer_.Stop();
-    expand_timer_.Start(FROM_HERE,
-                        base::TimeDelta::FromMilliseconds(kExpandHoverDelay),
-                        this, &StatusBubbleGtk::ExpandURL);
+    expand_timer_.Start(
+        FROM_HERE,
+        base::TimeDelta::FromMilliseconds(kExpandHoverDelayMS),
+        this, &StatusBubbleGtk::ExpandURL);
     // When not expanded, we limit the size to one third the browser's
     // width.
     desired_width /= 3;
   }
 
   // TODO(tc): We don't actually use gfx::Font as the font in the status
-  // bubble.  We should extend gfx::ElideUrl to take some sort of pango font.
-  url_text_ = UTF16ToUTF8(
-      gfx::ElideUrl(url_, gfx::FontList(), desired_width, languages_));
+  // bubble.  We should extend ElideUrl to take some sort of pango font.
+  url_text_ = base::UTF16ToUTF8(
+      ElideUrl(url_, gfx::FontList(), desired_width, languages_));
   SetStatusTextTo(url_text_);
 }
 
@@ -140,7 +142,8 @@ void StatusBubbleGtk::Hide() {
 void StatusBubbleGtk::SetStatusTextTo(const std::string& status_utf8) {
   if (status_utf8.empty()) {
     hide_timer_.Stop();
-    hide_timer_.Start(FROM_HERE, base::TimeDelta::FromMilliseconds(kHideDelay),
+    hide_timer_.Start(FROM_HERE,
+                      base::TimeDelta::FromMilliseconds(kHideDelayMS),
                       this, &StatusBubbleGtk::Hide);
   } else {
     gtk_label_set_text(GTK_LABEL(label_.get()), status_utf8.c_str());

@@ -21,7 +21,7 @@
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
 
-#if defined(FILE_MANAGER_EXTENSION)
+#if defined(OS_CHROMEOS)
 #include "chrome/browser/ui/views/select_file_dialog_extension.h"
 #include "chrome/browser/ui/views/select_file_dialog_extension_factory.h"
 #endif
@@ -72,18 +72,17 @@ void ChromeBrowserMainExtraPartsAsh::PreProfileInit() {
 #if !defined(OS_CHROMEOS)
     gfx::Screen::SetScreenTypeDelegate(new ScreenTypeDelegateWin);
     ui::SelectFileDialog::SetShellDialogsDelegate(
-        &g_shell_dialogs_delegate.Get());
+        g_shell_dialogs_delegate.Pointer());
 #endif
   }
 #if defined(OS_CHROMEOS)
   // For OS_CHROMEOS, virtual keyboard needs to be initialized before profile
   // initialized. Otherwise, virtual keyboard extension will not load at login
   // screen.
-  if (keyboard::IsKeyboardEnabled())
-    keyboard::InitializeKeyboard();
+  keyboard::InitializeKeyboard();
 #endif
 
-#if defined(FILE_MANAGER_EXTENSION)
+#if defined(OS_CHROMEOS)
   ui::SelectFileDialog::SetFactory(new SelectFileDialogExtensionFactory);
 #endif
 }

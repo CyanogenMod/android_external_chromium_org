@@ -5,12 +5,12 @@
 #ifndef NET_QUIC_QUIC_CONNECTION_LOGGER_H_
 #define NET_QUIC_QUIC_CONNECTION_LOGGER_H_
 
+#include "net/base/ip_endpoint.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
 
-class BoundNetLog;
 class CryptoHandshakeMessage;
 
 // This class is a debug visitor of a QuicConnection which logs
@@ -72,6 +72,12 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   // Number of times that the current received packet sequence number is
   // smaller than the last received packet sequence number.
   size_t out_of_order_recieved_packet_count_;
+  // Number of times a truncated ACK frame was sent.
+  size_t num_truncated_acks_sent_;
+  // Number of times a truncated ACK frame was received.
+  size_t num_truncated_acks_received_;
+  // The kCADR value provided by the server in ServerHello.
+  IPEndPoint client_address_;
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionLogger);
 };
 

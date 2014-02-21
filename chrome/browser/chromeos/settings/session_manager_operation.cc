@@ -182,7 +182,12 @@ void SessionManagerOperation::ValidateDeviceSettings(
       policy::CloudPolicyValidatorBase::DM_TOKEN_NOT_REQUIRED);
   validator->ValidatePolicyType(policy::dm_protocol::kChromeDevicePolicyType);
   validator->ValidatePayload();
-  validator->ValidateSignature(*owner_key_->public_key(), false);
+  // We don't check the DMServer verification key below, because the signing
+  // key is validated when it is installed.
+  validator->ValidateSignature(owner_key_->public_key_as_string(),
+                               std::string(),  // No key validation check.
+                               std::string(),
+                               false);
   validator->StartValidation(
       base::Bind(&SessionManagerOperation::ReportValidatorStatus,
                  weak_factory_.GetWeakPtr()));

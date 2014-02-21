@@ -20,20 +20,20 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
   static scoped_ptr<YUVVideoDrawQuad> Create();
 
   void SetNew(const SharedQuadState* shared_quad_state,
-              gfx::Rect rect,
-              gfx::Rect opaque_rect,
-              gfx::SizeF tex_scale,
+              const gfx::Rect& rect,
+              const gfx::Rect& opaque_rect,
+              const gfx::SizeF& tex_scale,
               unsigned y_plane_resource_id,
               unsigned u_plane_resource_id,
               unsigned v_plane_resource_id,
               unsigned a_plane_resource_id);
 
   void SetAll(const SharedQuadState* shared_quad_state,
-              gfx::Rect rect,
-              gfx::Rect opaque_rect,
-              gfx::Rect visible_rect,
+              const gfx::Rect& rect,
+              const gfx::Rect& opaque_rect,
+              const gfx::Rect& visible_rect,
               bool needs_blending,
-              gfx::SizeF tex_scale,
+              const gfx::SizeF& tex_scale,
               unsigned y_plane_resource_id,
               unsigned u_plane_resource_id,
               unsigned v_plane_resource_id,

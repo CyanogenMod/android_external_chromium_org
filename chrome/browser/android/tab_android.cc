@@ -6,128 +6,30 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/debug/trace_event.h"
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
-#include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/history/history_tab_helper.h"
-#include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/net/net_error_tab_helper.h"
-#include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/password_manager/password_manager_delegate_impl.h"
-#include "chrome/browser/predictors/resource_prefetch_predictor_factory.h"
-#include "chrome/browser/predictors/resource_prefetch_predictor_tab_helper.h"
-#include "chrome/browser/prerender/prerender_tab_helper.h"
 #include "chrome/browser/printing/print_view_manager_basic.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/browser/ssl/ssl_tab_helper.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate_android.h"
-#include "chrome/browser/tab_contents/navigation_metrics_recorder.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/ui/alternate_error_tab_observer.h"
 #include "chrome/browser/ui/android/content_settings/popup_blocked_infobar_delegate.h"
 #include "chrome/browser/ui/android/context_menu_helper.h"
 #include "chrome/browser/ui/android/infobars/infobar_container_android.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/browser/ui/android/window_android_helper.h"
-#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
-#include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
-#include "chrome/browser/ui/browser_tab_contents.h"
-#include "chrome/browser/ui/find_bar/find_tab_helper.h"
-#include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
+#include "chrome/browser/ui/tab_helpers.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/view_type_utils.h"
 #include "jni/TabBase_jni.h"
-
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
-#endif
-
-namespace {
-
-const char kTabHelpersInitializedUserDataKey[] =
-    "TabAndroidTabHelpersInitialized";
-
-}  // namespace
-
-void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
-  // If already initialized, nothing to be done.
-  base::SupportsUserData::Data* initialization_tag =
-      contents->GetUserData(&kTabHelpersInitializedUserDataKey);
-  if (initialization_tag)
-    return;
-
-  // Mark as initialized.
-  contents->SetUserData(&kTabHelpersInitializedUserDataKey,
-                            new base::SupportsUserData::Data());
-
-  // Set the view type.
-  extensions::SetViewType(contents, extensions::VIEW_TYPE_TAB_CONTENTS);
-
-  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
-
-  // SessionTabHelper comes first because it sets up the tab ID, and other
-  // helpers may rely on that.
-  SessionTabHelper::CreateForWebContents(contents);
-
-  AlternateErrorPageTabObserver::CreateForWebContents(contents);
-  autofill::TabAutofillManagerDelegate::CreateForWebContents(contents);
-  autofill::AutofillDriverImpl::CreateForWebContentsAndDelegate(
-      contents,
-      autofill::TabAutofillManagerDelegate::FromWebContents(contents),
-      g_browser_process->GetApplicationLocale(),
-      autofill::AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
-  BookmarkTabHelper::CreateForWebContents(contents);
-  ContextMenuHelper::CreateForWebContents(contents);
-  CoreTabHelper::CreateForWebContents(contents);
-  extensions::TabHelper::CreateForWebContents(contents);
-  FaviconTabHelper::CreateForWebContents(contents);
-  FindTabHelper::CreateForWebContents(contents);
-  HistoryTabHelper::CreateForWebContents(contents);
-  InfoBarService::CreateForWebContents(contents);
-  NavigationMetricsRecorder::CreateForWebContents(contents);
-  chrome_browser_net::NetErrorTabHelper::CreateForWebContents(contents);
-  PasswordManagerDelegateImpl::CreateForWebContents(contents);
-  PasswordManager::CreateForWebContentsAndDelegate(
-      contents, PasswordManagerDelegateImpl::FromWebContents(contents));
-  PopupBlockerTabHelper::CreateForWebContents(contents);
-  PrefsTabHelper::CreateForWebContents(contents);
-  prerender::PrerenderTabHelper::CreateForWebContentsWithPasswordManager(
-      contents, PasswordManager::FromWebContents(contents));
-  SingleTabModeTabHelper::CreateForWebContents(contents);
-  SSLTabHelper::CreateForWebContents(contents);
-  TabSpecificContentSettings::CreateForWebContents(contents);
-  TranslateTabHelper::CreateForWebContents(contents);
-  WindowAndroidHelper::CreateForWebContents(contents);
-
-  if (predictors::ResourcePrefetchPredictorFactory::GetForProfile(profile)) {
-    predictors::ResourcePrefetchPredictorTabHelper::CreateForWebContents(
-        contents);
-  }
-
-#if defined(ENABLE_MANAGED_USERS)
-  if (profile->IsManaged())
-    ManagedModeNavigationObserver::CreateForWebContents(contents);
-#endif
-}
-
-// TODO(dtrainor): Refactor so we do not need this method.
-void TabAndroid::InitTabHelpers(content::WebContents* contents) {
-  BrowserTabContents::AttachTabHelpers(contents);
-}
 
 TabAndroid* TabAndroid::FromWebContents(content::WebContents* web_contents) {
   CoreTabHelper* core_tab_helper = CoreTabHelper::FromWebContents(web_contents);
@@ -159,6 +61,11 @@ TabAndroid::~TabAndroid() {
     return;
 
   Java_TabBase_clearNativePtr(env, obj.obj());
+}
+
+base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetJavaObject() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return weak_java_tab_.get(env);
 }
 
 int TabAndroid::GetAndroidId() const {
@@ -229,8 +136,45 @@ void TabAndroid::SetSyncId(int sync_id) {
   Java_TabBase_setSyncId(env, obj.obj(), sync_id);
 }
 
+void TabAndroid::HandlePopupNavigation(chrome::NavigateParams* params) {
+  NOTIMPLEMENTED();
+}
+
+void TabAndroid::OnReceivedHttpAuthRequest(jobject auth_handler,
+                                           const base::string16& host,
+                                           const base::string16& realm) {
+  NOTIMPLEMENTED();
+}
+
+void TabAndroid::AddShortcutToBookmark(const GURL& url,
+                                       const base::string16& title,
+                                       const SkBitmap& skbitmap,
+                                       int r_value,
+                                       int g_value,
+                                       int b_value) {
+  NOTREACHED();
+}
+
+void TabAndroid::EditBookmark(int64 node_id,
+                              const base::string16& node_title,
+                              bool is_folder,
+                              bool is_partner_bookmark) {
+  NOTREACHED();
+}
+
+void TabAndroid::OnNewTabPageReady() {
+  NOTREACHED();
+}
+
+bool TabAndroid::ShouldWelcomePageLinkToTermsOfService() {
+  NOTIMPLEMENTED();
+  return false;
+}
+
 void TabAndroid::SwapTabContents(content::WebContents* old_contents,
-                                 content::WebContents* new_contents) {
+                                 content::WebContents* new_contents,
+                                 bool did_start_load,
+                                 bool did_finish_load) {
   JNIEnv* env = base::android::AttachCurrentThread();
 
   // We need to notify the native InfobarContainer so infobars can be swapped.
@@ -246,7 +190,9 @@ void TabAndroid::SwapTabContents(content::WebContents* old_contents,
   Java_TabBase_swapWebContents(
       env,
       weak_java_tab_.get(env).obj(),
-      reinterpret_cast<intptr_t>(new_contents));
+      reinterpret_cast<intptr_t>(new_contents),
+      did_start_load,
+      did_finish_load);
 }
 
 void TabAndroid::Observe(int type,
@@ -267,11 +213,8 @@ void TabAndroid::Observe(int type,
         if (popup_blocker_helper)
           num_popups = popup_blocker_helper->GetBlockedPopupsCount();
 
-        if (num_popups > 0) {
-          PopupBlockedInfoBarDelegate::Create(
-              InfoBarService::FromWebContents(web_contents()),
-              num_popups);
-        }
+        if (num_popups > 0)
+          PopupBlockedInfoBarDelegate::Create(web_contents(), num_popups);
 
         settings->SetBlockageHasBeenIndicated(CONTENT_SETTINGS_TYPE_POPUPS);
       }
@@ -280,10 +223,17 @@ void TabAndroid::Observe(int type,
     case chrome::NOTIFICATION_FAVICON_UPDATED:
       Java_TabBase_onFaviconUpdated(env, weak_java_tab_.get(env).obj());
       break;
+    case content::NOTIFICATION_NAV_ENTRY_CHANGED:
+      Java_TabBase_onNavEntryChanged(env, weak_java_tab_.get(env).obj());
+      break;
     default:
       NOTREACHED() << "Unexpected notification " << type;
       break;
   }
+}
+
+void TabAndroid::Destroy(JNIEnv* env, jobject obj) {
+  delete this;
 }
 
 void TabAndroid::InitWebContents(JNIEnv* env,
@@ -299,7 +249,7 @@ void TabAndroid::InitWebContents(JNIEnv* env,
   DCHECK(content_view_core->GetWebContents());
 
   web_contents_.reset(content_view_core->GetWebContents());
-  InitTabHelpers(web_contents_.get());
+  TabHelpers::AttachTabHelpers(web_contents_.get());
 
   session_tab_id_.set_id(
       SessionTabHelper::FromWebContents(web_contents())->session_id().id());
@@ -322,6 +272,11 @@ void TabAndroid::InitWebContents(JNIEnv* env,
       this,
       chrome::NOTIFICATION_FAVICON_UPDATED,
       content::Source<content::WebContents>(web_contents()));
+  notification_registrar_.Add(
+      this,
+      content::NOTIFICATION_NAV_ENTRY_CHANGED,
+      content::Source<content::NavigationController>(
+           &web_contents()->GetController()));
 
   synced_tab_delegate_->SetWebContents(web_contents());
 
@@ -364,6 +319,14 @@ void TabAndroid::DestroyWebContents(JNIEnv* env,
     // Release the WebContents so it does not get deleted by the scoped_ptr.
     ignore_result(web_contents_.release());
   }
+}
+
+base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetWebContents(
+    JNIEnv* env,
+    jobject obj) {
+  if (!web_contents_.get())
+    return base::android::ScopedJavaLocalRef<jobject>();
+  return web_contents_->GetJavaWebContents();
 }
 
 base::android::ScopedJavaLocalRef<jobject> TabAndroid::GetProfileAndroid(
@@ -416,6 +379,12 @@ bool TabAndroid::Print(JNIEnv* env, jobject obj) {
 
   print_view_manager->PrintNow();
   return true;
+}
+
+static void Init(JNIEnv* env, jobject obj) {
+  TRACE_EVENT0("native", "TabAndroid::Init");
+  // This will automatically bind to the Java object and pass ownership there.
+  new TabAndroid(env, obj);
 }
 
 bool TabAndroid::RegisterTabAndroid(JNIEnv* env) {

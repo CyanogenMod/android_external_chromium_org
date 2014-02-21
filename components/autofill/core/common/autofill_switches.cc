@@ -10,6 +10,10 @@ namespace switches {
 // Flag used to tell Chrome the base url of the Autofill service.
 const char kAutofillServiceUrl[]            = "autofill-service-url";
 
+// Forces the password manager to not ignore autocomplete='off' for password
+// forms.
+const char kDisableIgnoreAutocompleteOff[]  = "do-not-ignore-autocomplete-off";
+
 // Disables an interactive autocomplete UI. See kEnableInteractiveAutocomplete
 // for a description.
 const char kDisableInteractiveAutocomplete[] =
@@ -28,10 +32,10 @@ const char kEnableInteractiveAutocomplete[] = "enable-interactive-autocomplete";
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
-// Removes the requirement that we recieved a ping from the autofill servers.
-// Used in testing.
-const char kNoAutofillNecessaryForPasswordGeneration[] =
-    "no-autofill-for-password-generation";
+// Removes the requirement that we recieved a ping from the autofill servers
+// and that the user doesn't have the given form blacklisted. Used in testing.
+const char kLocalHeuristicsOnlyForPasswordGeneration[] =
+    "local-heuristics-only-for-password-generation";
 
 // Annotates forms with Autofill field type predictions.
 const char kShowAutofillTypePredictions[]   = "show-autofill-type-predictions";

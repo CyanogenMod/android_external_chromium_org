@@ -5,20 +5,17 @@
 #ifndef CHROME_RENDERER_CHROME_CONTENT_RENDERER_CLIENT_H_
 #define CHROME_RENDERER_CHROME_CONTENT_RENDERER_CLIENT_H_
 
+#include <set>
 #include <string>
 #include <vector>
-
-#if defined(ENABLE_PLUGINS)
-#include <set>
-#endif
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "ipc/ipc_channel_proxy.h"
 
 class ChromeRenderProcessObserver;
-class ExtensionSet;
 class PrescientNetworkingDispatcher;
 class RendererNetPredictor;
 class SearchBouncer;
@@ -36,6 +33,7 @@ struct WebPluginInfo;
 namespace extensions {
 class Dispatcher;
 class Extension;
+class ExtensionSet;
 class RendererPermissionsPolicyDelegate;
 }
 
@@ -81,12 +79,13 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       const base::FilePath& plugin_path) OVERRIDE;
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain) OVERRIDE;
-  virtual bool ShouldSuppressErrorPage(const GURL& url) OVERRIDE;
+  virtual bool ShouldSuppressErrorPage(content::RenderFrame* render_frame,
+                                       const GURL& url) OVERRIDE;
   virtual void GetNavigationErrorStrings(
+      content::RenderView* render_view,
       blink::WebFrame* frame,
       const blink::WebURLRequest& failed_request,
       const blink::WebURLError& error,
-      const std::string& accept_languages,
       std::string* error_html,
       base::string16* error_description) OVERRIDE;
   virtual void DeferMediaLoad(content::RenderFrame* render_frame,
@@ -104,7 +103,6 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                                const GURL& url,
                                const GURL& first_party_for_cookies,
                                GURL* new_url) OVERRIDE;
-  virtual bool ShouldPumpEventsDuringCookieMessage() OVERRIDE;
   virtual void DidCreateScriptContext(blink::WebFrame* frame,
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
@@ -119,14 +117,6 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual bool ShouldOverridePageVisibilityState(
       const content::RenderFrame* render_frame,
       blink::WebPageVisibilityState* override_state) OVERRIDE;
-  virtual bool HandleGetCookieRequest(content::RenderView* sender,
-                                      const GURL& url,
-                                      const GURL& first_party_for_cookies,
-                                      std::string* cookies) OVERRIDE;
-  virtual bool HandleSetCookieRequest(content::RenderView* sender,
-                                      const GURL& url,
-                                      const GURL& first_party_for_cookies,
-                                      const std::string& value) OVERRIDE;
   virtual bool AllowBrowserPlugin(
       blink::WebPluginContainer* container) OVERRIDE;
   virtual const void* CreatePPAPIInterface(
@@ -138,7 +128,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       const base::string16& source) const OVERRIDE;
   virtual bool ShouldEnableSiteIsolationPolicy() const OVERRIDE;
   virtual blink::WebWorkerPermissionClientProxy*
-      CreateWorkerPermissionClientProxy(content::RenderView* render_view,
+      CreateWorkerPermissionClientProxy(content::RenderFrame* render_frame,
                                         blink::WebFrame* frame) OVERRIDE;
   virtual bool AllowPepperMediaStreamAPI(const GURL& url) OVERRIDE;
   virtual void AddKeySystems(
@@ -163,6 +153,9 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       const blink::WebPluginParams& params,
       const ChromeViewHostMsg_GetPluginInfo_Output& output);
 
+  static bool IsExtensionOrSharedModuleWhitelisted(
+      const GURL& url, const std::set<std::string>& whitelist);
+
   // TODO(mpcomplete): remove after we collect histogram data.
   // http://crbug.com/100411
   static bool IsAdblockInstalled();
@@ -185,7 +178,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   // extension app's extent.
   bool CrossesExtensionExtents(blink::WebFrame* frame,
                                const GURL& new_url,
-                               const ExtensionSet& extensions,
+                               const extensions::ExtensionSet& extensions,
                                bool is_extension_url,
                                bool is_initial_navigation);
 

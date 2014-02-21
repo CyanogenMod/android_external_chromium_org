@@ -93,6 +93,16 @@ void ChromeClassTester::CheckTag(TagDecl* tag) {
         return;
 
     CheckChromeClass(record_location, record);
+  } else if (EnumDecl* enum_decl = dyn_cast<EnumDecl>(tag)) {
+    SourceLocation enum_location = enum_decl->getInnerLocStart();
+    if (InBannedDirectory(enum_location))
+      return;
+
+    std::string base_name = enum_decl->getNameAsString();
+    if (IsIgnoredType(base_name))
+      return;
+
+    CheckChromeEnum(enum_location, enum_decl);
   }
 }
 
@@ -140,7 +150,6 @@ bool ChromeClassTester::InImplementationFile(SourceLocation record_location) {
 void ChromeClassTester::BuildBannedLists() {
   banned_namespaces_.push_back("std");
   banned_namespaces_.push_back("__gnu_cxx");
-  banned_namespaces_.push_back("WebTestRunner");
 
   // We're in the process of renaming WebKit to blink.
   // TODO(abarth): Remove WebKit once the rename is complete.
@@ -201,6 +210,9 @@ void ChromeClassTester::BuildBannedLists() {
   // non-pod class member. Probably harmless.
   ignored_record_names_.insert("MockTransaction");
 
+  // Enum type with _LAST members where _LAST doesn't mean last enum value.
+  ignored_record_names_.insert("ServerFieldType");
+
   // Used heavily in ui_unittests and once in views_unittests. Fixing this
   // isn't worth the overhead of an additional library.
   ignored_record_names_.insert("TestAnimationDelegate");
@@ -212,6 +224,9 @@ void ChromeClassTester::BuildBannedLists() {
   // Measured performance improvement on cc_perftests. See
   // https://codereview.chromium.org/11299290/
   ignored_record_names_.insert("QuadF");
+
+  // Enum type with _LAST members where _LAST doesn't mean last enum value.
+  ignored_record_names_.insert("ViewID");
 }
 
 std::string ChromeClassTester::GetNamespaceImpl(const DeclContext* context,

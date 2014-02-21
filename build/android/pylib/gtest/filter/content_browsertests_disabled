@@ -4,6 +4,7 @@ Http/MediaTest.*
 File/MediaTest.*
 WorkerTest.*
 MediaTest.*
+MediaSourceTest.ConfigChangeVideo
 WebGLConformanceTest.*
 MessagePortTest.Tests
 CrossPlatformAccessibilityBrowserTest.*
@@ -12,6 +13,8 @@ ResourceDispatcherHostBrowserTest.SyncXMLHttpRequest_DuringUnload
 
 # Crashes
 ResourceDispatcherHostBrowserTest.CrossSiteAfterCrash
+RenderFrameHostManagerTest.IgnoreRendererDebugURLsWhenCrashed
+RenderFrameHostManagerTest.ProcessExitWithSwappedOutViews
 
 # Failures
 RenderViewHostTest.BaseURLParam
@@ -26,6 +29,7 @@ ChildProcessSecurityPolicyInProcessBrowserTest.NoLeak
 SecurityExploitBrowserTest.SetWebUIProperty
 
 # Plugins are not supported.
+BrowserPluginThreadedCompositorPixelTest.*
 BrowserPluginHostTest.*
 BrowserPluginTest.*
 PluginTest.*
@@ -35,6 +39,10 @@ PluginTest.*
 DomSerializerTests.*
 
 # http://crbug.com/297230
+DumpAccessibilityTreeTest.AccessibilityAriaLevel
+DumpAccessibilityTreeTest.AccessibilityAriaProgressbar
+DumpAccessibilityTreeTest.AccessibilityListMarkers
+DumpAccessibilityTreeTest.AccessibilityUl
 DumpAccessibilityTreeTest.AccessibilityCanvas
 RendererAccessibilityTest.DetachAccessibilityObject
 RendererAccessibilityTest.EditableTextModeFocusEvents
@@ -52,9 +60,6 @@ RenderWidgetTest.OnMsgPaintAtSize
 PasswordFormConversionUtilsTest.ValidWebFormElementToPasswordForm
 PasswordFormConversionUtilsTest.InvalidWebFormElementToPasswordForm
 
-# Multiple test servers support: http://crbug/187570
-RenderFrameHostManagerTest.*
-
 # http://crbug.com/215894
 DownloadContentTest.CancelInterruptedDownload
 DownloadContentTest.CancelResumingDownload
@@ -67,29 +72,32 @@ DownloadContentTest.ResumeInterruptedDownloadBadPrecondition
 DownloadContentTest.ResumeWithDeletedFile
 
 # http://crbug.com/181069
-WebrtcBrowserTest.CanForwardRemoteStream
-WebrtcBrowserTest.CanForwardRemoteStream720p
-WebrtcBrowserTest.CanSetupVideoCall
-WebrtcBrowserTest.CanSetupAudioAndVideoCall
-WebrtcBrowserTest.CanSetupAudioAndVideoCallWithoutMsidAndBundle
-WebrtcBrowserTest.CanSetupLegacyCall
-WebrtcBrowserTest.CallWithDataOnly
-WebrtcBrowserTest.CallWithDataAndMedia
-WebrtcBrowserTest.CanMakeEmptyCallThenAddStreamsAndRenegotiate
-WebrtcBrowserTest.CallWithNewVideoMediaStream
-WebrtcBrowserTest.GetAudioAndVideoStreamAndClone
-WebrtcBrowserTest.GetAudioAndVideoStreamAndStop
-WebrtcBrowserTest.GetVideoStreamAndStop
+WebRtcBrowserTest.CanSetupLegacyCall
+WebRtcBrowserTest.CallWithDataOnly
+WebRtcBrowserTest.CallWithDataAndMedia
+WebRtcBrowserTest.CanMakeEmptyCallThenAddStreamsAndRenegotiate
 WebRTCInternalsBrowserTest.WithRealPeerConnectionCall
 WebRTCInternalsBrowserTest.NegotiateUnsupportedVideoCodec
 WebRTCInternalsBrowserTest.NegotiateNonCryptoCall
+WebRtcAecDumpBrowserTest.CallWithAecDump
+WebRtcBrowserTest.CallAndVerifyVideoMutingWorks
+WebRtcBrowserTest.CallWithAecDump
+WebRtcBrowserTest.CallWithAecDumpEnabledThenDisabled
+WebRtcBrowserTest.CallWithNewVideoMediaStream
+WebRtcBrowserTest.CallWithSctpDataAndMedia
+WebRtcBrowserTest.CallWithSctpDataOnly
+WebRtcBrowserTest.CanForwardRemoteStream
+WebRtcBrowserTest.CanForwardRemoteStream720p
+WebRtcBrowserTest.CanSetupAudioAndVideoCall
+WebRtcBrowserTest.CanSetupAudioAndVideoCallWithoutMsidAndBundle
+WebRtcBrowserTest.CanSetupVideoCall
+WebRtcBrowserTest.EstablishAudioVideoCallAndMeasureOutputLevel
+WebRtcBrowserTest.EstablishAudioVideoCallAndVerifyMutingWorks
+WebRtcBrowserTest.NegotiateOfferWithBLine
+WebRtcGetUserMediaBrowserTest.TraceVideoCaptureDeviceAndroidPerformanceDuringGetUserMedia
 
 # http://crbug.com/175683
-WebrtcBrowserTest.CallWithDataAndLaterAddMedia
-
-# http://crbug.com/311348
-WebrtcBrowserTest.CallWithSctpDataOnly
-WebrtcBrowserTest.CallWithSctpDataAndMedia
+WebRtcBrowserTest.CallWithDataAndLaterAddMedia
 
 # http://crbug.com/224134
 RenderWidgetHostBrowserTest.GetSnapshotFromRendererTest
@@ -106,12 +114,6 @@ IndexedDBBrowserTestWithCorruptLevelDB.DestroyTest
 
 BookmarkletTest.NonEmptyResult
 
-# http://crbug.com/248796
-ResourceFetcherTests.ResourceFetcher404
-ResourceFetcherTests.ResourceFetcherDeletedInCallback
-ResourceFetcherTests.ResourceFetcherTimeout
-ResourceFetcherTests.ResourceFetcherDownload
-
 # http://crbug.com/256238
 SignalTest.*
 
@@ -120,3 +122,32 @@ BrowserGpuChannelHostFactoryTest.AlreadyEstablished
 BrowserGpuChannelHostFactoryTest.Basic
 BrowserGpuChannelHostFactoryTest.CrashAndRecover
 BrowserGpuChannelHostFactoryTest.EstablishAndTerminate
+
+# http://crbug.com/338011
+WithInputHandlerProxy/TouchInputBrowserTest.MultiPointTouchPress/0
+WithInputHandlerProxy/TouchInputBrowserTest.TouchHandlerConsume/0
+WithInputHandlerProxy/TouchInputBrowserTest.TouchHandlerNoConsume/0
+WithInputHandlerProxy/TouchInputBrowserTest.TouchNoHandler/0
+WithoutInputHandlerProxy/TouchInputBrowserTest.MultiPointTouchPress/0
+WithoutInputHandlerProxy/TouchInputBrowserTest.TouchHandlerConsume/0
+WithoutInputHandlerProxy/TouchInputBrowserTest.TouchHandlerNoConsume/0
+WithoutInputHandlerProxy/TouchInputBrowserTest.TouchNoHandler/0
+
+# http://crbug.com/338408
+TracingControllerTest.EnableCaptureAndDisableMonitoring
+
+# http://crbug.com/338023
+SecurityExploitBrowserTest.AttemptDuplicateRenderViewHost
+SecurityExploitBrowserTest.AttemptDuplicateRenderWidgetHost
+
+# http://crbug.com/338411
+FrameTreeBrowserTest.NavigateWithLeftoverFrames
+
+# http://crbug.com/338421
+GinBrowserTest.GinAndGarbageCollection
+
+# http://crbug.com/341995
+TracingControllerTest.EnableCaptureAndDisableMonitoringWithFilePath
+
+# http://crbug.com/343604
+MSE_ClearKey/EncryptedMediaTest.ConfigChangeVideo/0

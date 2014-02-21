@@ -12,7 +12,6 @@
 
 #include <string.h>
 
-#include "base/safe_numerics.h"
 #include "gpu/command_buffer/common/bitfield_helpers.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/gles2_cmd_ids.h"
@@ -182,6 +181,7 @@ struct GetAttribLocation {
   typedef GetAttribLocation ValueType;
   static const CommandId kCmdId = kGetAttribLocation;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   typedef GLint Result;
 
@@ -248,6 +248,7 @@ struct GetAttribLocationBucket {
   typedef GetAttribLocationBucket ValueType;
   static const CommandId kCmdId = kGetAttribLocationBucket;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   typedef GLint Result;
 
@@ -303,6 +304,7 @@ struct GetUniformLocation {
   typedef GetUniformLocation ValueType;
   static const CommandId kCmdId = kGetUniformLocation;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   typedef GLint Result;
 
@@ -368,6 +370,7 @@ struct GetUniformLocationBucket {
   typedef GetUniformLocationBucket ValueType;
   static const CommandId kCmdId = kGetUniformLocationBucket;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   typedef GLint Result;
 
@@ -423,6 +426,7 @@ struct GenMailboxCHROMIUM {
   typedef GenMailboxCHROMIUM ValueType;
   static const CommandId kCmdId = kGenMailboxCHROMIUM;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
   CommandHeader header;
 };
 
@@ -430,6 +434,7 @@ struct InsertSyncPointCHROMIUM {
   typedef InsertSyncPointCHROMIUM ValueType;
   static const CommandId kCmdId = kInsertSyncPointCHROMIUM;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
   CommandHeader header;
 };
 

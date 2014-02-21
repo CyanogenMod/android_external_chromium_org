@@ -66,7 +66,7 @@ bool ComputeTargetNameFromDep(const Value& input_value,
   const std::string& loc = computed_location.value();
 
   // Use implicit name. The path will be "//", "//base/", "//base/i18n/", etc.
-  if (loc.size() <= 1) {
+  if (loc.size() <= 2) {
     *err = Err(input_value, "This dependency name is empty");
     return false;
   }
@@ -234,6 +234,10 @@ Label Label::Resolve(const SourceDir& current_dir,
 
 Label Label::GetToolchainLabel() const {
   return Label(toolchain_dir_, toolchain_name_);
+}
+
+Label Label::GetWithNoToolchain() const {
+  return Label(dir_, name_);
 }
 
 std::string Label::GetUserVisibleName(bool include_toolchain) const {

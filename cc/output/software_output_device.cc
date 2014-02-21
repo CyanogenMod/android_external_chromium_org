@@ -17,7 +17,7 @@ SoftwareOutputDevice::SoftwareOutputDevice() {}
 
 SoftwareOutputDevice::~SoftwareOutputDevice() {}
 
-void SoftwareOutputDevice::Resize(gfx::Size viewport_size) {
+void SoftwareOutputDevice::Resize(const gfx::Size& viewport_size) {
   if (viewport_size_ == viewport_size)
     return;
 
@@ -27,7 +27,7 @@ void SoftwareOutputDevice::Resize(gfx::Size viewport_size) {
   canvas_ = skia::AdoptRef(new SkCanvas(device_.get()));
 }
 
-SkCanvas* SoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
+SkCanvas* SoftwareOutputDevice::BeginPaint(const gfx::Rect& damage_rect) {
   DCHECK(device_);
   damage_rect_ = damage_rect;
   return canvas_.get();
@@ -42,14 +42,14 @@ void SoftwareOutputDevice::EndPaint(SoftwareFrameData* frame_data) {
 }
 
 void SoftwareOutputDevice::CopyToBitmap(
-    gfx::Rect rect, SkBitmap* output) {
+    const gfx::Rect& rect, SkBitmap* output) {
   DCHECK(device_);
   const SkBitmap& bitmap = device_->accessBitmap(false);
   bitmap.extractSubset(output, gfx::RectToSkIRect(rect));
 }
 
-void SoftwareOutputDevice::Scroll(
-    gfx::Vector2d delta, gfx::Rect clip_rect) {
+void SoftwareOutputDevice::Scroll(const gfx::Vector2d& delta,
+                                  const gfx::Rect& clip_rect) {
   NOTIMPLEMENTED();
 }
 

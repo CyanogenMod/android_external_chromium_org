@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/vibration_provider.h"
 #include "content/public/browser/content_browser_client.h"
@@ -18,7 +18,8 @@ namespace content {
 // Minimum duration of a vibration is 1 millisecond.
 const int64 kMinimumVibrationDurationMs = 1;
 
-VibrationMessageFilter::VibrationMessageFilter() {
+VibrationMessageFilter::VibrationMessageFilter()
+    : BrowserMessageFilter(ViewMsgStart) {
   provider_.reset(GetContentClient()->browser()->OverrideVibrationProvider());
   if (!provider_.get())
     provider_.reset(CreateProvider());
@@ -48,7 +49,7 @@ void VibrationMessageFilter::OnVibrate(int64 milliseconds) {
   // Though the Blink implementation already sanitizes vibration times, don't
   // trust any values passed from the renderer.
   milliseconds = std::max(kMinimumVibrationDurationMs, std::min(milliseconds,
-          base::checked_numeric_cast<int64>(blink::kVibrationDurationMax)));
+          base::checked_cast<int64>(blink::kVibrationDurationMax)));
 
   provider_->Vibrate(milliseconds);
 }

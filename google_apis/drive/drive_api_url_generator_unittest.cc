@@ -35,10 +35,20 @@ TEST_F(DriveApiUrlGeneratorTest, GetAboutGetUrl) {
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetAppsListUrl) {
+  const bool use_internal_url = true;
+  EXPECT_EQ("https://www.googleapis.com/drive/v2internal/apps",
+            url_generator_.GetAppsListUrl(use_internal_url).spec());
   EXPECT_EQ("https://www.googleapis.com/drive/v2/apps",
-            url_generator_.GetAppsListUrl().spec());
+            url_generator_.GetAppsListUrl(!use_internal_url).spec());
   EXPECT_EQ("http://127.0.0.1:12345/drive/v2/apps",
-            test_url_generator_.GetAppsListUrl().spec());
+            test_url_generator_.GetAppsListUrl(!use_internal_url).spec());
+}
+
+TEST_F(DriveApiUrlGeneratorTest, GetAppsDeleteUrl) {
+  EXPECT_EQ("https://www.googleapis.com/drive/v2internal/apps/0ADK06pfg",
+            url_generator_.GetAppsDeleteUrl("0ADK06pfg").spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2internal/apps/0ADK06pfg",
+            test_url_generator_.GetAppsDeleteUrl("0ADK06pfg").spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetFilesGetUrl) {
@@ -56,6 +66,15 @@ TEST_F(DriveApiUrlGeneratorTest, GetFilesGetUrl) {
             test_url_generator_.GetFilesGetUrl("0Bz0bd074").spec());
   EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files/file%3Afile_id",
             test_url_generator_.GetFilesGetUrl("file:file_id").spec());
+}
+
+TEST_F(DriveApiUrlGeneratorTest, GetFilesAuthorizeUrl) {
+  EXPECT_EQ(
+      "https://www.googleapis.com/drive/v2internal/files/aa/authorize?appId=bb",
+            url_generator_.GetFilesAuthorizeUrl("aa", "bb").spec());
+  EXPECT_EQ(
+      "http://127.0.0.1:12345/drive/v2internal/files/foo/authorize?appId=bar",
+      test_url_generator_.GetFilesAuthorizeUrl("foo", "bar").spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetFilesInsertUrl) {
@@ -184,6 +203,23 @@ TEST_F(DriveApiUrlGeneratorTest, GetFilesListUrl) {
             kTestPatterns[i].max_results, kTestPatterns[i].page_token,
             kTestPatterns[i].q).spec());
   }
+}
+
+TEST_F(DriveApiUrlGeneratorTest, GetFilesDeleteUrl) {
+  // |file_id| should be embedded into the url.
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/files/0ADK06pfg",
+            url_generator_.GetFilesDeleteUrl("0ADK06pfg").spec());
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/files/0Bz0bd074",
+            url_generator_.GetFilesDeleteUrl("0Bz0bd074").spec());
+  EXPECT_EQ("https://www.googleapis.com/drive/v2/files/file%3Afile_id",
+            url_generator_.GetFilesDeleteUrl("file:file_id").spec());
+
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files/0ADK06pfg",
+            test_url_generator_.GetFilesDeleteUrl("0ADK06pfg").spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files/0Bz0bd074",
+            test_url_generator_.GetFilesDeleteUrl("0Bz0bd074").spec());
+  EXPECT_EQ("http://127.0.0.1:12345/drive/v2/files/file%3Afile_id",
+            test_url_generator_.GetFilesDeleteUrl("file:file_id").spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetFilesTrashUrl) {
@@ -321,45 +357,69 @@ TEST_F(DriveApiUrlGeneratorTest, GetChildrenDeleteUrl) {
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetInitiateUploadNewFileUrl) {
+  const bool kSetModifiedDate = true;
+
   EXPECT_EQ(
       "https://www.googleapis.com/upload/drive/v2/files?uploadType=resumable",
-      url_generator_.GetInitiateUploadNewFileUrl().spec());
+      url_generator_.GetInitiateUploadNewFileUrl(!kSetModifiedDate).spec());
 
   EXPECT_EQ(
       "http://127.0.0.1:12345/upload/drive/v2/files?uploadType=resumable",
-      test_url_generator_.GetInitiateUploadNewFileUrl().spec());
+      test_url_generator_.GetInitiateUploadNewFileUrl(
+          !kSetModifiedDate).spec());
+
+  EXPECT_EQ(
+      "http://127.0.0.1:12345/upload/drive/v2/files?uploadType=resumable&"
+      "setModifiedDate=true",
+      test_url_generator_.GetInitiateUploadNewFileUrl(
+          kSetModifiedDate).spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GetInitiateUploadExistingFileUrl) {
+  const bool kSetModifiedDate = true;
+
   // |resource_id| should be embedded into the url.
   EXPECT_EQ(
       "https://www.googleapis.com/upload/drive/v2/files/0ADK06pfg"
       "?uploadType=resumable",
-      url_generator_.GetInitiateUploadExistingFileUrl("0ADK06pfg").spec());
+      url_generator_.GetInitiateUploadExistingFileUrl(
+          "0ADK06pfg", !kSetModifiedDate).spec());
   EXPECT_EQ(
       "https://www.googleapis.com/upload/drive/v2/files/0Bz0bd074"
       "?uploadType=resumable",
-      url_generator_.GetInitiateUploadExistingFileUrl("0Bz0bd074").spec());
+      url_generator_.GetInitiateUploadExistingFileUrl(
+          "0Bz0bd074", !kSetModifiedDate).spec());
   EXPECT_EQ(
       "https://www.googleapis.com/upload/drive/v2/files/file%3Afile_id"
       "?uploadType=resumable",
-      url_generator_.GetInitiateUploadExistingFileUrl("file:file_id").spec());
+      url_generator_.GetInitiateUploadExistingFileUrl(
+          "file:file_id", !kSetModifiedDate).spec());
+  EXPECT_EQ(
+      "https://www.googleapis.com/upload/drive/v2/files/file%3Afile_id"
+      "?uploadType=resumable&setModifiedDate=true",
+      url_generator_.GetInitiateUploadExistingFileUrl(
+          "file:file_id", kSetModifiedDate).spec());
 
   EXPECT_EQ(
       "http://127.0.0.1:12345/upload/drive/v2/files/0ADK06pfg"
       "?uploadType=resumable",
       test_url_generator_.GetInitiateUploadExistingFileUrl(
-          "0ADK06pfg").spec());
+          "0ADK06pfg", !kSetModifiedDate).spec());
   EXPECT_EQ(
       "http://127.0.0.1:12345/upload/drive/v2/files/0Bz0bd074"
       "?uploadType=resumable",
       test_url_generator_.GetInitiateUploadExistingFileUrl(
-          "0Bz0bd074").spec());
+          "0Bz0bd074", !kSetModifiedDate).spec());
   EXPECT_EQ(
       "http://127.0.0.1:12345/upload/drive/v2/files/file%3Afile_id"
       "?uploadType=resumable",
       test_url_generator_.GetInitiateUploadExistingFileUrl(
-          "file:file_id").spec());
+          "file:file_id", !kSetModifiedDate).spec());
+  EXPECT_EQ(
+      "http://127.0.0.1:12345/upload/drive/v2/files/file%3Afile_id"
+      "?uploadType=resumable&setModifiedDate=true",
+      test_url_generator_.GetInitiateUploadExistingFileUrl(
+          "file:file_id", kSetModifiedDate).spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, GenerateDownloadFileUrl) {

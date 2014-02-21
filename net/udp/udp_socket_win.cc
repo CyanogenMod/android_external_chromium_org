@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/rand_util.h"
 #include "net/base/io_buffer.h"
@@ -322,15 +323,23 @@ int UDPSocketWin::Connect(const IPEndPoint& address) {
 int UDPSocketWin::InternalConnect(const IPEndPoint& address) {
   DCHECK(!is_connected());
   DCHECK(!remote_address_.get());
-  int rv = CreateSocket(address);
+  int addr_family = address.GetSockAddrFamily();
+  int rv = CreateSocket(addr_family);
   if (rv < 0)
     return rv;
 
-  if (bind_type_ == DatagramSocket::RANDOM_BIND)
-    rv = RandomBind(address);
+  if (bind_type_ == DatagramSocket::RANDOM_BIND) {
+    // Construct IPAddressNumber of appropriate size (IPv4 or IPv6) of 0s,
+    // representing INADDR_ANY or in6addr_any.
+    size_t addr_size =
+        addr_family == AF_INET ? kIPv4AddressSize : kIPv6AddressSize;
+    IPAddressNumber addr_any(addr_size);
+    rv = RandomBind(addr_any);
+  }
   // else connect() does the DatagramSocket::DEFAULT_BIND
 
   if (rv < 0) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", -rv);
     Close();
     return rv;
   }
@@ -353,7 +362,7 @@ int UDPSocketWin::InternalConnect(const IPEndPoint& address) {
 
 int UDPSocketWin::Bind(const IPEndPoint& address) {
   DCHECK(!is_connected());
-  int rv = CreateSocket(address);
+  int rv = CreateSocket(address.GetSockAddrFamily());
   if (rv < 0)
     return rv;
   rv = SetSocketOptions();
@@ -370,8 +379,8 @@ int UDPSocketWin::Bind(const IPEndPoint& address) {
   return rv;
 }
 
-int UDPSocketWin::CreateSocket(const IPEndPoint& address) {
-  addr_family_ = address.GetSockAddrFamily();
+int UDPSocketWin::CreateSocket(int addr_family) {
+  addr_family_ = addr_family;
   socket_ = CreatePlatformSocket(addr_family_, SOCK_DGRAM, IPPROTO_UDP);
   if (socket_ == INVALID_SOCKET)
     return MapSystemError(WSAGetLastError());
@@ -656,21 +665,31 @@ int UDPSocketWin::DoBind(const IPEndPoint& address) {
   if (!address.ToSockAddr(storage.addr, &storage.addr_len))
     return ERR_ADDRESS_INVALID;
   int rv = bind(socket_, storage.addr, storage.addr_len);
-  return rv < 0 ? MapSystemError(WSAGetLastError()) : rv;
+  if (rv == 0)
+    return OK;
+  int last_error = WSAGetLastError();
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketBindErrorFromWinOS", last_error);
+  // Map some codes that are special to bind() separately.
+  // * WSAEACCES: If a port is already bound to a socket, WSAEACCES may be
+  //   returned instead of WSAEADDRINUSE, depending on whether the socket
+  //   option SO_REUSEADDR or SO_EXCLUSIVEADDRUSE is set and whether the
+  //   conflicting socket is owned by a different user account. See the MSDN
+  //   page "Using SO_REUSEADDR and SO_EXCLUSIVEADDRUSE" for the gory details.
+  if (last_error == WSAEACCES || last_error == WSAEADDRNOTAVAIL)
+    return ERR_ADDRESS_IN_USE;
+  return MapSystemError(last_error);
 }
 
-int UDPSocketWin::RandomBind(const IPEndPoint& address) {
+int UDPSocketWin::RandomBind(const IPAddressNumber& address) {
   DCHECK(bind_type_ == DatagramSocket::RANDOM_BIND && !rand_int_cb_.is_null());
 
-  // Construct IPAddressNumber of appropriate size (IPv4 or IPv6) of 0s.
-  IPAddressNumber ip(address.address().size());
-
   for (int i = 0; i < kBindRetries; ++i) {
-    int rv = DoBind(IPEndPoint(ip, rand_int_cb_.Run(kPortStart, kPortEnd)));
+    int rv = DoBind(IPEndPoint(address,
+                               rand_int_cb_.Run(kPortStart, kPortEnd)));
     if (rv == OK || rv != ERR_ADDRESS_IN_USE)
       return rv;
   }
-  return DoBind(IPEndPoint(ip, 0));
+  return DoBind(IPEndPoint(address, 0));
 }
 
 bool UDPSocketWin::ReceiveAddressToIPEndpoint(IPEndPoint* address) const {

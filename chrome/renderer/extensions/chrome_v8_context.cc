@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/module_system.h"
@@ -17,6 +16,7 @@
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/extension_urls.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -95,10 +95,9 @@ v8::Local<v8::Value> ChromeV8Context::CallFunction(
           function, global, argc, argv)));
 }
 
-bool ChromeV8Context::IsAnyFeatureAvailableToContext(
-    const std::string& api_name) {
+bool ChromeV8Context::IsAnyFeatureAvailableToContext(const Feature& api) {
   return ExtensionAPI::GetSharedInstance()->IsAnyFeatureAvailableToContext(
-      api_name,
+      api,
       extension_.get(),
       context_type_,
       UserScriptSlave::GetDataSourceURLForFrame(web_frame_));
@@ -106,10 +105,30 @@ bool ChromeV8Context::IsAnyFeatureAvailableToContext(
 
 Feature::Availability ChromeV8Context::GetAvailability(
     const std::string& api_name) {
+  // Hack: Hosted apps should have the availability of messaging APIs based on
+  // the URL of the page (which might have access depending on some extension
+  // with externally_connectable), not whether the app has access to messaging
+  // (which it won't).
+  const Extension* extension = extension_.get();
+  if (extension && extension->is_hosted_app() &&
+      (api_name == "runtime.connect" || api_name == "runtime.sendMessage")) {
+    extension = NULL;
+  }
   return ExtensionAPI::GetSharedInstance()->IsAvailable(api_name,
-                                                        extension_.get(),
+                                                        extension,
                                                         context_type_,
                                                         GetURL());
+}
+
+void ChromeV8Context::DispatchEvent(const char* event_name,
+                                    v8::Handle<v8::Array> args) const {
+  v8::HandleScope handle_scope(isolate());
+  v8::Context::Scope context_scope(v8_context());
+
+  v8::Handle<v8::Value> argv[] = {
+      v8::String::NewFromUtf8(isolate(), event_name), args};
+  module_system_->CallModuleMethod(
+      kEventBindings, "dispatchEvent", arraysize(argv), argv);
 }
 
 void ChromeV8Context::DispatchOnUnloadEvent() {
@@ -123,6 +142,7 @@ std::string ChromeV8Context::GetContextTypeDescription() {
     case Feature::UNBLESSED_EXTENSION_CONTEXT: return "UNBLESSED_EXTENSION";
     case Feature::CONTENT_SCRIPT_CONTEXT:      return "CONTENT_SCRIPT";
     case Feature::WEB_PAGE_CONTEXT:            return "WEB_PAGE";
+    case Feature::BLESSED_WEB_PAGE_CONTEXT:    return "BLESSED_WEB_PAGE";
   }
   NOTREACHED();
   return std::string();
@@ -141,7 +161,7 @@ void ChromeV8Context::OnResponseReceived(const std::string& name,
 
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
   v8::Handle<v8::Value> argv[] = {
-    v8::Integer::New(request_id),
+    v8::Integer::New(isolate(), request_id),
     v8::String::NewFromUtf8(isolate(), name.c_str()),
     v8::Boolean::New(isolate(), success),
     converter->ToV8Value(&response, v8_context_.NewHandle(isolate())),

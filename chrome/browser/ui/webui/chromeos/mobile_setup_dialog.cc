@@ -98,10 +98,10 @@ void MobileSetupDialogDelegate::ShowDialog(const std::string& service_path) {
     if (login_view)
       parent = login_view->GetNativeWindow();
   }
-
+  // Only the primary user can change this.
   dialog_window_ = chrome::ShowWebDialog(
       parent,
-      ProfileManager::GetDefaultProfileOrOffTheRecord(),
+      ProfileManager::GetPrimaryUserProfile(),
       this);
 }
 
@@ -109,7 +109,7 @@ ui::ModalType MobileSetupDialogDelegate::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 MobileSetupDialogDelegate::GetDialogTitle() const {
+base::string16 MobileSetupDialogDelegate::GetDialogTitle() const {
   return l10n_util::GetStringUTF16(IDS_MOBILE_SETUP_TITLE);
 }
 

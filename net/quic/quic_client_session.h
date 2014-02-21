@@ -12,11 +12,14 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
+#include "net/proxy/proxy_server.h"
 #include "net/quic/quic_connection_logger.h"
 #include "net/quic/quic_crypto_client_stream.h"
+#include "net/quic/quic_protocol.h"
 #include "net/quic/quic_reliable_client_stream.h"
 #include "net/quic/quic_session.h"
 
@@ -114,11 +117,12 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // QuicSession methods:
   virtual bool OnStreamFrames(
       const std::vector<QuicStreamFrame>& frames) OVERRIDE;
-  virtual QuicReliableClientStream* CreateOutgoingReliableStream() OVERRIDE;
+  virtual QuicReliableClientStream* CreateOutgoingDataStream() OVERRIDE;
   virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
   virtual void CloseStream(QuicStreamId stream_id) OVERRIDE;
   virtual void SendRstStream(QuicStreamId id,
-                             QuicRstStreamErrorCode error) OVERRIDE;
+                             QuicRstStreamErrorCode error,
+                             QuicStreamOffset bytes_written) OVERRIDE;
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) OVERRIDE;
   virtual void OnCryptoHandshakeMessageSent(
       const CryptoHandshakeMessage& message) OVERRIDE;
@@ -143,7 +147,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // that this session has been closed, which will delete the session.
   void CloseSessionOnError(int error);
 
-  base::Value* GetInfoAsValue(const HostPortPair& pair) const;
+  base::Value* GetInfoAsValue(const std::set<HostPortProxyPair>& aliases) const;
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -154,10 +158,14 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
   // than the number of round-trips needed for the handshake.
   int GetNumSentClientHellos() const;
 
+  // Returns true if |hostname| may be pooled onto this session.  If this
+  // is a secure QUIC session, then |hostname| must match the certificate
+  // presented during the handshake.
+  bool CanPool(const std::string& hostname) const;
+
  protected:
   // QuicSession methods:
-  virtual ReliableQuicStream* CreateIncomingReliableStream(
-      QuicStreamId id) OVERRIDE;
+  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
 
  private:
   friend class test::QuicClientSessionPeer;

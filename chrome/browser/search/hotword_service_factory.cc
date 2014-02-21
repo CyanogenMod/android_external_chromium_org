@@ -14,11 +14,6 @@
 
 // static
 HotwordService* HotwordServiceFactory::GetForProfile(Profile* profile) {
-  if (!profile->GetPrefs()->GetBoolean(prefs::kHotwordSearchEnabled) ||
-      (profile->IsOffTheRecord() &&
-       !profile->GetPrefs()->GetBoolean(prefs::kHotwordSearchIncognitoEnabled)))
-    return NULL;
-
   return static_cast<HotwordService*>(
       GetInstance()->GetServiceForBrowserContext(profile, true));
 }
@@ -26,6 +21,24 @@ HotwordService* HotwordServiceFactory::GetForProfile(Profile* profile) {
 // static
 HotwordServiceFactory* HotwordServiceFactory::GetInstance() {
   return Singleton<HotwordServiceFactory>::get();
+}
+
+// static
+bool HotwordServiceFactory::ShouldShowOptInPopup(Profile* profile) {
+  HotwordService* hotword_service = GetForProfile(profile);
+  return hotword_service && hotword_service->ShouldShowOptInPopup();
+}
+
+// static
+bool HotwordServiceFactory::IsServiceAvailable(Profile* profile) {
+  HotwordService* hotword_service = GetForProfile(profile);
+  return hotword_service && hotword_service->IsServiceAvailable();
+}
+
+// static
+bool HotwordServiceFactory::IsHotwordAllowed(Profile* profile) {
+  HotwordService* hotword_service = GetForProfile(profile);
+  return hotword_service && hotword_service->IsHotwordAllowed();
 }
 
 HotwordServiceFactory::HotwordServiceFactory()
@@ -42,15 +55,10 @@ void HotwordServiceFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* prefs) {
   prefs->RegisterBooleanPref(prefs::kHotwordSearchEnabled,
                              false,
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kHotwordOptInPopupTimesShown,
+                             0,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kHotwordSearchIncognitoEnabled,
-                             false,
-                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
-content::BrowserContext* HotwordServiceFactory::GetBrowserContextToUse(
-    content::BrowserContext* context) const {
-  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
 BrowserContextKeyedService* HotwordServiceFactory::BuildServiceInstanceFor(

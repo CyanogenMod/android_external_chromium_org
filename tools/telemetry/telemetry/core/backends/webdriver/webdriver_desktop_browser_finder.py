@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 
+from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import possible_browser
 from telemetry.core import platform
@@ -37,18 +38,23 @@ class PossibleWebDriverBrowser(possible_browser.PossibleBrowser):
   """A browser that can be controlled through webdriver API."""
 
   def __init__(self, browser_type, finder_options):
-    super(PossibleWebDriverBrowser, self).__init__(browser_type, finder_options)
+    target_os = sys.platform.lower()
+    super(PossibleWebDriverBrowser, self).__init__(browser_type, target_os,
+        finder_options)
     assert browser_type in ALL_BROWSER_TYPES, \
         'Please add %s to ALL_BROWSER_TYPES' % browser_type
+
+  @property
+  @decorators.Cache
+  def _platform_backend(self):
+    return platform.CreatePlatformBackendForCurrentOS()
 
   def CreateWebDriverBackend(self, platform_backend):
     raise NotImplementedError()
 
   def Create(self):
-    platform_backend = platform.CreatePlatformBackendForCurrentOS()
-    backend = self.CreateWebDriverBackend(platform_backend)
-    b = browser.Browser(backend, platform_backend)
-    return b
+    backend = self.CreateWebDriverBackend(self._platform_backend)
+    return browser.Browser(backend, self._platform_backend)
 
   def SupportsOptions(self, finder_options):
     if len(finder_options.extensions_to_load) != 0:
@@ -73,7 +79,7 @@ class PossibleDesktopIE(PossibleWebDriverBrowser):
     def DriverCreator():
       ie_driver_exe = os.path.join(util.GetTelemetryDir(), 'bin',
                                    'IEDriverServer_%s.exe' % self._architecture)
-      cloud_storage.GetIfChanged(cloud_storage.PUBLIC_BUCKET, ie_driver_exe)
+      cloud_storage.GetIfChanged(ie_driver_exe, cloud_storage.PUBLIC_BUCKET)
       return webdriver.Ie(executable_path=ie_driver_exe)
     return webdriver_ie_backend.WebDriverIEBackend(
         platform_backend, DriverCreator, self.finder_options.browser_options)

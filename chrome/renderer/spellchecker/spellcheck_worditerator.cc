@@ -174,14 +174,14 @@ void SpellcheckCharAttribute::CreateRuleSets(const std::string& language) {
       "$ALetterEx ($MidLetterEx | $MidNumLetEx) $ALetterEx {200};";
   const char kDisallowContraction[] = "";
 
-  ruleset_allow_contraction_ = ASCIIToUTF16(
+  ruleset_allow_contraction_ = base::ASCIIToUTF16(
       base::StringPrintf(kRuleTemplate,
                          aletter,
                          aletter_extra,
                          midletter_extra,
                          aletter_plus,
                          kAllowContraction));
-  ruleset_disallow_contraction_ = ASCIIToUTF16(
+  ruleset_disallow_contraction_ = base::ASCIIToUTF16(
       base::StringPrintf(kRuleTemplate,
                          aletter,
                          aletter_extra,
@@ -339,7 +339,7 @@ bool SpellcheckWordIterator::IsInitialized() const {
   return !!iterator_;
 }
 
-bool SpellcheckWordIterator::SetText(const char16* text, size_t length) {
+bool SpellcheckWordIterator::SetText(const base::char16* text, size_t length) {
   DCHECK(!!iterator_);
 
   // Set the text to be split by this iterator.

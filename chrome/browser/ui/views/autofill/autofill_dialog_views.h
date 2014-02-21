@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
-#include "chrome/browser/ui/autofill/testable_autofill_dialog_view.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
@@ -61,7 +60,6 @@ class InfoBubble;
 // Views toolkit implementation of the Autofill dialog that handles the
 // imperative autocomplete API call.
 class AutofillDialogViews : public AutofillDialogView,
-                            public TestableAutofillDialogView,
                             public views::DialogDelegateView,
                             public views::WidgetObserver,
                             public views::TextfieldController,
@@ -87,33 +85,18 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void UpdateSection(DialogSection section) OVERRIDE;
   virtual void UpdateErrorBubble() OVERRIDE;
   virtual void FillSection(DialogSection section,
-                           const DetailInput& originating_input) OVERRIDE;
+                           ServerFieldType originating_type) OVERRIDE;
   virtual void GetUserInput(DialogSection section,
                             FieldValueMap* output) OVERRIDE;
   virtual base::string16 GetCvc() OVERRIDE;
-  virtual bool HitTestInput(const DetailInput& input,
+  virtual bool HitTestInput(ServerFieldType type,
                             const gfx::Point& screen_point) OVERRIDE;
   virtual bool SaveDetailsLocally() OVERRIDE;
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
   virtual void ModelChanged() OVERRIDE;
-  virtual TestableAutofillDialogView* GetTestableView() OVERRIDE;
   virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
-
-  // TestableAutofillDialogView implementation:
-  virtual void SubmitForTesting() OVERRIDE;
-  virtual void CancelForTesting() OVERRIDE;
-  virtual base::string16 GetTextContentsOfInput(
-      const DetailInput& input) OVERRIDE;
-  virtual void SetTextContentsOfInput(const DetailInput& input,
-                                      const base::string16& contents) OVERRIDE;
-  virtual void SetTextContentsOfSuggestionInput(
-      DialogSection section,
-      const base::string16& text) OVERRIDE;
-  virtual void ActivateInput(const DetailInput& input) OVERRIDE;
-  virtual gfx::Size GetSize() const OVERRIDE;
-  virtual content::WebContents* GetSignInWebContents() OVERRIDE;
-  virtual bool IsShowingOverlay() const OVERRIDE;
+  virtual void ValidateSection(DialogSection section) OVERRIDE;
 
   // views::View implementation.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -138,8 +121,6 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual views::View* CreateFootnoteView() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView(
-      views::Widget* widget) OVERRIDE;
 
   // views::WidgetObserver implementation:
   virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
@@ -161,7 +142,7 @@ class AutofillDialogViews : public AutofillDialogView,
                                 views::View* focused_now) OVERRIDE;
 
   // views::ComboboxListener implementation:
-  virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
+  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
 
   // views::StyledLabelListener implementation:
   virtual void StyledLabelLinkClicked(const gfx::Range& range, int event_flags)
@@ -179,6 +160,8 @@ class AutofillDialogViews : public AutofillDialogView,
   views::View* GetScrollableAreaForTesting();
 
  private:
+  friend class AutofillDialogViewTesterViews;
+
   // What the entire dialog should be doing (e.g. gathering info from the user,
   // asking the user to sign in, etc.).
   enum DialogMode {
@@ -428,6 +411,9 @@ class AutofillDialogViews : public AutofillDialogView,
     void SetTextfield(const base::string16& placeholder_text,
                       const gfx::Image& icon);
 
+    // Calls SetLabelText() with the appropriate text based on current bounds.
+    void UpdateLabelText();
+
     // The state of |this|.
     SuggestionState state_;
 
@@ -461,9 +447,9 @@ class AutofillDialogViews : public AutofillDialogView,
     SectionContainer* container;
     // The view that allows manual input.
     views::View* manual_input;
-    // The textfields in |manual_input|, tracked by their DetailInput.
+    // The textfields in |manual_input|, tracked by their ServerFieldType.
     TextfieldMap textfields;
-    // The comboboxes in |manual_input|, tracked by their DetailInput.
+    // The comboboxes in |manual_input|, tracked by their ServerFieldType.
     ComboboxMap comboboxes;
     // The view that holds the text of the suggested data. This will be
     // visible IFF |manual_input| is not visible.
@@ -505,10 +491,8 @@ class AutofillDialogViews : public AutofillDialogView,
   // a given section.
   views::View* CreateInputsContainer(DialogSection section);
 
-  // Creates a grid of textfield views for the given section, and stores them
-  // in the appropriate DetailsGroup. The top level View in the hierarchy is
-  // returned.
-  views::View* InitInputsView(DialogSection section);
+  // Creates a grid of inputs for the given section.
+  void InitInputsView(DialogSection section);
 
   // Changes the function of the whole dialog. Currently this can show a loading
   // shield, an embedded sign in web view, or the more typical detail input mode
@@ -530,6 +514,9 @@ class AutofillDialogViews : public AutofillDialogView,
   // Gets a pointer to the DetailsGroup that's associated with a given |view|.
   // Returns NULL if no DetailsGroup was found.
   DetailsGroup* GroupForView(views::View* view);
+
+  // Erases all views in |group| from |validity_map_|.
+  void EraseInvalidViewsInGroup(const DetailsGroup* group);
 
   // Explicitly focuses the initially focusable view.
   void FocusInitialView();
@@ -561,11 +548,13 @@ class AutofillDialogViews : public AutofillDialogView,
   // ones and returns true if all were valid.
   bool ValidateForm();
 
-  // When an input textfield is edited (its contents change) or activated
-  // (clicked while focused), this function will inform the delegate that it's
-  // time to show a suggestion popup and possibly reset the validity state of
-  // the input.
-  void TextfieldEditedOrActivated(views::Textfield* textfield, bool was_edit);
+  // When an input is edited (its contents change) or activated (clicked while
+  // focused), this function will inform the delegate to take the appropriate
+  // action (textfields may show a suggestion popup, comboboxes may rebuild the
+  // section inputs). May also reset the validity state of the input.
+  void InputEditedOrActivated(ServerFieldType type,
+                              const gfx::Rect& bounds,
+                              bool was_edit);
 
   // Updates the views in the button strip.
   void UpdateButtonStripExtraView();
@@ -574,13 +563,17 @@ class AutofillDialogViews : public AutofillDialogView,
   void ContentsPreferredSizeChanged();
   void DoContentsPreferredSizeChanged();
 
-  // Gets the textfield view that is shown for the given DetailInput model, or
-  // NULL.
-  views::Textfield* TextfieldForInput(const DetailInput& input);
+  // Gets the textfield view that is shown for the given |type| or NULL.
+  DecoratedTextfield* TextfieldForType(ServerFieldType type);
 
-  // Gets the combobox view that is shown for the given DetailInput model, or
-  // NULL.
-  views::Combobox* ComboboxForInput(const DetailInput& input);
+  // Returns the associated ServerFieldType for |textfield|.
+  ServerFieldType TypeForTextfield(const views::Textfield* textfield);
+
+  // Gets the combobox view that is shown for the given |type|, or NULL.
+  views::Combobox* ComboboxForType(ServerFieldType type);
+
+  // Returns the associated ServerFieldType for |combobox|.
+  ServerFieldType TypeForCombobox(const views::Combobox* combobox) const;
 
   // Called when the details container changes in size or position.
   void DetailsContainerBoundsChanged();

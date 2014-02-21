@@ -170,9 +170,12 @@
         'native_client/src/trusted/plugin/nacl_http_response_headers_unittest.cc',
         'proxy/device_enumeration_resource_helper_unittest.cc',
         'proxy/file_chooser_resource_unittest.cc',
+        'proxy/file_system_resource_unittest.cc',
         'proxy/flash_resource_unittest.cc',
+        'proxy/interface_list_unittest.cc',
         'proxy/mock_resource.cc',
         'proxy/mock_resource.h',
+        'proxy/nacl_message_scanner_unittest.cc',
         'proxy/pdf_resource_unittest.cc',
         'proxy/plugin_dispatcher_unittest.cc',
         'proxy/plugin_resource_tracker_unittest.cc',
@@ -206,7 +209,7 @@
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],          
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_skeleton',
@@ -519,6 +522,30 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      'target_name': 'ppapi_example_media_stream_audio',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/media_stream_audio/media_stream_audio.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_media_stream_video',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/media_stream_video/media_stream_video.cc',
+      ],
     },
   ],
 }

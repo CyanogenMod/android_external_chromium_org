@@ -13,7 +13,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -24,6 +23,7 @@
 #include "chromeos/dbus/shill_stub_helper.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "components/onc/onc_constants.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
@@ -432,9 +432,21 @@ IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
   EXPECT_TRUE(RunNetworkingSubtest("verifyAndEncryptData")) << message_;
 }
 
+#if defined(OS_CHROMEOS)
+// Currently TDLS support is only enabled for Chrome OS.
+IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
+                       SetWifiTDLSEnabledState) {
+  EXPECT_TRUE(RunNetworkingSubtest("setWifiTDLSEnabledState")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
+                       GetWifiTDLSStatus) {
+  EXPECT_TRUE(RunNetworkingSubtest("getWifiTDLSStatus")) << message_;
+}
+#endif
+
 INSTANTIATE_TEST_CASE_P(ExtensionNetworkingPrivateApiTestInstantiation,
                         ExtensionNetworkingPrivateApiTest,
                         testing::Bool());
 
 }  // namespace
-

@@ -204,7 +204,8 @@ void RendererOverridesHandler::InnerSwapCompositorFrame() {
       base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
                  weak_factory_.GetWeakPtr(),
                  scoped_refptr<DevToolsProtocol::Command>(), format, quality,
-                 last_compositor_frame_metadata_));
+                 last_compositor_frame_metadata_),
+      SkBitmap::kARGB_8888_Config);
 }
 
 void RendererOverridesHandler::ParseCaptureParameters(
@@ -367,7 +368,7 @@ RendererOverridesHandler::PageGetNavigationHistory(
       result->SetInteger(
           devtools::Page::getNavigationHistory::kResponseCurrentIndex,
           controller.GetCurrentEntryIndex());
-      ListValue* entries = new ListValue();
+      base::ListValue* entries = new base::ListValue();
       for (int i = 0; i != controller.GetEntryCount(); ++i) {
         const NavigationEntry* entry = controller.GetEntryAtIndex(i);
         base::DictionaryValue* entry_value = new base::DictionaryValue();
@@ -460,7 +461,8 @@ RendererOverridesHandler::PageCaptureScreenshot(
       view_bounds, snapshot_size,
       base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
                  weak_factory_.GetWeakPtr(), command, format, quality,
-                 last_compositor_frame_metadata_));
+                 last_compositor_frame_metadata_),
+      SkBitmap::kARGB_8888_Config);
   return command->AsyncResponsePromise();
 }
 

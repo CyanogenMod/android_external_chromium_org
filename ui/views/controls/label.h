@@ -27,9 +27,6 @@ namespace views {
 /////////////////////////////////////////////////////////////////////////////
 class VIEWS_EXPORT Label : public View {
  public:
-  // Internal class name.
-  static const char kViewClassName[];
-
   // The following enum is used to indicate whether using the Chrome UI's
   // directionality as the label's directionality, or auto-detecting the label's
   // directionality.
@@ -52,22 +49,24 @@ class VIEWS_EXPORT Label : public View {
     ELIDE_AS_EMAIL,   // Elide while retaining username/domain chars as needed.
   };
 
+  // Internal class name.
+  static const char kViewClassName[];
+
+  // The padding for the focus border when rendering focused text.
+  static const int kFocusBorderPadding;
+
   Label();
-  explicit Label(const string16& text);
-  Label(const string16& text, const gfx::FontList& font_list);
-  Label(const string16& text, const gfx::Font& font);  // OBSOLETE
+  explicit Label(const base::string16& text);
+  Label(const base::string16& text, const gfx::FontList& font_list);
   virtual ~Label();
 
   // Gets or sets the fonts used by this label.
   const gfx::FontList& font_list() const { return font_list_; }
   virtual void SetFontList(const gfx::FontList& font_list);
-  // Obsolete gfx::Font version.  Should use gfx::FontList version instead.
-  const gfx::Font& font() const;  // OBSOLETE
-  virtual void SetFont(const gfx::Font& font);  // OBSOLETE
 
   // Get or set the label text.
-  const string16& text() const { return text_; }
-  void SetText(const string16& text);
+  const base::string16& text() const { return text_; }
+  virtual void SetText(const base::string16& text);
 
   // Enables or disables auto-color-readability (enabled by default).  If this
   // is enabled, then calls to set any foreground or background color will
@@ -144,7 +143,7 @@ class VIEWS_EXPORT Label : public View {
   // show the full text if it is wider than its bounds.  Calling this overrides
   // the default behavior and lets you set a custom tooltip.  To revert to
   // default behavior, call this with an empty string.
-  void SetTooltipText(const string16& tooltip_text);
+  void SetTooltipText(const base::string16& tooltip_text);
 
   // Resizes the label so its width is set to the width of the longest line and
   // its height deduced accordingly.
@@ -160,13 +159,13 @@ class VIEWS_EXPORT Label : public View {
   void set_collapse_when_hidden(bool value) { collapse_when_hidden_ = value; }
   bool collapse_when_hidden() const { return collapse_when_hidden_; }
 
-  void SetHasFocusBorder(bool has_focus_border);
-
   // Overridden from View:
   virtual gfx::Insets GetInsets() const OVERRIDE;
   virtual int GetBaseline() const OVERRIDE;
   // Overridden to compute the size required to display this label.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  // Returns the width of an ellipsis if the label is non-empty, or 0 otherwise.
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
   // Returns the height necessary to display this label with the provided width.
   // This method is used to layout multi-line labels. It is equivalent to
   // GetPreferredSize().height() if the receiver is not multi-line.
@@ -180,13 +179,13 @@ class VIEWS_EXPORT Label : public View {
   // tooltip).  If a custom tooltip has been specified with SetTooltipText()
   // it is returned instead.
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
 
  protected:
   // Called by Paint to paint the text.  Override this to change how
   // text is painted.
   virtual void PaintText(gfx::Canvas* canvas,
-                         const string16& text,
+                         const base::string16& text,
                          const gfx::Rect& text_bounds,
                          int flags);
 
@@ -212,7 +211,7 @@ class VIEWS_EXPORT Label : public View {
   // Calls ComputeDrawStringFlags().
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DisableSubpixelRendering);
 
-  void Init(const string16& text, const gfx::FontList& font_list);
+  void Init(const base::string16& text, const gfx::FontList& font_list);
 
   void RecalculateColors();
 
@@ -224,7 +223,7 @@ class VIEWS_EXPORT Label : public View {
   gfx::Rect GetAvailableRect() const;
 
   // Returns parameters to be used for the DrawString call.
-  void CalculateDrawStringParams(string16* paint_text,
+  void CalculateDrawStringParams(base::string16* paint_text,
                                  gfx::Rect* text_bounds,
                                  int* flags) const;
 
@@ -237,7 +236,7 @@ class VIEWS_EXPORT Label : public View {
 
   bool ShouldShowDefaultTooltip() const;
 
-  string16 text_;
+  base::string16 text_;
   gfx::FontList font_list_;
   SkColor requested_enabled_color_;
   SkColor actual_enabled_color_;
@@ -258,17 +257,13 @@ class VIEWS_EXPORT Label : public View {
   bool allow_character_break_;
   ElideBehavior elide_behavior_;
   gfx::HorizontalAlignment horizontal_alignment_;
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
   // Whether to collapse the label when it's not visible.
   bool collapse_when_hidden_;
   // The following member variable is used to control whether the
   // directionality is auto-detected based on first strong directionality
   // character or is determined by chrome UI's locale.
   DirectionalityMode directionality_mode_;
-  // When embedded in a larger control that is focusable, setting this flag
-  // allows this view to reserve space for a focus border that it otherwise
-  // might not have because it is not itself focusable.
-  bool has_focus_border_;
 
   // Colors for shadow.
   SkColor enabled_shadow_color_;

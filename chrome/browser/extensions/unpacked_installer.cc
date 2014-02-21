@@ -12,13 +12,15 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/manifest.h"
@@ -88,6 +90,7 @@ namespace extensions {
 // static
 scoped_refptr<UnpackedInstaller> UnpackedInstaller::Create(
     ExtensionService* extension_service) {
+  DCHECK(extension_service);
   return scoped_refptr<UnpackedInstaller>(
       new UnpackedInstaller(extension_service));
 }
@@ -156,11 +159,11 @@ void UnpackedInstaller::ShowInstallPrompt() {
   if (!service_weak_.get())
     return;
 
-  const ExtensionSet* disabled_extensions =
-      service_weak_->disabled_extensions();
+  const ExtensionSet& disabled_extensions =
+      ExtensionRegistry::Get(service_weak_->profile())->disabled_extensions();
   if (service_weak_->show_extensions_prompts() && prompt_for_plugins_ &&
       PluginInfo::HasPlugins(installer_.extension().get()) &&
-      !disabled_extensions->Contains(installer_.extension()->id())) {
+      !disabled_extensions.Contains(installer_.extension()->id())) {
     SimpleExtensionLoadPrompt* prompt = new SimpleExtensionLoadPrompt(
         installer_.extension().get(),
         installer_.profile(),
@@ -285,7 +288,7 @@ void UnpackedInstaller::ConfirmInstall() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::string16 error = installer_.CheckManagementPolicy();
   if (!error.empty()) {
-    ReportExtensionLoadError(UTF16ToUTF8(error));
+    ReportExtensionLoadError(base::UTF16ToUTF8(error));
     return;
   }
 
@@ -296,7 +299,7 @@ void UnpackedInstaller::ConfirmInstall() {
       installer_.extension().get(),
       syncer::StringOrdinal(),
       false /* no requirement errors */,
-      Blacklist::NOT_BLACKLISTED,
+      NOT_BLACKLISTED,
       false /* don't wait for idle */);
 }
 

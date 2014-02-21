@@ -284,6 +284,12 @@ void RecordDownloadInterrupted(DownloadInterruptReason reason,
   UMA_HISTOGRAM_BOOLEAN("Download.InterruptedUnknownSize", unknown_size);
 }
 
+void RecordMaliciousDownloadClassified(DownloadDangerType danger_type) {
+  UMA_HISTOGRAM_ENUMERATION("Download.MaliciousDownloadClassified",
+                            danger_type,
+                            DOWNLOAD_DANGER_TYPE_MAX);
+}
+
 void RecordDangerousDownloadAccept(DownloadDangerType danger_type,
                                    const base::FilePath& file_path) {
   UMA_HISTOGRAM_ENUMERATION("Download.DangerousDownloadValidated",
@@ -311,11 +317,11 @@ void RecordDangerousDownloadDiscard(DownloadDiscardReason reason,
     case DOWNLOAD_DISCARD_DUE_TO_SHUTDOWN:
       UMA_HISTOGRAM_ENUMERATION(
           "Download.Discard", danger_type, DOWNLOAD_DANGER_TYPE_MAX);
-      break;
       if (danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE) {
         UMA_HISTOGRAM_SPARSE_SLOWLY("Download.DangerousFile.Discard",
                                     GetDangerousFileType(file_path));
       }
+      break;
     default:
       NOTREACHED();
   }
@@ -609,6 +615,16 @@ void RecordSavePackageEvent(SavePackageEvent event) {
   UMA_HISTOGRAM_ENUMERATION("Download.SavePackage",
                             event,
                             SAVE_PACKAGE_LAST_ENTRY);
+}
+
+void RecordOriginStateOnResumption(bool is_partial,
+                                   int state) {
+  if (is_partial)
+    UMA_HISTOGRAM_ENUMERATION("Download.OriginStateOnPartialResumption", state,
+                              ORIGIN_STATE_ON_RESUMPTION_MAX);
+  else
+    UMA_HISTOGRAM_ENUMERATION("Download.OriginStateOnFullResumption", state,
+                              ORIGIN_STATE_ON_RESUMPTION_MAX);
 }
 
 }  // namespace content

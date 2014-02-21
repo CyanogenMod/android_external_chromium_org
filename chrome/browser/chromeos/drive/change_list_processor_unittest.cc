@@ -139,7 +139,7 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
 
   const EntryExpectation kExpected[] = {
       // Root files
-      {"drive/root", kRootId, util::kDriveGrandRootLocalId, DIRECTORY},
+      {"drive/root", kRootId, "", DIRECTORY},
       {"drive/root/File 1.txt",
           "file:2_file_resource_id", kRootId, FILE},
       {"drive/root/Slash _ in file 1.txt",
@@ -170,7 +170,7 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
           "folder:sub_dir_folder_resource_id", DIRECTORY},
       // Orphan
       {"drive/other/Orphan File 1.txt", "file:1_orphanfile_resource_id",
-           util::kDriveOtherDirLocalId, FILE},
+           "", FILE},
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kExpected); ++i) {
@@ -525,11 +525,14 @@ TEST_F(ChangeListProcessorTest, RefreshDirectory) {
   change_lists[0]->mutable_parent_resource_ids()->push_back(kRootId);
 
   // Update the directory with the map.
+  ResourceEntry root;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetResourceEntryByPath(
+      util::GetDriveMyDriveRootPath(), &root));
   const int64 kNewChangestamp = 12345;
   base::FilePath file_path;
   EXPECT_EQ(FILE_ERROR_OK, ChangeListProcessor::RefreshDirectory(
       metadata_.get(),
-      DirectoryFetchInfo(kRootId, kNewChangestamp),
+      DirectoryFetchInfo(root.local_id(), kRootId, kNewChangestamp),
       change_lists.Pass(),
       &file_path));
   EXPECT_EQ(util::GetDriveMyDriveRootPath().value(), file_path.value());
@@ -567,11 +570,14 @@ TEST_F(ChangeListProcessorTest, RefreshDirectory_WrongParentId) {
 
 
   // Update the directory.
+  ResourceEntry root;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetResourceEntryByPath(
+      util::GetDriveMyDriveRootPath(), &root));
   const int64 kNewChangestamp = 12345;
   base::FilePath file_path;
   EXPECT_EQ(FILE_ERROR_OK, ChangeListProcessor::RefreshDirectory(
       metadata_.get(),
-      DirectoryFetchInfo(kRootId, kNewChangestamp),
+      DirectoryFetchInfo(root.local_id(), kRootId, kNewChangestamp),
       change_lists.Pass(),
       &file_path));
   EXPECT_EQ(util::GetDriveMyDriveRootPath().value(), file_path.value());
@@ -580,6 +586,32 @@ TEST_F(ChangeListProcessorTest, RefreshDirectory_WrongParentId) {
   ResourceEntry entry;
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, metadata_->GetResourceEntryByPath(
       util::GetDriveMyDriveRootPath().AppendASCII(new_file.title()), &entry));
+}
+
+TEST_F(ChangeListProcessorTest, SharedFilesWithNoParentInFeed) {
+  // Prepare metadata.
+  EXPECT_EQ(FILE_ERROR_OK,
+            ApplyFullResourceList(ParseChangeList(kBaseResourceListFile)));
+
+  // Create change lists.
+  ScopedVector<ChangeList> change_lists;
+  change_lists.push_back(new ChangeList);
+
+  // Add a new file with non-existing parent resource id to the change lists.
+  ResourceEntry new_file;
+  new_file.set_title("new_file");
+  new_file.set_resource_id("new_file_id");
+  change_lists[0]->mutable_entries()->push_back(new_file);
+  change_lists[0]->mutable_parent_resource_ids()->push_back("nonexisting");
+  change_lists[0]->set_largest_changestamp(kBaseResourceListChangestamp + 1);
+
+  std::set<base::FilePath> changed_dirs;
+  EXPECT_EQ(FILE_ERROR_OK, ApplyChangeList(change_lists.Pass(), &changed_dirs));
+
+  // "new_file" should be added under drive/other.
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetResourceEntryByPath(
+      util::GetDriveGrandRootPath().AppendASCII("other/new_file"), &entry));
 }
 
 }  // namespace internal

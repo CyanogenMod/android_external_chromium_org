@@ -19,7 +19,8 @@ cr.define('print_preview', function() {
    * @param {{tags: Array.<string>,
    *          isOwned: ?boolean,
    *          lastAccessTime: ?number,
-   *          isTosAccepted: ?boolean}=} opt_params Optional parameters for the
+   *          isTosAccepted: ?boolean,
+   *          cloudID: ?string}=} opt_params Optional parameters for the
    *     destination.
    * @constructor
    */
@@ -112,6 +113,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isTosAccepted_ = (opt_params && opt_params.isTosAccepted) || false;
+
+    /**
+     * Cloud ID for privet printers
+     * @type {?string}
+     * @private
+     */
+    this.cloudID_ = (opt_params && opt_params.cloudID) || '';
   };
 
   /**
@@ -228,7 +236,9 @@ cr.define('print_preview', function() {
     /** @return {boolean} Whether the destination is local or cloud-based. */
     get isLocal() {
       return this.origin_ == Destination.Origin.LOCAL ||
-             this.origin_ == Destination.Origin.PRIVET;
+             (this.origin_ == Destination.Origin.PRIVET &&
+              this.connectionStatus_ !=
+              Destination.ConnectionStatus.UNREGISTERED);
     },
 
     /** @return {boolean} Whether the destination is a privet local printer */
@@ -242,6 +252,7 @@ cr.define('print_preview', function() {
      */
     get location() {
       if (this.location_ == null) {
+        this.location_ = '';
         for (var tag, i = 0; tag = this.tags_[i]; i++) {
           if (tag.indexOf(Destination.LOCATION_TAG_PREFIX) == 0) {
             this.location_ = tag.substring(
@@ -256,6 +267,11 @@ cr.define('print_preview', function() {
     /** @return {!Array.<string>} Tags associated with the destination. */
     get tags() {
       return this.tags_.slice(0);
+    },
+
+    /** @return {string} Cloud ID associated with the destination */
+    get cloudID() {
+      return this.cloudID_;
     },
 
     /** @return {print_preview.Cdd} Print capabilities of the destination. */
@@ -285,6 +301,32 @@ cr.define('print_preview', function() {
      */
     set connectionStatus(status) {
       this.connectionStatus_ = status;
+    },
+
+    /** @return {boolean} Whether the destination is considered offline. */
+    get isOffline() {
+      return arrayContains([print_preview.Destination.ConnectionStatus.OFFLINE,
+                            print_preview.Destination.ConnectionStatus.DORMANT],
+                            this.connectionStatus_);
+    },
+
+    /** @return {string} Human readable status for offline destination. */
+    get offlineStatusText() {
+      if (!this.isOffline) {
+        return '';
+      }
+      var offlineDurationMs = Date.now() - this.lastAccessTime_;
+      var offlineMessageId;
+      if (offlineDurationMs > 31622400000.0) {  // One year.
+        offlineMessageId = 'offlineForYear';
+      } else if (offlineDurationMs > 2678400000.0) {  // One month.
+        offlineMessageId = 'offlineForMonth';
+      } else if (offlineDurationMs > 604800000.0) {  // One week.
+        offlineMessageId = 'offlineForWeek';
+      } else {
+        offlineMessageId = 'offline';
+      }
+      return localStrings.getString(offlineMessageId);
     },
 
     /**

@@ -21,10 +21,10 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/media_stream_request.h"
-#import "testing/gtest_mac.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
-#include "ui/base/test/cocoa_test_event_utils.h"
+#include "ui/events/test/cocoa_test_event_utils.h"
 
 using content::SiteInstance;
 using content::WebContents;
@@ -170,6 +170,31 @@ TEST_F(TabStripControllerTest, AddRemoveTabs) {
   EXPECT_TRUE(model_->empty());
   CreateTab();
   EXPECT_EQ(model_->count(), 1);
+}
+
+// Clicking a selected (but inactive) tab should activate it.
+TEST_F(TabStripControllerTest, ActivateSelectedButInactiveTab) {
+  TabView* tab0 = CreateTab();
+  TabView* tab1 = CreateTab();
+  model_->ToggleSelectionAt(0);
+  EXPECT_TRUE([[tab0 controller] selected]);
+  EXPECT_TRUE([[tab1 controller] selected]);
+
+  [controller_ selectTab:tab1];
+  EXPECT_EQ(1, model_->active_index());
+}
+
+// Toggling (cmd-click) a selected (but inactive) tab should deselect it.
+TEST_F(TabStripControllerTest, DeselectInactiveTab) {
+  TabView* tab0 = CreateTab();
+  TabView* tab1 = CreateTab();
+  model_->ToggleSelectionAt(0);
+  EXPECT_TRUE([[tab0 controller] selected]);
+  EXPECT_TRUE([[tab1 controller] selected]);
+
+  model_->ToggleSelectionAt(1);
+  EXPECT_TRUE([[tab0 controller] selected]);
+  EXPECT_FALSE([[tab1 controller] selected]);
 }
 
 TEST_F(TabStripControllerTest, SelectTab) {

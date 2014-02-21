@@ -206,6 +206,16 @@ class ASH_EXPORT SystemTrayDelegate {
   // Shows login UI to add other users to this session.
   virtual void ShowUserLogin() = 0;
 
+  // Shows the spring charger replacement dialog if necessary.
+  // Returns true if the dialog is shown by the call.
+  virtual bool ShowSpringChargerReplacementDialog() = 0;
+
+  // True if the spring charger replacement dialog is visible.
+  virtual bool IsSpringChargerReplacementDialogVisible() = 0;
+
+  // True if user has confirmed using safe spring charger.
+  virtual bool HasUserConfirmedSafeSpringCharger() = 0;
+
   // Attempts to shut down the system.
   virtual void ShutDown() = 0;
 
@@ -308,6 +318,11 @@ class ASH_EXPORT SystemTrayDelegate {
 
   // Get the system tray menu size in pixels (dependent on the language).
   virtual int GetSystemTrayMenuWidth() = 0;
+
+  // The active user has been changed. This will be called when the UI is ready
+  // to be switched to the new user.
+  // Note: This will happen after SessionStateObserver::ActiveUserChanged fires.
+  virtual void ActiveUserWasChanged() = 0;
 };
 
 }  // namespace ash

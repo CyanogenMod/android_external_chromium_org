@@ -12,12 +12,15 @@
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../ui/accessibility/accessibility.gyp:ax_gen',
         '../ui/events/events.gyp:dom4_keycode_converter',
         '../ui/events/events.gyp:events_base',
+        '../ui/events/events.gyp:events_test_support',
         '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gfx/gfx.gyp:gfx_test_support',
         '../ui/resources/ui_resources.gyp:ui_resources',
         '../ui/ui.gyp:ui',
-        '../ui/ui_unittests.gyp:ui_test_support',
         '../url/url.gyp:url_lib',
         'browser/speech/proto/speech_proto.gyp:speech_proto',
         'content.gyp:content_app_both',
@@ -28,6 +31,8 @@
         '..',
       ],
       'sources': [
+        'public/test/async_file_test_helper.cc',
+        'public/test/async_file_test_helper.h',
         'public/test/browser_test_base.cc',
         'public/test/browser_test_base.h',
         'public/test/browser_test.h',
@@ -39,7 +44,8 @@
         'public/test/download_test_observer.h',
         'public/test/fake_speech_recognition_manager.cc',
         'public/test/fake_speech_recognition_manager.h',
-        'public/test/layouttest_support.h',
+        'public/test/mock_blob_url_request_context.cc',
+        'public/test/mock_blob_url_request_context.h',
         'public/test/mock_download_item.cc',
         'public/test/mock_download_item.h',
         'public/test/mock_download_manager.cc',
@@ -112,7 +118,6 @@
         'gpu/gpu_idirect3d9_mock_win.h',
         'test/content_test_suite.cc',
         'test/content_test_suite.h',
-        'test/layouttest_support.cc',
         'test/mock_google_streaming_server.cc',
         'test/mock_google_streaming_server.h',
         'test/mock_keyboard.cc',
@@ -144,6 +149,8 @@
         'test/test_content_browser_client.h',
         'test/test_content_client.cc',
         'test/test_content_client.h',
+        'test/test_context_provider_factory.cc',
+        'test/test_context_provider_factory.h',
         'test/test_media_stream_client.cc',
         'test/test_media_stream_client.h',
         'test/test_render_frame_host.cc',
@@ -177,8 +184,6 @@
         # TODO(kinuko): Those files should be moved to content/public/test.
         '../webkit/browser/appcache/appcache_test_helper.cc',
         '../webkit/browser/appcache/appcache_test_helper.h',
-        '../webkit/browser/fileapi/async_file_test_helper.cc',
-        '../webkit/browser/fileapi/async_file_test_helper.h',
       ],
       'conditions': [
         ['OS == "ios"', {
@@ -225,16 +230,16 @@
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
             '../ppapi/ppapi_internal.gyp:ppapi_unittest_shared',
             '../third_party/WebKit/public/blink.gyp:blink',
-            '../third_party/WebKit/public/blink_test_runner.gyp:blink_test_runner',
             '../ui/surface/surface.gyp:surface',
             '../webkit/child/webkit_child.gyp:webkit_child',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
             '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
-            '../webkit/glue/webkit_glue.gyp:glue',
             '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
-            '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
+          ],
+          'export_dependent_settings': [
+            '../third_party/WebKit/public/blink.gyp:blink',
           ],
         }],
         ['OS == "win" or toolkit_uses_gtk == 1', {
@@ -277,8 +282,12 @@
         ['use_aura==1', {
           'dependencies': [
             '../ui/aura/aura.gyp:aura_test_support',
-            '../ui/compositor/compositor.gyp:compositor',
             '../ui/resources/ui_resources.gyp:ui_test_pak',
+          ],
+        }],
+        ['use_aura==1 or OS=="mac"', {
+          'dependencies': [
+            '../ui/compositor/compositor.gyp:compositor',
           ],
         }],
         ['OS=="win"', {
@@ -315,7 +324,10 @@
         '../sql/sql.gyp:test_support_sql',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../third_party/re2/re2.gyp:re2',
+        '../ui/accessibility/accessibility.gyp:accessibility',
         '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/ui.gyp:ui',
         '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
       ],
@@ -324,18 +336,19 @@
         '<(SHARED_INTERMEDIATE_DIR)',  # Needed by key_systems_unittest.cc.
       ],
       'sources': [
+        'browser/accessibility/accessibility_mode_helper_unittest.cc',
         'browser/accessibility/browser_accessibility_mac_unittest.mm',
         'browser/accessibility/browser_accessibility_manager_unittest.cc',
         'browser/accessibility/browser_accessibility_win_unittest.cc',
         'browser/appcache/chrome_appcache_service_unittest.cc',
-        'browser/aura/software_browser_compositor_output_surface_unittest.cc',
-        'browser/aura/software_output_device_ozone_unittest.cc',
         'browser/browser_thread_unittest.cc',
         'browser/browser_url_handler_impl_unittest.cc',
         'browser/byte_stream_unittest.cc',
         'browser/child_process_security_policy_unittest.cc',
-        'browser/device_orientation/data_fetcher_impl_android_unittest.cc',
+        'browser/compositor/software_browser_compositor_output_surface_unittest.cc',
+        'browser/compositor/software_output_device_ozone_unittest.cc',
         'browser/device_orientation/data_fetcher_shared_memory_base_unittest.cc',
+        'browser/device_orientation/sensor_manager_android_unittest.cc',
         'browser/devtools/devtools_http_handler_unittest.cc',
         'browser/devtools/devtools_manager_unittest.cc',
         'browser/dom_storage/dom_storage_area_unittest.cc',
@@ -375,6 +388,8 @@
         'browser/frame_host/navigation_controller_impl_unittest.cc',
         'browser/frame_host/navigation_entry_impl_unittest.cc',
         'browser/frame_host/render_frame_host_manager_unittest.cc',
+        'browser/frame_host/render_widget_host_view_child_frame_unittest.cc',
+        'browser/frame_host/render_widget_host_view_guest_unittest.cc',
         'browser/gamepad/gamepad_provider_unittest.cc',
         'browser/gamepad/gamepad_test_helpers.cc',
         'browser/gamepad/gamepad_test_helpers.h',
@@ -418,7 +433,7 @@
         'browser/power_monitor_message_broadcaster_unittest.cc',
         'browser/renderer_host/compositing_iosurface_transformer_mac_unittest.cc',
         'browser/renderer_host/gtk_key_bindings_handler_unittest.cc',
-        'browser/renderer_host/input/gesture_event_filter_unittest.cc',
+        'browser/renderer_host/input/gesture_event_queue_unittest.cc',
         'browser/renderer_host/input/input_router_impl_unittest.cc',
         'browser/renderer_host/input/mock_input_ack_handler.cc',
         'browser/renderer_host/input/mock_input_ack_handler.h',
@@ -426,8 +441,9 @@
         'browser/renderer_host/input/mock_input_router_client.h',
         'browser/renderer_host/input/synthetic_gesture_controller_unittest.cc',
         'browser/renderer_host/input/tap_suppression_controller_unittest.cc',
-        'browser/renderer_host/input/touch_event_queue_unittest.cc',
         'browser/renderer_host/input/touch_action_filter_unittest.cc',
+        'browser/renderer_host/input/touch_disposition_gesture_filter_unittest.cc',
+        'browser/renderer_host/input/touch_event_queue_unittest.cc',
         'browser/renderer_host/media/audio_input_device_manager_unittest.cc',
         'browser/renderer_host/media/audio_mirroring_manager_unittest.cc',
         'browser/renderer_host/media/audio_renderer_host_unittest.cc',
@@ -449,10 +465,10 @@
         'browser/renderer_host/pepper/pepper_gamepad_host_unittest.cc',
         'browser/renderer_host/pepper/pepper_printing_host_unittest.cc',
         'browser/renderer_host/pepper/quota_reservation_unittest.cc',
+        'browser/renderer_host/render_process_host_unittest.cc',
         'browser/renderer_host/render_view_host_unittest.cc',
         'browser/renderer_host/render_widget_host_unittest.cc',
         'browser/renderer_host/render_widget_host_view_aura_unittest.cc',
-        'browser/renderer_host/render_widget_host_view_guest_unittest.cc',
         'browser/renderer_host/render_widget_host_view_mac_editcommand_helper_unittest.mm',
         'browser/renderer_host/render_widget_host_view_mac_unittest.mm',
         'browser/renderer_host/software_frame_manager_unittest.cc',
@@ -462,10 +478,14 @@
         'browser/renderer_host/websocket_dispatcher_host_unittest.cc',
         'browser/resolve_proxy_msg_helper_unittest.cc',
         'browser/service_worker/embedded_worker_instance_unittest.cc',
+        'browser/service_worker/embedded_worker_test_helper.cc',
+        'browser/service_worker/embedded_worker_test_helper.h',
         'browser/service_worker/service_worker_context_unittest.cc',
         'browser/service_worker/service_worker_dispatcher_host_unittest.cc',
+        'browser/service_worker/service_worker_job_unittest.cc',
         'browser/service_worker/service_worker_registration_unittest.cc',
         'browser/service_worker/service_worker_storage_unittest.cc',
+        'browser/service_worker/service_worker_version_unittest.cc',
         'browser/site_instance_impl_unittest.cc',
         'browser/speech/chunked_byte_buffer_unittest.cc',
         'browser/speech/endpointer/endpointer_unittest.cc',
@@ -479,6 +499,7 @@
         'browser/streams/stream_unittest.cc',
         'browser/streams/stream_url_request_job_unittest.cc',
         'browser/system_message_window_win_unittest.cc',
+        'browser/web_contents/aura/overscroll_navigation_overlay_unittest.cc',
         'browser/web_contents/aura/window_slider_unittest.cc',
         'browser/web_contents/web_contents_delegate_unittest.cc',
         'browser/web_contents/web_contents_impl_unittest.cc',
@@ -490,7 +511,7 @@
         'browser/webui/web_ui_message_handler_unittest.cc',
         'child/fileapi/webfilewriter_base_unittest.cc',
         'child/indexed_db/indexed_db_dispatcher_unittest.cc',
-        'child/indexed_db/proxy_webidbcursor_impl_unittest.cc',
+        'child/indexed_db/webidbcursor_impl_unittest.cc',
         'child/npapi/plugin_lib_unittest.cc',
         'child/power_monitor_broadcast_source_unittest.cc',
         'child/resource_dispatcher_unittest.cc',
@@ -502,6 +523,7 @@
         'common/gpu/gpu_memory_manager_unittest.cc',
         'common/indexed_db/indexed_db_key_unittest.cc',
         'common/input/input_param_traits_unittest.cc',
+        'common/input/web_input_event_traits_unittest.cc',
         'common/inter_process_time_ticks_converter_unittest.cc',
         'common/mac/attributed_string_coder_unittest.mm',
         'common/mac/font_descriptor_unittest.mm',
@@ -522,9 +544,9 @@
         'renderer/device_orientation/device_orientation_event_pump_unittest.cc',
         'renderer/disambiguation_popup_helper_unittest.cc',
         'renderer/dom_storage/dom_storage_cached_area_unittest.cc',
-        'renderer/gpu/input_event_filter_unittest.cc',
-        'renderer/gpu/input_handler_proxy_unittest.cc',
         'renderer/ico_image_decoder_unittest.cc',
+        'renderer/input/input_event_filter_unittest.cc',
+        'renderer/input/input_handler_proxy_unittest.cc',
         'renderer/media/android/media_info_loader_unittest.cc',
         'renderer/media/audio_message_filter_unittest.cc',
         'renderer/media/audio_renderer_mixer_manager_unittest.cc',
@@ -532,8 +554,10 @@
         'renderer/media/buffered_resource_loader_unittest.cc',
         'renderer/media/cache_util_unittest.cc',
         'renderer/media/crypto/key_systems_unittest.cc',
+        'renderer/media/media_stream_video_source_unittest.cc',
         'renderer/media/test_response_generator.cc',
         'renderer/media/test_response_generator.h',
+        'renderer/media/video_capture_impl_manager_unittest.cc',
         'renderer/media/video_capture_impl_unittest.cc',
         'renderer/media/video_capture_message_filter_unittest.cc',
         'renderer/media/video_destination_handler_unittest.cc',
@@ -544,8 +568,8 @@
         'renderer/pepper/mock_resource.h',
         'renderer/pepper/pepper_broker_unittest.cc',
         'renderer/pepper/v8_var_converter_unittest.cc',
+        'renderer/render_frame_impl_unittest.cc',
         'renderer/render_thread_impl_unittest.cc',
-        'renderer/render_view_impl_unittest.cc',
         'renderer/render_widget_unittest.cc',
         'renderer/skia_benchmarking_extension_unittest.cc',
         'renderer/v8_value_converter_impl_unittest.cc',
@@ -554,6 +578,7 @@
         'test/image_decoder_test.h',
         'test/run_all_unittests.cc',
         '../webkit/browser/appcache/appcache_database_unittest.cc',
+        '../webkit/browser/appcache/appcache_disk_cache_unittest.cc',
         '../webkit/browser/appcache/appcache_group_unittest.cc',
         '../webkit/browser/appcache/appcache_host_unittest.cc',
         '../webkit/browser/appcache/appcache_quota_client_unittest.cc',
@@ -575,8 +600,6 @@
         '../webkit/browser/appcache/mock_appcache_storage_unittest.cc',
         '../webkit/browser/blob/blob_storage_context_unittest.cc',
         '../webkit/browser/blob/local_file_stream_reader_unittest.cc',
-        '../webkit/browser/blob/mock_blob_url_request_context.cc',
-        '../webkit/browser/blob/mock_blob_url_request_context.h',
         '../webkit/browser/database/database_quota_client_unittest.cc',
         '../webkit/browser/database/database_tracker_unittest.cc',
         '../webkit/browser/database/database_util_unittest.cc',
@@ -612,6 +635,8 @@
         '../webkit/common/user_agent/user_agent_unittest.cc',
         '../webkit/browser/quota/mock_quota_manager.cc',
         '../webkit/browser/quota/mock_quota_manager.h',
+        '../webkit/browser/quota/mock_quota_manager_proxy.cc',
+        '../webkit/browser/quota/mock_quota_manager_proxy.h',
         '../webkit/browser/quota/mock_quota_manager_unittest.cc',
         '../webkit/browser/quota/mock_special_storage_policy.cc',
         '../webkit/browser/quota/mock_special_storage_policy.h',
@@ -621,7 +646,6 @@
         '../webkit/browser/quota/quota_manager_unittest.cc',
         '../webkit/browser/quota/quota_temporary_storage_evictor_unittest.cc',
         '../webkit/browser/quota/usage_tracker_unittest.cc',
-        '../webkit/renderer/cpp_variant_unittest.cc',
       ],
       'conditions': [
         ['OS == "ios"', {
@@ -658,9 +682,7 @@
             '../ui/gl/gl.gyp:gl',
             '../v8/tools/gyp/v8.gyp:v8',
             '../webkit/common/webkit_common.gyp:webkit_common',
-            '../webkit/glue/webkit_glue.gyp:glue',
             '../webkit/child/webkit_child.gyp:webkit_child',
-            '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
           ],
@@ -674,6 +696,7 @@
           ],
           'sources!': [
             'browser/plugin_loader_posix_unittest.cc',
+            'renderer/media/media_stream_video_source_unittest.cc',
             'renderer/media/video_destination_handler_unittest.cc',
           ],
         }],
@@ -707,6 +730,7 @@
           ]
         }, {
           'sources!': [
+            'renderer/media/media_stream_video_source_unittest.cc',
             'renderer/media/video_destination_handler_unittest.cc',
           ],
         }],
@@ -771,14 +795,16 @@
         ['use_aura==1', {
           'dependencies': [
             '../ui/aura/aura.gyp:aura',
-          ],
-          'sources!': [
-            'browser/accessibility/browser_accessibility_win_unittest.cc',
-          ],
+          ]
         }],
         ['use_aura==1 or toolkit_views==1', {
           'dependencies': [
             '../ui/events/events.gyp:events_test_support',
+          ],
+        }],
+        ['use_aura!=1 and OS!="mac"', {
+          'sources/': [
+            ['exclude', '^browser/compositor/'],
           ],
         }],
         ['OS == "android"', {
@@ -802,41 +828,36 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
-        ['use_aura!=1 and OS!="win" and OS!="android"', {
+        ['use_aura!=1 and OS!="android"', {
           'sources!': [
             'browser/renderer_host/input/tap_suppression_controller_unittest.cc',
           ],
         }],
-        ['enable_webrtc==1 and google_tv==1', {
-          'sources': [
-            'renderer/media/rtc_video_decoder_factory_tv_unittest.cc',
-          ],
-        }],
-	['use_dbus==0', {
+        ['use_dbus==0', {
           'sources!': [
             'browser/geolocation/wifi_data_provider_linux_unittest.cc',
           ],
-	}],
+        }],
       ],
     },
   ],
   'conditions': [
     ['test_isolation_mode != "noop"', {
       'targets': [
-	{
-	  'target_name': 'content_unittests_run',
-	  'type': 'none',
-	  'dependencies': [
-	    'content_unittests',
-	  ],
-	  'includes': [
-	    '../build/isolate.gypi',
-	    'content_unittests.isolate',
-	  ],
-	  'sources': [
-	    'content_unittests.isolate',
-	  ],
-	},
+        {
+          'target_name': 'content_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'content_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'content_unittests.isolate',
+          ],
+          'sources': [
+            'content_unittests.isolate',
+          ],
+       },
       ],
     }],
     ['OS!="ios"', {
@@ -854,6 +875,7 @@
             '../testing/gtest.gyp:gtest',
             '../testing/perf/perf_test.gyp:*',
             '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
           ],
           'include_dirs': [
             '..',
@@ -870,6 +892,7 @@
             'content_shell_lib',
             '../skia/skia.gyp:skia',
             '../testing/gtest.gyp:gtest',
+            '../ui/accessibility/accessibility.gyp:ax_gen',
           ],
           'sources': [
             'test/accessibility_browser_test_utils.cc',
@@ -879,8 +902,6 @@
             'test/content_browser_test_utils.cc',
             'test/content_browser_test_utils.h',
             'test/content_browser_test_utils_mac.mm',
-            'test/cpp_binding_example.cc',
-            'test/cpp_binding_example.h',
           ],
         },
         {
@@ -896,6 +917,7 @@
             'content_shell_lib',
             'content_shell_pak',
             '../base/base.gyp:test_support_base',
+            '../gin/gin.gyp:gin',
             '../gpu/gpu.gyp:gpu',
             '../ipc/ipc.gyp:test_support_ipc',
             '../media/media.gyp:media_test_support',
@@ -911,15 +933,16 @@
             '../third_party/WebKit/public/blink.gyp:blink',
             '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
             '../third_party/mesa/mesa.gyp:osmesa',
+            '../ui/accessibility/accessibility.gyp:accessibility',
             '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/gl/gl.gyp:gl',
             '../ui/resources/ui_resources.gyp:ui_resources',
             '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
             '../ui/snapshot/snapshot.gyp:snapshot',
             '../ui/ui.gyp:ui',
             '../webkit/child/webkit_child.gyp:webkit_child',
-            '../webkit/glue/webkit_glue.gyp:glue',
-            '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
+            '../ui/accessibility/accessibility.gyp:ax_gen',
           ],
           'include_dirs': [
             '..',
@@ -935,7 +958,7 @@
             'browser/accessibility/accessibility_win_browsertest.cc',
             'browser/accessibility/cross_platform_accessibility_browsertest.cc',
             'browser/accessibility/dump_accessibility_tree_browsertest.cc',
-            'browser/aura/image_transport_factory_browsertest.cc',
+            'browser/compositor/image_transport_factory_browsertest.cc',
             'browser/bookmarklet_browsertest.cc',
             'browser/browser_plugin/browser_plugin_host_browsertest.cc',
             'browser/browser_plugin/test_browser_plugin_embedder.cc',
@@ -956,6 +979,7 @@
             'browser/download/mhtml_generation_browsertest.cc',
             'browser/download/save_package_browsertest.cc',
             'browser/fileapi/file_system_browsertest.cc',
+            'browser/frame_host/frame_tree_browsertest.cc',
             'browser/frame_host/render_frame_host_manager_browsertest.cc',
             'browser/gpu/compositor_util_browsertest.cc',
             'browser/gpu/gpu_ipc_browsertests.cc',
@@ -975,6 +999,7 @@
             'browser/renderer_host/render_widget_host_browsertest.cc',
             'browser/renderer_host/render_widget_host_view_browsertest.cc',
             'browser/security_exploit_browsertest.cc',
+            'browser/service_worker/service_worker_browsertest.cc',
             'browser/session_history_browsertest.cc',
             'browser/site_per_process_browsertest.cc',
             'browser/speech/input_tag_speech_browsertest.cc',
@@ -994,8 +1019,9 @@
             'renderer/browser_plugin/mock_browser_plugin.h',
             'renderer/browser_plugin/mock_browser_plugin_manager.cc',
             'renderer/browser_plugin/mock_browser_plugin_manager.h',
-            'renderer/cpp_bound_class_unittest.cc',
+	    'renderer/browser_render_view_browsertest.cc',
             'renderer/dom_serializer_browsertest.cc',
+            'renderer/gin_browsertest.cc',
             'renderer/mouse_lock_dispatcher_browsertest.cc',
             'renderer/pepper/fake_pepper_plugin_instance.cc',
             'renderer/pepper/mock_renderer_ppapi_host.cc',
@@ -1090,10 +1116,6 @@
               'sources!': [
                 'browser/accessibility/accessibility_win_browsertest.cc',
               ],
-            }, {
-              'sources/': [
-                ['exclude', '^browser/aura/'],
-              ],
             }],
             ['use_aura==1 and OS!="win"', {
               'sources!': [
@@ -1105,6 +1127,11 @@
                 '../ui/events/events.gyp:events_test_support',
               ],
             }],
+            ['use_aura!=1 and OS!="mac"', {
+              'sources/': [
+                ['exclude', '^browser/compositor/'],
+              ],
+            }],
             ['OS!="android" and OS!="ios"', {
               # npapi test plugin doesn't build on android or ios
               'dependencies': [
@@ -1114,7 +1141,11 @@
             }],
             ['enable_webrtc==1', {
               'sources': [
+                'browser/media/webrtc_aecdump_browsertest.cc',
                 'browser/media/webrtc_browsertest.cc',
+                'browser/media/webrtc_getusermedia_browsertest.cc',
+                'test/webrtc_content_browsertest_base.cc',
+                'test/webrtc_content_browsertest_base.h',
               ],
               'dependencies': [
                 '../testing/perf/perf_test.gyp:perf_test',
@@ -1138,6 +1169,7 @@
               'sources!': [
                 # These tests depend on single process mode, which is disabled
                 # in official builds.
+		'renderer/browser_render_view_browsertest.cc',
                 'renderer/dom_serializer_browsertest.cc',
                 'renderer/resource_fetcher_browsertest.cc',
                 'renderer/savable_resources_browsertest.cc',
@@ -1155,19 +1187,19 @@
             '../gpu/gpu.gyp:command_buffer_common',
             '../testing/gtest.gyp:gtest',
             '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/gl/gl.gyp:gl',
             '../ui/ui.gyp:ui',
             '../third_party/WebKit/public/blink.gyp:blink',
             # The following two dependencies provide the missing
             # symbol HeapProfilerStart in Linux component builds.
             '../webkit/child/webkit_child.gyp:webkit_child',
-            '../webkit/glue/webkit_glue.gyp:glue',
           ],
           'include_dirs': [
             '..',
           ],
           'sources': [
-            'common/gpu/client/gl_helper_unittests.cc',
+            'common/gpu/client/gl_helper_unittest.cc',
             'common/gpu/client/gpu_in_process_context_tests.cc',
           ],
           'conditions': [
@@ -1187,12 +1219,12 @@
             '../base/base.gyp:test_support_base',
             '../testing/gtest.gyp:gtest',
             '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/gl/gl.gyp:gl',
             '../ui/ui.gyp:ui',
             '../third_party/WebKit/public/blink.gyp:blink',
             # The following two dependencies provide the missing
             # symbol HeapProfilerStart in Linux component builds.
-            '../webkit/glue/webkit_glue.gyp:glue',
             '../webkit/child/webkit_child.gyp:webkit_child',
           ],
           'include_dirs': [
@@ -1230,6 +1262,7 @@
               '../media/media.gyp:media',
               '../ui/gl/gl.gyp:gl',
               '../ui/gfx/gfx.gyp:gfx',
+              '../ui/gfx/gfx.gyp:gfx_geometry',
               '../ui/ui.gyp:ui',
             ],
             'include_dirs': [
@@ -1262,8 +1295,8 @@
               }],
               ['OS=="win"', {
                 'dependencies': [
-                  '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
-                  '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
+                  '<(angle_path)/src/build_angle.gyp:libEGL',
+                  '<(angle_path)/src/build_angle.gyp:libGLESv2',
                 ],
               }],
               ['(OS=="win" and win_use_allocator_shim==1) or '
@@ -1278,9 +1311,41 @@
                   '<(DEPTH)/third_party/libva',
                 ],
               }],
+              ['use_x11==1', {
+                'dependencies': [
+                  '../build/linux/system.gyp:x11',  # Used by rendering_helper.cc
+                ],
+              }],
             ],
             # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
             'msvs_disabled_warnings': [ 4267, ],
+          },
+        ]
+    }],
+    ['chromeos==1 and use_x11 == 1 and target_arch != "arm"', {
+      'targets': [
+          {
+            'target_name': 'vaapi_h264_decoder_unittest',
+            'type': '<(gtest_target_type)',
+            'dependencies': [
+              'content.gyp:content_common',
+              '../base/base.gyp:base',
+              '../media/media.gyp:media',
+              '../testing/gtest.gyp:gtest',
+              '../third_party/libyuv/libyuv.gyp:libyuv',
+              '../ui/gfx/gfx.gyp:gfx_geometry',
+            ],
+            'sources': [
+              'common/gpu/media/vaapi_h264_decoder_unittest.cc',
+            ],
+            'include_dirs': [
+              '<(DEPTH)/third_party/libva',
+            ],
+            'link_settings': {
+              'libraries': [
+                '-lX11',
+              ],
+            },
           },
         ]
     }],
@@ -1296,6 +1361,7 @@
             '../media/media.gyp:media',
               '../ui/gl/gl.gyp:gl',
               '../ui/gfx/gfx.gyp:gfx',
+              '../ui/gfx/gfx.gyp:gfx_geometry',
               '../ui/ui.gyp:ui',
           ],
           'sources': [
@@ -1304,30 +1370,6 @@
           ],
         },
       ]
-    }],
-    ['chromeos == 1 or OS == "linux"', {
-      'targets': [
-        {
-          'target_name': 'h264_parser_unittest',
-          'type': 'executable',
-          'dependencies': [
-            'content.gyp:content_common',
-            '../base/base.gyp:base',
-            '../testing/gtest.gyp:gtest',
-          ],
-          'sources': [
-            'common/gpu/media/h264_bit_reader_unittest.cc',
-            'common/gpu/media/h264_parser_unittest.cc',
-          ],
-          'conditions': [
-            ['linux_use_tcmalloc==1', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-          ],
-        }
-      ],
     }],
     # Special target to wrap a gtest_target_type==shared_library
     # content_unittests into an android apk for execution.
@@ -1382,54 +1424,50 @@
           'includes': [ '../build/java_apk.gypi' ],
         },
         {
-          'target_name': 'content_linker_test_apk',
+          'target_name': 'chromium_linker_test_apk',
           'type': 'none',
           'dependencies': [
-            'content_android_linker_test',
+            'chromium_android_linker_test',
             'content.gyp:content_java',
             'content_shell_java',
           ],
           'variables': {
-            'apk_name': 'ContentLinkerTest',
+            'apk_name': 'ChromiumLinkerTest',
             'java_in_dir': 'shell/android/linker_test_apk',
             'resource_dir': 'shell/android/linker_test_apk/res',
-            'native_lib_target': 'libcontent_android_linker_test',
+            'native_lib_target': 'libchromium_android_linker_test',
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
             'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
-            'use_content_linker': '1',
-            'enable_content_linker_tests': '1',
+            'use_chromium_linker': '1',
+            'enable_chromium_linker_tests': '1',
           },
           'includes': [ '../build/java_apk.gypi' ],
         },
         {
-          'target_name': 'content_android_linker_test',
+          'target_name': 'chromium_android_linker_test',
           'type': 'shared_library',
           'defines!': ['CONTENT_IMPLEMENTATION'],
           'dependencies': [
-            'content_android_linker_test_jni_headers',
+            'chromium_android_linker_test_jni_headers',
             'content_shell_lib',
             # Required to include "content/public/browser/android/compositor.h"
-            # in content_linker_test_android.cc :-(
+            # in chromium_linker_test_android.cc :-(
             '../skia/skia.gyp:skia',
           ],
           'sources': [
-            'shell/android/linker_test_apk/content_linker_test_android.cc',
-            'shell/android/linker_test_apk/content_linker_test_linker_tests.cc',
+            'shell/android/linker_test_apk/chromium_linker_test_android.cc',
+            'shell/android/linker_test_apk/chromium_linker_test_linker_tests.cc',
           ],
         },
         {
-          'target_name': 'content_android_linker_test_jni_headers',
+          'target_name': 'chromium_android_linker_test_jni_headers',
           'type': 'none',
           'sources': [
-            'shell/android/linker_test_apk/src/org/chromium/content_linker_test_apk/LinkerTests.java',
+            'shell/android/linker_test_apk/src/org/chromium/chromium_linker_test_apk/LinkerTests.java',
           ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '<(SHARED_INTERMEDIATE_DIR)/content/shell',
-            ],
-          },
           'variables': {
             'jni_gen_package': 'content/shell',
+            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1455,13 +1493,9 @@
           'sources': [
             'public/test/android/javatests/src/org/chromium/content/browser/test/NestedSystemMessageHandler.java',
           ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '<(SHARED_INTERMEDIATE_DIR)/content/public/test',
-            ],
-          },
           'variables': {
             'jni_gen_package': 'content/public/test',
+            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },

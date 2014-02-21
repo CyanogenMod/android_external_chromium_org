@@ -26,12 +26,12 @@ using ::testing::Mock;
 using ::testing::StrictMock;
 using ::testing::_;
 
-#define EXPECT_SET_NEEDS_FULL_TREE_SYNC(expect, code_to_test) do {        \
+#define EXPECT_SET_NEEDS_FULL_TREE_SYNC(expect, code_to_test)               \
+  do {                                                                      \
     EXPECT_CALL(*layer_tree_host_, SetNeedsFullTreeSync()).Times((expect)); \
-    code_to_test;                                                         \
-    Mock::VerifyAndClearExpectations(layer_tree_host_.get());           \
+    code_to_test;                                                           \
+    Mock::VerifyAndClearExpectations(layer_tree_host_.get());               \
   } while (false)
-
 
 namespace cc {
 namespace {
@@ -51,7 +51,7 @@ class MockLayerTreeHost : public LayerTreeHost {
 class MockLayerPainter : public LayerPainter {
  public:
   virtual void Paint(SkCanvas* canvas,
-                     gfx::Rect content_rect,
+                     const gfx::Rect& content_rect,
                      gfx::RectF* opaque) OVERRIDE {}
 };
 
@@ -549,9 +549,9 @@ TEST_F(LayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetIsRootForIsolatedGroup(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetContentsOpaque(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetPosition(gfx::PointF(4.f, 9.f)));
-  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetSublayerTransform(
-      gfx::Transform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)));
-  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetScrollable(true));
+  // We can use any layer pointer here since we aren't syncing for real.
+  EXPECT_SET_NEEDS_COMMIT(1,
+                          test_layer->SetScrollClipLayerId(test_layer->id()));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetUserScrollable(true, false));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetScrollOffset(
       gfx::Vector2d(10, 10)));

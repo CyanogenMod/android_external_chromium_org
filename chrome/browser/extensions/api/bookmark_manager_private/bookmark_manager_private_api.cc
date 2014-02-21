@@ -9,6 +9,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -19,10 +20,12 @@
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
+#include "chrome/browser/undo/bookmark_undo_service.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#include "chrome/browser/undo/bookmark_undo_utils.h"
 #include "chrome/common/extensions/api/bookmark_manager_private.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/user_prefs.h"
@@ -31,8 +34,10 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
+#include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
@@ -52,10 +57,12 @@ namespace GetSubtree = api::bookmark_manager_private::GetSubtree;
 namespace manager_keys = bookmark_manager_api_constants;
 namespace GetMetaInfo = api::bookmark_manager_private::GetMetaInfo;
 namespace Paste = api::bookmark_manager_private::Paste;
+namespace RedoInfo = api::bookmark_manager_private::GetRedoInfo;
 namespace RemoveTrees = api::bookmark_manager_private::RemoveTrees;
 namespace SetMetaInfo = api::bookmark_manager_private::SetMetaInfo;
 namespace SortChildren = api::bookmark_manager_private::SortChildren;
 namespace StartDrag = api::bookmark_manager_private::StartDrag;
+namespace UndoInfo = api::bookmark_manager_private::GetUndoInfo;
 
 using content::WebContents;
 
@@ -424,8 +431,14 @@ bool BookmarkManagerPrivateStartDragFunction::RunImpl() {
     WebContents* web_contents =
         dispatcher()->delegate()->GetAssociatedWebContents();
     CHECK(web_contents);
+
+    ui::DragDropTypes::DragEventSource source =
+        ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE;
+    if (params->is_from_touch)
+      source = ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH;
+
     chrome::DragBookmarks(
-        GetProfile(), nodes, web_contents->GetView()->GetNativeView());
+        GetProfile(), nodes, web_contents->GetView()->GetNativeView(), source);
 
     return true;
   } else {
@@ -562,6 +575,9 @@ bool BookmarkManagerPrivateRemoveTreesFunction::RunImpl() {
   scoped_ptr<RemoveTrees::Params> params(RemoveTrees::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
+#if !defined(OS_ANDROID)
+  ScopedGroupBookmarkActions group_deletes(GetProfile());
+#endif
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
   int64 id;
   for (size_t i = 0; i < params->id_list.size(); ++i) {
@@ -570,6 +586,54 @@ bool BookmarkManagerPrivateRemoveTreesFunction::RunImpl() {
     if (!bookmark_api_helpers::RemoveNode(model, id, true, &error_))
       return false;
   }
+
+  return true;
+}
+
+bool BookmarkManagerPrivateUndoFunction::RunImpl() {
+#if !defined(OS_ANDROID)
+  BookmarkUndoServiceFactory::GetForProfile(GetProfile())->undo_manager()->
+      Undo();
+#endif
+
+  return true;
+}
+
+bool BookmarkManagerPrivateRedoFunction::RunImpl() {
+#if !defined(OS_ANDROID)
+  BookmarkUndoServiceFactory::GetForProfile(GetProfile())->undo_manager()->
+      Redo();
+#endif
+
+  return true;
+}
+
+bool BookmarkManagerPrivateGetUndoInfoFunction::RunImpl() {
+#if !defined(OS_ANDROID)
+  UndoManager* undo_manager =
+      BookmarkUndoServiceFactory::GetForProfile(GetProfile())->undo_manager();
+
+  UndoInfo::Results::Result result;
+  result.enabled = undo_manager->undo_count() > 0;
+  result.label = base::UTF16ToUTF8(undo_manager->GetUndoLabel());
+
+  results_ = UndoInfo::Results::Create(result);
+#endif  // !defined(OS_ANDROID)
+
+  return true;
+}
+
+bool BookmarkManagerPrivateGetRedoInfoFunction::RunImpl() {
+#if !defined(OS_ANDROID)
+  UndoManager* undo_manager =
+      BookmarkUndoServiceFactory::GetForProfile(GetProfile())->undo_manager();
+
+  RedoInfo::Results::Result result;
+  result.enabled = undo_manager->redo_count() > 0;
+  result.label = base::UTF16ToUTF8(undo_manager->GetRedoLabel());
+
+  results_ = RedoInfo::Results::Create(result);
+#endif  // !defined(OS_ANDROID)
 
   return true;
 }

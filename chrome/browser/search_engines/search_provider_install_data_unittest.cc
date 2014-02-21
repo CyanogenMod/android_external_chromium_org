@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,6 +22,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -135,6 +137,10 @@ class SearchProviderInstallDataTest : public testing::Test {
   // deleted on the I/O thread, which is why it isn't a scoped_ptr.
   SearchProviderInstallData* install_data_;
 
+  // A mock RenderProcessHost that the SearchProviderInstallData will scope its
+  // lifetime to.
+  scoped_ptr<content::MockRenderProcessHost> process_;
+
   DISALLOW_COPY_AND_ASSIGN(SearchProviderInstallDataTest);
 };
 
@@ -149,9 +155,9 @@ void SearchProviderInstallDataTest::SetUp() {
       std::string() /* unknown country code */);
 #endif
   util_.SetUp();
-  install_data_ = new SearchProviderInstallData(util_.profile(),
-      content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-      content::Source<SearchProviderInstallDataTest>(this));
+  process_.reset(new content::MockRenderProcessHost(util_.profile()));
+  install_data_ =
+      new SearchProviderInstallData(util_.profile(), process_.get());
 }
 
 void SearchProviderInstallDataTest::TearDown() {
@@ -160,10 +166,7 @@ void SearchProviderInstallDataTest::TearDown() {
 
   // Make sure that the install data class on the UI thread gets cleaned up.
   // It doesn't matter that this happens after install_data_ is deleted.
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-      content::Source<SearchProviderInstallDataTest>(this),
-      content::NotificationService::NoDetails());
+  process_.reset();
 
   util_.TearDown();
   testing::Test::TearDown();
@@ -175,16 +178,16 @@ void SearchProviderInstallDataTest::SimulateDefaultSearchIsManaged(
   TestingPrefServiceSyncable* service =
       util_.profile()->GetTestingPrefService();
   service->SetManagedPref(prefs::kDefaultSearchProviderEnabled,
-                          Value::CreateBooleanValue(true));
+                          base::Value::CreateBooleanValue(true));
   service->SetManagedPref(prefs::kDefaultSearchProviderSearchURL,
-                          Value::CreateStringValue(url));
+                          base::Value::CreateStringValue(url));
   service->SetManagedPref(prefs::kDefaultSearchProviderName,
-                          Value::CreateStringValue("managed"));
+                          base::Value::CreateStringValue("managed"));
   // Clear the IDs that are not specified via policy.
   service->SetManagedPref(prefs::kDefaultSearchProviderID,
-                          new StringValue(std::string()));
+                          new base::StringValue(std::string()));
   service->SetManagedPref(prefs::kDefaultSearchProviderPrepopulateID,
-                          new StringValue(std::string()));
+                          new base::StringValue(std::string()));
   util_.model()->Observe(chrome::NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
                          content::NotificationService::AllSources(),
                          content::NotificationService::NoDetails());
@@ -208,7 +211,7 @@ TEST_F(SearchProviderInstallDataTest, GetInstallState) {
   // Set up the database.
   util_.ChangeModelToLoadState();
   std::string host = "www.unittest.com";
-  AddNewTemplateURL("http://" + host + "/path", ASCIIToUTF16("unittest"));
+  AddNewTemplateURL("http://" + host + "/path", base::ASCIIToUTF16("unittest"));
 
   // Wait for the changes to be saved.
   base::RunLoop().RunUntilIdle();
@@ -220,7 +223,8 @@ TEST_F(SearchProviderInstallDataTest, GetInstallState) {
   // Set-up a default and try it all one more time.
   std::string default_host = "www.mmm.com";
   TemplateURL* default_url =
-      AddNewTemplateURL("http://" + default_host + "/", ASCIIToUTF16("mmm"));
+      AddNewTemplateURL("http://" + default_host + "/",
+                        base::ASCIIToUTF16("mmm"));
   util_.model()->SetDefaultSearchProvider(default_url);
   test_get_install_state.RunTests(host, default_host);
 }
@@ -229,7 +233,7 @@ TEST_F(SearchProviderInstallDataTest, ManagedDefaultSearch) {
   // Set up the database.
   util_.ChangeModelToLoadState();
   std::string host = "www.unittest.com";
-  AddNewTemplateURL("http://" + host + "/path", ASCIIToUTF16("unittest"));
+  AddNewTemplateURL("http://" + host + "/path", base::ASCIIToUTF16("unittest"));
 
   // Set a managed preference that establishes a default search provider.
   std::string host2 = "www.managedtest.com";
@@ -256,9 +260,10 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
   // Wait for the I/O thread to process the update notification.
   base::RunLoop().RunUntilIdle();
 
-  AddNewTemplateURL("{google:baseURL}?q={searchTerms}", ASCIIToUTF16("t"));
+  AddNewTemplateURL("{google:baseURL}?q={searchTerms}",
+                    base::ASCIIToUTF16("t"));
   TemplateURL* default_url =
-      AddNewTemplateURL("http://d.com/", ASCIIToUTF16("d"));
+      AddNewTemplateURL("http://d.com/", base::ASCIIToUTF16("d"));
   util_.model()->SetDefaultSearchProvider(default_url);
 
   // Wait for the changes to be saved.

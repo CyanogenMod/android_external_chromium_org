@@ -14,25 +14,25 @@ namespace onc {
 namespace {
 
 const OncValueSignature kBoolSignature = {
-  Value::TYPE_BOOLEAN, NULL
+  base::Value::TYPE_BOOLEAN, NULL
 };
 const OncValueSignature kStringSignature = {
-  Value::TYPE_STRING, NULL
+  base::Value::TYPE_STRING, NULL
 };
 const OncValueSignature kIntegerSignature = {
-  Value::TYPE_INTEGER, NULL
+  base::Value::TYPE_INTEGER, NULL
 };
 const OncValueSignature kStringListSignature = {
-  Value::TYPE_LIST, NULL, &kStringSignature
+  base::Value::TYPE_LIST, NULL, &kStringSignature
 };
 const OncValueSignature kIntegerListSignature = {
-  Value::TYPE_LIST, NULL, &kIntegerSignature
+  base::Value::TYPE_LIST, NULL, &kIntegerSignature
 };
 const OncValueSignature kIPConfigListSignature = {
-  Value::TYPE_LIST, NULL, &kIPConfigSignature
+  base::Value::TYPE_LIST, NULL, &kIPConfigSignature
 };
 const OncValueSignature kCellularApnListSignature = {
-  Value::TYPE_LIST, NULL, &kCellularApnSignature
+  base::Value::TYPE_LIST, NULL, &kCellularApnSignature
 };
 
 const OncFieldSignature issuer_subject_pattern_fields[] = {
@@ -47,6 +47,7 @@ const OncFieldSignature certificate_pattern_fields[] = {
     { ::onc::certificate::kEnrollmentURI, &kStringListSignature},
     { ::onc::certificate::kIssuer, &kIssuerSubjectPatternSignature},
     { ::onc::certificate::kIssuerCARef, &kStringListSignature},
+    // Used internally. Not officially supported.
     { ::onc::certificate::kIssuerCAPEMs, &kStringListSignature},
     { ::onc::certificate::kSubject, &kIssuerSubjectPatternSignature},
     {NULL}};
@@ -62,8 +63,10 @@ const OncFieldSignature eap_fields[] = {
     { ::onc::eap::kOuter, &kStringSignature},
     { ::onc::eap::kPassword, &kStringSignature},
     { ::onc::eap::kSaveCredentials, &kBoolSignature},
+    // Used internally. Not officially supported.
     { ::onc::eap::kServerCAPEMs, &kStringListSignature},
     { ::onc::eap::kServerCARef, &kStringSignature},
+    { ::onc::eap::kServerCARefs, &kStringListSignature},
     { ::onc::eap::kUseSystemCAs, &kBoolSignature},
     {NULL}};
 
@@ -77,11 +80,18 @@ const OncFieldSignature ipsec_fields[] = {
     { ::onc::ipsec::kIKEVersion, &kIntegerSignature},
     { ::onc::ipsec::kPSK, &kStringSignature},
     { ::onc::vpn::kSaveCredentials, &kBoolSignature},
-    { ::onc::ipsec::kServerCAPEMs, &kStringSignature},
+    // Used internally. Not officially supported.
+    { ::onc::ipsec::kServerCAPEMs, &kStringListSignature},
     { ::onc::ipsec::kServerCARef, &kStringSignature},
+    { ::onc::ipsec::kServerCARefs, &kStringListSignature},
+    { ::onc::ipsec::kXAUTH, &kXAUTHSignature},
     // Not yet supported.
     //  { ipsec::kEAP, &kEAPSignature },
-    //  { ipsec::kXAUTH, &kXAUTHSignature },
+    {NULL}};
+
+const OncFieldSignature xauth_fields[] = {
+    { ::onc::vpn::kPassword, &kStringSignature},
+    { ::onc::vpn::kUsername, &kStringSignature},
     {NULL}};
 
 const OncFieldSignature l2tp_fields[] = {
@@ -113,8 +123,10 @@ const OncFieldSignature openvpn_fields[] = {
     { ::onc::openvpn::kRemoteCertTLS, &kStringSignature},
     { ::onc::openvpn::kRenegSec, &kIntegerSignature},
     { ::onc::vpn::kSaveCredentials, &kBoolSignature},
+    // Used internally. Not officially supported.
     { ::onc::openvpn::kServerCAPEMs, &kStringListSignature},
     { ::onc::openvpn::kServerCARef, &kStringSignature},
+    { ::onc::openvpn::kServerCARefs, &kStringListSignature},
     // Not supported, yet.
     { ::onc::openvpn::kServerCertPEM, &kStringSignature},
     { ::onc::openvpn::kServerCertRef, &kStringSignature},
@@ -303,88 +315,92 @@ const OncFieldSignature toplevel_configuration_fields[] = {
 }  // namespace
 
 const OncValueSignature kRecommendedSignature = {
-  Value::TYPE_LIST, NULL, &kStringSignature
+  base::Value::TYPE_LIST, NULL, &kStringSignature
 };
 const OncValueSignature kEAPSignature = {
-  Value::TYPE_DICTIONARY, eap_fields, NULL
+  base::Value::TYPE_DICTIONARY, eap_fields, NULL
 };
 const OncValueSignature kIssuerSubjectPatternSignature = {
-  Value::TYPE_DICTIONARY, issuer_subject_pattern_fields, NULL
+  base::Value::TYPE_DICTIONARY, issuer_subject_pattern_fields, NULL
 };
 const OncValueSignature kCertificatePatternSignature = {
-  Value::TYPE_DICTIONARY, certificate_pattern_fields, NULL
+  base::Value::TYPE_DICTIONARY, certificate_pattern_fields, NULL
 };
 const OncValueSignature kIPsecSignature = {
-  Value::TYPE_DICTIONARY, ipsec_fields, NULL
+  base::Value::TYPE_DICTIONARY, ipsec_fields, NULL
+};
+const OncValueSignature kXAUTHSignature = {
+  base::Value::TYPE_DICTIONARY, xauth_fields, NULL
 };
 const OncValueSignature kL2TPSignature = {
-  Value::TYPE_DICTIONARY, l2tp_fields, NULL
+  base::Value::TYPE_DICTIONARY, l2tp_fields, NULL
 };
 const OncValueSignature kOpenVPNSignature = {
-  Value::TYPE_DICTIONARY, openvpn_fields, NULL
+  base::Value::TYPE_DICTIONARY, openvpn_fields, NULL
 };
 const OncValueSignature kVerifyX509Signature = {
-  Value::TYPE_DICTIONARY, verify_x509_fields, NULL
+  base::Value::TYPE_DICTIONARY, verify_x509_fields, NULL
 };
 const OncValueSignature kVPNSignature = {
-  Value::TYPE_DICTIONARY, vpn_fields, NULL
+  base::Value::TYPE_DICTIONARY, vpn_fields, NULL
 };
 const OncValueSignature kEthernetSignature = {
-  Value::TYPE_DICTIONARY, ethernet_fields, NULL
+  base::Value::TYPE_DICTIONARY, ethernet_fields, NULL
 };
 const OncValueSignature kIPConfigSignature = {
-  Value::TYPE_DICTIONARY, ipconfig_fields, NULL
+  base::Value::TYPE_DICTIONARY, ipconfig_fields, NULL
 };
 const OncValueSignature kProxyLocationSignature = {
-  Value::TYPE_DICTIONARY, proxy_location_fields, NULL
+  base::Value::TYPE_DICTIONARY, proxy_location_fields, NULL
 };
 const OncValueSignature kProxyManualSignature = {
-  Value::TYPE_DICTIONARY, proxy_manual_fields, NULL
+  base::Value::TYPE_DICTIONARY, proxy_manual_fields, NULL
 };
 const OncValueSignature kProxySettingsSignature = {
-  Value::TYPE_DICTIONARY, proxy_settings_fields, NULL
+  base::Value::TYPE_DICTIONARY, proxy_settings_fields, NULL
 };
 const OncValueSignature kWiFiSignature = {
-  Value::TYPE_DICTIONARY, wifi_fields, NULL
+  base::Value::TYPE_DICTIONARY, wifi_fields, NULL
 };
 const OncValueSignature kCertificateSignature = {
-  Value::TYPE_DICTIONARY, certificate_fields, NULL
+  base::Value::TYPE_DICTIONARY, certificate_fields, NULL
 };
 const OncValueSignature kNetworkConfigurationSignature = {
-  Value::TYPE_DICTIONARY, network_configuration_fields, NULL
+  base::Value::TYPE_DICTIONARY, network_configuration_fields, NULL
 };
 const OncValueSignature kGlobalNetworkConfigurationSignature = {
-  Value::TYPE_DICTIONARY, global_network_configuration_fields, NULL
+  base::Value::TYPE_DICTIONARY, global_network_configuration_fields, NULL
 };
 const OncValueSignature kCertificateListSignature = {
-  Value::TYPE_LIST, NULL, &kCertificateSignature
+  base::Value::TYPE_LIST, NULL, &kCertificateSignature
 };
 const OncValueSignature kNetworkConfigurationListSignature = {
-  Value::TYPE_LIST, NULL, &kNetworkConfigurationSignature
+  base::Value::TYPE_LIST, NULL, &kNetworkConfigurationSignature
 };
 const OncValueSignature kToplevelConfigurationSignature = {
-  Value::TYPE_DICTIONARY, toplevel_configuration_fields, NULL
+  base::Value::TYPE_DICTIONARY, toplevel_configuration_fields, NULL
 };
 
 // Derived "ONC with State" signatures.
 const OncValueSignature kNetworkWithStateSignature = {
-  Value::TYPE_DICTIONARY, network_with_state_fields, NULL,
+  base::Value::TYPE_DICTIONARY, network_with_state_fields, NULL,
   &kNetworkConfigurationSignature
 };
 const OncValueSignature kWiFiWithStateSignature = {
-  Value::TYPE_DICTIONARY, wifi_with_state_fields, NULL, &kWiFiSignature
+  base::Value::TYPE_DICTIONARY, wifi_with_state_fields, NULL, &kWiFiSignature
 };
 const OncValueSignature kCellularSignature = {
-  Value::TYPE_DICTIONARY, cellular_fields, NULL
+  base::Value::TYPE_DICTIONARY, cellular_fields, NULL
 };
 const OncValueSignature kCellularWithStateSignature = {
-  Value::TYPE_DICTIONARY, cellular_with_state_fields, NULL, &kCellularSignature
+  base::Value::TYPE_DICTIONARY, cellular_with_state_fields, NULL,
+  &kCellularSignature
 };
 const OncValueSignature kCellularProviderSignature = {
-  Value::TYPE_DICTIONARY, cellular_provider_fields, NULL
+  base::Value::TYPE_DICTIONARY, cellular_provider_fields, NULL
 };
 const OncValueSignature kCellularApnSignature = {
-  Value::TYPE_DICTIONARY, cellular_apn_fields, NULL
+  base::Value::TYPE_DICTIONARY, cellular_apn_fields, NULL
 };
 
 const OncFieldSignature* GetFieldSignature(const OncValueSignature& signature,
@@ -411,6 +427,7 @@ struct CredentialEntry {
 const CredentialEntry credentials[] = {
     {&kEAPSignature, ::onc::eap::kPassword},
     {&kIPsecSignature, ::onc::ipsec::kPSK},
+    {&kXAUTHSignature, ::onc::vpn::kPassword},
     {&kL2TPSignature, ::onc::vpn::kPassword},
     {&kOpenVPNSignature, ::onc::vpn::kPassword},
     {&kOpenVPNSignature, ::onc::openvpn::kTLSAuthContents},

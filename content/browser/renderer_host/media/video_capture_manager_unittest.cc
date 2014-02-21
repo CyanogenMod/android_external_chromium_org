@@ -16,6 +16,7 @@
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
 #include "content/common/media/media_stream_options.h"
+#include "media/video/capture/fake_video_capture_device.h"
 #include "media/video/capture/video_capture_device.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,7 +56,7 @@ class MockFrameObserver : public VideoCaptureControllerEventHandler {
   virtual void OnBufferReady(
       const VideoCaptureControllerID& id,
       int buffer_id,
-      base::Time timestamp,
+      base::TimeTicks timestamp,
       const media::VideoCaptureFormat& format) OVERRIDE {}
   virtual void OnEnded(const VideoCaptureControllerID& id) OVERRIDE {}
 
@@ -71,7 +72,7 @@ class VideoCaptureManagerTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     listener_.reset(new MockMediaStreamProviderListener());
-    message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
+    message_loop_.reset(new base::MessageLoopForIO);
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
                                            message_loop_.get()));
     vcm_ = new VideoCaptureManager();
@@ -192,6 +193,157 @@ TEST_F(VideoCaptureManagerTest, OpenTwice) {
   vcm_->Close(video_session_id_second);
 
   // Wait to check callbacks before removing the listener.
+  message_loop_->RunUntilIdle();
+  vcm_->Unregister();
+}
+
+// Connect and disconnect devices.
+TEST_F(VideoCaptureManagerTest, ConnectAndDisconnectDevices) {
+  StreamDeviceInfoArray devices;
+  int number_of_devices_keep =
+      media::FakeVideoCaptureDevice::NumberOfFakeDevices();
+
+  InSequence s;
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .Times(1).WillOnce(SaveArg<1>(&devices));
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+  message_loop_->RunUntilIdle();
+  ASSERT_EQ(devices.size(), 2u);
+
+  // Simulate we remove 1 fake device.
+  media::FakeVideoCaptureDevice::SetNumberOfFakeDevices(1);
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .Times(1).WillOnce(SaveArg<1>(&devices));
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+  message_loop_->RunUntilIdle();
+  ASSERT_EQ(devices.size(), 1u);
+
+  // Simulate we add 2 fake devices.
+  media::FakeVideoCaptureDevice::SetNumberOfFakeDevices(3);
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .Times(1).WillOnce(SaveArg<1>(&devices));
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+  message_loop_->RunUntilIdle();
+  ASSERT_EQ(devices.size(), 3u);
+
+  vcm_->Unregister();
+  media::FakeVideoCaptureDevice::SetNumberOfFakeDevices(number_of_devices_keep);
+}
+
+// Enumerate devices and open the first, then check the list of supported
+// formats. Then start the opened device. The capability list should stay the
+// same. Finally stop the device and check that the capabilities stay unchanged.
+TEST_F(VideoCaptureManagerTest, ManipulateDeviceAndCheckCapabilities) {
+  StreamDeviceInfoArray devices;
+
+  // Before enumerating the devices, requesting formats should return false.
+  int video_session_id = 0;
+  media::VideoCaptureFormats supported_formats;
+  supported_formats.clear();
+  EXPECT_FALSE(
+      vcm_->GetDeviceSupportedFormats(video_session_id, &supported_formats));
+
+  InSequence s;
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .Times(1).WillOnce(SaveArg<1>(&devices));
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+  message_loop_->RunUntilIdle();
+  ASSERT_GE(devices.size(), 2u);
+
+  EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, _)).Times(1);
+  video_session_id = vcm_->Open(devices.front());
+  message_loop_->RunUntilIdle();
+
+  // Right after opening the device, we should see all its formats.
+  supported_formats.clear();
+  EXPECT_TRUE(
+      vcm_->GetDeviceSupportedFormats(video_session_id, &supported_formats));
+  ASSERT_GT(supported_formats.size(), 1u);
+  EXPECT_GT(supported_formats[0].frame_size.width(), 1);
+  EXPECT_GT(supported_formats[0].frame_size.height(), 1);
+  EXPECT_GT(supported_formats[0].frame_rate, 1);
+  EXPECT_GT(supported_formats[1].frame_size.width(), 1);
+  EXPECT_GT(supported_formats[1].frame_size.height(), 1);
+  EXPECT_GT(supported_formats[1].frame_rate, 1);
+
+  VideoCaptureControllerID client_id = StartClient(video_session_id, true);
+  message_loop_->RunUntilIdle();
+  // After StartClient(), device's supported formats should stay the same.
+  supported_formats.clear();
+  EXPECT_TRUE(
+      vcm_->GetDeviceSupportedFormats(video_session_id, &supported_formats));
+  ASSERT_GE(supported_formats.size(), 2u);
+  EXPECT_GT(supported_formats[0].frame_size.width(), 1);
+  EXPECT_GT(supported_formats[0].frame_size.height(), 1);
+  EXPECT_GT(supported_formats[0].frame_rate, 1);
+  EXPECT_GT(supported_formats[1].frame_size.width(), 1);
+  EXPECT_GT(supported_formats[1].frame_size.height(), 1);
+  EXPECT_GT(supported_formats[1].frame_rate, 1);
+
+  EXPECT_CALL(*listener_, Closed(MEDIA_DEVICE_VIDEO_CAPTURE, _)).Times(1);
+  StopClient(client_id);
+  supported_formats.clear();
+  EXPECT_TRUE(
+      vcm_->GetDeviceSupportedFormats(video_session_id, &supported_formats));
+  ASSERT_GE(supported_formats.size(), 2u);
+  EXPECT_GT(supported_formats[0].frame_size.width(), 1);
+  EXPECT_GT(supported_formats[0].frame_size.height(), 1);
+  EXPECT_GT(supported_formats[0].frame_rate, 1);
+  EXPECT_GT(supported_formats[1].frame_size.width(), 1);
+  EXPECT_GT(supported_formats[1].frame_size.height(), 1);
+  EXPECT_GT(supported_formats[1].frame_rate, 1);
+
+  vcm_->Close(video_session_id);
+  message_loop_->RunUntilIdle();
+  vcm_->Unregister();
+}
+
+// Enumerate devices and open the first, then check the formats currently in
+// use, which should be an empty vector. Then start the opened device. The
+// format(s) in use should be just one format (the one used when configuring-
+// starting the device). Finally stop the device and check that the formats in
+// use is an empty vector.
+TEST_F(VideoCaptureManagerTest, StartDeviceAndGetDeviceFormatInUse) {
+  StreamDeviceInfoArray devices;
+
+  InSequence s;
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .Times(1).WillOnce(SaveArg<1>(&devices));
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+  message_loop_->RunUntilIdle();
+  ASSERT_GE(devices.size(), 2u);
+
+  EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, _)).Times(1);
+  int video_session_id = vcm_->Open(devices.front());
+  message_loop_->RunUntilIdle();
+
+  // Right after opening the device, we should see no format in use.
+  media::VideoCaptureFormats formats_in_use;
+  EXPECT_TRUE(vcm_->GetDeviceFormatsInUse(video_session_id, &formats_in_use));
+  EXPECT_TRUE(formats_in_use.empty());
+
+  VideoCaptureControllerID client_id = StartClient(video_session_id, true);
+  message_loop_->RunUntilIdle();
+  // After StartClient(), |formats_in_use| should contain one valid format.
+  EXPECT_TRUE(vcm_->GetDeviceFormatsInUse(video_session_id, &formats_in_use));
+  EXPECT_EQ(formats_in_use.size(), 1u);
+  if (formats_in_use.size()) {
+    media::VideoCaptureFormat& format_in_use = formats_in_use.front();
+    EXPECT_TRUE(format_in_use.IsValid());
+    EXPECT_GT(format_in_use.frame_size.width(), 1);
+    EXPECT_GT(format_in_use.frame_size.height(), 1);
+    EXPECT_GT(format_in_use.frame_rate, 1);
+  }
+  formats_in_use.clear();
+
+  EXPECT_CALL(*listener_, Closed(MEDIA_DEVICE_VIDEO_CAPTURE, _)).Times(1);
+  StopClient(client_id);
+  message_loop_->RunUntilIdle();
+  // After StopClient(), the device's formats in use should be empty again.
+  EXPECT_TRUE(vcm_->GetDeviceFormatsInUse(video_session_id, &formats_in_use));
+  EXPECT_TRUE(formats_in_use.empty());
+
+  vcm_->Close(video_session_id);
   message_loop_->RunUntilIdle();
   vcm_->Unregister();
 }

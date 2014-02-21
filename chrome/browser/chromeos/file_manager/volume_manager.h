@@ -5,14 +5,18 @@
 #ifndef CHROME_BROWSER_CHROMEOS_FILE_MANAGER_VOLUME_MANAGER_H_
 #define CHROME_BROWSER_CHROMEOS_FILE_MANAGER_VOLUME_MANAGER_H_
 
+#include <string>
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
-#include "chromeos/disks/disk_mount_manager.h"
+#include "chrome/browser/local_discovery/storage/privet_volume_lister.h"
 #include "chromeos/dbus/cros_disks_client.h"
+#include "chromeos/disks/disk_mount_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class Profile;
@@ -41,6 +45,7 @@ enum VolumeType {
   VOLUME_TYPE_DOWNLOADS_DIRECTORY,
   VOLUME_TYPE_REMOVABLE_DISK_PARTITION,
   VOLUME_TYPE_MOUNTED_ARCHIVE_FILE,
+  VOLUME_TYPE_CLOUD_DEVICE
 };
 
 struct VolumeInfo {
@@ -125,6 +130,9 @@ class VolumeManager : public BrowserContextKeyedService,
   bool FindVolumeInfoById(const std::string& volume_id,
                           VolumeInfo* result) const;
 
+  // For testing purpose, adds the custom |path| as the "Downloads" folder.
+  bool RegisterDownloadsDirectoryForTesting(const base::FilePath& path);
+
   // drive::DriveIntegrationServiceObserver overrides.
   virtual void OnFileSystemMounted() OVERRIDE;
   virtual void OnFileSystemBeingUnmounted() OVERRIDE;
@@ -150,12 +158,24 @@ class VolumeManager : public BrowserContextKeyedService,
   void OnExternalStorageDisabledChanged();
 
  private:
+  void OnPrivetVolumesAvailable(
+      const local_discovery::PrivetVolumeLister::VolumeList& volumes);
+  void DoMountEvent(chromeos::MountError error_code,
+                    const VolumeInfo& volume_info,
+                    bool is_remounting);
+  void DoUnmountEvent(chromeos::MountError error_code,
+                      const VolumeInfo& volume_info);
+
   Profile* profile_;
   drive::DriveIntegrationService* drive_integration_service_;
   chromeos::disks::DiskMountManager* disk_mount_manager_;
   scoped_ptr<MountedDiskMonitor> mounted_disk_monitor_;
   PrefChangeRegistrar pref_change_registrar_;
   ObserverList<VolumeManagerObserver> observers_;
+  scoped_ptr<local_discovery::PrivetVolumeLister> privet_volume_lister_;
+
+  std::map<std::string, VolumeInfo> mounted_volumes_;
+
   DISALLOW_COPY_AND_ASSIGN(VolumeManager);
 };
 

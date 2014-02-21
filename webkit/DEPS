@@ -9,9 +9,10 @@ include_rules = [
   # For bridge/c/c_utility.h in npruntime_util.cc
   "+bridge",
   "+cc",
+  "-cc/surfaces",
   "+grit",  # For generated headers
   "+skia",
-  "+third_party/angle_dx11",
+  "+third_party/angle",
   "+third_party/hyphen",
   "+third_party/leveldatabase",
   "+third_party/skia",

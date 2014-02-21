@@ -62,17 +62,17 @@
 #include "win8/util/win8_util.h"
 #endif
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 using ui::DropTargetEvent;
 
 namespace {
 
 static const int kTabStripAnimationVSlop = 40;
 // Inactive tabs in a native frame are slightly transparent.
-static const int kNativeFrameInactiveTabAlpha = 200;
+static const int kGlassFrameInactiveTabAlpha = 200;
 // If there are multiple tabs selected then make non-selected inactive tabs
 // even more transparent.
-static const int kNativeFrameInactiveTabAlphaMultiSelection = 150;
+static const int kGlassFrameInactiveTabAlphaMultiSelection = 150;
 
 // Alpha applied to all elements save the selected tabs.
 static const int kInactiveTabAndNewTabButtonAlphaAsh = 230;
@@ -333,7 +333,7 @@ class NewTabButton : public views::ImageButton {
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  private:
-  bool ShouldUseNativeFrame() const;
+  bool ShouldWindowContentsBeTransparent() const;
   gfx::ImageSkia GetBackgroundImage(views::CustomButton::ButtonState state,
                                     ui::ScaleFactor scale_factor) const;
   gfx::ImageSkia GetImageForState(views::CustomButton::ButtonState state,
@@ -427,16 +427,16 @@ void NewTabButton::OnGestureEvent(ui::GestureEvent* event) {
   event->SetHandled();
 }
 
-bool NewTabButton::ShouldUseNativeFrame() const {
+bool NewTabButton::ShouldWindowContentsBeTransparent() const {
   return GetWidget() &&
-    GetWidget()->GetTopLevelWidget()->ShouldUseNativeFrame();
+         GetWidget()->GetTopLevelWidget()->ShouldWindowContentsBeTransparent();
 }
 
 gfx::ImageSkia NewTabButton::GetBackgroundImage(
     views::CustomButton::ButtonState state,
     ui::ScaleFactor scale_factor) const {
   int background_id = 0;
-  if (ShouldUseNativeFrame()) {
+  if (ShouldWindowContentsBeTransparent()) {
     background_id = IDR_THEME_TAB_BACKGROUND_V;
   } else if (tab_strip_->controller()->IsIncognito()) {
     background_id = IDR_THEME_TAB_BACKGROUND_INCOGNITO;
@@ -452,7 +452,8 @@ gfx::ImageSkia NewTabButton::GetBackgroundImage(
   switch (state) {
     case views::CustomButton::STATE_NORMAL:
     case views::CustomButton::STATE_HOVERED:
-      alpha = ShouldUseNativeFrame() ? kNativeFrameInactiveTabAlpha : 255;
+      alpha = ShouldWindowContentsBeTransparent() ? kGlassFrameInactiveTabAlpha
+                                                  : 255;
       break;
     case views::CustomButton::STATE_PRESSED:
       alpha = 145;
@@ -523,10 +524,10 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   canvas.DrawImageInt(GetBackgroundImage(state, scale_factor), 0, 0);
 
   // Draw the button border with a slight alpha.
-  const int kNativeFrameOverlayAlpha = 178;
+  const int kGlassFrameOverlayAlpha = 178;
   const int kOpaqueFrameOverlayAlpha = 230;
-  uint8 alpha = ShouldUseNativeFrame() ?
-      kNativeFrameOverlayAlpha : kOpaqueFrameOverlayAlpha;
+  uint8 alpha = ShouldWindowContentsBeTransparent() ?
+      kGlassFrameOverlayAlpha : kOpaqueFrameOverlayAlpha;
   canvas.DrawImageInt(*overlay, 0, 0, alpha);
 
   return gfx::ImageSkia(canvas.ExtractImageRep());
@@ -898,14 +899,6 @@ bool TabStrip::IsValidModelIndex(int model_index) const {
   return controller_->IsValidIndex(model_index);
 }
 
-Tab* TabStrip::CreateTabForDragging() {
-  Tab* tab = new Tab(NULL);
-  // Make sure the dragged tab shares our theme provider. We need to explicitly
-  // do this as during dragging there isn't a theme provider.
-  tab->set_theme_provider(GetThemeProvider());
-  return tab;
-}
-
 bool TabStrip::IsDragSessionActive() const {
   return drag_controller_.get() != NULL;
 }
@@ -1148,16 +1141,11 @@ void TabStrip::MaybeStartDrag(
     move_behavior = TabDragController::MOVE_VISIBILE_TABS;
   }
 
-  views::Widget* widget = GetWidget();
 #if defined(OS_WIN)
   // It doesn't make sense to drag tabs out on Win8's single window Metro mode.
   if (win8::IsSingleWindowMetroMode())
     detach_behavior = TabDragController::NOT_DETACHABLE;
 #endif
-  // Gestures don't automatically do a capture. We don't allow multiple drags at
-  // the same time, so we explicitly capture.
-  if (event.type() == ui::ET_GESTURE_BEGIN)
-    widget->SetCapture(this);
   drag_controller_.reset(new TabDragController);
   drag_controller_->Init(
       this, tab, tabs, gfx::Point(x, y), event.x(), selection_model,
@@ -1337,14 +1325,14 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   if (inactive_tab_alpha < 255)
     canvas->Restore();
 
-  if (GetWidget()->ShouldUseNativeFrame()) {
+  if (GetWidget()->ShouldWindowContentsBeTransparent()) {
     // Make sure non-active tabs are somewhat transparent.
     SkPaint paint;
     // If there are multiple tabs selected, fade non-selected tabs more to make
     // the selected tabs more noticable.
     int alpha = selected_tab_count > 1 ?
-        kNativeFrameInactiveTabAlphaMultiSelection :
-        kNativeFrameInactiveTabAlpha;
+        kGlassFrameInactiveTabAlphaMultiSelection :
+        kGlassFrameInactiveTabAlpha;
     paint.setColor(SkColorSetARGB(alpha, 255, 255, 255));
     paint.setXfermodeMode(SkXfermode::kDstIn_Mode);
     paint.setStyle(SkPaint::kFill_Style);
@@ -1410,7 +1398,9 @@ void TabStrip::OnDragEntered(const DropTargetEvent& event) {
   base::string16 title;
 
   // Check whether the event data includes supported drop data.
-  if (event.data().GetURLAndTitle(&url, &title) && url.is_valid()) {
+  if (event.data().GetURLAndTitle(
+          ui::OSExchangeData::CONVERT_FILENAMES, &url, &title) &&
+      url.is_valid()) {
     drop_info_->url = url;
 
     // For file:// URLs, kick off a MIME type request in case they're dropped.
@@ -1450,7 +1440,9 @@ int TabStrip::OnPerformDrop(const DropTargetEvent& event) {
   GURL url;
   base::string16 title;
   if (!file_supported ||
-      !event.data().GetURLAndTitle(&url, &title) || !url.is_valid())
+      !event.data().GetURLAndTitle(
+           ui::OSExchangeData::CONVERT_FILENAMES, &url, &title) ||
+      !url.is_valid())
     return ui::DragDropTypes::DRAG_NONE;
 
   controller()->PerformDrop(drop_before, drop_index, url);
@@ -2320,6 +2312,9 @@ void TabStrip::SetTabBoundsForDrag(const std::vector<gfx::Rect>& tab_bounds) {
   DCHECK_EQ(tab_count(), static_cast<int>(tab_bounds.size()));
   for (int i = 0; i < tab_count(); ++i)
     tab_at(i)->SetBoundsRect(tab_bounds[i]);
+  // Reset the layout size as we've effectively layed out a different size.
+  // This ensures a layout happens after the drag is done.
+  last_layout_size_ = gfx::Size();
 }
 
 void TabStrip::AddMessageLoopObserver() {

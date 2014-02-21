@@ -4,44 +4,38 @@
 
 #include "chrome/browser/password_manager/password_generation_manager.h"
 
-#include "base/prefs/pref_service.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/password_manager/password_manager_client.h"
+#include "chrome/browser/password_manager/password_manager_driver.h"
+#include "chrome/browser/ui/autofill/password_generation_popup_controller_impl.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/common/pref_names.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/password_generator.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/password_form.h"
-#include "components/user_prefs/pref_registry_syncable.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "ipc/ipc_message_macros.h"
+#include "content/public/browser/web_contents_view.h"
 #include "ui/gfx/rect.h"
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordGenerationManager);
-
 PasswordGenerationManager::PasswordGenerationManager(
-    content::WebContents* contents)
-    : content::WebContentsObserver(contents) {}
+    content::WebContents* contents,
+    PasswordManagerClient* client)
+    : web_contents_(contents),
+      observer_(NULL),
+      client_(client),
+      driver_(client->GetDriver()) {}
 
 PasswordGenerationManager::~PasswordGenerationManager() {}
 
-// static
-void PasswordGenerationManager::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(
-      prefs::kPasswordGenerationEnabled,
-      true,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+void PasswordGenerationManager::SetTestObserver(
+    autofill::PasswordGenerationPopupObserver* observer) {
+  observer_ = observer;
 }
 
 void PasswordGenerationManager::DetectAccountCreationForms(
@@ -60,53 +54,22 @@ void PasswordGenerationManager::DetectAccountCreationForms(
     }
   }
   if (!account_creation_forms.empty() && IsGenerationEnabled()) {
-    SendAccountCreationFormsToRenderer(web_contents()->GetRenderViewHost(),
+    SendAccountCreationFormsToRenderer(web_contents_->GetRenderViewHost(),
                                        account_creation_forms);
   }
 }
 
-bool PasswordGenerationManager::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(PasswordGenerationManager, message)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_ShowPasswordGenerationPopup,
-                        OnShowPasswordGenerationPopup)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-
-  return handled;
-}
-
 // In order for password generation to be enabled, we need to make sure:
-// (1) Password sync is enabled,
-// (2) Password manager is enabled, and
-// (3) Password generation preference check box is checked.
+// (1) Password sync is enabled, and
+// (2) Password saving is enabled.
 bool PasswordGenerationManager::IsGenerationEnabled() const {
-  if (!web_contents())
-    return false;
-
-  Profile* profile = Profile::FromBrowserContext(
-      web_contents()->GetBrowserContext());
-
-  if (!PasswordManager::FromWebContents(web_contents())->IsSavingEnabled()) {
+  if (!driver_->GetPasswordManager()->IsSavingEnabled()) {
     DVLOG(2) << "Generation disabled because password saving is disabled";
     return false;
   }
 
-  bool password_sync_enabled = false;
-  ProfileSyncService* sync_service =
-      ProfileSyncServiceFactory::GetForProfile(profile);
-  if (sync_service) {
-    syncer::ModelTypeSet sync_set = sync_service->GetActiveDataTypes();
-    password_sync_enabled = (sync_service->HasSyncSetupCompleted() &&
-                             sync_set.Has(syncer::PASSWORDS));
-  }
-  if (!password_sync_enabled) {
+  if (!client_->IsPasswordSyncEnabled()) {
     DVLOG(2) << "Generation disabled because passwords are not being synced";
-    return false;
-  }
-
-  if (!profile->GetPrefs()->GetBoolean(prefs::kPasswordGenerationEnabled)) {
-    DVLOG(2) << "Generation disabled by user";
     return false;
   }
 
@@ -120,17 +83,66 @@ void PasswordGenerationManager::SendAccountCreationFormsToRenderer(
       host->GetRoutingID(), forms));
 }
 
+gfx::RectF PasswordGenerationManager::GetBoundsInScreenSpace(
+    const gfx::RectF& bounds) {
+  gfx::Rect client_area;
+  web_contents_->GetView()->GetContainerBounds(&client_area);
+  return bounds + client_area.OffsetFromOrigin();
+}
+
 void PasswordGenerationManager::OnShowPasswordGenerationPopup(
-    const gfx::Rect& bounds,
+    const gfx::RectF& bounds,
     int max_length,
     const autofill::PasswordForm& form) {
-#if defined(OS_ANDROID)
-  NOTIMPLEMENTED();
-#else
+  // TODO(gcasto): Validate data in PasswordForm.
+
+  // Only implemented for Aura right now.
+#if defined(USE_AURA)
+  // Convert element_bounds to be in screen space.
+  gfx::RectF element_bounds_in_screen_space = GetBoundsInScreenSpace(bounds);
+
   password_generator_.reset(new autofill::PasswordGenerator(max_length));
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
-  browser->window()->ShowPasswordGenerationBubble(bounds,
-                                                  form,
-                                                  password_generator_.get());
-#endif  // #if defined(OS_ANDROID)
+
+  popup_controller_ =
+      autofill::PasswordGenerationPopupControllerImpl::GetOrCreate(
+          popup_controller_,
+          element_bounds_in_screen_space,
+          form,
+          password_generator_.get(),
+          driver_->GetPasswordManager(),
+          observer_,
+          web_contents_,
+          web_contents_->GetView()->GetNativeView());
+  popup_controller_->Show(true /* display_password */);
+#endif  // #if defined(USE_AURA)
+}
+
+void PasswordGenerationManager::OnShowPasswordEditingPopup(
+    const gfx::RectF& bounds,
+    const autofill::PasswordForm& form) {
+  // Only implemented for Aura right now.
+#if defined(USE_AURA)
+  gfx::RectF element_bounds_in_screen_space = GetBoundsInScreenSpace(bounds);
+
+  popup_controller_ =
+      autofill::PasswordGenerationPopupControllerImpl::GetOrCreate(
+          popup_controller_,
+          element_bounds_in_screen_space,
+          form,
+          password_generator_.get(),
+          driver_->GetPasswordManager(),
+          observer_,
+          web_contents_,
+          web_contents_->GetView()->GetNativeView());
+  popup_controller_->Show(false /* display_password */);
+#endif  // #if defined(USE_AURA)
+}
+
+void PasswordGenerationManager::OnHidePasswordGenerationPopup() {
+  HidePopup();
+}
+
+void PasswordGenerationManager::HidePopup() {
+  if (popup_controller_)
+    popup_controller_->HideAndDestroy();
 }

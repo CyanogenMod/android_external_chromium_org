@@ -68,6 +68,8 @@ class WebContentsViewDelegate;
 struct ColorSuggestion;
 struct FaviconURL;
 struct LoadNotificationDetails;
+struct ResourceRedirectDetails;
+struct ResourceRequestDetails;
 
 // Factory function for the implementations that content knows about. Takes
 // ownership of |delegate|.
@@ -166,6 +168,15 @@ class CONTENT_EXPORT WebContentsImpl
   void DragSourceMovedTo(int client_x, int client_y,
                          int screen_x, int screen_y);
 
+  // A response has been received for a resource request.
+  void DidGetResourceResponseStart(
+      const ResourceRequestDetails& details);
+
+  // A redirect was received while requesting a resource.
+  void DidGetRedirectForResourceRequest(
+      RenderViewHost* render_view_host,
+      const ResourceRedirectDetails& details);
+
   // WebContents ------------------------------------------------------
   virtual WebContentsDelegate* GetDelegate() OVERRIDE;
   virtual void SetDelegate(WebContentsDelegate* delegate) OVERRIDE;
@@ -174,6 +185,9 @@ class CONTENT_EXPORT WebContentsImpl
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual RenderProcessHost* GetRenderProcessHost() const OVERRIDE;
   virtual RenderFrameHost* GetMainFrame() OVERRIDE;
+  virtual void ForEachFrame(
+      const base::Callback<void(RenderFrameHost*)>& on_frame) OVERRIDE;
+  virtual void SendToAllFrames(IPC::Message* message) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() const OVERRIDE;
   virtual void GetRenderViewHostAtPosition(
       int x,
@@ -191,7 +205,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual WebUI* GetCommittedWebUI() const OVERRIDE;
   virtual void SetUserAgentOverride(const std::string& override) OVERRIDE;
   virtual const std::string& GetUserAgentOverride() const OVERRIDE;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) OVERRIDE;
 #endif
@@ -210,7 +224,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual std::set<GURL> GetSitesInTab() const OVERRIDE;
   virtual const std::string& GetEncoding() const OVERRIDE;
   virtual bool DisplayedInsecureContent() const OVERRIDE;
-  virtual void IncrementCapturerCount() OVERRIDE;
+  virtual void IncrementCapturerCount(const gfx::Size& capture_size) OVERRIDE;
   virtual void DecrementCapturerCount() OVERRIDE;
   virtual int GetCapturerCount() const OVERRIDE;
   virtual bool IsCrashed() const OVERRIDE;
@@ -219,7 +233,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual base::TerminationStatus GetCrashedStatus() const OVERRIDE;
   virtual bool IsBeingDestroyed() const OVERRIDE;
   virtual void NotifyNavigationStateChanged(unsigned changed_flags) OVERRIDE;
-  virtual base::TimeTicks GetLastSelectedTime() const OVERRIDE;
+  virtual base::TimeTicks GetLastActiveTime() const OVERRIDE;
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual bool NeedToFireBeforeUnload() OVERRIDE;
@@ -268,6 +282,12 @@ class CONTENT_EXPORT WebContentsImpl
                             bool is_favicon,
                             uint32_t max_bitmap_size,
                             const ImageDownloadCallback& callback) OVERRIDE;
+  virtual bool IsSubframe() const OVERRIDE;
+  virtual void Find(int request_id,
+                    const base::string16& search_text,
+                    const blink::WebFindOptions& options) OVERRIDE;
+  virtual void SetZoomLevel(double level) OVERRIDE;
+  virtual void StopFinding(StopFindAction action) OVERRIDE;
 #if defined(OS_ANDROID)
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents()
       OVERRIDE;
@@ -284,6 +304,12 @@ class CONTENT_EXPORT WebContentsImpl
                                  const IPC::Message& message) OVERRIDE;
   virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void DidStartLoading(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void DidStopLoading(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void WorkerCrashed(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
+                               const ContextMenuParams& params) OVERRIDE;
+  virtual WebContents* GetAsWebContents() OVERRIDE;
 
   // RenderViewHostDelegate ----------------------------------------------------
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
@@ -294,7 +320,9 @@ class CONTENT_EXPORT WebContentsImpl
   virtual const GURL& GetURL() const OVERRIDE;
   virtual const GURL& GetVisibleURL() const OVERRIDE;
   virtual const GURL& GetLastCommittedURL() const OVERRIDE;
-  virtual WebContents* GetAsWebContents() OVERRIDE;
+  // RenderFrameHostDelegate has the same method, so list it there because this
+  // interface is going away.
+  // virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderViewReady(RenderViewHost* render_view_host) OVERRIDE;
@@ -302,22 +330,6 @@ class CONTENT_EXPORT WebContentsImpl
                                     base::TerminationStatus status,
                                     int error_code) OVERRIDE;
   virtual void RenderViewDeleted(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidRedirectProvisionalLoad(
-      RenderViewHost* render_view_host,
-      int32 page_id,
-      const GURL& source_url,
-      const GURL& target_url) OVERRIDE;
-  virtual void DidFailProvisionalLoadWithError(
-      RenderViewHost* render_view_host,
-      const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params)
-          OVERRIDE;
-  virtual void DidGetResourceResponseStart(
-      const ResourceRequestDetails& details) OVERRIDE;
-  virtual void DidGetRedirectForResourceRequest(
-      const ResourceRedirectDetails& details) OVERRIDE;
-  virtual void DidNavigate(
-      RenderViewHost* render_view_host,
-      const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
   virtual void UpdateState(RenderViewHost* render_view_host,
                            int32 page_id,
                            const PageState& page_state) OVERRIDE;
@@ -331,8 +343,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void Close(RenderViewHost* render_view_host) OVERRIDE;
   virtual void RequestMove(const gfx::Rect& new_bounds) OVERRIDE;
   virtual void SwappedOut(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidStartLoading(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidCancelLoading() OVERRIDE;
   virtual void DidChangeLoadProgress(double progress) OVERRIDE;
   virtual void DidDisownOpener(RenderViewHost* rvh) OVERRIDE;
@@ -391,7 +401,6 @@ class CONTENT_EXPORT WebContentsImpl
                                 const net::LoadStateWithParam& load_state,
                                 uint64 upload_position,
                                 uint64 upload_size) OVERRIDE;
-  virtual void WorkerCrashed() OVERRIDE;
   virtual void Activate() OVERRIDE;
   virtual void Deactivate() OVERRIDE;
   virtual void LostCapture() OVERRIDE;
@@ -428,7 +437,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void ShowCreatedWidget(int route_id,
                                  const gfx::Rect& initial_pos) OVERRIDE;
   virtual void ShowCreatedFullscreenWidget(int route_id) OVERRIDE;
-  virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
@@ -446,8 +454,44 @@ class CONTENT_EXPORT WebContentsImpl
       const GURL& validated_url,
       bool is_error_page,
       bool is_iframe_srcdoc) OVERRIDE;
+  virtual void DidFailProvisionalLoadWithError(
+      RenderFrameHostImpl* render_frame_host,
+      const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params)
+      OVERRIDE;
+  virtual void DidFailLoadWithError(
+      RenderFrameHostImpl* render_frame_host,
+      int64 frame_id,
+      const GURL& url,
+      bool is_main_frame,
+      int error_code,
+      const base::string16& error_description) OVERRIDE;
+  virtual void DidRedirectProvisionalLoad(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& validated_target_url) OVERRIDE;
+  virtual void DidCommitProvisionalLoad(
+      int64 frame_id,
+      const base::string16& frame_unique_name,
+      bool is_main_frame,
+      const GURL& url,
+      PageTransition transition_type,
+      RenderFrameHostImpl* render_frame_host) OVERRIDE;
+  virtual void DidNavigateMainFramePostCommit(
+      const LoadCommittedDetails& details,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) OVERRIDE;
+  virtual void DidNavigateAnyFramePostCommit(
+      RenderFrameHostImpl* render_frame_host,
+      const LoadCommittedDetails& details,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) OVERRIDE;
+  virtual void SetMainFrameMimeType(const std::string& mime_type) OVERRIDE;
+  virtual bool CanOverscrollContent() OVERRIDE;
   virtual void NotifyChangedNavigationState(
       InvalidateTypes changed_flags) OVERRIDE;
+  virtual void AboutToNavigateRenderFrame(
+      RenderFrameHostImpl* render_frame_host) OVERRIDE;
+  virtual void DidStartNavigationToPendingEntry(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& url,
+      NavigationController::ReloadType reload_type) OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -460,15 +504,19 @@ class CONTENT_EXPORT WebContentsImpl
       const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool PreHandleWheelEvent(
       const blink::WebMouseWheelEvent& event) OVERRIDE;
+  virtual bool PreHandleGestureEvent(
+      const blink::WebGestureEvent& event) OVERRIDE;
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
 
   // RenderFrameHostManager::Delegate ------------------------------------------
 
   virtual bool CreateRenderViewForRenderManager(
-      RenderViewHost* render_view_host, int opener_route_id) OVERRIDE;
+      RenderViewHost* render_view_host,
+      int opener_route_id,
+      CrossProcessFrameConnector* frame_connector) OVERRIDE;
   virtual void BeforeUnloadFiredFromRenderManager(
       bool proceed, const base::TimeTicks& proceed_time,
       bool* proceed_to_fire_unload) OVERRIDE;
@@ -544,9 +592,9 @@ class CONTENT_EXPORT WebContentsImpl
       int merge_history_length,
       int32 minimum_page_id) OVERRIDE;
 
-  // Called by InterstitialPageImpl when it creates a RenderViewHost.
-  virtual void RenderViewForInterstitialPageCreated(
-      RenderViewHost* render_view_host) OVERRIDE;
+  // Called by InterstitialPageImpl when it creates a RenderFrameHost.
+  virtual void RenderFrameForInterstitialPageCreated(
+      RenderFrameHost* render_frame_host) OVERRIDE;
 
   // Sets the passed interstitial as the currently showing interstitial.
   // No interstitial page should already be attached.
@@ -578,6 +626,7 @@ class CONTENT_EXPORT WebContentsImpl
                            CrossSiteCantPreemptAfterUnload);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, PendingContents);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, FrameTreeShape);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, GetLastActiveTime);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest, PageDoesBackAndReload);
@@ -638,11 +687,6 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidFinishLoad(int64 frame_id,
                        const GURL& url,
                        bool is_main_frame);
-  void OnDidFailLoadWithError(int64 frame_id,
-                              const GURL& url,
-                              bool is_main_frame,
-                              int error_code,
-                              const base::string16& error_description);
   void OnGoToEntryAtOffset(int offset);
   void OnUpdateZoomLimits(int minimum_percent,
                           int maximum_percent,
@@ -694,10 +738,16 @@ class CONTENT_EXPORT WebContentsImpl
   void OnUpdateFaviconURL(int32 page_id,
                           const std::vector<FaviconURL>& candidates);
   void OnFirstVisuallyNonEmptyPaint(int32 page_id);
-  void OnMediaNotification(int64 player_cookie,
-                           bool has_video,
-                           bool has_audio,
-                           bool is_playing);
+  void OnMediaPlayingNotification(int64 player_cookie,
+                                  bool has_video,
+                                  bool has_audio);
+  void OnMediaPausedNotification(int64 player_cookie);
+  void OnShowValidationMessage(const gfx::Rect& anchor_in_root_view,
+                               const base::string16& main_text,
+                               const base::string16& sub_text);
+  void OnHideValidationMessage();
+  void OnMoveValidationMessage(const gfx::Rect& anchor_in_root_view);
+
 
   // Called by derived classes to indicate that we're no longer waiting for a
   // response. This won't actually update the throbber, but it will get picked
@@ -712,17 +762,6 @@ class CONTENT_EXPORT WebContentsImpl
   // committed to the navigation controller. Note that the navigation entry is
   // not provided since it may be invalid/changed after being committed. The
   // current navigation entry is in the NavigationController at this point.
-  void DidNavigateMainFramePostCommit(
-      const LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
-  void DidNavigateAnyFramePostCommit(
-      RenderViewHost* render_view_host,
-      const LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
-
-  // Specifies whether the passed in URL should be assigned as the site of the
-  // current SiteInstance, if it does not yet have a site.
-  bool ShouldAssignSiteForURL(const GURL& url);
 
   // If our controller was restored, update the max page ID associated with the
   // given RenderViewHost to be larger than the number of restored entries.
@@ -740,12 +779,6 @@ class CONTENT_EXPORT WebContentsImpl
   // different and was therefore updated.
   bool UpdateTitleForEntry(NavigationEntryImpl* entry,
                            const base::string16& title);
-
-  // Causes the WebContentsImpl to navigate in the right renderer to |entry|,
-  // which must be already part of the entries in the navigation controller.
-  // This does not change the NavigationController state.
-  bool NavigateToEntry(const NavigationEntryImpl& entry,
-                       NavigationController::ReloadType reload_type);
 
   // Recursively creates swapped out RenderViews for this tab's opener chain
   // (including this tab) in the given SiteInstance, allowing other tabs to send
@@ -808,6 +841,11 @@ class CONTENT_EXPORT WebContentsImpl
 
   void OnFrameRemoved(RenderViewHostImpl* render_view_host, int64 frame_id);
 
+  // Helper method that's called whenever |preferred_size_| or
+  // |preferred_size_for_capture_| changes, to propagate the new value to the
+  // |delegate_|.
+  void OnPreferredSizeChanged(const gfx::Size& old_size);
+
   // Adds/removes a callback called on creation of each new WebContents.
   // Deprecated, about to remove.
   static void AddCreatedCallback(const CreatedCallback& callback);
@@ -852,7 +890,7 @@ class CONTENT_EXPORT WebContentsImpl
   // is closed.
   WebContentsImpl* opener_;
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   gfx::NativeViewAccessible accessible_parent_;
 #endif
 
@@ -896,9 +934,6 @@ class CONTENT_EXPORT WebContentsImpl
   // to a given tab and SiteInstance, and must be valid for the lifetime of the
   // WebContentsImpl.
   std::map<int32, int32> max_page_ids_;
-
-  // System time at which the current load was started.
-  base::TimeTicks current_load_start_;
 
   // The current load state and the URL associated with it.
   net::LoadStateWithParam load_state_;
@@ -954,8 +989,9 @@ class CONTENT_EXPORT WebContentsImpl
   // Settings that get passed to the renderer process.
   RendererPreferences renderer_preferences_;
 
-  // The time that this tab was last selected.
-  base::TimeTicks last_selected_time_;
+  // The time that this WebContents was last made active. The initial value is
+  // the WebContents creation time.
+  base::TimeTicks last_active_time_;
 
   // See description above setter.
   bool closed_by_user_gesture_;
@@ -970,6 +1006,10 @@ class CONTENT_EXPORT WebContentsImpl
 
   // The intrinsic size of the page.
   gfx::Size preferred_size_;
+
+  // The preferred size for content screen capture.  When |capturer_count_| > 0,
+  // this overrides |preferred_size_|.
+  gfx::Size preferred_size_for_capture_;
 
 #if defined(OS_ANDROID)
   // Date time chooser opened by this tab.
@@ -1000,10 +1040,11 @@ class CONTENT_EXPORT WebContentsImpl
   // member variables that are gone.
   NotificationRegistrar registrar_;
 
-  // Used during IPC message dispatching from the RenderView so that the
-  // handlers can get a pointer to the RVH through which the message was
+  // Used during IPC message dispatching from the RenderView/RenderFrame so that
+  // the handlers can get a pointer to the RVH through which the message was
   // received.
   RenderViewHost* render_view_message_source_;
+  RenderFrameHost* render_frame_message_source_;
 
   // All live RenderWidgetHostImpls that are created by this object and may
   // outlive it.
@@ -1015,6 +1056,10 @@ class CONTENT_EXPORT WebContentsImpl
   // Maps the ids of pending image downloads to their callbacks
   typedef std::map<int, ImageDownloadCallback> ImageDownloadMap;
   ImageDownloadMap image_download_map_;
+
+  // Whether this WebContents is responsible for displaying a subframe in a
+  // different process from its parent page.
+  bool is_subframe_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsImpl);
 };

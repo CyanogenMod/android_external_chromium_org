@@ -10,11 +10,14 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #import "ui/base/cocoa/hover_image_button.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 #include "ui/message_center/fake_message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_types.h"
+
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
 
 namespace {
 
@@ -60,6 +63,10 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
 @implementation MCNotificationController (TestingInterface)
 - (NSButton*)closeButton {
   return closeButton_.get();
+}
+
+- (NSImageView*)smallImageView {
+  return smallImage_.get();
 }
 
 - (NSButton*)secondButton {
@@ -115,11 +122,13 @@ TEST_F(NotificationControllerTest, BasicLayout) {
           ASCIIToUTF16("Added to circles"),
           ASCIIToUTF16("Jonathan and 5 others"),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           message_center::RichNotificationData(),
           NULL));
-  notification->set_icon(gfx::Image([TestIcon() retain]));
+  gfx::Image testIcon([TestIcon() retain]);
+  notification->set_icon(testIcon);
+  notification->set_small_image(testIcon);
 
   base::scoped_nsobject<MCNotificationController> controller(
       [[MCNotificationController alloc] initWithNotification:notification.get()
@@ -127,6 +136,7 @@ TEST_F(NotificationControllerTest, BasicLayout) {
   [controller view];
 
   EXPECT_EQ(TestIcon(), [[controller iconView] image]);
+  EXPECT_EQ(TestIcon(), [[controller smallImageView] image]);
   EXPECT_EQ(base::SysNSStringToUTF16([[controller titleView] string]),
             notification->title());
   EXPECT_EQ(base::SysNSStringToUTF16([[controller messageView] string]),
@@ -145,7 +155,7 @@ TEST_F(NotificationControllerTest, OverflowText) {
                        "notification. Are you really going to read this "
                        "entire thing?"),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           message_center::RichNotificationData(),
           NULL));
@@ -163,10 +173,10 @@ TEST_F(NotificationControllerTest, Close) {
       new message_center::Notification(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           "an_id",
-          string16(),
-          string16(),
+          base::string16(),
+          base::string16(),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           message_center::RichNotificationData(),
           NULL));
@@ -193,7 +203,7 @@ TEST_F(NotificationControllerTest, Update) {
           ASCIIToUTF16("This message isn't too long and should fit in the"
                        "default bounds."),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           message_center::RichNotificationData(),
           NULL));
@@ -206,11 +216,15 @@ TEST_F(NotificationControllerTest, Update) {
   EXPECT_EQ(NSHeight([[controller view] frame]),
             message_center::kNotificationIconSize);
   EXPECT_FALSE([[controller iconView] image]);
+  EXPECT_FALSE([[controller smallImageView] image]);
 
   // Update the icon.
-  notification->set_icon(gfx::Image([TestIcon() retain]));
+  gfx::Image testIcon([TestIcon() retain]);
+  notification->set_icon(testIcon);
+  notification->set_small_image(testIcon);
   [controller updateNotification:notification.get()];
   EXPECT_EQ(TestIcon(), [[controller iconView] image]);
+  EXPECT_EQ(TestIcon(), [[controller smallImageView] image]);
   EXPECT_EQ(NSHeight([[controller view] frame]),
             message_center::kNotificationIconSize);
 }
@@ -226,10 +240,10 @@ TEST_F(NotificationControllerTest, Buttons) {
       new message_center::Notification(
           message_center::NOTIFICATION_TYPE_BASE_FORMAT,
           "an_id",
-          string16(),
-          string16(),
+          base::string16(),
+          base::string16(),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           optional,
           NULL));
@@ -251,10 +265,10 @@ TEST_F(NotificationControllerTest, Image) {
       new message_center::Notification(
           message_center::NOTIFICATION_TYPE_BASE_FORMAT,
           "an_id",
-          string16(),
-          string16(),
+          base::string16(),
+          base::string16(),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           message_center::RichNotificationData(),
           NULL));
@@ -269,9 +283,10 @@ TEST_F(NotificationControllerTest, Image) {
   [controller view];
 
   ASSERT_EQ(1u, [[controller bottomSubviews] count]);
-  ASSERT_TRUE([[[controller bottomSubviews] lastObject]
+  ASSERT_TRUE([[[[controller bottomSubviews] lastObject] contentView]
       isKindOfClass:[NSImageView class]]);
-  EXPECT_EQ(image, [[[controller bottomSubviews] lastObject] image]);
+  EXPECT_EQ(image,
+      [[[[controller bottomSubviews] lastObject] contentView] image]);
 }
 
 TEST_F(NotificationControllerTest, List) {
@@ -296,7 +311,7 @@ TEST_F(NotificationControllerTest, List) {
           UTF8ToUTF16("Notification Title"),
           UTF8ToUTF16("Notification Message - should be hidden"),
           gfx::Image(),
-          string16(),
+          base::string16(),
           DummyNotifierId(),
           optional,
           NULL));

@@ -75,6 +75,9 @@ class DriveApiRequestsTest : public testing::Test {
         base::Bind(&DriveApiRequestsTest::HandleDataFileRequest,
                    base::Unretained(this)));
     test_server_.RegisterRequestHandler(
+        base::Bind(&DriveApiRequestsTest::HandleDeleteRequest,
+                   base::Unretained(this)));
+    test_server_.RegisterRequestHandler(
         base::Bind(&DriveApiRequestsTest::HandlePreconditionFailedRequest,
                    base::Unretained(this)));
     test_server_.RegisterRequestHandler(
@@ -174,6 +177,26 @@ class DriveApiRequestsTest : public testing::Test {
     // Return the response from the data file.
     return test_util::CreateHttpResponseFromFile(
         expected_data_file_path_).PassAs<net::test_server::HttpResponse>();
+  }
+
+  // Deletes the resource and returns no content with HTTP_NO_CONTENT status
+  // code.
+  scoped_ptr<net::test_server::HttpResponse> HandleDeleteRequest(
+      const net::test_server::HttpRequest& request) {
+    if (request.method != net::test_server::METHOD_DELETE ||
+        request.relative_url.find("/files/") == string::npos) {
+      // The file is not file deletion request. Delegate the processing to the
+      // next handler.
+      return scoped_ptr<net::test_server::HttpResponse>();
+    }
+
+    http_request_ = request;
+
+    scoped_ptr<net::test_server::BasicHttpResponse> response(
+        new net::test_server::BasicHttpResponse);
+    response->set_code(net::HTTP_NO_CONTENT);
+
+    return response.PassAs<net::test_server::HttpResponse>();
   }
 
   // Returns PRECONDITION_FAILED response for ETag mismatching with error JSON
@@ -395,6 +418,10 @@ TEST_F(DriveApiRequestsTest, DriveApiDataRequest_Fields) {
 }
 
 TEST_F(DriveApiRequestsTest, FilesInsertRequest) {
+  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
+  const base::Time::Exploded kLastViewedByMeDate =
+      {2013, 7, 0, 19, 15, 59, 13, 123};
+
   // Set an expected data file containing the directory's entry data.
   expected_data_file_path_ =
       test_util::GetTestFilePath("drive/directory_entry.json");
@@ -411,7 +438,10 @@ TEST_F(DriveApiRequestsTest, FilesInsertRequest) {
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &file_resource)));
+    request->set_last_viewed_by_me_date(
+        base::Time::FromUTCExploded(kLastViewedByMeDate));
     request->set_mime_type("application/vnd.google-apps.folder");
+    request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
     request->add_parent("root");
     request->set_title("new directory");
     request_sender_->StartRequestWithRetry(request);
@@ -424,6 +454,12 @@ TEST_F(DriveApiRequestsTest, FilesInsertRequest) {
   EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
 
   EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ("{\"lastViewedByMeDate\":\"2013-07-19T15:59:13.123Z\","
+            "\"mimeType\":\"application/vnd.google-apps.folder\","
+            "\"modifiedDate\":\"2012-07-19T15:59:13.123Z\","
+            "\"parents\":[{\"id\":\"root\"}],"
+            "\"title\":\"new directory\"}",
+            http_request_.content);
 
   scoped_ptr<FileResource> expected(
       FileResource::CreateFrom(
@@ -562,6 +598,7 @@ TEST_F(DriveApiRequestsTest, AppsListRequest) {
     drive::AppsListRequest* request = new drive::AppsListRequest(
         request_sender_.get(),
         *url_generator_,
+        false,  // use_internal_endpoint
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &app_list)));
@@ -759,6 +796,30 @@ TEST_F(DriveApiRequestsTest, FilesListNextPageRequest) {
   EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
   EXPECT_EQ("/continue/get/file/list", http_request_.relative_url);
   EXPECT_TRUE(result);
+}
+
+TEST_F(DriveApiRequestsTest, FilesDeleteRequest) {
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+
+  // Delete a resource with the given resource id.
+  {
+    base::RunLoop run_loop;
+    drive::FilesDeleteRequest* request = new drive::FilesDeleteRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop, test_util::CreateCopyResultCallback(&error)));
+    request->set_file_id("resource_id");
+    request->set_etag(kTestETag);
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_NO_CONTENT, error);
+  EXPECT_EQ(net::test_server::METHOD_DELETE, http_request_.method);
+  EXPECT_EQ(kTestETag, http_request_.headers["If-Match"]);
+  EXPECT_EQ("/drive/v2/files/resource_id", http_request_.relative_url);
+  EXPECT_FALSE(http_request_.has_content);
 }
 
 TEST_F(DriveApiRequestsTest, FilesTrashRequest) {
@@ -1210,6 +1271,60 @@ TEST_F(DriveApiRequestsTest, UploadNewLargeFileRequest) {
   }
 }
 
+TEST_F(DriveApiRequestsTest, UploadNewFileWithMetadataRequest) {
+  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
+  const base::Time::Exploded kLastViewedByMeDate =
+      {2013, 7, 0, 19, 15, 59, 13, 123};
+
+  // Set an expected url for uploading.
+  expected_upload_path_ = kTestUploadNewFilePath;
+
+  const char kTestContentType[] = "text/plain";
+  const std::string kTestContent(100, 'a');
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  GURL upload_url;
+
+  // Initiate uploading a new file to the directory with "parent_resource_id".
+  {
+    base::RunLoop run_loop;
+    drive::InitiateUploadNewFileRequest* request =
+        new drive::InitiateUploadNewFileRequest(
+            request_sender_.get(),
+            *url_generator_,
+            kTestContentType,
+            kTestContent.size(),
+            "parent_resource_id",  // The resource id of the parent directory.
+            "new file title",  // The title of the file being uploaded.
+            test_util::CreateQuitCallback(
+                &run_loop,
+                test_util::CreateCopyResultCallback(&error, &upload_url)));
+    request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
+    request->set_last_viewed_by_me_date(
+        base::Time::FromUTCExploded(kLastViewedByMeDate));
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(kTestUploadNewFilePath, upload_url.path());
+  EXPECT_EQ(kTestContentType, http_request_.headers["X-Upload-Content-Type"]);
+  EXPECT_EQ(base::Int64ToString(kTestContent.size()),
+            http_request_.headers["X-Upload-Content-Length"]);
+
+  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
+  EXPECT_EQ("/upload/drive/v2/files?uploadType=resumable&setModifiedDate=true",
+            http_request_.relative_url);
+  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
+  EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ("{\"lastViewedByMeDate\":\"2013-07-19T15:59:13.123Z\","
+            "\"modifiedDate\":\"2012-07-19T15:59:13.123Z\","
+            "\"parents\":[{\"id\":\"parent_resource_id\","
+            "\"kind\":\"drive#fileLink\"}],"
+            "\"title\":\"new file title\"}",
+            http_request_.content);
+}
+
 TEST_F(DriveApiRequestsTest, UploadExistingFileRequest) {
   // Set an expected url for uploading.
   expected_upload_path_ = kTestUploadExistingFilePath;
@@ -1524,6 +1639,65 @@ TEST_F(DriveApiRequestsTest,
 
   // New entry should be NULL.
   EXPECT_FALSE(new_entry.get());
+}
+
+TEST_F(DriveApiRequestsTest, UploadExistingFileWithMetadataRequest) {
+  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
+  const base::Time::Exploded kLastViewedByMeDate =
+      {2013, 7, 0, 19, 15, 59, 13, 123};
+
+  // Set an expected url for uploading.
+  expected_upload_path_ = kTestUploadExistingFilePath;
+
+  const char kTestContentType[] = "text/plain";
+  const std::string kTestContent(100, 'a');
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  GURL upload_url;
+
+  // Initiate uploading a new file to the directory with "parent_resource_id".
+  {
+    base::RunLoop run_loop;
+    drive::InitiateUploadExistingFileRequest* request =
+        new drive::InitiateUploadExistingFileRequest(
+            request_sender_.get(),
+            *url_generator_,
+            kTestContentType,
+            kTestContent.size(),
+            "resource_id",  // The resource id of the file to be overwritten.
+            kTestETag,
+            test_util::CreateQuitCallback(
+                &run_loop,
+                test_util::CreateCopyResultCallback(&error, &upload_url)));
+    request->set_parent_resource_id("new_parent_resource_id");
+    request->set_title("new file title");
+    request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
+    request->set_last_viewed_by_me_date(
+        base::Time::FromUTCExploded(kLastViewedByMeDate));
+
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(kTestUploadExistingFilePath, upload_url.path());
+  EXPECT_EQ(kTestContentType, http_request_.headers["X-Upload-Content-Type"]);
+  EXPECT_EQ(base::Int64ToString(kTestContent.size()),
+            http_request_.headers["X-Upload-Content-Length"]);
+  EXPECT_EQ(kTestETag, http_request_.headers["If-Match"]);
+
+  EXPECT_EQ(net::test_server::METHOD_PUT, http_request_.method);
+  EXPECT_EQ("/upload/drive/v2/files/resource_id?"
+            "uploadType=resumable&setModifiedDate=true",
+            http_request_.relative_url);
+  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
+  EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ("{\"lastViewedByMeDate\":\"2013-07-19T15:59:13.123Z\","
+            "\"modifiedDate\":\"2012-07-19T15:59:13.123Z\","
+            "\"parents\":[{\"id\":\"new_parent_resource_id\","
+            "\"kind\":\"drive#fileLink\"}],"
+            "\"title\":\"new file title\"}",
+            http_request_.content);
 }
 
 TEST_F(DriveApiRequestsTest, DownloadFileRequest) {

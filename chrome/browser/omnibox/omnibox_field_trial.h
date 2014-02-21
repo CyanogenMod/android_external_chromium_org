@@ -15,6 +15,74 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/common/autocomplete_match_type.h"
 
+namespace base {
+class TimeDelta;
+}
+
+// The set of parameters customizing the HUP scoring.
+struct HUPScoringParams {
+  // A set of parameters describing how to cap a given count score.  First,
+  // we apply a half-life based decay of the given count and then find the
+  // maximum relevance score in the corresponding bucket list.
+  class ScoreBuckets {
+   public:
+    // (decayed_count, max_relevance) pair.
+    typedef std::pair<double, int> CountMaxRelevance;
+
+    ScoreBuckets();
+    ~ScoreBuckets();
+
+    // Computes a half-life time decay given the |elapsed_time|.
+    double HalfLifeTimeDecay(const base::TimeDelta& elapsed_time) const;
+
+    int relevance_cap() const { return relevance_cap_; }
+    void set_relevance_cap(int relevance_cap) {
+      relevance_cap_ = relevance_cap;
+    }
+
+    int half_life_days() const { return half_life_days_; }
+    void set_half_life_days(int half_life_days) {
+      half_life_days_ = half_life_days;
+    }
+
+    std::vector<CountMaxRelevance>& buckets() { return buckets_; }
+    const std::vector<CountMaxRelevance>& buckets() const { return buckets_; }
+
+   private:
+    // History matches with relevance score greater or equal to |relevance_cap_|
+    // are not affected by this experiment.
+    // Set to -1, if there is no relevance cap in place and all matches are
+    // subject to demotion.
+    int relevance_cap_;
+
+    // Half life time for a decayed count as measured since the last visit.
+    // Set to -1 if not used.
+    int half_life_days_;
+
+    // The relevance score caps for given decayed count values.
+    // Each pair (decayed_count, max_score) indicates what the maximum relevance
+    // score is of a decayed count equal or greater than decayed_count.
+    //
+    // Consider this example:
+    //   [(1, 1000), (0.5, 500), (0, 100)]
+    // If decayed count is 2 (which is >= 1), the corresponding match's maximum
+    // relevance will be capped at 1000.  In case of 0.5, the score is capped
+    // at 500.  Anything below 0.5 is capped at 100.
+    //
+    // This list is sorted by the pair's first element in descending order.
+    std::vector<CountMaxRelevance> buckets_;
+  };
+
+  HUPScoringParams() : experimental_scoring_enabled(false) {}
+
+  bool experimental_scoring_enabled;
+
+  ScoreBuckets typed_count_buckets;
+
+  // Used only when the typed count is 0.
+  ScoreBuckets visited_count_buckets;
+};
+
 // This class manages the Omnibox field trials.
 class OmniboxFieldTrial {
  public:
@@ -84,14 +152,11 @@ class OmniboxFieldTrial {
   // ---------------------------------------------------------
   // For the AutocompleteController "stop timer" field trial.
 
-  // Returns whether the user should get the experimental setup or the
-  // default setup for this field trial.  The experiment group uses
-  // a timer in AutocompleteController to tell the providers to stop
-  // looking for matches after too much time has passed.  In other words,
-  // it tries to tell the providers to stop updating the list of suggested
-  // matches if updating the matches would probably be disruptive because
-  // they're arriving so late.
-  static bool InStopTimerFieldTrialExperimentGroup();
+  // Returns the duration to be used for the AutocompleteController's stop
+  // timer.  Returns the default value of 1.5 seconds if the stop timer
+  // override experiment isn't active or if parsing the experiment-provided
+  // duration fails.
+  static base::TimeDelta StopTimerFieldTrialDuration();
 
   // ---------------------------------------------------------
   // For the ZeroSuggestProvider field trial.
@@ -175,6 +240,14 @@ class OmniboxFieldTrial {
       AutocompleteInput::PageClassification current_page_classification);
 
   // ---------------------------------------------------------
+  // For the HistoryURL provider new scoring experiment that is part of the
+  // bundled omnibox field trial.
+
+  // Initializes the HUP |scoring_params| based on the active HUP scoring
+  // experiment.  If there is no such experiment, this function simply sets
+  // |scoring_params|->experimental_scoring_enabled to false.
+  static void GetExperimentalHUPScoringParams(HUPScoringParams* scoring_params);
+
   // For the HQPBookmarkValue experiment that's part of the
   // bundled omnibox field trial.
 
@@ -183,6 +256,16 @@ class OmniboxFieldTrial {
   // visits to pages and the default of 20 for typed visits.  Returns
   // 1 if the bookmark value experiment isn't active.
   static int HQPBookmarkValue();
+
+  // ---------------------------------------------------------
+  // For the HQPDiscountFrecencyWhenFewVisits experiment that's part of
+  // the bundled omnibox field trial.
+
+  // Returns whether to discount the frecency score estimates when a
+  // URL has fewer than ScoredHistoryMatch::kMaxVisitsToScore visits.
+  // See comments in scored_history_match.h for details.  Returns false
+  // if the discount frecency experiment isn't active.
+  static bool HQPDiscountFrecencyWhenFewVisits();
 
   // ---------------------------------------------------------
   // For the HQPAllowMatchInTLD experiment that's part of the
@@ -212,10 +295,22 @@ class OmniboxFieldTrial {
   static const char kUndemotableTopTypeRule[];
   static const char kReorderForLegalDefaultMatchRule[];
   static const char kHQPBookmarkValueRule[];
+  static const char kHQPDiscountFrecencyWhenFewVisitsRule[];
   static const char kHQPAllowMatchInTLDRule[];
   static const char kHQPAllowMatchInSchemeRule[];
+  static const char kZeroSuggestRule[];
+  static const char kZeroSuggestVariantRule[];
   // Rule values.
-  static const char kReorderForLegalDefaultMatchRuleEnabled[];
+  static const char kReorderForLegalDefaultMatchRuleDisabled[];
+
+  // Parameter names used by the HUP new scoring experiments.
+  static const char kHUPNewScoringEnabledParam[];
+  static const char kHUPNewScoringTypedCountRelevanceCapParam[];
+  static const char kHUPNewScoringTypedCountHalfLifeTimeParam[];
+  static const char kHUPNewScoringTypedCountScoreBucketsParam[];
+  static const char kHUPNewScoringVisitedCountRelevanceCapParam[];
+  static const char kHUPNewScoringVisitedCountHalfLifeTimeParam[];
+  static const char kHUPNewScoringVisitedCountScoreBucketsParam[];
 
  private:
   friend class OmniboxFieldTrialTest;

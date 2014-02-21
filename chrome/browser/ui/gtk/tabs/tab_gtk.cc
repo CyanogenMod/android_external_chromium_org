@@ -21,7 +21,9 @@
 #include "grit/theme_resources.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/scoped_region.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/text_utils.h"
 
 using content::WebContents;
 
@@ -33,7 +35,7 @@ int GetTitleWidth(gfx::Font* font, base::string16 title) {
   if (title.empty())
     return 0;
 
-  return font->GetStringWidth(title);
+  return gfx::GetStringWidth(title, gfx::FontList(*font));
 }
 
 }  // namespace
@@ -298,11 +300,29 @@ void TabGtk::ContextMenuClosed() {
 }
 
 void TabGtk::UpdateTooltipState() {
+  // Note: This method can be called several times per second for various
+  // reasons (e.g., navigation/loading state changes, tab media indicator
+  // updates, and so on).  However, we must avoid calling the
+  // gtk_widget_set_XXX() methods if there is no actual change in state.
+  // Otherwise, GTK will continuously re-hide *all* tooltips throughout the
+  // browser in response!  http://crbug.com/333002
+
   // Only show the tooltip if the title is truncated.
   if (title_width_ > title_bounds().width()) {
-    gtk_widget_set_tooltip_text(widget(), UTF16ToUTF8(GetTitle()).c_str());
+    const std::string utf8_title = base::UTF16ToUTF8(GetTitle());
+    if (gtk_widget_get_has_tooltip(widget())) {
+      gchar* const current_tooltip = gtk_widget_get_tooltip_text(widget());
+      if (current_tooltip) {
+        const bool title_unchanged = (utf8_title == current_tooltip);
+        g_free(current_tooltip);
+        if (title_unchanged)
+          return;
+      }
+    }
+    gtk_widget_set_tooltip_text(widget(), utf8_title.c_str());
   } else {
-    gtk_widget_set_has_tooltip(widget(), FALSE);
+    if (gtk_widget_get_has_tooltip(widget()))
+      gtk_widget_set_has_tooltip(widget(), FALSE);
   }
 }
 

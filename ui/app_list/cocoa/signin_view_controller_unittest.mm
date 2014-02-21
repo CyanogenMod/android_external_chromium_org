@@ -10,7 +10,7 @@
 #import "testing/gtest_mac.h"
 #include "ui/app_list/signin_delegate.h"
 #include "ui/app_list/test/app_list_test_view_delegate.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 @class TestSigninViewDelegate;
 
@@ -37,7 +37,7 @@ class SigninViewControllerTest : public ui::CocoaTest,
                                  public SigninDelegate {
  public:
   SigninViewControllerTest()
-      : test_text_(ASCIIToUTF16("Sign in")),
+      : test_text_(base::ASCIIToUTF16("Sign in")),
         needs_signin_(true),
         show_signin_count_(0),
         open_learn_more_count_(0),

@@ -49,15 +49,18 @@ static const char* kTimeZones[] = {
     "America/Vancouver",
     "America/Tijuana",
     "America/Phoenix",
+    "America/Chihuahua",
     "America/Denver",
     "America/Edmonton",
-    "America/Chihuahua",
+    "America/Mazatlan",
     "America/Regina",
     "America/Costa_Rica",
     "America/Chicago",
     "America/Mexico_City",
     "America/Winnipeg",
+    "Pacific/Easter",
     "America/Bogota",
+    "America/Lima",
     "America/New_York",
     "America/Toronto",
     "America/Caracas",
@@ -66,27 +69,37 @@ static const char* kTimeZones[] = {
     "America/Manaus",
     "America/Santiago",
     "America/St_Johns",
-    "America/Sao_Paulo",
     "America/Araguaina",
     "America/Argentina/Buenos_Aires",
     "America/Argentina/San_Luis",
+    "America/Sao_Paulo",
     "America/Montevideo",
     "America/Godthab",
     "Atlantic/South_Georgia",
     "Atlantic/Cape_Verde",
     "Atlantic/Azores",
+    "Atlantic/Reykjavik",
+    "Atlantic/St_Helena",
     "Africa/Casablanca",
-    "Europe/London",
+    "Atlantic/Faroe",
     "Europe/Dublin",
+    "Europe/Lisbon",
+    "Europe/London",
     "Europe/Amsterdam",
     "Europe/Belgrade",
     "Europe/Berlin",
     "Europe/Brussels",
+    "Europe/Budapest",
+    "Europe/Copenhagen",
+    "Europe/Ljubljana",
     "Europe/Madrid",
+    "Europe/Oslo",
     "Europe/Paris",
+    "Europe/Prague",
     "Europe/Rome",
     "Europe/Stockholm",
     "Europe/Sarajevo",
+    "Europe/Tirane",
     "Europe/Vienna",
     "Europe/Warsaw",
     "Europe/Zurich",
@@ -97,16 +110,24 @@ static const char* kTimeZones[] = {
     "Africa/Harare",
     "Africa/Maputo",
     "Africa/Johannesburg",
-    "Europe/Helsinki",
     "Europe/Athens",
+    "Europe/Bucharest",
+    "Europe/Chisinau",
+    "Europe/Helsinki",
+    "Europe/Istanbul",
+    "Europe/Kiev",
+    "Europe/Riga",
+    "Europe/Sofia",
+    "Europe/Tallinn",
+    "Europe/Vilnius",
     "Asia/Amman",
     "Asia/Beirut",
     "Asia/Jerusalem",
-    "Europe/Minsk",
+    "Africa/Nairobi",
     "Asia/Baghdad",
     "Asia/Riyadh",
     "Asia/Kuwait",
-    "Africa/Nairobi",
+    "Europe/Minsk",
     "Asia/Tehran",
     "Europe/Moscow",
     "Asia/Dubai",
@@ -118,7 +139,7 @@ static const char* kTimeZones[] = {
     "Asia/Karachi",
     "Asia/Ashgabat",
     "Asia/Oral",
-    "Asia/Calcutta",
+    "Asia/Kolkata",
     "Asia/Colombo",
     "Asia/Katmandu",
     "Asia/Yekaterinburg",
@@ -129,6 +150,9 @@ static const char* kTimeZones[] = {
     "Asia/Jakarta",
     "Asia/Omsk",
     "Asia/Novosibirsk",
+    "Asia/Ho_Chi_Minh",
+    "Asia/Phnom_Penh",
+    "Asia/Vientiane",
     "Asia/Shanghai",
     "Asia/Hong_Kong",
     "Asia/Kuala_Lumpur",
@@ -143,20 +167,20 @@ static const char* kTimeZones[] = {
     "Asia/Seoul",
     "Asia/Tokyo",
     "Asia/Jayapura",
-    "Australia/Adelaide",
     "Australia/Darwin",
+    "Australia/Adelaide",
+    "Asia/Yakutsk",
+    "Pacific/Guam",
     "Australia/Brisbane",
     "Australia/Hobart",
     "Australia/Sydney",
-    "Asia/Yakutsk",
-    "Pacific/Guam",
     "Pacific/Port_Moresby",
     "Asia/Vladivostok",
     "Asia/Sakhalin",
     "Asia/Magadan",
-    "Pacific/Auckland",
     "Pacific/Fiji",
     "Pacific/Majuro",
+    "Pacific/Auckland",
     "Pacific/Tongatapu",
     "Pacific/Apia",
     "Pacific/Kiritimati",
@@ -230,8 +254,8 @@ class TimezoneSettingsBaseImpl : public chromeos::system::TimezoneSettings {
 
   // TimezoneSettings implementation:
   virtual const icu::TimeZone& GetTimezone() OVERRIDE;
-  virtual string16 GetCurrentTimezoneID() OVERRIDE;
-  virtual void SetTimezoneFromID(const string16& timezone_id) OVERRIDE;
+  virtual base::string16 GetCurrentTimezoneID() OVERRIDE;
+  virtual void SetTimezoneFromID(const base::string16& timezone_id) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual const std::vector<icu::TimeZone*>& GetTimezoneList() const OVERRIDE;
@@ -297,11 +321,12 @@ const icu::TimeZone& TimezoneSettingsBaseImpl::GetTimezone() {
   return *timezone_.get();
 }
 
-string16 TimezoneSettingsBaseImpl::GetCurrentTimezoneID() {
+base::string16 TimezoneSettingsBaseImpl::GetCurrentTimezoneID() {
   return chromeos::system::TimezoneSettings::GetTimezoneID(GetTimezone());
 }
 
-void TimezoneSettingsBaseImpl::SetTimezoneFromID(const string16& timezone_id) {
+void TimezoneSettingsBaseImpl::SetTimezoneFromID(
+    const base::string16& timezone_id) {
   scoped_ptr<icu::TimeZone> timezone(icu::TimeZone::createTimeZone(
       icu::UnicodeString(timezone_id.c_str(), timezone_id.size())));
   SetTimezone(*timezone);
@@ -351,7 +376,7 @@ void TimezoneSettingsImpl::SetTimezone(const icu::TimeZone& timezone) {
     known_timezone = &timezone;
 
   timezone_.reset(known_timezone->clone());
-  std::string id = UTF16ToUTF8(GetTimezoneID(*known_timezone));
+  std::string id = base::UTF16ToUTF8(GetTimezoneID(*known_timezone));
   VLOG(1) << "Setting timezone to " << id;
   // It's safe to change the timezone config files in the background as the
   // following operations don't depend on the completion of the config change.
@@ -430,10 +455,10 @@ TimezoneSettings* TimezoneSettings::GetInstance() {
 }
 
 // static
-string16 TimezoneSettings::GetTimezoneID(const icu::TimeZone& timezone) {
+base::string16 TimezoneSettings::GetTimezoneID(const icu::TimeZone& timezone) {
   icu::UnicodeString id;
   timezone.getID(id);
-  return string16(id.getBuffer(), id.length());
+  return base::string16(id.getBuffer(), id.length());
 }
 
 }  // namespace system

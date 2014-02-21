@@ -64,6 +64,11 @@ void SystemMenuModelBuilder::BuildSystemMenuForBrowserWindow(
     model->AddSeparator(ui::NORMAL_SEPARATOR);
     model->AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
   }
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  model->AddSeparator(ui::NORMAL_SEPARATOR);
+  model->AddCheckItemWithStringId(IDC_USE_SYSTEM_TITLE_BAR,
+                                  IDS_SHOW_WINDOW_DECORATIONS_MENU);
+#endif
   AppendTeleportMenu(model);
   // If it's a regular browser window with tabs, we don't add any more items,
   // since it already has menus (Page, Chrome).
@@ -97,6 +102,10 @@ void SystemMenuModelBuilder::BuildSystemMenuForAppOrPopupWindow(
     model->AddSeparator(ui::NORMAL_SEPARATOR);
     model->AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
   }
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  model->AddSeparator(ui::NORMAL_SEPARATOR);
+  model->AddItemWithStringId(IDC_CLOSE_WINDOW, IDS_CLOSE);
+#endif
 
   AppendTeleportMenu(model);
 }
@@ -105,7 +114,8 @@ void SystemMenuModelBuilder::AddFrameToggleItems(ui::SimpleMenuModel* model) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDebugEnableFrameToggle)) {
     model->AddSeparator(ui::NORMAL_SEPARATOR);
-    model->AddItem(IDC_DEBUG_FRAME_TOGGLE, ASCIIToUTF16("Toggle Frame Type"));
+    model->AddItem(IDC_DEBUG_FRAME_TOGGLE,
+                   base::ASCIIToUTF16("Toggle Frame Type"));
   }
 }
 
@@ -140,8 +150,10 @@ void SystemMenuModelBuilder::AppendTeleportMenu(ui::SimpleMenuModel* model) {
     model->AddItem(
         user_index == 1 ? IDC_VISIT_DESKTOP_OF_LRU_USER_2 :
                           IDC_VISIT_DESKTOP_OF_LRU_USER_3,
-        l10n_util::GetStringFUTF16(IDC_VISIT_DESKTOP_OF_LRU_USER,
-                                   delegate->GetUserDisplayName(user_index)));
+        l10n_util::GetStringFUTF16(
+            IDS_VISIT_DESKTOP_OF_LRU_USER,
+            delegate->GetUserDisplayName(user_index),
+            base::ASCIIToUTF16(delegate->GetUserEmail(user_index))));
   }
 #endif
 }

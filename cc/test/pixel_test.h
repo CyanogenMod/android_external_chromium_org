@@ -59,9 +59,9 @@ class PixelTest : public testing::Test, RendererClient {
   void SetUpGLRenderer(bool use_skia_gpu_backend);
   void SetUpSoftwareRenderer();
 
-  void ForceExpandedViewport(gfx::Size surface_expansion);
-  void ForceViewportOffset(gfx::Vector2d viewport_offset);
-  void ForceDeviceClip(gfx::Rect clip);
+  void ForceExpandedViewport(const gfx::Size& surface_expansion);
+  void ForceViewportOffset(const gfx::Vector2d& viewport_offset);
+  void ForceDeviceClip(const gfx::Rect& clip);
   void EnableExternalStencilTest();
 
   // RendererClient implementation.

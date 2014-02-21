@@ -67,14 +67,18 @@ GURL GetFileManagerMainPageUrl() {
 GURL GetFileManagerMainPageUrlWithParams(
     ui::SelectFileDialog::Type type,
     const base::string16& title,
-    const base::FilePath& default_virtual_path,
+    const GURL& current_directory_url,
+    const GURL& selection_url,
+    const std::string& target_name,
     const ui::SelectFileDialog::FileTypeInfo* file_types,
     int file_type_index,
     const base::FilePath::StringType& default_extension) {
   base::DictionaryValue arg_value;
   arg_value.SetString("type", GetDialogTypeAsString(type));
   arg_value.SetString("title", title);
-  arg_value.SetString("defaultPath", default_virtual_path.value());
+  arg_value.SetString("currentDirectoryURL", current_directory_url.spec());
+  arg_value.SetString("selectionURL", selection_url.spec());
+  arg_value.SetString("targetName", target_name);
   arg_value.SetString("defaultExtension", default_extension);
 
   if (file_types) {

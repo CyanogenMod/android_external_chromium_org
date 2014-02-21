@@ -147,7 +147,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
-      blink::WebStorageQuotaCallbacks*) OVERRIDE;
+      blink::WebStorageQuotaCallbacks) OVERRIDE;
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
 
@@ -217,6 +217,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   webkit::WebCompositorSupportImpl compositor_support_;
 
   scoped_ptr<WebCryptoImpl> web_crypto_;
+
+  DISALLOW_COPY_AND_ASSIGN(RendererWebKitPlatformSupportImpl);
 };
 
 }  // namespace content

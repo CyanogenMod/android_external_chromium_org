@@ -85,9 +85,9 @@ cr.define('print_preview', function() {
   function PrivetDestinationParser() {}
 
   /**
-   * Parses a privet destination as a local printer or printers.
+   * Parses a privet destination as one or more local printers.
    * @param {!Object} destinationInfo Object that describes a privet printer.
-   * @return {!Array.<print_preview.Destination>} Parsed destination info.
+   * @return {!Array.<!print_preview.Destination>} Parsed destination info.
    */
   PrivetDestinationParser.parse = function(destinationInfo) {
     var returnedPrinters = [];
@@ -99,7 +99,8 @@ cr.define('print_preview', function() {
            print_preview.Destination.Origin.PRIVET,
            destinationInfo.name,
            false /*isRecent*/,
-           print_preview.Destination.ConnectionStatus.ONLINE));
+           print_preview.Destination.ConnectionStatus.ONLINE,
+           { cloudID: destinationInfo.cloudID }));
     }
 
     if (destinationInfo.isUnregistered) {

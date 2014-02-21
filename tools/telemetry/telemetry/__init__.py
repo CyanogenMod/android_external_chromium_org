@@ -10,9 +10,9 @@ import os
 import sys
 
 
-# Ensure Python >= 2.6
-if sys.version_info < (2, 6):
-  logging.critical('Need Python 2.6 or greater.')
+# Ensure Python >= 2.7
+if sys.version_info < (2, 7):
+  logging.critical('Need Python 2.7 or greater.')
   sys.exit(1)
 
 
@@ -53,22 +53,18 @@ def RemoveAllStalePycFiles(base_dir):
 
       pyc_path = os.path.join(dirname, filename)
       py_path = os.path.join(dirname, root + '.py')
-      if os.path.exists(py_path):
-        continue
 
       try:
-        os.remove(pyc_path)
+        if not os.path.exists(py_path):
+          os.remove(pyc_path)
       except OSError:
-        # Avoid race, in case we're running simultaneous instances.
+        # Wrap OS calls in try/except in case another process touched this file.
         pass
-
-    if os.listdir(dirname):
-      continue
 
     try:
       os.removedirs(dirname)
     except OSError:
-      # Avoid race, in case we're running simultaneous instances.
+      # Wrap OS calls in try/except in case another process touched this dir.
       pass
 
 

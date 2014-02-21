@@ -10,7 +10,7 @@ any modification below this line.
 
 Let's make a story. Add one sentence for every commit: 
 
-CHAPTER 1:
+CHÄPTER 1:
 It was a dark and blinky night; the rain fell in torrents -- except at
 occasional intervals, when it was checked by a violent gust of wind which
 swept up the streets (for it is in London that our scene lies), rattling along
@@ -58,7 +58,7 @@ a bottle of 3000¥ sake. He tries to recall the cook's face.  Purple?
 
 CHAPTER 5:
 Many tears later, Mr. Usagi would laugh at the memory of the earnest,
-well-intentioned Domo-Kun. Another day in the life. That is whe he realized that
+well-intentioned Domo-Kun. Another day in the life. That is when he realized that
 life goes on.
 
 TRUISMS (1978-1983)
@@ -77,3 +77,6 @@ AM NOT
 ARE TOO
 IF AT FIRST YOU DON'T SUCCEED: TRY, EXCEPT, FINALLY
 AND THEN, TIME LEAPT BACKWARDS 
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaaaaaaaaaaaaaaaaaaaaaaaahhhh LOT
+I'm really tempted to change something above the line.
+Reeccciiiipppppeeeeeesssssss!!!!!!!!!

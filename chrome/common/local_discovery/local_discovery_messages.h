@@ -30,6 +30,15 @@ struct LocalDiscoveryMsg_SocketInfo {
 
 #define IPC_MESSAGE_START LocalDiscoveryMsgStart
 
+IPC_ENUM_TRAITS_MAX_VALUE(local_discovery::ServiceWatcher::UpdateType,
+                          local_discovery::ServiceWatcher::UPDATE_TYPE_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(
+    local_discovery::ServiceResolver::RequestStatus,
+    local_discovery::ServiceResolver::REQUEST_STATUS_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(net::AddressFamily, net::ADDRESS_FAMILY_LAST)
+
 IPC_STRUCT_TRAITS_BEGIN(local_discovery::ServiceDescription)
   IPC_STRUCT_TRAITS_MEMBER(service_name)
   IPC_STRUCT_TRAITS_MEMBER(address)
@@ -37,10 +46,6 @@ IPC_STRUCT_TRAITS_BEGIN(local_discovery::ServiceDescription)
   IPC_STRUCT_TRAITS_MEMBER(ip_address)
   IPC_STRUCT_TRAITS_MEMBER(last_seen)
 IPC_STRUCT_TRAITS_END()
-
-IPC_ENUM_TRAITS(local_discovery::ServiceWatcher::UpdateType)
-IPC_ENUM_TRAITS(local_discovery::ServiceResolver::RequestStatus)
-IPC_ENUM_TRAITS(net::AddressFamily)
 
 #if defined(OS_POSIX)
 IPC_STRUCT_TRAITS_BEGIN(LocalDiscoveryMsg_SocketInfo)
@@ -67,6 +72,11 @@ IPC_MESSAGE_CONTROL2(LocalDiscoveryMsg_StartWatcher,
 IPC_MESSAGE_CONTROL2(LocalDiscoveryMsg_DiscoverServices,
                      uint64 /* id */,
                      bool /* force_update */)
+
+// Discovers new services.
+IPC_MESSAGE_CONTROL2(LocalDiscoveryMsg_SetActivelyRefreshServices,
+                     uint64 /* id */,
+                     bool /* actively_refresh_services */)
 
 // Destroys watcher in utility process.
 IPC_MESSAGE_CONTROL1(LocalDiscoveryMsg_DestroyWatcher,

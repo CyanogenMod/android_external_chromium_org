@@ -26,7 +26,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace options {
 
@@ -37,7 +37,7 @@ LanguageOptionsHandler::~LanguageOptionsHandler() {
 }
 
 void LanguageOptionsHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   LanguageOptionsHandlerCommon::GetLocalizedValues(localized_strings);
 
   RegisterTitle(localized_strings, "languagePage",
@@ -56,7 +56,7 @@ void LanguageOptionsHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-ListValue* LanguageOptionsHandler::GetLanguageList() {
+base::ListValue* LanguageOptionsHandler::GetLanguageList() {
   // Collect the language codes from the supported accept-languages.
   const std::string app_locale = g_browser_process->GetApplicationLocale();
   std::vector<std::string> language_codes;
@@ -67,10 +67,10 @@ ListValue* LanguageOptionsHandler::GetLanguageList() {
   // display names using ICU comparator, but doing it is hard, thus we'll
   // use an auxiliary vector to achieve the same result.
   typedef std::pair<std::string, base::string16> LanguagePair;
-  typedef std::map<string16, LanguagePair> LanguageMap;
+  typedef std::map<base::string16, LanguagePair> LanguageMap;
   LanguageMap language_map;
   // The auxiliary vector mentioned above.
-  std::vector<string16> display_names;
+  std::vector<base::string16> display_names;
 
   // Build the list of display names, and build the language map.
   for (size_t i = 0; i < language_codes.size(); ++i) {
@@ -90,7 +90,7 @@ ListValue* LanguageOptionsHandler::GetLanguageList() {
   l10n_util::SortStrings16(app_locale, &display_names);
 
   // Build the language list from the language map.
-  ListValue* language_list = new ListValue();
+  base::ListValue* language_list = new base::ListValue();
   for (size_t i = 0; i < display_names.size(); ++i) {
     base::string16& display_name = display_names[i];
     base::string16 adjusted_display_name(display_name);
@@ -103,7 +103,7 @@ ListValue* LanguageOptionsHandler::GetLanguageList() {
     bool has_rtl_chars = base::i18n::StringContainsStrongRTLChars(display_name);
     std::string directionality = has_rtl_chars ? "rtl" : "ltr";
 
-    DictionaryValue* dictionary = new DictionaryValue();
+    base::DictionaryValue* dictionary = new base::DictionaryValue();
     dictionary->SetString("code",  pair.first);
     dictionary->SetString("displayName", adjusted_display_name);
     dictionary->SetString("textDirection", directionality);
@@ -114,7 +114,7 @@ ListValue* LanguageOptionsHandler::GetLanguageList() {
   return language_list;
 }
 
-string16 LanguageOptionsHandler::GetProductName() {
+base::string16 LanguageOptionsHandler::GetProductName() {
   return l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
 }
 
@@ -124,7 +124,7 @@ void LanguageOptionsHandler::SetApplicationLocale(
   pref_service->SetString(prefs::kApplicationLocale, language_code);
 }
 
-void LanguageOptionsHandler::RestartCallback(const ListValue* args) {
+void LanguageOptionsHandler::RestartCallback(const base::ListValue* args) {
   content::RecordAction(UserMetricsAction("LanguageOptions_Restart"));
   chrome::AttemptRestart();
 }

@@ -21,8 +21,8 @@ namespace {
 
 scoped_ptr<UIResourceLayerImpl> GenerateUIResourceLayer(
     FakeUIResourceLayerTreeHostImpl* host_impl,
-    gfx::Size bitmap_size,
-    gfx::Size layer_size,
+    const gfx::Size& bitmap_size,
+    const gfx::Size& layer_size,
     bool opaque,
     UIResourceId uid) {
   gfx::Rect visible_content_rect(layer_size);
@@ -89,7 +89,7 @@ TEST(UIResourceLayerImplTest, VerifyDrawQuads) {
 }
 
 void OpaqueBoundsTest(scoped_ptr<UIResourceLayerImpl> layer,
-                 gfx::Rect expected_opaque_bounds) {
+                 const gfx::Rect& expected_opaque_bounds) {
   MockQuadCuller quad_culler;
   AppendQuadsData data;
   layer->AppendQuads(&quad_culler, &data);

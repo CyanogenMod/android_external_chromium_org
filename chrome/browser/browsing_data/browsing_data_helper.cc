@@ -17,7 +17,7 @@
 bool BrowsingDataHelper::IsWebScheme(const std::string& scheme) {
   // Special-case `file://` scheme iff cookies and site data are enabled via
   // the `--allow-file-cookies` CLI flag.
-  if (scheme == chrome::kFileScheme) {
+  if (scheme == content::kFileScheme) {
     return CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kEnableFileCookies);
 
@@ -28,7 +28,7 @@ bool BrowsingDataHelper::IsWebScheme(const std::string& scheme) {
         content::ChildProcessSecurityPolicy::GetInstance();
     return (policy->IsWebSafeScheme(scheme) &&
             !BrowsingDataHelper::IsExtensionScheme(scheme) &&
-            scheme != chrome::kChromeDevToolsScheme);
+            scheme != content::kChromeDevToolsScheme);
   }
 }
 

@@ -86,7 +86,8 @@ class Platform(object):
     return self._platform_backend.GetOSName()
 
   def GetOSVersionName(self):
-    """Returns a string description of the Platform OS version.
+    """Returns a logically sortable, string-like description of the Platform OS
+    version.
 
     Examples: VISTA, WIN7, LION, MOUNTAINLION"""
     return self._platform_backend.GetOSVersionName()
@@ -111,10 +112,17 @@ class Platform(object):
     return self._platform_backend.FlushSystemCacheForDirectory(
         directory, ignoring=ignoring)
 
-  def LaunchApplication(self, application, parameters=None):
-    """"Launchs a given application on the OS."""
-    return self._platform_backend.LaunchApplication(application,
-                                                    parameters)
+  def LaunchApplication(self, application, parameters=None,
+                        elevate_privilege=False):
+    """"Launches the given |application| with a list of |parameters| on the OS.
+
+    Set |elevate_privilege| to launch the application with root or admin rights.
+
+    Returns:
+      A popen style process handle for host platforms.
+    """
+    return self._platform_backend.LaunchApplication(
+        application, parameters, elevate_privilege=elevate_privilege)
 
   def IsApplicationRunning(self, application):
     """Returns whether an application is currently running."""
@@ -158,6 +166,73 @@ class Platform(object):
     """
     for t in self._platform_backend.StopVideoCapture():
       yield t
+
+  def CanMonitorPowerSync(self):
+    """Returns True iff power can be monitored synchronously via
+    MonitorPowerSync().
+    """
+    return self._platform_backend.CanMonitorPowerSync()
+
+  def MonitorPowerSync(self, duration_ms):
+    """Synchronously monitors power for |duration_ms|.
+
+    Returns:
+      A dict of power utilization statistics containing: {
+        # The instantaneous power (voltage * current) reading in milliwatts at
+        # each sample.
+        'power_samples_mw': [mw0, mw1, ..., mwN],
+
+        # The total energy consumption during the sampling period in milliwatt
+        # hours. May be estimated by integrating power samples or may be exact
+        # on supported hardware.
+        'energy_consumption_mwh': mwh,
+
+        # A platform-specific dictionary of additional details about the
+        # utilization of individual hardware components.
+        hw_component_utilization: {
+           ...
+        }
+      }
+    """
+    return self._platform_backend.MonitorPowerSync(duration_ms)
+
+  def CanMonitorPowerAsync(self):
+    """Returns True iff power can be monitored asynchronously via
+    StartMonitoringPowerAsync() and StopMonitoringPowerAsync().
+    """
+    return self._platform_backend.CanMonitorPowerAsync()
+
+  def StartMonitoringPowerAsync(self):
+    """Starts monitoring power utilization statistics."""
+    assert self._platform_backend.CanMonitorPowerAsync()
+    self._platform_backend.StartMonitoringPowerAsync()
+
+  def StopMonitoringPowerAsync(self):
+    """Stops monitoring power utilization and returns collects stats
+
+    Returns:
+      A dict of power utilization statistics containing: {
+        # An identifier for the data provider. Allows to evaluate the precision
+        # of the data. Example values: monsoon, powermetrics, ds2784
+        'identifier': identifier,
+
+        # The instantaneous power (voltage * current) reading in milliwatts at
+        # each sample.
+        'power_samples_mw':  [mw0, mw1, ..., mwN],
+
+        # The total energy consumption during the sampling period in milliwatt
+        # hours. May be estimated by integrating power samples or may be exact
+        # on supported hardware.
+        'energy_consumption_mwh': mwh,
+
+        # A platform-specific dictionary of additional details about the
+        # utilization of individual hardware components.
+        hw_component_utilization: {
+           ...
+        }
+      }
+    """
+    return self._platform_backend.StopMonitoringPowerAsync()
 
 
 def CreatePlatformBackendForCurrentOS():

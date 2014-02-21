@@ -17,6 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/user_metrics.h"
 #include "base/process/kill.h"
 #include "base/time/time.h"
 #include "chrome/browser/metrics/metrics_log.h"
@@ -29,7 +30,9 @@
 #include "content/public/browser/user_metrics.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_ANDROID)
+#include "chrome/browser/android/activity_type_ids.h"
+#elif defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/external_metrics.h"
 #endif
 
@@ -111,8 +114,20 @@ class MetricsService
     SHUTDOWN_COMPLETE = 700,
   };
 
+  enum ReportingState {
+    REPORTING_ENABLED,
+    REPORTING_DISABLED,
+  };
+
   MetricsService();
   virtual ~MetricsService();
+
+  // Initializes metrics recording state. Updates various bookkeeping values in
+  // prefs and sets up the scheduler. This is a separate function rather than
+  // being done by the constructor so that field trials could be created before
+  // this is run. Takes |reporting_state| parameter which specifies whether UMA
+  // is enabled.
+  void InitializeMetricsRecordingState(ReportingState reporting_state);
 
   // Starts the metrics system, turning on recording and uploading of metrics.
   // Should be called when starting up with metrics enabled, or when metrics
@@ -153,7 +168,7 @@ class MetricsService
   // because this method may need to be called before the MetricsService needs
   // to be started.
   scoped_ptr<const base::FieldTrial::EntropyProvider> CreateEntropyProvider(
-      bool reporting_will_be_enabled);
+      ReportingState reporting_state);
 
   // Force the client ID to be generated. This is useful in case it's needed
   // before recording.
@@ -162,6 +177,9 @@ class MetricsService
   // At startup, prefs needs to be called with a list of all the pref names and
   // types we'll be using.
   static void RegisterPrefs(PrefRegistrySimple* registry);
+#if defined(OS_ANDROID)
+  static void RegisterPrefsAndroid(PrefRegistrySimple* registry);
+#endif  // defined(OS_ANDROID)
 
   // Set up notifications which indicate that a user is performing work. This is
   // useful to allow some features to sleep, until the machine becomes active,
@@ -190,6 +208,18 @@ class MetricsService
   // that session end was successful.
   void RecordCompletedSessionEnd();
 
+#if defined(OS_ANDROID)
+  // Called to log launch and crash stats to preferences.
+  void LogAndroidStabilityToPrefs(PrefService* pref);
+
+  // Converts crash stats stored in the preferences into histograms.
+  void ConvertAndroidStabilityPrefsToHistograms(PrefService* pref);
+
+  // Called when the Activity that the user interacts with is swapped out.
+  void OnForegroundActivityChanged(PrefService* pref,
+                                   ActivityTypeIds::Type type);
+#endif  // defined(OS_ANDROID)
+
 #if defined(OS_ANDROID) || defined(OS_IOS)
   // Called when the application is going into background mode.
   void OnAppEnterBackground();
@@ -216,10 +246,6 @@ class MetricsService
   // any previous browser processes which generated a crash dump.
   void CountBrowserCrashDumpAttempts();
 #endif  // OS_WIN
-
-  // Save any unsent logs into a persistent store in a pref.  We always do this
-  // at shutdown, but we can do it as we reduce the list as well.
-  void StoreUnsentLogs();
 
 #if defined(OS_CHROMEOS)
   // Start the external metrics service, which collects metrics from Chrome OS
@@ -253,12 +279,14 @@ class MetricsService
   // The MetricsService has a lifecycle that is stored as a state.
   // See metrics_service.cc for description of this lifecycle.
   enum State {
-    INITIALIZED,            // Constructor was called.
-    INIT_TASK_SCHEDULED,    // Waiting for deferred init tasks to complete.
-    INIT_TASK_DONE,         // Waiting for timer to send initial log.
-    INITIAL_LOG_READY,      // Initial log generated, and waiting for reply.
-    SENDING_OLD_LOGS,       // Sending unsent logs from previous session.
-    SENDING_CURRENT_LOGS,   // Sending standard current logs as they acrue.
+    INITIALIZED,                    // Constructor was called.
+    INIT_TASK_SCHEDULED,            // Waiting for deferred init tasks to
+                                    // complete.
+    INIT_TASK_DONE,                 // Waiting for timer to send initial log.
+    SENDING_INITIAL_STABILITY_LOG,  // Initial stability log being sent.
+    SENDING_INITIAL_METRICS_LOG,    // Initial metrics log being sent.
+    SENDING_OLD_LOGS,               // Sending unsent logs from last session.
+    SENDING_CURRENT_LOGS,           // Sending ongoing logs as they accrue.
   };
 
   enum ShutdownCleanliness {
@@ -335,6 +363,9 @@ class MetricsService
   // the old version (after an autoupdate has arrived), and so we'd bias
   // initial results towards showing crashes :-(.
   static void DiscardOldStabilityStats(PrefService* local_state);
+#if defined(OS_ANDROID)
+  static void DiscardOldStabilityStatsAndroid(PrefService* local_state);
+#endif  // defined(OS_ANDROID)
 
   // Turns recording on or off.
   // DisableRecording() also forces a persistent save of logging state (if
@@ -349,7 +380,7 @@ class MetricsService
   void HandleIdleSinceLastTransmission(bool in_idle);
 
   // Set up client ID, session ID, etc.
-  void InitializeMetricsState();
+  void InitializeMetricsState(ReportingState reporting_state);
 
   // Generates a new client ID to use to identify self to metrics server.
   static std::string GenerateClientID();
@@ -393,8 +424,15 @@ class MetricsService
   // (depending on |state_|), and stages it for upload.
   void StageNewLog();
 
-  // Record stats, client ID, Session ID, etc. in a special "first" log.
-  void PrepareInitialLog();
+  // Prepares the initial stability log, which is only logged when the previous
+  // run of Chrome crashed.  This log contains any stability metrics left over
+  // from that previous run, and only these stability metrics.  It uses the
+  // system profile from the previous session.
+  void PrepareInitialStabilityLog();
+
+  // Prepares the initial metrics log, which includes startup histograms and
+  // profiler data, as well as incremental stability-related metrics.
+  void PrepareInitialMetricsLog(MetricsLog::LogType log_type);
 
   // Uploads the currently staged log (which must be non-null).
   void SendStagedLog();
@@ -457,7 +495,7 @@ class MetricsService
   void GetCurrentSyntheticFieldTrials(
       std::vector<chrome_variations::ActiveGroupId>* synthetic_trials);
 
-  content::ActionCallback action_callback_;
+  base::ActionCallback action_callback_;
 
   content::NotificationRegistrar registrar_;
 
@@ -471,9 +509,12 @@ class MetricsService
   // be cut, and logs are neither persisted nor uploaded.
   bool test_mode_active_;
 
-  // The progession of states made by the browser are recorded in the following
+  // The progression of states made by the browser are recorded in the following
   // state.
   State state_;
+
+  // Whether the initial stability log has been recorded during startup.
+  bool has_initial_stability_log_;
 
   // Chrome OS hardware class (e.g., hardware qualification ID). This
   // class identifies the configured system components such as CPU,
@@ -487,8 +528,10 @@ class MetricsService
   // Google Update statistics, which were retrieved on a blocking pool thread.
   GoogleUpdateMetrics google_update_metrics_;
 
-  // The initial log, used to record startup metrics.
-  scoped_ptr<MetricsLog> initial_log_;
+  // The initial metrics log, used to record startup metrics (histograms and
+  // profiler data). Note that if a crash occurred in the previous session, an
+  // initial stability log may be sent before this.
+  scoped_ptr<MetricsLog> initial_metrics_log_;
 
   // The outstanding transmission appears as a URL Fetch operation.
   scoped_ptr<net::URLFetcher> current_fetch_;
@@ -520,7 +563,7 @@ class MetricsService
   int next_window_id_;
 
   // Buffer of child process notifications for quick access.
-  std::map<string16, ChildProcessStats> child_process_stats_buffer_;
+  std::map<base::string16, ChildProcessStats> child_process_stats_buffer_;
 
   // Weak pointers factory used to post task on different threads. All weak
   // pointers managed by this factory have the same lifetime as MetricsService.

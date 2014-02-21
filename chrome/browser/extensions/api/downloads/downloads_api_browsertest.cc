@@ -366,7 +366,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
                            "    \"previous\": \"in_progress\","
                            "    \"current\": \"interrupted\"}}]",
                            item->GetId(),
-                           content::InterruptReasonDebugString(
+                           content::DownloadInterruptReasonToString(
                              expected_error).c_str()));
   }
 
@@ -623,6 +623,7 @@ class MockIconExtractorImpl : public DownloadFileIconExtractor {
   virtual ~MockIconExtractorImpl() {}
 
   virtual bool ExtractIconURLForPath(const base::FilePath& path,
+                                     float scale,
                                      IconLoader::IconSize icon_size,
                                      IconURLCallback callback) OVERRIDE {
     EXPECT_STREQ(expected_path_.value().c_str(), path.value().c_str());
@@ -730,9 +731,9 @@ class HTML5FileWriter {
  private:
   static void CopyInCompletion(bool* result,
                                base::WaitableEvent* done_event,
-                               base::PlatformFileError error) {
+                               base::File::Error error) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    *result = error == base::PLATFORM_FILE_OK;
+    *result = error == base::File::FILE_OK;
     done_event->Signal();
   }
 
@@ -1527,8 +1528,8 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
                          result_id)));
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
-// This test is very flaky on Win Aura. http://crbug.com/248438
+#if defined(OS_WIN)
+// This test is very flaky on Win. http://crbug.com/248438
 #define MAYBE_DownloadExtensionTest_Download_UnsafeHeaders \
     DISABLED_DownloadExtensionTest_Download_UnsafeHeaders
 #else
@@ -1679,13 +1680,13 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
       << kInvalidURLs[index];
   }
 
-  EXPECT_STREQ("net::ERR_ACCESS_DENIED", RunFunctionAndReturnError(
+  EXPECT_STREQ("NETWORK_INVALID_REQUEST", RunFunctionAndReturnError(
       new DownloadsDownloadFunction(),
       "[{\"url\": \"javascript:document.write(\\\"hello\\\");\"}]").c_str());
-  EXPECT_STREQ("net::ERR_ACCESS_DENIED", RunFunctionAndReturnError(
+  EXPECT_STREQ("NETWORK_INVALID_REQUEST", RunFunctionAndReturnError(
       new DownloadsDownloadFunction(),
       "[{\"url\": \"javascript:return false;\"}]").c_str());
-  EXPECT_STREQ("net::ERR_NOT_IMPLEMENTED", RunFunctionAndReturnError(
+  EXPECT_STREQ("NETWORK_FAILED", RunFunctionAndReturnError(
       new DownloadsDownloadFunction(),
       "[{\"url\": \"ftp://example.com/example.txt\"}]").c_str());
 }
@@ -1777,7 +1778,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
 }
 
 // Valid file URLs are valid URLs.
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 // Disabled due to crbug.com/175711
 #define MAYBE_DownloadExtensionTest_Download_File \
         DISABLED_DownloadExtensionTest_Download_File
@@ -1943,7 +1944,8 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
       content::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT,
       base::StringPrintf("[{\"danger\": \"safe\","
                          "  \"incognito\": false,"
-                         "  \"bytesReceived\": 0,"
+                         "  \"bytesReceived\": 0.0,"
+                         "  \"fileSize\": 0.0,"
                          "  \"mime\": \"\","
                          "  \"paused\": false,"
                          "  \"url\": \"%s\"}]",
@@ -1980,15 +1982,17 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
 
   ASSERT_TRUE(WaitFor(api::OnCreated::kEventName,
       base::StringPrintf("[{\"danger\": \"safe\","
-                          "  \"incognito\": false,"
-                          "  \"mime\": \"text/html\","
-                          "  \"paused\": false,"
-                          "  \"url\": \"%s\"}]", download_url.c_str())));
+                         "  \"incognito\": false,"
+                         "  \"bytesReceived\": 0.0,"
+                         "  \"fileSize\": 0.0,"
+                         "  \"mime\": \"text/html\","
+                         "  \"paused\": false,"
+                         "  \"url\": \"%s\"}]", download_url.c_str())));
   ASSERT_TRUE(WaitFor(api::OnChanged::kEventName,
       base::StringPrintf("[{\"id\": %d,"
-                          "  \"state\": {"
-                          "    \"previous\": \"in_progress\","
-                          "    \"current\": \"complete\"}}]", result_id)));
+                         "  \"state\": {"
+                         "    \"previous\": \"in_progress\","
+                         "    \"current\": \"complete\"}}]", result_id)));
 }
 
 // Test that DownloadsDownloadFunction propagates the |method| and |body|
@@ -3499,8 +3503,15 @@ void OnDangerPromptCreated(DownloadDangerPrompt* prompt) {
   prompt->InvokeActionForTesting(DownloadDangerPrompt::ACCEPT);
 }
 
+#if defined(OS_MACOSX)
+// Flakily triggers and assert on Mac.
+// http://crbug.com/180759
+#define MAYBE_DownloadExtensionTest_AcceptDanger DownloadExtensionTest_AcceptDanger
+#else
+#define MAYBE_DownloadExtensionTest_AcceptDanger DISABLED_DownloadExtensionTest_AcceptDanger
+#endif
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
-                       DownloadExtensionTest_AcceptDanger) {
+                       MAYBE_DownloadExtensionTest_AcceptDanger) {
   // Download a file that will be marked dangerous; click the browser action
   // button; the browser action poup will call acceptDanger(); when the
   // DownloadDangerPrompt is created, pretend that the user clicks the Accept

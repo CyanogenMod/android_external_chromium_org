@@ -38,6 +38,8 @@ const SkColor kSliderThumbDarkGrey = SkColorSetRGB(0xea, 0xe5, 0xe0);
 const SkColor kSliderThumbBorderDarkGrey =
     SkColorSetRGB(0x9d, 0x96, 0x8e);
 
+const SkColor kTextBorderColor = SkColorSetRGB(0xa9, 0xa9, 0xa9);
+
 const SkColor kMenuPopupBackgroundColor = SkColorSetRGB(210, 225, 246);
 
 const unsigned int kDefaultScrollbarWidth = 15;
@@ -216,6 +218,9 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
       // Invoked by views scrollbar code, don't care about for non-win
       // implementations, so no NOTIMPLEMENTED.
       break;
+    case kScrollbarCorner:
+      PaintScrollbarCorner(canvas, state, rect);
+      break;
     case kSliderTrack:
       PaintSliderTrack(canvas, state, rect, extra.slider);
       break;
@@ -247,18 +252,20 @@ NativeThemeBase::NativeThemeBase()
 NativeThemeBase::~NativeThemeBase() {
 }
 
+// static
+scoped_ptr<gfx::Canvas> NativeThemeBase::CreateCanvas(SkCanvas* sk_canvas) {
+  // TODO(pkotwicz): Do something better and don't infer device
+  // scale factor from canvas scale.
+  SkMatrix m = sk_canvas->getTotalMatrix();
+  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
+  return scoped_ptr<gfx::Canvas>(
+      gfx::Canvas::CreateCanvasWithoutScaling(sk_canvas, device_scale));
+}
+
 void NativeThemeBase::PaintArrowButton(
     SkCanvas* canvas,
     const gfx::Rect& rect, Part direction, State state) const {
-  int widthMiddle, lengthMiddle;
   SkPaint paint;
-  if (direction == kScrollbarUpArrow || direction == kScrollbarDownArrow) {
-    widthMiddle = rect.width() / 2 + 1;
-    lengthMiddle = rect.height() / 2 + 1;
-  } else {
-    lengthMiddle = rect.width() / 2 + 1;
-    widthMiddle = rect.height() / 2 + 1;
-  }
 
   // Calculate button color.
   SkScalar trackHSV[3];
@@ -333,11 +340,24 @@ void NativeThemeBase::PaintArrowButton(
   paint.setColor(OutlineColor(trackHSV, thumbHSV));
   canvas->drawPath(outline, paint);
 
-  // If the button is disabled or read-only, the arrow is drawn with the
-  // outline color.
-  if (state != kDisabled)
-    paint.setColor(SK_ColorBLACK);
+  PaintArrow(canvas, rect, direction, GetArrowColor(state));
+}
 
+void NativeThemeBase::PaintArrow(SkCanvas* gc,
+                                 const gfx::Rect& rect,
+                                 Part direction,
+                                 SkColor color) const {
+  int width_middle, length_middle;
+  if (direction == kScrollbarUpArrow || direction == kScrollbarDownArrow) {
+    width_middle = rect.width() / 2 + 1;
+    length_middle = rect.height() / 2 + 1;
+  } else {
+    length_middle = rect.width() / 2 + 1;
+    width_middle = rect.height() / 2 + 1;
+  }
+
+  SkPaint paint;
+  paint.setColor(color);
   paint.setAntiAlias(false);
   paint.setStyle(SkPaint::kFill_Style);
 
@@ -346,22 +366,22 @@ void NativeThemeBase::PaintArrowButton(
   // looking arrows without anti-aliasing.
   switch (direction) {
     case kScrollbarUpArrow:
-      path.moveTo(rect.x() + widthMiddle - 4, rect.y() + lengthMiddle + 2);
+      path.moveTo(rect.x() + width_middle - 4, rect.y() + length_middle + 2);
       path.rLineTo(7, 0);
       path.rLineTo(-4, -4);
       break;
     case kScrollbarDownArrow:
-      path.moveTo(rect.x() + widthMiddle - 4, rect.y() + lengthMiddle - 3);
+      path.moveTo(rect.x() + width_middle - 4, rect.y() + length_middle - 3);
       path.rLineTo(7, 0);
       path.rLineTo(-4, 4);
       break;
     case kScrollbarRightArrow:
-      path.moveTo(rect.x() + lengthMiddle - 3, rect.y() + widthMiddle - 4);
+      path.moveTo(rect.x() + length_middle - 3, rect.y() + width_middle - 4);
       path.rLineTo(0, 7);
       path.rLineTo(4, -4);
       break;
     case kScrollbarLeftArrow:
-      path.moveTo(rect.x() + lengthMiddle + 1, rect.y() + widthMiddle - 5);
+      path.moveTo(rect.x() + length_middle + 1, rect.y() + width_middle - 5);
       path.rLineTo(0, 9);
       path.rLineTo(-4, -4);
       break;
@@ -370,7 +390,7 @@ void NativeThemeBase::PaintArrowButton(
   }
   path.close();
 
-  canvas->drawPath(path, paint);
+  gc->drawPath(path, paint);
 }
 
 void NativeThemeBase::PaintScrollbarTrack(SkCanvas* canvas,
@@ -471,6 +491,16 @@ void NativeThemeBase::PaintScrollbarThumb(SkCanvas* canvas,
                    paint);
     }
   }
+}
+
+void NativeThemeBase::PaintScrollbarCorner(SkCanvas* canvas,
+                                           State state,
+                                           const gfx::Rect& rect) const {
+  SkPaint paint;
+  paint.setColor(SK_ColorWHITE);
+  paint.setStyle(SkPaint::kFill_Style);
+  paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+  canvas->drawIRect(RectToSkIRect(rect), paint);
 }
 
 void NativeThemeBase::PaintCheckbox(SkCanvas* canvas,
@@ -688,10 +718,6 @@ void NativeThemeBase::PaintTextField(SkCanvas* canvas,
                                      State state,
                                      const gfx::Rect& rect,
                                      const TextFieldExtraParams& text) const {
-  // The following drawing code simulates the user-agent css border for
-  // text area and text input so that we do not break layout tests. Once we
-  // have decided the desired looks, we should update the code here and
-  // the layout test expectations.
   SkRect bounds;
   bounds.set(rect.x(), rect.y(), rect.right() - 1, rect.bottom() - 1);
 
@@ -700,78 +726,12 @@ void NativeThemeBase::PaintTextField(SkCanvas* canvas,
   fill_paint.setColor(text.background_color);
   canvas->drawRect(bounds, fill_paint);
 
-  if (text.is_text_area) {
-    // Draw text area border: 1px solid black
-    SkPaint stroke_paint;
-    fill_paint.setStyle(SkPaint::kStroke_Style);
-    fill_paint.setColor(SK_ColorBLACK);
-    canvas->drawRect(bounds, fill_paint);
-  } else {
-    // Draw text input and listbox inset border
-    //   Text Input: 2px inset #eee
-    //   Listbox: 1px inset #808080
-    const SkColor kLightColor = text.is_listbox ?
-        SkColorSetRGB(0x80, 0x80, 0x80) : SkColorSetRGB(0xee, 0xee, 0xee);
-    const SkColor kDarkColor = text.is_listbox ?
-        SkColorSetRGB(0x2c, 0x2c, 0x2c) : SkColorSetRGB(0x9a, 0x9a, 0x9a);
-    const int kBorderWidth = text.is_listbox ? 1 : 2;
-
-    SkPaint dark_paint;
-    dark_paint.setAntiAlias(true);
-    dark_paint.setStyle(SkPaint::kFill_Style);
-    dark_paint.setColor(kDarkColor);
-
-    SkPaint light_paint;
-    light_paint.setAntiAlias(true);
-    light_paint.setStyle(SkPaint::kFill_Style);
-    light_paint.setColor(kLightColor);
-
-    int left = rect.x();
-    int top = rect.y();
-    int right = rect.right();
-    int bottom = rect.bottom();
-
-    SkPath path;
-    path.incReserve(4);
-
-    // Top
-    path.moveTo(SkIntToScalar(left), SkIntToScalar(top));
-    path.lineTo(SkIntToScalar(left + kBorderWidth),
-                SkIntToScalar(top + kBorderWidth));
-    path.lineTo(SkIntToScalar(right - kBorderWidth),
-                SkIntToScalar(top + kBorderWidth));
-    path.lineTo(SkIntToScalar(right), SkIntToScalar(top));
-    canvas->drawPath(path, dark_paint);
-
-    // Bottom
-    path.reset();
-    path.moveTo(SkIntToScalar(left + kBorderWidth),
-                SkIntToScalar(bottom - kBorderWidth));
-    path.lineTo(SkIntToScalar(left), SkIntToScalar(bottom));
-    path.lineTo(SkIntToScalar(right), SkIntToScalar(bottom));
-    path.lineTo(SkIntToScalar(right - kBorderWidth),
-                SkIntToScalar(bottom - kBorderWidth));
-    canvas->drawPath(path, light_paint);
-
-    // Left
-    path.reset();
-    path.moveTo(SkIntToScalar(left), SkIntToScalar(top));
-    path.lineTo(SkIntToScalar(left), SkIntToScalar(bottom));
-    path.lineTo(SkIntToScalar(left + kBorderWidth),
-                SkIntToScalar(bottom - kBorderWidth));
-    path.lineTo(SkIntToScalar(left + kBorderWidth),
-                SkIntToScalar(top + kBorderWidth));
-    canvas->drawPath(path, dark_paint);
-
-    // Right
-    path.reset();
-    path.moveTo(SkIntToScalar(right - kBorderWidth),
-                SkIntToScalar(top + kBorderWidth));
-    path.lineTo(SkIntToScalar(right - kBorderWidth), SkIntToScalar(bottom));
-    path.lineTo(SkIntToScalar(right), SkIntToScalar(bottom));
-    path.lineTo(SkIntToScalar(right), SkIntToScalar(top));
-    canvas->drawPath(path, light_paint);
-  }
+  // Text INPUT, listbox SELECT, and TEXTAREA have consistent borders.
+  // border: 1px solid #a9a9a9
+  SkPaint stroke_paint;
+  stroke_paint.setStyle(SkPaint::kStroke_Style);
+  stroke_paint.setColor(kTextBorderColor);
+  canvas->drawRect(bounds, stroke_paint);
 }
 
 void NativeThemeBase::PaintMenuList(
@@ -999,12 +959,7 @@ void NativeThemeBase::DrawImageInt(
     SkCanvas* sk_canvas, const gfx::ImageSkia& image,
     int src_x, int src_y, int src_w, int src_h,
     int dest_x, int dest_y, int dest_w, int dest_h) const {
-  // TODO(pkotwicz): Do something better and don't infer device
-  // scale factor from canvas scale.
-  SkMatrix m = sk_canvas->getTotalMatrix();
-  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
-  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
-      sk_canvas, device_scale));
+  scoped_ptr<gfx::Canvas> canvas(CreateCanvas(sk_canvas));
   canvas->DrawImageInt(image, src_x, src_y, src_w, src_h,
       dest_x, dest_y, dest_w, dest_h, true);
 }
@@ -1013,12 +968,7 @@ void NativeThemeBase::DrawTiledImage(SkCanvas* sk_canvas,
     const gfx::ImageSkia& image,
     int src_x, int src_y, float tile_scale_x, float tile_scale_y,
     int dest_x, int dest_y, int w, int h) const {
-  // TODO(pkotwicz): Do something better and don't infer device
-  // scale factor from canvas scale.
-  SkMatrix m = sk_canvas->getTotalMatrix();
-  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
-  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
-      sk_canvas, device_scale));
+  scoped_ptr<gfx::Canvas> canvas(CreateCanvas(sk_canvas));
   canvas->TileImageInt(image, src_x, src_y, tile_scale_x,
       tile_scale_y, dest_x, dest_y, w, h);
 }
@@ -1031,6 +981,17 @@ SkColor NativeThemeBase::SaturateAndBrighten(SkScalar* hsv,
   color[1] = Clamp(hsv[1] + saturate_amount, 0.0, 1.0);
   color[2] = Clamp(hsv[2] + brighten_amount, 0.0, 1.0);
   return SkHSVToColor(color);
+}
+
+SkColor NativeThemeBase::GetArrowColor(State state) const {
+  if (state != kDisabled)
+    return SK_ColorBLACK;
+
+  SkScalar track_hsv[3];
+  SkColorToHSV(track_color_, track_hsv);
+  SkScalar thumb_hsv[3];
+  SkColorToHSV(thumb_inactive_color_, thumb_hsv);
+  return OutlineColor(track_hsv, thumb_hsv);
 }
 
 void NativeThemeBase::DrawVertLine(SkCanvas* canvas,

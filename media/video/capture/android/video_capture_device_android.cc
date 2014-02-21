@@ -9,6 +9,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/debug/trace_event.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "jni/VideoCapture_jni.h"
@@ -55,8 +56,43 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
 
 // static
 void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
-    VideoCaptureCapabilities* formats) {
-  NOTIMPLEMENTED();
+    VideoCaptureFormats* capture_formats) {
+  int id;
+  if (!base::StringToInt(device.id(), &id))
+    return;
+  JNIEnv* env = AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jobjectArray> collected_formats =
+      Java_VideoCapture_getDeviceSupportedFormats(env, id);
+  if (collected_formats.is_null())
+    return;
+
+  jsize num_formats = env->GetArrayLength(collected_formats.obj());
+  for (int i = 0; i < num_formats; ++i) {
+    base::android::ScopedJavaLocalRef<jobject> format(
+        env, env->GetObjectArrayElement(collected_formats.obj(), i));
+
+    VideoPixelFormat pixel_format = media::PIXEL_FORMAT_UNKNOWN;
+    switch (media::Java_CaptureFormat_getPixelFormat(env, format.obj())) {
+      case VideoCaptureDeviceAndroid::ANDROID_IMAGEFORMAT_YV12:
+        pixel_format = media::PIXEL_FORMAT_YV12;
+        break;
+      case VideoCaptureDeviceAndroid::ANDROID_IMAGEFORMAT_NV21:
+        pixel_format = media::PIXEL_FORMAT_NV21;
+        break;
+      default:
+        break;
+    }
+    VideoCaptureFormat capture_format(
+        gfx::Size(media::Java_CaptureFormat_getWidth(env, format.obj()),
+                  media::Java_CaptureFormat_getHeight(env, format.obj())),
+        media::Java_CaptureFormat_getFramerate(env, format.obj()),
+        pixel_format);
+    capture_formats->push_back(capture_format);
+    DVLOG(1) << device.name() << " resolution: "
+        << capture_format.frame_size.ToString() << ", fps: "
+        << capture_format.frame_rate << ", pixel format: "
+        << capture_format.pixel_format;
+  }
 }
 
 const std::string VideoCaptureDevice::Name::GetModel() const {
@@ -195,9 +231,8 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
     jobject obj,
     jbyteArray data,
     jint length,
-    jint rotation,
-    jboolean flip_vert,
-    jboolean flip_horiz) {
+    jint rotation) {
+  TRACE_EVENT0("video", "VideoCaptureDeviceAndroid::OnFrameAvailable");
   DVLOG(3) << "VideoCaptureDeviceAndroid::OnFrameAvailable: length =" << length;
 
   base::AutoLock lock(lock_);
@@ -224,10 +259,8 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
 
     client_->OnIncomingCapturedFrame(reinterpret_cast<uint8*>(buffer),
                                      length,
-                                     base::Time::Now(),
+                                     base::TimeTicks::Now(),
                                      rotation,
-                                     flip_vert,
-                                     flip_horiz,
                                      capture_format_);
   }
 
@@ -238,20 +271,14 @@ VideoPixelFormat VideoCaptureDeviceAndroid::GetColorspace() {
   JNIEnv* env = AttachCurrentThread();
   int current_capture_colorspace =
       Java_VideoCapture_getColorspace(env, j_capture_.obj());
-  switch (current_capture_colorspace){
-  case ANDROID_IMAGEFORMAT_YV12:
-    return media::PIXEL_FORMAT_YV12;
-  case ANDROID_IMAGEFORMAT_NV21:
-    return media::PIXEL_FORMAT_NV21;
-  case ANDROID_IMAGEFORMAT_YUY2:
-    return media::PIXEL_FORMAT_YUY2;
-  case ANDROID_IMAGEFORMAT_NV16:
-  case ANDROID_IMAGEFORMAT_JPEG:
-  case ANDROID_IMAGEFORMAT_RGB_565:
-  case ANDROID_IMAGEFORMAT_UNKNOWN:
-    // NOTE(mcasas): NV16, JPEG, RGB565 not supported in VideoPixelFormat.
-  default:
-    return media::PIXEL_FORMAT_UNKNOWN;
+  switch (current_capture_colorspace) {
+    case ANDROID_IMAGEFORMAT_YV12:
+      return media::PIXEL_FORMAT_YV12;
+    case ANDROID_IMAGEFORMAT_NV21:
+      return media::PIXEL_FORMAT_NV21;
+    case ANDROID_IMAGEFORMAT_UNKNOWN:
+    default:
+      return media::PIXEL_FORMAT_UNKNOWN;
   }
 }
 
@@ -261,7 +288,7 @@ void VideoCaptureDeviceAndroid::SetErrorState(const std::string& reason) {
     base::AutoLock lock(lock_);
     state_ = kError;
   }
-  client_->OnError();
+  client_->OnError(reason);
 }
 
 }  // namespace media

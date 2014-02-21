@@ -21,8 +21,8 @@ BitmapSkPictureContentLayerUpdater::Resource::Resource(
 
 void BitmapSkPictureContentLayerUpdater::Resource::Update(
     ResourceUpdateQueue* queue,
-    gfx::Rect source_rect,
-    gfx::Vector2d dest_offset,
+    const gfx::Rect& source_rect,
+    const gfx::Vector2d& dest_offset,
     bool partial_update) {
   bitmap_.setConfig(
       SkBitmap::kARGB_8888_Config, source_rect.width(), source_rect.height(), 0,
@@ -70,7 +70,7 @@ BitmapSkPictureContentLayerUpdater::CreateResource(
 
 void BitmapSkPictureContentLayerUpdater::PaintContentsRect(
     SkCanvas* canvas,
-    gfx::Rect source_rect) {
+    const gfx::Rect& source_rect) {
   // Translate the origin of content_rect to that of source_rect.
   canvas->translate(content_rect().x() - source_rect.x(),
                     content_rect().y() - source_rect.y());

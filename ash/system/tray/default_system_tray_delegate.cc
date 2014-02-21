@@ -71,7 +71,7 @@ const std::string DefaultSystemTrayDelegate::GetEnterpriseDomain() const {
 }
 
 const base::string16 DefaultSystemTrayDelegate::GetEnterpriseMessage() const {
-  return string16();
+  return base::string16();
 }
 
 const std::string
@@ -82,12 +82,12 @@ DefaultSystemTrayDelegate::GetLocallyManagedUserManager() const {
 const base::string16
 DefaultSystemTrayDelegate::GetLocallyManagedUserManagerName()
     const {
-  return string16();
+  return base::string16();
 }
 
 const base::string16 DefaultSystemTrayDelegate::GetLocallyManagedUserMessage()
     const {
-  return string16();
+  return base::string16();
 }
 
 bool DefaultSystemTrayDelegate::SystemShouldUpgrade() const {
@@ -150,6 +150,18 @@ void DefaultSystemTrayDelegate::ShowLocallyManagedUserInfo() {
 }
 
 void DefaultSystemTrayDelegate::ShowUserLogin() {
+}
+
+bool DefaultSystemTrayDelegate::ShowSpringChargerReplacementDialog() {
+  return false;
+}
+
+bool DefaultSystemTrayDelegate::IsSpringChargerReplacementDialogVisible() {
+  return false;
+}
+
+bool DefaultSystemTrayDelegate::HasUserConfirmedSafeSpringCharger() {
+  return false;
 }
 
 void DefaultSystemTrayDelegate::ShutDown() {
@@ -267,6 +279,9 @@ bool DefaultSystemTrayDelegate::GetSessionLengthLimit(
 int DefaultSystemTrayDelegate::GetSystemTrayMenuWidth() {
   // This is the default width for English languages.
   return 300;
+}
+
+void DefaultSystemTrayDelegate::ActiveUserWasChanged() {
 }
 
 }  // namespace ash

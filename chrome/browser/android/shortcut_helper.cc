@@ -11,11 +11,11 @@
 #include "base/basictypes.h"
 #include "base/location.h"
 #include "base/strings/string16.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/threading/worker_pool.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -184,15 +184,15 @@ void ShortcutHelper::AddShortcutInBackground(
   switch (shortcut_type) {
     case ShortcutBuilder::APP_SHORTCUT:
       content::RecordAction(
-          content::UserMetricsAction("webapps.AddShortcut.AppShortcut"));
+          base::UserMetricsAction("webapps.AddShortcut.AppShortcut"));
       break;
     case ShortcutBuilder::APP_SHORTCUT_APPLE:
       content::RecordAction(
-          content::UserMetricsAction("webapps.AddShortcut.AppShortcutApple"));
+          base::UserMetricsAction("webapps.AddShortcut.AppShortcutApple"));
       break;
     case ShortcutBuilder::BOOKMARK:
       content::RecordAction(
-          content::UserMetricsAction("webapps.AddShortcut.Bookmark"));
+          base::UserMetricsAction("webapps.AddShortcut.Bookmark"));
       break;
     default:
       NOTREACHED();

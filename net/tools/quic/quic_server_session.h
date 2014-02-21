@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/quic/quic_crypto_server_stream.h"
@@ -18,6 +19,7 @@
 
 namespace net {
 
+class QuicBlockedWriterInterface;
 class QuicConfig;
 class QuicConnection;
 class QuicCryptoServerConfig;
@@ -31,40 +33,43 @@ class QuicServerSessionPeer;
 
 // An interface from the session to the entity owning the session.
 // This lets the session notify its owner (the Dispatcher) when the connection
-// is closed.
-class QuicSessionOwner {
+// is closed or blocked.
+class QuicServerSessionVisitor {
  public:
-  virtual ~QuicSessionOwner() {}
+  virtual ~QuicServerSessionVisitor() {}
 
   virtual void OnConnectionClosed(QuicGuid guid, QuicErrorCode error) = 0;
+  virtual void OnWriteBlocked(QuicBlockedWriterInterface* writer) = 0;
 };
 
 class QuicServerSession : public QuicSession {
  public:
   QuicServerSession(const QuicConfig& config,
                     QuicConnection *connection,
-                    QuicSessionOwner* owner);
+                    QuicServerSessionVisitor* visitor);
 
   // Override the base class to notify the owner of the connection close.
   virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnWriteBlocked() OVERRIDE;
 
   virtual ~QuicServerSession();
 
   virtual void InitializeSession(const QuicCryptoServerConfig& crypto_config);
 
-  const QuicCryptoServerStream* crypto_stream() { return crypto_stream_.get(); }
+  const QuicCryptoServerStream* crypto_stream() const {
+    return crypto_stream_.get();
+  }
 
  protected:
   // QuicSession methods:
-  virtual ReliableQuicStream* CreateIncomingReliableStream(
-      QuicStreamId id) OVERRIDE;
-  virtual ReliableQuicStream* CreateOutgoingReliableStream() OVERRIDE;
+  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
+  virtual QuicDataStream* CreateOutgoingDataStream() OVERRIDE;
   virtual QuicCryptoServerStream* GetCryptoStream() OVERRIDE;
 
   // If we should create an incoming stream, returns true. Otherwise
   // does error handling, including communicating the error to the client and
   // possibly closing the connection, and returns false.
-  virtual bool ShouldCreateIncomingReliableStream(QuicStreamId id);
+  virtual bool ShouldCreateIncomingDataStream(QuicStreamId id);
 
   virtual QuicCryptoServerStream* CreateQuicCryptoServerStream(
     const QuicCryptoServerConfig& crypto_config);
@@ -73,7 +78,7 @@ class QuicServerSession : public QuicSession {
   friend class test::QuicServerSessionPeer;
 
   scoped_ptr<QuicCryptoServerStream> crypto_stream_;
-  QuicSessionOwner* owner_;
+  QuicServerSessionVisitor* visitor_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicServerSession);
 };

@@ -70,7 +70,7 @@ TEST_F(FontTest, LoadArial) {
 
 TEST_F(FontTest, LoadArialBold) {
   Font cf("Arial", 16);
-  Font bold(cf.DeriveFont(0, Font::BOLD));
+  Font bold(cf.Derive(0, Font::BOLD));
   NativeFont native = bold.GetNativeFont();
   EXPECT_TRUE(native);
   EXPECT_EQ(bold.GetStyle(), Font::BOLD);
@@ -95,11 +95,7 @@ TEST_F(FontTest, CapHeight) {
   Font cf("Arial", 16);
   EXPECT_GT(cf.GetCapHeight(), 0);
   EXPECT_GT(cf.GetCapHeight(), cf.GetHeight() / 2);
-#if defined(OS_CHROMEOS) || defined(OS_LINUX)
-  EXPECT_EQ(cf.GetCapHeight(), cf.GetBaseline());
-#else
   EXPECT_LT(cf.GetCapHeight(), cf.GetBaseline());
-#endif
 }
 
 TEST_F(FontTest, AvgWidths) {
@@ -108,22 +104,6 @@ TEST_F(FontTest, AvgWidths) {
   EXPECT_GT(cf.GetExpectedTextWidth(1), cf.GetExpectedTextWidth(0));
   EXPECT_GT(cf.GetExpectedTextWidth(2), cf.GetExpectedTextWidth(1));
   EXPECT_GT(cf.GetExpectedTextWidth(3), cf.GetExpectedTextWidth(2));
-}
-
-TEST_F(FontTest, AvgCharWidth) {
-  Font cf("Arial", 16);
-  EXPECT_GT(cf.GetAverageCharacterWidth(), 0);
-}
-
-TEST_F(FontTest, Widths) {
-  Font cf("Arial", 16);
-  EXPECT_EQ(cf.GetStringWidth(base::string16()), 0);
-  EXPECT_GT(cf.GetStringWidth(ASCIIToUTF16("a")),
-            cf.GetStringWidth(base::string16()));
-  EXPECT_GT(cf.GetStringWidth(ASCIIToUTF16("ab")),
-            cf.GetStringWidth(ASCIIToUTF16("a")));
-  EXPECT_GT(cf.GetStringWidth(ASCIIToUTF16("abc")),
-            cf.GetStringWidth(ASCIIToUTF16("ab")));
 }
 
 #if !defined(OS_WIN)
@@ -143,21 +123,21 @@ TEST_F(FontTest, GetActualFontNameForTesting) {
 #endif
 
 #if defined(OS_WIN)
-TEST_F(FontTest, DeriveFontResizesIfSizeTooSmall) {
+TEST_F(FontTest, DeriveResizesIfSizeTooSmall) {
   Font cf("Arial", 8);
   // The minimum font size is set to 5 in browser_main.cc.
   ScopedMinimumFontSizeCallback minimum_size(5);
 
-  Font derived_font = cf.DeriveFont(-4);
+  Font derived_font = cf.Derive(-4, cf.GetStyle());
   EXPECT_EQ(5, derived_font.GetFontSize());
 }
 
-TEST_F(FontTest, DeriveFontKeepsOriginalSizeIfHeightOk) {
+TEST_F(FontTest, DeriveKeepsOriginalSizeIfHeightOk) {
   Font cf("Arial", 8);
   // The minimum font size is set to 5 in browser_main.cc.
   ScopedMinimumFontSizeCallback minimum_size(5);
 
-  Font derived_font = cf.DeriveFont(-2);
+  Font derived_font = cf.Derive(-2, cf.GetStyle());
   EXPECT_EQ(6, derived_font.GetFontSize());
 }
 #endif  // defined(OS_WIN)

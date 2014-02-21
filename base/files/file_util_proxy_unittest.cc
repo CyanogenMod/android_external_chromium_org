@@ -21,9 +21,8 @@ namespace base {
 class FileUtilProxyTest : public testing::Test {
  public:
   FileUtilProxyTest()
-      : message_loop_(MessageLoop::TYPE_IO),
-        file_thread_("FileUtilProxyTestFileThread"),
-        error_(PLATFORM_FILE_OK),
+      : file_thread_("FileUtilProxyTestFileThread"),
+        error_(File::FILE_OK),
         created_(false),
         file_(kInvalidPlatformFileValue),
         bytes_written_(-1),
@@ -39,12 +38,12 @@ class FileUtilProxyTest : public testing::Test {
       ClosePlatformFile(file_);
   }
 
-  void DidFinish(PlatformFileError error) {
+  void DidFinish(File::Error error) {
     error_ = error;
     MessageLoop::current()->QuitWhenIdle();
   }
 
-  void DidCreateOrOpen(PlatformFileError error,
+  void DidCreateOrOpen(File::Error error,
                        PassPlatformFile file,
                        bool created) {
     error_ = error;
@@ -53,7 +52,7 @@ class FileUtilProxyTest : public testing::Test {
     MessageLoop::current()->QuitWhenIdle();
   }
 
-  void DidCreateTemporary(PlatformFileError error,
+  void DidCreateTemporary(File::Error error,
                           PassPlatformFile file,
                           const FilePath& path) {
     error_ = error;
@@ -62,14 +61,14 @@ class FileUtilProxyTest : public testing::Test {
     MessageLoop::current()->QuitWhenIdle();
   }
 
-  void DidGetFileInfo(PlatformFileError error,
-                      const PlatformFileInfo& file_info) {
+  void DidGetFileInfo(File::Error error,
+                      const File::Info& file_info) {
     error_ = error;
     file_info_ = file_info;
     MessageLoop::current()->QuitWhenIdle();
   }
 
-  void DidRead(PlatformFileError error,
+  void DidRead(File::Error error,
                const char* data,
                int bytes_read) {
     error_ = error;
@@ -78,7 +77,7 @@ class FileUtilProxyTest : public testing::Test {
     MessageLoop::current()->QuitWhenIdle();
   }
 
-  void DidWrite(PlatformFileError error,
+  void DidWrite(File::Error error,
                 int bytes_written) {
     error_ = error;
     bytes_written_ = bytes_written;
@@ -103,15 +102,15 @@ class FileUtilProxyTest : public testing::Test {
   const FilePath& test_dir_path() const { return dir_.path(); }
   const FilePath test_path() const { return dir_.path().AppendASCII("test"); }
 
-  MessageLoop message_loop_;
+  MessageLoopForIO message_loop_;
   Thread file_thread_;
 
   ScopedTempDir dir_;
-  PlatformFileError error_;
+  File::Error error_;
   bool created_;
   PlatformFile file_;
   FilePath path_;
-  PlatformFileInfo file_info_;
+  File::Info file_info_;
   std::vector<char> buffer_;
   int bytes_written_;
   WeakPtrFactory<FileUtilProxyTest> weak_factory_;
@@ -125,7 +124,7 @@ TEST_F(FileUtilProxyTest, CreateOrOpen_Create) {
       Bind(&FileUtilProxyTest::DidCreateOrOpen, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
 
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_TRUE(created_);
   EXPECT_NE(kInvalidPlatformFileValue, file_);
   EXPECT_TRUE(PathExists(test_path()));
@@ -144,7 +143,7 @@ TEST_F(FileUtilProxyTest, CreateOrOpen_Open) {
       Bind(&FileUtilProxyTest::DidCreateOrOpen, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
 
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_FALSE(created_);
   EXPECT_NE(kInvalidPlatformFileValue, file_);
 }
@@ -156,7 +155,7 @@ TEST_F(FileUtilProxyTest, CreateOrOpen_OpenNonExistent) {
       PLATFORM_FILE_OPEN | PLATFORM_FILE_READ,
       Bind(&FileUtilProxyTest::DidCreateOrOpen, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
-  EXPECT_EQ(PLATFORM_FILE_ERROR_NOT_FOUND, error_);
+  EXPECT_EQ(File::FILE_ERROR_NOT_FOUND, error_);
   EXPECT_FALSE(created_);
   EXPECT_EQ(kInvalidPlatformFileValue, file_);
   EXPECT_FALSE(PathExists(test_path()));
@@ -178,7 +177,7 @@ TEST_F(FileUtilProxyTest, Close) {
       file,
       Bind(&FileUtilProxyTest::DidFinish, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
 
   // Now it should pass on all platforms.
   EXPECT_TRUE(base::Move(test_path(), test_dir_path().AppendASCII("new")));
@@ -189,7 +188,7 @@ TEST_F(FileUtilProxyTest, CreateTemporary) {
       file_task_runner(), 0 /* additional_file_flags */,
       Bind(&FileUtilProxyTest::DidCreateTemporary, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_TRUE(PathExists(path_));
   EXPECT_NE(kInvalidPlatformFileValue, file_);
 
@@ -225,7 +224,7 @@ TEST_F(FileUtilProxyTest, CreateTemporary) {
 TEST_F(FileUtilProxyTest, GetFileInfo_File) {
   // Setup.
   ASSERT_EQ(4, file_util::WriteFile(test_path(), "test", 4));
-  PlatformFileInfo expected_info;
+  File::Info expected_info;
   GetFileInfo(test_path(), &expected_info);
 
   // Run.
@@ -236,7 +235,7 @@ TEST_F(FileUtilProxyTest, GetFileInfo_File) {
   MessageLoop::current()->Run();
 
   // Verify.
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_EQ(expected_info.size, file_info_.size);
   EXPECT_EQ(expected_info.is_directory, file_info_.is_directory);
   EXPECT_EQ(expected_info.is_symbolic_link, file_info_.is_symbolic_link);
@@ -248,7 +247,7 @@ TEST_F(FileUtilProxyTest, GetFileInfo_File) {
 TEST_F(FileUtilProxyTest, GetFileInfo_Directory) {
   // Setup.
   ASSERT_TRUE(base::CreateDirectory(test_path()));
-  PlatformFileInfo expected_info;
+  File::Info expected_info;
   GetFileInfo(test_path(), &expected_info);
 
   // Run.
@@ -259,7 +258,7 @@ TEST_F(FileUtilProxyTest, GetFileInfo_Directory) {
   MessageLoop::current()->Run();
 
   // Verify.
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_EQ(expected_info.size, file_info_.size);
   EXPECT_EQ(expected_info.is_directory, file_info_.is_directory);
   EXPECT_EQ(expected_info.is_symbolic_link, file_info_.is_symbolic_link);
@@ -285,7 +284,7 @@ TEST_F(FileUtilProxyTest, Read) {
   MessageLoop::current()->Run();
 
   // Verify.
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_EQ(expected_bytes, static_cast<int>(buffer_.size()));
   for (size_t i = 0; i < buffer_.size(); ++i) {
     EXPECT_EQ(expected_data[i], buffer_[i]);
@@ -306,7 +305,7 @@ TEST_F(FileUtilProxyTest, WriteAndFlush) {
       data_bytes,
       Bind(&FileUtilProxyTest::DidWrite, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
   EXPECT_EQ(data_bytes, bytes_written_);
 
   // Flush the written data.  (So that the following read should always
@@ -316,7 +315,7 @@ TEST_F(FileUtilProxyTest, WriteAndFlush) {
       file,
       Bind(&FileUtilProxyTest::DidFinish, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
 
   // Verify the written data.
   char buffer[10];
@@ -339,9 +338,9 @@ TEST_F(FileUtilProxyTest, Touch) {
       last_modified_time,
       Bind(&FileUtilProxyTest::DidFinish, weak_factory_.GetWeakPtr()));
   MessageLoop::current()->Run();
-  EXPECT_EQ(PLATFORM_FILE_OK, error_);
+  EXPECT_EQ(File::FILE_OK, error_);
 
-  PlatformFileInfo info;
+  File::Info info;
   GetFileInfo(test_path(), &info);
 
   // The returned values may only have the seconds precision, so we cast
@@ -356,7 +355,7 @@ TEST_F(FileUtilProxyTest, Truncate_Shrink) {
   // Setup.
   const char kTestData[] = "0123456789";
   ASSERT_EQ(10, file_util::WriteFile(test_path(), kTestData, 10));
-  PlatformFileInfo info;
+  File::Info info;
   GetFileInfo(test_path(), &info);
   ASSERT_EQ(10, info.size);
 
@@ -383,7 +382,7 @@ TEST_F(FileUtilProxyTest, Truncate_Expand) {
   // Setup.
   const char kTestData[] = "9876543210";
   ASSERT_EQ(10, file_util::WriteFile(test_path(), kTestData, 10));
-  PlatformFileInfo info;
+  File::Info info;
   GetFileInfo(test_path(), &info);
   ASSERT_EQ(10, info.size);
 

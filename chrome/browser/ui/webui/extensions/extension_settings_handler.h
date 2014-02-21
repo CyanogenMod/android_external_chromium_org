@@ -147,7 +147,7 @@ class ExtensionSettingsHandler
   void HandleInspectMessage(const base::ListValue* args);
 
   // Callback for "launch" message.
-  void HandleLaunchMessage(const ListValue* args);
+  void HandleLaunchMessage(const base::ListValue* args);
 
   // Callback for "reload" message.
   void HandleReloadMessage(const base::ListValue* args);
@@ -199,10 +199,9 @@ class ExtensionSettingsHandler
       const Extension* extension,
       const std::set<content::RenderViewHost*>& views,
       std::vector<ExtensionPage>* result);
-  void GetShellWindowPagesForExtensionProfile(
-      const Extension* extension,
-      Profile* profile,
-      std::vector<ExtensionPage>* result);
+  void GetAppWindowPagesForExtensionProfile(const Extension* extension,
+                                            Profile* profile,
+                                            std::vector<ExtensionPage>* result);
 
   // Returns the ExtensionUninstallDialog object for this class, creating it if
   // needed.
@@ -269,6 +268,10 @@ class ExtensionSettingsHandler
 
   // An observer to listen for when Extension errors are reported.
   ScopedObserver<ErrorConsole, ErrorConsole::Observer> error_console_observer_;
+
+  // Whether we found any DISABLE_NOT_VERIFIED extensions and want to kick off
+  // a verification check to try and rescue them.
+  bool should_do_verification_check_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSettingsHandler);
 };

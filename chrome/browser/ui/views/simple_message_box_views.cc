@@ -8,23 +8,22 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/run_loop.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "grit/generated_resources.h"
+#include "ui/aura/client/dispatcher_client.h"
+#include "ui/aura/env.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/controls/message_box_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/client/dispatcher_client.h"
-#include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #if defined(OS_WIN)
 #include "chrome/browser/ui/views/simple_message_box_win.h"
-#endif
 #endif
 
 namespace chrome {
@@ -37,7 +36,7 @@ namespace {
 // destroyed before a box in an outer-loop. So to avoid this, ref-counting is
 // used so that the SimpleMessageBoxViews gets deleted at the right time.
 class SimpleMessageBoxViews : public views::DialogDelegate,
-                              public base::MessageLoop::Dispatcher,
+                              public base::MessagePumpDispatcher,
                               public base::RefCounted<SimpleMessageBoxViews> {
  public:
   SimpleMessageBoxViews(const base::string16& title,
@@ -63,8 +62,8 @@ class SimpleMessageBoxViews : public views::DialogDelegate,
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
 
-  // Overridden from MessageLoop::Dispatcher:
-  virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE;
+  // Overridden from MessagePumpDispatcher:
+  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
 
  private:
   friend class base::RefCounted<SimpleMessageBoxViews>;
@@ -173,14 +172,11 @@ const views::Widget* SimpleMessageBoxViews::GetWidget() const {
   return message_box_view_->GetWidget();
 }
 
-bool SimpleMessageBoxViews::Dispatch(const base::NativeEvent& event) {
-#if defined(OS_WIN)
-  TranslateMessage(&event);
-  DispatchMessage(&event);
-#elif defined(USE_AURA)
-  aura::Env::GetInstance()->GetDispatcher()->Dispatch(event);
-#endif
-  return should_show_dialog_;
+uint32_t SimpleMessageBoxViews::Dispatch(const base::NativeEvent& event) {
+  uint32_t action = POST_DISPATCH_PERFORM_DEFAULT;
+  if (!should_show_dialog_)
+    action |= POST_DISPATCH_QUIT_LOOP;
+  return action;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -196,7 +192,7 @@ MessageBoxResult ShowMessageBoxImpl(gfx::NativeWindow parent,
                                     const base::string16& yes_text,
                                     const base::string16& no_text) {
 
-#if defined(USE_AURA) && defined(OS_WIN)
+#if defined(OS_WIN)
   // If we're very early, we can't show a GPU-based dialog, so fallback to
   // plain Windows MessageBox.
   if (!ui::ContextFactory::GetInstance())
@@ -207,7 +203,6 @@ MessageBoxResult ShowMessageBoxImpl(gfx::NativeWindow parent,
       new SimpleMessageBoxViews(title, message, type, yes_text, no_text));
   CreateBrowserModalDialogViews(dialog.get(), parent)->Show();
 
-#if defined(USE_AURA)
   aura::Window* anchor = parent;
   aura::client::DispatcherClient* client = anchor ?
       aura::client::GetDispatcherClient(anchor->GetRootWindow()) : NULL;
@@ -218,15 +213,7 @@ MessageBoxResult ShowMessageBoxImpl(gfx::NativeWindow parent,
     anchor = dialog->GetWidget()->GetNativeWindow();
     client = aura::client::GetDispatcherClient(anchor->GetRootWindow());
   }
-  client->RunWithDispatcher(dialog.get(), anchor, true);
-#else
-  {
-    base::MessageLoop::ScopedNestableTaskAllower allow(
-        base::MessageLoopForUI::current());
-    base::RunLoop run_loop(dialog);
-    run_loop.Run();
-  }
-#endif
+  client->RunWithDispatcher(dialog.get(), anchor);
   return dialog->result();
 }
 
@@ -240,7 +227,6 @@ MessageBoxResult ShowMessageBox(gfx::NativeWindow parent,
       parent, title, message, type, base::string16(), base::string16());
 }
 
-#if defined(USE_AURA)
 MessageBoxResult ShowMessageBoxWithButtonText(gfx::NativeWindow parent,
                                               const base::string16& title,
                                               const base::string16& message,
@@ -249,6 +235,5 @@ MessageBoxResult ShowMessageBoxWithButtonText(gfx::NativeWindow parent,
   return ShowMessageBoxImpl(
       parent, title, message, MESSAGE_BOX_TYPE_QUESTION, yes_text, no_text);
 }
-#endif
 
 }  // namespace chrome

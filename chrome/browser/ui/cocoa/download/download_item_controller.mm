@@ -27,7 +27,7 @@
 #include "content/public/browser/page_navigator.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#include "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/text_elider.h"
@@ -178,6 +178,12 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
         base::SysUTF16ToNSString(downloadModel->GetWarningConfirmButtonText());
     DCHECK(confirmButtonTitle);
     [dangerousDownloadConfirmButton_ setTitle:confirmButtonTitle];
+
+    // Since the text of the confirm button changed, dangerousButtonTweaker
+    // should be resized.
+    NSSize sizeChange =
+        [GTMUILocalizerAndLayoutTweaker sizeToFitView:dangerousButtonTweaker_];
+    buttonWidthChange += sizeChange.width;
 
     // Move the button to account for the change in label size.
     NSPoint frameOrigin = [dangerousButtonTweaker_ frame].origin;

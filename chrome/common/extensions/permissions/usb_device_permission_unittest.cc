@@ -51,13 +51,13 @@ TEST(USBDevicePermissionTest, MAYBE_PermissionMessage) {
 
   UsbDevicePermission permission(
       PermissionsInfo::GetInstance()->GetByID(APIPermission::kUsbDevice));
-  ASSERT_TRUE(permission.FromValue(permission_list.get()));
+  ASSERT_TRUE(permission.FromValue(permission_list.get(), NULL));
 
   PermissionMessages messages = permission.GetMessages();
   ASSERT_EQ(3U, messages.size());
-  EXPECT_EQ(ASCIIToUTF16(kMessages[0]), messages.at(0).message());
-  EXPECT_EQ(ASCIIToUTF16(kMessages[1]), messages.at(1).message());
-  EXPECT_EQ(ASCIIToUTF16(kMessages[2]), messages.at(2).message());
+  EXPECT_EQ(base::ASCIIToUTF16(kMessages[0]), messages.at(0).message());
+  EXPECT_EQ(base::ASCIIToUTF16(kMessages[1]), messages.at(1).message());
+  EXPECT_EQ(base::ASCIIToUTF16(kMessages[2]), messages.at(2).message());
 }
 
 }  // namespace extensions

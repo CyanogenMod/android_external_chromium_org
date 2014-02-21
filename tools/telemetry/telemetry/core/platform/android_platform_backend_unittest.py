@@ -6,6 +6,7 @@ import logging
 import os
 import unittest
 
+from telemetry import test
 from telemetry.core import bitmap
 from telemetry.core import util
 from telemetry.core.platform import android_platform_backend
@@ -23,6 +24,12 @@ class MockAdbCommands(object):
   def GetProtectedFileContents(self, file_name, log_result):
     return self.mock_content
 
+  def PushIfNeeded(self, host_binary, device_path):
+    pass
+
+  def RunShellCommand(self, command):
+    return []
+
 
 class AndroidPlatformBackendTest(unittest.TestCase):
   def setUp(self):
@@ -32,6 +39,7 @@ class AndroidPlatformBackendTest(unittest.TestCase):
   def tearDown(self):
     self._stubs.Restore()
 
+  @test.Disabled('chromeos')
   def testGetCpuStats(self):
     proc_stat_content = [
         '7702 (.android.chrome) S 167 167 0 0 -1 1077936448 '
@@ -45,6 +53,7 @@ class AndroidPlatformBackendTest(unittest.TestCase):
     cpu_stats = backend.GetCpuStats('7702')
     self.assertEquals(cpu_stats, {'CpuProcessTime': 5.0})
 
+  @test.Disabled('chromeos')
   def testGetCpuStatsInvalidPID(self):
     # Mock an empty /proc/pid/stat.
     adb_empty_proc_stat = MockAdbCommands([])
@@ -53,6 +62,7 @@ class AndroidPlatformBackendTest(unittest.TestCase):
     cpu_stats = backend.GetCpuStats('7702')
     self.assertEquals(cpu_stats, {})
 
+  @test.Disabled
   def testFramesFromMp4(self):
     mock_adb = MockAdbCommands([])
     backend = android_platform_backend.AndroidPlatformBackend(mock_adb, False)

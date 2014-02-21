@@ -24,6 +24,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_MANAGER_H_
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -35,10 +36,7 @@
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/public/browser/media_request_state.h"
-
-namespace base {
-class Thread;
-}
+#include "content/public/browser/resource_context.h"
 
 namespace media {
 class AudioManager;
@@ -51,7 +49,6 @@ class FakeMediaStreamUIProxy;
 class MediaStreamDeviceSettings;
 class MediaStreamRequester;
 class MediaStreamUIProxy;
-class ResourceContext;
 class VideoCaptureManager;
 
 // MediaStreamManager is used to generate and close new media devices, not to
@@ -86,7 +83,7 @@ class CONTENT_EXPORT MediaStreamManager
       int render_process_id,
       int render_view_id,
       int page_request_id,
-      const StreamOptions& components,
+      const StreamOptions& options,
       const GURL& security_origin,
       const MediaRequestResponseCallback& callback);
 
@@ -94,15 +91,22 @@ class CONTENT_EXPORT MediaStreamManager
   // creates a new request which is identified by a unique string that's
   // returned to the caller.  |render_process_id| and |render_view_id| refer to
   // the view where the infobar will appear to the user.
-  std::string GenerateStream(MediaStreamRequester* requester,
-                             int render_process_id,
-                             int render_view_id,
-                             ResourceContext* rc,
-                             int page_request_id,
-                             const StreamOptions& components,
-                             const GURL& security_origin);
+  void GenerateStream(MediaStreamRequester* requester,
+                      int render_process_id,
+                      int render_view_id,
+                      const ResourceContext::SaltCallback& sc,
+                      int page_request_id,
+                      const StreamOptions& components,
+                      const GURL& security_origin);
 
+  void CancelRequest(int render_process_id,
+                     int render_view_id,
+                     int page_request_id);
+
+  // Cancel an open request identified by |label|.
   virtual void CancelRequest(const std::string& label);
+
+  // Cancel all requests for the given |render_process_id|.
   void CancelAllRequests(int render_process_id);
 
   // Closes the stream device for a certain render view. The stream must have
@@ -121,7 +125,7 @@ class CONTENT_EXPORT MediaStreamManager
   virtual std::string EnumerateDevices(MediaStreamRequester* requester,
                                        int render_process_id,
                                        int render_view_id,
-                                       ResourceContext* rc,
+                                       const ResourceContext::SaltCallback& sc,
                                        int page_request_id,
                                        MediaStreamType type,
                                        const GURL& security_origin);
@@ -129,14 +133,14 @@ class CONTENT_EXPORT MediaStreamManager
   // Open a device identified by |device_id|.  |type| must be either
   // MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
   // The request is identified using string returned to the caller.
-  std::string OpenDevice(MediaStreamRequester* requester,
-                         int render_process_id,
-                         int render_view_id,
-                         ResourceContext* rc,
-                         int page_request_id,
-                         const std::string& device_id,
-                         MediaStreamType type,
-                         const GURL& security_origin);
+  void OpenDevice(MediaStreamRequester* requester,
+                  int render_process_id,
+                  int render_view_id,
+                  const ResourceContext::SaltCallback& sc,
+                  int page_request_id,
+                  const std::string& device_id,
+                  MediaStreamType type,
+                  const GURL& security_origin);
 
   // Called by UI to make sure the device monitor is started so that UI receive
   // notifications about device changes.
@@ -177,6 +181,16 @@ class CONTENT_EXPORT MediaStreamManager
   // WillDestroyCurrentMessageLoop explicitly because the notification happens
   // too late. (see http://crbug.com/247525#c14).
   virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+
+  // Sends log messages to the render process hosts whose corresponding render
+  // processes are making device requests, to be used by the
+  // webrtcLoggingPrivate API if requested.
+  void AddLogMessageOnIOThread(const std::string& message);
+
+  // Adds |message| to native logs for outstanding device requests, for use by
+  // render processes hosts whose corresponding render processes are requesting
+  // logging from webrtcLoggingPrivate API. Safe to call from any thread.
+  static void SendMessageToNativeLog(const std::string& message);
 
  protected:
   // Used for testing.
@@ -233,14 +247,29 @@ class CONTENT_EXPORT MediaStreamManager
   DeviceRequest* FindRequest(const std::string& label) const;
   void DeleteRequest(const std::string& label);
   void ClearEnumerationCache(EnumerationCache* cache);
+  // Returns true if the |cache| is invalid, false if it's invalid or if
+  // the |stream_type| is MEDIA_NO_SERVICE.
+  // On Android, this function will always return true for
+  // MEDIA_DEVICE_AUDIO_CAPTURE since we don't have a SystemMonitor to tell
+  // us about audio device changes.
+  bool EnumerationRequired(EnumerationCache* cache, MediaStreamType type);
   // Prepare the request with label |label| by starting device enumeration if
   // needed.
   void SetupRequest(const std::string& label);
+  // Prepare |request| of type MEDIA_DEVICE_AUDIO_CAPTURE and/or
+  // MEDIA_DEVICE_VIDEO_CAPTURE for being posted to the UI by parsing
+  // StreamOptions::Constraints for requested device IDs.
+  bool SetupDeviceCaptureRequest(DeviceRequest* request);
+  // Prepare |request| of type MEDIA_TAB_AUDIO_CAPTURE and/or
+  // MEDIA_TAB_VIDEO_CAPTURE for being posted to the UI by parsing
+  // StreamOptions::Constraints for requested tab capture IDs.
   bool SetupTabCaptureRequest(DeviceRequest* request);
+  // Prepare |request| of type MEDIA_LOOPBACK_AUDIO_CAPTURE and/or
+  // MEDIA_DESKTOP_VIDEO_CAPTURE for being posted to the UI by parsing
+  // StreamOptions::Constraints for the requested desktop ID.
   bool SetupScreenCaptureRequest(DeviceRequest* request);
   // Called when a request has been setup and devices have been enumerated if
-  // needed. If a certain source id has been requested, the source id is
-  // translated to a real device id before the request is posted to UI.
+  // needed.
   void PostRequestToUI(const std::string& label, DeviceRequest* request);
   // Returns true if a device with |device_id| has already been requested with
   // a render procecss_id and render_view_id and type equal to the the values
@@ -279,22 +308,35 @@ class CONTENT_EXPORT MediaStreamManager
   void StartMonitoring();
   void StopMonitoring();
 
-  bool TranslateRequestedSourceIdToDeviceId(DeviceRequest* request);
+  // Finds the requested device id from constraints. The requested device type
+  // must be MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
+  bool GetRequestedDeviceCaptureId(const DeviceRequest* request,
+                                   MediaStreamType type,
+                                   std::string* device_id) const;
+
   void TranslateDeviceIdToSourceId(DeviceRequest* request,
                                    MediaStreamDevice* device);
+
+  // Helper method that sends log messages to the render process hosts whose
+  // corresponding render processes are in |render_process_ids|, to be used by
+  // the webrtcLoggingPrivate API if requested.
+  void AddLogMessageOnUIThread(const std::set<int>& render_process_ids,
+                               const std::string& message);
 
   // Finds and returns the device id corresponding to the given
   // |source_id|. Returns true if there was a raw device id that matched the
   // given |source_id|, false if nothing matched it.
   bool TranslateSourceIdToDeviceId(
       MediaStreamType stream_type,
-      ResourceContext* rc,
+      const ResourceContext::SaltCallback& rc,
       const GURL& security_origin,
       const std::string& source_id,
-      std::string* device_id);
+      std::string* device_id) const;
 
-  // Device thread shared by VideoCaptureManager and AudioInputDeviceManager.
-  scoped_ptr<base::Thread> device_thread_;
+  // Task runner shared by VideoCaptureManager and AudioInputDeviceManager.
+  // Note: Enumeration tasks may take seconds to complete so must never be run
+  // on any of the BrowserThreads (UI, IO, etc).  See http://crbug.com/256945.
+  scoped_refptr<base::SingleThreadTaskRunner> device_task_runner_;
 
   media::AudioManager* const audio_manager_;  // not owned
   scoped_refptr<AudioInputDeviceManager> audio_input_device_manager_;
@@ -312,7 +354,7 @@ class CONTENT_EXPORT MediaStreamManager
   // AudioInputDeviceManager, in order to only enumerate when necessary.
   int active_enumeration_ref_count_[NUM_MEDIA_TYPES];
 
-  // All non-closed request.
+  // All non-closed request. Must be accessed on IO thread.
   DeviceRequests requests_;
 
   // Hold a pointer to the IO loop to check we delete the device thread and

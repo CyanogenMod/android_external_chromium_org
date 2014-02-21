@@ -52,6 +52,10 @@ class ChromePluginPlaceholder : public plugins::PluginPlaceholder,
   // WebViewPlugin::Delegate (via PluginPlaceholder) method
   virtual void BindWebFrame(blink::WebFrame* frame) OVERRIDE;
 
+  // gin::Wrappable (via PluginPlaceholder) method
+  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) OVERRIDE;
+
   // content::RenderViewObserver (via PluginPlaceholder) override:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -66,9 +70,7 @@ class ChromePluginPlaceholder : public plugins::PluginPlaceholder,
   virtual void OnMenuClosed(int request_id) OVERRIDE;
 
   // Javascript callback opens chrome://plugins in a new tab.
-  // Arguments are required by the caller, but not used.
-  void OpenAboutPluginsCallback(const webkit_glue::CppArgumentList& args,
-                                webkit_glue::CppVariant* result);
+  void OpenAboutPluginsCallback();
 
   void OnLoadBlockedPlugins(const std::string& identifier);
   void OnSetIsPrerendering(bool is_prerendering);
@@ -96,11 +98,6 @@ class ChromePluginPlaceholder : public plugins::PluginPlaceholder,
   bool has_host_;
   int context_menu_request_id_;  // Nonzero when request pending.
   base::string16 plugin_name_;
-
-  // TODO(jam): remove this class, it's temporary until ContentSettingObserver
-  // is a RenderFrameObserver.
-  class RenderViewObserver;
-  scoped_ptr<RenderViewObserver> view_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromePluginPlaceholder);
 };

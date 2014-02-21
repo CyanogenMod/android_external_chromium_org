@@ -14,6 +14,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+using base::ASCIIToUTF16;
+
 class BuiltinProviderTest : public testing::Test {
  protected:
   template<class ResultType>
@@ -73,7 +75,7 @@ void BuiltinProviderTest::RunTest(test_data<ResultType>* builtin_cases,
 
 TEST_F(BuiltinProviderTest, TypingScheme) {
   const base::string16 kAbout = ASCIIToUTF16(chrome::kAboutScheme);
-  const base::string16 kChrome = ASCIIToUTF16(chrome::kChromeUIScheme);
+  const base::string16 kChrome = ASCIIToUTF16(content::kChromeUIScheme);
   const base::string16 kSeparator1 = ASCIIToUTF16(":");
   const base::string16 kSeparator2 = ASCIIToUTF16(":/");
   const base::string16 kSeparator3 =
@@ -140,7 +142,7 @@ TEST_F(BuiltinProviderTest, NonChromeURLs) {
 
 TEST_F(BuiltinProviderTest, ChromeURLs) {
   const base::string16 kAbout = ASCIIToUTF16(chrome::kAboutScheme);
-  const base::string16 kChrome = ASCIIToUTF16(chrome::kChromeUIScheme);
+  const base::string16 kChrome = ASCIIToUTF16(content::kChromeUIScheme);
   const base::string16 kSeparator1 = ASCIIToUTF16(":");
   const base::string16 kSeparator2 = ASCIIToUTF16(":/");
   const base::string16 kSeparator3 =

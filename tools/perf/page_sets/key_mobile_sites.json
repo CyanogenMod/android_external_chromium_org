@@ -11,7 +11,8 @@
     },
     {
       "url": "http://nytimes.com/",
-      "why": "Top news site"
+      "why": "Top news site",
+      "fastpath": true
     },
     {
       "url": "http://iphone.capitolvolkswagen.com/index.htm#new-inventory_p_2Fsb-new_p_2Ehtm_p_3Freset_p_3DInventoryListing",
@@ -28,7 +29,8 @@
     },
     {
       "url": "http://cuteoverload.com",
-      "why": "Image-heavy site"
+      "why": "Image-heavy site",
+      "fastpath": true
     },
     {
       "url": "http://theverge.com",
@@ -191,7 +193,8 @@
     },
     {
       "url": "http://slashdot.org/",
-      "why": "crbug.com/169827"
+      "why": "crbug.com/169827",
+      "fastpath": true
     },
     {
       "url": "http://worldjournal.com/",
@@ -219,11 +222,13 @@
     },
     {
       "url": "http://www.reddit.com/r/programming/comments/1g96ve",
-      "why": "#5 Alexa news"
+      "why": "#5 Alexa news",
+      "fastpath": true
     },
     {
       "url": "http://www.boingboing.net",
-      "why": "Problematic use of fixed position elements"
+      "why": "Problematic use of fixed position elements",
+      "fastpath": true
     },
     {
       "disabled": "Page behaves non-deterministically, replaced with test version for now",
@@ -237,7 +242,7 @@
       "smoothness": {
         "action": "scroll",
         "scroll_requires_touch": true,
-        "remaining_scroll_distance_function": "function() { return Math.max(0, 1250 + document.getElementById('element-19').contentDocument.getElementById('element-22').getBoundingClientRect().top); }"
+        "scroll_distance_function": "function() { return Math.max(0, 1250 + document.getElementById('element-19').contentDocument.getElementById('element-22').getBoundingClientRect().top); }"
       }
     },
     {
@@ -250,7 +255,7 @@
       "smoothness": {
         "action": "scroll",
         "scroll_requires_touch": true,
-        "remaining_scroll_distance_function": "function() { return Math.max(0, 1250 + document.getElementById('element-5').getBoundingClientRect().top); }"
+        "scroll_distance_function": "function() { return Math.max(0, 1250 + document.getElementById('element-5').getBoundingClientRect().top); }"
       }
     },
     {
@@ -260,7 +265,11 @@
     },
     {
       "url": "http://mobile-news.sandbox.google.com/news/pt1",
-      "why": "Google News: accelerated scrolling version"
+      "why": "Google News: accelerated scrolling version",
+      "navigate_steps": [
+        { "action": "navigate" },
+        { "action": "wait", "javascript": "typeof NEWS_telemetryReady !== 'undefined' && NEWS_telemetryReady == true" }
+      ]
     },
     {
       "url": "http://mobile-news.sandbox.google.com/news/pt0",

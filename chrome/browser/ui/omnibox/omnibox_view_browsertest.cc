@@ -50,6 +50,8 @@
 #include <gtk/gtk.h>
 #endif
 
+using base::ASCIIToUTF16;
+using base::UTF16ToUTF8;
 using base::Time;
 using base::TimeDelta;
 
@@ -87,31 +89,30 @@ const char *kBlockedHostnames[] = {
 const struct TestHistoryEntry {
   const char* url;
   const char* title;
-  const char* body;
   int visit_count;
   int typed_count;
   bool starred;
 } kHistoryEntries[] = {
-  {"http://www.bar.com/1", "Page 1", kSearchText, 10, 10, false },
-  {"http://www.bar.com/2", "Page 2", kSearchText, 9, 9, false },
-  {"http://www.bar.com/3", "Page 3", kSearchText, 8, 8, false },
-  {"http://www.bar.com/4", "Page 4", kSearchText, 7, 7, false },
-  {"http://www.bar.com/5", "Page 5", kSearchText, 6, 6, false },
-  {"http://www.bar.com/6", "Page 6", kSearchText, 5, 5, false },
-  {"http://www.bar.com/7", "Page 7", kSearchText, 4, 4, false },
-  {"http://www.bar.com/8", "Page 8", kSearchText, 3, 3, false },
-  {"http://www.bar.com/9", "Page 9", kSearchText, 2, 2, false },
-  {"http://www.site.com/path/1", "Site 1", kSearchText, 4, 4, false },
-  {"http://www.site.com/path/2", "Site 2", kSearchText, 3, 3, false },
-  {"http://www.site.com/path/3", "Site 3", kSearchText, 2, 2, false },
+  {"http://www.bar.com/1", "Page 1", 10, 10, false },
+  {"http://www.bar.com/2", "Page 2", 9, 9, false },
+  {"http://www.bar.com/3", "Page 3", 8, 8, false },
+  {"http://www.bar.com/4", "Page 4", 7, 7, false },
+  {"http://www.bar.com/5", "Page 5", 6, 6, false },
+  {"http://www.bar.com/6", "Page 6", 5, 5, false },
+  {"http://www.bar.com/7", "Page 7", 4, 4, false },
+  {"http://www.bar.com/8", "Page 8", 3, 3, false },
+  {"http://www.bar.com/9", "Page 9", 2, 2, false },
+  {"http://www.site.com/path/1", "Site 1", 4, 4, false },
+  {"http://www.site.com/path/2", "Site 2", 3, 3, false },
+  {"http://www.site.com/path/3", "Site 3", 2, 2, false },
 
   // To trigger inline autocomplete.
-  {"http://www.def.com", "Page def", kSearchText, 10000, 10000, true },
+  {"http://www.def.com", "Page def", 10000, 10000, true },
 
   // Used in particular for the desired TLD test.  This makes it test
   // the interesting case when there's an intranet host with the same
   // name as the .com.
-  {"http://bar/", "Bar", kSearchText, 1, 0, false },
+  {"http://bar/", "Bar", 1, 0, false },
 };
 
 #if defined(TOOLKIT_GTK)
@@ -299,7 +300,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     GURL url(entry.url);
     // Add everything in order of time. We don't want to have a time that
     // is "right now" or it will nondeterministically appear in the results.
-    history_service->AddPageWithDetails(url, UTF8ToUTF16(entry.title),
+    history_service->AddPageWithDetails(url, base::UTF8ToUTF16(entry.title),
                                         entry.visit_count,
                                         entry.typed_count, time, false,
                                         history::SOURCE_BROWSED);
@@ -535,7 +536,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_BackspaceInKeywordMode) {
   // the keyword mode.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
   ASSERT_FALSE(omnibox_view->model()->is_keyword_hint());
-  ASSERT_EQ(string16(), omnibox_view->model()->keyword());
+  ASSERT_EQ(base::string16(), omnibox_view->model()->keyword());
   ASSERT_EQ(std::string(kSearchKeyword) + kSearchText,
             UTF16ToUTF8(omnibox_view->GetText()));
 }
@@ -755,7 +756,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_BasicTextOperations) {
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
 
   base::string16 old_text = omnibox_view->GetText();
-  EXPECT_EQ(UTF8ToUTF16(content::kAboutBlankURL), old_text);
+  EXPECT_EQ(base::UTF8ToUTF16(content::kAboutBlankURL), old_text);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
 
   size_t start, end;
@@ -780,7 +781,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_BasicTextOperations) {
   // Insert one character at the end. Make sure we won't insert
   // anything after the special ZWS mark used in gtk implementation.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_A, 0));
-  EXPECT_EQ(old_text + char16('a'), omnibox_view->GetText());
+  EXPECT_EQ(old_text + base::char16('a'), omnibox_view->GetText());
 
   // Delete one character from the end. Make sure we won't delete the special
   // ZWS mark used in gtk implementation.
@@ -836,7 +837,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
   ASSERT_TRUE(omnibox_view->GetText().empty());
 
   // Revert to keyword hint mode.
-  omnibox_view->model()->ClearKeyword(string16());
+  omnibox_view->model()->ClearKeyword(base::string16());
   ASSERT_TRUE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
   ASSERT_EQ(search_keyword, omnibox_view->GetText());
@@ -844,21 +845,21 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
   // Keyword should also be accepted by typing an ideographic space.
   omnibox_view->OnBeforePossibleChange();
   omnibox_view->SetWindowTextAndCaretPos(search_keyword +
-      WideToUTF16(L"\x3000"), search_keyword.length() + 1, false, false);
+      base::WideToUTF16(L"\x3000"), search_keyword.length() + 1, false, false);
   omnibox_view->OnAfterPossibleChange();
   ASSERT_FALSE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
   ASSERT_TRUE(omnibox_view->GetText().empty());
 
   // Revert to keyword hint mode.
-  omnibox_view->model()->ClearKeyword(string16());
+  omnibox_view->model()->ClearKeyword(base::string16());
   ASSERT_TRUE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
   ASSERT_EQ(search_keyword, omnibox_view->GetText());
 
   // Keyword shouldn't be accepted by pressing space with a trailing
   // whitespace.
-  omnibox_view->SetWindowTextAndCaretPos(search_keyword + char16(' '),
+  omnibox_view->SetWindowTextAndCaretPos(search_keyword + base::char16(' '),
       search_keyword.length() + 1, false, false);
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_SPACE, 0));
   ASSERT_TRUE(omnibox_view->model()->is_keyword_hint());
@@ -869,7 +870,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
   ASSERT_TRUE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
-  ASSERT_EQ(search_keyword + char16(' '), omnibox_view->GetText());
+  ASSERT_EQ(search_keyword + base::char16(' '), omnibox_view->GetText());
 
   // Keyword shouldn't be accepted by pressing space before a trailing space.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_LEFT, 0));
@@ -893,7 +894,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
   EXPECT_EQ(0U, end);
 
   // Keyword shouldn't be accepted by pasting "foo bar".
-  omnibox_view->SetUserText(string16());
+  omnibox_view->SetUserText(base::string16());
   ASSERT_FALSE(omnibox_view->model()->is_keyword_hint());
   ASSERT_TRUE(omnibox_view->model()->keyword().empty());
 
@@ -929,12 +930,12 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_SPACE, 0));
   ASSERT_FALSE(omnibox_view->model()->is_keyword_hint());
   ASSERT_EQ(search_keyword, omnibox_view->model()->keyword());
-  ASSERT_EQ(string16(), omnibox_view->GetText());
+  ASSERT_EQ(base::string16(), omnibox_view->GetText());
 
   // Space should accept keyword even when inline autocomplete is available.
-  omnibox_view->SetUserText(string16());
+  omnibox_view->SetUserText(base::string16());
   const TestHistoryEntry kHistoryFoobar = {
-    "http://www.foobar.com", "Page foobar", kSearchText, 100, 100, true
+    "http://www.foobar.com", "Page foobar", 100, 100, true
   };
 
   // Add a history entry to trigger inline autocomplete when typing "foo".
@@ -959,7 +960,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
 
   // Space in the middle of a temporary text, which separates the text into
   // keyword and replacement portions, should trigger keyword mode.
-  omnibox_view->SetUserText(string16());
+  omnibox_view->SetUserText(base::string16());
   ASSERT_NO_FATAL_FAILURE(SendKeySequence(kSearchKeywordKeys));
   ASSERT_NO_FATAL_FAILURE(WaitForAutocompleteControllerDone());
   OmniboxPopupModel* popup_model = omnibox_view->model()->popup_model();
@@ -981,9 +982,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_AcceptKeywordBySpace) {
 
   // Space after temporary text that looks like a keyword, when the original
   // input does not look like a keyword, should trigger keyword mode.
-  omnibox_view->SetUserText(string16());
+  omnibox_view->SetUserText(base::string16());
   const TestHistoryEntry kHistoryFoo = {
-    "http://footest.com", "Page footest", kSearchText, 1000, 1000, true
+    "http://footest.com", "Page footest", 1000, 1000, true
   };
 
   // Add a history entry to trigger HQP matching with text == keyword when
@@ -1034,7 +1035,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_NonSubstitutingKeywordTest) {
   TemplateURL* template_url = new TemplateURL(profile, data);
   template_url_service->Add(template_url);
 
-  omnibox_view->SetUserText(string16());
+  omnibox_view->SetUserText(base::string16());
 
   // Non-default substituting keyword shouldn't be matched by default.
   ASSERT_NO_FATAL_FAILURE(SendKeySequence(kSearchTextKeys));
@@ -1047,7 +1048,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_NonSubstitutingKeywordTest) {
   ASSERT_EQ(kSearchTextURL,
             popup_model->result().default_match()->destination_url.spec());
 
-  omnibox_view->SetUserText(string16());
+  omnibox_view->SetUserText(base::string16());
   ASSERT_NO_FATAL_FAILURE(WaitForAutocompleteControllerDone());
   ASSERT_FALSE(popup_model->IsOpen());
 
@@ -1275,7 +1276,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_TabTraverseResultsTest) {
   ASSERT_TRUE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
 
   const TestHistoryEntry kHistoryFoo = {
-    "http://foo/", "Page foo", kSearchText, 1, 1, false
+    "http://foo/", "Page foo", 1, 1, false
   };
 
   // Add a history entry so "foo" gets multiple matches.
@@ -1392,7 +1393,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
 
   base::string16 old_text = omnibox_view->GetText();
-  EXPECT_EQ(UTF8ToUTF16(content::kAboutBlankURL), old_text);
+  EXPECT_EQ(base::UTF8ToUTF16(content::kAboutBlankURL), old_text);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
 
   // Delete the text, then undo.
@@ -1450,14 +1451,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   // Insert text: ﾀﾞ
-  omnibox_view->SetUserText(UTF8ToUTF16("\357\276\200\357\276\236"));
+  omnibox_view->SetUserText(base::UTF8ToUTF16("\357\276\200\357\276\236"));
 
   // Move the cursor to the end.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_END, 0));
 
   // Backspace should delete one character.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
-  EXPECT_EQ(UTF8ToUTF16("\357\276\200"), omnibox_view->GetText());
+  EXPECT_EQ(base::UTF8ToUTF16("\357\276\200"), omnibox_view->GetText());
 }
 #endif  // defined(TOOLKIT_GTK) || defined(TOOLKIT_VIEWS)
 
@@ -1635,7 +1636,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CutURLToClipboard) {
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
   clipboard->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_CUT));
-  EXPECT_EQ(string16(), omnibox_view->GetText());
+  EXPECT_EQ(base::string16(), omnibox_view->GetText());
   EXPECT_TRUE(clipboard->IsFormatAvailable(
       ui::Clipboard::GetPlainTextFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
 
@@ -1697,7 +1698,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CutTextToClipboard) {
       ui::Clipboard::GetPlainTextFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
   EXPECT_FALSE(clipboard->IsFormatAvailable(
       ui::Clipboard::GetHtmlFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
-  EXPECT_EQ(string16(), omnibox_view->GetText());
+  EXPECT_EQ(base::string16(), omnibox_view->GetText());
 }
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, EditSearchEngines) {

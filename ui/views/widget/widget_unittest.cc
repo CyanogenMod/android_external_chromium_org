@@ -12,6 +12,7 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/hit_test.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
@@ -167,28 +168,14 @@ ui::WindowShowState GetWidgetShowState(const Widget* widget) {
   return widget->IsFullscreen() ? ui::SHOW_STATE_FULLSCREEN :
       widget->IsMaximized() ? ui::SHOW_STATE_MAXIMIZED :
       widget->IsMinimized() ? ui::SHOW_STATE_MINIMIZED :
-                              ui::SHOW_STATE_NORMAL;
+      widget->IsActive() ? ui::SHOW_STATE_NORMAL :
+                           ui::SHOW_STATE_INACTIVE;
 }
 
 TEST_F(WidgetTest, WidgetInitParams) {
-  ASSERT_FALSE(views_delegate().UseTransparentWindows());
-
   // Widgets are not transparent by default.
   Widget::InitParams init1;
   EXPECT_EQ(Widget::InitParams::INFER_OPACITY, init1.opacity);
-
-  // Non-window widgets are not transparent either.
-  Widget::InitParams init2(Widget::InitParams::TYPE_MENU);
-  EXPECT_EQ(Widget::InitParams::INFER_OPACITY, init2.opacity);
-
-  // A ViewsDelegate can set windows transparent by default.
-  views_delegate().SetUseTransparentWindows(true);
-  Widget::InitParams init3;
-  EXPECT_EQ(Widget::InitParams::TRANSLUCENT_WINDOW, init3.opacity);
-
-  // Non-window widgets stay opaque.
-  Widget::InitParams init4(Widget::InitParams::TYPE_MENU);
-  EXPECT_EQ(Widget::InitParams::INFER_OPACITY, init4.opacity);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -257,32 +244,6 @@ TEST_F(WidgetTest, Visibility) {
   toplevel->CloseNow();
   // |child| should be automatically destroyed with |toplevel|.
 }
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-// On Windows, it is possible to have child window that are TYPE_POPUP.  Unlike
-// regular child windows, these should be created as hidden and must be shown
-// explicitly.
-TEST_F(WidgetTest, Visibility_ChildPopup) {
-  Widget* toplevel = CreateTopLevelPlatformWidget();
-  Widget* child_popup = CreateChildPopupPlatformWidget(
-      toplevel->GetNativeView());
-
-  EXPECT_FALSE(toplevel->IsVisible());
-  EXPECT_FALSE(child_popup->IsVisible());
-
-  toplevel->Show();
-
-  EXPECT_TRUE(toplevel->IsVisible());
-  EXPECT_FALSE(child_popup->IsVisible());
-
-  child_popup->Show();
-
-  EXPECT_TRUE(child_popup->IsVisible());
-
-  toplevel->CloseNow();
-  // |child_popup| should be automatically destroyed with |toplevel|.
-}
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Widget ownership tests.
@@ -613,7 +574,6 @@ class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
     widget->StackAtTop();
     widget->IsClosed();
     widget->Close();
-    widget->Show();
     widget->Hide();
     widget->Activate();
     widget->Deactivate();
@@ -650,6 +610,7 @@ class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
     // widget->CenterWindow(gfx::Size(50, 60));
     // widget->GetRestoredBounds();
     // widget->ShowInactive();
+    // widget->Show();
   }
 
  private:
@@ -929,7 +890,7 @@ TEST_F(WidgetTest, KeyboardInputEvent) {
   View* container = toplevel->client_view();
 
   Textfield* textfield = new Textfield();
-  textfield->SetText(ASCIIToUTF16("some text"));
+  textfield->SetText(base::ASCIIToUTF16("some text"));
   container->AddChildView(textfield);
   toplevel->Show();
   textfield->RequestFocus();
@@ -951,7 +912,7 @@ TEST_F(WidgetTest, KeyboardInputEvent) {
 TEST_F(WidgetTest, DISABLED_FocusChangesOnBubble) {
   // Create a widget, show and activate it and focus the contents view.
   View* contents_view = new View;
-  contents_view->set_focusable(true);
+  contents_view->SetFocusable(true);
   Widget widget;
   Widget::InitParams init_params =
       CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -970,7 +931,7 @@ TEST_F(WidgetTest, DISABLED_FocusChangesOnBubble) {
   // Show a bubble.
   BubbleDelegateView* bubble_delegate_view =
       new BubbleDelegateView(contents_view, BubbleBorder::TOP_LEFT);
-  bubble_delegate_view->set_focusable(true);
+  bubble_delegate_view->SetFocusable(true);
   BubbleDelegateView::CreateBubble(bubble_delegate_view)->Show();
   bubble_delegate_view->RequestFocus();
 
@@ -982,6 +943,36 @@ TEST_F(WidgetTest, DISABLED_FocusChangesOnBubble) {
 
   // Closing the bubble should result in focus going back to the contents view.
   EXPECT_TRUE(contents_view->HasFocus());
+}
+
+class TestBubbleDelegateView : public BubbleDelegateView {
+ public:
+  TestBubbleDelegateView(View* anchor)
+      : BubbleDelegateView(anchor, BubbleBorder::NONE),
+        reset_controls_called_(false) {}
+  virtual ~TestBubbleDelegateView() {}
+
+  virtual bool ShouldShowCloseButton() const OVERRIDE {
+    reset_controls_called_ = true;
+    return true;
+  }
+
+  mutable bool reset_controls_called_;
+};
+
+TEST_F(WidgetTest, BubbleControlsResetOnInit) {
+  Widget* anchor = CreateTopLevelPlatformWidget();
+  anchor->Show();
+
+  TestBubbleDelegateView* bubble_delegate =
+      new TestBubbleDelegateView(anchor->client_view());
+  Widget* bubble_widget(BubbleDelegateView::CreateBubble(bubble_delegate));
+  EXPECT_TRUE(bubble_delegate->reset_controls_called_);
+  bubble_widget->Show();
+  bubble_widget->CloseNow();
+
+  anchor->Hide();
+  anchor->CloseNow();
 }
 
 // Desktop native widget Aura tests are for non Chrome OS platforms.
@@ -1052,7 +1043,7 @@ class DesktopAuraTestValidPaintWidget : public views::Widget {
 
 TEST_F(WidgetTest, DesktopNativeWidgetAuraNoPaintAfterCloseTest) {
   View* contents_view = new View;
-  contents_view->set_focusable(true);
+  contents_view->SetFocusable(true);
   DesktopAuraTestValidPaintWidget widget;
   Widget::InitParams init_params =
       CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -1072,7 +1063,7 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraNoPaintAfterCloseTest) {
 
 TEST_F(WidgetTest, DesktopNativeWidgetAuraNoPaintAfterHideTest) {
   View* contents_view = new View;
-  contents_view->set_focusable(true);
+  contents_view->SetFocusable(true);
   DesktopAuraTestValidPaintWidget widget;
   Widget::InitParams init_params =
       CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -1128,21 +1119,21 @@ class DesktopAuraTopLevelWindowTest
     init_params.type = Widget::InitParams::TYPE_WINDOW;
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    init_params.layer_type = ui::LAYER_NOT_DRAWN;
+    init_params.layer_type = aura::WINDOW_LAYER_NOT_DRAWN;
     init_params.accept_events = fullscreen;
 
     widget_.Init(init_params);
 
     owned_window_ = new aura::Window(&child_window_delegate_);
-    owned_window_->SetType(aura::client::WINDOW_TYPE_NORMAL);
+    owned_window_->SetType(ui::wm::WINDOW_TYPE_NORMAL);
     owned_window_->SetName("TestTopLevelWindow");
     if (fullscreen) {
       owned_window_->SetProperty(aura::client::kShowStateKey,
                                  ui::SHOW_STATE_FULLSCREEN);
     } else {
-      owned_window_->SetType(aura::client::WINDOW_TYPE_MENU);
+      owned_window_->SetType(ui::wm::WINDOW_TYPE_MENU);
     }
-    owned_window_->Init(ui::LAYER_TEXTURED);
+    owned_window_->Init(aura::WINDOW_LAYER_TEXTURED);
     aura::client::ParentWindowWithContext(
         owned_window_,
         widget_.GetNativeView()->GetRootWindow(),
@@ -1177,6 +1168,14 @@ class DesktopAuraTopLevelWindowTest
     } else {
       ADD_FAILURE() << "Unexpected window destroyed callback: " << window;
     }
+  }
+
+  aura::Window* owned_window() {
+    return owned_window_;
+  }
+
+  views::Widget* top_level_widget() {
+    return top_level_widget_;
   }
 
  private:
@@ -1219,6 +1218,24 @@ TEST_F(WidgetTest, DesktopAuraTopLevelOwnedPopupTest) {
   ASSERT_NO_FATAL_FAILURE(popup_window.CreateTopLevelWindow(
       gfx::Rect(0, 0, 200, 200), false));
 
+  RunPendingMessages();
+  ASSERT_NO_FATAL_FAILURE(popup_window.DestroyOwnedWindow());
+  RunPendingMessages();
+}
+
+// This test validates that when a top level owned popup Aura window is
+// resized, the widget is resized as well.
+TEST_F(WidgetTest, DesktopAuraTopLevelOwnedPopupResizeTest) {
+  ViewsDelegate::views_delegate = NULL;
+  DesktopAuraTopLevelWindowTest popup_window;
+  ASSERT_NO_FATAL_FAILURE(popup_window.CreateTopLevelWindow(
+      gfx::Rect(0, 0, 200, 200), false));
+
+  gfx::Rect new_size(0, 0, 400, 400);
+  popup_window.owned_window()->SetBounds(new_size);
+
+  EXPECT_EQ(popup_window.top_level_widget()->GetNativeView()->bounds().size(),
+            new_size.size());
   RunPendingMessages();
   ASSERT_NO_FATAL_FAILURE(popup_window.DestroyOwnedWindow());
   RunPendingMessages();
@@ -1305,31 +1322,34 @@ class CloseWidgetView : public View {
 void GenerateMouseEvents(Widget* widget, ui::EventType last_event_type) {
   const gfx::Rect screen_bounds(widget->GetWindowBoundsInScreen());
   ui::MouseEvent move_event(ui::ET_MOUSE_MOVED, screen_bounds.CenterPoint(),
-                            screen_bounds.CenterPoint(), 0);
-  aura::RootWindowHostDelegate* rwhd =
-      widget->GetNativeWindow()->GetDispatcher()->AsRootWindowHostDelegate();
-  rwhd->OnHostMouseEvent(&move_event);
-  if (last_event_type == ui::ET_MOUSE_ENTERED)
+                            screen_bounds.CenterPoint(), 0, 0);
+  aura::WindowEventDispatcher* dispatcher =
+      widget->GetNativeWindow()->GetDispatcher();
+  ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&move_event);
+  if (last_event_type == ui::ET_MOUSE_ENTERED || details.dispatcher_destroyed)
     return;
-  rwhd->OnHostMouseEvent(&move_event);
-  if (last_event_type == ui::ET_MOUSE_MOVED)
+  details = dispatcher->OnEventFromSource(&move_event);
+  if (last_event_type == ui::ET_MOUSE_MOVED || details.dispatcher_destroyed)
     return;
 
   ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED, screen_bounds.CenterPoint(),
-                             screen_bounds.CenterPoint(), 0);
-  rwhd->OnHostMouseEvent(&press_event);
-  if (last_event_type == ui::ET_MOUSE_PRESSED)
+                             screen_bounds.CenterPoint(), 0, 0);
+  details = dispatcher->OnEventFromSource(&press_event);
+  if (last_event_type == ui::ET_MOUSE_PRESSED || details.dispatcher_destroyed)
     return;
 
   gfx::Point end_point(screen_bounds.CenterPoint());
   end_point.Offset(1, 1);
-  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, end_point, end_point, 0);
-  rwhd->OnHostMouseEvent(&drag_event);
-  if (last_event_type == ui::ET_MOUSE_DRAGGED)
+  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, end_point, end_point, 0, 0);
+  details = dispatcher->OnEventFromSource(&drag_event);
+  if (last_event_type == ui::ET_MOUSE_DRAGGED || details.dispatcher_destroyed)
     return;
 
-  ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, end_point, end_point, 0);
-  rwhd->OnHostMouseEvent(&release_event);
+  ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, end_point, end_point, 0,
+                               0);
+  details = dispatcher->OnEventFromSource(&release_event);
+  if (details.dispatcher_destroyed)
+    return;
 }
 
 // Creates a widget and invokes GenerateMouseEvents() with |last_event_type|.
@@ -1542,7 +1562,7 @@ TEST_F(WidgetTest, SynthesizeMouseMoveEvent) {
 
   gfx::Point cursor_location(5, 5);
   ui::MouseEvent move(ui::ET_MOUSE_MOVED, cursor_location, cursor_location,
-                      ui::EF_NONE);
+                      ui::EF_NONE, ui::EF_NONE);
   widget->OnMouseEvent(&move);
 
   EXPECT_EQ(1, v1->GetEventCount(ui::ET_MOUSE_ENTERED));
@@ -1617,10 +1637,10 @@ class WidgetWindowTitleTest : public WidgetTest {
     internal::NativeWidgetPrivate* native_widget =
         widget->native_widget_private();
 
-    string16 empty;
-    string16 s1(UTF8ToUTF16("Title1"));
-    string16 s2(UTF8ToUTF16("Title2"));
-    string16 s3(UTF8ToUTF16("TitleLong"));
+    base::string16 empty;
+    base::string16 s1(base::UTF8ToUTF16("Title1"));
+    base::string16 s2(base::UTF8ToUTF16("Title2"));
+    base::string16 s3(base::UTF8ToUTF16("TitleLong"));
 
     // The widget starts with no title, setting empty should not change
     // anything.
@@ -1724,7 +1744,7 @@ TEST_F(WidgetTest, TestWidgetDeletedInOnMousePressed) {
 
   gfx::Point click_location(45, 15);
   ui::MouseEvent press(ui::ET_MOUSE_PRESSED, click_location, click_location,
-      ui::EF_LEFT_MOUSE_BUTTON);
+                       ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   widget->OnMouseEvent(&press);
 
   // Yay we did not crash!
@@ -1867,7 +1887,7 @@ TEST_F(WidgetTest, MAYBE_DisableTestRootViewHandlersWhenHidden) {
   EXPECT_EQ(NULL, GetMousePressedHandler(root_view));
   gfx::Point click_location(45, 15);
   ui::MouseEvent press(ui::ET_MOUSE_PRESSED, click_location, click_location,
-      ui::EF_LEFT_MOUSE_BUTTON);
+                       ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   widget->OnMouseEvent(&press);
   EXPECT_EQ(view, GetMousePressedHandler(root_view));
   widget->Hide();
@@ -1877,7 +1897,7 @@ TEST_F(WidgetTest, MAYBE_DisableTestRootViewHandlersWhenHidden) {
   widget->Show();
   EXPECT_EQ(NULL, GetMouseMoveHandler(root_view));
   gfx::Point move_location(45, 15);
-  ui::MouseEvent move(ui::ET_MOUSE_MOVED, move_location, move_location, 0);
+  ui::MouseEvent move(ui::ET_MOUSE_MOVED, move_location, move_location, 0, 0);
   widget->OnMouseEvent(&move);
   EXPECT_EQ(view, GetMouseMoveHandler(root_view));
   widget->Hide();
@@ -2066,9 +2086,11 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
   ui::MouseEvent move_main(ui::ET_MOUSE_MOVED,
                            cursor_location_main,
                            cursor_location_main,
+                           ui::EF_NONE,
                            ui::EF_NONE);
-  top_level_widget.GetNativeView()->GetDispatcher()->
-      AsRootWindowHostDelegate()->OnHostMouseEvent(&move_main);
+  ui::EventDispatchDetails details = top_level_widget.GetNativeView()->
+      GetDispatcher()->OnEventFromSource(&move_main);
+  ASSERT_FALSE(details.dispatcher_destroyed);
 
   EXPECT_EQ(1, widget_view->GetEventCount(ui::ET_MOUSE_ENTERED));
   widget_view->ResetCounts();
@@ -2092,9 +2114,11 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
   ui::MouseEvent mouse_down_dialog(ui::ET_MOUSE_PRESSED,
                                    cursor_location_dialog,
                                    cursor_location_dialog,
+                                   ui::EF_NONE,
                                    ui::EF_NONE);
-  top_level_widget.GetNativeView()->GetDispatcher()->
-      AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse_down_dialog);
+  details = top_level_widget.GetNativeView()->GetDispatcher()->
+      OnEventFromSource(&mouse_down_dialog);
+  ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_EQ(1, dialog_widget_view->GetEventCount(ui::ET_MOUSE_PRESSED));
 
   // Send a mouse move message to the main window. It should not be received by
@@ -2103,9 +2127,11 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
   ui::MouseEvent mouse_down_main(ui::ET_MOUSE_MOVED,
                                  cursor_location_main2,
                                  cursor_location_main2,
+                                 ui::EF_NONE,
                                  ui::EF_NONE);
-  top_level_widget.GetNativeView()->GetDispatcher()->
-      AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse_down_main);
+  details = top_level_widget.GetNativeView()->GetDispatcher()->
+      OnEventFromSource(&mouse_down_main);
+  ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_EQ(0, widget_view->GetEventCount(ui::ET_MOUSE_MOVED));
 
   modal_dialog_widget->CloseNow();
@@ -2237,6 +2263,172 @@ TEST_F(WidgetTest, WindowModalityActivationTest) {
   top_level_widget.CloseNow();
 }
 #endif
+#endif
+
+TEST_F(WidgetTest, ShowCreatesActiveWindow) {
+  Widget* widget = CreateTopLevelPlatformWidget();
+
+  widget->Show();
+  EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
+
+  widget->CloseNow();
+}
+
+TEST_F(WidgetTest, ShowInactive) {
+  Widget* widget = CreateTopLevelPlatformWidget();
+
+  widget->ShowInactive();
+  EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_INACTIVE);
+
+  widget->CloseNow();
+}
+
+TEST_F(WidgetTest, ShowInactiveAfterShow) {
+  Widget* widget = CreateTopLevelPlatformWidget();
+
+  widget->Show();
+  widget->ShowInactive();
+  EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
+
+  widget->CloseNow();
+}
+
+TEST_F(WidgetTest, ShowAfterShowInactive) {
+  Widget* widget = CreateTopLevelPlatformWidget();
+
+  widget->ShowInactive();
+  widget->Show();
+  EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
+
+  widget->CloseNow();
+}
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+TEST_F(WidgetTest, InactiveWidgetDoesNotGrabActivation) {
+  Widget* widget = CreateTopLevelPlatformWidget();
+  widget->Show();
+  EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
+
+  Widget widget2;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.can_activate = false;
+  params.native_widget = new DesktopNativeWidgetAura(&widget2);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget2.Init(params);
+  widget2.Show();
+
+  EXPECT_EQ(GetWidgetShowState(&widget2), ui::SHOW_STATE_INACTIVE);
+  EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
+
+  widget->CloseNow();
+  widget2.CloseNow();
+}
+#endif
+
+namespace {
+
+class FullscreenAwareFrame : public views::NonClientFrameView {
+ public:
+  explicit FullscreenAwareFrame(views::Widget* widget)
+      : widget_(widget), fullscreen_layout_called_(false) {}
+  virtual ~FullscreenAwareFrame() {}
+
+  // views::NonClientFrameView overrides:
+  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE {
+    return gfx::Rect();
+  }
+  virtual gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const OVERRIDE {
+    return gfx::Rect();
+  }
+  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE {
+    return HTNOWHERE;
+  }
+  virtual void GetWindowMask(const gfx::Size& size,
+                             gfx::Path* window_mask) OVERRIDE {}
+  virtual void ResetWindowControls() OVERRIDE {}
+  virtual void UpdateWindowIcon() OVERRIDE {}
+  virtual void UpdateWindowTitle() OVERRIDE {}
+
+  // views::View overrides:
+  virtual void Layout() OVERRIDE {
+    if (widget_->IsFullscreen())
+      fullscreen_layout_called_ = true;
+  }
+
+  bool fullscreen_layout_called() const { return fullscreen_layout_called_; }
+
+ private:
+  views::Widget* widget_;
+  bool fullscreen_layout_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(FullscreenAwareFrame);
+};
+
+}  // namespace
+
+// Tests that frame Layout is called when a widget goes fullscreen without
+// changing its size or title.
+TEST_F(WidgetTest, FullscreenFrameLayout) {
+  Widget* widget = CreateTopLevelPlatformWidget();
+  FullscreenAwareFrame* frame = new FullscreenAwareFrame(widget);
+  widget->non_client_view()->SetFrameView(frame);  // Owns |frame|.
+
+  widget->Maximize();
+  RunPendingMessages();
+
+  EXPECT_FALSE(frame->fullscreen_layout_called());
+  widget->SetFullscreen(true);
+  widget->Show();
+  RunPendingMessages();
+  EXPECT_TRUE(frame->fullscreen_layout_called());
+
+  widget->CloseNow();
+}
+
+#if !defined(OS_CHROMEOS)
+namespace {
+
+// Trivial WidgetObserverTest that invokes Widget::IsActive() from
+// OnWindowDestroying.
+class IsActiveFromDestroyObserver : public WidgetObserver {
+ public:
+  IsActiveFromDestroyObserver() {}
+  virtual ~IsActiveFromDestroyObserver() {}
+  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE {
+    widget->IsActive();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IsActiveFromDestroyObserver);
+};
+
+}  // namespace
+
+// Verifies Widget::IsActive() invoked from
+// WidgetObserver::OnWidgetDestroying() in a child widget doesn't crash.
+TEST_F(WidgetTest, IsActiveFromDestroy) {
+  // Create two widgets, one a child of the other.
+  IsActiveFromDestroyObserver observer;
+  Widget parent_widget;
+  Widget::InitParams parent_params =
+      CreateParams(Widget::InitParams::TYPE_POPUP);
+  parent_params.native_widget = new DesktopNativeWidgetAura(&parent_widget);
+  parent_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  parent_widget.Init(parent_params);
+  parent_widget.Show();
+
+  Widget child_widget;
+  Widget::InitParams child_params =
+      CreateParams(Widget::InitParams::TYPE_POPUP);
+  child_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  child_params.context = parent_widget.GetNativeView();
+  child_widget.Init(child_params);
+  child_widget.AddObserver(&observer);
+  child_widget.Show();
+
+  parent_widget.CloseNow();
+}
 #endif
 
 }  // namespace test

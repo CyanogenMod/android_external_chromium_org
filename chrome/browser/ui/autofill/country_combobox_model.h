@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_AUTOFILL_COUNTRY_COMBOBOX_MODEL_H_
 #define CHROME_BROWSER_UI_AUTOFILL_COUNTRY_COMBOBOX_MODEL_H_
 
+#include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -23,7 +24,7 @@ class CountryComboboxModel : public ui::ComboboxModel {
   explicit CountryComboboxModel(const PersonalDataManager& manager);
   virtual ~CountryComboboxModel();
 
-  // ui::Combobox implementation:
+  // ui::ComboboxModel implementation:
   virtual int GetItemCount() const OVERRIDE;
   virtual base::string16 GetItemAt(int index) OVERRIDE;
   virtual bool IsItemSeparatorAt(int index) OVERRIDE;
@@ -31,6 +32,9 @@ class CountryComboboxModel : public ui::ComboboxModel {
   const std::vector<AutofillCountry*>& countries() const {
     return countries_.get();
   }
+
+  // Returns the default country code for this model.
+  std::string GetDefaultCountryCode() const;
 
  private:
   // The countries to show in the model, including NULL for entries that are

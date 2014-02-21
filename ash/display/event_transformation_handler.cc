@@ -6,7 +6,6 @@
 
 #include <cmath>
 
-#include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/window_util.h"
@@ -68,7 +67,7 @@ void EventTransformationHandler::OnTouchEvent(ui::TouchEvent* event) {
   // Check output_configurator's output_state instead of checking
   // DisplayManager::IsMirrored() because the compositor based mirroring
   // won't cause the scaling issue.
-  if (output_configurator->output_state() != chromeos::STATE_DUAL_MIRROR)
+  if (output_configurator->output_state() != ui::OUTPUT_STATE_DUAL_MIRROR)
     return;
 
   const std::map<int, float>& area_ratio_map =

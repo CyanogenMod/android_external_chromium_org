@@ -10,25 +10,23 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/password_manager/password_store.h"
+#include "chrome/browser/password_manager/password_manager_client.h"
+#include "chrome/browser/password_manager/password_manager_driver.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/profiles/profile.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/validation.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_form.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
+#include "components/password_manager/core/browser/password_store.h"
 
 using autofill::FormStructure;
 using autofill::PasswordForm;
 using autofill::PasswordFormMap;
 using base::Time;
 
-PasswordFormManager::PasswordFormManager(Profile* profile,
-                                         PasswordManager* password_manager,
-                                         content::WebContents* web_contents,
+PasswordFormManager::PasswordFormManager(PasswordManager* password_manager,
+                                         PasswordManagerClient* client,
+                                         PasswordManagerDriver* driver,
                                          const PasswordForm& observed_form,
                                          bool ssl_valid)
     : best_matches_deleter_(&best_matches_),
@@ -38,12 +36,11 @@ PasswordFormManager::PasswordFormManager(Profile* profile,
       password_manager_(password_manager),
       preferred_match_(NULL),
       state_(PRE_MATCHING_PHASE),
-      profile_(profile),
-      web_contents_(web_contents),
+      client_(client),
+      driver_(driver),
       manager_action_(kManagerActionNone),
       user_action_(kUserActionNone),
       submit_result_(kSubmitResultNotSubmitted) {
-  DCHECK(profile_);
   if (observed_form_.origin.is_valid())
     base::SplitString(observed_form_.origin.path(), '/', &form_path_tokens_);
   observed_form_.ssl_valid = ssl_valid;
@@ -130,8 +127,7 @@ void PasswordFormManager::PermanentlyBlacklist() {
   int num_passwords_deleted = 0;
   if (!best_matches_.empty()) {
     PasswordFormMap::const_iterator iter;
-    PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-        profile_, Profile::EXPLICIT_ACCESS).get();
+    PasswordStore* password_store = client_->GetPasswordStore();
     if (!password_store) {
       NOTREACHED();
       return;
@@ -155,6 +151,12 @@ void PasswordFormManager::PermanentlyBlacklist() {
 
   // Save the pending_credentials_ entry marked as blacklisted.
   SaveAsNewLogin(false);
+}
+
+void PasswordFormManager::SetUseAdditionalPasswordAuthentication(
+    bool use_additional_authentication) {
+  pending_credentials_.use_additional_authentication =
+      use_additional_authentication;
 }
 
 bool PasswordFormManager::IsNewLogin() {
@@ -246,7 +248,7 @@ void PasswordFormManager::ProvisionallySave(
 
 void PasswordFormManager::Save() {
   DCHECK_EQ(state_, POST_MATCHING_PHASE);
-  DCHECK(!profile_->IsOffTheRecord());
+  DCHECK(!driver_->IsOffTheRecord());
 
   if (IsNewLogin())
     SaveAsNewLogin(true);
@@ -254,16 +256,16 @@ void PasswordFormManager::Save() {
     UpdateLogin();
 }
 
-void PasswordFormManager::FetchMatchingLoginsFromPasswordStore() {
+void PasswordFormManager::FetchMatchingLoginsFromPasswordStore(
+    PasswordStore::AuthorizationPromptPolicy prompt_policy) {
   DCHECK_EQ(state_, PRE_MATCHING_PHASE);
   state_ = MATCHING_PHASE;
-  PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile_, Profile::EXPLICIT_ACCESS).get();
+  PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
     NOTREACHED();
     return;
   }
-  password_store->GetLogins(observed_form_, this);
+  password_store->GetLogins(observed_form_, prompt_policy, this);
 }
 
 bool PasswordFormManager::HasCompletedMatching() {
@@ -366,15 +368,16 @@ void PasswordFormManager::OnRequestDone(
     return;
   }
 
-  // If not blacklisted, send a message to allow password generation.
-  SendNotBlacklistedToRenderer();
+  // If not blacklisted, inform the driver that password generation is allowed
+  // for |observed_form_|.
+  driver_->AllowPasswordGenerationForForm(&observed_form_);
 
   // Proceed to autofill.
   // Note that we provide the choices but don't actually prefill a value if:
   // (1) we are in Incognito mode, (2) the ACTION paths don't match,
   // or (3) if it matched using public suffix domain matching.
   bool wait_for_username =
-      profile_->IsOffTheRecord() ||
+      driver_->IsOffTheRecord() ||
       observed_form_.action.GetWithEmptyPath() !=
           preferred_match_->action.GetWithEmptyPath() ||
           preferred_match_->IsPublicSuffixMatch();
@@ -386,13 +389,6 @@ void PasswordFormManager::OnRequestDone(
                               *preferred_match_, wait_for_username);
 }
 
-void PasswordFormManager::OnPasswordStoreRequestDone(
-      CancelableRequestProvider::Handle handle,
-      const std::vector<autofill::PasswordForm*>& result) {
-  // TODO(kaiwang): Remove this function.
-  NOTREACHED();
-}
-
 void PasswordFormManager::OnGetPasswordStoreResults(
       const std::vector<autofill::PasswordForm*>& results) {
   DCHECK_EQ(state_, MATCHING_PHASE);
@@ -402,7 +398,7 @@ void PasswordFormManager::OnGetPasswordStoreResults(
     // No result means that we visit this site the first time so we don't need
     // to check whether this site is blacklisted or not. Just send a message
     // to allow password generation.
-    SendNotBlacklistedToRenderer();
+    driver_->AllowPasswordGenerationForForm(&observed_form_);
     return;
   }
   OnRequestDone(results);
@@ -430,10 +426,9 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
   // new_form contains the same basic data as observed_form_ (because its the
   // same form), but with the newly added credentials.
 
-  DCHECK(!profile_->IsOffTheRecord());
+  DCHECK(!driver_->IsOffTheRecord());
 
-  PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile_, Profile::IMPLICIT_ACCESS).get();
+  PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
     NOTREACHED();
     return;
@@ -452,15 +447,15 @@ void PasswordFormManager::SanitizePossibleUsernames(PasswordForm* form) {
   // Remove any possible usernames that could be credit cards or SSN for privacy
   // reasons. Also remove duplicates, both in other_possible_usernames and
   // between other_possible_usernames and username_value.
-  std::set<string16> set;
-  for (std::vector<string16>::iterator it =
+  std::set<base::string16> set;
+  for (std::vector<base::string16>::iterator it =
            form->other_possible_usernames.begin();
        it != form->other_possible_usernames.end(); ++it) {
     if (!autofill::IsValidCreditCardNumber(*it) && !autofill::IsSSN(*it))
       set.insert(*it);
   }
   set.erase(form->username_value);
-  std::vector<string16> temp(set.begin(), set.end());
+  std::vector<base::string16> temp(set.begin(), set.end());
   form->other_possible_usernames.swap(temp);
 }
 
@@ -488,10 +483,9 @@ void PasswordFormManager::UpdateLogin() {
   // username, or the user selected one of the non-preferred matches,
   // thus requiring a swap of preferred bits.
   DCHECK(!IsNewLogin() && pending_credentials_.preferred);
-  DCHECK(!profile_->IsOffTheRecord());
+  DCHECK(!driver_->IsOffTheRecord());
 
-  PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile_, Profile::IMPLICIT_ACCESS).get();
+  PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
     NOTREACHED();
     return;
@@ -578,13 +572,12 @@ void PasswordFormManager::CheckForAccountCreationForm(
     if (!pending.form_data.fields.empty() &&
         pending_structure.FormSignature() !=
             observed_structure.FormSignature()) {
-      autofill::AutofillDriverImpl* driver =
-          autofill::AutofillDriverImpl::FromWebContents(web_contents_);
-      if (driver && driver->autofill_manager()) {
+      autofill::AutofillManager* autofill_manager;
+      if ((autofill_manager = driver_->GetAutofillManager())) {
         // Note that this doesn't guarantee that the upload succeeded, only that
         // |pending.form_data| is considered uploadable.
-        bool success = driver->autofill_manager()->UploadPasswordGenerationForm(
-            pending.form_data);
+        bool success =
+            autofill_manager->UploadPasswordGenerationForm(pending.form_data);
         UMA_HISTOGRAM_BOOLEAN("PasswordGeneration.UploadStarted", success);
       }
     }
@@ -650,10 +643,4 @@ void PasswordFormManager::SubmitPassed() {
 
 void PasswordFormManager::SubmitFailed() {
   submit_result_ = kSubmitResultFailed;
-}
-
-void PasswordFormManager::SendNotBlacklistedToRenderer() {
-  content::RenderViewHost* host = web_contents_->GetRenderViewHost();
-  host->Send(new AutofillMsg_FormNotBlacklisted(host->GetRoutingID(),
-                                                 observed_form_));
 }

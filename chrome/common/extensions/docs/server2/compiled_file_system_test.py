@@ -9,8 +9,7 @@ import os
 from appengine_wrappers import GetAppVersion
 from compiled_file_system import CompiledFileSystem
 from copy import deepcopy
-from file_system import FileNotFoundError, FileSystem, StatInfo
-from future import Gettable, Future
+from file_system import FileNotFoundError
 from mock_file_system import MockFileSystem
 from object_store_creator import ObjectStoreCreator
 from test_file_system import TestFileSystem
@@ -84,8 +83,8 @@ class CompiledFileSystemTest(unittest.TestCase):
                      compiled_fs.GetFromFile('404.html').Get())
     self.assertEqual('ZZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzz',
                      compiled_fs.GetFromFile('apps/a11y.html').Get())
-    self.assertEqual('ZZZZZZZZZZZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzz',
-                     compiled_fs.GetFromFile('/apps/fakedir/file.html').Get())
+    self.assertEqual('ZZZZZZZZZZZZZZZZZZZZZZzzzzzzzzzzzzzzzzzz',
+                     compiled_fs.GetFromFile('apps/fakedir/file.html').Get())
 
   def testPopulateFromFileListing(self):
     def strip_ext(path, files):
@@ -102,8 +101,6 @@ class CompiledFileSystemTest(unittest.TestCase):
       'extensions/alarms'
     ]
     self.assertEqual(expected_top_listing,
-                     sorted(compiled_fs.GetFromFileListing('/').Get()))
-    self.assertEqual(expected_top_listing,
                      sorted(compiled_fs.GetFromFileListing('').Get()))
     expected_apps_listing = [
       'a11y',
@@ -113,22 +110,12 @@ class CompiledFileSystemTest(unittest.TestCase):
       'fakedir/file',
     ]
     self.assertEqual(expected_apps_listing,
-                     sorted(compiled_fs.GetFromFileListing('/apps/').Get()))
-    self.assertEqual(expected_apps_listing,
                      sorted(compiled_fs.GetFromFileListing('apps/').Get()))
-    self.assertEqual(['file',],
-                     compiled_fs.GetFromFileListing('/apps/fakedir/').Get())
     self.assertEqual(['file',],
                      compiled_fs.GetFromFileListing('apps/fakedir/').Get())
     self.assertEqual(['deeper/deepest', 'deepfile'],
                      sorted(compiled_fs.GetFromFileListing(
-                        '/apps/deepdir/').Get()))
-    self.assertEqual(['deeper/deepest', 'deepfile'],
-                     sorted(compiled_fs.GetFromFileListing(
                          'apps/deepdir/').Get()))
-    self.assertEqual(['deepest'],
-                     compiled_fs.GetFromFileListing(
-                         '/apps/deepdir/deeper/').Get())
     self.assertEqual(['deepest'],
                      compiled_fs.GetFromFileListing(
                          'apps/deepdir/deeper/').Get())
@@ -138,32 +125,33 @@ class CompiledFileSystemTest(unittest.TestCase):
     self.assertEqual('404.html contents',
                      compiled_fs.GetFromFile('404.html').Get())
     self.assertEqual(set(('file.html',)),
-                     set(compiled_fs.GetFromFileListing('apps/fakedir').Get()))
+                     set(compiled_fs.GetFromFileListing('apps/fakedir/').Get()))
 
-    compiled_fs._file_system._obj['404.html'] = 'boom'
-    compiled_fs._file_system._obj['apps']['fakedir']['boom.html'] = 'blam'
+    compiled_fs._file_system._path_values['404.html'] = 'boom'
+    compiled_fs._file_system._path_values['apps/fakedir/'] = [
+        'file.html', 'boom.html']
     self.assertEqual('404.html contents',
                      compiled_fs.GetFromFile('404.html').Get())
     self.assertEqual(set(('file.html',)),
-                     set(compiled_fs.GetFromFileListing('apps/fakedir').Get()))
+                     set(compiled_fs.GetFromFileListing('apps/fakedir/').Get()))
 
     compiled_fs._file_system.IncrementStat()
     self.assertEqual('boom', compiled_fs.GetFromFile('404.html').Get())
     self.assertEqual(set(('file.html', 'boom.html')),
-                     set(compiled_fs.GetFromFileListing('apps/fakedir').Get()))
+                     set(compiled_fs.GetFromFileListing('apps/fakedir/').Get()))
 
   def testFailures(self):
     compiled_fs = _GetTestCompiledFsCreator()(identity, CompiledFileSystemTest)
     self.assertRaises(FileNotFoundError,
                       compiled_fs.GetFromFile('405.html').Get)
     # TODO(kalman): would be nice to test this fails since apps/ is a dir.
-    compiled_fs.GetFromFile('apps/')
+    compiled_fs.GetFromFile('apps')
     #self.assertRaises(SomeError, compiled_fs.GetFromFile, 'apps/')
     self.assertRaises(FileNotFoundError,
                       compiled_fs.GetFromFileListing('nodir/').Get)
     # TODO(kalman): likewise, not a FileNotFoundError.
     self.assertRaises(FileNotFoundError,
-                      compiled_fs.GetFromFileListing('404.html').Get)
+                      compiled_fs.GetFromFileListing('404.html/').Get)
 
   def testCorrectFutureBehaviour(self):
     # Tests that the underlying FileSystem's Read Future has had Get() called
@@ -205,7 +193,7 @@ class CompiledFileSystemTest(unittest.TestCase):
     self.assertTrue(*mock_fs.CheckAndReset())
 
     # Similar configuration to the 'apps/' case but deeper.
-    future = compiled_fs.GetFromFileListing('/')
+    future = compiled_fs.GetFromFileListing('')
     self.assertTrue(*mock_fs.CheckAndReset(stat_count=1,
                                            read_count=2,
                                            read_resolve_count=1))

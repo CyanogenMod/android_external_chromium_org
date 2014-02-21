@@ -8,7 +8,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "ui/app_list/app_list_constants.h"
-#include "ui/app_list/app_list_item_model.h"
+#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/cached_label.h"
@@ -20,7 +20,7 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/transform_util.h"
@@ -47,7 +47,7 @@ const int kLeftRightPaddingChars = 1;
 const float kDraggingIconScale = 1.5f;
 
 // Delay in milliseconds of when the dragging UI should be shown for mouse drag.
-const int kMouseDragUIDelayInMs = 100;
+const int kMouseDragUIDelayInMs = 200;
 
 }  // namespace
 
@@ -55,9 +55,9 @@ const int kMouseDragUIDelayInMs = 100;
 const char AppListItemView::kViewClassName[] = "ui/app_list/AppListItemView";
 
 AppListItemView::AppListItemView(AppsGridView* apps_grid_view,
-                                 AppListItemModel* model)
+                                 AppListItem* item)
     : CustomButton(apps_grid_view),
-      model_(model),
+      item_(item),
       apps_grid_view_(apps_grid_view),
       icon_(new views::ImageView),
       title_(new CachedLabel),
@@ -70,9 +70,9 @@ AppListItemView::AppListItemView(AppsGridView* apps_grid_view,
   title_->SetBackgroundColor(0);
   title_->SetAutoColorReadabilityEnabled(false);
   title_->SetEnabledColor(kGridTitleColor);
-  title_->SetFont(rb.GetFont(kItemTextFontStyle));
+  title_->SetFontList(rb.GetFontList(kItemTextFontStyle));
   title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  title_->SetVisible(!model_->is_installing());
+  title_->SetVisible(!item_->is_installing());
   title_->Invalidate();
 
   const gfx::ShadowValue kIconShadows[] = {
@@ -87,7 +87,7 @@ AppListItemView::AppListItemView(AppsGridView* apps_grid_view,
   ItemIconChanged();
   ItemTitleChanged();
   ItemIsInstallingChanged();
-  model_->AddObserver(this);
+  item_->AddObserver(this);
 
   set_context_menu_controller(this);
   set_request_focus_on_press(false);
@@ -96,7 +96,7 @@ AppListItemView::AppListItemView(AppsGridView* apps_grid_view,
 }
 
 AppListItemView::~AppListItemView() {
-  model_->RemoveObserver(this);
+  item_->RemoveObserver(this);
 }
 
 void AppListItemView::SetIconSize(const gfx::Size& size) {
@@ -112,8 +112,8 @@ void AppListItemView::UpdateIcon() {
   if (icon_size_.IsEmpty())
     return;
 
-  gfx::ImageSkia icon = model_->icon();
-  // Clear icon and bail out if model icon is empty.
+  gfx::ImageSkia icon = item_->icon();
+  // Clear icon and bail out if item icon is empty.
   if (icon.isNull()) {
     icon_->SetImage(NULL);
     return;
@@ -121,20 +121,20 @@ void AppListItemView::UpdateIcon() {
 
   gfx::ImageSkia resized(gfx::ImageSkiaOperations::CreateResizedImage(icon,
       skia::ImageOperations::RESIZE_BEST, icon_size_));
-  if (model_->has_shadow()) {
+  if (item_->has_shadow()) {
     gfx::ImageSkia shadow(
         gfx::ImageSkiaOperations::CreateImageWithDropShadow(resized,
                                                             icon_shadows_));
     icon_->SetImage(shadow);
     return;
-  };
+  }
 
   icon_->SetImage(resized);
 }
 
 void AppListItemView::UpdateTooltip() {
-  title_->SetTooltipText(model_->title() == model_->full_name() ?
-                             string16() : UTF8ToUTF16(model_->full_name()));
+  title_->SetTooltipText(item_->title() == item_->full_name() ? base::string16()
+                         : base::UTF8ToUTF16(item_->full_name()));
 }
 
 void AppListItemView::SetUIState(UIState state) {
@@ -146,8 +146,8 @@ void AppListItemView::SetUIState(UIState state) {
 #if defined(USE_AURA)
   switch (ui_state_) {
     case UI_STATE_NORMAL:
-      title_->SetVisible(!model_->is_installing());
-      progress_bar_->SetVisible(model_->is_installing());
+      title_->SetVisible(!item_->is_installing());
+      progress_bar_->SetVisible(item_->is_installing());
       break;
     case UI_STATE_DRAGGING:
       title_->SetVisible(false);
@@ -226,7 +226,7 @@ void AppListItemView::ItemIconChanged() {
 }
 
 void AppListItemView::ItemTitleChanged() {
-  title_->SetText(UTF8ToUTF16(model_->title()));
+  title_->SetText(base::UTF8ToUTF16(item_->title()));
   title_->Invalidate();
   UpdateTooltip();
   Layout();
@@ -238,10 +238,10 @@ void AppListItemView::ItemHighlightedChanged() {
 }
 
 void AppListItemView::ItemIsInstallingChanged() {
-  if (model_->is_installing())
+  if (item_->is_installing())
     apps_grid_view_->EnsureViewVisible(this);
-  title_->SetVisible(!model_->is_installing());
-  progress_bar_->SetVisible(model_->is_installing());
+  title_->SetVisible(!item_->is_installing());
+  progress_bar_->SetVisible(item_->is_installing());
   SchedulePaint();
 }
 
@@ -249,9 +249,9 @@ void AppListItemView::ItemPercentDownloadedChanged() {
   // A percent_downloaded() of -1 can mean it's not known how much percent is
   // completed, or the download hasn't been marked complete, as is the case
   // while an extension is being installed after being downloaded.
-  if (model_->percent_downloaded() == -1)
+  if (item_->percent_downloaded() == -1)
     return;
-  progress_bar_->SetValue(model_->percent_downloaded() / 100.0);
+  progress_bar_->SetValue(item_->percent_downloaded() / 100.0);
 }
 
 const char* AppListItemView::GetClassName() const {
@@ -261,15 +261,12 @@ const char* AppListItemView::GetClassName() const {
 void AppListItemView::Layout() {
   gfx::Rect rect(GetContentsBounds());
 
-  const int left_right_padding = kLeftRightPaddingChars *
-      title_->font().GetAverageCharacterWidth();
+  const int left_right_padding =
+      title_->font_list().GetExpectedTextWidth(kLeftRightPaddingChars);
   rect.Inset(left_right_padding, kTopPadding, left_right_padding, 0);
   const int y = rect.y();
 
-  gfx::Rect icon_bounds(rect.x(), y, rect.width(), icon_size_.height());
-  icon_bounds.Inset(gfx::ShadowValue::GetMargin(icon_shadows_));
-  icon_->SetBoundsRect(icon_bounds);
-
+  icon_->SetBoundsRect(GetIconBoundsForTargetViewBounds(GetContentsBounds()));
   const gfx::Size title_size = title_->GetPreferredSize();
   gfx::Rect title_bounds(rect.x() + (rect.width() - title_size.width()) / 2,
                          y + icon_size_.height() + kIconTitleSpacing,
@@ -290,7 +287,7 @@ void AppListItemView::OnPaint(gfx::Canvas* canvas) {
     return;
 
   gfx::Rect rect(GetContentsBounds());
-  if (model_->highlighted() && !model_->is_installing()) {
+  if (item_->highlighted() && !item_->is_installing()) {
     canvas->FillRect(rect, kHighlightedColor);
     return;
   } else if (apps_grid_view_->IsSelectedView(this)) {
@@ -317,13 +314,13 @@ void AppListItemView::OnPaint(gfx::Canvas* canvas) {
 
 void AppListItemView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
-  state->name = UTF8ToUTF16(model_->title());
+  state->name = base::UTF8ToUTF16(item_->title());
 }
 
 void AppListItemView::ShowContextMenuForView(views::View* source,
                                              const gfx::Point& point,
                                              ui::MenuSourceType source_type) {
-  ui::MenuModel* menu_model = model_->GetContextMenuModel();
+  ui::MenuModel* menu_model = item_->GetContextMenuModel();
   if (!menu_model)
     return;
 
@@ -348,7 +345,7 @@ void AppListItemView::StateChanged() {
   } else {
     if (!is_folder_ui_enabled)
       apps_grid_view_->ClearSelectedView(this);
-    model_->SetHighlighted(false);
+    item_->SetHighlighted(false);
     title_->SetEnabledColor(kGridTitleColor);
   }
   title_->Invalidate();
@@ -407,7 +404,8 @@ void AppListItemView::OnMouseCaptureLost() {
 
 bool AppListItemView::OnMouseDragged(const ui::MouseEvent& event) {
   CustomButton::OnMouseDragged(event);
-  apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, event);
+  if (apps_grid_view_->IsDraggedView(this))
+    apps_grid_view_->UpdateDragFromItem(AppsGridView::MOUSE, event);
 
   // Shows dragging UI when it's confirmed without waiting for the timer.
   if (ui_state_ != UI_STATE_DRAGGING &&
@@ -428,7 +426,7 @@ void AppListItemView::OnGestureEvent(ui::GestureEvent* event) {
       }
       break;
     case ui::ET_GESTURE_SCROLL_UPDATE:
-      if (touch_dragging_) {
+      if (touch_dragging_ && apps_grid_view_->IsDraggedView(this)) {
         apps_grid_view_->UpdateDragFromItem(AppsGridView::TOUCH, *event);
         event->SetHandled();
       }
@@ -460,6 +458,27 @@ void AppListItemView::OnGestureEvent(ui::GestureEvent* event) {
 
 void AppListItemView::OnSyncDragEnd() {
   SetUIState(UI_STATE_NORMAL);
+}
+
+const gfx::Rect& AppListItemView::GetIconBounds() const {
+  return icon_->bounds();
+}
+
+void AppListItemView::SetDragUIState() {
+  SetUIState(UI_STATE_DRAGGING);
+}
+
+gfx::Rect AppListItemView::GetIconBoundsForTargetViewBounds(
+    const gfx::Rect& target_bounds) {
+  gfx::Rect rect(target_bounds);
+
+  const int left_right_padding =
+      title_->font_list().GetExpectedTextWidth(kLeftRightPaddingChars);
+  rect.Inset(left_right_padding, kTopPadding, left_right_padding, 0);
+
+  gfx::Rect icon_bounds(rect.x(), rect.y(), rect.width(), icon_size_.height());
+  icon_bounds.Inset(gfx::ShadowValue::GetMargin(icon_shadows_));
+  return icon_bounds;
 }
 
 }  // namespace app_list

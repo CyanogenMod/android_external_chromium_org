@@ -10,32 +10,34 @@
 
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/common/extensions/api/gcm.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 
 namespace {
 
 const size_t kMaximumMessageSize = 4096;  // in bytes.
+const char kCollapseKey[] = "collapse_key";
 const char kGoogDotRestrictedPrefix[] = "goog.";
-const size_t kGoogDotPrefixLength = arraysize(kGoogDotRestrictedPrefix) - 1;
 const char kGoogleRestrictedPrefix[] = "google";
-const size_t kGooglePrefixLength = arraysize(kGoogleRestrictedPrefix) - 1;
 
 // Error messages.
 const char kInvalidParameter[] =
     "Function was called with invalid parameters.";
+const char kNotSignedIn[] = "Profile was not signed in.";
+const char kCertificateMissing[] = "Manifest key was missing.";
 const char kAsyncOperationPending[] =
     "Asynchronous operation is pending.";
-const char kNetworkError[] = "Network error occured.";
-const char kServerError[] = "Server error occured.";
+const char kNetworkError[] = "Network error occurred.";
+const char kServerError[] = "Server error occurred.";
 const char kTtlExceeded[] = "Time-to-live exceeded.";
-const char kUnknownError[] = "Unknown error occured.";
+const char kUnknownError[] = "Unknown error occurred.";
 
 std::string SHA1HashHexString(const std::string& str) {
   std::string hash = base::SHA1HashString(str);
@@ -48,6 +50,10 @@ const char* GcmResultToError(gcm::GCMClient::Result result) {
       return "";
     case gcm::GCMClient::INVALID_PARAMETER:
       return kInvalidParameter;
+    case gcm::GCMClient::NOT_SIGNED_IN:
+      return kNotSignedIn;
+    case gcm::GCMClient::CERTIFICATE_MISSING:
+      return kCertificateMissing;
     case gcm::GCMClient::ASYNC_OPERATION_PENDING:
       return kAsyncOperationPending;
     case gcm::GCMClient::NETWORK_ERROR:
@@ -68,9 +74,15 @@ const char* GcmResultToError(gcm::GCMClient::Result result) {
 }
 
 bool IsMessageKeyValid(const std::string& key) {
+  std::string lower = StringToLowerASCII(key);
   return !key.empty() &&
-      key.compare(0, kGooglePrefixLength, kGoogleRestrictedPrefix) != 0 &&
-      key.compare(0, kGoogDotPrefixLength, kGoogDotRestrictedPrefix) != 0;
+         key.compare(0, arraysize(kCollapseKey) - 1, kCollapseKey) != 0 &&
+         lower.compare(0,
+                       arraysize(kGoogleRestrictedPrefix) - 1,
+                       kGoogleRestrictedPrefix) != 0 &&
+         lower.compare(0,
+                       arraysize(kGoogDotRestrictedPrefix),
+                       kGoogDotRestrictedPrefix) != 0;
 }
 
 }  // namespace
@@ -85,8 +97,8 @@ bool GcmApiFunction::RunImpl() {
 }
 
 bool GcmApiFunction::IsGcmApiEnabled() const {
-  return gcm::GCMProfileService::IsGCMEnabled() &&
-      !GetExtension()->public_key().empty();
+  return gcm::GCMProfileService::IsGCMEnabled(
+             Profile::FromBrowserContext(context()));
 }
 
 gcm::GCMProfileService* GcmApiFunction::GCMProfileService() const {
@@ -103,14 +115,16 @@ bool GcmRegisterFunction::DoWork() {
       api::gcm::Register::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  // Caching the values so that it is possbile to safely pass them by reference.
-  sender_ids_ = params->sender_ids;
-  cert_ = SHA1HashHexString(GetExtension()->public_key());
+  if (GetExtension()->public_key().empty()) {
+    CompleteFunctionWithResult(std::string(),
+                               gcm::GCMClient::CERTIFICATE_MISSING);
+    return false;
+  }
 
   GCMProfileService()->Register(
       GetExtension()->id(),
-      sender_ids_,
-      cert_,
+      params->sender_ids,
+      SHA1HashHexString(GetExtension()->public_key()),
       base::Bind(&GcmRegisterFunction::CompleteFunctionWithResult, this));
 
   return true;
@@ -135,17 +149,16 @@ bool GcmSendFunction::DoWork() {
   EXTENSION_FUNCTION_VALIDATE(
       ValidateMessageData(params->message.data.additional_properties));
 
-  // Caching the values so that it is possbile to safely pass them by reference.
-  outgoing_message_.id = params->message.message_id;
-  outgoing_message_.data = params->message.data.additional_properties;
+  gcm::GCMClient::OutgoingMessage outgoing_message;
+  outgoing_message.id = params->message.message_id;
+  outgoing_message.data = params->message.data.additional_properties;
   if (params->message.time_to_live.get())
-    outgoing_message_.time_to_live = *params->message.time_to_live;
-  destination_id_ = params->message.destination_id;
+    outgoing_message.time_to_live = *params->message.time_to_live;
 
   GCMProfileService()->Send(
       GetExtension()->id(),
       params->message.destination_id,
-      outgoing_message_,
+      outgoing_message,
       base::Bind(&GcmSendFunction::CompleteFunctionWithResult, this));
 
   return true;

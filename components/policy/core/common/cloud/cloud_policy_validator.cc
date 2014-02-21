@@ -6,6 +6,7 @@
 
 #include "base/bind_helpers.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -23,9 +24,38 @@ namespace {
 const int kTimestampGraceIntervalSeconds = 60;
 
 // DER-encoded ASN.1 object identifier for the SHA1-RSA signature algorithm.
-const uint8 kSignatureAlgorithm[] = {
+const uint8 kSHA1SignatureAlgorithm[] = {
     0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
     0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00
+};
+
+// DER-encoded ASN.1 object identifier for the SHA256-RSA signature algorithm
+// (source: http://tools.ietf.org/html/rfc5754 section 3.2).
+const uint8 kSHA256SignatureAlgorithm[] = {
+    0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
+    0xf7, 0x0d, 0x01, 0x01, 0x0b, 0x05, 0x00
+};
+
+COMPILE_ASSERT(sizeof(kSHA256SignatureAlgorithm) ==
+               sizeof(kSHA1SignatureAlgorithm), invalid_algorithm_size);
+
+const int kSignatureAlgorithmSize = sizeof(kSHA1SignatureAlgorithm);
+
+const char kMetricPolicyKeyVerification[] = "Enterprise.PolicyKeyVerification";
+
+enum MetricPolicyKeyVerification {
+  // UMA metric recorded when the client has no verification key.
+  METRIC_POLICY_KEY_VERIFICATION_KEY_MISSING,
+  // Recorded when the policy being verified has no key signature (e.g. policy
+  // fetched before the server supported the verification key).
+  METRIC_POLICY_KEY_VERIFICATION_SIGNATURE_MISSING,
+  // Recorded when the key signature did not match the expected value (in
+  // theory, this should only happen after key rotation or if the policy cached
+  // on disk has been modified).
+  METRIC_POLICY_KEY_VERIFICATION_FAILED,
+  // Recorded when key verification succeeded.
+  METRIC_POLICY_KEY_VERIFICATION_SUCCEEDED,
+  METRIC_POLICY_KEY_VERIFICATION_SIZE  // Must be the last.
 };
 
 }  // namespace
@@ -83,16 +113,34 @@ void CloudPolicyValidatorBase::ValidatePayload() {
   validation_flags_ |= VALIDATE_PAYLOAD;
 }
 
-void CloudPolicyValidatorBase::ValidateSignature(const std::vector<uint8>& key,
-                                                 bool allow_key_rotation) {
+
+void CloudPolicyValidatorBase::ValidateCachedKey(
+    const std::string& cached_key,
+    const std::string& cached_key_signature,
+    const std::string& verification_key,
+    const std::string& owning_domain) {
+  validation_flags_ |= VALIDATE_CACHED_KEY;
+  set_verification_key_and_domain(verification_key, owning_domain);
+  cached_key_ = cached_key;
+  cached_key_signature_ = cached_key_signature;
+}
+
+void CloudPolicyValidatorBase::ValidateSignature(
+    const std::string& key,
+    const std::string& verification_key,
+    const std::string& owning_domain,
+    bool allow_key_rotation) {
   validation_flags_ |= VALIDATE_SIGNATURE;
-  key_ = std::string(reinterpret_cast<const char*>(vector_as_array(&key)),
-                     key.size());
+  set_verification_key_and_domain(verification_key, owning_domain);
+  key_ = key;
   allow_key_rotation_ = allow_key_rotation;
 }
 
-void CloudPolicyValidatorBase::ValidateInitialKey() {
+void CloudPolicyValidatorBase::ValidateInitialKey(
+    const std::string& verification_key,
+    const std::string& owning_domain) {
   validation_flags_ |= VALIDATE_INITIAL_KEY;
+  set_verification_key_and_domain(verification_key, owning_domain);
 }
 
 void CloudPolicyValidatorBase::ValidateAgainstCurrentPolicy(
@@ -192,6 +240,7 @@ void CloudPolicyValidatorBase::RunChecks() {
   } kCheckFunctions[] = {
     { VALIDATE_SIGNATURE,   &CloudPolicyValidatorBase::CheckSignature },
     { VALIDATE_INITIAL_KEY, &CloudPolicyValidatorBase::CheckInitialKey },
+    { VALIDATE_CACHED_KEY,  &CloudPolicyValidatorBase::CheckCachedKey },
     { VALIDATE_POLICY_TYPE, &CloudPolicyValidatorBase::CheckPolicyType },
     { VALIDATE_ENTITY_ID,   &CloudPolicyValidatorBase::CheckEntityId },
     { VALIDATE_TOKEN,       &CloudPolicyValidatorBase::CheckToken },
@@ -210,21 +259,114 @@ void CloudPolicyValidatorBase::RunChecks() {
   }
 }
 
+// Verifies the |new_public_key_verification_signature| for the |new_public_key|
+// in the policy blob.
+bool CloudPolicyValidatorBase::CheckNewPublicKeyVerificationSignature() {
+  // If there's no local verification key, then just return true (no
+  // validation possible).
+  if (verification_key_.empty()) {
+    UMA_HISTOGRAM_ENUMERATION(kMetricPolicyKeyVerification,
+                              METRIC_POLICY_KEY_VERIFICATION_KEY_MISSING,
+                              METRIC_POLICY_KEY_VERIFICATION_SIZE);
+    return true;
+  }
+
+  if (!policy_->has_new_public_key_verification_signature()) {
+    // Policy does not contain a verification signature, so log an error.
+    LOG(ERROR) << "Policy is missing public_key_verification_signature";
+    UMA_HISTOGRAM_ENUMERATION(kMetricPolicyKeyVerification,
+                              METRIC_POLICY_KEY_VERIFICATION_SIGNATURE_MISSING,
+                              METRIC_POLICY_KEY_VERIFICATION_SIZE);
+    // TODO(atwilson): Return an error on failed signature verification once
+    // our test servers and unittests are returning policy with a verification
+    // signature (http://crbug.com/275291).
+    return true;
+  }
+
+  if (!CheckVerificationKeySignature(
+          policy_->new_public_key(),
+          verification_key_,
+          policy_->new_public_key_verification_signature())) {
+    LOG(ERROR) << "Signature verification failed";
+    UMA_HISTOGRAM_ENUMERATION(kMetricPolicyKeyVerification,
+                              METRIC_POLICY_KEY_VERIFICATION_FAILED,
+                              METRIC_POLICY_KEY_VERIFICATION_SIZE);
+    return false;
+  }
+  // Signature verification succeeded - return success to the caller.
+  DVLOG(1) << "Signature verification succeeded";
+  UMA_HISTOGRAM_ENUMERATION(kMetricPolicyKeyVerification,
+                            METRIC_POLICY_KEY_VERIFICATION_SUCCEEDED,
+                            METRIC_POLICY_KEY_VERIFICATION_SIZE);
+  return true;
+}
+
+bool CloudPolicyValidatorBase::CheckVerificationKeySignature(
+    const std::string& key,
+    const std::string& verification_key,
+    const std::string& signature) {
+  DCHECK(!verification_key.empty());
+  em::PolicyPublicKeyAndDomain signed_data;
+  signed_data.set_new_public_key(key);
+
+  // If no owning_domain_ supplied, try extracting the domain from the policy
+  // itself (this happens on certain platforms during startup, when we validate
+  // cached policy before prefs are loaded).
+  std::string domain = owning_domain_.empty() ?
+      ExtractDomainFromPolicy() : owning_domain_;
+  if (domain.empty()) {
+    LOG(ERROR) << "Policy does not contain a domain";
+    return false;
+  }
+  signed_data.set_domain(domain);
+  std::string signed_data_as_string;
+  if (!signed_data.SerializeToString(&signed_data_as_string)) {
+    DLOG(ERROR) << "Could not serialize verification key to string";
+    return false;
+  }
+  return VerifySignature(signed_data_as_string, verification_key, signature,
+                         SHA256);
+}
+
+std::string CloudPolicyValidatorBase::ExtractDomainFromPolicy() {
+  std::string domain;
+  if (policy_data_->has_username()) {
+    domain = gaia::ExtractDomainName(
+        gaia::CanonicalizeEmail(
+            gaia::SanitizeEmail(policy_data_->username())));
+  }
+  return domain;
+}
+
+void CloudPolicyValidatorBase::set_verification_key_and_domain(
+    const std::string& verification_key, const std::string& owning_domain) {
+  // Make sure we aren't overwriting the verification key with a different key.
+  DCHECK(verification_key_.empty() || verification_key_ == verification_key);
+  DCHECK(owning_domain_.empty() || owning_domain_ == owning_domain);
+  verification_key_ = verification_key;
+  owning_domain_ = owning_domain;
+}
+
 CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckSignature() {
   const std::string* signature_key = &key_;
   if (policy_->has_new_public_key() && allow_key_rotation_) {
     signature_key = &policy_->new_public_key();
     if (!policy_->has_new_public_key_signature() ||
         !VerifySignature(policy_->new_public_key(), key_,
-                         policy_->new_public_key_signature())) {
-      LOG(ERROR) << "New public key signature verification failed";
+                         policy_->new_public_key_signature(), SHA1)) {
+      LOG(ERROR) << "New public key rotation signature verification failed";
       return VALIDATION_BAD_SIGNATURE;
+    }
+
+    if (!CheckNewPublicKeyVerificationSignature()) {
+      LOG(ERROR) << "New public key root verification failed";
+      return VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE;
     }
   }
 
   if (!policy_->has_policy_data_signature() ||
       !VerifySignature(policy_->policy_data(), *signature_key,
-                       policy_->policy_data_signature())) {
+                       policy_->policy_data_signature(), SHA1)) {
     LOG(ERROR) << "Policy signature validation failed";
     return VALIDATION_BAD_SIGNATURE;
   }
@@ -236,11 +378,27 @@ CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckInitialKey() {
   if (!policy_->has_new_public_key() ||
       !policy_->has_policy_data_signature() ||
       !VerifySignature(policy_->policy_data(), policy_->new_public_key(),
-                       policy_->policy_data_signature())) {
+                       policy_->policy_data_signature(), SHA1)) {
     LOG(ERROR) << "Initial policy signature validation failed";
     return VALIDATION_BAD_INITIAL_SIGNATURE;
   }
 
+  if (!CheckNewPublicKeyVerificationSignature()) {
+    LOG(ERROR) << "Initial policy root signature validation failed";
+    return VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE;
+  }
+  return VALIDATION_OK;
+}
+
+CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckCachedKey() {
+  if (!verification_key_.empty() &&
+      !CheckVerificationKeySignature(cached_key_, verification_key_,
+                                     cached_key_signature_)) {
+    LOG(ERROR) << "Cached key signature verification failed";
+    return VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE;
+  } else {
+    DVLOG(1) << "Cached key signature verification succeeded";
+  }
   return VALIDATION_OK;
 }
 
@@ -327,17 +485,12 @@ CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckUsername() {
   return VALIDATION_OK;
 }
 
-
 CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckDomain() {
-  if (!policy_data_->has_username()) {
+  std::string policy_domain = ExtractDomainFromPolicy();
+  if (policy_domain.empty()) {
     LOG(ERROR) << "Policy is missing user name";
     return VALIDATION_BAD_USERNAME;
   }
-
-  std::string policy_domain =
-      gaia::ExtractDomainName(
-          gaia::CanonicalizeEmail(
-              gaia::SanitizeEmail(policy_data_->username())));
 
   if (domain_ != policy_domain) {
     LOG(ERROR) << "Invalid user name " << policy_data_->username();
@@ -361,14 +514,28 @@ CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckPayload() {
 // static
 bool CloudPolicyValidatorBase::VerifySignature(const std::string& data,
                                                const std::string& key,
-                                               const std::string& signature) {
+                                               const std::string& signature,
+                                               SignatureType signature_type) {
   crypto::SignatureVerifier verifier;
+  const uint8* algorithm = NULL;
+  switch (signature_type) {
+    case SHA1:
+      algorithm = kSHA1SignatureAlgorithm;
+      break;
+    case SHA256:
+      algorithm = kSHA256SignatureAlgorithm;
+      break;
+    default:
+      NOTREACHED() << "Invalid signature type: " << signature_type;
+      return false;
+  }
 
-  if (!verifier.VerifyInit(kSignatureAlgorithm, sizeof(kSignatureAlgorithm),
+  if (!verifier.VerifyInit(algorithm, kSignatureAlgorithmSize,
                            reinterpret_cast<const uint8*>(signature.c_str()),
                            signature.size(),
                            reinterpret_cast<const uint8*>(key.c_str()),
                            key.size())) {
+    DLOG(ERROR) << "Invalid verification signature/key format";
     return false;
   }
   verifier.VerifyUpdate(reinterpret_cast<const uint8*>(data.c_str()),
@@ -378,7 +545,7 @@ bool CloudPolicyValidatorBase::VerifySignature(const std::string& data,
 
 template class CloudPolicyValidator<em::CloudPolicySettings>;
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 template class CloudPolicyValidator<em::ExternalPolicyData>;
 #endif
 

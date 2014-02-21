@@ -41,11 +41,7 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       browser_(browser),
       current_tab_id_(-1),
       preview_enabled_(false),
-      popup_(NULL),
-      scoped_icon_animation_observer_(
-          page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetWebContents())),
-          this) {
+      popup_(NULL) {
   const Extension* extension = owner_->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
@@ -54,7 +50,7 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       new ExtensionActionIconFactory(
           owner_->profile(), extension, page_action, this));
 
-  set_accessibility_focusable(true);
+  SetAccessibilityFocusable(true);
   set_context_menu_controller(this);
 
   extensions::CommandService* command_service =
@@ -72,20 +68,6 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
         ui::AcceleratorManager::kHighPriority,
         this);
   }
-
-  extensions::Command script_badge_command;
-  if (command_service->GetScriptBadgeCommand(
-          extension->id(),
-          extensions::CommandService::ACTIVE_ONLY,
-          &script_badge_command,
-          NULL)) {
-    script_badge_keybinding_.reset(
-        new ui::Accelerator(script_badge_command.accelerator()));
-    owner_->GetFocusManager()->RegisterAccelerator(
-        *script_badge_keybinding_.get(),
-        ui::AcceleratorManager::kHighPriority,
-        this);
-  }
 }
 
 PageActionImageView::~PageActionImageView() {
@@ -93,11 +75,6 @@ PageActionImageView::~PageActionImageView() {
     if (page_action_keybinding_.get()) {
       owner_->GetFocusManager()->UnregisterAccelerator(
           *page_action_keybinding_.get(), this);
-    }
-
-    if (script_badge_keybinding_.get()) {
-      owner_->GetFocusManager()->UnregisterAccelerator(
-          *script_badge_keybinding_.get(), this);
     }
   }
 
@@ -132,18 +109,12 @@ void PageActionImageView::ExecuteAction(
       // mouse button through to the LocationBarController.
       NOTREACHED();
       break;
-
-    case LocationBarController::ACTION_SHOW_SCRIPT_POPUP:
-      ShowPopupWithURL(
-          extensions::ExtensionInfoUI::GetURL(page_action_->extension_id()),
-          show_action);
-      break;
   }
 }
 
 void PageActionImageView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
-  state->name = UTF8ToUTF16(tooltip_);
+  state->name = base::UTF8ToUTF16(tooltip_);
 }
 
 bool PageActionImageView::OnMousePressed(const ui::MouseEvent& event) {
@@ -226,7 +197,7 @@ void PageActionImageView::UpdateVisibility(WebContents* contents,
 
   // Set the tooltip.
   tooltip_ = page_action_->GetTitle(current_tab_id_);
-  SetTooltipText(UTF8ToUTF16(tooltip_));
+  SetTooltipText(base::UTF8ToUTF16(tooltip_));
 
   // Set the image.
   gfx::Image icon = icon_factory_->GetIcon(current_tab_id_);
@@ -250,10 +221,6 @@ void PageActionImageView::OnIconUpdated() {
   WebContents* web_contents = owner_->GetWebContents();
   if (web_contents)
     UpdateVisibility(web_contents, current_url_);
-}
-
-void PageActionImageView::OnIconChanged() {
-  OnIconUpdated();
 }
 
 void PageActionImageView::PaintChildren(gfx::Canvas* canvas) {

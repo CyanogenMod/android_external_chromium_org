@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/net/chrome_network_data_saving_metrics.h"
+#include "chrome/browser/net/spdyproxy/data_saving_metrics.h"
 #include "net/base/network_delegate.h"
 
 class ClientHints;
@@ -29,7 +29,6 @@ class Value;
 
 namespace chrome_browser_net {
 class ConnectInterceptor;
-class LoadTimeStats;
 class Predictor;
 }
 
@@ -88,10 +87,6 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   // Causes requested URLs to be fed to |predictor| via ConnectInterceptor.
   void set_predictor(chrome_browser_net::Predictor* predictor);
 
-  void set_load_time_stats(chrome_browser_net::LoadTimeStats* load_time_stats) {
-    load_time_stats_ = load_time_stats;
-  }
-
   void set_enable_do_not_track(BooleanPrefMember* enable_do_not_track) {
     enable_do_not_track_ = enable_do_not_track;
   }
@@ -124,11 +119,11 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   // Creates a Value summary of the persistent state of the network session.
   // The caller is responsible for deleting the returned value.
   // Must be called on the UI thread.
-  static Value* HistoricNetworkStatsInfoToValue();
+  static base::Value* HistoricNetworkStatsInfoToValue();
 
   // Creates a Value summary of the state of the network session. The caller is
   // responsible for deleting the returned value.
-  Value* SessionNetworkStatsInfoToValue() const;
+  base::Value* SessionNetworkStatsInfoToValue() const;
 
  private:
   friend class ChromeNetworkDelegateTest;
@@ -177,12 +172,11 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual int OnBeforeSocketStreamConnect(
       net::SocketStream* stream,
       const net::CompletionCallback& callback) OVERRIDE;
-  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
-                                        RequestWaitState state) OVERRIDE;
 
   void AccumulateContentLength(
-      int64 received_payload_byte_count, int64 original_payload_byte_count,
-      chrome_browser_net::DataReductionRequestType data_reduction_type);
+      int64 received_payload_byte_count,
+      int64 original_payload_byte_count,
+      spdyproxy::DataReductionRequestType data_reduction_type);
 
   scoped_refptr<extensions::EventRouterForwarder> event_router_;
   void* profile_;
@@ -211,9 +205,6 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   // set this variable once at start-up time.  It is effectively
   // static anyway since it is based on a command-line flag.
   static bool g_never_throttle_requests_;
-
-  // Pointer to IOThread global, should outlive ChromeNetworkDelegate.
-  chrome_browser_net::LoadTimeStats* load_time_stats_;
 
   // Total size of all content (excluding headers) that has been received
   // over the network.

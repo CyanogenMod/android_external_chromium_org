@@ -30,21 +30,19 @@
 #include "ash/touch/touch_hud_projection.h"
 #include "ash/touch/touch_observer_hud.h"
 #include "ash/wm/always_on_top_controller.h"
-#include "ash/wm/base_layout_manager.h"
 #include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/panels/panel_window_event_handler.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
-#include "ash/wm/solo_window_tracker.h"
 #include "ash/wm/stacking_controller.h"
 #include "ash/wm/status_area_layout_manager.h"
 #include "ash/wm/system_background_controller.h"
 #include "ash/wm/system_modal_container_layout_manager.h"
-#include "ash/wm/toplevel_window_event_handler.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/workspace/workspace_layout_manager.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/command_line.h"
 #include "base/time/time.h"
@@ -65,8 +63,11 @@
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/corewm/capture_controller.h"
 #include "ui/views/corewm/visibility_controller.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
+#include "ui/wm/public/easy_resize_window_targeter.h"
+#include "ui/wm/public/window_types.h"
 
 #if defined(OS_CHROMEOS)
 #include "ash/wm/boot_splash_screen_chromeos.h"
@@ -90,22 +91,54 @@ aura::Window* CreateContainer(int window_id,
   aura::Window* container = new aura::Window(NULL);
   container->set_id(window_id);
   container->SetName(name);
-  container->Init(ui::LAYER_NOT_DRAWN);
+  container->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->AddChild(container);
   if (window_id != internal::kShellWindowId_UnparentedControlContainer)
     container->Show();
   return container;
 }
 
+float ToRelativeValue(int value, int src, int dst) {
+  return static_cast<float>(value) / static_cast<float>(src) * dst;
+}
+
+void MoveOriginRelativeToSize(const gfx::Size& src_size,
+                                const gfx::Size& dst_size,
+                                gfx::Rect* bounds_in_out) {
+  gfx::Point origin = bounds_in_out->origin();
+  bounds_in_out->set_origin(gfx::Point(
+      ToRelativeValue(origin.x(), src_size.width(), dst_size.width()),
+      ToRelativeValue(origin.y(), src_size.height(), dst_size.height())));
+}
+
 // Reparents |window| to |new_parent|.
 void ReparentWindow(aura::Window* window, aura::Window* new_parent) {
+  const gfx::Size src_size = window->parent()->bounds().size();
+  const gfx::Size dst_size = new_parent->bounds().size();
   // Update the restore bounds to make it relative to the display.
   wm::WindowState* state = wm::GetWindowState(window);
   gfx::Rect restore_bounds;
   bool has_restore_bounds = state->HasRestoreBounds();
-  if (has_restore_bounds)
+
+  bool update_bounds = (state->IsNormalShowState() || state->IsMinimized()) &&
+      new_parent->id() != internal::kShellWindowId_DockedContainer;
+  gfx::Rect local_bounds;
+  if (update_bounds) {
+    local_bounds = state->window()->bounds();
+    MoveOriginRelativeToSize(src_size, dst_size, &local_bounds);
+  }
+
+  if (has_restore_bounds) {
     restore_bounds = state->GetRestoreBoundsInParent();
+    MoveOriginRelativeToSize(src_size, dst_size, &restore_bounds);
+  }
+
   new_parent->AddChild(window);
+
+  // Docked windows have bounds handled by the layout manager in AddChild().
+  if (update_bounds)
+    window->SetBounds(local_bounds);
+
   if (has_restore_bounds)
     state->SetRestoreBoundsInParent(restore_bounds);
 }
@@ -155,6 +188,18 @@ void SetUsesScreenCoordinates(aura::Window* container) {
 // say in the same root window regardless of the bounds specified.
 void DescendantShouldStayInSameRootWindow(aura::Window* container) {
   container->SetProperty(internal::kStayInSameRootWindowKey, true);
+}
+
+void SetUsesEasyResizeTargeter(aura::Window* container) {
+  gfx::Insets mouse_extend(-kResizeOutsideBoundsSize,
+                           -kResizeOutsideBoundsSize,
+                           -kResizeOutsideBoundsSize,
+                           -kResizeOutsideBoundsSize);
+  gfx::Insets touch_extend = mouse_extend.Scale(
+      kResizeOutsideBoundsScaleForTouch);
+  container->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
+      new ::wm::EasyResizeWindowTargeter(container, mouse_extend,
+                                         touch_extend)));
 }
 
 // A window delegate which does nothing. Used to create a window that
@@ -237,7 +282,7 @@ void RootWindowController::CreateForVirtualKeyboardDisplay(
 }
 
 // static
-RootWindowController* RootWindowController::ForLauncher(aura::Window* window) {
+RootWindowController* RootWindowController::ForShelf(aura::Window* window) {
   return GetRootWindowController(window->GetRootWindow());
 }
 
@@ -250,6 +295,15 @@ RootWindowController* RootWindowController::ForWindow(
 // static
 RootWindowController* RootWindowController::ForTargetRootWindow() {
   return internal::GetRootWindowController(Shell::GetTargetRootWindow());
+}
+
+// static
+aura::Window* RootWindowController::GetContainerForWindow(
+    aura::Window* window) {
+  aura::Window* container = window->parent();
+  while (container && container->type() != ui::wm::WINDOW_TYPE_UNKNOWN)
+    container = container->parent();
+  return container;
 }
 
 RootWindowController::~RootWindowController() {
@@ -306,22 +360,23 @@ void RootWindowController::Shutdown() {
 
 SystemModalContainerLayoutManager*
 RootWindowController::GetSystemModalLayoutManager(aura::Window* window) {
-  aura::Window* container = NULL;
+  aura::Window* modal_container = NULL;
   if (window) {
-    if (window->parent() &&
-        window->parent()->id() >= kShellWindowId_LockScreenContainer) {
-      container = GetContainer(kShellWindowId_LockSystemModalContainer);
+    aura::Window* window_container = GetContainerForWindow(window);
+    if (window_container &&
+        window_container->id() >= kShellWindowId_LockScreenContainer) {
+      modal_container = GetContainer(kShellWindowId_LockSystemModalContainer);
     } else {
-      container = GetContainer(kShellWindowId_SystemModalContainer);
+      modal_container = GetContainer(kShellWindowId_SystemModalContainer);
     }
   } else {
     int modal_window_id = Shell::GetInstance()->session_state_delegate()
         ->IsUserSessionBlocked() ? kShellWindowId_LockSystemModalContainer :
                                    kShellWindowId_SystemModalContainer;
-    container = GetContainer(modal_window_id);
+    modal_container = GetContainer(modal_window_id);
   }
-  return container ? static_cast<SystemModalContainerLayoutManager*>(
-      container->layout_manager()) : NULL;
+  return modal_container ? static_cast<SystemModalContainerLayoutManager*>(
+      modal_container->layout_manager()) : NULL;
 }
 
 aura::Window* RootWindowController::GetContainer(int container_id) {
@@ -332,18 +387,18 @@ const aura::Window* RootWindowController::GetContainer(int container_id) const {
   return root_window_->window()->GetChildById(container_id);
 }
 
-void RootWindowController::ShowLauncher() {
-  if (!shelf_->launcher())
+void RootWindowController::ShowShelf() {
+  if (!shelf_->shelf())
     return;
-  shelf_->launcher()->SetVisible(true);
+  shelf_->shelf()->SetVisible(true);
   shelf_->status_area_widget()->Show();
 }
 
-void RootWindowController::OnLauncherCreated() {
+void RootWindowController::OnShelfCreated() {
   if (panel_layout_manager_)
-    panel_layout_manager_->SetLauncher(shelf_->launcher());
+    panel_layout_manager_->SetShelf(shelf_->shelf());
   if (docked_layout_manager_) {
-    docked_layout_manager_->SetLauncher(shelf_->launcher());
+    docked_layout_manager_->SetShelf(shelf_->shelf());
     if (shelf_->shelf_layout_manager())
       docked_layout_manager_->AddObserver(shelf_->shelf_layout_manager());
   }
@@ -396,13 +451,6 @@ void RootWindowController::OnWallpaperAnimationFinished(views::Widget* widget) {
 
 void RootWindowController::CloseChildWindows() {
   mouse_event_target_.reset();
-
-  // |solo_window_tracker_| must be shut down before windows are destroyed.
-  if (solo_window_tracker_) {
-    if (docked_layout_manager_)
-      docked_layout_manager_->RemoveObserver(solo_window_tracker_.get());
-    solo_window_tracker_.reset();
-  }
 
   // Deactivate keyboard container before closing child windows and shutting
   // down associated layout managers.
@@ -493,7 +541,9 @@ void RootWindowController::ShowContextMenu(const gfx::Point& location_in_screen,
                                            ui::MenuSourceType source_type) {
   DCHECK(Shell::GetInstance()->delegate());
   scoped_ptr<ui::MenuModel> menu_model(
-      Shell::GetInstance()->delegate()->CreateContextMenu(root_window()));
+      Shell::GetInstance()->delegate()->CreateContextMenu(root_window(),
+                                                          NULL,
+                                                          NULL));
   if (!menu_model)
     return;
 
@@ -524,8 +574,8 @@ const aura::Window* RootWindowController::GetWindowForFullscreenMode() const {
   const aura::Window* topmost_window = NULL;
   for (aura::Window::Windows::const_reverse_iterator iter = windows.rbegin();
        iter != windows.rend(); ++iter) {
-    if (((*iter)->type() == aura::client::WINDOW_TYPE_NORMAL ||
-         (*iter)->type() == aura::client::WINDOW_TYPE_PANEL) &&
+    if (((*iter)->type() == ui::wm::WINDOW_TYPE_NORMAL ||
+         (*iter)->type() == ui::wm::WINDOW_TYPE_PANEL) &&
         (*iter)->layer()->GetTargetVisibility()) {
       topmost_window = *iter;
       break;
@@ -534,7 +584,7 @@ const aura::Window* RootWindowController::GetWindowForFullscreenMode() const {
   while (topmost_window) {
     if (wm::GetWindowState(topmost_window)->IsFullscreen())
       return topmost_window;
-    topmost_window = topmost_window->transient_parent();
+    topmost_window = views::corewm::GetTransientParent(topmost_window);
   }
   return NULL;
 }
@@ -563,15 +613,18 @@ void RootWindowController::ActivateKeyboard(
 
 void RootWindowController::DeactivateKeyboard(
     keyboard::KeyboardController* keyboard_controller) {
-  if (!keyboard::IsKeyboardEnabled())
+  if (!keyboard_controller ||
+      !keyboard_controller->keyboard_container_initialized()) {
     return;
-
-  DCHECK(keyboard_controller);
+  }
   aura::Window* keyboard_container =
       keyboard_controller->GetContainerWindow();
   if (keyboard_container->GetRootWindow() == root_window()) {
     root_window()->RemoveChild(keyboard_container);
     if (!keyboard::IsKeyboardUsabilityExperimentEnabled()) {
+      // Virtual keyboard may be deactivated while still showing, notify all
+      // observers that keyboard bounds changed to 0 before remove them.
+      keyboard_controller->NotifyKeyboardBoundsChanging(gfx::Rect());
       keyboard_controller->RemoveObserver(shelf()->shelf_layout_manager());
       keyboard_controller->RemoveObserver(panel_layout_manager_);
       keyboard_controller->RemoveObserver(docked_layout_manager_);
@@ -604,7 +657,7 @@ void RootWindowController::Init(RootWindowType root_window_type,
   Shell* shell = Shell::GetInstance();
   shell->InitRootWindow(root_window());
 
-  root_window_->SetCursor(ui::kCursorPointer);
+  root_window_->host()->SetCursor(ui::kCursorPointer);
   CreateContainersInRootWindow(root_window_->window());
 
   if (root_window_type == VIRTUAL_KEYBOARD) {
@@ -635,14 +688,10 @@ void RootWindowController::Init(RootWindowType root_window_type,
         root_window_->window());
     root_window_->host()->Show();
 
-    // Create a launcher if a user is already logged in.
+    // Create a shelf if a user is already logged in.
     if (shell->session_state_delegate()->NumberOfLoggedInUsers())
-      shelf()->CreateLauncher();
+      shelf()->CreateShelf();
   }
-
-  solo_window_tracker_.reset(new SoloWindowTracker(root_window_.get()));
-  if (docked_layout_manager_)
-    docked_layout_manager_->AddObserver(solo_window_tracker_.get());
 }
 
 void RootWindowController::InitLayoutManagers() {
@@ -658,8 +707,8 @@ void RootWindowController::InitLayoutManagers() {
   aura::Window* always_on_top_container =
       GetContainer(kShellWindowId_AlwaysOnTopContainer);
   always_on_top_container->SetLayoutManager(
-      new BaseLayoutManager(
-          always_on_top_container->GetRootWindow()));
+      new internal::WorkspaceLayoutManager(
+          always_on_top_container));
   always_on_top_controller_.reset(new internal::AlwaysOnTopController);
   always_on_top_controller_->SetAlwaysOnTopContainer(always_on_top_container);
 
@@ -677,7 +726,7 @@ void RootWindowController::InitLayoutManagers() {
     // This window exists only to be a event target on login screen.
     // It does not have to handle events, nor be visible.
     mouse_event_target_.reset(new aura::Window(new EmptyWindowDelegate));
-    mouse_event_target_->Init(ui::LAYER_NOT_DRAWN);
+    mouse_event_target_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
 
     aura::Window* lock_background_container =
         GetContainer(internal::kShellWindowId_LockScreenBackgroundContainer);
@@ -691,8 +740,6 @@ void RootWindowController::InitLayoutManagers() {
   docked_layout_manager_ =
       new internal::DockedWindowLayoutManager(docked_container,
                                               workspace_controller());
-  docked_container_handler_.reset(
-      new ToplevelWindowEventHandler(docked_container));
   docked_container->SetLayoutManager(docked_layout_manager_);
 
   // Create Panel layout manager
@@ -700,9 +747,9 @@ void RootWindowController::InitLayoutManagers() {
       internal::kShellWindowId_PanelContainer);
   panel_layout_manager_ =
       new internal::PanelLayoutManager(panel_container);
-  panel_container_handler_.reset(
-      new PanelWindowEventHandler(panel_container));
   panel_container->SetLayoutManager(panel_layout_manager_);
+  panel_container_handler_.reset(new PanelWindowEventHandler);
+  panel_container->AddPreTargetHandler(panel_container_handler_.get());
 }
 
 void RootWindowController::InitTouchHuds() {
@@ -785,13 +832,12 @@ void RootWindowController::CreateContainersInRootWindow(
       non_lock_screen_containers);
   views::corewm::SetChildWindowVisibilityChangesAnimated(default_container);
   SetUsesScreenCoordinates(default_container);
+  SetUsesEasyResizeTargeter(default_container);
 
   aura::Window* always_on_top_container = CreateContainer(
       kShellWindowId_AlwaysOnTopContainer,
       "AlwaysOnTopContainer",
       non_lock_screen_containers);
-  always_on_top_container_handler_.reset(
-      new ToplevelWindowEventHandler(always_on_top_container));
   views::corewm::SetChildWindowVisibilityChangesAnimated(
       always_on_top_container);
   SetUsesScreenCoordinates(always_on_top_container);
@@ -802,6 +848,7 @@ void RootWindowController::CreateContainersInRootWindow(
       non_lock_screen_containers);
   views::corewm::SetChildWindowVisibilityChangesAnimated(docked_container);
   SetUsesScreenCoordinates(docked_container);
+  SetUsesEasyResizeTargeter(docked_container);
 
   aura::Window* shelf_container =
       CreateContainer(kShellWindowId_ShelfContainer,
@@ -815,6 +862,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "PanelContainer",
       non_lock_screen_containers);
   SetUsesScreenCoordinates(panel_container);
+  SetUsesEasyResizeTargeter(panel_container);
 
   aura::Window* shelf_bubble_container =
       CreateContainer(kShellWindowId_ShelfBubbleContainer,
@@ -833,12 +881,11 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_SystemModalContainer,
       "SystemModalContainer",
       non_lock_screen_containers);
-  modal_container_handler_.reset(
-      new ToplevelWindowEventHandler(modal_container));
   modal_container->SetLayoutManager(
       new SystemModalContainerLayoutManager(modal_container));
   views::corewm::SetChildWindowVisibilityChangesAnimated(modal_container);
   SetUsesScreenCoordinates(modal_container);
+  SetUsesEasyResizeTargeter(modal_container);
 
   aura::Window* input_method_container = CreateContainer(
       kShellWindowId_InputMethodContainer,
@@ -855,7 +902,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "LockScreenContainer",
       lock_screen_containers);
   lock_container->SetLayoutManager(
-      new BaseLayoutManager(root_window));
+      new internal::WorkspaceLayoutManager(lock_container));
   SetUsesScreenCoordinates(lock_container);
   // TODO(beng): stopsevents
 
@@ -863,12 +910,11 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_LockSystemModalContainer,
       "LockSystemModalContainer",
       lock_screen_containers);
-  lock_modal_container_handler_.reset(
-      new ToplevelWindowEventHandler(lock_modal_container));
   lock_modal_container->SetLayoutManager(
       new SystemModalContainerLayoutManager(lock_modal_container));
   views::corewm::SetChildWindowVisibilityChangesAnimated(lock_modal_container);
   SetUsesScreenCoordinates(lock_modal_container);
+  SetUsesEasyResizeTargeter(lock_modal_container);
 
   aura::Window* status_container =
       CreateContainer(kShellWindowId_StatusContainer,

@@ -30,7 +30,7 @@ H*
 InfoBarsTest.*
 # J*: 0    tests
 # K*: 1    tests
-L*
+# L*: 62   tests
 M*
 N*
 O*
@@ -51,3 +51,9 @@ W*
 
 # http://crbug.com/302993
 InstantNTPURLRewriteTest.UberURLHandler_InstantExtendedNewTabPage
+
+# http://crbug.com/328936
+IEImporterBrowserTest.IEImporter
+
+# http://crbug.com/332219
+IEImporterBrowserTest.IEImporterMalformedFavoritesRegistry

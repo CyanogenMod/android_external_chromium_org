@@ -13,8 +13,6 @@
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/search/instant_service.h"
-#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/task_manager/renderer_resource.h"
@@ -26,8 +24,10 @@
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/process_map.h"
 #include "extensions/common/constants.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -88,7 +88,6 @@ class TabContentsResource : public RendererResource {
   static gfx::ImageSkia* prerender_icon_;
   content::WebContents* web_contents_;
   Profile* profile_;
-  bool is_instant_ntp_;
 
   DISALLOW_COPY_AND_ASSIGN(TabContentsResource);
 };
@@ -100,8 +99,7 @@ TabContentsResource::TabContentsResource(
     : RendererResource(web_contents->GetRenderProcessHost()->GetHandle(),
                        web_contents->GetRenderViewHost()),
       web_contents_(web_contents),
-      profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
-      is_instant_ntp_(chrome::IsPreloadedInstantExtendedNTP(web_contents)) {
+      profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())) {
   if (!prerender_icon_) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     prerender_icon_ = rb.GetImageSkiaNamed(IDR_PRERENDER);
@@ -119,7 +117,7 @@ Resource::Type TabContentsResource::GetType() const {
   return HostsExtension() ? EXTENSION : RENDERER;
 }
 
-string16 TabContentsResource::GetTitle() const {
+base::string16 TabContentsResource::GetTitle() const {
   // Fall back on the URL if there's no title.
   GURL url = web_contents_->GetURL();
   base::string16 tab_title = util::GetTitleFromWebContents(web_contents_);
@@ -128,7 +126,7 @@ string16 TabContentsResource::GetTitle() const {
   // extension process.  (It's possible to be showing the URL from before it
   // was installed as an app.)
   ExtensionService* extension_service = profile_->GetExtensionService();
-  extensions::ProcessMap* process_map = extension_service->process_map();
+  extensions::ProcessMap* process_map = extensions::ProcessMap::Get(profile_);
   bool is_app = extension_service->IsInstalledApp(url) &&
       process_map->Contains(web_contents_->GetRenderProcessHost()->GetID());
 
@@ -137,12 +135,11 @@ string16 TabContentsResource::GetTitle() const {
       HostsExtension(),
       profile_->IsOffTheRecord(),
       IsContentsPrerendering(web_contents_),
-      is_instant_ntp_,
       false);  // is_background
   return l10n_util::GetStringFUTF16(message_id, tab_title);
 }
 
-string16 TabContentsResource::GetProfileName() const {
+base::string16 TabContentsResource::GetProfileName() const {
   return util::GetProfileNameFromInfoCache(profile_);
 }
 
@@ -183,12 +180,12 @@ TabContentsResourceProvider::~TabContentsResourceProvider() {
 
 Resource* TabContentsResourceProvider::GetResource(
     int origin_pid,
-    int render_process_host_id,
-    int routing_id) {
-  WebContents* web_contents =
-      tab_util::GetWebContentsByID(render_process_host_id, routing_id);
-  if (!web_contents)  // Not one of our resource.
-    return NULL;
+    int child_id,
+    int route_id) {
+  content::RenderFrameHost* rfh =
+      content::RenderFrameHost::FromID(child_id, route_id);
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderFrameHost(rfh);
 
   // If an origin PID was specified then the request originated in a plugin
   // working on the WebContents's behalf, so ignore it.
@@ -236,21 +233,15 @@ void TabContentsResourceProvider::StartUpdating() {
     }
   }
 
-  // Add all the Instant Extended prerendered NTPs.
-  for (size_t i = 0; i < profiles.size(); ++i) {
-    const InstantService* instant_service =
-        InstantServiceFactory::GetForProfile(profiles[i]);
-    if (instant_service && instant_service->GetNTPContents())
-      Add(instant_service->GetNTPContents());
-  }
-
 #if defined(ENABLE_FULL_PRINTING)
   // Add all the pages being background printed.
   printing::BackgroundPrintingManager* printing_manager =
       g_browser_process->background_printing_manager();
-  for (printing::BackgroundPrintingManager::WebContentsSet::iterator i =
-           printing_manager->begin();
-       i != printing_manager->end(); ++i) {
+  std::set<content::WebContents*> printing_contents =
+      printing_manager->CurrentContentSet();
+  for (std::set<content::WebContents*>::iterator i =
+           printing_contents.begin();
+       i != printing_contents.end(); ++i) {
     Add(*i);
   }
 #endif
@@ -297,7 +288,6 @@ void TabContentsResourceProvider::Add(WebContents* web_contents) {
   // pages, prerender pages, and background printed pages.
   if (!chrome::FindBrowserWithWebContents(web_contents) &&
       !IsContentsPrerendering(web_contents) &&
-      !chrome::IsPreloadedInstantExtendedNTP(web_contents) &&
       !IsContentsBackgroundPrinted(web_contents) &&
       !DevToolsWindow::IsDevToolsWindow(web_contents->GetRenderViewHost())) {
     return;

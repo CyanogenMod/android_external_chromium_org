@@ -11,7 +11,7 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/framer/cast_message_builder.h"
 #include "media/cast/framer/frame_id_map.h"
-#include "media/cast/rtp_common/rtp_defines.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace webrtc {
 class AudioCodingModule;
@@ -51,7 +51,7 @@ class AudioDecoder {
  private:
   scoped_refptr<CastEnvironment> cast_environment_;
 
-  // The webrtc AudioCodingModule is threadsafe.
+  // The webrtc AudioCodingModule is thread safe.
   scoped_ptr<webrtc::AudioCodingModule> audio_decoder_;
 
   FrameIdMap frame_id_map_;

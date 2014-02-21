@@ -10,9 +10,14 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "jni/MojoMain_jni.h"
+#include "mojo/public/shell/application.h"
+#include "mojo/services/native_viewport/native_viewport_service.h"
+#include "mojo/shell/context.h"
 #include "mojo/shell/init.h"
 #include "mojo/shell/run.h"
+#include "mojo/shell/service_manager.h"
 #include "ui/gl/gl_surface_egl.h"
 
 using base::LazyInstance;
@@ -21,13 +26,29 @@ namespace mojo {
 
 namespace {
 
-base::AtExitManager* g_at_exit = 0;
-
 LazyInstance<scoped_ptr<base::MessageLoop> > g_java_message_loop =
     LAZY_INSTANCE_INITIALIZER;
 
 LazyInstance<scoped_ptr<shell::Context> > g_context =
     LAZY_INSTANCE_INITIALIZER;
+
+class NativeViewportServiceLoader : public shell::ServiceManager::Loader {
+ public:
+  NativeViewportServiceLoader() {}
+  virtual ~NativeViewportServiceLoader() {}
+
+ private:
+  virtual void Load(const GURL& url,
+                    ScopedShellHandle service_handle)
+      MOJO_OVERRIDE {
+    app_.reset(CreateNativeViewportService(g_context.Get().get(),
+                                           service_handle.Pass()));
+  }
+  scoped_ptr<Application> app_;
+};
+
+LazyInstance<scoped_ptr<NativeViewportServiceLoader> >
+    g_viewport_service_loader = LAZY_INSTANCE_INITIALIZER;
 
 }  // namspace
 
@@ -36,16 +57,10 @@ static void Init(JNIEnv* env, jclass clazz, jobject context) {
 
   base::android::InitApplicationContext(env, scoped_context);
 
-  if (g_at_exit)
-    return;
-  g_at_exit = new base::AtExitManager();
-  // TODO(abarth): Currently we leak g_at_exit.
-
   CommandLine::Init(0, 0);
   mojo::shell::InitializeLogging();
 
-  g_java_message_loop.Get().reset(
-      new base::MessageLoop(base::MessageLoop::TYPE_UI));
+  g_java_message_loop.Get().reset(new base::MessageLoopForUI);
   base::MessageLoopForUI::current()->Start();
 
   // TODO(abarth): At which point should we switch to cross-platform
@@ -55,11 +70,19 @@ static void Init(JNIEnv* env, jclass clazz, jobject context) {
 }
 
 static void Start(JNIEnv* env, jclass clazz, jobject context, jstring jurl) {
-  if (jurl) {
-    std::string app_url = base::android::ConvertJavaStringToUTF8(env, jurl);
+  std::string app_url;
+#if defined(MOJO_SHELL_DEBUG_URL)
+  app_url = MOJO_SHELL_DEBUG_URL;
+  // Sleep for 5 seconds to give the debugger a chance to attach.
+  sleep(5);
+#else
+  if (jurl)
+    app_url = base::android::ConvertJavaStringToUTF8(env, jurl);
+#endif
+  if (!app_url.empty()) {
     std::vector<std::string> argv;
     argv.push_back("mojo_shell");
-    argv.push_back("--app=" + app_url);
+    argv.push_back(app_url);
     CommandLine::ForCurrentProcess()->InitFromArgv(argv);
   }
 
@@ -68,6 +91,11 @@ static void Start(JNIEnv* env, jclass clazz, jobject context, jstring jurl) {
 
   shell::Context* shell_context = new shell::Context();
   shell_context->set_activity(activity.obj());
+  g_viewport_service_loader.Get().reset(new NativeViewportServiceLoader());
+  shell_context->service_manager()->SetLoaderForURL(
+      g_viewport_service_loader.Get().get(),
+      GURL("mojo:mojo_native_viewport_service"));
+
   g_context.Get().reset(shell_context);
   shell::Run(shell_context);
 }

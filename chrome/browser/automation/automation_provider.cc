@@ -29,7 +29,6 @@
 #include "chrome/browser/automation/automation_browser_tracker.h"
 #include "chrome/browser/automation/automation_provider_list.h"
 #include "chrome/browser/automation/automation_provider_observers.h"
-#include "chrome/browser/automation/automation_resource_message_filter.h"
 #include "chrome/browser/automation/automation_tab_tracker.h"
 #include "chrome/browser/automation/automation_window_tracker.h"
 #include "chrome/browser/browser_process.h"
@@ -69,6 +68,7 @@
 #include "content/public/browser/tracing_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "ipc/ipc_channel_proxy.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
@@ -89,66 +89,6 @@ using content::RenderViewHost;
 using content::TracingController;
 using content::WebContents;
 
-namespace {
-
-void PopulateProxyConfig(const DictionaryValue& dict, net::ProxyConfig* pc) {
-  DCHECK(pc);
-  bool no_proxy = false;
-  if (dict.GetBoolean(automation::kJSONProxyNoProxy, &no_proxy)) {
-    // Make no changes to the ProxyConfig.
-    return;
-  }
-  bool auto_config;
-  if (dict.GetBoolean(automation::kJSONProxyAutoconfig, &auto_config)) {
-    pc->set_auto_detect(true);
-  }
-  std::string pac_url;
-  if (dict.GetString(automation::kJSONProxyPacUrl, &pac_url)) {
-    pc->set_pac_url(GURL(pac_url));
-  }
-  bool pac_mandatory;
-  if (dict.GetBoolean(automation::kJSONProxyPacMandatory, &pac_mandatory)) {
-    pc->set_pac_mandatory(pac_mandatory);
-  }
-  std::string proxy_bypass_list;
-  if (dict.GetString(automation::kJSONProxyBypassList, &proxy_bypass_list)) {
-    pc->proxy_rules().bypass_rules.ParseFromString(proxy_bypass_list);
-  }
-  std::string proxy_server;
-  if (dict.GetString(automation::kJSONProxyServer, &proxy_server)) {
-    pc->proxy_rules().ParseFromString(proxy_server);
-  }
-}
-
-void SetProxyConfigCallback(
-    const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
-    const std::string& proxy_config) {
-  // First, deserialize the JSON string. If this fails, log and bail.
-  JSONStringValueSerializer deserializer(proxy_config);
-  std::string error_msg;
-  scoped_ptr<Value> root(deserializer.Deserialize(NULL, &error_msg));
-  if (!root.get() || root->GetType() != Value::TYPE_DICTIONARY) {
-    DLOG(WARNING) << "Received bad JSON string for ProxyConfig: "
-                  << error_msg;
-    return;
-  }
-
-  scoped_ptr<DictionaryValue> dict(
-      static_cast<DictionaryValue*>(root.release()));
-  // Now put together a proxy configuration from the deserialized string.
-  net::ProxyConfig pc;
-  PopulateProxyConfig(*dict.get(), &pc);
-
-  net::ProxyService* proxy_service =
-      request_context_getter->GetURLRequestContext()->proxy_service();
-  DCHECK(proxy_service);
-  scoped_ptr<net::ProxyConfigService> proxy_config_service(
-      new net::ProxyConfigServiceFixed(pc));
-  proxy_service->ResetConfigService(proxy_config_service.release());
-}
-
-}  // namespace
-
 AutomationProvider::AutomationProvider(Profile* profile)
     : profile_(profile),
       reply_message_(NULL),
@@ -166,7 +106,6 @@ AutomationProvider::AutomationProvider(Profile* profile)
   browser_tracker_.reset(new AutomationBrowserTracker(this));
   tab_tracker_.reset(new AutomationTabTracker(this));
   window_tracker_.reset(new AutomationWindowTracker(this));
-  new_tab_ui_load_observer_.reset(new NewTabUILoadObserver(this, profile));
   metric_event_duration_observer_.reset(new MetricEventDurationObserver());
 
   TRACE_EVENT_END_ETW("AutomationProvider::AutomationProvider", 0, "");
@@ -200,16 +139,11 @@ bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
     reinitialize_on_channel_error_ = true;
   }
 
-  if (!automation_resource_message_filter_.get()) {
-    automation_resource_message_filter_ = new AutomationResourceMessageFilter;
-  }
-
   channel_.reset(new IPC::ChannelProxy(
       effective_channel_id,
       GetChannelMode(use_named_interface),
       this,
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get()));
-  channel_->AddFilter(automation_resource_message_filter_.get());
 
 #if defined(OS_CHROMEOS)
   if (use_initial_load_observers_) {
@@ -283,7 +217,7 @@ int AutomationProvider::GetIndexForNavigationController(
 }
 
 // TODO(phajdan.jr): move to TestingAutomationProvider.
-DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
+base::DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
     const DownloadItem* download, bool incognito) {
   const char *download_state_string = NULL;
   switch (download->GetState()) {
@@ -346,7 +280,7 @@ DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
   if (!download_danger_type_string)
     download_danger_type_string = "UNKNOWN";
 
-  DictionaryValue* dl_item_value = new DictionaryValue;
+  base::DictionaryValue* dl_item_value = new base::DictionaryValue;
   dl_item_value->SetInteger("id", static_cast<int>(download->GetId()));
   dl_item_value->SetString("url", download->GetURL().spec());
   dl_item_value->SetString("referrer_url", download->GetReferrerUrl().spec());
@@ -381,44 +315,15 @@ bool AutomationProvider::OnMessageReceived(const IPC::Message& message) {
   bool deserialize_success = true;
   IPC_BEGIN_MESSAGE_MAP_EX(AutomationProvider, message, deserialize_success)
     IPC_MESSAGE_HANDLER(AutomationMsg_HandleUnused, HandleUnused)
-    IPC_MESSAGE_HANDLER(AutomationMsg_SetProxyConfig, SetProxyConfig)
-    IPC_MESSAGE_HANDLER(AutomationMsg_PrintAsync, PrintAsync)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(AutomationMsg_Find, HandleFindRequest)
     IPC_MESSAGE_HANDLER(AutomationMsg_OverrideEncoding, OverrideEncoding)
-    IPC_MESSAGE_HANDLER(AutomationMsg_SelectAll, SelectAll)
-    IPC_MESSAGE_HANDLER(AutomationMsg_Cut, Cut)
-    IPC_MESSAGE_HANDLER(AutomationMsg_Copy, Copy)
-    IPC_MESSAGE_HANDLER(AutomationMsg_Paste, Paste)
     IPC_MESSAGE_HANDLER(AutomationMsg_ReloadAsync, ReloadAsync)
     IPC_MESSAGE_HANDLER(AutomationMsg_StopAsync, StopAsync)
     IPC_MESSAGE_HANDLER(AutomationMsg_SetPageFontSize, OnSetPageFontSize)
-    IPC_MESSAGE_HANDLER(AutomationMsg_SaveAsAsync, SaveAsAsync)
-    IPC_MESSAGE_HANDLER(AutomationMsg_RemoveBrowsingData, RemoveBrowsingData)
     IPC_MESSAGE_HANDLER(AutomationMsg_JavaScriptStressTestControl,
                         JavaScriptStressTestControl)
     IPC_MESSAGE_HANDLER(AutomationMsg_BeginTracing, BeginTracing)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(AutomationMsg_EndTracing, EndTracing)
-#if defined(OS_WIN)
-    // These are for use with external tabs.
-    IPC_MESSAGE_HANDLER(AutomationMsg_CreateExternalTab, CreateExternalTab)
-    IPC_MESSAGE_HANDLER(AutomationMsg_ProcessUnhandledAccelerator,
-                        ProcessUnhandledAccelerator)
-    IPC_MESSAGE_HANDLER(AutomationMsg_SetInitialFocus, SetInitialFocus)
-    IPC_MESSAGE_HANDLER(AutomationMsg_TabReposition, OnTabReposition)
-    IPC_MESSAGE_HANDLER(AutomationMsg_ForwardContextMenuCommandToChrome,
-                        OnForwardContextMenuCommandToChrome)
-    IPC_MESSAGE_HANDLER(AutomationMsg_NavigateInExternalTab,
-                        NavigateInExternalTab)
-    IPC_MESSAGE_HANDLER(AutomationMsg_NavigateExternalTabAtIndex,
-                        NavigateExternalTabAtIndex)
-    IPC_MESSAGE_HANDLER(AutomationMsg_ConnectExternalTab, ConnectExternalTab)
-    IPC_MESSAGE_HANDLER(AutomationMsg_HandleMessageFromExternalHost,
-                        OnMessageFromExternalHost)
-    IPC_MESSAGE_HANDLER(AutomationMsg_BrowserMove, OnBrowserMoved)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(AutomationMsg_RunUnloadHandlers,
-                                    OnRunUnloadHandlers)
-    IPC_MESSAGE_HANDLER(AutomationMsg_SetZoomLevel, OnSetZoomLevel)
-#endif  // defined(OS_WIN)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   if (!handled)
@@ -534,20 +439,9 @@ void AutomationProvider::SendFindRequest(
   options.forward = forward;
   options.matchCase = match_case;
   options.findNext = find_next;
-  web_contents->GetRenderViewHost()->Find(
+  web_contents->Find(
       FindInPageNotificationObserver::kFindInPageRequestId, search_string,
       options);
-}
-
-void AutomationProvider::SetProxyConfig(const std::string& new_proxy_config) {
-  net::URLRequestContextGetter* context_getter =
-      profile_->GetRequestContext();
-  DCHECK(context_getter);
-
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(SetProxyConfigCallback, make_scoped_refptr(context_getter),
-                 new_proxy_config));
 }
 
 WebContents* AutomationProvider::GetWebContentsForHandle(
@@ -594,46 +488,6 @@ void AutomationProvider::OverrideEncoding(int tab_handle,
       contents->SetOverrideEncoding(selected_encoding);
     }
   }
-}
-
-void AutomationProvider::SelectAll(int tab_handle) {
-  RenderViewHost* view = GetViewForTab(tab_handle);
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->SelectAll();
-}
-
-void AutomationProvider::Cut(int tab_handle) {
-  RenderViewHost* view = GetViewForTab(tab_handle);
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Cut();
-}
-
-void AutomationProvider::Copy(int tab_handle) {
-  RenderViewHost* view = GetViewForTab(tab_handle);
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Copy();
-}
-
-void AutomationProvider::Paste(int tab_handle) {
-  RenderViewHost* view = GetViewForTab(tab_handle);
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Paste();
 }
 
 void AutomationProvider::ReloadAsync(int tab_handle) {
@@ -683,13 +537,6 @@ void AutomationProvider::OnSetPageFontSize(int tab_handle,
       profile->GetPrefs()->SetInteger(prefs::kWebKitDefaultFontSize, font_size);
     }
   }
-}
-
-void AutomationProvider::RemoveBrowsingData(int remove_mask) {
-  BrowsingDataRemover* remover;
-  remover = BrowsingDataRemover::CreateForUnboundedRange(profile());
-  remover->Remove(remove_mask, BrowsingDataHelper::UNPROTECTED_WEB);
-  // BrowsingDataRemover deletes itself.
 }
 
 void AutomationProvider::JavaScriptStressTestControl(int tab_handle,
@@ -751,11 +598,4 @@ RenderViewHost* AutomationProvider::GetViewForTab(int tab_handle) {
   }
 
   return NULL;
-}
-
-void AutomationProvider::SaveAsAsync(int tab_handle) {
-  NavigationController* tab = NULL;
-  WebContents* web_contents = GetWebContentsForHandle(tab_handle, &tab);
-  if (web_contents)
-    web_contents->OnSavePage();
 }

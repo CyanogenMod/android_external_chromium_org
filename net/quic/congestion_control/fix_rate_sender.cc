@@ -11,6 +11,8 @@
 #include "base/logging.h"
 #include "net/quic/quic_protocol.h"
 
+using std::max;
+
 namespace {
   const int kInitialBitrate = 100000;  // In bytes per second.
   const uint64 kWindowSizeUs = 10000;  // 10 ms.
@@ -56,16 +58,8 @@ void FixRateSender::OnIncomingQuicCongestionFeedbackFrame(
 
 void FixRateSender::OnPacketAcked(
     QuicPacketSequenceNumber /*acked_sequence_number*/,
-    QuicByteCount bytes_acked,
-    QuicTime::Delta rtt) {
-  // RTT can't be negative.
-  DCHECK_LE(0, rtt.ToMicroseconds());
-
+    QuicByteCount bytes_acked) {
   data_in_flight_ -= bytes_acked;
-  if (rtt.IsInfinite()) {
-    return;
-  }
-  latest_rtt_ = rtt;
 }
 
 void FixRateSender::OnPacketLost(QuicPacketSequenceNumber /*sequence_number*/,
@@ -87,7 +81,7 @@ bool FixRateSender::OnPacketSent(
   return true;
 }
 
-void FixRateSender::OnRetransmissionTimeout() { }
+void FixRateSender::OnRetransmissionTimeout(bool packets_retransmitted) { }
 
 void FixRateSender::OnPacketAbandoned(
     QuicPacketSequenceNumber /*sequence_number*/,
@@ -118,11 +112,20 @@ QuicByteCount FixRateSender::CongestionWindow() {
   QuicByteCount window_size_bytes = bitrate_.ToBytesPerPeriod(
       QuicTime::Delta::FromMicroseconds(kWindowSizeUs));
   // Make sure window size is not less than a packet.
-  return std::max(kDefaultMaxPacketSize, window_size_bytes);
+  return max(kDefaultMaxPacketSize, window_size_bytes);
 }
 
 QuicBandwidth FixRateSender::BandwidthEstimate() const {
   return bitrate_;
+}
+
+void FixRateSender::UpdateRtt(QuicTime::Delta rtt_sample) {
+  // RTT can't be negative.
+  DCHECK_LE(0, rtt_sample.ToMicroseconds());
+  if (rtt_sample.IsInfinite()) {
+    return;
+  }
+  latest_rtt_ = rtt_sample;
 }
 
 QuicTime::Delta FixRateSender::SmoothedRtt() const {

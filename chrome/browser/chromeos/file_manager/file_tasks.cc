@@ -8,7 +8,6 @@
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/chromeos/drive/drive_app_registry.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_task_executor.h"
 #include "chrome/browser/chromeos/file_manager/app_id.h"
@@ -16,17 +15,18 @@
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/open_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
+#include "chrome/browser/drive/drive_app_registry.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
+#include "chrome/common/extensions/api/file_browser_private.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -83,33 +83,6 @@ TaskType StringToTaskType(const std::string& str) {
 const char kDriveTaskExtensionPrefix[] = "drive-app:";
 const size_t kDriveTaskExtensionPrefixLength =
     arraysize(kDriveTaskExtensionPrefix) - 1;
-
-// Checks if the file browser extension has permissions for the files in its
-// file system context.
-bool FileBrowserHasAccessPermissionForFiles(
-    Profile* profile,
-    const GURL& source_url,
-    const std::string& file_browser_id,
-    const std::vector<FileSystemURL>& files) {
-  fileapi::ExternalFileSystemBackend* backend =
-      util::GetFileSystemContextForExtensionId(
-          profile, file_browser_id)->external_backend();
-  if (!backend)
-    return false;
-
-  for (size_t i = 0; i < files.size(); ++i) {
-    // Make sure this url really being used by the right caller extension.
-    if (source_url.GetOrigin() != files[i].origin())
-      return false;
-
-    if (!chromeos::FileSystemBackend::CanHandleURL(files[i]) ||
-        !backend->IsAccessAllowed(files[i])) {
-      return false;
-    }
-  }
-
-  return true;
-}
 
 // Returns true if path_mime_set contains a Google document.
 bool ContainsGoogleDocument(const PathAndMimeTypeSet& path_mime_set) {
@@ -184,7 +157,7 @@ std::string GetDefaultTaskIdFromPrefs(const PrefService& pref_service,
       << " and suffix: " << suffix;
   std::string task_id;
   if (!mime_type.empty()) {
-    const DictionaryValue* mime_task_prefs =
+    const base::DictionaryValue* mime_task_prefs =
         pref_service.GetDictionary(prefs::kDefaultTasksByMimeType);
     DCHECK(mime_task_prefs);
     LOG_IF(ERROR, !mime_task_prefs) << "Unable to open MIME type prefs";
@@ -195,7 +168,7 @@ std::string GetDefaultTaskIdFromPrefs(const PrefService& pref_service,
     }
   }
 
-  const DictionaryValue* suffix_task_prefs =
+  const base::DictionaryValue* suffix_task_prefs =
       pref_service.GetDictionary(prefs::kDefaultTasksBySuffix);
   DCHECK(suffix_task_prefs);
   LOG_IF(ERROR, !suffix_task_prefs) << "Unable to open suffix prefs";
@@ -265,14 +238,9 @@ bool ParseTaskID(const std::string& task_id, TaskDescriptor* task) {
 
 bool ExecuteFileTask(Profile* profile,
                      const GURL& source_url,
-                     const std::string& app_id,
                      const TaskDescriptor& task,
                      const std::vector<FileSystemURL>& file_urls,
                      const FileTaskFinishedCallback& done) {
-  if (!FileBrowserHasAccessPermissionForFiles(profile, source_url,
-                                              app_id, file_urls))
-    return false;
-
   // drive::FileTaskExecutor is responsible to handle drive tasks.
   if (task.task_type == TASK_TYPE_DRIVE_APP) {
     DCHECK_EQ(kDriveAppActionID, task.action_id);
@@ -305,7 +273,7 @@ bool ExecuteFileTask(Profile* profile,
     }
 
     if (!done.is_null())
-      done.Run(true);
+      done.Run(extensions::api::file_browser_private::TASK_RESULT_MESSAGE_SENT);
     return true;
   }
   NOTREACHED();
@@ -331,23 +299,21 @@ void FindDriveAppTasks(
     if (!drive::util::IsUnderDriveMountPoint(file_path))
       return;
 
-    ScopedVector<drive::DriveAppInfo> app_info_list;
+    std::vector<drive::DriveAppInfo> app_info_list;
     drive_app_registry.GetAppsForFile(file_path.Extension(),
                                       mime_type,
                                       &app_info_list);
 
     if (is_first) {
       // For the first file, we store all the info.
-      for (size_t j = 0; j < app_info_list.size(); ++j) {
-        const drive::DriveAppInfo& app_info = *app_info_list[j];
-        drive_app_map[app_info.app_id] = app_info;
-      }
+      for (size_t j = 0; j < app_info_list.size(); ++j)
+        drive_app_map[app_info_list[j].app_id] = app_info_list[j];
     } else {
       // For remaining files, take the intersection with the current
       // result, based on the app id.
       std::set<std::string> app_id_set;
       for (size_t j = 0; j < app_info_list.size(); ++j)
-        app_id_set.insert(app_info_list[j]->app_id);
+        app_id_set.insert(app_info_list[j].app_id);
       for (DriveAppInfoMap::iterator iter = drive_app_map.begin();
            iter != drive_app_map.end();) {
         if (app_id_set.count(iter->first) == 0) {
@@ -389,7 +355,8 @@ void FindFileHandlerTasks(
   if (!service)
     return;
 
-  for (ExtensionSet::const_iterator iter = service->extensions()->begin();
+  for (extensions::ExtensionSet::const_iterator iter =
+           service->extensions()->begin();
        iter != service->extensions()->end();
        ++iter) {
     const Extension* extension = iter->get();
@@ -399,7 +366,7 @@ void FindFileHandlerTasks(
       continue;
 
     if (profile->IsOffTheRecord() &&
-        !extension_util::IsIncognitoEnabled(extension->id(), service))
+        !extensions::util::IsIncognitoEnabled(extension->id(), profile))
       continue;
 
     typedef std::vector<const extensions::FileHandlerInfo*> FileHandlerList;

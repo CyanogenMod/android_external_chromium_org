@@ -44,8 +44,8 @@ FullWallet::~FullWallet() {}
 
 // static
 scoped_ptr<FullWallet>
-    FullWallet::CreateFullWallet(const DictionaryValue& dictionary) {
-  const ListValue* required_actions_list;
+    FullWallet::CreateFullWallet(const base::DictionaryValue& dictionary) {
+  const base::ListValue* required_actions_list;
   std::vector<RequiredAction> required_actions;
   if (dictionary.GetList("required_action", &required_actions_list)) {
     for (size_t i = 0; i < required_actions_list->GetSize(); ++i) {
@@ -97,7 +97,7 @@ scoped_ptr<FullWallet>
     return scoped_ptr<FullWallet>();
   }
 
-  const DictionaryValue* billing_address_dict;
+  const base::DictionaryValue* billing_address_dict;
   if (!dictionary.GetDictionary("billing_address", &billing_address_dict)) {
     DLOG(ERROR) << "Response from Google wallet missing billing address";
     return scoped_ptr<FullWallet>();
@@ -110,7 +110,7 @@ scoped_ptr<FullWallet>
     return scoped_ptr<FullWallet>();
   }
 
-  const DictionaryValue* shipping_address_dict;
+  const base::DictionaryValue* shipping_address_dict;
   scoped_ptr<Address> shipping_address;
   if (dictionary.GetDictionary("shipping_address", &shipping_address_dict)) {
     shipping_address =
@@ -154,16 +154,17 @@ scoped_ptr<FullWallet>
   return wallet.Pass();
 }
 
-base::string16 FullWallet::GetInfo(const AutofillType& type) {
+base::string16 FullWallet::GetInfo(const std::string& app_locale,
+                                   const AutofillType& type) {
   switch (type.GetStorableType()) {
     case CREDIT_CARD_NUMBER:
-      return UTF8ToUTF16(GetPan());
+      return base::ASCIIToUTF16(GetPan());
 
     case CREDIT_CARD_NAME:
       return billing_address()->recipient_name();
 
     case CREDIT_CARD_VERIFICATION_CODE:
-      return UTF8ToUTF16(GetCvn());
+      return base::ASCIIToUTF16(GetCvn());
 
     case CREDIT_CARD_EXP_MONTH:
       if (expiration_month() == 0)
@@ -182,29 +183,39 @@ base::string16 FullWallet::GetInfo(const AutofillType& type) {
 
     case CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR:
       if (expiration_month() == 0 || expiration_year() == 0)
-            return base::string16();
-      return base::IntToString16(expiration_month()) + ASCIIToUTF16("/") +
+        return base::string16();
+      return base::IntToString16(expiration_month()) + base::ASCIIToUTF16("/") +
              base::IntToString16(expiration_year() % 100);
 
     case CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR:
       if (expiration_month() == 0 || expiration_year() == 0)
             return base::string16();
-      return base::IntToString16(expiration_month()) + ASCIIToUTF16("/") +
+      return base::IntToString16(expiration_month()) + base::ASCIIToUTF16("/") +
              base::IntToString16(expiration_year());
 
     case CREDIT_CARD_TYPE: {
       std::string internal_type =
-          CreditCard::GetCreditCardType(UTF8ToUTF16(GetPan()));
+          CreditCard::GetCreditCardType(base::ASCIIToUTF16(GetPan()));
       if (internal_type == kGenericCard)
         return base::string16();
       return CreditCard::TypeForDisplay(internal_type);
     }
 
-    default:
-      NOTREACHED();
-  }
+    default: {
+      switch (type.group()) {
+        case NAME_BILLING:
+        case PHONE_BILLING:
+        case ADDRESS_BILLING:
+          return billing_address_->GetInfo(type, app_locale);
 
-  return base::string16();
+        case CREDIT_CARD:
+          NOTREACHED();
+
+        default:
+          return shipping_address_->GetInfo(type, app_locale);
+      }
+    }
+  }
 }
 
 bool FullWallet::HasRequiredAction(RequiredAction action) const {
@@ -216,9 +227,14 @@ bool FullWallet::HasRequiredAction(RequiredAction action) const {
 
 base::string16 FullWallet::TypeAndLastFourDigits() {
   CreditCard card;
-  card.SetRawInfo(CREDIT_CARD_NUMBER,
-                  GetInfo(AutofillType(CREDIT_CARD_NUMBER)));
+  card.SetRawInfo(CREDIT_CARD_NUMBER, base::ASCIIToUTF16(GetPan()));
   return card.TypeAndLastFourDigits();
+}
+
+const std::string& FullWallet::GetPan() {
+  if (pan_.empty())
+    DecryptCardInfo();
+  return pan_;
 }
 
 bool FullWallet::operator==(const FullWallet& other) const {
@@ -305,12 +321,6 @@ void FullWallet::DecryptCardInfo() {
   size_t split = kPanSize - kBinSize;
   cvn_ = card_info.substr(split);
   pan_ = iin_ + card_info.substr(0, split);
-}
-
-const std::string& FullWallet::GetPan() {
-  if (pan_.empty())
-    DecryptCardInfo();
-  return pan_;
 }
 
 const std::string& FullWallet::GetCvn() {

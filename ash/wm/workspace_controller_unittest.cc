@@ -8,7 +8,7 @@
 
 #include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -16,6 +16,8 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/shell_test_api.h"
+#include "ash/test/test_shelf_delegate.h"
+#include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
@@ -30,8 +32,10 @@
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/corewm/window_animations.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
 
 using aura::Window;
@@ -85,16 +89,16 @@ class WorkspaceControllerTest : public test::AshTestBase {
   aura::Window* CreateTestWindowUnparented() {
     aura::Window* window = new aura::Window(NULL);
     window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-    window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    window->Init(ui::LAYER_TEXTURED);
+    window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
     return window;
   }
 
   aura::Window* CreateTestWindow() {
     aura::Window* window = new aura::Window(NULL);
     window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-    window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    window->Init(ui::LAYER_TEXTURED);
+    window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
     ParentWindowInPrimaryRootWindow(window);
     return window;
   }
@@ -111,6 +115,25 @@ class WorkspaceControllerTest : public test::AshTestBase {
   aura::Window* CreatePopupLikeWindow(const gfx::Rect& bounds) {
     aura::Window* window = CreateTestWindowInShellWithBounds(bounds);
     window->Show();
+    return window;
+  }
+
+  aura::Window* CreateTestPanel(aura::WindowDelegate* delegate,
+                                const gfx::Rect& bounds) {
+    aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
+        delegate,
+        ui::wm::WINDOW_TYPE_PANEL,
+        0,
+        bounds);
+    test::TestShelfDelegate* shelf_delegate =
+        test::TestShelfDelegate::instance();
+    shelf_delegate->AddShelfItem(window);
+    PanelLayoutManager* manager =
+        static_cast<PanelLayoutManager*>(
+            Shell::GetContainer(window->GetRootWindow(),
+                                internal::kShellWindowId_PanelContainer)->
+                                layout_manager());
+    manager->Relayout();
     return window;
   }
 
@@ -181,9 +204,9 @@ TEST_F(WorkspaceControllerTest, SingleMaximizeWindow) {
   EXPECT_TRUE(wm::IsActiveWindow(w1.get()));
 
   EXPECT_EQ(w1.get(), GetDesktop()->children()[0]);
-  EXPECT_EQ(ScreenAsh::GetMaximizedWindowBoundsInParent(w1.get()).width(),
+  EXPECT_EQ(ScreenUtil::GetMaximizedWindowBoundsInParent(w1.get()).width(),
             w1->bounds().width());
-  EXPECT_EQ(ScreenAsh::GetMaximizedWindowBoundsInParent(w1.get()).height(),
+  EXPECT_EQ(ScreenUtil::GetMaximizedWindowBoundsInParent(w1.get()).height(),
             w1->bounds().height());
 
   // Restore the window.
@@ -213,7 +236,7 @@ TEST_F(WorkspaceControllerTest, FullscreenWithNormalWindow) {
   EXPECT_EQ(w2.get(), GetDesktop()->children()[1]);
 
   gfx::Rect work_area(
-      ScreenAsh::GetMaximizedWindowBoundsInParent(w1.get()));
+      ScreenUtil::GetMaximizedWindowBoundsInParent(w1.get()));
   EXPECT_EQ(work_area.width(), w2->bounds().width());
   EXPECT_EQ(work_area.height(), w2->bounds().height());
 
@@ -441,7 +464,7 @@ TEST_F(WorkspaceControllerTest, ShelfStateUpdated) {
   wm::ActivateWindow(w1.get());
   EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
-  EXPECT_EQ(ScreenAsh::GetMaximizedWindowBoundsInParent(
+  EXPECT_EQ(ScreenUtil::GetMaximizedWindowBoundsInParent(
                 w2->parent()).ToString(),
             w2->bounds().ToString());
 
@@ -450,7 +473,7 @@ TEST_F(WorkspaceControllerTest, ShelfStateUpdated) {
   EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
-  EXPECT_EQ(ScreenAsh::GetMaximizedWindowBoundsInParent(w2.get()).ToString(),
+  EXPECT_EQ(ScreenUtil::GetMaximizedWindowBoundsInParent(w2.get()).ToString(),
             w2->bounds().ToString());
 
   // Turn off auto-hide, switch back to w2 (maximized) and verify overlap.
@@ -676,7 +699,8 @@ TEST_F(WorkspaceControllerTest, TransientParent) {
   // Window with a transient parent. We set the transient parent to the root,
   // which would never happen but is enough to exercise the bug.
   scoped_ptr<Window> w1(CreateTestWindowUnparented());
-  Shell::GetInstance()->GetPrimaryRootWindow()->AddTransientChild(w1.get());
+  views::corewm::AddTransientChild(
+      Shell::GetInstance()->GetPrimaryRootWindow(), w1.get());
   w1->SetBounds(gfx::Rect(10, 11, 250, 251));
   ParentWindowInPrimaryRootWindow(w1.get());
   w1->Show();
@@ -1114,12 +1138,8 @@ TEST_F(WorkspaceControllerTest, AnimatedNormToMaxToNormRepositionsRemaining) {
 // with a real browser the browser here has a transient child window
 // (corresponds to the status bubble).
 TEST_F(WorkspaceControllerTest, VerifyLayerOrdering) {
-  scoped_ptr<Window> browser(
-      aura::test::CreateTestWindowWithDelegate(
-          NULL,
-          aura::client::WINDOW_TYPE_NORMAL,
-          gfx::Rect(5, 6, 7, 8),
-          NULL));
+  scoped_ptr<Window> browser(aura::test::CreateTestWindowWithDelegate(
+      NULL, ui::wm::WINDOW_TYPE_NORMAL, gfx::Rect(5, 6, 7, 8), NULL));
   browser->SetName("browser");
   ParentWindowInPrimaryRootWindow(browser.get());
   browser->Show();
@@ -1131,21 +1151,16 @@ TEST_F(WorkspaceControllerTest, VerifyLayerOrdering) {
       aura::test::TestWindowDelegate::CreateSelfDestroyingDelegate();
   status_bubble_delegate->set_can_focus(false);
   Window* status_bubble =
-      aura::test::CreateTestWindowWithDelegate(
-          status_bubble_delegate,
-          aura::client::WINDOW_TYPE_POPUP,
-          gfx::Rect(5, 6, 7, 8),
-          NULL);
-  browser->AddTransientChild(status_bubble);
+      aura::test::CreateTestWindowWithDelegate(status_bubble_delegate,
+                                               ui::wm::WINDOW_TYPE_POPUP,
+                                               gfx::Rect(5, 6, 7, 8),
+                                               NULL);
+  views::corewm::AddTransientChild(browser.get(), status_bubble);
   ParentWindowInPrimaryRootWindow(status_bubble);
   status_bubble->SetName("status_bubble");
 
-  scoped_ptr<Window> app(
-      aura::test::CreateTestWindowWithDelegate(
-          NULL,
-          aura::client::WINDOW_TYPE_NORMAL,
-          gfx::Rect(5, 6, 7, 8),
-          NULL));
+  scoped_ptr<Window> app(aura::test::CreateTestWindowWithDelegate(
+      NULL, ui::wm::WINDOW_TYPE_NORMAL, gfx::Rect(5, 6, 7, 8), NULL));
   app->SetName("app");
   ParentWindowInPrimaryRootWindow(app.get());
 
@@ -1281,21 +1296,23 @@ class WorkspaceControllerTestDragging
 TEST_P(WorkspaceControllerTestDragging, DragWindowOverlapShelf) {
   aura::test::TestWindowDelegate delegate;
   delegate.set_window_component(HTCAPTION);
-  scoped_ptr<Window> w1(
-      aura::test::CreateTestWindowWithDelegate(&delegate,
-                                               aura::client::WINDOW_TYPE_NORMAL,
-                                               gfx::Rect(5, 5, 100, 50),
-                                               NULL));
+  scoped_ptr<Window> w1(aura::test::CreateTestWindowWithDelegate(
+      &delegate, ui::wm::WINDOW_TYPE_NORMAL, gfx::Rect(5, 5, 100, 50), NULL));
   ParentWindowInPrimaryRootWindow(w1.get());
 
   ShelfLayoutManager* shelf = shelf_layout_manager();
   shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_NEVER);
 
-  // Drag near the shelf
+  // Drag near the shelf.
   aura::test::EventGenerator generator(
       Shell::GetPrimaryRootWindow(), gfx::Point());
   generator.MoveMouseTo(10, 10);
   generator.PressLeftButton();
+  generator.MoveMouseTo(100, shelf->GetIdealBounds().y() - 70);
+
+  // Shelf should not be in overlapped state.
+  EXPECT_FALSE(GetWindowOverlapsShelf());
+
   generator.MoveMouseTo(100, shelf->GetIdealBounds().y() - 20);
 
   // Shelf should detect overlap. Overlap state stays after mouse is released.
@@ -1304,8 +1321,183 @@ TEST_P(WorkspaceControllerTestDragging, DragWindowOverlapShelf) {
   EXPECT_TRUE(GetWindowOverlapsShelf());
 }
 
+// Verifies that when dragging a window autohidden shelf stays hidden during
+// and after the drag.
+TEST_P(WorkspaceControllerTestDragging, DragWindowKeepsShelfAutohidden) {
+  aura::test::TestWindowDelegate delegate;
+  delegate.set_window_component(HTCAPTION);
+  scoped_ptr<Window> w1(aura::test::CreateTestWindowWithDelegate(
+      &delegate, ui::wm::WINDOW_TYPE_NORMAL, gfx::Rect(5, 5, 100, 50), NULL));
+  ParentWindowInPrimaryRootWindow(w1.get());
+
+  ShelfLayoutManager* shelf = shelf_layout_manager();
+  shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+
+  // Drag very little.
+  aura::test::EventGenerator generator(
+      Shell::GetPrimaryRootWindow(), gfx::Point());
+  generator.MoveMouseTo(10, 10);
+  generator.PressLeftButton();
+  generator.MoveMouseTo(12, 12);
+
+  // Shelf should be hidden during and after the drag.
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+  generator.ReleaseLeftButton();
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+}
+
 INSTANTIATE_TEST_CASE_P(DockedOrNot, WorkspaceControllerTestDragging,
                         ::testing::Bool());
+
+// Verifies that events are targeted properly just outside the window edges.
+TEST_F(WorkspaceControllerTest, WindowEdgeHitTest) {
+  aura::test::TestWindowDelegate d_first, d_second;
+  scoped_ptr<Window> first(aura::test::CreateTestWindowWithDelegate(&d_first,
+      123, gfx::Rect(20, 10, 100, 50), NULL));
+  ParentWindowInPrimaryRootWindow(first.get());
+  first->Show();
+
+  scoped_ptr<Window> second(aura::test::CreateTestWindowWithDelegate(&d_second,
+      234, gfx::Rect(30, 40, 40, 10), NULL));
+  ParentWindowInPrimaryRootWindow(second.get());
+  second->Show();
+
+  ui::EventTarget* root = first->GetRootWindow();
+  ui::EventTargeter* targeter = root->GetEventTargeter();
+
+  // The windows overlap, and |second| is on top of |first|. Events targeted
+  // slightly outside the edges of the |second| window should still be targeted
+  // to |second| to allow resizing the windows easily.
+
+  const int kNumPoints = 4;
+  struct {
+    const char* direction;
+    gfx::Point location;
+  } points[kNumPoints] = {
+    { "left", gfx::Point(28, 45) },  // outside the left edge.
+    { "top", gfx::Point(50, 38) },  // outside the top edge.
+    { "right", gfx::Point(72, 45) },  // outside the right edge.
+    { "bottom", gfx::Point(50, 52) },  // outside the bottom edge.
+  };
+  // Do two iterations, first without any transform on |second|, and the second
+  // time after applying some transform on |second| so that it doesn't get
+  // targeted.
+  for (int times = 0; times < 2; ++times) {
+    SCOPED_TRACE(times == 0 ? "Without transform" : "With transform");
+    aura::Window* expected_target = times == 0 ? second.get() : first.get();
+    for (int i = 0; i < kNumPoints; ++i) {
+      SCOPED_TRACE(points[i].direction);
+      const gfx::Point& location = points[i].location;
+      ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
+                           ui::EF_NONE);
+      ui::EventTarget* target = targeter->FindTargetForEvent(root, &mouse);
+      EXPECT_EQ(expected_target, target);
+
+      ui::TouchEvent touch(ui::ET_TOUCH_PRESSED, location, 0,
+                           ui::EventTimeForNow());
+      target = targeter->FindTargetForEvent(root, &touch);
+      EXPECT_EQ(expected_target, target);
+    }
+    // Apply a transform on |second|. After the transform is applied, the window
+    // should no longer be targeted.
+    gfx::Transform transform;
+    transform.Translate(70, 40);
+    second->SetTransform(transform);
+  }
+}
+
+// Verifies events targeting just outside the window edges for panels.
+TEST_F(WorkspaceControllerTest, WindowEdgeHitTestPanel) {
+  aura::test::TestWindowDelegate delegate;
+  scoped_ptr<Window> window(CreateTestPanel(&delegate,
+                                           gfx::Rect(20, 10, 100, 50)));
+  ui::EventTarget* root = window->GetRootWindow();
+  ui::EventTargeter* targeter = root->GetEventTargeter();
+  const gfx::Rect bounds = window->bounds();
+  const int kNumPoints = 5;
+  struct {
+    const char* direction;
+    gfx::Point location;
+    bool is_target_hit;
+  } points[kNumPoints] = {
+    { "left", gfx::Point(bounds.x() - 2, bounds.y() + 10), true },
+    { "top", gfx::Point(bounds.x() + 10, bounds.y() - 2), true },
+    { "right", gfx::Point(bounds.right() + 2, bounds.y() + 10), true },
+    { "bottom", gfx::Point(bounds.x() + 10, bounds.bottom() + 2), true },
+    { "outside", gfx::Point(bounds.x() + 10, bounds.y() - 31), false },
+  };
+  for (int i = 0; i < kNumPoints; ++i) {
+    SCOPED_TRACE(points[i].direction);
+    const gfx::Point& location = points[i].location;
+    ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
+                         ui::EF_NONE);
+    ui::EventTarget* target = targeter->FindTargetForEvent(root, &mouse);
+    if (points[i].is_target_hit)
+      EXPECT_EQ(window.get(), target);
+    else
+      EXPECT_NE(window.get(), target);
+
+    ui::TouchEvent touch(ui::ET_TOUCH_PRESSED, location, 0,
+                         ui::EventTimeForNow());
+    target = targeter->FindTargetForEvent(root, &touch);
+    if (points[i].is_target_hit)
+      EXPECT_EQ(window.get(), target);
+    else
+      EXPECT_NE(window.get(), target);
+  }
+}
+
+// Verifies events targeting just outside the window edges for docked windows.
+TEST_F(WorkspaceControllerTest, WindowEdgeHitTestDocked) {
+  if (!switches::UseDockedWindows())
+    return;
+  aura::test::TestWindowDelegate delegate;
+  // Make window smaller than the minimum docked area so that the window edges
+  // are exposed.
+  delegate.set_maximum_size(gfx::Size(180, 200));
+  scoped_ptr<Window> window(aura::test::CreateTestWindowWithDelegate(&delegate,
+      123, gfx::Rect(20, 10, 100, 50), NULL));
+  ParentWindowInPrimaryRootWindow(window.get());
+  aura::Window* docked_container = Shell::GetContainer(
+      window->GetRootWindow(), internal::kShellWindowId_DockedContainer);
+  docked_container->AddChild(window.get());
+  window->Show();
+  ui::EventTarget* root = window->GetRootWindow();
+  ui::EventTargeter* targeter = root->GetEventTargeter();
+  const gfx::Rect bounds = window->bounds();
+  const int kNumPoints = 5;
+  struct {
+    const char* direction;
+    gfx::Point location;
+    bool is_target_hit;
+  } points[kNumPoints] = {
+    { "left", gfx::Point(bounds.x() - 2, bounds.y() + 10), true },
+    { "top", gfx::Point(bounds.x() + 10, bounds.y() - 2), true },
+    { "right", gfx::Point(bounds.right() + 2, bounds.y() + 10), true },
+    { "bottom", gfx::Point(bounds.x() + 10, bounds.bottom() + 2), true },
+    { "outside", gfx::Point(bounds.x() + 10, bounds.y() - 31), false },
+  };
+  for (int i = 0; i < kNumPoints; ++i) {
+    SCOPED_TRACE(points[i].direction);
+    const gfx::Point& location = points[i].location;
+    ui::MouseEvent mouse(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
+                         ui::EF_NONE);
+    ui::EventTarget* target = targeter->FindTargetForEvent(root, &mouse);
+    if (points[i].is_target_hit)
+      EXPECT_EQ(window.get(), target);
+    else
+      EXPECT_NE(window.get(), target);
+
+    ui::TouchEvent touch(ui::ET_TOUCH_PRESSED, location, 0,
+                         ui::EventTimeForNow());
+    target = targeter->FindTargetForEvent(root, &touch);
+    if (points[i].is_target_hit)
+      EXPECT_EQ(window.get(), target);
+    else
+      EXPECT_NE(window.get(), target);
+  }
+}
 
 }  // namespace internal
 }  // namespace ash

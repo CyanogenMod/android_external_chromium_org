@@ -5,12 +5,13 @@
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace app_list {
 
@@ -30,7 +31,8 @@ AppListSyncableServiceFactory::AppListSyncableServiceFactory()
     : BrowserContextKeyedServiceFactory(
         "AppListSyncableService",
         BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(extensions::ExtensionSystemFactory::GetInstance());
+  DependsOn(
+      extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 AppListSyncableServiceFactory::~AppListSyncableServiceFactory() {
@@ -40,9 +42,8 @@ BrowserContextKeyedService*
 AppListSyncableServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* browser_context) const {
   Profile* profile = static_cast<Profile*>(browser_context);
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  return new AppListSyncableService(profile, extension_service);
+  return new AppListSyncableService(profile,
+                                    extensions::ExtensionSystem::Get(profile));
 }
 
 void AppListSyncableServiceFactory::RegisterProfilePrefs(
@@ -51,11 +52,12 @@ void AppListSyncableServiceFactory::RegisterProfilePrefs(
 
 content::BrowserContext* AppListSyncableServiceFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
+  // In Guest session, off the record profile should not be redirected to the
+  // original one.
+  Profile* profile = static_cast<Profile*>(context);
+  if (profile->IsGuestSession())
+    return chrome::GetBrowserContextOwnInstanceInIncognito(context);
   return chrome::GetBrowserContextRedirectedInIncognito(context);
-}
-
-bool AppListSyncableServiceFactory::ServiceIsCreatedWithBrowserContext() const {
-  return true;
 }
 
 }  // namespace app_list

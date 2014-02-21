@@ -28,7 +28,6 @@ class Image;
 namespace views {
 class GridLayout;
 class Link;
-class TextButton;
 class LabelButton;
 }
 
@@ -137,7 +136,8 @@ class ProfileChooserView : public views::BubbleDelegateView,
       const AvatarMenu::Item& avatar_item);
   void CreateAccountButton(views::GridLayout* layout,
                            const std::string& account,
-                           bool is_primary_account);
+                           bool is_primary_account,
+                           int width);
 
   scoped_ptr<AvatarMenu> avatar_menu_;
   Browser* browser_;
@@ -159,10 +159,10 @@ class ProfileChooserView : public views::BubbleDelegateView,
   EditableProfileName* current_profile_name_;
 
   // Action buttons.
-  views::TextButton* guest_button_;
-  views::TextButton* end_guest_button_;
-  views::TextButton* add_user_button_;
-  views::TextButton* users_button_;
+  views::LabelButton* guest_button_;
+  views::LabelButton* end_guest_button_;
+  views::LabelButton* add_user_button_;
+  views::LabelButton* users_button_;
   views::LabelButton* add_account_button_;
 
   // Active view mode.

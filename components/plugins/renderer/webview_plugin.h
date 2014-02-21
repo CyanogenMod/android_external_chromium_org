@@ -40,12 +40,11 @@ class WebViewPlugin : public blink::WebPlugin,
     // This method is called from WebFrameClient::didClearWindowObject.
     virtual void BindWebFrame(blink::WebFrame* frame) = 0;
 
-    // Called before the WebViewPlugin is destroyed. The delegate should delete
-    // itself here.
-    virtual void WillDestroyPlugin() = 0;
-
     // Called upon a context menu event.
     virtual void ShowContextMenu(const blink::WebMouseEvent&) = 0;
+
+    // Called when the WebViewPlugin is destroyed.
+    virtual void PluginDestroyed() = 0;
   };
 
   explicit WebViewPlugin(Delegate* delegate);
@@ -86,7 +85,7 @@ class WebViewPlugin : public blink::WebPlugin,
       const blink::WebVector<blink::WebRect>& cut_out_rects,
       bool is_visible);
 
-  virtual void updateFocus(bool) {}
+  virtual void updateFocus(bool);
   virtual void updateVisibility(bool) {}
 
   virtual bool acceptsInputEvents();
@@ -122,7 +121,7 @@ class WebViewPlugin : public blink::WebPlugin,
   virtual void didChangeCursor(const blink::WebCursorInfo& cursor);
 
   // WebFrameClient methods:
-  virtual void didClearWindowObject(blink::WebFrame* frame);
+  virtual void didClearWindowObject(blink::WebFrame* frame, int world_id);
 
   // This method is defined in WebPlugin as well as in WebFrameClient, but with
   // different parameters. We only care about implementing the WebPlugin
@@ -136,13 +135,19 @@ class WebViewPlugin : public blink::WebPlugin,
   friend class base::DeleteHelper<WebViewPlugin>;
   virtual ~WebViewPlugin();
 
+  // Manages its own lifetime.
   Delegate* delegate_;
-  // Destroys itself.
+
   blink::WebCursorInfo current_cursor_;
+
   // Owns us.
   blink::WebPluginContainer* container_;
+
   // Owned by us, deleted via |close()|.
   blink::WebView* web_view_;
+
+  // Owned by us, deleted via |close()|.
+  blink::WebFrame* web_frame_;
   gfx::Rect rect_;
 
   blink::WebURLResponse response_;
@@ -150,6 +155,7 @@ class WebViewPlugin : public blink::WebPlugin,
   bool finished_loading_;
   scoped_ptr<blink::WebURLError> error_;
   blink::WebString old_title_;
+  bool focused_;
 };
 
 #endif  // COMPONENTS_PLUGINS_RENDERER_WEBVIEW_PLUGIN_H_

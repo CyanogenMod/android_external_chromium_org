@@ -12,12 +12,12 @@
 #include "chrome/browser/extensions/api/storage/settings_sync_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/value_builder.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_change_processor.h"
@@ -26,9 +26,9 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/schema_registry_service.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/core/common/policy_map.h"
@@ -251,8 +251,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
 #endif
 };
 
-// Flaky. http://crbug.com/248032
-IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, DISABLED_SimpleTest) {
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, SimpleTest) {
   ASSERT_TRUE(RunExtensionTest("settings/simple_test")) << message_;
 }
 
@@ -376,7 +375,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
 
   // Set "foo" to "bar" via sync.
   syncer::SyncChangeList sync_changes;
-  StringValue bar("bar");
+  base::StringValue bar("bar");
   sync_changes.push_back(settings_sync_util::CreateAdd(
       extension_id, "foo", bar, kModelType));
   SendChanges(sync_changes);
@@ -421,7 +420,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
 
   // Set "foo" to "bar" via sync.
   syncer::SyncChangeList sync_changes;
-  StringValue bar("bar");
+  base::StringValue bar("bar");
   sync_changes.push_back(settings_sync_util::CreateAdd(
       extension_id, "foo", bar, kModelType));
   SendChanges(sync_changes);
@@ -459,8 +458,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, IsStorageEnabled) {
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ExtensionsSchemas) {
   // Verifies that the Schemas for the extensions domain are created on startup.
   Profile* profile = browser()->profile();
-  ExtensionSystem* extension_system =
-      ExtensionSystemFactory::GetForProfile(profile);
+  ExtensionSystem* extension_system = ExtensionSystem::Get(profile);
   if (!extension_system->ready().is_signaled()) {
     // Wait until the extension system is ready.
     base::RunLoop run_loop;

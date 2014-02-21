@@ -8,7 +8,7 @@
 #include "ash/display/display_info.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/root_window_transformers.h"
-#include "ash/host/root_window_host_factory.h"
+#include "ash/host/window_tree_host_factory.h"
 #include "ash/root_window_controller.h"
 #include "ash/root_window_settings.h"
 #include "ash/shell.h"
@@ -42,8 +42,8 @@ void VirtualKeyboardWindowController::UpdateWindow(
   if (!root_window_controller_.get()) {
     const gfx::Rect& bounds_in_native = display_info.bounds_in_native();
     aura::RootWindow::CreateParams params(bounds_in_native);
-    params.host = Shell::GetInstance()->root_window_host_factory()->
-        CreateRootWindowHost(bounds_in_native);
+    params.host = Shell::GetInstance()->window_tree_host_factory()->
+        CreateWindowTreeHost(bounds_in_native);
     aura::RootWindow* root_window = new aura::RootWindow(params);
 
     root_window->window()->SetName(
@@ -56,7 +56,7 @@ void VirtualKeyboardWindowController::UpdateWindow(
         Shell::GetInstance()->display_controller());
     InitRootWindowSettings(root_window->window())->display_id =
         display_info.id();
-    root_window->Init();
+    root_window->host()->InitHost();
     RootWindowController::CreateForVirtualKeyboardDisplay(root_window);
     root_window_controller_.reset(GetRootWindowController(
         root_window->window()));
@@ -68,7 +68,7 @@ void VirtualKeyboardWindowController::UpdateWindow(
     aura::RootWindow* root_window = root_window_controller_->dispatcher();
     GetRootWindowSettings(root_window->window())->display_id =
         display_info.id();
-    root_window->SetHostBounds(display_info.bounds_in_native());
+    root_window->host()->SetBounds(display_info.bounds_in_native());
   }
 }
 
@@ -95,7 +95,7 @@ void VirtualKeyboardWindowController::FlipDisplay() {
   scoped_ptr<aura::RootWindowTransformer> transformer(
       internal::CreateRootWindowTransformerForDisplay(root_window->window(),
           display_manager->non_desktop_display()));
-  root_window->SetRootWindowTransformer(transformer.Pass());
+  root_window->host()->SetRootWindowTransformer(transformer.Pass());
 }
 
 }  // namespace internal

@@ -11,10 +11,14 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/activity_log_private.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/features/feature.h"
+#include "extensions/common/features/feature_provider.h"
 
 namespace extensions {
 
@@ -24,24 +28,17 @@ using api::activity_log_private::ActivityResultSet;
 using api::activity_log_private::ExtensionActivity;
 using api::activity_log_private::Filter;
 
-const char kActivityLogExtensionId[] = "fpofdchlamddhnajleknffcbmnjfahpg";
-const char kActivityLogTestExtensionId[] = "abjoigjokfeibfhiahiijggogladbmfm";
-// TODO(mvrable): Delete kActivityLogObsoleteExtensionId after ensuring that it
-// is no longer in use.
-const char kActivityLogObsoleteExtensionId[] =
-    "hhcnncjlpehbepkbgccanfpkneoejnpb";
-
 static base::LazyInstance<ProfileKeyedAPIFactory<ActivityLogAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<ActivityLogAPI>* ActivityLogAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 template<>
 void ProfileKeyedAPIFactory<ActivityLogAPI>::DeclareFactoryDependencies() {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(ActivityLogFactory::GetInstance());
 }
 
@@ -74,9 +71,8 @@ void ActivityLogAPI::Shutdown() {
 
 // static
 bool ActivityLogAPI::IsExtensionWhitelisted(const std::string& extension_id) {
-  return (extension_id == kActivityLogExtensionId ||
-          extension_id == kActivityLogTestExtensionId ||
-          extension_id == kActivityLogObsoleteExtensionId);
+  return FeatureProvider::GetPermissionFeatures()->
+      GetFeature("activityLogPrivate")->IsIdInWhitelist(extension_id);
 }
 
 void ActivityLogAPI::OnListenerAdded(const EventListenerInfo& details) {
@@ -178,6 +174,25 @@ void ActivityLogPrivateGetExtensionActivitiesFunction::OnLookupCompleted(
       *result_set);
 
   SendResponse(true);
+}
+
+bool ActivityLogPrivateDeleteActivitiesFunction::RunImpl() {
+  scoped_ptr<activity_log_private::DeleteActivities::Params> params(
+      activity_log_private::DeleteActivities::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  // Put the arguments in the right format.
+  std::vector<int64> action_ids;
+  int64 value;
+  for (size_t i = 0; i < params->activity_ids.size(); i++) {
+    if (base::StringToInt64(params->activity_ids[i], &value))
+      action_ids.push_back(value);
+  }
+
+  ActivityLog* activity_log = ActivityLog::GetInstance(GetProfile());
+  DCHECK(activity_log);
+  activity_log->RemoveActions(action_ids);
+  return true;
 }
 
 bool ActivityLogPrivateDeleteDatabaseFunction::RunImpl() {

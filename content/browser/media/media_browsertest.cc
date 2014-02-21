@@ -26,14 +26,6 @@ const char MediaBrowserTest::kEnded[] = "ENDED";
 const char MediaBrowserTest::kError[] = "ERROR";
 const char MediaBrowserTest::kFailed[] = "FAILED";
 
-void MediaBrowserTest::SetUp() {
-  // TODO(danakj): The GPU Video Decoder needs real GL bindings.
-  // crbug.com/269087
-  UseRealGLBindings();
-
-  ContentBrowserTest::SetUp();
-}
-
 void MediaBrowserTest::RunMediaTestPage(
     const char* html_page, std::vector<StringPair>* query_params,
     const char* expected, bool http) {
@@ -59,7 +51,7 @@ void MediaBrowserTest::RunMediaTestPage(
 }
 
 void MediaBrowserTest::RunTest(const GURL& gurl, const char* expected) {
-  const base::string16 expected_title = ASCIIToUTF16(expected);
+  const base::string16 expected_title = base::ASCIIToUTF16(expected);
   DVLOG(1) << "Running test URL: " << gurl;
   TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   AddWaitForTitles(&title_watcher);
@@ -70,9 +62,9 @@ void MediaBrowserTest::RunTest(const GURL& gurl, const char* expected) {
 }
 
 void MediaBrowserTest::AddWaitForTitles(content::TitleWatcher* title_watcher) {
-  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kEnded));
-  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kError));
-  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kFailed));
+  title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kEnded));
+  title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kError));
+  title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kFailed));
 }
 
 // Tests playback and seeking of an audio or video file over file or http based
@@ -115,6 +107,14 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentTheora) {
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWebm) {
   PlayVideo("bear.webm", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearOpusWebm) {
+  PlayVideo("bear-opus.webm", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearOpusOgg) {
+  PlayVideo("bear-opus.ogg", GetParam());
 }
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentWebm) {

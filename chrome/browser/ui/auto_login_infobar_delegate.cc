@@ -16,7 +16,10 @@
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/ubertoken_fetcher.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -33,6 +36,7 @@
 #include "content/public/common/referrer.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "google_apis/gaia/ubertoken_fetcher.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -84,9 +88,17 @@ AutoLoginRedirector::AutoLoginRedirector(
     const std::string& args)
     : content::WebContentsObserver(web_contents),
       args_(args) {
-  ubertoken_fetcher_.reset(new UbertokenFetcher(
-      Profile::FromBrowserContext(web_contents->GetBrowserContext()), this));
-  ubertoken_fetcher_->StartFetchingToken();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  ubertoken_fetcher_.reset(new UbertokenFetcher(token_service,
+                                                this,
+                                                profile->GetRequestContext()));
+  ubertoken_fetcher_->StartFetchingToken(
+      signin_manager->GetAuthenticatedAccountId());
 }
 
 AutoLoginRedirector::~AutoLoginRedirector() {
@@ -179,12 +191,12 @@ AutoLoginInfoBarDelegate*
   return this;
 }
 
-string16 AutoLoginInfoBarDelegate::GetMessageText() const {
+base::string16 AutoLoginInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(IDS_AUTOLOGIN_INFOBAR_MESSAGE,
-                                    UTF8ToUTF16(params_.username));
+                                    base::UTF8ToUTF16(params_.username));
 }
 
-string16 AutoLoginInfoBarDelegate::GetButtonLabel(
+base::string16 AutoLoginInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_AUTOLOGIN_INFOBAR_OK_BUTTON : IDS_AUTOLOGIN_INFOBAR_CANCEL_BUTTON);

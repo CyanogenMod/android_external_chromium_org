@@ -54,6 +54,12 @@ TiledLayerImpl::~TiledLayerImpl() {
 ResourceProvider::ResourceId TiledLayerImpl::ContentsResourceId() const {
   // This function is only valid for single texture layers, e.g. masks.
   DCHECK(tiler_);
+  // It's possible the mask layer is created but has no size or otherwise
+  // can't draw.
+  if (tiler_->num_tiles_x() == 0 || tiler_->num_tiles_y() == 0)
+    return 0;
+
+  // Any other number of tiles other than 0 or 1 is incorrect for masks.
   DCHECK_EQ(tiler_->num_tiles_x(), 1);
   DCHECK_EQ(tiler_->num_tiles_y(), 1);
 
@@ -263,7 +269,7 @@ void TiledLayerImpl::PushTileProperties(
     int i,
     int j,
     ResourceProvider::ResourceId resource_id,
-    gfx::Rect opaque_rect,
+    const gfx::Rect& opaque_rect,
     bool contents_swizzled) {
   DrawableTile* tile = TileAt(i, j);
   if (!tile)
@@ -290,7 +296,7 @@ Region TiledLayerImpl::VisibleContentOpaqueRegion() const {
   return tiler_->OpaqueRegionInContentRect(visible_content_rect());
 }
 
-void TiledLayerImpl::DidLoseOutputSurface() {
+void TiledLayerImpl::ReleaseResources() {
   tiler_->reset();
 }
 

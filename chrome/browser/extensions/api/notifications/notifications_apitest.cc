@@ -626,11 +626,11 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, MAYBE_TestProgressNotification) {
   }
 }
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-// Failing after disabling Linux Aura: http://crbug.com/319689
-#define MAYBE_TestPartialUpdate DISABLED_TestPartialUpdate
-#else
+// MessaceCenter-specific test.
+#if defined(RUN_MESSAGE_CENTER_TESTS)
 #define MAYBE_TestPartialUpdate TestPartialUpdate
+#else
+#define MAYBE_TestPartialUpdate DISABLED_TestPartialUpdate
 #endif
 IN_PROC_BROWSER_TEST_F(NotificationsApiTest, MAYBE_TestPartialUpdate) {
   scoped_refptr<Extension> empty_extension(utils::CreateEmptyExtension());
@@ -720,8 +720,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, MAYBE_TestPartialUpdate) {
       g_browser_process->message_center()->GetVisibleNotifications();
   ASSERT_EQ(1u, notifications.size());
   message_center::Notification* notification = *(notifications.begin());
-  EXPECT_EQ(ASCIIToUTF16(kNewTitle), notification->title());
-  EXPECT_EQ(ASCIIToUTF16(kNewMessage), notification->message());
+  EXPECT_EQ(base::ASCIIToUTF16(kNewTitle), notification->title());
+  EXPECT_EQ(base::ASCIIToUTF16(kNewMessage), notification->message());
   EXPECT_EQ(kNewPriority, notification->priority());
   EXPECT_EQ(0u, notification->buttons().size());
 }

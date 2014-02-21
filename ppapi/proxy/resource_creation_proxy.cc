@@ -54,7 +54,6 @@
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
-#include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_image_data_api.h"
@@ -108,16 +107,30 @@ PP_Resource ResourceCreationProxy::CreateIMEInputEvent(
       segment_offsets, target_segment, selection_start, selection_end);
 }
 
-PP_Resource ResourceCreationProxy::CreateKeyboardInputEvent(
+PP_Resource ResourceCreationProxy::CreateKeyboardInputEvent_1_0(
     PP_Instance instance,
     PP_InputEvent_Type type,
     PP_TimeTicks time_stamp,
     uint32_t modifiers,
     uint32_t key_code,
     struct PP_Var character_text) {
+  PP_Var code = StringVar::StringToPPVar("");
   return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
       OBJECT_IS_PROXY, instance, type, time_stamp, modifiers, key_code,
-      character_text);
+      character_text, code);
+}
+
+PP_Resource ResourceCreationProxy::CreateKeyboardInputEvent_1_2(
+    PP_Instance instance,
+    PP_InputEvent_Type type,
+    PP_TimeTicks time_stamp,
+    uint32_t modifiers,
+    uint32_t key_code,
+    struct PP_Var character_text,
+    struct PP_Var code) {
+  return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
+      OBJECT_IS_PROXY, instance, type, time_stamp, modifiers, key_code,
+      character_text, code);
 }
 
 PP_Resource ResourceCreationProxy::CreateMouseInputEvent(
@@ -141,15 +154,6 @@ PP_Resource ResourceCreationProxy::CreateTouchInputEvent(
     uint32_t modifiers) {
   return PPB_InputEvent_Shared::CreateTouchInputEvent(
       OBJECT_IS_PROXY, instance, type, time_stamp, modifiers);
-}
-
-PP_Resource ResourceCreationProxy::CreateResourceArray(
-    PP_Instance instance,
-    const PP_Resource elements[],
-    uint32_t size) {
-  PPB_ResourceArray_Shared* object = new PPB_ResourceArray_Shared(
-      OBJECT_IS_PROXY, instance, elements, size);
-  return object->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateTrueTypeFont(

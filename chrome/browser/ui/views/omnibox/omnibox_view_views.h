@@ -52,10 +52,8 @@ class OmniboxViewViews
   // Initialize, create the underlying views, etc;
   void Init();
 
-  // Sets the colors of the text view according to the theme.
-  void SetBaseColor();
-
   // views::Textfield:
+  virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
@@ -68,6 +66,7 @@ class OmniboxViewViews
       const ui::KeyEvent& event) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
+  virtual base::string16 GetSelectionClipboardText() const OVERRIDE;
 
   // OmniboxView:
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
@@ -106,11 +105,15 @@ class OmniboxViewViews
   virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE;
   virtual void SetGrayTextAutocompletion(const base::string16& input) OVERRIDE;
   virtual base::string16 GetGrayTextAutocompletion() const OVERRIDE;
-  virtual int TextWidth() const OVERRIDE;
+  virtual int GetTextWidth() const OVERRIDE;
+  virtual int GetWidth() const OVERRIDE;
   virtual bool IsImeComposing() const OVERRIDE;
   virtual bool IsImeShowingPopup() const OVERRIDE;
-  virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
-  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
+  virtual void ShowImeIfNeeded() OVERRIDE;
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
+  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
@@ -127,11 +130,6 @@ class OmniboxViewViews
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
   virtual int OnDrop(const ui::OSExchangeData& data) OVERRIDE;
   virtual void UpdateContextMenu(ui::SimpleMenuModel* menu_contents) OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
-  virtual bool HandlesCommand(int command_id) const OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
 #if defined(OS_CHROMEOS)
   // chromeos::input_method::InputMethodManager::CandidateWindowObserver:

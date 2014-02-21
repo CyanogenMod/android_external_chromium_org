@@ -117,7 +117,7 @@ class NullEncryptor : public Encryptor {
   }
 };
 
-std::string ValueToString(const Value& value) {
+std::string ValueToString(const base::Value& value) {
   std::string str;
   base::JSONWriter::Write(&value, &str);
   return str;
@@ -144,7 +144,7 @@ class LoggingChangeDelegate : public SyncManager::ChangeDelegate {
       if (it->action != ChangeRecord::ACTION_DELETE) {
         ReadNode node(trans);
         CHECK_EQ(node.InitByIdLookup(it->id), BaseNode::INIT_OK);
-        scoped_ptr<base::DictionaryValue> details(node.GetDetailsAsValue());
+        scoped_ptr<base::DictionaryValue> details(node.ToValue());
         VLOG(1) << "Details: " << ValueToString(*details);
       }
       ++i;
@@ -269,17 +269,21 @@ int SyncClientMain(int argc, char* argv[]) {
       new MyTestURLRequestContextGetter(io_thread.message_loop_proxy());
   const notifier::NotifierOptions& notifier_options =
       ParseNotifierOptions(command_line, context_getter);
+  syncer::NetworkChannelCreator network_channel_creator =
+      syncer::NonBlockingInvalidator::MakePushClientChannelCreator(
+          notifier_options);
   const char kClientInfo[] = "standalone_sync_client";
   std::string invalidator_id = base::RandBytesAsString(8);
   NullInvalidationStateTracker null_invalidation_state_tracker;
   scoped_ptr<Invalidator> invalidator(new NonBlockingInvalidator(
-      notifier_options,
+      network_channel_creator,
       invalidator_id,
       null_invalidation_state_tracker.GetSavedInvalidations(),
       null_invalidation_state_tracker.GetBootstrapData(),
       WeakHandle<InvalidationStateTracker>(
           null_invalidation_state_tracker.AsWeakPtr()),
-      kClientInfo));
+      kClientInfo,
+      notifier_options.request_context_getter));
 
   // Set up database directory for the syncer.
   base::ScopedTempDir database_dir;
@@ -305,6 +309,7 @@ int SyncClientMain(int argc, char* argv[]) {
   model_types.Put(APP_NOTIFICATIONS);
   model_types.Put(HISTORY_DELETE_DIRECTIVES);
   model_types.Put(SYNCED_NOTIFICATIONS);
+  model_types.Put(SYNCED_NOTIFICATION_APP_INFO);
   model_types.Put(DEVICE_INFO);
   model_types.Put(EXPERIMENTS);
   model_types.Put(PRIORITY_PREFERENCES);
@@ -319,8 +324,8 @@ int SyncClientMain(int argc, char* argv[]) {
   }
   scoped_refptr<PassiveModelWorker> passive_model_safe_worker =
       new PassiveModelWorker(&sync_loop, NULL);
-  std::vector<ModelSafeWorker*> workers;
-  workers.push_back(passive_model_safe_worker.get());
+  std::vector<scoped_refptr<ModelSafeWorker> > workers;
+  workers.push_back(passive_model_safe_worker);
 
   // Set up sync manager.
   SyncManagerFactory sync_manager_factory;

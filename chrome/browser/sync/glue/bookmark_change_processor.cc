@@ -24,7 +24,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
-#include "chrome/browser/undo/undo_manager_utils.h"
+#include "chrome/browser/undo/bookmark_undo_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -75,7 +75,7 @@ void BookmarkChangeProcessor::UpdateSyncNodeProperties(
     syncer::WriteNode* dst) {
   // Set the properties of the item.
   dst->SetIsFolder(src->is_folder());
-  dst->SetTitle(UTF16ToWideHack(src->GetTitle()));
+  dst->SetTitle(base::UTF16ToWideHack(src->GetTitle()));
   sync_pb::BookmarkSpecifics bookmark_specifics(dst->GetBookmarkSpecifics());
   if (!src->is_folder())
     bookmark_specifics.set_url(src->url().spec());
@@ -204,8 +204,8 @@ void BookmarkChangeProcessor::RemoveAllChildNodes(
   }
 }
 
-void BookmarkChangeProcessor::Loaded(BookmarkModel* model,
-                                     bool ids_reassigned) {
+void BookmarkChangeProcessor::BookmarkModelLoaded(BookmarkModel* model,
+                                                  bool ids_reassigned) {
   NOTREACHED();
 }
 
@@ -515,8 +515,7 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
 
   // Changes made to the bookmark model due to sync should not be undoable.
 #if !defined(OS_ANDROID)
-  ScopedSuspendUndoTracking suspend_undo(
-      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager());
+  ScopedSuspendBookmarkUndo suspend_undo(profile_);
 #endif
 
   // Notify UI intensive observers of BookmarkModel that we are about to make
@@ -704,7 +703,7 @@ void BookmarkChangeProcessor::UpdateBookmarkWithSyncData(
       sync_node.GetBookmarkSpecifics();
   if (!sync_node.GetIsFolder())
     model->SetURL(node, GURL(specifics.url()));
-  model->SetTitle(node, UTF8ToUTF16(sync_node.GetTitle()));
+  model->SetTitle(node, base::UTF8ToUTF16(sync_node.GetTitle()));
   if (specifics.has_creation_time_us()) {
     model->SetDateAdded(
         node,
@@ -740,7 +739,8 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
 
   const BookmarkNode* node;
   if (sync_node->GetIsFolder()) {
-    node = model->AddFolder(parent, index, UTF8ToUTF16(sync_node->GetTitle()));
+    node = model->AddFolder(
+        parent, index, base::UTF8ToUTF16(sync_node->GetTitle()));
   } else {
     // 'creation_time_us' was added in m24. Assume a time of 0 means now.
     const sync_pb::BookmarkSpecifics& specifics =
@@ -749,7 +749,8 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
     base::Time create_time = (create_time_internal == 0) ?
         base::Time::Now() : base::Time::FromInternalValue(create_time_internal);
     node = model->AddURLWithCreationTime(parent, index,
-                                         UTF8ToUTF16(sync_node->GetTitle()),
+                                         base::UTF8ToUTF16(
+                                             sync_node->GetTitle()),
                                          GURL(specifics.url()), create_time);
     if (node)
       SetBookmarkFavicon(sync_node, node, model, profile);

@@ -13,8 +13,8 @@
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "grit/theme_resources.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
-#import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSColor+Luminance.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/canvas_skia_paint.h"
@@ -370,22 +370,14 @@ using content::DownloadItem;
 }
 
 - (NSString*)elideTitle:(int)availableWidth {
-  NSFont* font = [self font];
-  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
-                     [font pointSize]);
-
   return base::SysUTF16ToNSString(gfx::ElideFilename(
-      downloadPath_, gfx::FontList(font_chr), availableWidth));
+      downloadPath_, gfx::FontList(gfx::Font([self font])), availableWidth));
 }
 
 - (NSString*)elideStatus:(int)availableWidth {
-  NSFont* font = [self secondaryFont];
-  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
-                     [font pointSize]);
-
   return base::SysUTF16ToNSString(gfx::ElideText(
       base::SysNSStringToUTF16([self secondaryTitle]),
-      font_chr,
+      gfx::FontList(gfx::Font([self secondaryFont])),
       availableWidth,
       gfx::ELIDE_AT_END));
 }

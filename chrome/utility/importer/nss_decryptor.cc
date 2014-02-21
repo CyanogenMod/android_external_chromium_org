@@ -61,10 +61,10 @@
 *
 * ***** END LICENSE BLOCK ***** */
 
-string16 NSSDecryptor::Decrypt(const std::string& crypt) const {
+base::string16 NSSDecryptor::Decrypt(const std::string& crypt) const {
   // Do nothing if NSS is not loaded.
   if (!is_nss_initialized_)
-    return string16();
+    return base::string16();
 
   // The old style password is encoded in base64. They are identified
   // by a leading '~'. Otherwise, we should decrypt the text.
@@ -76,7 +76,7 @@ string16 NSSDecryptor::Decrypt(const std::string& crypt) const {
     SECStatus result = PK11_Authenticate(slot, PR_TRUE, NULL);
     if (result != SECSuccess) {
       FreeSlot(slot);
-      return string16();
+      return base::string16();
     }
 
     SECItem request;
@@ -101,7 +101,7 @@ string16 NSSDecryptor::Decrypt(const std::string& crypt) const {
     base::Base64Decode(crypt.substr(1), &plain);
   }
 
-  return UTF8ToUTF16(plain);
+  return base::UTF8ToUTF16(plain);
 }
 
 // There are three versions of password files. They store saved user
@@ -205,11 +205,11 @@ void NSSDecryptor::ParseSignons(
     // line (contains a dot).
     while (begin + 4 < end) {
       // The user name.
-      form.username_element = UTF8ToUTF16(lines[begin++]);
+      form.username_element = base::UTF8ToUTF16(lines[begin++]);
       form.username_value = Decrypt(lines[begin++]);
       // The element name has a leading '*'.
       if (lines[begin].at(0) == '*') {
-        form.password_element = UTF8ToUTF16(lines[begin++].substr(1));
+        form.password_element = base::UTF8ToUTF16(lines[begin++].substr(1));
         form.password_value = Decrypt(lines[begin++]);
       } else {
         // Maybe the file is bad, we skip to next block.

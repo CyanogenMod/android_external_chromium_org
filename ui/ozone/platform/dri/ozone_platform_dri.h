@@ -5,7 +5,7 @@
 #ifndef UI_OZONE_PLATFORM_DRI_OZONE_PLATFORM_DRI_H_
 #define UI_OZONE_PLATFORM_DRI_OZONE_PLATFORM_DRI_H_
 
-#include "ui/events/ozone/evdev/event_factory.h"
+#include "ui/events/ozone/evdev/event_factory_evdev.h"
 #include "ui/gfx/ozone/dri/dri_surface_factory.h"
 #include "ui/ozone/ozone_platform.h"
 
@@ -22,10 +22,14 @@ class OzonePlatformDri : public OzonePlatform {
 
   virtual gfx::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE;
   virtual ui::EventFactoryOzone* GetEventFactoryOzone() OVERRIDE;
+  virtual ui::InputMethodContextFactoryOzone*
+      GetInputMethodContextFactoryOzone() OVERRIDE;
 
  private:
   gfx::DriSurfaceFactory surface_factory_ozone_;
   ui::EventFactoryEvdev event_factory_ozone_;
+  // This creates a minimal input context.
+  ui::InputMethodContextFactoryOzone input_method_context_factory_ozone_;
 
   DISALLOW_COPY_AND_ASSIGN(OzonePlatformDri);
 };

@@ -38,7 +38,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp \
 	third_party/skia/src/ports/SkOSFile_posix.cpp \
 	third_party/skia/src/ports/SkOSFile_stdio.cpp \
-	third_party/skia/src/ports/SkThread_pthread.cpp \
 	third_party/skia/src/ports/SkTime_Unix.cpp \
 	third_party/skia/src/ports/SkTLS_pthread.cpp \
 	third_party/skia/src/sfnt/SkOTTable_name.cpp \
@@ -50,6 +49,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkBitSet.cpp \
 	third_party/skia/src/utils/SkCanvasStack.cpp \
 	third_party/skia/src/utils/SkCanvasStateUtils.cpp \
+	third_party/skia/src/utils/SkEventTracer.cpp \
 	third_party/skia/src/utils/SkDeferredCanvas.cpp \
 	third_party/skia/src/utils/SkMatrix44.cpp \
 	third_party/skia/src/utils/SkNullCanvas.cpp \
@@ -57,7 +57,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkPictureUtils.cpp \
 	third_party/skia/src/utils/SkProxyCanvas.cpp \
 	third_party/skia/src/utils/SkRTConf.cpp \
-	third_party/skia/src/core/Sk64.cpp \
 	third_party/skia/src/core/SkAAClip.cpp \
 	third_party/skia/src/core/SkAnnotation.cpp \
 	third_party/skia/src/core/SkAdvancedTypefaceMetrics.cpp \
@@ -91,7 +90,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkComposeShader.cpp \
 	third_party/skia/src/core/SkConfig8888.cpp \
 	third_party/skia/src/core/SkConvolver.cpp \
-	third_party/skia/src/core/SkCordic.cpp \
 	third_party/skia/src/core/SkCubicClipper.cpp \
 	third_party/skia/src/core/SkData.cpp \
 	third_party/skia/src/core/SkDataTable.cpp \
@@ -112,7 +110,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkFilterProc.cpp \
 	third_party/skia/src/core/SkFilterShader.cpp \
 	third_party/skia/src/core/SkFlattenable.cpp \
-	third_party/skia/src/core/SkFlattenableBuffers.cpp \
 	third_party/skia/src/core/SkFlattenableSerialization.cpp \
 	third_party/skia/src/core/SkFloat.cpp \
 	third_party/skia/src/core/SkFloatBits.cpp \
@@ -133,10 +130,11 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkMaskGamma.cpp \
 	third_party/skia/src/core/SkMath.cpp \
 	third_party/skia/src/core/SkMatrix.cpp \
+	third_party/skia/src/core/SkMatrixClipStateMgr.cpp \
 	third_party/skia/src/core/SkMetaData.cpp \
 	third_party/skia/src/core/SkMipMap.cpp \
-	third_party/skia/src/core/SkOrderedReadBuffer.cpp \
-	third_party/skia/src/core/SkOrderedWriteBuffer.cpp \
+	third_party/skia/src/core/SkReadBuffer.cpp \
+	third_party/skia/src/core/SkWriteBuffer.cpp \
 	third_party/skia/src/core/SkPackBits.cpp \
 	third_party/skia/src/core/SkPaint.cpp \
 	third_party/skia/src/core/SkPaintPriv.cpp \
@@ -155,6 +153,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkProcSpriteBlitter.cpp \
 	third_party/skia/src/core/SkPtrRecorder.cpp \
 	third_party/skia/src/core/SkQuadClipper.cpp \
+	third_party/skia/src/core/SkQuadTree.cpp \
+	third_party/skia/src/core/SkQuadTreePicture.cpp \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
 	third_party/skia/src/core/SkRect.cpp \
@@ -192,7 +192,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkWriter32.cpp \
 	third_party/skia/src/core/SkXfermode.cpp \
 	third_party/skia/src/doc/SkDocument.cpp \
-	third_party/skia/src/image/SkDataPixelRef.cpp \
 	third_party/skia/src/image/SkImage.cpp \
 	third_party/skia/src/image/SkImagePriv.cpp \
 	third_party/skia/src/image/SkImage_Codec.cpp \
@@ -234,10 +233,10 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/pathops/SkReduceOrder.cpp \
 	third_party/skia/src/effects/Sk1DPathEffect.cpp \
 	third_party/skia/src/effects/Sk2DPathEffect.cpp \
+	third_party/skia/src/effects/SkAlphaThresholdFilter.cpp \
 	third_party/skia/src/effects/SkArithmeticMode.cpp \
 	third_party/skia/src/effects/SkAvoidXfermode.cpp \
 	third_party/skia/src/effects/SkBicubicImageFilter.cpp \
-	third_party/skia/src/effects/SkBitmapAlphaThresholdShader.cpp \
 	third_party/skia/src/effects/SkBitmapSource.cpp \
 	third_party/skia/src/effects/SkBlurDrawLooper.cpp \
 	third_party/skia/src/effects/SkBlurMask.cpp \
@@ -269,9 +268,11 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkOffsetImageFilter.cpp \
 	third_party/skia/src/effects/SkPaintFlagsDrawFilter.cpp \
 	third_party/skia/src/effects/SkPerlinNoiseShader.cpp \
+	third_party/skia/src/effects/SkPictureImageFilter.cpp \
 	third_party/skia/src/effects/SkPixelXorXfermode.cpp \
 	third_party/skia/src/effects/SkPorterDuff.cpp \
 	third_party/skia/src/effects/SkRectShaderImageFilter.cpp \
+	third_party/skia/src/effects/SkResizeImageFilter.cpp \
 	third_party/skia/src/effects/SkStippleMaskFilter.cpp \
 	third_party/skia/src/effects/SkTableColorFilter.cpp \
 	third_party/skia/src/effects/SkTableMaskFilter.cpp \
@@ -301,6 +302,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/pdf/SkPDFStream.cpp \
 	third_party/skia/src/pdf/SkPDFTypes.cpp \
 	third_party/skia/src/pdf/SkPDFUtils.cpp \
+	third_party/skia/src/gpu/gl/GrGLCreateNullInterface.cpp \
+	third_party/skia/src/gpu/gl/SkNullGLContext.cpp \
 	third_party/skia/src/gpu/GrAAHairLinePathRenderer.cpp \
 	third_party/skia/src/gpu/GrAAConvexPathRenderer.cpp \
 	third_party/skia/src/gpu/GrAARectRenderer.cpp \
@@ -348,6 +351,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrConfigConversionEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBezierEffect.cpp \
 	third_party/skia/src/gpu/effects/GrConvolutionEffect.cpp \
+	third_party/skia/src/gpu/effects/GrConvexPolyEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBicubicEffect.cpp \
 	third_party/skia/src/gpu/effects/GrCustomCoordsTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
@@ -415,6 +419,7 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
@@ -424,10 +429,10 @@ MY_CFLAGS_Debug := \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -438,7 +443,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -449,8 +453,9 @@ MY_DEFS_Debug := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
@@ -460,11 +465,12 @@ MY_DEFS_Debug := \
 	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
+	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
@@ -514,7 +520,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -547,6 +552,7 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
@@ -557,11 +563,9 @@ MY_CFLAGS_Release := \
 	-fdata-sections \
 	-ffunction-sections \
 	-fomit-frame-pointer \
-	-fno-unwind-tables \
-	-fno-asynchronous-unwind-tables
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -572,7 +576,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -583,8 +586,9 @@ MY_DEFS_Release := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
@@ -594,11 +598,12 @@ MY_DEFS_Release := \
 	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
+	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
@@ -648,7 +653,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

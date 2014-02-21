@@ -17,7 +17,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "grit/devtools_discovery_page_resources.h"
@@ -78,8 +77,7 @@ std::string BrowserListTabContentsProvider::GetPageThumbnailData(
       continue;
     scoped_refptr<base::RefCountedMemory> data;
     if (top_sites->GetPageThumbnail(url, false, &data))
-      return std::string(
-          reinterpret_cast<const char*>(data->front()), data->size());
+      return std::string(data->front_as<char>(), data->size());
   }
 
   return std::string();

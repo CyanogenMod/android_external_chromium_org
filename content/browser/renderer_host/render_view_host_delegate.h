@@ -24,8 +24,7 @@ class GURL;
 class SkBitmap;
 class WebKeyboardEvent;
 struct ViewHostMsg_CreateWindow_Params;
-struct ViewHostMsg_DidFailProvisionalLoadWithError_Params;
-struct ViewHostMsg_FrameNavigate_Params;
+struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 struct ViewMsg_PostMessage_Params;
 struct WebPreferences;
 
@@ -47,6 +46,7 @@ class Size;
 namespace content {
 
 class BrowserContext;
+class CrossSiteTransferringRequest;
 class FrameTree;
 class PageState;
 class RenderViewHost;
@@ -55,14 +55,11 @@ class SessionStorageNamespace;
 class SiteInstance;
 class WebContents;
 class WebContentsImpl;
-struct ContextMenuParams;
 struct FileChooserParams;
 struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
 struct Referrer;
 struct RendererPreferences;
-struct ResourceRedirectDetails;
-struct ResourceRequestDetails;
 
 //
 // RenderViewHostDelegate
@@ -97,10 +94,13 @@ class CONTENT_EXPORT RenderViewHostDelegate {
     // The |pending_render_view_host| is ready to commit a page.  The delegate
     // should ensure that the old RenderViewHost runs its unload handler first
     // and determine whether a RenderViewHost transfer is needed.
+    // |cross_site_transferring_request| is NULL if a request is not being
+    // transferred between renderers.
     virtual void OnCrossSiteResponse(
         RenderViewHost* pending_render_view_host,
         const GlobalRequestID& global_request_id,
-        bool is_transfer,
+        scoped_ptr<CrossSiteTransferringRequest>
+            cross_site_transferring_request,
         const std::vector<GURL>& transfer_url_chain,
         const Referrer& referrer,
         PageTransition page_transition,
@@ -151,34 +151,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // RenderView is going to be destroyed
   virtual void RenderViewDeleted(RenderViewHost* render_view_host) {}
 
-  // The RenderView processed a redirect during a provisional load.
-  //
-  // TODO(creis): Remove this method and have the pre-rendering code listen to
-  // WebContentsObserver::DidGetRedirectForResourceRequest instead.
-  // See http://crbug.com/78512.
-  virtual void DidRedirectProvisionalLoad(
-      RenderViewHost* render_view_host,
-      int32 page_id,
-      const GURL& source_url,
-      const GURL& target_url) {}
-
-  // A provisional load in the RenderView failed.
-  virtual void DidFailProvisionalLoadWithError(
-      RenderViewHost* render_view_host,
-      const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params) {}
-
-  // A response has been received for a resource request.
-  virtual void DidGetResourceResponseStart(
-      const ResourceRequestDetails& details) {}
-
-  // A redirect was received while requesting a resource.
-  virtual void DidGetRedirectForResourceRequest(
-      const ResourceRedirectDetails& details) {}
-
-  // The RenderView was navigated to a different page.
-  virtual void DidNavigate(RenderViewHost* render_view_host,
-                           const ViewHostMsg_FrameNavigate_Params& params) {}
-
   // The state for the page changed and should be updated.
   virtual void UpdateState(RenderViewHost* render_view_host,
                            int32 page_id,
@@ -205,14 +177,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // The page is trying to move the RenderView's representation in the client.
   virtual void RequestMove(const gfx::Rect& new_bounds) {}
-
-  // The RenderView began loading a new page. This corresponds to WebKit's
-  // notion of the throbber starting.
-  virtual void DidStartLoading(RenderViewHost* render_view_host) {}
-
-  // The RenderView stopped loading a page. This corresponds to WebKit's
-  // notion of the throbber stopping.
-  virtual void DidStopLoading(RenderViewHost* render_view_host) {}
 
   // The pending page load was canceled.
   virtual void DidCancelLoading() {}
@@ -328,9 +292,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                                 uint64 upload_position,
                                 uint64 upload_size) {}
 
-  // Notification that a worker process has crashed.
-  virtual void WorkerCrashed() {}
-
   // The page wants the hosting window to activate/deactivate itself (it
   // called the JavaScript window.focus()/blur() method).
   virtual void Activate() {}
@@ -423,10 +384,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // Show the newly created full screen widget. Similar to above.
   virtual void ShowCreatedFullscreenWidget(int route_id) {}
-
-  // A context menu should be shown, to be built using the context information
-  // provided in the supplied params.
-  virtual void ShowContextMenu(const ContextMenuParams& params) {}
 
   // The render view has requested access to media devices listed in
   // |request|, and the client should grant or deny that permission by

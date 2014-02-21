@@ -45,21 +45,21 @@ namespace login {
 NetworkStateHelper::NetworkStateHelper() {}
 NetworkStateHelper::~NetworkStateHelper() {}
 
-string16 NetworkStateHelper::GetCurrentNetworkName() const {
+base::string16 NetworkStateHelper::GetCurrentNetworkName() const {
   NetworkStateHandler* nsh = NetworkHandler::Get()->network_state_handler();
   const NetworkState* network =
       nsh->ConnectedNetworkByType(NetworkTypePattern::NonVirtual());
   if (network) {
     if (network->Matches(NetworkTypePattern::Ethernet()))
       return l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
-    return UTF8ToUTF16(network->name());
+    return base::UTF8ToUTF16(network->name());
   }
 
   network = nsh->ConnectingNetworkByType(NetworkTypePattern::NonVirtual());
   if (network) {
     if (network->Matches(NetworkTypePattern::Ethernet()))
       return l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
-    return UTF8ToUTF16(network->name());
+    return base::UTF8ToUTF16(network->name());
   }
   return base::string16();
 }

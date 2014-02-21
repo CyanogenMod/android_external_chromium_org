@@ -10,7 +10,6 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/swap_promise_monitor.h"
-#include "cc/debug/rendering_stats.h"
 #include "cc/input/top_controls_state.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
@@ -46,11 +45,10 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   const base::WeakPtr<cc::InputHandler>& GetInputHandler();
   void SetSuppressScheduleComposite(bool suppress);
   bool BeginMainFrameRequested() const;
-  void Animate(base::TimeTicks time);
+  void UpdateAnimations(base::TimeTicks time);
   void Composite(base::TimeTicks frame_begin_time);
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
-  void GetRenderingStats(cc::RenderingStats* stats);
   void UpdateTopControlsState(cc::TopControlsState constraints,
                               cc::TopControlsState current,
                               bool animate);
@@ -110,7 +108,6 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
       const blink::WebLayer* innerViewportScrollLayer,
       const blink::WebLayer* outerViewportScrollLayer) OVERRIDE;
   virtual void clearViewportLayers() OVERRIDE;
-  virtual void renderingStats(blink::WebRenderingStats& stats) const {}
   virtual void setShowFPSCounter(bool show);
   virtual void setShowPaintRects(bool show);
   virtual void setShowDebugBorders(bool show);
@@ -120,9 +117,9 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   // cc::LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE;
   virtual void DidBeginMainFrame() OVERRIDE;
-  virtual void Animate(double frame_begin_time) OVERRIDE;
+  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
+  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) OVERRIDE;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE;
@@ -144,7 +141,7 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
  private:
   RenderWidgetCompositor(RenderWidget* widget, bool threaded);
 
-  bool Initialize(cc::LayerTreeSettings settings);
+  void Initialize(cc::LayerTreeSettings settings);
 
   bool threaded_;
   bool suppress_schedule_composite_;

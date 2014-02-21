@@ -81,7 +81,7 @@ struct FirefoxImporter::BookmarkItem {
   int parent;
   int id;
   GURL url;
-  string16 title;
+  base::string16 title;
   BookmarkItemType type;
   std::string keyword;
   base::Time date_added;
@@ -258,7 +258,7 @@ void FirefoxImporter::ImportBookmarks() {
       continue;
 
     // Find the bookmark path by tracing their links to parent folders.
-    std::vector<string16> path;
+    std::vector<base::string16> path;
     BookmarkItem* child = item;
     bool found_path = false;
     bool is_in_toolbar = false;
@@ -310,7 +310,7 @@ void FirefoxImporter::ImportBookmarks() {
       if (!item->keyword.empty() && item->url.is_valid()) {
         importer::URLKeywordInfo url_keyword_info;
         url_keyword_info.url = item->url;
-        url_keyword_info.keyword.assign(UTF8ToUTF16(item->keyword));
+        url_keyword_info.keyword.assign(base::UTF8ToUTF16(item->keyword));
         url_keyword_info.display_name = item->title;
         url_keywords.push_back(url_keyword_info);
       }
@@ -321,7 +321,7 @@ void FirefoxImporter::ImportBookmarks() {
 
   // Write into profile.
   if (!bookmarks.empty() && !cancelled()) {
-    const string16& first_folder_name =
+    const base::string16& first_folder_name =
         bridge_->GetLocalizedString(IDS_BOOKMARK_GROUP_FROM_FIREFOX);
     bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
@@ -383,6 +383,9 @@ void FirefoxImporter::ImportHomepage() {
 
 void FirefoxImporter::GetSearchEnginesXMLData(
     std::vector<std::string>* search_engine_data) {
+  // TODO(mpawlowski): This may no longer work, search engines are stored in
+  // search.json since Firefox 3.5, not in search.sqlite. XML definitions are
+  // still necessary. http://crbug.com/329175
   base::FilePath file = source_path_.AppendASCII("search.sqlite");
   if (!base::PathExists(file))
     return;
@@ -401,8 +404,21 @@ void FirefoxImporter::GetSearchEnginesXMLData(
   if (!s.is_valid())
     return;
 
-  base::FilePath app_path = app_path_.AppendASCII("searchplugins");
-  base::FilePath profile_path = source_path_.AppendASCII("searchplugins");
+  const base::FilePath searchplugins_path(FILE_PATH_LITERAL("searchplugins"));
+  // Search engine definitions are XMLs stored in two directories. Default
+  // engines are in the app directory (app_path_) and custom engines are
+  // in the profile directory (source_path_).
+
+  // Since Firefox 21, app_path_ engines are in 'browser' subdirectory:
+  base::FilePath app_path =
+      app_path_.AppendASCII("browser").Append(searchplugins_path);
+  if (!base::PathExists(app_path)) {
+    // This might be an older Firefox, try old location without the 'browser'
+    // path component:
+    app_path = app_path_.Append(searchplugins_path);
+  }
+
+  base::FilePath profile_path = source_path_.Append(searchplugins_path);
 
   // Firefox doesn't store a search engine in its sqlite database unless the
   // user has added a engine. So we get search engines from sqlite db as well

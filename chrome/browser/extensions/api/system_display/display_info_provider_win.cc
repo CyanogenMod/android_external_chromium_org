@@ -31,7 +31,7 @@ BOOL CALLBACK EnumMonitorCallback(HMONITOR monitor,
   MONITORINFOEX monitor_info;
   ZeroMemory(&monitor_info, sizeof(MONITORINFOEX));
   monitor_info.cbSize = sizeof(monitor_info);
-  base::win::GetMonitorInfoWrapper(monitor, &monitor_info);
+  GetMonitorInfo(monitor, &monitor_info);
 
   DISPLAY_DEVICE device;
   device.cb = sizeof(device);
@@ -39,8 +39,9 @@ BOOL CALLBACK EnumMonitorCallback(HMONITOR monitor,
     return FALSE;
 
   gfx::Size dpi(gfx::GetDPI());
-  unit->id = base::Int64ToString(base::Hash(WideToUTF8(monitor_info.szDevice)));
-  unit->name = WideToUTF8(device.DeviceString);
+  unit->id = base::Int64ToString(
+      base::Hash(base::WideToUTF8(monitor_info.szDevice)));
+  unit->name = base::WideToUTF8(device.DeviceString);
   unit->dpi_x = dpi.width();
   unit->dpi_y = dpi.height();
   all_displays->push_back(unit);

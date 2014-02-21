@@ -127,6 +127,12 @@ class NET_EXPORT HttpServerPropertiesImpl
   // Returns all persistent SPDY settings.
   virtual const SpdySettingsMap& spdy_settings_map() const OVERRIDE;
 
+  virtual void SetServerNetworkStats(const HostPortPair& host_port_pair,
+                                     NetworkStats stats) OVERRIDE;
+
+  virtual const NetworkStats* GetServerNetworkStats(
+      const HostPortPair& host_port_pair) const OVERRIDE;
+
   virtual HttpPipelinedHostCapability GetPipelineCapability(
       const HostPortPair& origin) OVERRIDE;
 
@@ -144,12 +150,26 @@ class NET_EXPORT HttpServerPropertiesImpl
   // |spdy_servers_table_| has flattened representation of servers (host/port
   // pair) that either support or not support SPDY protocol.
   typedef base::hash_map<std::string, bool> SpdyServerHostPortTable;
+  typedef std::map<HostPortPair, NetworkStats> ServerNetworkStatsMap;
+  typedef std::map<HostPortPair, HostPortPair> CanonicalHostMap;
+  typedef std::vector<std::string> CanonicalSufficList;
+
+  // Return the canonical host for |server|, or end if none exists.
+  CanonicalHostMap::const_iterator GetCanonicalHost(HostPortPair server) const;
 
   SpdyServerHostPortTable spdy_servers_table_;
 
   AlternateProtocolMap alternate_protocol_map_;
   SpdySettingsMap spdy_settings_map_;
+  ServerNetworkStatsMap server_network_stats_map_;
   scoped_ptr<CachedPipelineCapabilityMap> pipeline_capability_map_;
+  // Contains a map of servers which could share the same alternate protocol.
+  // Map from a Canonical host/port (host is some postfix of host names) to an
+  // actual origin, which has a plausible alternate protocol mapping.
+  CanonicalHostMap canonical_host_to_origin_map_;
+  // Contains list of suffixes (for exmaple ".c.youtube.com",
+  // ".googlevideo.com") of canoncial hostnames.
+  CanonicalSufficList canoncial_suffixes_;
 
   base::WeakPtrFactory<HttpServerPropertiesImpl> weak_ptr_factory_;
 

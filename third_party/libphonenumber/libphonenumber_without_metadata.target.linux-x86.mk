@@ -17,7 +17,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "third_party_libphonenumber_libphonenumber_gyp_libphonenumber_without_metadata_target_genproto":
-# "{'inputs': ['../../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'msvs_cygwin_shell': '0', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['src/resources/phonemetadata.proto', 'src/resources/phonenumber.proto'], 'action': ['python', '../../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', 'src/resources', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)', 'process_outputs_as_sources': '1'}":
+# "{'inputs': ['../../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'process_outputs_as_sources': '1', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['src/resources/phonemetadata.proto', 'src/resources/phonenumber.proto'], 'action': ['python', '../../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', 'src/resources', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -118,6 +118,7 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
@@ -127,11 +128,11 @@ MY_CFLAGS_Debug := \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
 	'-DI18N_PHONENUMBERS_USE_ICU_REGEXP=1' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -142,7 +143,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -186,7 +186,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -219,6 +218,7 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
@@ -229,12 +229,10 @@ MY_CFLAGS_Release := \
 	-fdata-sections \
 	-ffunction-sections \
 	-fomit-frame-pointer \
-	-fno-unwind-tables \
-	-fno-asynchronous-unwind-tables
+	-funwind-tables
 
 MY_DEFS_Release := \
 	'-DI18N_PHONENUMBERS_USE_ICU_REGEXP=1' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -245,7 +243,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -289,7 +286,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

@@ -5,125 +5,74 @@
 #include "chrome/browser/extensions/suspicious_extension_bubble_controller.h"
 
 #include "base/bind.h"
+#include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/extension_prefs.h"
+#include "chrome/browser/extensions/extension_message_bubble.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/suspicious_extension_bubble.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
-// UMA histogram constants.
-enum UmaWipeoutHistogramOptions {
-  ACTION_LEARN_MORE = 0,
-  ACTION_DISMISS,
-  ACTION_BOUNDARY, // Must be the last value.
-};
-
-static base::LazyInstance<extensions::ProfileKeyedAPIFactory<
-    extensions::SuspiciousExtensionBubbleController> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-
-namespace extensions {
+base::LazyInstance<std::set<Profile*> > g_shown_for_profiles =
+  LAZY_INSTANCE_INITIALIZER;
 
 ////////////////////////////////////////////////////////////////////////////////
-// SuspiciousExtensionBubbleController
+// SuspiciousExtensionBubbleDelegate
 
-SuspiciousExtensionBubbleController::SuspiciousExtensionBubbleController(
-    Profile* profile)
-    : service_(extensions::ExtensionSystem::Get(profile)->extension_service()),
-      profile_(profile),
-      has_notified_(false) {
+SuspiciousExtensionBubbleDelegate::SuspiciousExtensionBubbleDelegate(
+    ExtensionService* service)
+    : service_(service) {
 }
 
-SuspiciousExtensionBubbleController::~SuspiciousExtensionBubbleController() {
+SuspiciousExtensionBubbleDelegate::~SuspiciousExtensionBubbleDelegate() {
 }
 
-// static
-ProfileKeyedAPIFactory<SuspiciousExtensionBubbleController>*
-SuspiciousExtensionBubbleController::GetFactoryInstance() {
-  return &g_factory.Get();
-}
-
-// static
-SuspiciousExtensionBubbleController* SuspiciousExtensionBubbleController::Get(
-    Profile* profile) {
-  return ProfileKeyedAPIFactory<
-      SuspiciousExtensionBubbleController>::GetForProfile(profile);
-}
-
-bool SuspiciousExtensionBubbleController::HasSuspiciousExtensions() {
-  if (has_notified_)
+bool SuspiciousExtensionBubbleDelegate::ShouldIncludeExtension(
+      const std::string& extension_id) {
+  extensions::ExtensionPrefs* prefs = service_->extension_prefs();
+  if (!prefs->IsExtensionDisabled(extension_id))
     return false;
-  if (!service_)
-    return false;  // Can happen during tests.
 
-  suspicious_extensions_.clear();
+  int disble_reasons = prefs->GetDisableReasons(extension_id);
+  if (disble_reasons & extensions::Extension::DISABLE_NOT_VERIFIED)
+    return !prefs->HasWipeoutBeenAcknowledged(extension_id);
 
-  ExtensionPrefs* prefs = service_->extension_prefs();
-
-  scoped_ptr<const ExtensionSet> extension_set(
-      service_->GenerateInstalledExtensionsSet());
-  for (ExtensionSet::const_iterator it = extension_set->begin();
-       it != extension_set->end(); ++it) {
-    std::string id = (*it)->id();
-    if (!prefs->IsExtensionDisabled(id))
-      continue;
-    int disble_reasons = prefs->GetDisableReasons(id);
-    if (disble_reasons & Extension::DISABLE_NOT_VERIFIED) {
-      if (prefs->HasWipeoutBeenAcknowledged(id))
-         continue;
-
-      suspicious_extensions_.push_back(id);
-    }
-  }
-
-  UMA_HISTOGRAM_COUNTS_100(
-      "SuspiciousExtensionBubble.ExtensionWipeoutCount",
-      suspicious_extensions_.size());
-
-  has_notified_ = true;
-  return !suspicious_extensions_.empty();
+  return false;
 }
 
-void SuspiciousExtensionBubbleController::Show(
-    SuspiciousExtensionBubble* bubble) {
-  // Wire up all the callbacks, to get notified what actions the user took.
-  base::Closure button_callback =
-      base::Bind(&SuspiciousExtensionBubbleController::OnBubbleDismiss,
-      base::Unretained(this));
-  base::Closure link_callback =
-      base::Bind(&SuspiciousExtensionBubbleController::OnLinkClicked,
-      base::Unretained(this));
-  bubble->OnButtonClicked(button_callback);
-  bubble->OnLinkClicked(link_callback);
-
-  content::RecordAction(
-      content::UserMetricsAction("ExtensionWipeoutNotificationShown"));
-
-  bubble->Show();
+void SuspiciousExtensionBubbleDelegate::AcknowledgeExtension(
+    const std::string& extension_id,
+    ExtensionMessageBubbleController::BubbleAction user_action) {
+  extensions::ExtensionPrefs* prefs = service_->extension_prefs();
+  prefs->SetWipeoutAcknowledged(extension_id, true);
 }
 
-string16 SuspiciousExtensionBubbleController::GetTitle() {
+void SuspiciousExtensionBubbleDelegate::PerformAction(
+    const extensions::ExtensionIdList& list) {
+  // This bubble solicits no action from the user. Or as Nimoy would have it:
+  // "Well, my work here is done".
+}
+
+base::string16 SuspiciousExtensionBubbleDelegate::GetTitle() const {
   return l10n_util::GetStringUTF16(IDS_EXTENSIONS_SUSPICIOUS_DISABLED_TITLE);
 }
 
-string16 SuspiciousExtensionBubbleController::GetMessageBody() {
+base::string16 SuspiciousExtensionBubbleDelegate::GetMessageBody() const {
   return l10n_util::GetStringFUTF16(IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY,
       l10n_util::GetStringUTF16(IDS_EXTENSION_WEB_STORE_TITLE));
 }
 
-string16 SuspiciousExtensionBubbleController::GetOverflowText(
-    const base::string16& overflow_count) {
+base::string16 SuspiciousExtensionBubbleDelegate::GetOverflowText(
+    const base::string16& overflow_count) const {
   base::string16 overflow_string = l10n_util::GetStringUTF16(
       IDS_EXTENSIONS_SUSPICIOUS_DISABLED_AND_N_MORE);
   base::string16 new_string;
@@ -131,8 +80,8 @@ string16 SuspiciousExtensionBubbleController::GetOverflowText(
   // Just before string freeze, we checked in # as a substitution value for
   // this string, whereas we should have used $1. It was discovered too late,
   // so we do the substitution by hand in that case.
-  if (overflow_string.find(ASCIIToUTF16("#")) != base::string16::npos) {
-    base::ReplaceChars(overflow_string, ASCIIToUTF16("#").c_str(),
+  if (overflow_string.find(base::ASCIIToUTF16("#")) != base::string16::npos) {
+    base::ReplaceChars(overflow_string, base::ASCIIToUTF16("#").c_str(),
                        overflow_count, &new_string);
   } else {
     new_string = l10n_util::GetStringFUTF16(
@@ -143,70 +92,75 @@ string16 SuspiciousExtensionBubbleController::GetOverflowText(
   return new_string;
 }
 
-string16 SuspiciousExtensionBubbleController::GetLearnMoreLabel() {
+base::string16
+SuspiciousExtensionBubbleDelegate::GetLearnMoreLabel() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
-string16 SuspiciousExtensionBubbleController::GetDismissButtonLabel() {
+GURL SuspiciousExtensionBubbleDelegate::GetLearnMoreUrl() const {
+  return GURL(chrome::kRemoveNonCWSExtensionURL);
+}
+
+base::string16
+SuspiciousExtensionBubbleDelegate::GetActionButtonLabel() const {
+  return base::string16();
+}
+
+base::string16
+SuspiciousExtensionBubbleDelegate::GetDismissButtonLabel() const {
   return l10n_util::GetStringUTF16(IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BUTTON);
 }
 
-std::vector<string16>
-SuspiciousExtensionBubbleController::GetSuspiciousExtensionNames() {
-  if (suspicious_extensions_.empty())
-    return std::vector<string16>();
-
-  std::vector<string16> return_value;
-  for (ExtensionIdList::const_iterator it = suspicious_extensions_.begin();
-       it != suspicious_extensions_.end(); ++it) {
-    const Extension* extension = service_->GetInstalledExtension(*it);
-    if (extension) {
-      return_value.push_back(UTF8ToUTF16(extension->name()));
-    } else {
-      return_value.push_back(
-          ASCIIToUTF16(std::string("(unknown name) ") + *it));
-      // TODO(finnur): Add this as a string to the grd, for next milestone.
-    }
-  }
-  return return_value;
+bool
+SuspiciousExtensionBubbleDelegate::ShouldShowExtensionList() const {
+  return true;
 }
 
-void SuspiciousExtensionBubbleController::OnBubbleDismiss() {
-  content::RecordAction(
-      content::UserMetricsAction("SuspiciousExtensionBubbleDismissed"));
-  UMA_HISTOGRAM_ENUMERATION("SuspiciousExtensionBubble.UserSelection",
-                            ACTION_DISMISS, ACTION_BOUNDARY);
-  AcknowledgeWipeout();
+void SuspiciousExtensionBubbleDelegate::LogExtensionCount(
+    size_t count) {
+  UMA_HISTOGRAM_COUNTS_100(
+      "ExtensionWipeoutBubble.ExtensionWipeoutCount", count);
 }
 
-void SuspiciousExtensionBubbleController::OnLinkClicked() {
-  UMA_HISTOGRAM_ENUMERATION("SuspiciousExtensionBubble.UserSelection",
-                            ACTION_LEARN_MORE, ACTION_BOUNDARY);
-  Browser* browser =
-      chrome::FindBrowserWithProfile(profile_, chrome::GetActiveDesktop());
-  if (browser) {
-    browser->OpenURL(
-        content::OpenURLParams(GURL(chrome::kChromeUIExtensionsURL),
-                               content::Referrer(),
-                               NEW_FOREGROUND_TAB,
-                               content::PAGE_TRANSITION_LINK,
-                               false));
-  }
-  AcknowledgeWipeout();
+void SuspiciousExtensionBubbleDelegate::LogAction(
+    ExtensionMessageBubbleController::BubbleAction action) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "ExtensionWipeoutBubble.UserSelection",
+      action, ExtensionMessageBubbleController::ACTION_BOUNDARY);
 }
 
-void SuspiciousExtensionBubbleController::AcknowledgeWipeout() {
-  ExtensionPrefs* prefs = service_->extension_prefs();
-  for (ExtensionIdList::const_iterator it = suspicious_extensions_.begin();
-       it != suspicious_extensions_.end(); ++it) {
-    prefs->SetWipeoutAcknowledged(*it, true);
-  }
+}  // namespace
+
+namespace extensions {
+
+////////////////////////////////////////////////////////////////////////////////
+// SuspiciousExtensionBubbleController
+
+// static
+void SuspiciousExtensionBubbleController::ClearProfileListForTesting() {
+  g_shown_for_profiles.Get().clear();
 }
 
-template <>
-void ProfileKeyedAPIFactory<
-    SuspiciousExtensionBubbleController>::DeclareFactoryDependencies() {
-  DependsOn(extensions::ExtensionSystemFactory::GetInstance());
+SuspiciousExtensionBubbleController::SuspiciousExtensionBubbleController(
+    Profile* profile)
+    : ExtensionMessageBubbleController(
+          new SuspiciousExtensionBubbleDelegate(
+              extensions::ExtensionSystem::Get(profile)->extension_service()),
+          profile),
+      profile_(profile) {
+}
+
+SuspiciousExtensionBubbleController::~SuspiciousExtensionBubbleController() {
+}
+
+bool SuspiciousExtensionBubbleController::ShouldShow() {
+  return !g_shown_for_profiles.Get().count(profile_) &&
+      !GetExtensionList().empty();
+}
+
+void SuspiciousExtensionBubbleController::Show(ExtensionMessageBubble* bubble) {
+  g_shown_for_profiles.Get().insert(profile_);
+  ExtensionMessageBubbleController::Show(bubble);
 }
 
 }  // namespace extensions

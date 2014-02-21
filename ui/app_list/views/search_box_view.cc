@@ -10,6 +10,7 @@
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/search_box_model.h"
+#include "ui/app_list/speech_ui_model.h"
 #include "ui/app_list/views/app_list_menu_views.h"
 #include "ui/app_list/views/search_box_view_delegate.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -55,7 +56,7 @@ SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
 
 #if !defined(OS_CHROMEOS)
   menu_button_ = new views::MenuButton(NULL, base::string16(), this, false);
-  menu_button_->set_border(NULL);
+  menu_button_->SetBorder(views::Border::NullBorder());
   menu_button_->SetIcon(*rb.GetImageSkiaNamed(IDR_APP_LIST_TOOLS_NORMAL));
   menu_button_->SetHoverIcon(*rb.GetImageSkiaNamed(IDR_APP_LIST_TOOLS_HOVER));
   menu_button_->SetPushedIcon(*rb.GetImageSkiaNamed(
@@ -63,16 +64,18 @@ SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
   AddChildView(menu_button_);
 #endif
 
-  search_box_->RemoveBorder();
-  search_box_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  search_box_->SetBorder(views::Border::NullBorder());
+  search_box_->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
   search_box_->set_placeholder_text_color(kHintTextColor);
-  search_box_->SetController(this);
+  search_box_->set_controller(this);
   AddChildView(search_box_);
 
+  view_delegate_->GetSpeechUI()->AddObserver(this);
   ModelChanged();
 }
 
 SearchBoxView::~SearchBoxView() {
+  view_delegate_->GetSpeechUI()->RemoveObserver(this);
   model_->search_box()->RemoveObserver(this);
 }
 
@@ -94,6 +97,7 @@ bool SearchBoxView::HasSearch() const {
 
 void SearchBoxView::ClearSearch() {
   search_box_->SetText(base::string16());
+  view_delegate_->AutoLaunchCanceled();
   // Updates model and fires query changed manually because SetText() above
   // does not generate ContentsChanged() notification.
   UpdateModel();
@@ -175,6 +179,7 @@ void SearchBoxView::NotifyQueryChanged() {
 void SearchBoxView::ContentsChanged(views::Textfield* sender,
                                     const base::string16& new_contents) {
   UpdateModel();
+  view_delegate_->AutoLaunchCanceled();
   NotifyQueryChanged();
 }
 
@@ -189,7 +194,7 @@ bool SearchBoxView::HandleKeyEvent(views::Textfield* sender,
 
 void SearchBoxView::ButtonPressed(views::Button* sender,
                                   const ui::Event& event) {
-  DCHECK(!speech_button_ && sender == speech_button_);
+  DCHECK(speech_button_ && sender == speech_button_);
   view_delegate_->ToggleSpeechRecognition();
 }
 
@@ -208,16 +213,24 @@ void SearchBoxView::IconChanged() {
 }
 
 void SearchBoxView::SpeechRecognitionButtonPropChanged() {
-  const SearchBoxModel::ButtonProperty* speech_button_prop =
+  const SearchBoxModel::SpeechButtonProperty* speech_button_prop =
       model_->search_box()->speech_button();
   if (speech_button_prop) {
     if (!speech_button_) {
       speech_button_ = new views::ImageButton(this);
       AddChildView(speech_button_);
     }
-    speech_button_->SetImage(views::Button::STATE_NORMAL,
-                            &speech_button_prop->icon);
-    speech_button_->SetTooltipText(speech_button_prop->tooltip);
+
+    if (view_delegate_->GetSpeechUI()->state() ==
+        SPEECH_RECOGNITION_HOTWORD_LISTENING) {
+      speech_button_->SetImage(
+          views::Button::STATE_NORMAL, &speech_button_prop->on_icon);
+      speech_button_->SetTooltipText(speech_button_prop->on_tooltip);
+    } else {
+      speech_button_->SetImage(
+          views::Button::STATE_NORMAL, &speech_button_prop->off_icon);
+      speech_button_->SetTooltipText(speech_button_prop->off_tooltip);
+    }
   } else {
     if (speech_button_) {
       // Deleting a view will detach it from its parent.
@@ -238,6 +251,12 @@ void SearchBoxView::SelectionModelChanged() {
 void SearchBoxView::TextChanged() {
   search_box_->SetText(model_->search_box()->text());
   NotifyQueryChanged();
+}
+
+void SearchBoxView::OnSpeechRecognitionStateChanged(
+    SpeechRecognitionState new_state) {
+  SpeechRecognitionButtonPropChanged();
+  SchedulePaint();
 }
 
 }  // namespace app_list

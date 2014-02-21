@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "nacl_io/dbgprint.h"
 #include "nacl_io/kernel_proxy.h"
 #include "nacl_io/kernel_wrap.h"
 #include "nacl_io/osmman.h"
@@ -33,6 +34,14 @@ void ki_init(void* kp) {
 void ki_init_ppapi(void* kp,
                    PP_Instance instance,
                    PPB_GetInterface get_browser_interface) {
+  PepperInterface* ppapi = NULL;
+  if (instance && get_browser_interface)
+    ppapi = new RealPepperInterface(instance, get_browser_interface);
+  ki_init_interface(kp, ppapi);
+}
+
+void ki_init_interface(void* kp, void* pepper_interface) {
+  PepperInterface* ppapi = static_cast<PepperInterface*>(pepper_interface);
   kernel_wrap_init();
 
   if (kp == NULL) {
@@ -43,11 +52,15 @@ void ki_init_ppapi(void* kp,
     s_kp_owned = false;
   }
 
-  PepperInterface* ppapi = NULL;
-  if (instance && get_browser_interface)
-    ppapi = new RealPepperInterface(instance, get_browser_interface);
-
   s_kp->Init(ppapi);
+}
+
+int ki_register_fs_type(const char* fs_type, struct fuse_operations* fuse_ops) {
+  return s_kp->RegisterFsType(fs_type, fuse_ops);
+}
+
+int ki_unregister_fs_type(const char* fs_type) {
+  return s_kp->UnregisterFsType(fs_type);
 }
 
 int ki_is_initialized() {
@@ -369,77 +382,106 @@ sighandler_t ki_sigset(int signum, sighandler_t handler) {
 #ifdef PROVIDES_SOCKET_API
 // Socket Functions
 int ki_accept(int fd, struct sockaddr* addr, socklen_t* len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->accept(fd, addr, len);
 }
 
 int ki_bind(int fd, const struct sockaddr* addr, socklen_t len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->bind(fd, addr, len);
 }
 
 int ki_connect(int fd, const struct sockaddr* addr, socklen_t len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->connect(fd, addr, len);
 }
 
 struct hostent* ki_gethostbyname(const char* name) {
+  ON_NOSYS_RETURN(NULL);
   return s_kp->gethostbyname(name);
 }
 
+int ki_getaddrinfo(const char *node, const char *service,
+                const struct addrinfo *hints,
+                struct addrinfo **res) {
+  ON_NOSYS_RETURN(EAI_SYSTEM);
+  return s_kp->getaddrinfo(node, service, hints, res);
+}
+
+void ki_freeaddrinfo(struct addrinfo *res) {
+  s_kp->freeaddrinfo(res);
+}
+
 int ki_getpeername(int fd, struct sockaddr* addr, socklen_t* len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->getpeername(fd, addr, len);
 }
 
 int ki_getsockname(int fd, struct sockaddr* addr, socklen_t* len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->getsockname(fd, addr, len);
 }
 
 int ki_getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->getsockopt(fd, lvl, optname, optval, len);
 }
 
 int ki_listen(int fd, int backlog) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->listen(fd, backlog);
 }
 
 ssize_t ki_recv(int fd, void* buf, size_t len, int flags) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->recv(fd, buf, len, flags);
 }
 
 ssize_t ki_recvfrom(int fd, void* buf, size_t len, int flags,
                  struct sockaddr* addr, socklen_t* addrlen) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->recvfrom(fd, buf, len, flags, addr, addrlen);
 }
 
 ssize_t ki_recvmsg(int fd, struct msghdr* msg, int flags) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->recvmsg(fd, msg, flags);
 }
 
 ssize_t ki_send(int fd, const void* buf, size_t len, int flags) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->send(fd, buf, len, flags);
 }
 
 ssize_t ki_sendto(int fd, const void* buf, size_t len, int flags,
                const struct sockaddr* addr, socklen_t addrlen) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->sendto(fd, buf, len, flags, addr, addrlen);
 }
 
 ssize_t ki_sendmsg(int fd, const struct msghdr* msg, int flags) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->sendmsg(fd, msg, flags);
 }
 
 int ki_setsockopt(int fd, int lvl, int optname, const void* optval,
                   socklen_t len) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->setsockopt(fd, lvl, optname, optval, len);
 }
 
 int ki_shutdown(int fd, int how) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->shutdown(fd, how);
 }
 
 int ki_socket(int domain, int type, int protocol) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->socket(domain, type, protocol);
 }
 
 int ki_socketpair(int domain, int type, int protocol, int* sv) {
+  ON_NOSYS_RETURN(-1);
   return s_kp->socketpair(domain, type, protocol, sv);
 }
 #endif  // PROVIDES_SOCKET_API

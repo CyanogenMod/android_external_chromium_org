@@ -22,19 +22,16 @@ chrome.dll: %(VersionDir)s\
 chrome_100_percent.pak: %(VersionDir)s\
 chrome_child.dll: %(VersionDir)s\
 chrome_elf.dll: %(VersionDir)s\
-chrome_frame_helper.dll: %(VersionDir)s\
-chrome_frame_helper.exe: %(VersionDir)s\
-chrome_launcher.exe: %(VersionDir)s\
 D3DCompiler_43.dll: %(VersionDir)s\
 d3dcompiler_46.dll: %(VersionDir)s\
 ffmpegsumo.dll: %(VersionDir)s\
 icudt.dll: %(VersionDir)s\
+icudtl.dat: %(VersionDir)s\
 libEGL.dll: %(VersionDir)s\
 libGLESv2.dll: %(VersionDir)s\
 nacl64.exe: %(VersionDir)s\
 nacl_irt_x86_32.nexe: %(VersionDir)s\
 nacl_irt_x86_64.nexe: %(VersionDir)s\
-npchrome_frame.dll: %(VersionDir)s\
 pdf.dll: %(VersionDir)s\
 ppGoogleNaClPluginChrome.dll: %(VersionDir)s\
 resources.pak: %(VersionDir)s\
@@ -53,7 +50,6 @@ locales\*.pak: %(VersionDir)s\Locales
 chrome_200_percent.pak: %(VersionDir)s\
 
 [TOUCH]
-chrome_touch_100_percent.pak: %(VersionDir)s\
 
 [GOOGLE_CHROME]
 delegate_execute.exe: %(VersionDir)s\

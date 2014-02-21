@@ -152,7 +152,7 @@ void ToastContentsView::StartFadeIn() {
   fade_animation_->Stop();
 
   GetWidget()->SetOpacity(0);
-  GetWidget()->Show();
+  GetWidget()->ShowInactive();
   fade_animation_->Reset(0);
   fade_animation_->Show();
 }
@@ -226,11 +226,7 @@ void ToastContentsView::WindowClosing() {
 }
 
 bool ToastContentsView::CanActivate() const {
-#if defined(OS_WIN) && defined(USE_AURA)
-  return true;
-#else
   return false;
-#endif
 }
 
 void ToastContentsView::OnDisplayChanged() {
@@ -285,6 +281,42 @@ void ToastContentsView::GetAccessibleState(ui::AccessibleViewState* state) {
   if (child_count() > 0)
     child_at(0)->GetAccessibleState(state);
   state->role = ui::AccessibilityTypes::ROLE_WINDOW;
+}
+
+void ToastContentsView::ClickOnNotification(
+    const std::string& notification_id) {
+  if (collection_)
+    collection_->ClickOnNotification(notification_id);
+}
+
+void ToastContentsView::RemoveNotification(
+    const std::string& notification_id,
+    bool by_user) {
+  if (collection_)
+    collection_->RemoveNotification(notification_id, by_user);
+}
+
+scoped_ptr<ui::MenuModel> ToastContentsView::CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) {
+  // Should not reach, the context menu should be handled in
+  // MessagePopupCollection.
+  NOTREACHED();
+  return scoped_ptr<ui::MenuModel>();
+}
+
+bool ToastContentsView::HasClickedListener(
+    const std::string& notification_id) {
+  if (!collection_)
+    return false;
+  return collection_->HasClickedListener(notification_id);
+}
+
+void ToastContentsView::ClickOnNotificationButton(
+    const std::string& notification_id,
+    int button_index) {
+  if (collection_)
+    collection_->ClickOnNotificationButton(notification_id, button_index);
 }
 
 void ToastContentsView::CreateWidget(gfx::NativeView parent) {

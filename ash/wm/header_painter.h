@@ -10,16 +10,12 @@
 #include "base/compiler_specific.h"  // OVERRIDE
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/window_observer.h"
 #include "ui/gfx/animation/animation_delegate.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
-namespace aura {
-class Window;
-}
 namespace gfx {
 class Canvas;
-class Font;
+class FontList;
 class ImageSkia;
 class Point;
 class Size;
@@ -34,19 +30,8 @@ namespace ash {
 class FrameCaptionButtonContainerView;
 
 // Helper class for painting the window header.
-class ASH_EXPORT HeaderPainter : public aura::WindowObserver,
-                                 public gfx::AnimationDelegate {
+class ASH_EXPORT HeaderPainter : public gfx::AnimationDelegate {
  public:
-  // Opacity values for the window header in various states, from 0 to 255.
-  static int kActiveWindowOpacity;
-  static int kInactiveWindowOpacity;
-  static int kSoloWindowOpacity;
-
-  enum HeaderMode {
-    ACTIVE,
-    INACTIVE
-  };
-
   HeaderPainter();
   virtual ~HeaderPainter();
 
@@ -88,7 +73,6 @@ class ASH_EXPORT HeaderPainter : public aura::WindowObserver,
   // Paints the header.
   // |theme_frame_overlay_id| is 0 if no overlay image should be used.
   void PaintHeader(gfx::Canvas* canvas,
-                   HeaderMode header_mode,
                    int theme_frame_id,
                    int theme_frame_overlay_id);
 
@@ -101,7 +85,7 @@ class ASH_EXPORT HeaderPainter : public aura::WindowObserver,
   int HeaderContentSeparatorSize() const;
 
   // Paint the title bar, primarily the title string.
-  void PaintTitleBar(gfx::Canvas* canvas, const gfx::Font& title_font);
+  void PaintTitleBar(gfx::Canvas* canvas, const gfx::FontList& title_font_list);
 
   // Performs layout for the header based on whether we want the shorter
   // appearance. |shorter_layout| is typically used for maximized windows, but
@@ -120,22 +104,15 @@ class ASH_EXPORT HeaderPainter : public aura::WindowObserver,
   }
 
   // Schedule a re-paint of the entire title.
-  void SchedulePaintForTitle(const gfx::Font& title_font);
+  void SchedulePaintForTitle(const gfx::FontList& title_font_list);
 
   // Called when the browser theme changes.
   void OnThemeChanged();
-
-  // aura::WindowObserver overrides:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
 
   // Overridden from gfx::AnimationDelegate
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(HeaderPainterTest, GetHeaderOpacity);
   FRIEND_TEST_ALL_PREFIXES(HeaderPainterTest, TitleIconAlignment);
 
   // Returns the header bounds in the coordinates of |header_view_|. The header
@@ -150,29 +127,18 @@ class ASH_EXPORT HeaderPainter : public aura::WindowObserver,
   // coordinates.
   int GetCaptionButtonContainerCenterY() const;
 
-  // Returns the opacity value used to paint the header.
-  // |theme_frame_overlay_id| is 0 if no overlay image is used.
-  int GetHeaderOpacity(HeaderMode header_mode,
-                       int theme_frame_id,
-                       int theme_frame_overlay_id) const;
-
   // Returns the radius of the header's top corners.
   int GetHeaderCornerRadius() const;
 
-  // Schedules a paint for the header. Used when transitioning from no header to
-  // a header (or other way around).
-  void SchedulePaintForHeader();
-
-  // Get the bounds for the title. The provided |title_font| is used to
+  // Get the bounds for the title. The provided |title_font_list| is used to
   // determine the correct dimensions.
-  gfx::Rect GetTitleBounds(const gfx::Font& title_font);
+  gfx::Rect GetTitleBounds(const gfx::FontList& title_font_list);
 
   // Not owned
   views::Widget* frame_;
   views::View* header_view_;
   views::View* window_icon_;  // May be NULL.
   FrameCaptionButtonContainerView* caption_button_container_;
-  aura::Window* window_;
 
   // The height of the header.
   int header_height_;
@@ -187,12 +153,10 @@ class ASH_EXPORT HeaderPainter : public aura::WindowObserver,
   // Image ids and opacity last used for painting header.
   int previous_theme_frame_id_;
   int previous_theme_frame_overlay_id_;
-  int previous_opacity_;
 
   // Image ids and opacity we are crossfading from.
   int crossfade_theme_frame_id_;
   int crossfade_theme_frame_overlay_id_;
-  int crossfade_opacity_;
 
   scoped_ptr<gfx::SlideAnimation> crossfade_animation_;
 

@@ -307,6 +307,7 @@ bool BufferedResourceHandler::SelectNextHandler(bool* defer) {
 
   if (net::IsSupportedCertificateMimeType(mime_type)) {
     // Install certificate file.
+    info->set_is_download(true);
     scoped_ptr<ResourceHandler> handler(
         new CertificateResourceHandler(request()));
     return UseAlternateNextHandler(handler.Pass());
@@ -333,6 +334,7 @@ bool BufferedResourceHandler::SelectNextHandler(bool* defer) {
       PluginServiceImpl::GetInstance()->GetPlugins(
           base::Bind(&BufferedResourceHandler::OnPluginsLoaded,
                      weak_ptr_factory_.GetWeakPtr()));
+      request()->LogBlockedBy("BufferedResourceHandler");
       *defer = true;
       return true;
     }
@@ -372,9 +374,11 @@ bool BufferedResourceHandler::UseAlternateNextHandler(
   // Inform the original ResourceHandler that this will be handled entirely by
   // the new ResourceHandler.
   // TODO(darin): We should probably check the return values of these.
-  // TODO(davidben): These DCHECKs do actually trigger.
   bool defer_ignored = false;
   next_handler_->OnResponseStarted(request_id, response_.get(), &defer_ignored);
+  // Although deferring OnResponseStarted is legal, the only downstream handler
+  // which does so is CrossSiteResourceHandler. Cross-site transitions should
+  // not trigger when switching handlers.
   DCHECK(!defer_ignored);
   net::URLRequestStatus status(net::URLRequestStatus::CANCELED,
                                net::ERR_ABORTED);
@@ -470,6 +474,7 @@ bool BufferedResourceHandler::CopyReadBufferToNextHandler(int request_id) {
 
 void BufferedResourceHandler::OnPluginsLoaded(
     const std::vector<WebPluginInfo>& plugins) {
+  request()->LogUnblocked();
   bool defer = false;
   if (!ProcessResponse(&defer)) {
     controller()->Cancel();

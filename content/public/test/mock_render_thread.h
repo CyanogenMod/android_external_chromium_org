@@ -55,10 +55,8 @@ class MockRenderThread : public RenderThread {
   virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void SetResourceDispatcherDelegate(
       ResourceDispatcherDelegate* delegate) OVERRIDE;
-  virtual void WidgetHidden() OVERRIDE;
-  virtual void WidgetRestored() OVERRIDE;
   virtual void EnsureWebKitInitialized() OVERRIDE;
-  virtual void RecordAction(const UserMetricsAction& action) OVERRIDE;
+  virtual void RecordAction(const base::UserMetricsAction& action) OVERRIDE;
   virtual void RecordComputedAction(const std::string& action) OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) OVERRIDE;
@@ -68,7 +66,6 @@ class MockRenderThread : public RenderThread {
   virtual int64 GetIdleNotificationDelayInMs() const OVERRIDE;
   virtual void SetIdleNotificationDelayInMs(
       int64 idle_notification_delay_in_ms) OVERRIDE;
-  virtual void ToggleWebKitSharedTimer(bool suspend) OVERRIDE;
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
   virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
@@ -92,12 +89,12 @@ class MockRenderThread : public RenderThread {
     return opener_id_;
   }
 
-  bool has_widget() const {
-    return (widget_ != NULL);
-  }
-
   void set_new_window_routing_id(int32 id) {
     new_window_routing_id_ = id;
+  }
+
+  void set_new_frame_routing_id(int32 id) {
+    new_frame_routing_id_ = id;
   }
 
   // Simulates the Widget receiving a close message. This should result
@@ -129,6 +126,13 @@ class MockRenderThread : public RenderThread {
     int* surface_id,
     int64* cloned_session_storage_namespace_id);
 
+  // The Frame expects to be returned a valid route_id different from its own.
+  void OnCreateChildFrame(int new_frame_routing_id,
+                          int64 parent_frame_id,
+                          int64 frame_id,
+                          const std::string& frame_name,
+                          int* new_render_frame_id);
+
 #if defined(OS_WIN)
   void OnDuplicateSection(base::SharedMemoryHandle renderer_handle,
                           base::SharedMemoryHandle* browser_handle);
@@ -145,14 +149,10 @@ class MockRenderThread : public RenderThread {
   // Opener id reported by the Widget.
   int32 opener_id_;
 
-  // We only keep track of one Widget, we learn its pointer when it
-  // adds a new route.  We do not keep track of Widgets created with
-  // OnCreateWindow.
-  IPC::Listener* widget_;
-
   // Routing id that will be assigned to a CreateWindow Widget.
   int32 new_window_routing_id_;
   int32 new_window_main_frame_routing_id_;
+  int32 new_frame_routing_id_;
 
   // The last known good deserializer for sync messages.
   scoped_ptr<IPC::MessageReplyDeserializer> reply_deserializer_;

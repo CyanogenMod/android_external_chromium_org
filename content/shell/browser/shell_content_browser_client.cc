@@ -137,7 +137,7 @@ BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
   return shell_browser_main_parts_;
 }
 
-void ShellContentBrowserClient::RenderProcessHostCreated(
+void ShellContentBrowserClient::RenderProcessWillLaunch(
     RenderProcessHost* host) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
@@ -180,11 +180,11 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   // ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
       chrome::kBlobScheme,
-      chrome::kFileSystemScheme,
-      chrome::kChromeUIScheme,
-      chrome::kChromeDevToolsScheme,
-      chrome::kDataScheme,
-      chrome::kFileScheme,
+      kFileSystemScheme,
+      kChromeUIScheme,
+      kChromeDevToolsScheme,
+      kDataScheme,
+      kFileScheme,
   };
   for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
     if (url.scheme() == kProtocolList[i])
@@ -212,6 +212,9 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
         CommandLine::ForCurrentProcess()->GetSwitchValuePath(
             switches::kCrashDumpsDir));
   }
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableLeakDetection))
+    command_line->AppendSwitch(switches::kEnableLeakDetection);
 }
 
 void ShellContentBrowserClient::OverrideWebkitPrefs(

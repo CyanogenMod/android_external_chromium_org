@@ -20,6 +20,7 @@ class KeyboardControllerProxyStub : public keyboard::KeyboardControllerProxy {
   KeyboardControllerProxyStub();
   virtual ~KeyboardControllerProxyStub();
 
+  virtual bool HasKeyboardWindow() const OVERRIDE;
   virtual aura::Window* GetKeyboardWindow() OVERRIDE;
 
  private:
@@ -31,6 +32,8 @@ class KeyboardControllerProxyStub : public keyboard::KeyboardControllerProxy {
       const content::MediaResponseCallback& callback) OVERRIDE;
 
   aura::test::TestWindowDelegate delegate_;
+  scoped_ptr<aura::Window> keyboard_;
+
   DISALLOW_COPY_AND_ASSIGN(KeyboardControllerProxyStub);
 };
 

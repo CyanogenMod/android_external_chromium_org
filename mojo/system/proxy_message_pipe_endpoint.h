@@ -21,6 +21,7 @@ namespace mojo {
 namespace system {
 
 class Channel;
+class MessagePipe;
 
 // A |ProxyMessagePipeEndpoint| connects an end of a |MessagePipe| to a
 // |Channel|, over which it transmits and receives data (to/from another
@@ -45,16 +46,13 @@ class MOJO_SYSTEM_IMPL_EXPORT ProxyMessagePipeEndpoint
 
   // |MessagePipeEndpoint| implementation:
   virtual void Close() OVERRIDE;
-  virtual bool OnPeerClose() OVERRIDE;
-  virtual MojoResult CanEnqueueMessage(
-      const MessageInTransit* message,
-      const std::vector<Dispatcher*>* dispatchers) OVERRIDE;
-  virtual void EnqueueMessage(
+  virtual void OnPeerClose() OVERRIDE;
+  virtual MojoResult EnqueueMessage(
       MessageInTransit* message,
-      std::vector<scoped_refptr<Dispatcher> >* dispatchers) OVERRIDE;
+      std::vector<DispatcherTransport>* transports) OVERRIDE;
   virtual void Attach(scoped_refptr<Channel> channel,
                       MessageInTransit::EndpointId local_id) OVERRIDE;
-  virtual bool Run(MessageInTransit::EndpointId remote_id) OVERRIDE;
+  virtual void Run(MessageInTransit::EndpointId remote_id) OVERRIDE;
 
  private:
   bool is_attached() const {
@@ -64,6 +62,12 @@ class MOJO_SYSTEM_IMPL_EXPORT ProxyMessagePipeEndpoint
   bool is_running() const {
     return remote_id_ != MessageInTransit::kInvalidEndpointId;
   }
+
+  // "Attaches" |transports| (which must be non-null and nonempty) to |message|
+  // by "serializing" them in an appropriate way, and closes each dispatcher.
+  void AttachAndCloseDispatchers(MessageInTransit* message,
+                                 std::vector<DispatcherTransport>* transports);
+  void EnqueueMessageInternal(MessageInTransit* message);
 
 #ifdef NDEBUG
   void AssertConsistentState() const {}

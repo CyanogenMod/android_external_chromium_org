@@ -16,18 +16,27 @@ cr.define('cr.ui.Oobe', function() {
   return {
     /**
      * Setups given "select" element using the list and adds callback.
+     * Creates option groups if needed.
      * @param {!Element} select Select object to be updated.
      * @param {!Object} list List of the options to be added.
+     * Elements with optionGroupName are considered option group.
      * @param {string} callback Callback name which should be send to Chrome or
      * an empty string if the event listener shouldn't be added.
      */
     setupSelect: function(select, list, callback) {
-      select.options.length = 0;
+      select.innerHTML = '';
+      var optgroup = select;
       for (var i = 0; i < list.length; ++i) {
         var item = list[i];
-        var option =
-            new Option(item.title, item.value, item.selected, item.selected);
-        select.appendChild(option);
+        if (item.optionGroupName) {
+          optgroup = document.createElement('optgroup');
+          optgroup.label = item.optionGroupName;
+          select.appendChild(optgroup);
+        } else {
+          var option =
+              new Option(item.title, item.value, item.selected, item.selected);
+          optgroup.appendChild(option);
+        }
       }
       if (callback) {
         var sendCallback = function() {
@@ -70,7 +79,7 @@ cr.define('cr.ui.Oobe', function() {
       login.TermsOfServiceScreen.register();
       login.AppLaunchSplashScreen.register();
       login.ConfirmPasswordScreen.register();
-      login.MessageBoxScreen.register();
+      login.FatalErrorScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));
@@ -100,6 +109,8 @@ cr.define('cr.ui.Oobe', function() {
                                             Oobe.handleSpokenFeedbackClick);
       $('screen-magnifier').addEventListener('click',
                                              Oobe.handleScreenMagnifierClick);
+      $('virtual-keyboard').addEventListener('click',
+                                              Oobe.handleVirtualKeyboardClick);
 
       // A11y menu should be accessible i.e. disable autohide on any
       // keydown or click inside menu.
@@ -163,6 +174,14 @@ cr.define('cr.ui.Oobe', function() {
     },
 
     /**
+     * On-screen keyboard checkbox handler.
+     */
+    handleVirtualKeyboardClick: function(e) {
+      chrome.send('enableVirtualKeyboard', [$('virtual-keyboard').checked]);
+      e.stopPropagation();
+    },
+
+    /**
      * Sets usage statistics checkbox.
      * @param {boolean} checked Is the checkbox checked?
      */
@@ -208,6 +227,7 @@ cr.define('cr.ui.Oobe', function() {
       $('spoken-feedback').checked = data.spokenFeedbackEnabled;
       $('screen-magnifier').checked = data.screenMagnifierEnabled;
       $('large-cursor').checked = data.largeCursorEnabled;
+      $('virtual-keyboard').checked = data.virtualKeyboardEnabled;
     },
 
     /**

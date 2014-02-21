@@ -16,6 +16,8 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 namespace examples {
 
@@ -108,8 +110,8 @@ class TextExample::TextExampleView : public View {
   int text_flags() const { return text_flags_; }
   void set_text_flags(int text_flags) { text_flags_ = text_flags; }
 
-  const string16& text() const { return text_; }
-  void set_text(const string16& text) { text_ = text; }
+  const base::string16& text() const { return text_; }
+  void set_text(const base::string16& text) { text_ = text; }
 
   bool halo() const { return halo_; }
   void set_halo(bool halo) { halo_ = halo; }
@@ -124,7 +126,7 @@ class TextExample::TextExampleView : public View {
     return font_list_.GetFontStyle();
   }
   void SetFontStyle(int style) {
-    font_list_ = font_list_.DeriveFontList(style);
+    font_list_ = font_list_.DeriveWithStyle(style);
   }
 
  private:
@@ -132,17 +134,17 @@ class TextExample::TextExampleView : public View {
   gfx::FontList font_list_;
 
   // The text to draw.
-  string16 text_;
+  base::string16 text_;
 
-  // Text flags for passing to |DrawStringInt()|.
+  // Text flags for passing to |DrawStringRect()|.
   int text_flags_;
 
   // If |true|, specifies to call |DrawStringWithHalo()| instead of
-  // |DrawStringInt()|.
+  // |DrawStringRect()|.
   bool halo_;
 
   // If |true|, specifies to call |DrawFadeTruncatingString()| instead of
-  // |DrawStringInt()|.
+  // |DrawStringRect()|.
   bool fade_;
 
   // If |fade_| is |true|, fade mode parameter to |DrawFadeTruncatingString()|.
@@ -185,7 +187,7 @@ Combobox* TextExample::AddCombobox(GridLayout* layout,
 
 void TextExample::CreateExampleView(View* container) {
   text_view_ = new TextExampleView;
-  text_view_->set_border(Border::CreateSolidBorder(1, SK_ColorGRAY));
+  text_view_->SetBorder(Border::CreateSolidBorder(1, SK_ColorGRAY));
 
   GridLayout* layout = new GridLayout(container);
   container->SetLayoutManager(layout);
@@ -253,7 +255,7 @@ void TextExample::ButtonPressed(Button* button, const ui::Event& event) {
   text_view_->SchedulePaint();
 }
 
-void TextExample::OnSelectedIndexChanged(Combobox* combobox) {
+void TextExample::OnPerformAction(Combobox* combobox) {
   int text_flags = text_view_->text_flags();
   if (combobox == h_align_cb_) {
     text_flags &= ~(gfx::Canvas::TEXT_ALIGN_LEFT |

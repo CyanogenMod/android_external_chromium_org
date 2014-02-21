@@ -1,7 +1,9 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 from measurements import rasterize_and_record
+from telemetry import test
 from telemetry.core import wpr_modes
 from telemetry.page import page_measurement_unittest_base
 from telemetry.unittest import options_for_unittests
@@ -23,6 +25,7 @@ class RasterizeAndRecordUnitTest(
     self._options.start_wait_time = 0.0
     self._options.stop_wait_time = 2.0
 
+  @test.Disabled
   def testRasterizeAndRecord(self):
     ps = self.CreatePageSetFromFileInUnittestDataDir('blank.html')
     measurement = rasterize_and_record.RasterizeAndRecord()

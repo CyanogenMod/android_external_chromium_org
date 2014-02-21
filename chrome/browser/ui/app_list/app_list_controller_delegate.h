@@ -10,7 +10,6 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
-class ExtensionSet;
 class Profile;
 
 namespace base {
@@ -19,6 +18,7 @@ class FilePath;
 
 namespace extensions {
 class Extension;
+class ExtensionSet;
 class InstallTracker;
 }
 
@@ -81,6 +81,14 @@ class AppListControllerDelegate {
   virtual void DoCreateShortcutsFlow(Profile* profile,
                                      const std::string& extension_id) = 0;
 
+  // Whether the controller supports a Show App Info flow.
+  virtual bool CanDoShowAppInfoFlow();
+
+  // Show the dialog with the application's information. Call only if
+  // CanDoShowAppInfoFlow() returns true.
+  virtual void DoShowAppInfoFlow(Profile* profile,
+                                 const std::string& extension_id);
+
   // Handle the "create window" context menu items of Chrome App.
   // |incognito| is true to create an incognito window.
   virtual void CreateNewWindow(Profile* profile, bool incognito) = 0;
@@ -111,6 +119,9 @@ class AppListControllerDelegate {
 
   // Uninstall the app identified by |app_id| from |profile|.
   void UninstallApp(Profile* profile, const std::string& app_id);
+
+  // Remove the app identified by |app_id| in |profile| from its folder.
+  void RemoveAppFromFolder(Profile* profile, const std::string& app_id);
 
   // True if the app was installed from the web store.
   bool IsAppFromWebStore(Profile* profile,
@@ -143,7 +154,7 @@ class AppListControllerDelegate {
   extensions::InstallTracker* GetInstallTrackerFor(Profile* profile);
 
   // Get the list of installed apps for the given profile.
-  void GetApps(Profile* profile, ExtensionSet* out_apps);
+  void GetApps(Profile* profile, extensions::ExtensionSet* out_apps);
 };
 
 #endif  // CHROME_BROWSER_UI_APP_LIST_APP_LIST_CONTROLLER_DELEGATE_H_

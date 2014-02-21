@@ -111,6 +111,9 @@ void __asan_before_dynamic_init(const char *module_name) { }
 void __asan_after_dynamic_init() { }
 int __asan_option_detect_stack_use_after_return;
 typedef unsigned long long uptr;
+void __asan_poison_memory_region(void const volatile *addr, uptr size) { }
+void __asan_unpoison_memory_region(void const volatile *addr, uptr size) { }
+uptr __asan_stack_malloc_0(uptr size, uptr real_stack) {}
 uptr __asan_stack_malloc_1(uptr size, uptr real_stack) {}
 uptr __asan_stack_malloc_2(uptr size, uptr real_stack) {}
 uptr __asan_stack_malloc_3(uptr size, uptr real_stack) {}
@@ -121,6 +124,7 @@ uptr __asan_stack_malloc_7(uptr size, uptr real_stack) {}
 uptr __asan_stack_malloc_8(uptr size, uptr real_stack) {}
 uptr __asan_stack_malloc_9(uptr size, uptr real_stack) {}
 uptr __asan_stack_malloc_10(uptr size, uptr real_stack) {}
+void  __asan_stack_free_0(uptr ptr, uptr size, uptr real_stack) {}
 void  __asan_stack_free_1(uptr ptr, uptr size, uptr real_stack) {}
 void  __asan_stack_free_2(uptr ptr, uptr size, uptr real_stack) {}
 void  __asan_stack_free_3(uptr ptr, uptr size, uptr real_stack) {}

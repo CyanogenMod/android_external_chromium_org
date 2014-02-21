@@ -15,6 +15,7 @@
         '../../../chrome/chrome.gyp:common',
         '../../../ipc/ipc.gyp:ipc',
         '../../../skia/skia.gyp:skia',
+        '../../../ui/accessibility/accessibility.gyp:ax_gen',
       ],
       'sources': [
         'all_messages.h',
@@ -27,7 +28,7 @@
         'message_names.h',
       ],
       'include_dirs': [
-        '../..',
+        '../../..',
       ],
     },
   ],

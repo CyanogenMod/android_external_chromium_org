@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
+#include "base/win/windows_version.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
@@ -26,6 +27,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
+#include "ui/views/bubble/bubble_window_targeter.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
@@ -51,20 +53,15 @@ void (*g_next_paint_callback)();
 const int kSpeechUIMargin = 12;
 
 // The vertical position for the appearing animation of the speech UI.
-const float kSpeechUIApearingPosition =12;
+const float kSpeechUIAppearingPosition = 12;
 
 // The distance between the arrow tip and edge of the anchor view.
 const int kArrowOffset = 10;
 
-#if defined(OS_LINUX)
-// The WM_CLASS name for the app launcher window on Linux.
-const char* kAppListWMClass = "chrome_app_list";
-#endif
-
 // Determines whether the current environment supports shadows bubble borders.
 bool SupportsShadow() {
-#if defined(USE_AURA) && defined(OS_WIN)
-  // Shadows are not supported on Windows Aura without Aero Glass.
+#if defined(OS_WIN)
+  // Shadows are not supported on Windows without Aero Glass.
   if (!ui::win::IsAeroGlassEnabled() ||
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableDwmComposition)) {
@@ -82,7 +79,9 @@ bool SupportsShadow() {
 // An animation observer to hide the view at the end of the animation.
 class HideViewAnimationObserver : public ui::ImplicitAnimationObserver {
  public:
-  HideViewAnimationObserver() : target_(NULL) {
+  HideViewAnimationObserver()
+      : frame_(NULL),
+        target_(NULL) {
   }
 
   virtual ~HideViewAnimationObserver() {
@@ -96,15 +95,21 @@ class HideViewAnimationObserver : public ui::ImplicitAnimationObserver {
     target_ = target;
   }
 
+  void set_frame(views::BubbleFrameView* frame) { frame_ = frame; }
+
  private:
   // Overridden from ui::ImplicitAnimationObserver:
   virtual void OnImplicitAnimationsCompleted() OVERRIDE {
     if (target_) {
       target_->SetVisible(false);
       target_ = NULL;
+
+      // Should update the background by invoking SchedulePaint().
+      frame_->SchedulePaint();
     }
   }
 
+  views::BubbleFrameView* frame_;
   views::View* target_;
 
   DISALLOW_COPY_AND_ASSIGN(HideViewAnimationObserver);
@@ -197,6 +202,12 @@ void AppListView::Paint(gfx::Canvas* canvas) {
   }
 }
 
+void AppListView::OnThemeChanged() {
+#if defined(OS_WIN)
+  GetWidget()->Close();
+#endif
+}
+
 bool AppListView::ShouldHandleSystemCommands() const {
   return true;
 }
@@ -266,7 +277,7 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   AddChildView(signin_view_);
 
   // Speech recognition is available only when the start page exists.
-  if (delegate_ && delegate_->GetStartPageContents()) {
+  if (delegate_ && delegate_->GetSpeechRecognitionContents()) {
     speech_view_ = new SpeechView(delegate_.get());
     speech_view_->SetVisible(false);
 #if defined(USE_AURA)
@@ -295,11 +306,14 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   SetBubbleArrow(arrow);
 
 #if defined(USE_AURA)
-  GetWidget()->GetNativeWindow()->layer()->SetMasksToBounds(true);
+  aura::Window* window = GetWidget()->GetNativeWindow();
+  window->layer()->SetMasksToBounds(true);
   GetBubbleFrameView()->set_background(new AppListBackground(
       GetBubbleFrameView()->bubble_border()->GetBorderCornerRadius(),
       app_list_main_view_));
   set_background(NULL);
+  window->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
+      new views::BubbleWindowTargeter(this)));
 #else
   set_background(new AppListBackground(
       GetBubbleFrameView()->bubble_border()->GetBorderCornerRadius(),
@@ -312,6 +326,9 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   // the border to be shown. See http://crbug.com/231687 .
   GetWidget()->Hide();
 #endif
+
+  if (delegate_)
+    delegate_->ViewInitialized();
 }
 
 void AppListView::OnBeforeBubbleWidgetInit(
@@ -321,10 +338,19 @@ void AppListView::OnBeforeBubbleWidgetInit(
   if (delegate_ && delegate_->ForceNativeDesktop())
     params->native_widget = new views::DesktopNativeWidgetAura(widget);
 #endif
-#if defined(OS_LINUX)
+#if defined(OS_WIN)
+  // Windows 7 and higher offer pinning to the taskbar, but we need presence
+  // on the taskbar for the user to be able to pin us. So, show the window on
+  // the taskbar for these versions of Windows.
+  if (base::win::GetVersion() >= base::win::VERSION_WIN7)
+    params->force_show_in_taskbar = true;
+#elif defined(OS_LINUX)
   // Set up a custom WM_CLASS for the app launcher window. This allows task
   // switchers in X11 environments to distinguish it from main browser windows.
   params->wm_class_name = kAppListWMClass;
+  // Show the window in the taskbar, even though it is a bubble, which would not
+  // normally be shown.
+  params->force_show_in_taskbar = true;
 #endif
 }
 
@@ -414,9 +440,11 @@ void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
 
 void AppListView::OnSpeechRecognitionStateChanged(
     SpeechRecognitionState new_state) {
-  DCHECK(!signin_view_->visible());
+  if (signin_view_->visible() || !speech_view_)
+    return;
 
-  bool recognizing = new_state != SPEECH_RECOGNITION_NOT_STARTED;
+  bool recognizing = (new_state == SPEECH_RECOGNITION_RECOGNIZING ||
+                      new_state == SPEECH_RECOGNITION_IN_SPEECH);
   // No change for this class.
   if (speech_view_->visible() == recognizing)
     return;
@@ -425,9 +453,10 @@ void AppListView::OnSpeechRecognitionStateChanged(
     speech_view_->Reset();
 
 #if defined(USE_AURA)
+  animation_observer_->set_frame(GetBubbleFrameView());
   gfx::Transform speech_transform;
   speech_transform.Translate(
-      0, SkFloatToMScalar(kSpeechUIApearingPosition));
+      0, SkFloatToMScalar(kSpeechUIAppearingPosition));
   if (recognizing)
     speech_view_->layer()->SetTransform(speech_transform);
 
@@ -463,10 +492,10 @@ void AppListView::OnSpeechRecognitionStateChanged(
 #else
   speech_view_->SetVisible(recognizing);
   app_list_main_view_->SetVisible(!recognizing);
-#endif
 
   // Needs to schedule paint of AppListView itself, to repaint the background.
-  SchedulePaint();
+  GetBubbleFrameView()->SchedulePaint();
+#endif
 }
 
 }  // namespace app_list

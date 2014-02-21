@@ -398,12 +398,8 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
         response->error_code());
   }
 
-  // Now set the error into the status so the layers above us could read it.
-  sessions::StatusController* status = session->mutable_status_controller();
-  status->set_sync_protocol_error(sync_protocol_error);
-
   // Inform the delegate of the error we got.
-  session->delegate()->OnSyncProtocolError(session->TakeSnapshot());
+  session->delegate()->OnSyncProtocolError(sync_protocol_error);
 
   // Update our state for any other commands we've received.
   if (response->has_client_command()) {
@@ -433,6 +429,11 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
       session->delegate()->OnReceivedClientInvalidationHintBufferSize(
           command.client_invalidation_hint_buffer_size());
     }
+
+    if (command.has_gu_retry_delay_seconds()) {
+      session->delegate()->OnReceivedGuRetryDelay(
+          base::TimeDelta::FromSeconds(command.gu_retry_delay_seconds()));
+    }
   }
 
   // Now do any special handling for the error type and decide on the return
@@ -461,9 +462,8 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
     case MIGRATION_DONE:
       LOG_IF(ERROR, 0 >= response->migrated_data_type_id_size())
           << "MIGRATION_DONE but no types specified.";
-      // TODO(akalin): This should be a set union.
-      session->mutable_status_controller()->
-          set_types_needing_local_migration(GetTypesToMigrate(*response));
+      session->delegate()->OnReceivedMigrationRequest(
+          GetTypesToMigrate(*response));
       return SERVER_RETURN_MIGRATION_DONE;
     case CLEAR_PENDING:
       return SERVER_RETURN_CLEAR_PENDING;

@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Fri Nov 29 09:11:40 2013. */
+/* From private/ppb_nacl_private.idl modified Mon Feb 10 11:05:29 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -78,16 +78,17 @@ struct PPB_NaCl_Private_1_0 {
    * the nexe contribute to crash throttling statisics and whether nexe starts
    * are throttled by crash throttling.
    */
-  PP_ExternalPluginResult (*LaunchSelLdr)(PP_Instance instance,
-                                          const char* alleged_url,
-                                          PP_Bool uses_irt,
-                                          PP_Bool uses_ppapi,
-                                          PP_Bool enable_ppapi_dev,
-                                          PP_Bool enable_dyncode_syscalls,
-                                          PP_Bool enable_exception_handling,
-                                          PP_Bool enable_crash_throttling,
-                                          void* imc_handle,
-                                          struct PP_Var* error_message);
+  void (*LaunchSelLdr)(PP_Instance instance,
+                       const char* alleged_url,
+                       PP_Bool uses_irt,
+                       PP_Bool uses_ppapi,
+                       PP_Bool enable_ppapi_dev,
+                       PP_Bool enable_dyncode_syscalls,
+                       PP_Bool enable_exception_handling,
+                       PP_Bool enable_crash_throttling,
+                       void* imc_handle,
+                       struct PP_Var* error_message,
+                       struct PP_CompletionCallback callback);
   /* This function starts the IPC proxy so the nexe can communicate with the
    * browser. Returns PP_EXTERNAL_PLUGIN_OK on success, otherwise a result code
    * indicating the failure. PP_EXTERNAL_PLUGIN_FAILED is returned if
@@ -126,6 +127,8 @@ struct PPB_NaCl_Private_1_0 {
    * returns a posix handle to that temporary file.
    */
   PP_FileHandle (*CreateTemporaryFile)(PP_Instance instance);
+  /* Return the number of processors in the system as reported by the OS */
+  int32_t (*GetNumberOfProcessors)(void);
   /* Create a temporary file, which will be deleted by the time the
    * last handle is closed (or earlier on POSIX systems), to use for
    * the nexe with the cache information given by |pexe_url|,
@@ -147,6 +150,8 @@ struct PPB_NaCl_Private_1_0 {
                        const char* last_modified,
                        const char* etag,
                        PP_Bool has_no_store_header,
+                       const char* sandbox_isa,
+                       const char* extra_flags,
                        PP_Bool* is_hit,
                        PP_FileHandle* nexe_handle,
                        struct PP_CompletionCallback callback);
@@ -176,7 +181,7 @@ struct PPB_NaCl_Private_1_0 {
    */
   void (*DispatchEvent)(PP_Instance instance,
                         PP_NaClEventType event_type,
-                        struct PP_Var resource_url,
+                        const char* resource_url,
                         PP_Bool length_is_computable,
                         uint64_t loaded_bytes,
                         uint64_t total_bytes);

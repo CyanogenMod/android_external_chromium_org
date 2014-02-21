@@ -39,9 +39,9 @@ const int64 kNoFileSize = -1;
 
 void HandleCheckFileResult(int64 expected_size,
                            const base::Callback<void(bool success)>& callback,
-                           base::PlatformFileError result,
-                           const base::PlatformFileInfo& file_info) {
-  if (result == base::PLATFORM_FILE_OK) {
+                           base::File::Error result,
+                           const base::File::Info& file_info) {
+  if (result == base::File::FILE_OK) {
     if (!file_info.is_directory && expected_size != kNoFileSize &&
         file_info.size == expected_size) {
       callback.Run(true);
@@ -108,12 +108,12 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
     ASSERT_TRUE(base::CreateDirectory(src_path));
 
     ScopedVector<fileapi::FileSystemBackend> additional_providers;
-    additional_providers.push_back(new fileapi::TestFileSystemBackend(
+    additional_providers.push_back(new content::TestFileSystemBackend(
         base::MessageLoopProxy::current().get(), src_path));
     additional_providers.push_back(new MediaFileSystemBackend(
         base, base::MessageLoopProxy::current().get()));
     file_system_context_ =
-        fileapi::CreateFileSystemContextWithAdditionalProvidersForTesting(
+        content::CreateFileSystemContextWithAdditionalProvidersForTesting(
             NULL, additional_providers.Pass(), base);
 
     move_src_ = file_system_context_->CreateCrackedFileSystemURL(
@@ -203,11 +203,11 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
 
   // Check that the move succeeded/failed based on expectation and then
   // check that the right file exists.
-  void OnMoveResult(bool expected_result, base::PlatformFileError result) {
+  void OnMoveResult(bool expected_result, base::File::Error result) {
     if (expected_result)
-      EXPECT_EQ(base::PLATFORM_FILE_OK, result);
+      EXPECT_EQ(base::File::FILE_OK, result);
     else
-      EXPECT_EQ(base::PLATFORM_FILE_ERROR_SECURITY, result);
+      EXPECT_EQ(base::File::FILE_ERROR_SECURITY, result);
     CheckFiles(!expected_result,
                base::Bind(&MediaFileValidatorTest::OnTestFilesCheckResult,
                           base::Unretained(this)));

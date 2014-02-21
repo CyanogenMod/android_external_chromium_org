@@ -4,6 +4,7 @@
 
 #include "content/renderer/p2p/ipc_socket_factory.h"
 
+#include <algorithm>
 #include <deque>
 
 #include "base/compiler_specific.h"
@@ -21,6 +22,8 @@ namespace content {
 
 namespace {
 
+const int kDefaultNonSetOptionValue = -1;
+
 bool IsTcpClientSocket(P2PSocketType type) {
   return (type == P2P_SOCKET_STUN_TCP_CLIENT) ||
          (type == P2P_SOCKET_TCP_CLIENT) ||
@@ -28,6 +31,30 @@ bool IsTcpClientSocket(P2PSocketType type) {
          (type == P2P_SOCKET_SSLTCP_CLIENT) ||
          (type == P2P_SOCKET_TLS_CLIENT) ||
          (type == P2P_SOCKET_STUN_TLS_CLIENT);
+}
+
+bool JingleSocketOptionToP2PSocketOption(talk_base::Socket::Option option,
+                                         P2PSocketOption* ipc_option) {
+  switch (option) {
+    case talk_base::Socket::OPT_RCVBUF:
+      *ipc_option = P2P_SOCKET_OPT_RCVBUF;
+      break;
+    case talk_base::Socket::OPT_SNDBUF:
+      *ipc_option = P2P_SOCKET_OPT_SNDBUF;
+      break;
+    case talk_base::Socket::OPT_DSCP:
+      *ipc_option = P2P_SOCKET_OPT_DSCP;
+      break;
+    case talk_base::Socket::OPT_DONTFRAGMENT:
+    case talk_base::Socket::OPT_NODELAY:
+    case talk_base::Socket::OPT_IPV6_V6ONLY:
+    case talk_base::Socket::OPT_RTP_SENDTIME_EXTN_ID:
+      return false;  // Not supported by the chrome sockets.
+    default:
+      NOTREACHED();
+      return false;
+  }
+  return true;
 }
 
 // TODO(miu): This needs tuning.  http://crbug.com/237960
@@ -51,14 +78,14 @@ class IpcPacketSocket : public talk_base::AsyncPacketSocket,
   virtual talk_base::SocketAddress GetLocalAddress() const OVERRIDE;
   virtual talk_base::SocketAddress GetRemoteAddress() const OVERRIDE;
   virtual int Send(const void *pv, size_t cb,
-                   talk_base::DiffServCodePoint dscp) OVERRIDE;
+                   const talk_base::PacketOptions& options) OVERRIDE;
   virtual int SendTo(const void *pv, size_t cb,
                      const talk_base::SocketAddress& addr,
-                     talk_base::DiffServCodePoint dscp) OVERRIDE;
+                     const talk_base::PacketOptions& options) OVERRIDE;
   virtual int Close() OVERRIDE;
   virtual State GetState() const OVERRIDE;
-  virtual int GetOption(talk_base::Socket::Option opt, int* value) OVERRIDE;
-  virtual int SetOption(talk_base::Socket::Option opt, int value) OVERRIDE;
+  virtual int GetOption(talk_base::Socket::Option option, int* value) OVERRIDE;
+  virtual int SetOption(talk_base::Socket::Option option, int value) OVERRIDE;
   virtual int GetError() const OVERRIDE;
   virtual void SetError(int error) OVERRIDE;
 
@@ -70,7 +97,8 @@ class IpcPacketSocket : public talk_base::AsyncPacketSocket,
   virtual void OnSendComplete() OVERRIDE;
   virtual void OnError() OVERRIDE;
   virtual void OnDataReceived(const net::IPEndPoint& address,
-                              const std::vector<char>& data) OVERRIDE;
+                              const std::vector<char>& data,
+                              const base::TimeTicks& timestamp) OVERRIDE;
 
  private:
   enum InternalState {
@@ -89,6 +117,9 @@ class IpcPacketSocket : public talk_base::AsyncPacketSocket,
   void InitAcceptedTcp(P2PSocketClient* client,
                        const talk_base::SocketAddress& local_address,
                        const talk_base::SocketAddress& remote_address);
+
+  int DoSetOption(P2PSocketOption option, int value);
+
   P2PSocketType type_;
 
   // Message loop on which this socket was created and being used.
@@ -123,6 +154,7 @@ class IpcPacketSocket : public talk_base::AsyncPacketSocket,
 
   // Current error code. Valid when state_ == IS_ERROR.
   int error_;
+  int options_[P2P_SOCKET_OPT_MAX];
 
   DISALLOW_COPY_AND_ASSIGN(IpcPacketSocket);
 };
@@ -135,6 +167,8 @@ IpcPacketSocket::IpcPacketSocket()
       writable_signal_expected_(false),
       error_(0) {
   COMPILE_ASSERT(kMaximumInFlightBytes > 0, would_send_at_zero_rate);
+  std::fill_n(options_, static_cast<int> (P2P_SOCKET_OPT_MAX),
+              kDefaultNonSetOptionValue);
 }
 
 IpcPacketSocket::~IpcPacketSocket() {
@@ -209,14 +243,14 @@ talk_base::SocketAddress IpcPacketSocket::GetRemoteAddress() const {
 }
 
 int IpcPacketSocket::Send(const void *data, size_t data_size,
-                          talk_base::DiffServCodePoint dscp) {
+                          const talk_base::PacketOptions& options) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
-  return SendTo(data, data_size, remote_address_, dscp);
+  return SendTo(data, data_size, remote_address_, options);
 }
 
 int IpcPacketSocket::SendTo(const void *data, size_t data_size,
                             const talk_base::SocketAddress& address,
-                            talk_base::DiffServCodePoint dscp) {
+                            const talk_base::PacketOptions& options) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
   switch (state_) {
@@ -263,7 +297,7 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
   const char* data_char = reinterpret_cast<const char*>(data);
   std::vector<char> data_vector(data_char, data_char + data_size);
   client_->SendWithDscp(address_chrome, data_vector,
-                        static_cast<net::DiffServCodePoint>(dscp));
+                        static_cast<net::DiffServCodePoint>(options.dscp));
 
   // Fake successful send. The caller ignores result anyway.
   return data_size;
@@ -305,14 +339,41 @@ talk_base::AsyncPacketSocket::State IpcPacketSocket::GetState() const {
   return STATE_CLOSED;
 }
 
-int IpcPacketSocket::GetOption(talk_base::Socket::Option opt, int* value) {
-  // We don't support socket options for IPC sockets.
-  return -1;
+int IpcPacketSocket::GetOption(talk_base::Socket::Option option, int* value) {
+  P2PSocketOption p2p_socket_option = P2P_SOCKET_OPT_MAX;
+  if (!JingleSocketOptionToP2PSocketOption(option, &p2p_socket_option)) {
+    // unsupported option.
+    return -1;
+  }
+
+  *value = options_[p2p_socket_option];
+  return 0;
 }
 
-int IpcPacketSocket::SetOption(talk_base::Socket::Option opt, int value) {
-  // We don't support socket options for IPC sockets.
-  return -1;
+int IpcPacketSocket::SetOption(talk_base::Socket::Option option, int value) {
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+
+  P2PSocketOption p2p_socket_option = P2P_SOCKET_OPT_MAX;
+  if (!JingleSocketOptionToP2PSocketOption(option, &p2p_socket_option)) {
+    // Option is not supported.
+    return -1;
+  }
+
+  options_[p2p_socket_option] = value;
+
+  if (state_ == IS_OPEN) {
+    // Options will be applied when state becomes IS_OPEN in OnOpen.
+    return DoSetOption(p2p_socket_option, value);
+  }
+  return 0;
+}
+
+int IpcPacketSocket::DoSetOption(P2PSocketOption option, int value) {
+  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK_EQ(state_, IS_OPEN);
+
+  client_->SetOption(option, value);
+  return 0;
 }
 
 int IpcPacketSocket::GetError() const {
@@ -337,6 +398,12 @@ void IpcPacketSocket::OnOpen(const net::IPEndPoint& address) {
 
   state_ = IS_OPEN;
   TraceSendThrottlingState();
+
+  // Set all pending options if any.
+  for (int i = 0; i < P2P_SOCKET_OPT_MAX; ++i) {
+    if (options_[i] != kDefaultNonSetOptionValue)
+      DoSetOption(static_cast<P2PSocketOption> (i), options_[i]);
+  }
 
   SignalAddressReady(this, local_address_);
   if (IsTcpClientSocket(type_))
@@ -381,7 +448,8 @@ void IpcPacketSocket::OnError() {
 }
 
 void IpcPacketSocket::OnDataReceived(const net::IPEndPoint& address,
-                                     const std::vector<char>& data) {
+                                     const std::vector<char>& data,
+                                     const base::TimeTicks& timestamp) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
   talk_base::SocketAddress address_lj;
@@ -392,7 +460,9 @@ void IpcPacketSocket::OnDataReceived(const net::IPEndPoint& address,
     return;
   }
 
-  SignalReadPacket(this, &data[0], data.size(), address_lj);
+  talk_base::PacketTime packet_time(timestamp.ToInternalValue(), 0);
+  SignalReadPacket(this, &data[0], data.size(), address_lj,
+                   packet_time);
 }
 
 }  // namespace
@@ -465,8 +535,7 @@ talk_base::AsyncPacketSocket* IpcPacketSocketFactory::CreateClientTcpSocket(
 
 talk_base::AsyncResolverInterface*
 IpcPacketSocketFactory::CreateAsyncResolver() {
-  NOTREACHED();
-  return NULL;
+  return new P2PAsyncAddressResolver(socket_dispatcher_);
 }
 
 }  // namespace content

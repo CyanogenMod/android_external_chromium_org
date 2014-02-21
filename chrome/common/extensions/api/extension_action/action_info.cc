@@ -20,14 +20,13 @@ namespace keys = manifest_keys;
 
 namespace {
 
-// The manifest data container for the ActionInfos for BrowserActions and
-// ScriptBadges.
+// The manifest data container for the ActionInfos for BrowserActions,
+// PageActions and SystemIndicators.
 struct ActionInfoData : public Extension::ManifestData {
   explicit ActionInfoData(ActionInfo* action_info);
   virtual ~ActionInfoData();
 
-  // The action associated with the BrowserAction or ScriptBadge.
-  // This is never NULL for ScriptBadge.
+  // The action associated with the BrowserAction.
   scoped_ptr<ActionInfo> action_info;
 };
 
@@ -69,7 +68,7 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
       if (iter == icons->end() ||
           !(*iter)->GetAsString(&path) ||
           !manifest_handler_helpers::NormalizeAndValidatePath(&path)) {
-        *error = ASCIIToUTF16(errors::kInvalidPageActionIconPath);
+        *error = base::ASCIIToUTF16(errors::kInvalidPageActionIconPath);
         return scoped_ptr<ActionInfo>();
       }
       result->default_icon.Add(extension_misc::EXTENSION_ICON_ACTION, path);
@@ -78,7 +77,7 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
     std::string id;
     if (dict->HasKey(keys::kPageActionId)) {
       if (!dict->GetString(keys::kPageActionId, &id)) {
-        *error = ASCIIToUTF16(errors::kInvalidPageActionId);
+        *error = base::ASCIIToUTF16(errors::kInvalidPageActionId);
         return scoped_ptr<ActionInfo>();
       }
       result->id = id;
@@ -89,7 +88,7 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
   // The |default_icon| value can be either dictionary {icon size -> icon path}
   // or non empty string value.
   if (dict->HasKey(keys::kPageActionDefaultIcon)) {
-    const DictionaryValue* icons_value = NULL;
+    const base::DictionaryValue* icons_value = NULL;
     std::string default_icon;
     if (dict->GetDictionary(keys::kPageActionDefaultIcon, &icons_value)) {
       if (!manifest_handler_helpers::LoadIconsFromDictionary(
@@ -106,7 +105,7 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
       result->default_icon.Add(extension_misc::EXTENSION_ICON_ACTION,
                                default_icon);
     } else {
-      *error = ASCIIToUTF16(errors::kInvalidPageActionIconPath);
+      *error = base::ASCIIToUTF16(errors::kInvalidPageActionIconPath);
       return scoped_ptr<ActionInfo>();
     }
   }
@@ -116,12 +115,12 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
   if (dict->HasKey(keys::kPageActionDefaultTitle)) {
     if (!dict->GetString(keys::kPageActionDefaultTitle,
                          &result->default_title)) {
-      *error = ASCIIToUTF16(errors::kInvalidPageActionDefaultTitle);
+      *error = base::ASCIIToUTF16(errors::kInvalidPageActionDefaultTitle);
       return scoped_ptr<ActionInfo>();
     }
   } else if (extension->manifest_version() == 1 && dict->HasKey(keys::kName)) {
     if (!dict->GetString(keys::kName, &result->default_title)) {
-      *error = ASCIIToUTF16(errors::kInvalidPageActionName);
+      *error = base::ASCIIToUTF16(errors::kInvalidPageActionName);
       return scoped_ptr<ActionInfo>();
     }
   }
@@ -144,7 +143,7 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
   }
 
   if (popup_key) {
-    const DictionaryValue* popup = NULL;
+    const base::DictionaryValue* popup = NULL;
     std::string url_str;
 
     if (dict->GetString(popup_key, &url_str)) {
@@ -157,7 +156,7 @@ scoped_ptr<ActionInfo> ActionInfo::Load(const Extension* extension,
         return scoped_ptr<ActionInfo>();
       }
     } else {
-      *error = ASCIIToUTF16(errors::kInvalidPageActionPopup);
+      *error = base::ASCIIToUTF16(errors::kInvalidPageActionPopup);
       return scoped_ptr<ActionInfo>();
     }
 
@@ -189,11 +188,6 @@ const ActionInfo* ActionInfo::GetPageActionInfo(const Extension* extension) {
 }
 
 // static
-const ActionInfo* ActionInfo::GetScriptBadgeInfo(const Extension* extension) {
-  return GetActionInfo(extension, keys::kScriptBadge);
-}
-
-// static
 const ActionInfo* ActionInfo::GetSystemIndicatorInfo(
     const Extension* extension) {
   return GetActionInfo(extension, keys::kSystemIndicator);
@@ -208,12 +202,6 @@ void ActionInfo::SetBrowserActionInfo(Extension* extension, ActionInfo* info) {
 // static
 void ActionInfo::SetPageActionInfo(Extension* extension, ActionInfo* info) {
   extension->SetManifestData(keys::kPageAction,
-                             new ActionInfoData(info));
-}
-
-// static
-void ActionInfo::SetScriptBadgeInfo(Extension* extension, ActionInfo* info) {
-  extension->SetManifestData(keys::kScriptBadge,
                              new ActionInfoData(info));
 }
 

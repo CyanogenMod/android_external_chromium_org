@@ -173,7 +173,7 @@ bool GetProxyServer(const base::DictionaryValue* proxy_server,
     *error = ErrorUtils::FormatErrorMessage(
         "Invalid 'rules.???.host' entry '*'. 'host' field supports only ASCII "
         "URLs (encode URLs in Punycode format).",
-        UTF16ToUTF8(host16));
+        base::UTF16ToUTF8(host16));
     return false;
   }
   std::string host = UTF16ToASCII(host16);
@@ -435,6 +435,9 @@ base::DictionaryValue* CreateProxyServerDict(const net::ProxyServer& proxy) {
       break;
     case net::ProxyServer::SCHEME_HTTPS:
       out->SetString(keys::kProxyConfigRuleScheme, "https");
+      break;
+    case net::ProxyServer::SCHEME_QUIC:
+      out->SetString(keys::kProxyConfigRuleScheme, "quic");
       break;
     case net::ProxyServer::SCHEME_SOCKS4:
       out->SetString(keys::kProxyConfigRuleScheme, "socks4");

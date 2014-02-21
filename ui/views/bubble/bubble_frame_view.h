@@ -55,9 +55,9 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView,
   // Overridden from ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
-  // Use bubble_border() and SetBubbleBorder(), not border() and set_border().
+  // Use bubble_border() and SetBubbleBorder(), not border() and SetBorder().
   BubbleBorder* bubble_border() const { return bubble_border_; }
-  void SetBubbleBorder(BubbleBorder* border);
+  void SetBubbleBorder(scoped_ptr<BubbleBorder> border);
 
   gfx::Insets content_margins() const { return content_margins_; }
 
@@ -71,9 +71,8 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView,
                                    bool adjust_if_offscreen);
 
  protected:
-  // Returns the bounds for the monitor showing the specified |rect|.
-  // This function is virtual to support testing environments.
-  virtual gfx::Rect GetMonitorBounds(const gfx::Rect& rect);
+  // Returns the available screen bounds if the frame were to show in |rect|.
+  virtual gfx::Rect GetAvailableScreenBounds(const gfx::Rect& rect);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BubbleFrameViewTest, GetBoundsForClientView);

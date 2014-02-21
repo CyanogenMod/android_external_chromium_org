@@ -14,11 +14,11 @@
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync_file_system/drive_backend/conflict_resolver.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/list_changes_task.h"
@@ -33,6 +33,9 @@
 #include "chrome/browser/sync_file_system/sync_task.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
 #include "google_apis/drive/drive_api_url_generator.h"
 #include "google_apis/drive/gdata_wapi_url_generator.h"
@@ -64,9 +67,11 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
           worker_pool->GetSequenceToken(),
           base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
 
+  Profile* profile = Profile::FromBrowserContext(context);
   ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(
-          Profile::FromBrowserContext(context));
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile);
   scoped_ptr<drive::DriveServiceInterface> drive_service(
       new drive::DriveAPIService(
           token_service,
@@ -74,7 +79,7 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
           drive_task_runner.get(),
           base_drive_url, base_download_url, wapi_base_url,
           std::string() /* custom_user_agent */));
-  drive_service->Initialize(token_service->GetPrimaryAccountId());
+  drive_service->Initialize(signin_manager->GetAuthenticatedAccountId());
 
   scoped_ptr<drive::DriveUploaderInterface> drive_uploader(
       new drive::DriveUploader(drive_service.get(), drive_task_runner.get()));
@@ -82,7 +87,7 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
   drive::DriveNotificationManager* notification_manager =
       drive::DriveNotificationManagerFactory::GetForBrowserContext(context);
   ExtensionService* extension_service =
-      extensions::ExtensionSystem::GetForBrowserContext(
+      extensions::ExtensionSystem::Get(
           context)->extension_service();
 
   scoped_refptr<base::SequencedTaskRunner> task_runner(
@@ -98,7 +103,8 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
           drive_uploader.Pass(),
           notification_manager,
           extension_service,
-          token_service));
+          token_service,
+          NULL));
   sync_engine->Initialize();
 
   return sync_engine.Pass();
@@ -109,7 +115,8 @@ void SyncEngine::AppendDependsOnFactories(
   DCHECK(factories);
   factories->insert(drive::DriveNotificationManagerFactory::GetInstance());
   factories->insert(ProfileOAuth2TokenServiceFactory::GetInstance());
-  factories->insert(extensions::ExtensionSystemFactory::GetInstance());
+  factories->insert(
+      extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 SyncEngine::~SyncEngine() {
@@ -288,17 +295,17 @@ void SyncEngine::DownloadRemoteVersion(
   callback.Run(SYNC_STATUS_FAILED, webkit_blob::ScopedFile());
 }
 
+void SyncEngine::PromoteDemotedChanges() {
+  if (metadata_database_)
+    metadata_database_->PromoteLowerPriorityTrackersToNormal();
+}
+
 void SyncEngine::ApplyLocalChange(
     const FileChange& local_change,
     const base::FilePath& local_path,
     const SyncFileMetadata& local_metadata,
     const fileapi::FileSystemURL& url,
     const SyncStatusCallback& callback) {
-  util::Log(logging::LOG_VERBOSE, FROM_HERE,
-            "[Local->Remote] ApplyLocalChange: %s on %s",
-            local_change.DebugString().c_str(),
-            url.DebugString().c_str());
-
   LocalToRemoteSyncer* syncer = new LocalToRemoteSyncer(
       this, local_metadata, local_change, local_path, url);
   task_manager_->ScheduleSyncTask(
@@ -348,7 +355,9 @@ void SyncEngine::OnReadyToSendRequests() {
   UpdateServiceState(REMOTE_SERVICE_OK, "Authenticated");
 
   if (!metadata_database_ && auth_token_service_) {
-    drive_service_->Initialize(auth_token_service_->GetPrimaryAccountId());
+    SigninManagerBase* signin_manager =
+        SigninManagerFactory::GetForProfile(auth_token_service_->profile());
+    drive_service_->Initialize(signin_manager->GetAuthenticatedAccountId());
     PostInitializeTask();
     return;
   }
@@ -405,9 +414,11 @@ SyncEngine::SyncEngine(
     scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
     drive::DriveNotificationManager* notification_manager,
     ExtensionServiceInterface* extension_service,
-    ProfileOAuth2TokenService* auth_token_service)
+    ProfileOAuth2TokenService* auth_token_service,
+    leveldb::Env* env_override)
     : base_dir_(base_dir),
       task_runner_(task_runner),
+      env_override_(env_override),
       drive_service_(drive_service.Pass()),
       drive_uploader_(drive_uploader.Pass()),
       notification_manager_(notification_manager),
@@ -417,6 +428,7 @@ SyncEngine::SyncEngine(
       service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
       should_check_conflict_(true),
       should_check_remote_change_(true),
+      listing_remote_changes_(false),
       sync_enabled_(false),
       conflict_resolution_policy_(CONFLICT_RESOLUTION_POLICY_LAST_WRITE_WIN),
       network_available_(false),
@@ -425,12 +437,18 @@ SyncEngine::SyncEngine(
 
 void SyncEngine::DoDisableApp(const std::string& app_id,
                               const SyncStatusCallback& callback) {
-  metadata_database_->DisableApp(app_id, callback);
+  if (metadata_database_)
+    metadata_database_->DisableApp(app_id, callback);
+  else
+    callback.Run(SYNC_STATUS_OK);
 }
 
 void SyncEngine::DoEnableApp(const std::string& app_id,
                              const SyncStatusCallback& callback) {
-  metadata_database_->EnableApp(app_id, callback);
+  if (metadata_database_)
+    metadata_database_->EnableApp(app_id, callback);
+  else
+    callback.Run(SYNC_STATUS_OK);
 }
 
 void SyncEngine::PostInitializeTask() {
@@ -442,7 +460,8 @@ void SyncEngine::PostInitializeTask() {
       new SyncEngineInitializer(this,
                                 task_runner_.get(),
                                 drive_service_.get(),
-                                base_dir_.Append(kDatabaseName));
+                                base_dir_.Append(kDatabaseName),
+                                env_override_);
   task_manager_->ScheduleSyncTaskAtPriority(
       scoped_ptr<SyncTask>(initializer),
       SyncTaskManager::PRIORITY_HIGH,
@@ -482,19 +501,17 @@ void SyncEngine::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
     return;
   }
 
-  if (status != SYNC_STATUS_OK)
-    DCHECK_EQ(SYNC_ACTION_NONE, syncer->sync_action());
-
-  if (syncer->url().is_valid() && syncer->sync_action() != SYNC_ACTION_NONE) {
-    FOR_EACH_OBSERVER(FileStatusObserver,
-                      file_status_observers_,
-                      OnFileStatusChanged(syncer->url(),
-                                          SYNC_FILE_STATUS_SYNCED,
-                                          syncer->sync_action(),
-                                          SYNC_DIRECTION_REMOTE_TO_LOCAL));
-  }
-
   if (status == SYNC_STATUS_OK) {
+    if (syncer->sync_action() != SYNC_ACTION_NONE &&
+        syncer->url().is_valid()) {
+      FOR_EACH_OBSERVER(FileStatusObserver,
+                        file_status_observers_,
+                        OnFileStatusChanged(syncer->url(),
+                                            SYNC_FILE_STATUS_SYNCED,
+                                            syncer->sync_action(),
+                                            SYNC_DIRECTION_REMOTE_TO_LOCAL));
+    }
+
     if (syncer->sync_action() == SYNC_ACTION_DELETED &&
         syncer->url().is_valid() &&
         fileapi::VirtualPath::IsRootPath(syncer->url().path())) {
@@ -508,10 +525,6 @@ void SyncEngine::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
 void SyncEngine::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
                                      const SyncStatusCallback& callback,
                                      SyncStatusCode status) {
-  util::Log(logging::LOG_VERBOSE, FROM_HERE,
-            "[Local->Remote] ApplyLocalChange finished --> %s",
-            SyncStatusCodeToString(status));
-
   if ((status == SYNC_STATUS_OK || status == SYNC_STATUS_RETRY) &&
       syncer->url().is_valid() &&
       syncer->sync_action() != SYNC_ACTION_NONE) {
@@ -533,14 +546,25 @@ void SyncEngine::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
                    base::Bind(&EmptyStatusCallback));
   }
 
+  if (syncer->needs_remote_change_listing() &&
+      !listing_remote_changes_) {
+    task_manager_->ScheduleSyncTaskAtPriority(
+        scoped_ptr<SyncTask>(new ListChangesTask(this)),
+        SyncTaskManager::PRIORITY_HIGH,
+        base::Bind(&SyncEngine::DidFetchChanges,
+                   weak_ptr_factory_.GetWeakPtr()));
+    should_check_remote_change_ = false;
+    listing_remote_changes_ = true;
+    time_to_check_changes_ =
+        base::TimeTicks::Now() +
+        base::TimeDelta::FromSeconds(kListChangesRetryDelaySeconds);
+  }
+
   if (status != SYNC_STATUS_OK &&
       status != SYNC_STATUS_NO_CHANGE_TO_SYNC) {
     callback.Run(status);
     return;
   }
-
-  if (status == SYNC_STATUS_NO_CHANGE_TO_SYNC)
-    metadata_database_->PromoteLowerPriorityTrackersToNormal();
 
   if (status == SYNC_STATUS_OK)
     should_check_conflict_ = true;
@@ -555,9 +579,13 @@ void SyncEngine::MaybeStartFetchChanges() {
   if (!metadata_database_)
     return;
 
+  if (listing_remote_changes_)
+    return;
+
   base::TimeTicks now = base::TimeTicks::Now();
   if (!should_check_remote_change_ && now < time_to_check_changes_) {
     if (!metadata_database_->HasDirtyTracker() && should_check_conflict_) {
+      should_check_conflict_ = false;
       task_manager_->ScheduleSyncTaskIfIdle(
           scoped_ptr<SyncTask>(new ConflictResolver(this)),
           base::Bind(&SyncEngine::DidResolveConflict,
@@ -571,19 +599,21 @@ void SyncEngine::MaybeStartFetchChanges() {
           base::Bind(&SyncEngine::DidFetchChanges,
                      weak_ptr_factory_.GetWeakPtr()))) {
     should_check_remote_change_ = false;
+    listing_remote_changes_ = true;
     time_to_check_changes_ =
         now + base::TimeDelta::FromSeconds(kListChangesRetryDelaySeconds);
   }
 }
 
 void SyncEngine::DidResolveConflict(SyncStatusCode status) {
-  if (status == SYNC_STATUS_NO_CONFLICT)
-    should_check_conflict_ = false;
+  if (status == SYNC_STATUS_OK)
+    should_check_conflict_ = true;
 }
 
 void SyncEngine::DidFetchChanges(SyncStatusCode status) {
   if (status == SYNC_STATUS_OK)
     should_check_conflict_ = true;
+  listing_remote_changes_ = false;
 }
 
 void SyncEngine::UpdateServiceStateFromSyncStatusCode(
@@ -643,7 +673,7 @@ void SyncEngine::UpdateServiceState(RemoteServiceState state,
   if (old_state == GetCurrentState())
     return;
 
-  util::Log(logging::LOG_INFO, FROM_HERE,
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
             "Service state changed: %d->%d: %s",
             old_state, GetCurrentState(), description.c_str());
   FOR_EACH_OBSERVER(

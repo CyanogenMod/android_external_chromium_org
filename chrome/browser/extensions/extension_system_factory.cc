@@ -4,13 +4,15 @@
 
 #include "chrome/browser/extensions/extension_system_factory.h"
 
-#include "chrome/browser/extensions/extension_prefs_factory.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_prefs_factory.h"
+#include "extensions/browser/extension_registry_factory.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/renderer_startup_helper.h"
 
 namespace extensions {
 
@@ -18,9 +20,10 @@ namespace extensions {
 
 // static
 ExtensionSystemImpl::Shared*
-ExtensionSystemSharedFactory::GetForProfile(Profile* profile) {
+ExtensionSystemSharedFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
   return static_cast<ExtensionSystemImpl::Shared*>(
-      GetInstance()->GetServiceForBrowserContext(profile, true));
+      GetInstance()->GetServiceForBrowserContext(context, true));
 }
 
 // static
@@ -33,8 +36,11 @@ ExtensionSystemSharedFactory::ExtensionSystemSharedFactory()
         "ExtensionSystemShared",
         BrowserContextDependencyManager::GetInstance()) {
   DependsOn(ExtensionPrefsFactory::GetInstance());
+  // This depends on ExtensionService which depends on ExtensionRegistry.
+  DependsOn(ExtensionRegistryFactory::GetInstance());
   DependsOn(GlobalErrorServiceFactory::GetInstance());
   DependsOn(policy::ProfilePolicyConnectorFactory::GetInstance());
+  DependsOn(RendererStartupHelperFactory::GetInstance());
 }
 
 ExtensionSystemSharedFactory::~ExtensionSystemSharedFactory() {
@@ -42,23 +48,23 @@ ExtensionSystemSharedFactory::~ExtensionSystemSharedFactory() {
 
 BrowserContextKeyedService*
 ExtensionSystemSharedFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
-  return new ExtensionSystemImpl::Shared(static_cast<Profile*>(profile));
+    content::BrowserContext* context) const {
+  return new ExtensionSystemImpl::Shared(static_cast<Profile*>(context));
 }
 
 content::BrowserContext* ExtensionSystemSharedFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
   // Redirected in incognito.
-  return extensions::ExtensionsBrowserClient::Get()->
-      GetOriginalContext(context);
+  return ExtensionsBrowserClient::Get()->GetOriginalContext(context);
 }
 
 // ExtensionSystemFactory
 
 // static
-ExtensionSystem* ExtensionSystemFactory::GetForProfile(Profile* profile) {
+ExtensionSystem* ExtensionSystemFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
   return static_cast<ExtensionSystem*>(
-      GetInstance()->GetServiceForBrowserContext(profile, true));
+      GetInstance()->GetServiceForBrowserContext(context, true));
 }
 
 // static
@@ -67,9 +73,10 @@ ExtensionSystemFactory* ExtensionSystemFactory::GetInstance() {
 }
 
 ExtensionSystemFactory::ExtensionSystemFactory()
-    : BrowserContextKeyedServiceFactory(
-        "ExtensionSystem",
-        BrowserContextDependencyManager::GetInstance()) {
+    : ExtensionSystemProvider("ExtensionSystem",
+                              BrowserContextDependencyManager::GetInstance()) {
+  DCHECK(ExtensionsBrowserClient::Get())
+      << "ExtensionSystemFactory must be initialized after BrowserProcess";
   DependsOn(ExtensionSystemSharedFactory::GetInstance());
 }
 
@@ -77,8 +84,8 @@ ExtensionSystemFactory::~ExtensionSystemFactory() {
 }
 
 BrowserContextKeyedService* ExtensionSystemFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
-  return new ExtensionSystemImpl(static_cast<Profile*>(profile));
+    content::BrowserContext* context) const {
+  return new ExtensionSystemImpl(static_cast<Profile*>(context));
 }
 
 content::BrowserContext* ExtensionSystemFactory::GetBrowserContextToUse(

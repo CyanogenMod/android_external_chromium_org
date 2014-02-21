@@ -10,19 +10,20 @@
 
 namespace cc {
 
-scoped_ptr<LayerTilingData> LayerTilingData::Create(gfx::Size tile_size,
+scoped_ptr<LayerTilingData> LayerTilingData::Create(const gfx::Size& tile_size,
                                                     BorderTexelOption border) {
   return make_scoped_ptr(new LayerTilingData(tile_size, border));
 }
 
-LayerTilingData::LayerTilingData(gfx::Size tile_size, BorderTexelOption border)
+LayerTilingData::LayerTilingData(const gfx::Size& tile_size,
+                                 BorderTexelOption border)
     : tiling_data_(tile_size, gfx::Size(), border == HAS_BORDER_TEXELS) {
   SetTileSize(tile_size);
 }
 
 LayerTilingData::~LayerTilingData() {}
 
-void LayerTilingData::SetTileSize(gfx::Size size) {
+void LayerTilingData::SetTileSize(const gfx::Size& size) {
   if (tile_size() == size)
     return;
 
@@ -66,7 +67,7 @@ LayerTilingData::Tile* LayerTilingData::TileAt(int i, int j) const {
   return tiles_.get(std::make_pair(i, j));
 }
 
-void LayerTilingData::ContentRectToTileIndices(gfx::Rect content_rect,
+void LayerTilingData::ContentRectToTileIndices(const gfx::Rect& content_rect,
                                                int* left,
                                                int* top,
                                                int* right,
@@ -90,7 +91,7 @@ gfx::Rect LayerTilingData::TileRect(const Tile* tile) const {
 }
 
 Region LayerTilingData::OpaqueRegionInContentRect(
-    gfx::Rect content_rect) const {
+    const gfx::Rect& content_rect) const {
   if (content_rect.IsEmpty())
     return Region();
 
@@ -111,7 +112,7 @@ Region LayerTilingData::OpaqueRegionInContentRect(
   return opaque_region;
 }
 
-void LayerTilingData::SetBounds(gfx::Size size) {
+void LayerTilingData::SetBounds(const gfx::Size& size) {
   tiling_data_.SetTotalSize(size);
   if (size.IsEmpty()) {
     tiles_.clear();

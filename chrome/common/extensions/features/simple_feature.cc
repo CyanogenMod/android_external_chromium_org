@@ -35,6 +35,7 @@ struct Mappings {
     contexts["unblessed_extension"] = Feature::UNBLESSED_EXTENSION_CONTEXT;
     contexts["content_script"] = Feature::CONTENT_SCRIPT_CONTEXT;
     contexts["web_page"] = Feature::WEB_PAGE_CONTEXT;
+    contexts["blessed_web_page"] = Feature::BLESSED_WEB_PAGE_CONTEXT;
 
     locations["component"] = Feature::COMPONENT_LOCATION;
 
@@ -197,6 +198,8 @@ std::string GetDisplayName(Feature::Context context) {
       return "content script";
     case Feature::WEB_PAGE_CONTEXT:
       return "web page";
+    case Feature::BLESSED_WEB_PAGE_CONTEXT:
+      return "hosted app";
   }
   NOTREACHED();
   return "";
@@ -313,6 +316,17 @@ Feature::Availability SimpleFeature::IsAvailableToManifest(
     Location location,
     int manifest_version,
     Platform platform) const {
+  // Check extension type first to avoid granting platform app permissions
+  // to component extensions.
+  // HACK(kalman): user script -> extension. Solve this in a more generic way
+  // when we compile feature files.
+  Manifest::Type type_to_check = (type == Manifest::TYPE_USER_SCRIPT) ?
+      Manifest::TYPE_EXTENSION : type;
+  if (!extension_types_.empty() &&
+      extension_types_.find(type_to_check) == extension_types_.end()) {
+    return CreateAvailability(INVALID_TYPE, type);
+  }
+
   // Component extensions can access any feature.
   if (location == COMPONENT_LOCATION)
     return CreateAvailability(IS_AVAILABLE, type);
@@ -331,15 +345,6 @@ Feature::Availability SimpleFeature::IsAvailableToManifest(
       if (extension_id != whitelist_switch_value)
         return CreateAvailability(NOT_FOUND_IN_WHITELIST, type);
     }
-  }
-
-  // HACK(kalman): user script -> extension. Solve this in a more generic way
-  // when we compile feature files.
-  Manifest::Type type_to_check = (type == Manifest::TYPE_USER_SCRIPT) ?
-      Manifest::TYPE_EXTENSION : type;
-  if (!extension_types_.empty() &&
-      extension_types_.find(type_to_check) == extension_types_.end()) {
-    return CreateAvailability(INVALID_TYPE, type);
   }
 
   if (location_ != UNSPECIFIED_LOCATION && location_ != location)

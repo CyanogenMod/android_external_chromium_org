@@ -13,14 +13,17 @@
 #include "ash/wm/immersive_fullscreen_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_delegate.h"
+#include "ash/wm/window_state_observer.h"
 #include "base/command_line.h"
+#include "base/debug/leak_annotations.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/native_widget_aura.h"
@@ -30,19 +33,19 @@
 
 namespace {
 
-const gfx::Font& GetTitleFont() {
-  static gfx::Font* title_font = NULL;
-  if (!title_font)
-    title_font = new gfx::Font(views::NativeWidgetAura::GetWindowTitleFont());
-  return *title_font;
+const gfx::FontList& GetTitleFontList() {
+  static const gfx::FontList* title_font_list =
+      new gfx::FontList(views::NativeWidgetAura::GetWindowTitleFontList());
+  ANNOTATE_LEAKING_OBJECT_PTR(title_font_list);
+  return *title_font_list;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // CustomFrameViewAshWindowStateDelegate
 
 // Handles a user's fullscreen request (Shift+F4/F4). Puts the window into
-// immersive fullscreen if the kAshEnableImmersiveFullscreenForAllWindows
-// flag is set.
+// immersive fullscreen if immersive fullscreen is enabled for non-browser
+// windows.
 class CustomFrameViewAshWindowStateDelegate
     : public ash::wm::WindowStateDelegate,
       public ash::wm::WindowStateObserver,
@@ -55,8 +58,7 @@ class CustomFrameViewAshWindowStateDelegate
 #if defined(OS_CHROMEOS)
     // TODO(pkotwicz): Investigate if immersive fullscreen can be enabled for
     // Windows Ash.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            ash::switches::kAshEnableImmersiveFullscreenForAllWindows)) {
+    if (ash::switches::UseImmersiveFullscreenForAllWindows()) {
       immersive_fullscreen_controller_.reset(
           new ash::ImmersiveFullscreenController);
       custom_frame_view->InitImmersiveFullscreenControllerForView(
@@ -89,8 +91,11 @@ class CustomFrameViewAshWindowStateDelegate
     } else {
       window_state->Restore();
     }
-    if (immersive_fullscreen_controller_)
-      immersive_fullscreen_controller_->SetEnabled(enter_fullscreen);
+    if (immersive_fullscreen_controller_) {
+      immersive_fullscreen_controller_->SetEnabled(
+          ash::ImmersiveFullscreenController::WINDOW_TYPE_OTHER,
+          enter_fullscreen);
+    }
     return true;
   }
   // Overridden from aura::WindowObserver:
@@ -100,14 +105,16 @@ class CustomFrameViewAshWindowStateDelegate
     window_state_ = NULL;
   }
   // Overridden from ash::wm::WindowStateObserver:
-  virtual void OnWindowShowTypeChanged(
+  virtual void OnPostWindowShowTypeChange(
       ash::wm::WindowState* window_state,
       ash::wm::WindowShowType old_type) OVERRIDE {
     if (!window_state->IsFullscreen() &&
         !window_state->IsMinimized() &&
         immersive_fullscreen_controller_.get() &&
         immersive_fullscreen_controller_->IsEnabled()) {
-      immersive_fullscreen_controller_->SetEnabled(false);
+      immersive_fullscreen_controller_->SetEnabled(
+          ash::ImmersiveFullscreenController::WINDOW_TYPE_OTHER,
+          false);
     }
   }
 
@@ -155,11 +162,6 @@ class CustomFrameViewAsh::HeaderView
   virtual void Layout() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
-  // Sets whether the header should be painted as active.
-  void set_paint_as_active(bool paint_as_active) {
-    paint_as_active_ = paint_as_active;
-  }
-
   HeaderPainter* header_painter() {
     return header_painter_.get();
   }
@@ -191,9 +193,6 @@ class CustomFrameViewAsh::HeaderView
   // Keeps track of whether |maximize_bubble_| is still alive.
   scoped_ptr<views::WidgetDeletionObserver> maximize_bubble_lifetime_observer_;
 
-  // Whether the header should be painted as active.
-  bool paint_as_active_;
-
   // The fraction of the header's height which is visible while in fullscreen.
   // This value is meaningless when not in fullscreen.
   double fullscreen_visible_fraction_;
@@ -206,7 +205,6 @@ CustomFrameViewAsh::HeaderView::HeaderView(views::Widget* frame)
       header_painter_(new ash::HeaderPainter),
       caption_button_container_(NULL),
       maximize_bubble_(NULL),
-      paint_as_active_(false),
       fullscreen_visible_fraction_(0) {
   // Unfortunately, there is no views::WidgetDelegate::CanMinimize(). Assume
   // that the window frame can be minimized if it can be maximized.
@@ -233,7 +231,7 @@ CustomFrameViewAsh::HeaderView::~HeaderView() {
 }
 
 void CustomFrameViewAsh::HeaderView::SchedulePaintForTitle() {
-  header_painter_->SchedulePaintForTitle(GetTitleFont());
+  header_painter_->SchedulePaintForTitle(GetTitleFontList());
 }
 
 void CustomFrameViewAsh::HeaderView::ResetWindowControls() {
@@ -267,17 +265,16 @@ void CustomFrameViewAsh::HeaderView::OnPaint(gfx::Canvas* canvas) {
   int theme_image_id = 0;
   if (frame_->IsMaximized() || frame_->IsFullscreen())
     theme_image_id = IDR_AURA_WINDOW_HEADER_BASE_MINIMAL;
-  else if (paint_as_active_)
+  else if (frame_->non_client_view()->frame_view()->ShouldPaintAsActive())
     theme_image_id = IDR_AURA_WINDOW_HEADER_BASE_ACTIVE;
   else
     theme_image_id = IDR_AURA_WINDOW_HEADER_BASE_INACTIVE;
 
   header_painter_->PaintHeader(
       canvas,
-      paint_as_active_ ? HeaderPainter::ACTIVE : HeaderPainter::INACTIVE,
       theme_image_id,
       0);
-  header_painter_->PaintTitleBar(canvas, GetTitleFont());
+  header_painter_->PaintTitleBar(canvas, GetTitleFontList());
   header_painter_->PaintHeaderContentSeparator(canvas);
 }
 
@@ -360,6 +357,10 @@ CustomFrameViewAsh::OverlayView::~OverlayView() {
 }
 
 void CustomFrameViewAsh::OverlayView::Layout() {
+  // Layout |header_view_| because layout affects the result of
+  // GetPreferredOnScreenHeight().
+  header_view_->Layout();
+
   int onscreen_height = header_view_->GetPreferredOnScreenHeight();
   if (onscreen_height == 0) {
     header_view_->SetVisible(false);
@@ -397,7 +398,7 @@ CustomFrameViewAsh::CustomFrameViewAsh(views::Widget* frame)
   if (!window_state->HasDelegate()) {
     window_state->SetDelegate(scoped_ptr<wm::WindowStateDelegate>(
         new CustomFrameViewAshWindowStateDelegate(
-            window_state, this)).Pass());
+            window_state, this)));
   }
 }
 
@@ -471,10 +472,16 @@ gfx::Size CustomFrameViewAsh::GetMaximumSize() {
 }
 
 void CustomFrameViewAsh::SchedulePaintInRect(const gfx::Rect& r) {
-  // The HeaderView is not a child of CustomFrameViewAsh. Redirect the paint to
-  // HeaderView instead.
-  header_view_->set_paint_as_active(ShouldPaintAsActive());
-  header_view_->SchedulePaint();
+  // We may end up here before |header_view_| has been added to the Widget.
+  if (header_view_->GetWidget()) {
+    // The HeaderView is not a child of CustomFrameViewAsh. Redirect the paint
+    // to HeaderView instead.
+    gfx::RectF to_paint(r);
+    views::View::ConvertRectToTarget(this, header_view_, &to_paint);
+    header_view_->SchedulePaintInRect(gfx::ToEnclosingRect(to_paint));
+  } else {
+    views::NonClientFrameView::SchedulePaintInRect(r);
+  }
 }
 
 bool CustomFrameViewAsh::HitTestRect(const gfx::Rect& rect) const {

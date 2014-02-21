@@ -18,11 +18,16 @@
 // These are messages sent from the renderer to the browser in
 // relation to <link rel=prerender> elements.
 
+IPC_STRUCT_BEGIN(PrerenderAttributes)
+  IPC_STRUCT_MEMBER(GURL, url)
+  IPC_STRUCT_MEMBER(uint32, rel_types)
+IPC_STRUCT_END()
+
 // Notifies of the insertion of a <link rel=prerender> element in the
 // document.
 IPC_MESSAGE_CONTROL5(PrerenderHostMsg_AddLinkRelPrerender,
                      int /* prerender_id, assigned by WebPrerendererClient */,
-                     GURL /* url */,
+                     PrerenderAttributes,
                      content::Referrer,
                      gfx::Size,
                      int /* render_view_route_id of launcher */)
@@ -51,6 +56,10 @@ IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderStart,
 
 // Signals to launcher that a prerender is running.
 IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderStopLoading,
+                     int /* prerender_id */)
+
+// Signals to launcher that a prerender has had it's 'domcontentloaded' event.
+IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderDomContentLoaded,
                      int /* prerender_id */)
 
 // Signals to a launcher that a new alias has been added to a prerender.

@@ -97,16 +97,18 @@ const char kIconUrl[] = "iconUrl";
 const char kAppKind[] = "drive#app";
 const char kName[] = "name";
 const char kObjectType[] = "objectType";
+const char kProductId[] = "productId";
 const char kSupportsCreate[] = "supportsCreate";
 const char kSupportsImport[] = "supportsImport";
 const char kInstalled[] = "installed";
 const char kAuthorized[] = "authorized";
-const char kProductUrl[] = "productUrl";
+const char kRemovable[] = "removable";
 const char kPrimaryMimeTypes[] = "primaryMimeTypes";
 const char kSecondaryMimeTypes[] = "secondaryMimeTypes";
 const char kPrimaryFileExtensions[] = "primaryFileExtensions";
 const char kSecondaryFileExtensions[] = "secondaryFileExtensions";
 const char kIcons[] = "icons";
+const char kCreateUrl[] = "createUrl";
 
 // Apps List
 // https://developers.google.com/drive/v2/reference/apps/list
@@ -301,7 +303,8 @@ AppResource::AppResource()
     : supports_create_(false),
       supports_import_(false),
       installed_(false),
-      authorized_(false) {
+      authorized_(false),
+      removable_(false) {
 }
 
 AppResource::~AppResource() {}
@@ -312,13 +315,12 @@ void AppResource::RegisterJSONConverter(
   converter->RegisterStringField(kId, &AppResource::application_id_);
   converter->RegisterStringField(kName, &AppResource::name_);
   converter->RegisterStringField(kObjectType, &AppResource::object_type_);
+  converter->RegisterStringField(kProductId, &AppResource::product_id_);
   converter->RegisterBoolField(kSupportsCreate, &AppResource::supports_create_);
   converter->RegisterBoolField(kSupportsImport, &AppResource::supports_import_);
   converter->RegisterBoolField(kInstalled, &AppResource::installed_);
   converter->RegisterBoolField(kAuthorized, &AppResource::authorized_);
-  converter->RegisterCustomField<GURL>(kProductUrl,
-                                       &AppResource::product_url_,
-                                       GetGURLFromString);
+  converter->RegisterBoolField(kRemovable, &AppResource::removable_);
   converter->RegisterRepeatedString(kPrimaryMimeTypes,
                                     &AppResource::primary_mimetypes_);
   converter->RegisterRepeatedString(kSecondaryMimeTypes,
@@ -328,6 +330,9 @@ void AppResource::RegisterJSONConverter(
   converter->RegisterRepeatedString(kSecondaryFileExtensions,
                                     &AppResource::secondary_file_extensions_);
   converter->RegisterRepeatedMessage(kIcons, &AppResource::icons_);
+  converter->RegisterCustomField<GURL>(kCreateUrl,
+                                       &AppResource::create_url_,
+                                       GetGURLFromString);
 }
 
 // static

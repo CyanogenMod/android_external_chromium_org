@@ -15,18 +15,20 @@
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
+#include "chrome/common/extensions/api/file_browser_private.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/lazy_background_task_queue.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "net/base/escape.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -79,10 +81,10 @@ const FileBrowserHandler* FindFileBrowserHandlerForActionId(
 }
 
 std::string EscapedUtf8ToLower(const std::string& str) {
-  base::string16 utf16 = UTF8ToUTF16(
+  base::string16 utf16 = base::UTF8ToUTF16(
       net::UnescapeURLComponent(str, net::UnescapeRule::NORMAL));
   return net::EscapeUrlEncodedData(
-      UTF16ToUTF8(base::i18n::ToLower(utf16)),
+      base::UTF16ToUTF8(base::i18n::ToLower(utf16)),
       false /* do not replace space with plus */);
 }
 
@@ -101,12 +103,12 @@ FileBrowserHandlerList FindFileBrowserHandlersForURL(
   const GURL lowercase_url(EscapedUtf8ToLower(selected_file_url.spec()));
 
   FileBrowserHandlerList results;
-  for (ExtensionSet::const_iterator iter = service->extensions()->begin();
-       iter != service->extensions()->end();
-       ++iter) {
+  for (extensions::ExtensionSet::const_iterator iter =
+           service->extensions()->begin();
+       iter != service->extensions()->end(); ++iter) {
     const Extension* extension = iter->get();
     if (profile->IsOffTheRecord() &&
-        !extension_util::IsIncognitoEnabled(extension->id(), service))
+        !extensions::util::IsIncognitoEnabled(extension->id(), profile))
       continue;
 
     FileBrowserHandler::List* handler_list =
@@ -238,7 +240,7 @@ FileBrowserHandlerExecutor::SetupFileAccessPermissions(
     const FileSystemURL& url = file_urls[i];
 
     // Check if this file system entry exists first.
-    base::PlatformFileInfo file_info;
+    base::File::Info file_info;
 
     base::FilePath local_path = url.path();
     base::FilePath virtual_path = url.virtual_path();
@@ -259,8 +261,7 @@ FileBrowserHandlerExecutor::SetupFileAccessPermissions(
     // Grant access to this particular file to target extension. This will
     // ensure that the target extension can access only this FS entry and
     // prevent from traversing FS hierarchy upward.
-    backend->GrantFileAccessToExtension(
-        handler_extension->id(), virtual_path);
+    backend->GrantFileAccessToExtension(handler_extension->id(), virtual_path);
 
     // Output values.
     FileDefinition file;
@@ -310,7 +311,10 @@ void FileBrowserHandlerExecutor::Execute(
 void FileBrowserHandlerExecutor::ExecuteDoneOnUIThread(bool success) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!done_.is_null())
-    done_.Run(success);
+    done_.Run(
+        success
+            ? extensions::api::file_browser_private::TASK_RESULT_MESSAGE_SENT
+            : extensions::api::file_browser_private::TASK_RESULT_FAILED);
   delete this;
 }
 
@@ -379,24 +383,23 @@ void FileBrowserHandlerExecutor::SetupPermissionsAndDispatchEvent(
   SetupHandlerHostFileAccessPermissions(
       file_list, extension_.get(), handler_pid);
 
-  scoped_ptr<ListValue> event_args(new ListValue());
+  scoped_ptr<base::ListValue> event_args(new base::ListValue());
   event_args->Append(new base::StringValue(action_id_));
-  DictionaryValue* details = new DictionaryValue();
+  base::DictionaryValue* details = new base::DictionaryValue();
   event_args->Append(details);
   // Get file definitions. These will be replaced with Entry instances by
   // dispatchEvent() method from event_binding.js.
-  ListValue* file_entries = new ListValue();
+  base::ListValue* file_entries = new base::ListValue();
   details->Set("entries", file_entries);
   for (FileDefinitionList::const_iterator iter = file_list.begin();
        iter != file_list.end();
        ++iter) {
-    DictionaryValue* file_def = new DictionaryValue();
+    base::DictionaryValue* file_def = new base::DictionaryValue();
     file_entries->Append(file_def);
     file_def->SetString("fileSystemName", file_system_name);
     file_def->SetString("fileSystemRoot", file_system_root.spec());
-    base::FilePath root(FILE_PATH_LITERAL("/"));
-    base::FilePath full_path = root.Append(iter->virtual_path);
-    file_def->SetString("fileFullPath", full_path.value());
+    file_def->SetString("fileFullPath",
+                        "/" + iter->virtual_path.AsUTF8Unsafe());
     file_def->SetBoolean("fileIsDirectory", iter->is_directory);
   }
 
@@ -476,7 +479,11 @@ bool ExecuteFileBrowserHandler(
   // Some action IDs of the file manager's file browser handlers require the
   // files to be directly opened with the browser.
   if (ShouldBeOpenedWithBrowser(extension->id(), action_id)) {
-    return OpenFilesWithBrowser(profile, file_urls);
+    const bool result = OpenFilesWithBrowser(profile, file_urls);
+    done.Run(result
+                 ? extensions::api::file_browser_private::TASK_RESULT_OPENED
+                 : extensions::api::file_browser_private::TASK_RESULT_FAILED);
+    return result;
   }
 
   // The executor object will be self deleted on completion.

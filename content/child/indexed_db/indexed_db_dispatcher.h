@@ -34,8 +34,8 @@ namespace content {
 class IndexedDBKey;
 class IndexedDBKeyPath;
 class IndexedDBKeyRange;
-class RendererWebIDBCursorImpl;
-class RendererWebIDBDatabaseImpl;
+class WebIDBCursorImpl;
+class WebIDBDatabaseImpl;
 class ThreadSafeSender;
 
 CONTENT_EXPORT extern const size_t kMaxIDBValueSizeInBytes;
@@ -64,7 +64,9 @@ class CONTENT_EXPORT IndexedDBDispatcher
       const IndexedDBDatabaseMetadata& idb_metadata);
 
   void OnMessageReceived(const IPC::Message& msg);
-  bool Send(IPC::Message* msg);
+
+  // This method is virtual so it can be overridden in unit tests.
+  virtual bool Send(IPC::Message* msg);
 
   void RequestIDBFactoryGetDatabaseNames(
       blink::WebIDBCallbacks* callbacks,
@@ -82,22 +84,28 @@ class CONTENT_EXPORT IndexedDBDispatcher
                                        blink::WebIDBCallbacks* callbacks,
                                        const std::string& database_identifier);
 
-  void RequestIDBCursorAdvance(unsigned long count,
-                               blink::WebIDBCallbacks* callbacks_ptr,
-                               int32 ipc_cursor_id);
+  // This method is virtual so it can be overridden in unit tests.
+  virtual void RequestIDBCursorAdvance(unsigned long count,
+                                       blink::WebIDBCallbacks* callbacks_ptr,
+                                       int32 ipc_cursor_id,
+                                       int64 transaction_id);
 
+  // This method is virtual so it can be overridden in unit tests.
   virtual void RequestIDBCursorContinue(const IndexedDBKey& key,
                                         const IndexedDBKey& primary_key,
                                         blink::WebIDBCallbacks* callbacks_ptr,
-                                        int32 ipc_cursor_id);
+                                        int32 ipc_cursor_id,
+                                        int64 transaction_id);
 
+  // This method is virtual so it can be overridden in unit tests.
   virtual void RequestIDBCursorPrefetch(int n,
                                         blink::WebIDBCallbacks* callbacks_ptr,
                                         int32 ipc_cursor_id);
 
-  void RequestIDBCursorPrefetchReset(int used_prefetches,
-                                     int unused_prefetches,
-                                     int32 ipc_cursor_id);
+  // This method is virtual so it can be overridden in unit tests.
+  virtual void RequestIDBCursorPrefetchReset(int used_prefetches,
+                                             int unused_prefetches,
+                                             int32 ipc_cursor_id);
 
   void RequestIDBDatabaseClose(int32 ipc_database_id,
                                int32 ipc_database_callbacks_id);
@@ -107,7 +115,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 transaction_id,
       blink::WebIDBDatabaseCallbacks* database_callbacks_ptr,
       blink::WebVector<long long> object_store_ids,
-      unsigned short mode);
+      blink::WebIDBDatabase::TransactionMode mode);
 
   void RequestIDBDatabaseGet(int32 ipc_database_id,
                              int64 transaction_id,
@@ -134,7 +142,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
                                     int64 object_store_id,
                                     int64 index_id,
                                     const IndexedDBKeyRange& key_range,
-                                    unsigned short direction,
+                                    blink::WebIDBCursor::Direction direction,
                                     bool key_only,
                                     blink::WebIDBDatabase::TaskType task_type,
                                     blink::WebIDBCallbacks* callbacks);
@@ -161,7 +169,11 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void DatabaseDestroyed(int32 ipc_database_id);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, CursorReset);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, CursorTransactionId);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, ValueSizeTest);
+
+  enum { kAllCursors = -1 };
 
   static int32 CurrentWorkerId() {
     return webkit_glue::WorkerTaskRunner::Instance()->CurrentWorkerId();
@@ -228,7 +240,8 @@ class CONTENT_EXPORT IndexedDBDispatcher
                           int64 new_version);
 
   // Reset cursor prefetch caches for all cursors except exception_cursor_id.
-  void ResetCursorPrefetchCaches(int32 ipc_exception_cursor_id = -1);
+  void ResetCursorPrefetchCaches(int64 transaction_id,
+                                 int32 ipc_exception_cursor_id);
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
@@ -238,10 +251,15 @@ class CONTENT_EXPORT IndexedDBDispatcher
   IDMap<blink::WebIDBDatabaseCallbacks, IDMapOwnPointer>
       pending_database_callbacks_;
 
-  // Map from cursor id to RendererWebIDBCursorImpl.
-  std::map<int32, RendererWebIDBCursorImpl*> cursors_;
+  // Maps the ipc_callback_id from an open cursor request to the request's
+  // transaction_id. Used to assign the transaction_id to the WebIDBCursorImpl
+  // when it is created.
+  std::map<int32, int64> cursor_transaction_ids_;
 
-  std::map<int32, RendererWebIDBDatabaseImpl*> databases_;
+  // Map from cursor id to WebIDBCursorImpl.
+  std::map<int32, WebIDBCursorImpl*> cursors_;
+
+  std::map<int32, WebIDBDatabaseImpl*> databases_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBDispatcher);
 };

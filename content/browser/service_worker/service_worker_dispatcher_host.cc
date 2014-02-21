@@ -9,12 +9,13 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
-#include "content/common/service_worker_messages.h"
+#include "content/common/service_worker/embedded_worker_messages.h"
+#include "content/common/service_worker/service_worker_messages.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
 #include "url/gurl.h"
 
-namespace content {
+using blink::WebServiceWorkerError;
 
 namespace {
 
@@ -23,18 +24,20 @@ const char kDisabledErrorMessage[] =
 const char kDomainMismatchErrorMessage[] =
     "Scope and scripts do not have the same origin";
 
-// TODO(alecflett): Store the service_worker_id keyed by (domain+pattern,
-// script) so we don't always return a new service worker id.
-int64 NextWorkerId() {
-  static int64 service_worker_id = 0;
-  return service_worker_id++;
-}
+const uint32 kFilteredMessageClasses[] = {
+  ServiceWorkerMsgStart,
+  EmbeddedWorkerMsgStart,
+};
 
 }  // namespace
 
+namespace content {
+
 ServiceWorkerDispatcherHost::ServiceWorkerDispatcherHost(
     int render_process_id)
-    : render_process_id_(render_process_id) {
+    : BrowserMessageFilter(
+          kFilteredMessageClasses, arraysize(kFilteredMessageClasses)),
+      render_process_id_(render_process_id) {
 }
 
 ServiceWorkerDispatcherHost::~ServiceWorkerDispatcherHost() {
@@ -66,9 +69,6 @@ void ServiceWorkerDispatcherHost::OnDestruct() const {
 bool ServiceWorkerDispatcherHost::OnMessageReceived(
     const IPC::Message& message,
     bool* message_was_ok) {
-  if (IPC_MESSAGE_CLASS(message) != ServiceWorkerMsgStart)
-    return false;
-
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(
     ServiceWorkerDispatcherHost, message, *message_was_ok)
@@ -80,6 +80,12 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnProviderCreated)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderDestroyed,
                         OnProviderDestroyed)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStarted,
+                        OnWorkerStarted)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
+                        OnWorkerStopped)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_SendMessageToBrowser,
+                        OnSendMessageToBrowser)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -95,8 +101,8 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
-        blink::WebServiceWorkerError::DisabledError,
-        ASCIIToUTF16(kDisabledErrorMessage)));
+        WebServiceWorkerError::DisabledError,
+        base::ASCIIToUTF16(kDisabledErrorMessage)));
     return;
   }
 
@@ -107,13 +113,19 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
-        blink::WebServiceWorkerError::SecurityError,
-        ASCIIToUTF16(kDomainMismatchErrorMessage)));
+        WebServiceWorkerError::SecurityError,
+        base::ASCIIToUTF16(kDomainMismatchErrorMessage)));
     return;
   }
 
-  Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
-      thread_id, request_id, NextWorkerId()));
+  context_->RegisterServiceWorker(
+      pattern,
+      script_url,
+      render_process_id_,
+      base::Bind(&ServiceWorkerDispatcherHost::RegistrationComplete,
+                 this,
+                 thread_id,
+                 request_id));
 }
 
 void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
@@ -128,11 +140,17 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
         thread_id,
         request_id,
         blink::WebServiceWorkerError::DisabledError,
-        ASCIIToUTF16(kDisabledErrorMessage)));
+        base::ASCIIToUTF16(kDisabledErrorMessage)));
     return;
   }
 
-  Send(new ServiceWorkerMsg_ServiceWorkerUnregistered(thread_id, request_id));
+  context_->UnregisterServiceWorker(
+      pattern,
+      render_process_id_,
+      base::Bind(&ServiceWorkerDispatcherHost::UnregistrationComplete,
+                 this,
+                 thread_id,
+                 request_id));
 }
 
 void ServiceWorkerDispatcherHost::OnProviderCreated(int provider_id) {
@@ -155,6 +173,69 @@ void ServiceWorkerDispatcherHost::OnProviderDestroyed(int provider_id) {
     return;
   }
   context_->RemoveProviderHost(render_process_id_, provider_id);
+}
+
+void ServiceWorkerDispatcherHost::RegistrationComplete(
+    int32 thread_id,
+    int32 request_id,
+    ServiceWorkerStatusCode status,
+    int64 registration_id) {
+  if (status != SERVICE_WORKER_OK) {
+    SendRegistrationError(thread_id, request_id, status);
+    return;
+  }
+
+  Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
+      thread_id, request_id, registration_id));
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerStarted(
+    int thread_id, int embedded_worker_id) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnWorkerStarted(
+      render_process_id_, thread_id, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerStopped(int embedded_worker_id) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnWorkerStopped(
+      render_process_id_, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnSendMessageToBrowser(
+    int embedded_worker_id,
+    int request_id,
+    const IPC::Message& message) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnSendMessageToBrowser(
+      embedded_worker_id, request_id, message);
+}
+
+void ServiceWorkerDispatcherHost::UnregistrationComplete(
+    int32 thread_id,
+    int32 request_id,
+    ServiceWorkerStatusCode status) {
+  if (status != SERVICE_WORKER_OK) {
+    SendRegistrationError(thread_id, request_id, status);
+    return;
+  }
+
+  Send(new ServiceWorkerMsg_ServiceWorkerUnregistered(thread_id, request_id));
+}
+
+void ServiceWorkerDispatcherHost::SendRegistrationError(
+    int32 thread_id,
+    int32 request_id,
+    ServiceWorkerStatusCode status) {
+  base::string16 error_message;
+  blink::WebServiceWorkerError::ErrorType error_type;
+  GetServiceWorkerRegistrationStatusResponse(
+      status, &error_type, &error_message);
+  Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+      thread_id, request_id, error_type, error_message));
 }
 
 }  // namespace content

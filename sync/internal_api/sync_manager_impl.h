@@ -12,7 +12,7 @@
 #include "sync/base/sync_export.h"
 #include "sync/engine/all_status.h"
 #include "sync/engine/net/server_connection_manager.h"
-#include "sync/engine/sync_engine_event.h"
+#include "sync/engine/sync_engine_event_listener.h"
 #include "sync/engine/traffic_recorder.h"
 #include "sync/internal_api/change_reorder_buffer.h"
 #include "sync/internal_api/debug_info_event_listener.h"
@@ -31,6 +31,7 @@
 
 namespace syncer {
 
+class ModelTypeRegistry;
 class SyncAPIServerConnectionManager;
 class WriteNode;
 class WriteTransaction;
@@ -69,7 +70,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       int sync_server_port,
       bool use_ssl,
       scoped_ptr<HttpPostProviderFactory> post_factory,
-      const std::vector<ModelSafeWorker*>& workers,
+      const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
       ExtensionsActivity* extensions_activity,
       SyncManager::ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
@@ -135,7 +136,11 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   static int GetPreferencesNudgeDelay();
 
   // SyncEngineEventListener implementation.
-  virtual void OnSyncEngineEvent(const SyncEngineEvent& event) OVERRIDE;
+  virtual void OnSyncCycleEvent(const SyncCycleEvent& event) OVERRIDE;
+  virtual void OnActionableError(const SyncProtocolError& error) OVERRIDE;
+  virtual void OnRetryTimeChanged(base::Time retry_time) OVERRIDE;
+  virtual void OnThrottledTypesChanged(ModelTypeSet throttled_types) OVERRIDE;
+  virtual void OnMigrationRequested(ModelTypeSet types) OVERRIDE;
 
   // ServerConnectionEventListener implementation.
   virtual void OnServerConnectionEvent(
@@ -274,7 +279,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // JS message handlers.
   JsArgList GetNotificationState(const JsArgList& args);
   JsArgList GetNotificationInfo(const JsArgList& args);
-  JsArgList GetRootNodeDetails(const JsArgList& args);
   JsArgList GetAllNodes(const JsArgList& args);
   JsArgList GetNodeSummariesById(const JsArgList& args);
   JsArgList GetNodeDetailsById(const JsArgList& args);
@@ -313,6 +317,10 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // The ServerConnectionManager used to abstract communication between the
   // client (the Syncer) and the sync server.
   scoped_ptr<SyncAPIServerConnectionManager> connection_manager_;
+
+  // Maintains state that affects the way we interact with different sync types.
+  // This state changes when entering or exiting a configuration cycle.
+  scoped_ptr<ModelTypeRegistry> model_type_registry_;
 
   // A container of various bits of information used by the SyncScheduler to
   // create SyncSessions.  Must outlive the SyncScheduler.

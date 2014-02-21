@@ -8,7 +8,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -24,6 +23,9 @@
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/pref_names.h"
+#include "extensions/browser/runtime_data.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -91,7 +93,7 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
   AddChildView(resize_area_);
 
   chevron_ = new views::MenuButton(NULL, base::string16(), this, false);
-  chevron_->set_border(NULL);
+  chevron_->SetBorder(views::Border::NullBorder());
   chevron_->EnableCanvasFlippingForRTLUI(true);
   chevron_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS_CHEVRON));
@@ -117,11 +119,12 @@ void BrowserActionsContainer::Init() {
   // We wait to set the container width until now so that the chevron images
   // will be loaded.  The width calculation needs to know the chevron size.
   if (model_ &&
-      !profile_->GetPrefs()->HasPrefPath(prefs::kExtensionToolbarSize)) {
+      !profile_->GetPrefs()->HasPrefPath(
+          extensions::pref_names::kToolbarSize)) {
     // Migration code to the new VisibleIconCount pref.
     // TODO(mpcomplete): remove this after users are upgraded to 5.0.
-    int predefined_width =
-        profile_->GetPrefs()->GetInteger(prefs::kBrowserActionContainerWidth);
+    int predefined_width = profile_->GetPrefs()->GetInteger(
+        extensions::pref_names::kBrowserActionContainerWidth);
     if (predefined_width != 0)
       model_->SetVisibleIconCount(WidthToIconCount(predefined_width));
   }
@@ -623,7 +626,7 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   // Enlarge the container if it was already at maximum size and we're not in
   // the middle of upgrading.
   if ((model_->GetVisibleIconCount() < 0) &&
-      !extensions::ExtensionSystem::Get(profile_)->extension_service()->
+      !extensions::ExtensionSystem::Get(profile_)->runtime_data()->
           IsBeingUpgraded(extension)) {
     suppress_chevron_ = true;
     SaveDesiredSizeAndAnimate(gfx::Tween::LINEAR, visible_actions + 1);
@@ -648,7 +651,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 
       // If the extension is being upgraded we don't want the bar to shrink
       // because the icon is just going to get re-added to the same location.
-      if (extensions::ExtensionSystem::Get(profile_)->extension_service()->
+      if (extensions::ExtensionSystem::Get(profile_)->runtime_data()->
               IsBeingUpgraded(extension))
         return;
 
@@ -707,7 +710,7 @@ bool BrowserActionsContainer::BrowserActionShowPopup(
   return false;
 }
 
-void BrowserActionsContainer::ModelLoaded() {
+void BrowserActionsContainer::VisibleCountChanged() {
   SetContainerWidth();
 }
 
@@ -827,11 +830,8 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
 bool BrowserActionsContainer::ShouldDisplayBrowserAction(
     const Extension* extension) {
   // Only display incognito-enabled extensions while in incognito mode.
-  return
-      (!profile_->IsOffTheRecord() ||
-       extension_util::IsIncognitoEnabled(
-           extension->id(),
-           extensions::ExtensionSystem::Get(profile_)->extension_service()));
+  return !profile_->IsOffTheRecord() ||
+      extensions::util::IsIncognitoEnabled(extension->id(), profile_);
 }
 
 bool BrowserActionsContainer::ShowPopup(

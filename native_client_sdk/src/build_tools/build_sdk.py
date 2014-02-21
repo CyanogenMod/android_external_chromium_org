@@ -18,7 +18,6 @@ and whether it should upload an SDK to file storage (GSTORE)
 # pylint: disable=W0621
 
 # std python includes
-import copy
 import datetime
 import glob
 import optparse
@@ -70,6 +69,12 @@ def GetGlibcToolchain():
 def GetNewlibToolchain():
   tcdir = os.path.join(NACL_DIR, 'toolchain', '.tars')
   tcname = 'naclsdk_%s_x86.tgz' % getos.GetPlatform()
+  return os.path.join(tcdir, tcname)
+
+
+def GetBionicToolchain():
+  tcdir = os.path.join(NACL_DIR, 'toolchain', '.tars')
+  tcname = 'naclsdk_%s_arm_bionic.tgz' % getos.GetPlatform()
   return os.path.join(tcdir, tcname)
 
 
@@ -144,12 +149,14 @@ def GetPNaClNativeLib(tcpath, arch):
   return os.path.join(tcpath, 'lib-' + arch)
 
 
-def BuildStepDownloadToolchains():
+def BuildStepDownloadToolchains(toolchains):
   buildbot_common.BuildStep('Running download_toolchains.py')
   download_script = os.path.join('build', 'download_toolchains.py')
-  buildbot_common.Run([sys.executable, download_script,
-                      '--no-arm-trusted', '--arm-untrusted', '--keep'],
-                      cwd=NACL_DIR)
+  args = [sys.executable, download_script, '--no-arm-trusted',
+          '--arm-untrusted', '--keep']
+  if 'bionic' in toolchains:
+    args.append('--allow-bionic')
+  buildbot_common.Run(args, cwd=NACL_DIR)
 
 
 def BuildStepCleanPepperDirs(pepperdir, pepperdir_old):
@@ -221,6 +228,16 @@ def BuildStepUntarToolchains(pepperdir, toolchains):
     newlibdir = os.path.join(pepperdir, 'toolchain', tcname)
     buildbot_common.Move(srcdir, newlibdir)
 
+  if 'bionic' in toolchains:
+    # Untar the bionic toolchains
+    tarfile = GetBionicToolchain()
+    tcname = platform + '_arm_bionic'
+    buildbot_common.Run([sys.executable, CYGTAR, '-C', tmpdir, '-xf', tarfile],
+                        cwd=NACL_DIR)
+    srcdir = os.path.join(tmpdir, tcname)
+    bionicdir = os.path.join(pepperdir, 'toolchain', tcname)
+    buildbot_common.Move(srcdir, bionicdir)
+
   if 'arm' in toolchains:
     # Copy the existing arm toolchain from native_client tree
     tcname = platform + '_arm_newlib'
@@ -276,32 +293,32 @@ def BuildStepUntarToolchains(pepperdir, toolchains):
 
 
 # List of toolchain headers to install.
-# Source is relative to native_client tree, destination is relative
+# Source is relative to top of Chromium tree, destination is relative
 # to the toolchain header directory.
 NACL_HEADER_MAP = {
   'newlib': [
-      ('src/include/nacl/nacl_exception.h', 'nacl/'),
-      ('src/include/nacl/nacl_minidump.h', 'nacl/'),
-      ('src/untrusted/irt/irt.h', ''),
-      ('src/untrusted/irt/irt_dev.h', ''),
-      ('src/untrusted/irt/irt_ppapi.h', ''),
-      ('src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
-      ('src/untrusted/nacl/nacl_startup.h', 'nacl/'),
-      ('src/untrusted/nacl/nacl_thread.h', 'nacl/'),
-      ('src/untrusted/pthread/pthread.h', ''),
-      ('src/untrusted/pthread/semaphore.h', ''),
-      ('src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
+      ('native_client/src/include/nacl/nacl_exception.h', 'nacl/'),
+      ('native_client/src/include/nacl/nacl_minidump.h', 'nacl/'),
+      ('native_client/src/untrusted/irt/irt.h', ''),
+      ('native_client/src/untrusted/irt/irt_dev.h', ''),
+      ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
+      ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
+      ('native_client/src/untrusted/nacl/nacl_thread.h', 'nacl/'),
+      ('native_client/src/untrusted/pthread/pthread.h', ''),
+      ('native_client/src/untrusted/pthread/semaphore.h', ''),
+      ('native_client/src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
+      ('ppapi/nacl_irt/irt_ppapi.h', ''),
   ],
   'glibc': [
-      ('src/include/nacl/nacl_exception.h', 'nacl/'),
-      ('src/include/nacl/nacl_minidump.h', 'nacl/'),
-      ('src/untrusted/irt/irt.h', ''),
-      ('src/untrusted/irt/irt_dev.h', ''),
-      ('src/untrusted/irt/irt_ppapi.h', ''),
-      ('src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
-      ('src/untrusted/nacl/nacl_startup.h', 'nacl/'),
-      ('src/untrusted/nacl/nacl_thread.h', 'nacl/'),
-      ('src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
+      ('native_client/src/include/nacl/nacl_exception.h', 'nacl/'),
+      ('native_client/src/include/nacl/nacl_minidump.h', 'nacl/'),
+      ('native_client/src/untrusted/irt/irt.h', ''),
+      ('native_client/src/untrusted/irt/irt_dev.h', ''),
+      ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
+      ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
+      ('native_client/src/untrusted/nacl/nacl_thread.h', 'nacl/'),
+      ('native_client/src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
+      ('ppapi/nacl_irt/irt_ppapi.h', ''),
   ],
   'host': []
 }
@@ -356,7 +373,7 @@ def InstallNaClHeaders(tc_dst_inc, tc_name):
     # ones
     tc_name = 'newlib'
 
-  InstallFiles(NACL_DIR, tc_dst_inc, NACL_HEADER_MAP[tc_name])
+  InstallFiles(SRC_DIR, tc_dst_inc, NACL_HEADER_MAP[tc_name])
 
 
 def MakeNinjaRelPath(path):
@@ -529,7 +546,7 @@ def GypNinjaBuild_Pnacl(rel_out_dir, target_arch):
 
 def GypNinjaBuild(arch, gyp_py_script, gyp_file, targets,
                   out_dir, force_arm_gcc=True):
-  gyp_env = copy.copy(os.environ)
+  gyp_env = dict(os.environ)
   gyp_env['GYP_GENERATORS'] = 'ninja'
   gyp_defines = []
   if options.mac_sdk:
@@ -537,16 +554,28 @@ def GypNinjaBuild(arch, gyp_py_script, gyp_file, targets,
   if arch:
     gyp_defines.append('target_arch=%s' % arch)
     if arch == 'arm':
-      gyp_defines += ['armv7=1', 'arm_thumb=0', 'arm_neon=1']
+      if getos.GetPlatform() == 'linux':
+        if os.path.exists("/usr/bin/arm-linux-gnueabihf-gcc"):
+          # TODO(sbc): make this conditional once all our linux
+          # have the ARM cross compiler installed.
+          gyp_env['CC'] = 'arm-linux-gnueabihf-gcc'
+          gyp_env['CXX'] = 'arm-linux-gnueabihf-g++'
+          gyp_env['AR'] = 'arm-linux-gnueabihf-ar'
+          gyp_env['AS'] = 'arm-linux-gnueabihf-as'
+          gyp_env['CC_host'] = 'cc'
+          gyp_env['CXX_host'] = 'c++'
+      gyp_defines += ['armv7=1', 'arm_thumb=0', 'arm_neon=1',
+          'arm_float_abi=hard']
       if force_arm_gcc:
         gyp_defines.append('nacl_enable_arm_gcc=1')
   if getos.GetPlatform() == 'mac':
     gyp_defines.append('clang=1')
 
   gyp_env['GYP_DEFINES'] = ' '.join(gyp_defines)
-  for key in ['GYP_GENERATORS', 'GYP_DEFINES']:
-    value = gyp_env[key]
-    print '%s="%s"' % (key, value)
+  for key in ['GYP_GENERATORS', 'GYP_DEFINES', 'CC']:
+    value = gyp_env.get(key)
+    if value is not None:
+      print '%s="%s"' % (key, value)
   gyp_generator_flags = ['-G', 'output_dir=%s' % (out_dir,)]
   gyp_depth = '--depth=.'
   buildbot_common.Run(
@@ -873,6 +902,8 @@ def BuildStepBuildAppEngine(pepperdir, chrome_revision):
 
 def main(args):
   parser = optparse.OptionParser()
+  parser.add_option('--bionic', help='Add bionic build.',
+      action='store_true')
   parser.add_option('--tar', help='Force the tar step.',
       action='store_true')
   parser.add_option('--archive', help='Force the archive step.',
@@ -916,6 +947,9 @@ def main(args):
     options.tar = True
 
   toolchains = ['newlib', 'glibc', 'arm', 'pnacl', 'host']
+  if options.bionic:
+    toolchains.append('bionic')
+
   print 'Building: ' + ' '.join(toolchains)
 
   if options.archive and not options.tar:
@@ -943,7 +977,7 @@ def main(args):
   if not options.skip_toolchain:
     BuildStepCleanPepperDirs(pepperdir, pepperdir_old)
     BuildStepMakePepperDirs(pepperdir, ['include', 'toolchain', 'tools'])
-    BuildStepDownloadToolchains()
+    BuildStepDownloadToolchains(toolchains)
     BuildStepUntarToolchains(pepperdir, toolchains)
 
   BuildStepBuildToolchains(pepperdir, toolchains)

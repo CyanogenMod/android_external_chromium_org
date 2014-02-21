@@ -42,6 +42,7 @@ class ServerBoundCertService;
 class ProxyService;
 class QuicClock;
 class QuicCryptoClientStreamFactory;
+class QuicServerInfoFactory;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
@@ -64,6 +65,7 @@ class NET_EXPORT HttpNetworkSession
     TransportSecurityState* transport_security_state;
     CTVerifier* cert_transparency_verifier;
     ProxyService* proxy_service;
+    QuicServerInfoFactory* quic_server_info_factory;
     std::string ssl_session_cache_shard;
     SSLConfigService* ssl_config_service;
     HttpAuthHandlerFactory* http_auth_handler_factory;
@@ -88,12 +90,14 @@ class NET_EXPORT HttpNetworkSession
     std::string trusted_spdy_proxy;
     bool enable_quic;
     bool enable_quic_https;
+    bool enable_quic_port_selection;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;
     size_t quic_max_packet_length;
     bool enable_user_alternate_protocol_ports;
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
+    QuicVersionVector quic_supported_versions;
   };
 
   enum SocketPoolType {

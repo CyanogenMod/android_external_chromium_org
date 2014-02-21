@@ -65,9 +65,8 @@ class PreferenceServiceTest : public InProcessBrowserTest {
     base::FilePath user_data_directory;
     PathService::Get(chrome::DIR_USER_DATA, &user_data_directory);
 
-    base::FilePath reference_pref_file;
     if (new_profile_) {
-      reference_pref_file = ui_test_utils::GetTestFilePath(
+      original_pref_file_ = ui_test_utils::GetTestFilePath(
           base::FilePath().AppendASCII("profiles").
                      AppendASCII("window_placement").
                      AppendASCII("Default"),
@@ -77,17 +76,17 @@ class PreferenceServiceTest : public InProcessBrowserTest {
       CHECK(base::CreateDirectory(tmp_pref_file_));
       tmp_pref_file_ = tmp_pref_file_.Append(chrome::kPreferencesFilename);
     } else {
-      reference_pref_file = ui_test_utils::GetTestFilePath(
+      original_pref_file_ = ui_test_utils::GetTestFilePath(
           base::FilePath().AppendASCII("profiles").
                      AppendASCII("window_placement"),
           base::FilePath().Append(chrome::kLocalStateFilename));
       tmp_pref_file_ = user_data_directory.Append(chrome::kLocalStateFilename);
     }
 
-    CHECK(base::PathExists(reference_pref_file));
+    CHECK(base::PathExists(original_pref_file_));
     // Copy only the Preferences file if |new_profile_|, or Local State if not,
     // and the rest will be automatically created.
-    CHECK(base::CopyFile(reference_pref_file, tmp_pref_file_));
+    CHECK(base::CopyFile(original_pref_file_, tmp_pref_file_));
 
 #if defined(OS_WIN)
     // Make the copy writable.  On POSIX we assume the umask allows files
@@ -99,6 +98,7 @@ class PreferenceServiceTest : public InProcessBrowserTest {
   }
 
  protected:
+  base::FilePath original_pref_file_;
   base::FilePath tmp_pref_file_;
 
  private:
@@ -127,13 +127,14 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsLoaded, Test) {
 
   // The window should open with the new reference profile, with window
   // placement values stored in the user data directory.
-  JSONFileValueSerializer deserializer(tmp_pref_file_);
-  scoped_ptr<Value> root(deserializer.Deserialize(NULL, NULL));
+  JSONFileValueSerializer deserializer(original_pref_file_);
+  scoped_ptr<base::Value> root(deserializer.Deserialize(NULL, NULL));
 
   ASSERT_TRUE(root.get());
-  ASSERT_TRUE(root->IsType(Value::TYPE_DICTIONARY));
+  ASSERT_TRUE(root->IsType(base::Value::TYPE_DICTIONARY));
 
-  DictionaryValue* root_dict = static_cast<DictionaryValue*>(root.get());
+  base::DictionaryValue* root_dict =
+      static_cast<base::DictionaryValue*>(root.get());
 
   // Retrieve the screen rect for the launched window
   gfx::Rect bounds = browser()->window()->GetRestoredBounds();
@@ -187,11 +188,11 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsMigrated, Test) {
   // The window should open with the old reference profile, with window
   // placement values stored in Local State.
 
-  JSONFileValueSerializer deserializer(tmp_pref_file_);
-  scoped_ptr<Value> root(deserializer.Deserialize(NULL, NULL));
+  JSONFileValueSerializer deserializer(original_pref_file_);
+  scoped_ptr<base::Value> root(deserializer.Deserialize(NULL, NULL));
 
   ASSERT_TRUE(root.get());
-  ASSERT_TRUE(root->IsType(Value::TYPE_DICTIONARY));
+  ASSERT_TRUE(root->IsType(base::Value::TYPE_DICTIONARY));
 
   // Retrieve the screen rect for the launched window
   gfx::Rect bounds = browser()->window()->GetRestoredBounds();
@@ -199,7 +200,8 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsMigrated, Test) {
   // Values from old reference profile in Local State should have been
   // correctly migrated to the user's Preferences -- if so, the window
   // should be set to values taken from the user's Local State.
-  DictionaryValue* root_dict = static_cast<DictionaryValue*>(root.get());
+  base::DictionaryValue* root_dict =
+      static_cast<base::DictionaryValue*>(root.get());
 
   // Retrieve the expected rect values from User Preferences, where they
   // should have been migrated from Local State.

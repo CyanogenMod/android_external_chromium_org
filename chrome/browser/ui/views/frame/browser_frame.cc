@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "base/command_line.h"
+#include "base/debug/leak_annotations.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -23,11 +24,12 @@
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/theme_provider.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/native_widget.h"
@@ -69,17 +71,24 @@ BrowserFrame::~BrowserFrame() {
 }
 
 // static
-const gfx::Font& BrowserFrame::GetTitleFont() {
+const gfx::FontList& BrowserFrame::GetTitleFontList() {
 #if !defined(OS_WIN) || defined(USE_AURA)
-  static gfx::Font* title_font = new gfx::Font;
+  static const gfx::FontList* title_font_list = new gfx::FontList();
 #else
-  static gfx::Font* title_font =
-      new gfx::Font(views::NativeWidgetWin::GetWindowTitleFont());
+  static const gfx::FontList* title_font_list =
+      new gfx::FontList(views::NativeWidgetWin::GetWindowTitleFontList());
 #endif
-  return *title_font;
+  ANNOTATE_LEAKING_OBJECT_PTR(title_font_list);
+  return *title_font_list;
 }
 
 void BrowserFrame::InitBrowserFrame() {
+  use_custom_frame_pref_.Init(
+      prefs::kUseCustomChromeFrame,
+      browser_view_->browser()->profile()->GetPrefs(),
+      base::Bind(&BrowserFrame::OnUseCustomChromeFrameChanged,
+                 base::Unretained(this)));
+
   native_browser_frame_ =
       NativeBrowserFrameFactory::CreateNativeBrowserFrame(this, browser_view_);
   views::Widget::InitParams params;
@@ -96,6 +105,10 @@ void BrowserFrame::InitBrowserFrame() {
   if (browser_view_->browser()->host_desktop_type() ==
       chrome::HOST_DESKTOP_TYPE_ASH || chrome::ShouldOpenAshOnStartup()) {
     params.context = ash::Shell::GetPrimaryRootWindow();
+#if defined(OS_WIN)
+   // If this window is under ASH on Windows, we need it to be translucent.
+   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+#endif
   }
 #endif
 
@@ -124,6 +137,10 @@ void BrowserFrame::InitBrowserFrame() {
   const char kX11WindowRolePopup[] = "pop-up";
   params.wm_role_name = browser_view_->browser()->is_type_tabbed() ?
       std::string(kX11WindowRoleBrowser) : std::string(kX11WindowRolePopup);
+
+  params.remove_standard_frame = UseCustomFrame();
+  set_frame_type(UseCustomFrame() ? Widget::FRAME_TYPE_FORCE_CUSTOM
+                                  : Widget::FRAME_TYPE_FORCE_NATIVE);
 #endif  // defined(OS_LINUX)
 
   Init(params);
@@ -161,6 +178,10 @@ void BrowserFrame::UpdateThrobber(bool running) {
 
 views::View* BrowserFrame::GetFrameView() const {
   return browser_frame_view_;
+}
+
+bool BrowserFrame::UseCustomFrame() const {
+  return use_custom_frame_pref_.GetValue();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -270,3 +291,10 @@ bool BrowserFrame::ShouldLeaveOffsetNearTopBorder() {
   return !IsMaximized();
 }
 #endif  // OS_WIN
+
+void BrowserFrame::OnUseCustomChromeFrameChanged() {
+  // Tell the window manager to add or remove system borders.
+  set_frame_type(UseCustomFrame() ? Widget::FRAME_TYPE_FORCE_CUSTOM
+                                  : Widget::FRAME_TYPE_FORCE_NATIVE);
+  FrameTypeChanged();
+}

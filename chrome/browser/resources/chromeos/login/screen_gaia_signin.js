@@ -18,12 +18,18 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
   /** @const */ var HELP_TOPIC_ENTERPRISE_REPORTING = 2535613;
 
+  /** @const */ var NET_ERROR_ABORTED = 3;
+
+  /** @const */ var NET_ERROR_DISALLOWED_URL_SCHEME = 301;
+
   return {
     EXTERNAL_API: [
       'loadAuthExtension',
       'updateAuthExtension',
+      'setAuthenticatedUserEmail',
       'doReload',
-      'onFrameError'
+      'onFrameError',
+      'updateCancelButtonState'
     ],
 
     /**
@@ -67,17 +73,32 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      */
     cancelAllowed_: undefined,
 
+    /**
+     * Whether we should show user pods on the login screen.
+     * @type {boolean}
+     * @private
+     */
+    isShowUsers_: undefined,
+
+    /**
+     * SAML password confirmation attempt count.
+     * @type {number}
+     */
+    samlPasswordConfirmAttempt_: 0,
+
     /** @override */
     decorate: function() {
       this.gaiaAuthHost_ = new cr.login.GaiaAuthHost($('signin-frame'));
       this.gaiaAuthHost_.addEventListener(
           'ready', this.onAuthReady_.bind(this));
+      this.gaiaAuthHost_.retrieveAuthenticatedUserEmailCallback =
+          this.onRetrieveAuthenticatedUserEmail_.bind(this);
       this.gaiaAuthHost_.confirmPasswordCallback =
           this.onAuthConfirmPassword_.bind(this);
       this.gaiaAuthHost_.noPasswordCallback =
           this.onAuthNoPassword_.bind(this);
-      this.gaiaAuthHost_.authPageLoadedCallback =
-          this.onAuthPageLoaded_.bind(this);
+      this.gaiaAuthHost_.addEventListener('authFlowChange',
+          this.onAuthFlowChange_.bind(this));
 
       $('enterprise-info-hint-link').addEventListener('click', function(e) {
         chrome.send('launchHelpApp', [HELP_TOPIC_ENTERPRISE_REPORTING]);
@@ -224,7 +245,10 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     loadAuthExtension: function(data) {
       this.isLocal = data.isLocal;
       this.email = '';
+
+      // Reset SAML
       this.classList.toggle('saml', false);
+      this.samlPasswordConfirmAttempt_ = 0;
 
       this.updateAuthExtension(data);
 
@@ -281,9 +305,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       $('createManagedUserNoManagerText').textContent =
           data.managedUsersRestrictionReason;
 
-      // Allow cancellation of screen only when user pods can be displayed.
-      this.cancelAllowed_ = data.isShowUsers && $('pod-row').pods.length;
-      $('login-header-bar').allowCancel = this.cancelAllowed_;
+      this.isShowUsers_ = data.isShowUsers;
+      this.updateCancelButtonState();
 
       // Sign-in right panel is hidden if all of its items are hidden.
       var noRightPanel = $('gaia-signin-reason').hidden &&
@@ -296,13 +319,52 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     },
 
     /**
-     * Invoked when the auth host notifies about an auth page is loaded.
-     * @param {boolean} isSAML True if the loaded auth page is SAML.
+     * Sends the authenticated user's e-mail address to the auth extension.
+     * @param {number} attemptToken The opaque token provided to
+     *     onRetrieveAuthenticatedUserEmail_.
+     * @param {string} email The authenticated user's e-mail address.
      */
-    onAuthPageLoaded_: function(isSAML) {
+    setAuthenticatedUserEmail: function(attemptToken, email) {
+      this.gaiaAuthHost_.setAuthenticatedUserEmail(attemptToken, email);
+    },
+
+    /**
+     * Updates [Cancel] button state. Allow cancellation of screen only when
+     * user pods can be displayed.
+     */
+    updateCancelButtonState: function() {
+      this.cancelAllowed_ = this.isShowUsers_ && $('pod-row').pods.length;
+      $('login-header-bar').allowCancel = this.cancelAllowed_;
+    },
+
+    /**
+     * Whether the current auth flow is SAML.
+     */
+    isSAML: function() {
+       return this.gaiaAuthHost_.authFlow ==
+           cr.login.GaiaAuthHost.AuthFlow.SAML;
+    },
+
+    /**
+     * Invoked when the authFlow property is changed no the gaia host.
+     * @param {Event} e Property change event.
+     */
+    onAuthFlowChange_: function(e) {
+      var isSAML = this.isSAML();
+
+      if (isSAML) {
+        $('saml-notice-message').textContent = loadTimeData.getStringF(
+            'samlNotice',
+            this.gaiaAuthHost_.authDomain);
+      }
+
       this.classList.toggle('saml', isSAML);
-      if (Oobe.getInstance().currentScreen === this)
+      $('saml-notice-container').hidden = !isSAML;
+
+      if (Oobe.getInstance().currentScreen === this) {
         Oobe.getInstance().updateScreenSize(this);
+        $('login-header-bar').allowCancel = isSAML || this.cancelAllowed_;
+      }
     },
 
     /**
@@ -327,15 +389,48 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     },
 
     /**
-     * Invoked when the auth host needs the user to confirm password.
+     * Invoked when the user has successfully authenticated via SAML and the
+     * auth host needs to retrieve the user's e-mail.
+     * @param {number} attemptToken Opaque token to be passed to
+     *     setAuthenticatedUserEmail along with the e-mail address.
+     * @param {boolean} apiUsed Whether the principals API was used during
+     *     authentication.
      * @private
      */
-    onAuthConfirmPassword_: function() {
+    onRetrieveAuthenticatedUserEmail_: function(attemptToken, apiUsed) {
+      if (apiUsed) {
+        // If the principals API was used, report this to the C++ backend so
+        // that statistics can be kept. If password scraping was used instead,
+        // there is no need to inform the C++ backend at this point: Either
+        // onAuthNoPassword_ or onAuthConfirmPassword_ will be called in a
+        // moment, both of which imply to the backend that the API was not used.
+        chrome.send('usingSAMLAPI');
+      }
+      chrome.send('retrieveAuthenticatedUserEmail', [attemptToken]);
+    },
+
+    /**
+     * Invoked when the user has successfully authenticated via SAML, the
+     * principals API was not used and the auth host needs the user to confirm
+     * the scraped password.
+     * @param {number} passwordCount The number of passwords that were scraped.
+     * @private
+     */
+    onAuthConfirmPassword_: function(passwordCount) {
       this.loading = true;
       Oobe.getInstance().headerHidden = false;
 
-      login.ConfirmPasswordScreen.show(
-          this.onConfirmPasswordCollected_.bind(this));
+      if (this.samlPasswordConfirmAttempt_ == 0)
+        chrome.send('scrapedPasswordCount', [passwordCount]);
+
+      if (this.samlPasswordConfirmAttempt_ < 2) {
+        login.ConfirmPasswordScreen.show(
+            this.samlPasswordConfirmAttempt_,
+            this.onConfirmPasswordCollected_.bind(this));
+      } else {
+        chrome.send('scrapedPasswordVerificationFailed');
+        this.showFatalAuthError();
+      }
     },
 
     /**
@@ -343,6 +438,7 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @private
      */
     onConfirmPasswordCollected_: function(password) {
+      this.samlPasswordConfirmAttempt_++;
       this.gaiaAuthHost_.verifyConfirmedPassword(password);
 
       // Shows signin UI again without changing states.
@@ -350,15 +446,20 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     },
 
     /**
-     * Inovked when the auth flow completes but no password is available.
-     * @param {string} email The authenticated user email.
+     * Inovked when the user has successfully authenticated via SAML, the
+     * principals API was not used and no passwords could be scraped.
+     * @param {string} email The authenticated user's e-mail.
      */
     onAuthNoPassword_: function(email) {
-      login.MessageBoxScreen.show(
-          loadTimeData.getString('noPasswordWarningTitle'),
-          loadTimeData.getString('noPasswordWarningBody'),
-          loadTimeData.getString('noPasswordWarningOkButton'),
-          Oobe.showSigninUI);
+      this.showFatalAuthError();
+      chrome.send('scrapedPasswordCount', [0]);
+    },
+
+    /**
+     * Shows the fatal auth error.
+     */
+    showFatalAuthError: function() {
+      login.FatalErrorScreen.show(Oobe.showSigninUI);
     },
 
     /**
@@ -378,7 +479,9 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
                      credentials.authCode]);
       } else {
         chrome.send('completeLogin',
-                    [credentials.email, credentials.password]);
+                    [credentials.email,
+                     credentials.password,
+                     credentials.usingSAML]);
       }
 
       this.loading = true;
@@ -482,8 +585,16 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * Called when user canceled signin.
      */
     cancel: function() {
-      if (!this.cancelAllowed_)
+      if (!this.cancelAllowed_) {
+        // In OOBE signin screen, cancel is not allowed because there is
+        // no other screen to show. If user is in middle of a saml flow,
+        // reset signin screen to get out of the saml flow.
+        if (this.isSAML())
+          Oobe.resetSigninUI(true);
+
         return;
+      }
+
       $('pod-row').loadLastWallpaper();
       Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
       Oobe.resetSigninUI(true);
@@ -491,10 +602,24 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
     /**
      * Handler for iframe's error notification coming from the outside.
-     * For more info see C++ class 'SnifferObserver' which calls this method.
+     * For more info see C++ class 'WebUILoginView' which calls this method.
      * @param {number} error Error code.
+     * @param {string} url The URL that failed to load.
      */
-    onFrameError: function(error) {
+    onFrameError: function(error, url) {
+      // Chrome OS requires that the entire authentication flow use https. If
+      // GAIA attempts to redirect to an http URL, the load will be blocked by
+      // CSP. Show a fatal error in this case.
+      // Some tests deviate from the above by disabling the CSP and using a
+      // mock GAIA implementation served over http. If an http URL fails to load
+      // in such a test, it has nothing to do with CSP and should not cause a
+      // fatal error to be shown.
+      if (error == NET_ERROR_ABORTED &&
+          url.indexOf('http://') == 0 &&
+          this.gaiaAuthParams_.gaiaUrl.indexOf('https://') == 0) {
+        error = NET_ERROR_DISALLOWED_URL_SCHEME;
+        this.showFatalAuthError();
+      }
       this.error_ = error;
       chrome.send('frameLoadingCompleted', [this.error_]);
     },

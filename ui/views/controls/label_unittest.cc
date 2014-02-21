@@ -12,6 +12,8 @@
 #include "ui/gfx/canvas.h"
 #include "ui/views/border.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 
 // All text sizing measurements (width and height) should be greater than this.
@@ -39,7 +41,7 @@ TEST(LabelTest, FontPropertyArial) {
 
 TEST(LabelTest, TextProperty) {
   Label label;
-  string16 test_text(ASCIIToUTF16("A random string."));
+  base::string16 test_text(ASCIIToUTF16("A random string."));
   label.SetText(test_text);
   EXPECT_EQ(test_text, label.text());
 }
@@ -98,19 +100,19 @@ TEST(LabelTest, MultiLineProperty) {
 
 TEST(LabelTest, TooltipProperty) {
   Label label;
-  string16 test_text(ASCIIToUTF16("My cool string."));
+  base::string16 test_text(ASCIIToUTF16("My cool string."));
   label.SetText(test_text);
 
-  string16 tooltip;
+  base::string16 tooltip;
   EXPECT_TRUE(label.GetTooltipText(gfx::Point(), &tooltip));
   EXPECT_EQ(test_text, tooltip);
 
-  string16 tooltip_text(ASCIIToUTF16("The tooltip!"));
+  base::string16 tooltip_text(ASCIIToUTF16("The tooltip!"));
   label.SetTooltipText(tooltip_text);
   EXPECT_TRUE(label.GetTooltipText(gfx::Point(), &tooltip));
   EXPECT_EQ(tooltip_text, tooltip);
 
-  string16 empty_text;
+  base::string16 empty_text;
   label.SetTooltipText(empty_text);
   EXPECT_TRUE(label.GetTooltipText(gfx::Point(), &tooltip));
   EXPECT_EQ(test_text, tooltip);
@@ -145,7 +147,7 @@ TEST(LabelTest, TooltipProperty) {
 
 TEST(LabelTest, Accessibility) {
   Label label;
-  string16 test_text(ASCIIToUTF16("My special text."));
+  base::string16 test_text(ASCIIToUTF16("My special text."));
   label.SetText(test_text);
 
   ui::AccessibleViewState state;
@@ -157,7 +159,7 @@ TEST(LabelTest, Accessibility) {
 
 TEST(LabelTest, SingleLineSizing) {
   Label label;
-  string16 test_text(ASCIIToUTF16("A not so random string in one line."));
+  base::string16 test_text(ASCIIToUTF16("A not so random string in one line."));
   label.SetText(test_text);
 
   // GetPreferredSize
@@ -167,10 +169,8 @@ TEST(LabelTest, SingleLineSizing) {
 
   // Test everything with borders.
   gfx::Insets border(10, 20, 30, 40);
-  label.set_border(Border::CreateEmptyBorder(border.top(),
-                                             border.left(),
-                                             border.bottom(),
-                                             border.right()));
+  label.SetBorder(Border::CreateEmptyBorder(
+      border.top(), border.left(), border.bottom(), border.right()));
 
   // GetPreferredSize and borders.
   label.SetBounds(0, 0, 0, 0);
@@ -183,7 +183,7 @@ TEST(LabelTest, SingleLineSizing) {
 
 TEST(LabelTest, MultilineSmallAvailableWidthSizing) {
   Label label;
-  string16 test_text(ASCIIToUTF16("Too Wide."));
+  base::string16 test_text(ASCIIToUTF16("Too Wide."));
 
   label.SetMultiLine(true);
   label.SetAllowCharacterBreak(true);
@@ -201,8 +201,8 @@ TEST(LabelTest, MultilineSmallAvailableWidthSizing) {
 
 TEST(LabelTest, MultiLineSizing) {
   Label label;
-  label.set_focusable(false);
-  string16 test_text(
+  label.SetFocusable(false);
+  base::string16 test_text(
       ASCIIToUTF16("A random string\nwith multiple lines\nand returns!"));
   label.SetText(test_text);
   label.SetMultiLine(true);
@@ -248,10 +248,8 @@ TEST(LabelTest, MultiLineSizing) {
 
   // Test everything with borders.
   gfx::Insets border(10, 20, 30, 40);
-  label.set_border(Border::CreateEmptyBorder(border.top(),
-                                             border.left(),
-                                             border.bottom(),
-                                             border.right()));
+  label.SetBorder(Border::CreateEmptyBorder(
+      border.top(), border.left(), border.bottom(), border.right()));
 
   // SizeToFit and borders.
   label.SizeToFit(0);
@@ -288,7 +286,7 @@ TEST(LabelTest, AutoDetectDirectionality) {
   label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
 
   // Test text starts with RTL character.
-  string16 test_text(WideToUTF16(L"  \x5d0\x5d1\x5d2 abc"));
+  base::string16 test_text(base::WideToUTF16(L"  \x5d0\x5d1\x5d2 abc"));
   label.SetText(test_text);
   gfx::Size required_size(label.GetPreferredSize());
   gfx::Size extra(22, 8);
@@ -297,7 +295,7 @@ TEST(LabelTest, AutoDetectDirectionality) {
                   required_size.width() + extra.width(),
                   required_size.height() + extra.height());
 
-  string16 paint_text;
+  base::string16 paint_text;
   gfx::Rect text_bounds;
   int flags;
   label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
@@ -306,7 +304,7 @@ TEST(LabelTest, AutoDetectDirectionality) {
                      gfx::Canvas::FORCE_LTR_DIRECTIONALITY));
 
   // Test text starts with LTR character.
-  test_text = (WideToUTF16(L"ltr \x5d0\x5d1\x5d2 abc"));
+  test_text = (base::WideToUTF16(L"ltr \x5d0\x5d1\x5d2 abc"));
   label.SetText(test_text);
   required_size = label.GetPreferredSize();
   label.SetBounds(0,
@@ -322,13 +320,13 @@ TEST(LabelTest, AutoDetectDirectionality) {
 
 TEST(LabelTest, DrawSingleLineString) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   // Turn off mirroring so that we don't need to figure out if
   // align right really means align left.
   label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
 
-  string16 test_text(ASCIIToUTF16("Here's a string with no returns."));
+  base::string16 test_text(ASCIIToUTF16("Here's a string with no returns."));
   label.SetText(test_text);
   gfx::Size required_size(label.GetPreferredSize());
   gfx::Size extra(22, 8);
@@ -338,7 +336,7 @@ TEST(LabelTest, DrawSingleLineString) {
                   required_size.height() + extra.height());
 
   // Do some basic verifications for all three alignments.
-  string16 paint_text;
+  base::string16 paint_text;
   gfx::Rect text_bounds;
   int flags;
 
@@ -389,10 +387,8 @@ TEST(LabelTest, DrawSingleLineString) {
 
   // Test single line drawing with a border.
   gfx::Insets border(39, 34, 8, 96);
-  label.set_border(Border::CreateEmptyBorder(border.top(),
-                                             border.left(),
-                                             border.bottom(),
-                                             border.right()));
+  label.SetBorder(Border::CreateEmptyBorder(
+      border.top(), border.left(), border.bottom(), border.right()));
 
   gfx::Size required_size_with_border(label.GetPreferredSize());
   EXPECT_EQ(required_size.width() + border.width(),
@@ -458,13 +454,13 @@ TEST(LabelTest, DrawSingleLineString) {
 // multiline lables to not ellide in Linux only.
 TEST(LabelTest, DrawMultiLineString) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   // Turn off mirroring so that we don't need to figure out if
   // align right really means align left.
   label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
 
-  string16 test_text(ASCIIToUTF16("Another string\nwith returns\n\n!"));
+  base::string16 test_text(ASCIIToUTF16("Another string\nwith returns\n\n!"));
   label.SetText(test_text);
   label.SetMultiLine(true);
   label.SizeToFit(0);
@@ -475,7 +471,7 @@ TEST(LabelTest, DrawMultiLineString) {
                   label.height() + extra.height());
 
   // Do some basic verifications for all three alignments.
-  string16 paint_text;
+  base::string16 paint_text;
   gfx::Rect text_bounds;
   int flags;
   label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
@@ -532,10 +528,8 @@ TEST(LabelTest, DrawMultiLineString) {
 
   // Test multiline drawing with a border.
   gfx::Insets border(19, 92, 23, 2);
-  label.set_border(Border::CreateEmptyBorder(border.top(),
-                                             border.left(),
-                                             border.bottom(),
-                                             border.right()));
+  label.SetBorder(Border::CreateEmptyBorder(
+      border.top(), border.left(), border.bottom(), border.right()));
   label.SizeToFit(0);
   label.SetBounds(label.x(),
                   label.y(),
@@ -599,12 +593,12 @@ TEST(LabelTest, DrawMultiLineString) {
 
 TEST(LabelTest, DrawSingleLineStringInRTL) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   std::string locale = l10n_util::GetApplicationLocale("");
   base::i18n::SetICUDefaultLocale("he");
 
-  string16 test_text(ASCIIToUTF16("Here's a string with no returns."));
+  base::string16 test_text(ASCIIToUTF16("Here's a string with no returns."));
   label.SetText(test_text);
   gfx::Size required_size(label.GetPreferredSize());
   gfx::Size extra(22, 8);
@@ -614,7 +608,7 @@ TEST(LabelTest, DrawSingleLineStringInRTL) {
                   required_size.height() + extra.height());
 
   // Do some basic verifications for all three alignments.
-  string16 paint_text;
+  base::string16 paint_text;
   gfx::Rect text_bounds;
   int flags;
 
@@ -666,10 +660,8 @@ TEST(LabelTest, DrawSingleLineStringInRTL) {
 
   // Test single line drawing with a border.
   gfx::Insets border(39, 34, 8, 96);
-  label.set_border(Border::CreateEmptyBorder(border.top(),
-                                             border.left(),
-                                             border.bottom(),
-                                             border.right()));
+  label.SetBorder(Border::CreateEmptyBorder(
+      border.top(), border.left(), border.bottom(), border.right()));
 
   gfx::Size required_size_with_border(label.GetPreferredSize());
   EXPECT_EQ(required_size.width() + border.width(),
@@ -738,13 +730,13 @@ TEST(LabelTest, DrawSingleLineStringInRTL) {
 // multiline lables to not ellide in Linux only.
 TEST(LabelTest, DrawMultiLineStringInRTL) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   // Test for RTL.
   std::string locale = l10n_util::GetApplicationLocale("");
   base::i18n::SetICUDefaultLocale("he");
 
-  string16 test_text(ASCIIToUTF16("Another string\nwith returns\n\n!"));
+  base::string16 test_text(ASCIIToUTF16("Another string\nwith returns\n\n!"));
   label.SetText(test_text);
   label.SetMultiLine(true);
   label.SizeToFit(0);
@@ -755,7 +747,7 @@ TEST(LabelTest, DrawMultiLineStringInRTL) {
                   label.height() + extra.height());
 
   // Do some basic verifications for all three alignments.
-  string16 paint_text;
+  base::string16 paint_text;
   gfx::Rect text_bounds;
   int flags;
   label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
@@ -815,10 +807,8 @@ TEST(LabelTest, DrawMultiLineStringInRTL) {
 
   // Test multiline drawing with a border.
   gfx::Insets border(19, 92, 23, 2);
-  label.set_border(Border::CreateEmptyBorder(border.top(),
-                                             border.left(),
-                                             border.bottom(),
-                                             border.right()));
+  label.SetBorder(Border::CreateEmptyBorder(
+      border.top(), border.left(), border.bottom(), border.right()));
   label.SizeToFit(0);
   label.SetBounds(label.x(),
                   label.y(),

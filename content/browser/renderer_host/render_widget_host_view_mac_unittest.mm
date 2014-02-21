@@ -20,8 +20,8 @@
 #include "content/test/test_render_view_host.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/test/cocoa_test_event_utils.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#include "ui/events/test/cocoa_test_event_utils.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 // Declare things that are part of the 10.7 SDK.
 #if !defined(MAC_OS_X_VERSION_10_7) || \
@@ -324,7 +324,7 @@ TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
 }
 
 TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
-  const base::string16 kDummyString = UTF8ToUTF16("hogehoge");
+  const base::string16 kDummyString = base::UTF8ToUTF16("hogehoge");
   const size_t kDummyOffset = 0;
 
   gfx::Rect caret_rect(10, 11, 0, 10);

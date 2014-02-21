@@ -82,7 +82,7 @@ BrowserAccessibilityWin
   // Represents a non-static text node in IAccessibleHypertext. This character
   // is embedded in the response to IAccessibleText::get_text, indicating the
   // position where a non-static text child object appears.
-  CONTENT_EXPORT static const char16 kEmbeddedCharacter[];
+  CONTENT_EXPORT static const base::char16 kEmbeddedCharacter[];
 
   // Mappings from roles and states to human readable strings. Initialize
   // with |InitializeStringMaps|.
@@ -790,29 +790,29 @@ BrowserAccessibilityWin
   BrowserAccessibilityWin* GetTargetFromChildID(const VARIANT& var_id);
 
   // Initialize the role and state metadata from the role enum and state
-  // bitmasks defined in AccessibilityNodeData.
+  // bitmasks defined in ui::AXNodeData.
   void InitRoleAndState();
 
   // Retrieve the value of an attribute from the string attribute map and
   // if found and nonempty, allocate a new BSTR (with SysAllocString)
   // and return S_OK. If not found or empty, return S_FALSE.
   HRESULT GetStringAttributeAsBstr(
-      AccessibilityNodeData::StringAttribute attribute,
+      ui::AXStringAttribute attribute,
       BSTR* value_bstr);
 
   // If the string attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void StringAttributeToIA2(AccessibilityNodeData::StringAttribute attribute,
+  void StringAttributeToIA2(ui::AXStringAttribute attribute,
                             const char* ia2_attr);
 
   // If the bool attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void BoolAttributeToIA2(AccessibilityNodeData::BoolAttribute attribute,
+  void BoolAttributeToIA2(ui::AXBoolAttribute attribute,
                           const char* ia2_attr);
 
   // If the int attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void IntAttributeToIA2(AccessibilityNodeData::IntAttribute attribute,
+  void IntAttributeToIA2(ui::AXIntAttribute attribute,
                          const char* ia2_attr);
 
   // Get the value text, which might come from the floating-point
@@ -887,6 +887,10 @@ BrowserAccessibilityWin
   // Collection of non-static text child indicies, each of which corresponds to
   // a hyperlink.
   std::vector<int32> hyperlinks_;
+
+  // The previous scroll position, so we can tell if this object scrolled.
+  int previous_scroll_x_;
+  int previous_scroll_y_;
 
   // The next unique id to use.
   static LONG next_unique_id_win_;

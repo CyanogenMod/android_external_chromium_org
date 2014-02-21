@@ -4,9 +4,9 @@
 
 #include "chrome/browser/chromeos/file_manager/app_installer.h"
 
-#include "base/strings/stringprintf.h"
-#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
+
+class Profile;
 
 namespace file_manager {
 
@@ -69,10 +69,10 @@ AppInstaller::CreateInstallPrompt() const {
       new ExtensionInstallPrompt::Prompt(
           ExtensionInstallPrompt::INLINE_INSTALL_PROMPT));
 
-  prompt->SetInlineInstallWebstoreData(localized_user_count(),
-                                       show_user_count(),
-                                       average_rating(),
-                                       rating_count());
+  prompt->SetWebstoreData(localized_user_count(),
+                          show_user_count(),
+                          average_rating(),
+                          rating_count());
   return prompt.Pass();
 }
 

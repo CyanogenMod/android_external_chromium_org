@@ -7,52 +7,66 @@
 
 #include <string>
 
-namespace extensions {
-class Extension;
+namespace content {
+class BrowserContext;
 }
 
-class ExtensionService;
+namespace extensions {
 
-namespace extension_util {
+class Extension;
 
-// Whether this extension can run in an incognito window.
+namespace util {
+
+// Returns true if |extension_id| can run in an incognito window.
 bool IsIncognitoEnabled(const std::string& extension_id,
-                        const ExtensionService* service);
+                        content::BrowserContext* context);
 
-// Will reload the extension since this permission is applied at loading time
-// only.
+// Sets whether |extension_id| can run in an incognito window. Reloads the
+// extension if it's enabled since this permission is applied at loading time
+// only. Note that an ExtensionService must exist.
 void SetIsIncognitoEnabled(const std::string& extension_id,
-                           ExtensionService* service,
+                           content::BrowserContext* context,
                            bool enabled);
 
-// Returns true if the given extension can see events and data from another
-// sub-profile (incognito to original profile, or vice versa).
+// Returns true if |extension| can see events and data from another sub-profile
+// (incognito to original profile, or vice versa).
 bool CanCrossIncognito(const extensions::Extension* extension,
-                       const ExtensionService* service);
+                       content::BrowserContext* context);
 
-// Returns true if the given extension can be loaded in incognito.
+// Returns true if |extension| can be loaded in incognito.
 bool CanLoadInIncognito(const extensions::Extension* extension,
-                        const ExtensionService* service);
+                        content::BrowserContext* context);
 
-// Whether this extension can inject scripts into pages with file URLs.
-bool AllowFileAccess(const extensions::Extension* extension,
-                     const ExtensionService* service);
+// Returns true if this extension can inject scripts into pages with file URLs.
+bool AllowFileAccess(const std::string& extension_id,
+                     content::BrowserContext* context);
 
-// Will reload the extension since this permission is applied at loading time
-// only.
-void SetAllowFileAccess(const extensions::Extension* extension,
-                        ExtensionService* service,
+// Sets whether |extension_id| can inject scripts into pages with file URLs.
+// Reloads the extension if it's enabled since this permission is applied at
+// loading time only. Note than an ExtensionService must exist.
+void SetAllowFileAccess(const std::string& extension_id,
+                        content::BrowserContext* context,
                         bool allow);
 
-// Whether an app can be launched or not. Apps may require enabling first,
-// but they will still be launchable.
+// Returns true if |extension_id| can be launched (possibly only after being
+// enabled).
 bool IsAppLaunchable(const std::string& extension_id,
-                     const ExtensionService* service);
+                     content::BrowserContext* context);
 
-// Whether an app can be launched without being enabled first.
+// Returns true if |extension_id| can be launched without being enabled first.
 bool IsAppLaunchableWithoutEnabling(const std::string& extension_id,
-                                    const ExtensionService* service);
+                                    content::BrowserContext* context);
 
-}  // namespace extension_util
+// Returns true if |extension_id| is idle and it is safe to perform actions such
+// as updating.
+bool IsExtensionIdle(const std::string& extension_id,
+                     content::BrowserContext* context);
+
+// Returns true if |extension_id| is installed permanently and not ephemerally.
+bool IsExtensionInstalledPermanently(const std::string& extension_id,
+                                     content::BrowserContext* context);
+
+}  // namespace util
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_UTIL_H_

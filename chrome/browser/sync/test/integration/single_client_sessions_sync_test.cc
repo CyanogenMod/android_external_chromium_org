@@ -6,7 +6,7 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sessions_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/typed_urls_helper.h"
@@ -43,13 +43,12 @@ IN_PROC_BROWSER_TEST_F(SingleClientSessionsSyncTest, MAYBE_Sanity) {
 
   ASSERT_TRUE(CheckInitialState(0));
 
+  // Add a new session to client 0 and wait for it to sync.
   ScopedWindowMap old_windows;
   ASSERT_TRUE(OpenTabAndGetLocalWindows(0,
                                         GURL("http://127.0.0.1/bubba"),
                                         old_windows.GetMutable()));
-
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for session change."));
+  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
 
   // Get foreign session data from client 0.
   SyncedSessionVector sessions;

@@ -20,6 +20,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/grid_layout.h"
@@ -58,10 +59,10 @@ CookieInfoView::~CookieInfoView() {
 
 void CookieInfoView::SetCookie(const std::string& domain,
                                const net::CanonicalCookie& cookie) {
-  name_value_field_->SetText(UTF8ToUTF16(cookie.Name()));
-  content_value_field_->SetText(UTF8ToUTF16(cookie.Value()));
-  domain_value_field_->SetText(UTF8ToUTF16(domain));
-  path_value_field_->SetText(UTF8ToUTF16(cookie.Path()));
+  name_value_field_->SetText(base::UTF8ToUTF16(cookie.Name()));
+  content_value_field_->SetText(base::UTF8ToUTF16(cookie.Value()));
+  domain_value_field_->SetText(base::UTF8ToUTF16(domain));
+  path_value_field_->SetText(base::UTF8ToUTF16(cookie.Path()));
   created_value_field_->SetText(
       base::TimeFormatFriendlyDateAndTime(cookie.CreationDate()));
 
@@ -128,7 +129,7 @@ void CookieInfoView::AddLabelRow(int layout_id, views::GridLayout* layout,
 
   // Now that the Textfield is in the view hierarchy, it can be initialized.
   text_field->SetReadOnly(true);
-  text_field->RemoveBorder();
+  text_field->SetBorder(views::Border::NullBorder());
   // Color these borderless text areas the same as the containing dialog.
   text_field->SetBackgroundColor(GetNativeTheme()->GetSystemColor(
       ui::NativeTheme::kColorId_DialogBackground));

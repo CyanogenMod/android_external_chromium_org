@@ -7,13 +7,16 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using content::WebContents;
 using extensions::Extension;
@@ -22,7 +25,9 @@ using extensions::WebstoreInstaller;
 
 namespace {
 
+const char kInvalidManifestError[] = "Invalid manifest";
 const char kExtensionTypeError[] = "Ephemeral extensions are not permitted";
+const char kLaunchAbortedError[] = "Launch aborted";
 
 Profile* ProfileForWebContents(content::WebContents* contents) {
   if (!contents)
@@ -76,10 +81,30 @@ void EphemeralAppLauncher::Start() {
 
   const Extension* extension = extension_service->GetInstalledExtension(id());
   if (extension) {
-    LaunchApp(extension);
+    if (extensions::util::IsAppLaunchableWithoutEnabling(extension->id(),
+                                                         profile())) {
+      LaunchApp(extension);
+      InvokeCallback(std::string());
+      return;
+    }
+
+    // The ephemeral app may have been updated and disabled as it requests
+    // more permissions. In this case we should always prompt before
+    // launching.
+    extension_enable_flow_.reset(
+        new ExtensionEnableFlow(profile(), extension->id(), this));
+    if (web_contents())
+      extension_enable_flow_->StartForWebContents(web_contents());
+    else
+      extension_enable_flow_->StartForNativeWindow(parent_window_);
+
+    // Keep this object alive until the enable flow is complete.
+    AddRef();  // Balanced in WebstoreStandaloneInstaller::CompleteInstall.
     return;
   }
 
+  // Fetch the app from the webstore.
+  StartObserving();
   BeginInstall();
 }
 
@@ -95,7 +120,6 @@ EphemeralAppLauncher::EphemeralAppLauncher(
           parent_window_(parent_window),
           dummy_web_contents_(
               WebContents::Create(WebContents::CreateParams(profile))) {
-  Init();
 }
 
 EphemeralAppLauncher::EphemeralAppLauncher(
@@ -108,12 +132,11 @@ EphemeralAppLauncher::EphemeralAppLauncher(
               callback),
           content::WebContentsObserver(web_contents),
           parent_window_(NativeWindowForWebContents(web_contents)) {
-  Init();
 }
 
 EphemeralAppLauncher::~EphemeralAppLauncher() {}
 
-void EphemeralAppLauncher::Init() {
+void EphemeralAppLauncher::StartObserving() {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile()->GetOriginalProfile()));
 }
@@ -154,6 +177,15 @@ WebContents* EphemeralAppLauncher::GetWebContents() const {
 
 scoped_ptr<ExtensionInstallPrompt::Prompt>
 EphemeralAppLauncher::CreateInstallPrompt() const {
+  DCHECK(extension_.get() != NULL);
+
+  // Skip the prompt by returning null if the app does not need to display
+  // permission warnings.
+  extensions::PermissionMessages permissions =
+      extensions::PermissionsData::GetPermissionMessages(extension_.get());
+  if (permissions.empty())
+    return scoped_ptr<ExtensionInstallPrompt::Prompt>();
+
   return make_scoped_ptr(new ExtensionInstallPrompt::Prompt(
       ExtensionInstallPrompt::LAUNCH_PROMPT));
 }
@@ -175,10 +207,21 @@ bool EphemeralAppLauncher::CheckRequestorPermitted(
 bool EphemeralAppLauncher::CheckInstallValid(
     const base::DictionaryValue& manifest,
     std::string* error) {
-  extensions::Manifest extension_manifest(
+  extension_ = Extension::Create(
+      base::FilePath(),
       extensions::Manifest::INTERNAL,
-      scoped_ptr<DictionaryValue>(manifest.DeepCopy()));
-  if (!extension_manifest.is_app()) {
+      manifest,
+      Extension::REQUIRE_KEY |
+          Extension::FROM_WEBSTORE |
+          Extension::IS_EPHEMERAL,
+      id(),
+      error);
+  if (!extension_.get()) {
+    *error = kInvalidManifestError;
+    return false;
+  }
+
+  if (!extension_->is_app()) {
     *error = kExtensionTypeError;
     return false;
   }
@@ -240,4 +283,22 @@ void EphemeralAppLauncher::Observe(
     default:
       NOTREACHED();
   }
+}
+
+void EphemeralAppLauncher::ExtensionEnableFlowFinished() {
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile())->extension_service();
+  DCHECK(extension_service);
+
+  const Extension* extension = extension_service->GetExtensionById(id(), false);
+  if (extension) {
+    LaunchApp(extension);
+    WebstoreStandaloneInstaller::CompleteInstall(std::string());
+  } else {
+    WebstoreStandaloneInstaller::CompleteInstall(kLaunchAbortedError);
+  }
+}
+
+void EphemeralAppLauncher::ExtensionEnableFlowAborted(bool user_initiated) {
+  WebstoreStandaloneInstaller::CompleteInstall(kLaunchAbortedError);
 }

@@ -29,7 +29,15 @@ Feature::Availability ExtensionAPI::IsAvailable(
   return Feature::CreateAvailability(Feature::NOT_PRESENT, "");
 }
 
-bool ExtensionAPI::IsAnyFeatureAvailableToContext(const std::string& api_name,
+Feature::Availability ExtensionAPI::IsAvailable(
+    const Feature& api,
+    const Extension* extension,
+    Feature::Context context,
+    const GURL& url) {
+  return Feature::CreateAvailability(Feature::NOT_PRESENT, "");
+}
+
+bool ExtensionAPI::IsAnyFeatureAvailableToContext(const Feature& api,
                                                   const Extension* extension,
                                                   Feature::Context context,
                                                   const GURL& url) {

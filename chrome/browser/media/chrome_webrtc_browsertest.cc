@@ -28,24 +28,17 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/test/browser_test_utils.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/perf/perf_test.h"
 
 static const char kMainWebrtcTestHtmlPage[] =
     "/webrtc/webrtc_jsep01_test.html";
 
-// Temporarily disabled on Linux.
-// http://crbug.com/281268.
-#if defined(OS_LINUX)
-#define MAYBE_WebrtcBrowserTest DISABLED_WebrtcBrowserTest
-#else
-#define MAYBE_WebrtcBrowserTest WebrtcBrowserTest
-#endif
-
 // Top-level integration test for WebRTC. Requires a real webcam and microphone
 // on the running system. This test is not meant to run in the main browser
 // test suite since normal tester machines do not have webcams.
-class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
+class WebRtcBrowserTest : public WebRtcTestBase {
  public:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
@@ -60,8 +53,11 @@ class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
     EXPECT_FALSE(command_line->HasSwitch(
         switches::kUseFakeUIForMediaStream));
 
-    // The video playback will not work without a GPU, so force its use here.
-    command_line->AppendSwitch(switches::kUseGpuInTests);
+#if defined(OS_MACOSX)
+    // TODO(mcasas): Remove this switch when ManyCam virtual video capture
+    // device starts supporting AVFoundation, see http://crbug.com/327618.
+    command_line->AppendSwitch(switches::kDisableAVFoundation);
+#endif
 
     // Flag used by TestWebAudioMediaStream to force garbage collection.
     command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
@@ -86,24 +82,6 @@ class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
                                  "active", to_tab));
   }
 
-  void StartDetectingVideo(content::WebContents* tab_contents,
-                           const std::string& video_element) {
-    std::string javascript = base::StringPrintf(
-        "startDetection('%s', 'frame-buffer', 320, 240)",
-        video_element.c_str());
-    EXPECT_EQ("ok-started", ExecuteJavascript(javascript, tab_contents));
-  }
-
-  void WaitForVideoToPlay(content::WebContents* tab_contents) {
-    EXPECT_TRUE(PollingWaitUntil("isVideoPlaying()", "video-playing",
-                                 tab_contents));
-  }
-
-  void WaitForVideoToStopPlaying(content::WebContents* tab_contents) {
-    EXPECT_TRUE(PollingWaitUntil("isVideoPlaying()", "video-not-playing",
-                                 tab_contents));
-  }
-
   void HangUp(content::WebContents* from_tab) {
     EXPECT_EQ("ok-call-hung-up", ExecuteJavascript("hangUp()", from_tab));
   }
@@ -111,20 +89,6 @@ class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
   void WaitUntilHangupVerified(content::WebContents* tab_contents) {
     EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
                                  "no-peer-connection", tab_contents));
-  }
-
-  std::string ToggleLocalVideoTrack(content::WebContents* tab_contents) {
-    // Toggle the only video track in the page (e.g. video track 0).
-    return ExecuteJavascript("toggleLocalStream("
-        "function(local) { return local.getVideoTracks()[0]; }, "
-        "'video');", tab_contents);
-  }
-
-  std::string ToggleRemoteVideoTrack(content::WebContents* tab_contents) {
-    // Toggle the only video track in the page (e.g. video track 0).
-    return ExecuteJavascript("toggleRemoteStream("
-        "function(local) { return local.getVideoTracks()[0]; }, "
-        "'video');", tab_contents);
   }
 
   void PrintProcessMetrics(base::ProcessMetrics* process_metrics,
@@ -178,19 +142,14 @@ class MAYBE_WebrtcBrowserTest : public WebRtcTestBase {
   }
 
   content::WebContents* OpenTestPageAndGetUserMediaInNewTab() {
-    chrome::AddTabAt(browser(), GURL(), -1, true);
-    ui_test_utils::NavigateToURL(
-        browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
-    content::WebContents* left_tab =
-        browser()->tab_strip_model()->GetActiveWebContents();
-    GetUserMediaAndAccept(left_tab);
-    return left_tab;
+    return OpenPageAndGetUserMediaInNewTab(
+        embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   }
 
   PeerConnectionServerRunner peerconnection_server_;
 };
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
                        MANUAL_RunsAudioVideoWebRTCCallInTwoTabs) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
@@ -213,7 +172,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest, MANUAL_CpuUsage15Seconds) {
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MANUAL_CpuUsage15Seconds) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
 
@@ -261,38 +220,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest, MANUAL_CpuUsage15Seconds) {
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
-                       MANUAL_TestMediaStreamTrackEnableDisable) {
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-  ASSERT_TRUE(peerconnection_server_.Start());
-
-  content::WebContents* left_tab = OpenTestPageAndGetUserMediaInNewTab();
-  content::WebContents* right_tab = OpenTestPageAndGetUserMediaInNewTab();
-
-  EstablishCall(left_tab, right_tab);
-
-  StartDetectingVideo(left_tab, "remote-view");
-  StartDetectingVideo(right_tab, "remote-view");
-
-  WaitForVideoToPlay(left_tab);
-  WaitForVideoToPlay(right_tab);
-
-  EXPECT_EQ("ok-video-toggled-to-false", ToggleLocalVideoTrack(left_tab));
-
-  WaitForVideoToStopPlaying(right_tab);
-
-  EXPECT_EQ("ok-video-toggled-to-true", ToggleLocalVideoTrack(left_tab));
-
-  WaitForVideoToPlay(right_tab);
-
-  HangUp(left_tab);
-  WaitUntilHangupVerified(left_tab);
-  WaitUntilHangupVerified(right_tab);
-
-  ASSERT_TRUE(peerconnection_server_.Stop());
-}
-
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
                        MANUAL_RunsAudioVideoCall60SecsAndLogsInternalMetrics) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(peerconnection_server_.Start());
@@ -340,7 +268,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest,
   ASSERT_TRUE(peerconnection_server_.Stop());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcBrowserTest, TestWebAudioMediaStream) {
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, TestWebAudioMediaStream) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   GURL url(embedded_test_server()->GetURL("/webrtc/webaudio_crash.html"));
   ui_test_utils::NavigateToURL(browser(), url);

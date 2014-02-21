@@ -47,17 +47,23 @@ static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
 
 namespace cc {
 
+RendererCapabilities::RendererCapabilities(ResourceFormat best_texture_format,
+                                           bool allow_partial_texture_updates,
+                                           bool using_offscreen_context3d,
+                                           int max_texture_size,
+                                           bool using_shared_memory_resources)
+    : best_texture_format(best_texture_format),
+      allow_partial_texture_updates(allow_partial_texture_updates),
+      using_offscreen_context3d(using_offscreen_context3d),
+      max_texture_size(max_texture_size),
+      using_shared_memory_resources(using_shared_memory_resources) {}
+
 RendererCapabilities::RendererCapabilities()
     : best_texture_format(RGBA_8888),
-      using_partial_swap(false),
-      using_egl_image(false),
       allow_partial_texture_updates(false),
       using_offscreen_context3d(false),
       max_texture_size(0),
-      avoid_pow2_textures(false),
-      using_map_image(false),
-      using_shared_memory_resources(false),
-      using_discard_framebuffer(false) {}
+      using_shared_memory_resources(false) {}
 
 RendererCapabilities::~RendererCapabilities() {}
 
@@ -69,8 +75,7 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
   DCHECK(impl_task_runner);
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  if (!layer_tree_host->InitializeThreaded(impl_task_runner))
-    return scoped_ptr<LayerTreeHost>();
+  layer_tree_host->InitializeThreaded(impl_task_runner);
   return layer_tree_host.Pass();
 }
 
@@ -81,8 +86,7 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
     const LayerTreeSettings& settings) {
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  if (!layer_tree_host->InitializeSingleThreaded(single_thread_client))
-    return scoped_ptr<LayerTreeHost>();
+  layer_tree_host->InitializeSingleThreaded(single_thread_client);
   return layer_tree_host.Pass();
 }
 
@@ -125,31 +129,25 @@ LayerTreeHost::LayerTreeHost(
       debug_state_.RecordRenderingStats());
 }
 
-bool LayerTreeHost::InitializeThreaded(
+void LayerTreeHost::InitializeThreaded(
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  return InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
+  InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
 }
 
-bool LayerTreeHost::InitializeSingleThreaded(
+void LayerTreeHost::InitializeSingleThreaded(
     LayerTreeHostSingleThreadClient* single_thread_client) {
-    return InitializeProxy(
-        SingleThreadProxy::Create(this, single_thread_client));
+  InitializeProxy(SingleThreadProxy::Create(this, single_thread_client));
 }
 
-bool LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
-  return InitializeProxy(proxy_for_testing.Pass());
+void LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
+  InitializeProxy(proxy_for_testing.Pass());
 }
 
-bool LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
+void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
   TRACE_EVENT0("cc", "LayerTreeHost::InitializeForReal");
 
-  scoped_ptr<OutputSurface> output_surface(CreateOutputSurface());
-  if (!output_surface)
-    return false;
-
   proxy_ = proxy.Pass();
-  proxy_->Start(output_surface.Pass());
-  return true;
+  proxy_->Start();
 }
 
 LayerTreeHost::~LayerTreeHost() {
@@ -164,6 +162,9 @@ LayerTreeHost::~LayerTreeHost() {
     DCHECK(proxy_->IsMainThread());
     proxy_->Stop();
   }
+
+  // We must clear any pointers into the layer tree prior to destroying it.
+  RegisterViewportLayers(NULL, NULL, NULL);
 
   if (root_layer_.get()) {
     // The layer tree must be destroyed before the layer tree host. We've
@@ -245,7 +246,7 @@ void LayerTreeHost::DidBeginMainFrame() {
 
 void LayerTreeHost::UpdateClientAnimations(base::TimeTicks frame_begin_time) {
   animating_ = true;
-  client_->Animate((frame_begin_time - base::TimeTicks()).InSecondsF());
+  client_->Animate(frame_begin_time);
   animating_ = false;
 }
 
@@ -340,12 +341,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->set_background_color(background_color_);
   sync_tree->set_has_transparent_background(has_transparent_background_);
 
-  sync_tree->FindRootScrollLayer();
-
-  // TODO(wjmaclean) For now, not all LTH clients will register viewports, so
-  // only set them when available..
-  if (page_scale_layer_) {
-    DCHECK(inner_viewport_scroll_layer_);
+  if (page_scale_layer_ && inner_viewport_scroll_layer_) {
     sync_tree->SetViewportLayersFromIds(
         page_scale_layer_->id(),
         inner_viewport_scroll_layer_->id(),
@@ -414,7 +410,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     // If we're not in impl-side painting, the tree is immediately
     // considered active.
     sync_tree->DidBecomeActive();
-    devtools_instrumentation::didActivateLayerTree(id_, source_frame_number_);
+    devtools_instrumentation::DidActivateLayerTree(id_, source_frame_number_);
   }
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
@@ -479,8 +475,9 @@ void LayerTreeHost::DidLoseOutputSurface() {
   SetNeedsCommit();
 }
 
-bool LayerTreeHost::CompositeAndReadback(void* pixels,
-                                         gfx::Rect rect_in_device_viewport) {
+bool LayerTreeHost::CompositeAndReadback(
+    void* pixels,
+    const gfx::Rect& rect_in_device_viewport) {
   trigger_idle_updates_ = false;
   bool ret = proxy_->CompositeAndReadback(pixels, rect_in_device_viewport);
   trigger_idle_updates_ = true;
@@ -508,11 +505,6 @@ void LayerTreeHost::SetNeedsDisplayOnAllLayers() {
       layer_stack.push(current_layer->child_at(i));
     }
   }
-}
-
-void LayerTreeHost::CollectRenderingStats(RenderingStats* stats) const {
-  CHECK(debug_state_.RecordRenderingStats());
-  *stats = rendering_stats_instrumentation_->GetRenderingStats();
 }
 
 const RendererCapabilities& LayerTreeHost::GetRendererCapabilities() const {
@@ -549,7 +541,7 @@ void LayerTreeHost::SetNeedsRedraw() {
   SetNeedsRedrawRect(gfx::Rect(device_viewport_size_));
 }
 
-void LayerTreeHost::SetNeedsRedrawRect(gfx::Rect damage_rect) {
+void LayerTreeHost::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
   proxy_->SetNeedsRedraw(damage_rect);
 }
 
@@ -639,7 +631,7 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetViewportSize(gfx::Size device_viewport_size) {
+void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
   if (device_viewport_size == device_viewport_size_)
     return;
 
@@ -701,7 +693,7 @@ void LayerTreeHost::SetVisible(bool visible) {
   proxy_->SetVisible(visible);
 }
 
-void LayerTreeHost::StartPageScaleAnimation(gfx::Vector2d target_offset,
+void LayerTreeHost::StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                             bool use_anchor,
                                             float scale,
                                             base::TimeDelta duration) {
@@ -895,12 +887,8 @@ void LayerTreeHost::SetPrioritiesForSurfaces(size_t surface_memory_bytes) {
 
 void LayerTreeHost::SetPrioritiesForLayers(
     const RenderSurfaceLayerList& update_list) {
-  typedef LayerIterator<Layer,
-                        RenderSurfaceLayerList,
-                        RenderSurface,
-                        LayerIteratorActions::FrontToBack> LayerIteratorType;
-
   PriorityCalculator calculator;
+  typedef LayerIterator<Layer> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&update_list);
   for (LayerIteratorType it = LayerIteratorType::Begin(&update_list);
        it != end;
@@ -997,13 +985,6 @@ void LayerTreeHost::PaintLayerContents(
     ResourceUpdateQueue* queue,
     bool* did_paint_content,
     bool* need_more_updates) {
-  // Use FrontToBack to allow for testing occlusion and performing culling
-  // during the tree walk.
-  typedef LayerIterator<Layer,
-                        RenderSurfaceLayerList,
-                        RenderSurface,
-                        LayerIteratorActions::FrontToBack> LayerIteratorType;
-
   bool record_metrics_for_frame =
       settings_.show_overdraw_in_tracing &&
       base::debug::TraceLog::GetInstance() &&
@@ -1018,6 +999,9 @@ void LayerTreeHost::PaintLayerContents(
 
   in_paint_layer_contents_ = true;
 
+  // Iterates front-to-back to allow for testing occlusion and performing
+  // culling during the tree walk.
+  typedef LayerIterator<Layer> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
   for (LayerIteratorType it =
            LayerIteratorType::Begin(&render_surface_layer_list);
@@ -1046,8 +1030,8 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
   if (!root_layer_.get())
     return;
 
-  gfx::Vector2d root_scroll_delta;
-  Layer* root_scroll_layer = FindFirstScrollableLayer(root_layer_.get());
+  gfx::Vector2d inner_viewport_scroll_delta;
+  gfx::Vector2d outer_viewport_scroll_delta;
 
   for (size_t i = 0; i < info.scrolls.size(); ++i) {
     Layer* layer =
@@ -1055,29 +1039,84 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
                                                 info.scrolls[i].layer_id);
     if (!layer)
       continue;
-    if (layer == root_scroll_layer) {
-      root_scroll_delta += info.scrolls[i].scroll_delta;
+    if (layer == outer_viewport_scroll_layer_.get()) {
+      outer_viewport_scroll_delta += info.scrolls[i].scroll_delta;
+    } else if (layer == inner_viewport_scroll_layer_.get()) {
+      inner_viewport_scroll_delta += info.scrolls[i].scroll_delta;
     } else {
       layer->SetScrollOffsetFromImplSide(layer->scroll_offset() +
                                          info.scrolls[i].scroll_delta);
     }
   }
 
-  if (!root_scroll_delta.IsZero() || info.page_scale_delta != 1.f) {
+  if (!inner_viewport_scroll_delta.IsZero() ||
+      !outer_viewport_scroll_delta.IsZero() || info.page_scale_delta != 1.f) {
     // SetScrollOffsetFromImplSide above could have destroyed the tree,
     // so re-get this layer before doing anything to it.
-    root_scroll_layer = FindFirstScrollableLayer(root_layer_.get());
 
     // Preemptively apply the scroll offset and scale delta here before sending
     // it to the client.  If the client comes back and sets it to the same
     // value, then the layer can early out without needing a full commit.
-    if (root_scroll_layer) {
-      root_scroll_layer->SetScrollOffsetFromImplSide(
-          root_scroll_layer->scroll_offset() + root_scroll_delta);
+    DCHECK(inner_viewport_scroll_layer_);  // We should always have this.
+
+    inner_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
+        inner_viewport_scroll_layer_->scroll_offset() +
+        inner_viewport_scroll_delta);
+    if (outer_viewport_scroll_layer_) {
+      outer_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
+          outer_viewport_scroll_layer_->scroll_offset() +
+          outer_viewport_scroll_delta);
     }
     ApplyPageScaleDeltaFromImplSide(info.page_scale_delta);
-    client_->ApplyScrollAndScale(root_scroll_delta, info.page_scale_delta);
+
+    client_->ApplyScrollAndScale(
+        inner_viewport_scroll_delta + outer_viewport_scroll_delta,
+        info.page_scale_delta);
   }
+}
+
+gfx::Vector2d LayerTreeHost::DistributeScrollOffsetToViewports(
+    const gfx::Vector2d offset,
+    Layer* layer) {
+  DCHECK(layer);
+  if (layer != outer_viewport_scroll_layer_.get())
+    return offset;
+
+  gfx::Vector2d inner_viewport_offset =
+      inner_viewport_scroll_layer_->scroll_offset();
+  gfx::Vector2d outer_viewport_offset =
+      outer_viewport_scroll_layer_->scroll_offset();
+
+  if (offset == inner_viewport_offset + outer_viewport_offset) {
+    // In this case, nothing should change, so we just return to the outer
+    // viewport the offset is already has.
+    return outer_viewport_offset;
+  }
+
+  // In the spirit of document-scrolls-first, we always want any change to
+  // go to the outer viewport first.
+  gfx::Vector2d max_outer_viewport_scroll_offset =
+      outer_viewport_scroll_layer_->MaxScrollOffset();
+  gfx::Vector2d max_inner_viewport_scroll_offset =
+      inner_viewport_scroll_layer_->MaxScrollOffset();
+
+  // TODO(bokan): This trips on zoom-out due to how Blink orders scale-scroll.
+  //              Disabled until that's sorted out: crbug.com/336574
+  // gfx::Vector2d total_max_scroll_offset =
+  //    max_outer_viewport_scroll_offset + max_inner_viewport_scroll_offset;
+  // DCHECK(total_max_scroll_offset.x() >= offset.x() &&
+  //       total_max_scroll_offset.y() >= offset.y());
+
+  outer_viewport_offset = offset - inner_viewport_offset;
+  outer_viewport_offset.SetToMin(max_outer_viewport_scroll_offset);
+  outer_viewport_offset.SetToMax(gfx::Vector2d());
+
+  inner_viewport_offset = offset - outer_viewport_offset;
+  inner_viewport_offset.SetToMin(max_inner_viewport_scroll_offset);
+  inner_viewport_offset.SetToMax(gfx::Vector2d());
+  inner_viewport_scroll_layer_->SetScrollOffset(inner_viewport_offset);
+
+  return outer_viewport_offset;
 }
 
 void LayerTreeHost::StartRateLimiter() {

@@ -10,6 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -139,7 +140,7 @@ void BuildSubTreesFromPreferences(
   base::DictionaryValue* is_user_controlled_tree = new base::DictionaryValue;
   for (std::vector<std::string>::const_iterator it = pref_names.begin();
        it != pref_names.end(); ++it) {
-    scoped_ptr<Value> pref_value_owned;
+    scoped_ptr<base::Value> pref_value_owned;
     if (pref_name_to_value_map->RemoveWithoutPathExpansion(*it,
                                                            &pref_value_owned)) {
       value_tree->Set(*it, pref_value_owned.release());
@@ -374,6 +375,7 @@ AutomaticProfileResetter::AutomaticProfileResetter(Profile* profile)
       enumeration_of_loaded_modules_ready_(false),
       template_url_service_ready_(false),
       has_already_dismissed_prompt_(false),
+      should_show_reset_banner_(false),
       weak_ptr_factory_(this) {
   DCHECK(profile_);
 }
@@ -438,6 +440,7 @@ void AutomaticProfileResetter::TriggerProfileReset(bool send_feedback) {
   DCHECK_EQ(state_, STATE_HAS_SHOWN_BUBBLE);
 
   state_ = STATE_PERFORMING_RESET;
+  should_show_reset_banner_ = false;
 
   ReportPromptResult(PROMPT_ACTION_RESET);
   delegate_->TriggerProfileSettingsReset(
@@ -450,6 +453,8 @@ void AutomaticProfileResetter::SkipProfileReset() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   DCHECK_EQ(state_, STATE_HAS_SHOWN_BUBBLE);
 
+  should_show_reset_banner_ = false;
+
   ReportPromptResult(PROMPT_ACTION_NO_RESET);
   delegate_->DismissPrompt();
   FinishResetPromptFlow();
@@ -458,6 +463,11 @@ void AutomaticProfileResetter::SkipProfileReset() {
 bool AutomaticProfileResetter::IsResetPromptFlowActive() const {
   return state_ == STATE_HAS_TRIGGERED_PROMPT ||
       state_ == STATE_HAS_SHOWN_BUBBLE;
+}
+
+bool AutomaticProfileResetter::ShouldShowResetBanner() const {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  return should_show_reset_banner_ && ShouldPerformLiveRun();
 }
 
 void AutomaticProfileResetter::NotifyDidShowResetBubble() {
@@ -504,6 +514,11 @@ void AutomaticProfileResetter::NotifyDidCloseWebUIResetDialog(
     }
     FinishResetPromptFlow();
   }
+}
+
+void AutomaticProfileResetter::NotifyDidCloseWebUIResetBanner() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  should_show_reset_banner_ = false;
 }
 
 void AutomaticProfileResetter::SetProgramForTesting(
@@ -628,6 +643,8 @@ scoped_ptr<AutomaticProfileResetter::EvaluationResults>
   UMA_HISTOGRAM_ENUMERATION("AutomaticProfileReset.InterpreterResult",
                             interpreter.result(),
                             JtlInterpreter::RESULT_MAX);
+  UMA_HISTOGRAM_SPARSE_SLOWLY("AutomaticProfileReset.ProgramChecksum",
+                              interpreter.CalculateProgramChecksum());
 
   // In each case below, the respective field in result originally contains the
   // default, so if the getter fails, we still have the correct value there.
@@ -675,6 +692,9 @@ void AutomaticProfileResetter::FinishEvaluationFlow(
 
   ReportStatistics(results->satisfied_criteria_mask,
                    results->combined_status_mask);
+
+  if (results->should_prompt)
+    should_show_reset_banner_ = true;
 
   if (results->should_prompt && !results->had_prompted_already) {
     evaluation_results_ = results.Pass();

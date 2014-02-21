@@ -10,41 +10,17 @@ actually running the test is in Test and PageRunner."""
 import copy
 import inspect
 import json
-import optparse
 import os
 import sys
 
 from telemetry import test
 from telemetry.core import browser_options
+from telemetry.core import command_line
 from telemetry.core import discover
 from telemetry.core import util
 
 
-class Command(object):
-  usage = ''
-
-  @property
-  def name(self):
-    return self.__class__.__name__.lower()
-
-  @property
-  def description(self):
-    return self.__doc__
-
-  def CreateParser(self):
-    return optparse.OptionParser('%%prog %s %s' % (self.name, self.usage))
-
-  def AddCommandLineOptions(self, parser):
-    pass
-
-  def ProcessCommandLine(self, parser, options, args):
-    pass
-
-  def Run(self, options, args):
-    raise NotImplementedError()
-
-
-class Help(Command):
+class Help(command_line.OptparseCommand):
   """Display help information"""
 
   def Run(self, options, args):
@@ -55,7 +31,7 @@ class Help(Command):
     return 0
 
 
-class List(Command):
+class List(command_line.OptparseCommand):
   """Lists the available tests"""
 
   usage = '[test_name] [<options>]'
@@ -82,7 +58,6 @@ class List(Command):
         test_list.append({
               'name': test_name,
               'description': test_class.__doc__,
-              'enabled': test_class.enabled,
               'options': test_class.options,
             })
       print json.dumps(test_list)
@@ -92,7 +67,7 @@ class List(Command):
     return 0
 
 
-class Run(Command):
+class Run(command_line.OptparseCommand):
   """Run one or more tests"""
 
   usage = 'test_name [<options>]'
@@ -138,15 +113,13 @@ class Run(Command):
     self._test = matching_tests.popitem()[1]
 
   def Run(self, options, args):
-    if not self._test.enabled:
-      print >> sys.stderr, 'TEST IS DISABLED. SKIPPING.'
-      return 0
     return min(255, self._test().Run(copy.copy(options)))
 
 
 COMMANDS = [cls() for _, cls in inspect.getmembers(sys.modules[__name__])
             if inspect.isclass(cls)
-            and cls is not Command and issubclass(cls, Command)]
+            and cls is not command_line.OptparseCommand
+            and issubclass(cls, command_line.OptparseCommand)]
 
 
 def _GetScriptName():
@@ -154,14 +127,10 @@ def _GetScriptName():
 
 
 def _GetTests():
-  # Lazy load and cache results.
-  if not hasattr(_GetTests, 'tests'):
-    base_dir = util.GetBaseDir()
-    tests = discover.DiscoverClasses(base_dir, base_dir, test.Test,
-                                     index_by_class_name=True)
-    tests = dict((test.GetName(), test) for test in tests.itervalues())
-    _GetTests.tests = tests
-  return _GetTests.tests
+  base_dir = util.GetBaseDir()
+  tests = discover.DiscoverClasses(base_dir, base_dir, test.Test,
+                                   index_by_class_name=True)
+  return dict((test.GetName(), test) for test in tests.itervalues())
 
 
 def _MatchTestName(input_test_name):

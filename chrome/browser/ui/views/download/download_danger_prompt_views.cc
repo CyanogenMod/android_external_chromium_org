@@ -4,7 +4,7 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/download/download_danger_prompt.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
+#include "chrome/browser/download/download_stats.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
@@ -15,6 +15,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
@@ -56,10 +57,6 @@ class DownloadDangerPromptViews : public DownloadDangerPrompt,
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Close() OVERRIDE;
-  // TODO(wittman): Remove this override once we move to the new style frame
-  // view on all dialogs.
-  virtual views::NonClientFrameView* CreateNonClientFrameView(
-      views::Widget* widget) OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
@@ -77,7 +74,6 @@ class DownloadDangerPromptViews : public DownloadDangerPrompt,
   void RunDone(Action action);
 
   content::DownloadItem* download_;
-  content::WebContents* web_contents_;
   bool show_context_;
   OnDone done_;
 
@@ -90,7 +86,6 @@ DownloadDangerPromptViews::DownloadDangerPromptViews(
     bool show_context,
     const OnDone& done)
     : download_(item),
-      web_contents_(web_contents),
       show_context_(show_context),
       done_(done),
       contents_view_(NULL) {
@@ -109,13 +104,12 @@ DownloadDangerPromptViews::DownloadDangerPromptViews(
   const base::string16 message_lead = GetMessageLead();
 
   if (!message_lead.empty()) {
-    views::Label* message_lead_label = new views::Label(message_lead);
+    ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+    views::Label* message_lead_label = new views::Label(
+        message_lead, rb->GetFontList(ui::ResourceBundle::BoldFont));
     message_lead_label->SetMultiLine(true);
     message_lead_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     message_lead_label->SetAllowCharacterBreak(true);
-
-    gfx::FontList font_list(gfx::Font().DeriveFont(0, gfx::Font::BOLD));
-    message_lead_label->SetFontList(font_list);
 
     layout->StartRow(0, 0);
     layout->AddView(message_lead_label);
@@ -130,6 +124,8 @@ DownloadDangerPromptViews::DownloadDangerPromptViews(
 
   layout->StartRow(0, 0);
   layout->AddView(message_body_label);
+
+  RecordOpenedDangerousConfirmDialog(download_->GetDangerType());
 }
 
 // DownloadDangerPrompt methods:
@@ -205,14 +201,6 @@ bool DownloadDangerPromptViews::Close() {
 
   RunDone(DISMISS);
   return true;
-}
-
-// TODO(wittman): Remove this override once we move to the new style frame
-// view on all dialogs.
-views::NonClientFrameView* DownloadDangerPromptViews::CreateNonClientFrameView(
-    views::Widget* widget) {
-  return CreateConstrainedStyleNonClientFrameView(
-      widget, web_contents_->GetBrowserContext());
 }
 
 views::View* DownloadDangerPromptViews::GetInitiallyFocusedView() {
@@ -296,7 +284,7 @@ base::string16 DownloadDangerPromptViews::GetMessageBody() const {
             IDS_PROMPT_DANGEROUS_DOWNLOAD,
             download_->GetFileNameToReportUser().LossyDisplayName());
       }
-      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL: // Fall through
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:  // Fall through
       case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
       case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
         return l10n_util::GetStringFUTF16(

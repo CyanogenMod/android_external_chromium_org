@@ -9,11 +9,14 @@
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/render_messages.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 
+using content::RenderFrameHost;
 using content::RenderViewHost;
 using content::WebContents;
 
@@ -92,5 +95,7 @@ void AlternateErrorPageTabObserver::OnAlternateErrorPagesEnabledChanged() {
 
 void AlternateErrorPageTabObserver::UpdateAlternateErrorPageURL(
     RenderViewHost* rvh) {
-  rvh->SetAltErrorPageURL(GetAlternateErrorPageURL());
+  RenderFrameHost* rfh = rvh->GetMainFrame();
+  rfh->Send(new ChromeViewMsg_SetAltErrorPageURL(
+                rfh->GetRoutingID(), GetAlternateErrorPageURL()));
 }

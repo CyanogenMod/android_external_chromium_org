@@ -33,8 +33,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
 
   virtual AudioOutputStream* MakeAudioOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params,
       const std::string& device_id) OVERRIDE;
@@ -46,8 +45,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params,
       const std::string& device_id) OVERRIDE;
@@ -67,10 +65,11 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       const AudioParameters& input_params) OVERRIDE;
 
  private:
+  bool HadNoAudioStreams();
   void Init();
   void Close();
-  void SetAudioMode(int mode);
-  void SetAudioDevice(const std::string& device_id);
+  void SetCommunicationAudioModeOn(bool on);
+  bool SetAudioDevice(const std::string& device_id);
   int GetNativeOutputSampleRate();
   bool IsAudioLowLatencySupported();
   int GetAudioLowLatencyOutputFrameSize();
@@ -79,7 +78,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
   void DoSetMuteOnAudioThread(bool muted);
 
   // Allow the AudioAndroidTest to access private methods.
-  FRIEND_TEST_ALL_PREFIXES(AudioAndroidTest, IsAudioLowLatencySupported);
+  FRIEND_TEST_ALL_PREFIXES(AudioAndroidOutputTest, IsAudioLowLatencySupported);
 
   // Java AudioManager instance.
   base::android::ScopedJavaGlobalRef<jobject> j_audio_manager_;

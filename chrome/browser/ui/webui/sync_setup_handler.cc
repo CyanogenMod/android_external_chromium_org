@@ -23,6 +23,8 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
@@ -30,6 +32,7 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/sync/signin_histogram.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
@@ -95,7 +98,7 @@ const char* kDataTypeNames[] = {
   "tabs"
 };
 
-COMPILE_ASSERT(29 == syncer::MODEL_TYPE_COUNT,
+COMPILE_ASSERT(32 == syncer::MODEL_TYPE_COUNT,
                update_kDataTypeNames_to_match_UserSelectableTypes);
 
 typedef std::map<syncer::ModelType, const char*> ModelTypeNameMap;
@@ -113,8 +116,8 @@ ModelTypeNameMap GetSelectableTypeNameMap() {
 }
 
 bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
-  scoped_ptr<Value> parsed_value(base::JSONReader::Read(json));
-  DictionaryValue* result;
+  scoped_ptr<base::Value> parsed_value(base::JSONReader::Read(json));
+  base::DictionaryValue* result;
   if (!parsed_value || !parsed_value->GetAsDictionary(&result)) {
     DLOG(ERROR) << "GetConfiguration() not passed a Dictionary";
     return false;
@@ -190,12 +193,13 @@ SyncSetupHandler::~SyncSetupHandler() {
   CloseSyncSetup();
 }
 
-void SyncSetupHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
+void SyncSetupHandler::GetLocalizedValues(
+    base::DictionaryValue* localized_strings) {
   GetStaticLocalizedValues(localized_strings, web_ui());
 }
 
 void SyncSetupHandler::GetStaticLocalizedValues(
-    DictionaryValue* localized_strings,
+    base::DictionaryValue* localized_strings,
     content::WebUI* web_ui) {
   DCHECK(localized_strings);
 
@@ -214,13 +218,14 @@ void SyncSetupHandler::GetStaticLocalizedValues(
   localized_strings->SetString(
       "passphraseRecover",
       GetStringFUTF16(IDS_SYNC_PASSPHRASE_RECOVER,
-                      ASCIIToUTF16(google_util::StringAppendGoogleLocaleParam(
-                          chrome::kSyncGoogleDashboardURL))));
+                      base::ASCIIToUTF16(
+                          google_util::StringAppendGoogleLocaleParam(
+                              chrome::kSyncGoogleDashboardURL))));
   localized_strings->SetString("stopSyncingExplanation",
       l10n_util::GetStringFUTF16(
           IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL,
           l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
-          ASCIIToUTF16(google_util::StringAppendGoogleLocaleParam(
+          base::ASCIIToUTF16(google_util::StringAppendGoogleLocaleParam(
               chrome::kSyncGoogleDashboardURL))));
   localized_strings->SetString("stopSyncingTitle",
       l10n_util::GetStringUTF16(IDS_SYNC_STOP_SYNCING_DIALOG_TITLE));
@@ -253,7 +258,6 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "typedURLs", IDS_SYNC_DATATYPE_TYPED_URLS },
     { "apps", IDS_SYNC_DATATYPE_APPS },
     { "openTabs", IDS_SYNC_DATATYPE_TABS },
-    { "syncZeroDataTypesError", IDS_SYNC_ZERO_DATA_TYPES_ERROR },
     { "serviceUnavailableError", IDS_SYNC_SETUP_ABORTED_BY_PENDING_CLEAR },
     { "confirmLabel", IDS_SYNC_CONFIRM_PASSPHRASE_LABEL },
     { "emptyErrorMessage", IDS_SYNC_EMPTY_PASSPHRASE_ERROR },
@@ -332,7 +336,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   //       passwords)
   //   usePassphrase: true if the data is encrypted with a secondary passphrase
   //   show_passphrase: true if a passphrase is needed to decrypt the sync data
-  DictionaryValue args;
+  base::DictionaryValue args;
 
   // Tell the UI layer which data types are registered/enabled by the user.
   const syncer::ModelTypeSet registered_types =
@@ -406,7 +410,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
         GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_DATA));
   }
 
-  StringValue page("configure");
+  base::StringValue page("configure");
   web_ui()->CallJavascriptFunction(
       "SyncSetupOverlay.showSyncSetupPage", page, args);
 
@@ -416,7 +420,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
 }
 
 void SyncSetupHandler::ConfigureSyncDone() {
-  StringValue page("done");
+  base::StringValue page("done");
   web_ui()->CallJavascriptFunction(
       "SyncSetupOverlay.showSyncSetupPage", page);
 
@@ -487,8 +491,6 @@ void SyncSetupHandler::DisplayGaiaLogin() {
 }
 
 void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
-  GURL url(signin::GetPromoURL(signin::SOURCE_SETTINGS,
-                               true));  // auto close after success.
   Browser* browser = chrome::FindBrowserWithWebContents(
       web_ui()->GetWebContents());
   if (!browser) {
@@ -500,18 +502,25 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
   // If the signin manager already has an authenticated username, this is a
   // re-auth scenario, and we need to ensure that the user signs in with the
   // same email address.
+  GURL url;
   std::string email = SigninManagerFactory::GetForProfile(
       browser->profile())->GetAuthenticatedUsername();
   if (!email.empty()) {
     UMA_HISTOGRAM_ENUMERATION("Signin.Reauth",
                               signin::HISTOGRAM_SHOWN,
                               signin::HISTOGRAM_MAX);
-    url = net::AppendQueryParameter(url, "Email", email);
+
+    SigninGlobalError* signin_error =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(browser->profile())->
+            signin_global_error();
+    DCHECK(signin_error->HasMenuItem());
+    url = signin::GetReauthURL(browser->profile(),
+                               signin_error->GetAccountIdOfLastAuthError());
+  } else {
+    url = signin::GetPromoURL(signin::SOURCE_SETTINGS, true);
   }
 
-  browser->OpenURL(
-      content::OpenURLParams(url, content::Referrer(), SINGLETON_TAB,
-                             content::PAGE_TRANSITION_AUTO_BOOKMARK, false));
+  chrome::ShowSingletonTab(browser, url);
 }
 #endif
 
@@ -536,8 +545,8 @@ bool SyncSetupHandler::PrepareSyncSetup() {
 
 void SyncSetupHandler::DisplaySpinner() {
   configuring_sync_ = true;
-  StringValue page("spinner");
-  DictionaryValue args;
+  base::StringValue page("spinner");
+  base::DictionaryValue args;
 
   const int kTimeoutSec = 30;
   DCHECK(!backend_start_timer_);
@@ -559,13 +568,13 @@ void SyncSetupHandler::DisplayTimeout() {
   // Do not listen to sync startup events.
   sync_startup_tracker_.reset();
 
-  StringValue page("timeout");
-  DictionaryValue args;
+  base::StringValue page("timeout");
+  base::DictionaryValue args;
   web_ui()->CallJavascriptFunction(
       "SyncSetupOverlay.showSyncSetupPage", page, args);
 }
 
-void SyncSetupHandler::OnDidClosePage(const ListValue* args) {
+void SyncSetupHandler::OnDidClosePage(const base::ListValue* args) {
   CloseSyncSetup();
 }
 
@@ -598,7 +607,7 @@ ProfileSyncService* SyncSetupHandler::GetSyncService() const {
       ProfileSyncServiceFactory::GetForProfile(GetProfile()) : NULL;
 }
 
-void SyncSetupHandler::HandleConfigure(const ListValue* args) {
+void SyncSetupHandler::HandleConfigure(const base::ListValue* args) {
   DCHECK(!sync_startup_tracker_);
   std::string json;
   if (!args->GetString(0, &json)) {
@@ -631,13 +640,13 @@ void SyncSetupHandler::HandleConfigure(const ListValue* args) {
 
   // Disable sync, but remain signed in if the user selected "Sync nothing" in
   // the advanced settings dialog. Note: In order to disable sync across
-  // restarts on Chrome OS, we must call OnStopSyncingPermanently(), which
+  // restarts on Chrome OS, we must call StopSyncingPermanently(), which
   // suppresses sync startup in addition to disabling it.
   if (configuration.sync_nothing) {
     ProfileSyncService::SyncEvent(
         ProfileSyncService::STOP_FROM_ADVANCED_DIALOG);
     CloseUI();
-    service->OnStopSyncingPermanently();
+    service->StopSyncingPermanently();
     service->SetSetupInProgress(false);
     return;
   }
@@ -716,7 +725,7 @@ void SyncSetupHandler::HandleConfigure(const ListValue* args) {
     ProfileMetrics::LogProfileSyncInfo(ProfileMetrics::SYNC_CHOOSE);
 }
 
-void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
+void SyncSetupHandler::HandleShowSetupUI(const base::ListValue* args) {
   ProfileSyncService* service = GetSyncService();
   DCHECK(service);
 
@@ -751,30 +760,28 @@ void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
 #if defined(OS_CHROMEOS)
 // On ChromeOS, we need to sign out the user session to fix an auth error, so
 // the user goes through the real signin flow to generate a new auth token.
-void SyncSetupHandler::HandleDoSignOutOnAuthError(const ListValue* args) {
-  DLOG(INFO) << "Signing out the user to fix a sync error.";
+void SyncSetupHandler::HandleDoSignOutOnAuthError(const base::ListValue* args) {
+  DVLOG(1) << "Signing out the user to fix a sync error.";
   chrome::AttemptUserExit();
 }
 #endif
 
 #if !defined(OS_CHROMEOS)
-void SyncSetupHandler::HandleStartSignin(const ListValue* args) {
+void SyncSetupHandler::HandleStartSignin(const base::ListValue* args) {
   // Should only be called if the user is not already signed in.
   DCHECK(SigninManagerFactory::GetForProfile(GetProfile())->
       GetAuthenticatedUsername().empty());
   OpenSyncSetup();
 }
 
-void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
+void SyncSetupHandler::HandleStopSyncing(const base::ListValue* args) {
   if (GetSyncService())
     ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
-#if !defined(OS_CHROMEOS)
   SigninManagerFactory::GetForProfile(GetProfile())->SignOut();
-#endif
 }
 #endif
 
-void SyncSetupHandler::HandleCloseTimeout(const ListValue* args) {
+void SyncSetupHandler::HandleCloseTimeout(const base::ListValue* args) {
   CloseSyncSetup();
 }
 
@@ -799,11 +806,11 @@ void SyncSetupHandler::CloseSyncSetup() {
       // If the user clicked "Cancel" while setting up sync, disable sync
       // because we don't want the sync backend to remain in the initialized
       // state. Note: In order to disable sync across restarts on Chrome OS, we
-      // must call OnStopSyncingPermanently(), which suppresses sync startup in
+      // must call StopSyncingPermanently(), which suppresses sync startup in
       // addition to disabling it.
       if (sync_service) {
         DVLOG(1) << "Sync setup aborted by user action";
-        sync_service->OnStopSyncingPermanently();
+        sync_service->StopSyncingPermanently();
 #if !defined(OS_CHROMEOS)
         // Sign out the user on desktop Chrome if they click cancel during
         // initial setup.
@@ -885,7 +892,7 @@ void SyncSetupHandler::FocusUI() {
 
 void SyncSetupHandler::CloseUI() {
   CloseSyncSetup();
-  StringValue page("done");
+  base::StringValue page("done");
   web_ui()->CallJavascriptFunction(
       "SyncSetupOverlay.showSyncSetupPage", page);
 }

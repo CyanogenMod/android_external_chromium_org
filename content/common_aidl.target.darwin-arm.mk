@@ -15,13 +15,13 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "content_content_gyp_common_aidl_target_compile_aidl":
-# "{'inputs': ['$(PWD)/prebuilts/sdk/18/framework.aidl', 'public/android/java/src/org/chromium/content/common/common.aidl'], 'extension': 'aidl', 'rule_sources': ['public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl', 'public/android/java/src/org/chromium/content/common/IChildProcessService.aidl'], 'rule_name': 'compile_aidl', 'outputs': ['$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java'], 'action': ['$(PWD)/prebuilts/sdk/tools/darwin/aidl', '-p$(PWD)/prebuilts/sdk/18/framework.aidl', '-ppublic/android/java/src/org/chromium/content/common/common.aidl', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java']}":
+# "{'inputs': ['$(PWD)/prebuilts/sdk/18/framework.aidl', 'public/android/java/src/org/chromium/content/common/common.aidl'], 'extension': 'aidl', 'rule_sources': ['public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl', 'public/android/java/src/org/chromium/content/common/IChildProcessService.aidl'], 'rule_name': 'compile_aidl', 'outputs': ['$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java'], 'action': ['$(PWD)/prebuilts/sdk/tools/linux/aidl', '-p$(PWD)/prebuilts/sdk/18/framework.aidl', '-ppublic/android/java/src/org/chromium/content/common/common.aidl', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java']}":
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl $(PWD)/prebuilts/sdk/18/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/darwin/aidl" "-p$(PWD)/prebuilts/sdk/18/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java"
+	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/linux/aidl" "-p$(PWD)/prebuilts/sdk/18/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java"
 
 .PHONY: content_common_aidl_gyp_rule_trigger
 content_common_aidl_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java
@@ -31,7 +31,7 @@ $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_i
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessService.aidl $(PWD)/prebuilts/sdk/18/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/darwin/aidl" "-p$(PWD)/prebuilts/sdk/18/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessService.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java"
+	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/linux/aidl" "-p$(PWD)/prebuilts/sdk/18/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessService.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java"
 
 .PHONY: content_common_aidl_gyp_rule_trigger
 content_common_aidl_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java
@@ -80,15 +80,16 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -99,7 +100,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -131,7 +131,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -163,15 +162,16 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -182,7 +182,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -215,7 +214,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

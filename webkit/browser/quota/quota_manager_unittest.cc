@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -22,6 +23,7 @@
 #include "webkit/browser/quota/mock_storage_client.h"
 #include "webkit/browser/quota/quota_database.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 
 using base::MessageLoopProxy;
 
@@ -960,10 +962,17 @@ TEST_F(QuotaManagerTest, GetAndSetPerststentHostQuota) {
   GetPersistentHostQuota("foo.com");
   SetPersistentHostQuota("foo.com", 200);
   GetPersistentHostQuota("foo.com");
-  SetPersistentHostQuota("foo.com", 300000000000ll);
+  SetPersistentHostQuota("foo.com", QuotaManager::kPerHostPersistentQuotaLimit);
   GetPersistentHostQuota("foo.com");
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(300000000000ll, quota());
+  EXPECT_EQ(QuotaManager::kPerHostPersistentQuotaLimit, quota());
+
+  // Persistent quota should be capped at the per-host quota limit.
+  SetPersistentHostQuota("foo.com",
+                         QuotaManager::kPerHostPersistentQuotaLimit + 100);
+  GetPersistentHostQuota("foo.com");
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(QuotaManager::kPerHostPersistentQuotaLimit, quota());
 }
 
 TEST_F(QuotaManagerTest, GetAndSetPersistentUsageAndQuota) {

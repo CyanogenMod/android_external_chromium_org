@@ -56,8 +56,8 @@ class Texture;
 // Coordinate system used in layers is DIP (Density Independent Pixel)
 // coordinates unless explicitly mentioned as pixel coordinates.
 //
-// NOTE: unlike Views, each Layer does *not* own its children views. If you
-// delete a Layer and it has children, the parent of each child layer is set to
+// NOTE: Unlike Views, each Layer does *not* own its child Layers. If you
+// delete a Layer and it has children, the parent of each child Layer is set to
 // NULL, but the children are not deleted.
 class COMPOSITOR_EXPORT Layer
     : public LayerAnimationDelegate,
@@ -198,10 +198,11 @@ class COMPOSITOR_EXPORT Layer
 
   // Set a layer mask for a layer.
   // Note the provided layer mask can neither have a layer mask itself nor can
-  // it have any children.
+  // it have any children. The ownership of |layer_mask| will not be
+  // transferred with this call.
   // Furthermore: A mask layer can only be set to one layer.
-  void SetMaskLayer(scoped_ptr<Layer> layer_mask);
-  Layer* layer_mask_layer() { return layer_mask_.get(); }
+  void SetMaskLayer(Layer* layer_mask);
+  Layer* layer_mask_layer() { return layer_mask_; }
 
   // Sets the visibility of the Layer. A Layer may be visible but not
   // drawn. This happens if any ancestor of a Layer is not visible.
@@ -282,14 +283,13 @@ class COMPOSITOR_EXPORT Layer
   // SchedulePaint() for that.
   void ScheduleDraw();
 
-  // Sends damaged rectangles recorded in |damaged_region_| to
-  // |compostior_| to repaint the content.
+  // Uses damaged rectangles recorded in |damaged_region_| to invalidate the
+  // |cc_layer_|.
   void SendDamagedRects();
 
   const SkRegion& damaged_region() const { return damaged_region_; }
 
-  // Suppresses painting the content by disgarding damaged region and ignoring
-  // new paint requests.
+  // Suppresses painting the content by disconnecting |delegate_|.
   void SuppressPaint();
 
   // Notifies the layer that the device scale factor has changed.
@@ -297,7 +297,7 @@ class COMPOSITOR_EXPORT Layer
 
   // Sets whether the layer should scale its content. If true, the canvas will
   // be scaled in software rendering mode before it is passed to
-  // |LayerDelegate::OnPaint|.
+  // |LayerDelegate::OnPaintLayer|.
   // Set to false if the delegate handles scaling.
   // NOTE: if this is called during |LayerDelegate::OnPaint|, the new value will
   // not apply to the canvas passed to the pending draw.
@@ -306,16 +306,12 @@ class COMPOSITOR_EXPORT Layer
   // Returns true if the layer scales its content.
   bool scale_content() const { return scale_content_; }
 
-  // Sometimes the Layer is being updated by something other than SetCanvas
-  // (e.g. the GPU process on UI_COMPOSITOR_IMAGE_TRANSPORT).
-  bool layer_updated_externally() const { return layer_updated_externally_; }
-
   // Requets a copy of the layer's output as a texture or bitmap.
   void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
 
   // ContentLayerClient
   virtual void PaintContents(
-      SkCanvas* canvas, gfx::Rect clip, gfx::RectF* opaque) OVERRIDE;
+      SkCanvas* canvas, const gfx::Rect& clip, gfx::RectF* opaque) OVERRIDE;
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
 
   cc::Layer* cc_layer() { return cc_layer_; }
@@ -335,8 +331,6 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface() const { return force_render_surface_; }
 
   // LayerClient
-  virtual std::string DebugName() OVERRIDE;
-
   virtual scoped_refptr<base::debug::ConvertableToTraceFormat>
       TakeDebugInfo() OVERRIDE;
 
@@ -358,16 +352,6 @@ class COMPOSITOR_EXPORT Layer
 
   bool ConvertPointForAncestor(const Layer* ancestor, gfx::Point* point) const;
   bool ConvertPointFromAncestor(const Layer* ancestor, gfx::Point* point) const;
-
-  // Following are invoked from the animation or if no animation exists to
-  // update the values immediately.
-  void SetBoundsImmediately(const gfx::Rect& bounds);
-  void SetTransformImmediately(const gfx::Transform& transform);
-  void SetOpacityImmediately(float opacity);
-  void SetVisibilityImmediately(bool visibility);
-  void SetBrightnessImmediately(float brightness);
-  void SetGrayscaleImmediately(float grayscale);
-  void SetColorImmediately(SkColor color);
 
   // Implementation of LayerAnimatorDelegate
   virtual void SetBoundsFromAnimation(const gfx::Rect& bounds) OVERRIDE;
@@ -391,7 +375,10 @@ class COMPOSITOR_EXPORT Layer
       scoped_ptr<cc::Animation> animation) OVERRIDE;
   virtual void RemoveThreadedAnimation(int animation_id) OVERRIDE;
 
+  // Creates a corresponding composited layer for |type_|.
   void CreateWebLayer();
+
+  // Recomputes and sets to |cc_layer_|.
   void RecomputeCCTransformFromTransform(const gfx::Transform& transform);
   void RecomputeDrawsContentAndUVRect();
   void RecomputePosition();
@@ -402,8 +389,7 @@ class COMPOSITOR_EXPORT Layer
   // Set all filters which got applied to the layer background.
   void SetLayerBackgroundFilters();
 
-  void UpdateIsDrawn();
-
+  // Cleanup |cc_layer_| and replaces it with |new_layer|.
   void SwitchToLayer(scoped_refptr<cc::Layer> new_layer);
 
   // We cannot send animations to our cc_layer_ until we have been added to a
@@ -432,9 +418,6 @@ class COMPOSITOR_EXPORT Layer
 
   bool fills_bounds_opaquely_;
 
-  // If true the layer is always up to date.
-  bool layer_updated_externally_;
-
   // Union of damaged rects, in pixel coordinates, to be used when
   // compositor is ready to paint the content.
   SkRegion damaged_region_;
@@ -448,8 +431,12 @@ class COMPOSITOR_EXPORT Layer
   float layer_grayscale_;
   bool layer_inverted_;
 
-  // The mask layer associated with this layer.
-  scoped_ptr<Layer> layer_mask_;
+  // The associated mask layer with this layer.
+  Layer* layer_mask_;
+  // The back link from the mask layer to it's associated masked layer.
+  // We keep this reference for the case that if the mask layer gets deleted
+  // while attached to the main layer before the main layer is deleted.
+  Layer* layer_mask_back_link_;
 
   // The zoom factor to scale the layer by.  Zooming is disabled when this is
   // set to 1.

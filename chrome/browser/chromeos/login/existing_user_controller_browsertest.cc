@@ -23,12 +23,12 @@
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -162,11 +162,14 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest,
         .WillRepeatedly(Return(false));
     EXPECT_CALL(*mock_user_manager_, Shutdown())
         .Times(1);
+    EXPECT_CALL(*mock_user_manager_, GetProfileByUser(_))
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(testing_profile_.get()));
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    SetUpUserManager();
     testing_profile_.reset(new TestingProfile());
+    SetUpUserManager();
     existing_user_controller_.reset(
         new ExistingUserController(mock_login_display_host_.get()));
     ASSERT_EQ(existing_user_controller(), existing_user_controller_.get());
@@ -366,9 +369,14 @@ class ExistingUserControllerPublicSessionTest
     }
 
     // Wait for the device local account policy to be installed.
-    policy::CloudPolicyStore* store = TestingBrowserProcess::GetGlobal()->
-        browser_policy_connector()->GetDeviceLocalAccountPolicyService()->
-        GetBrokerForUser(public_session_user_id_)->core()->store();
+    policy::CloudPolicyStore* store =
+        TestingBrowserProcess::GetGlobal()
+            ->platform_part()
+            ->browser_policy_connector_chromeos()
+            ->GetDeviceLocalAccountPolicyService()
+            ->GetBrokerForUser(public_session_user_id_)
+            ->core()
+            ->store();
     if (!store->has_policy()) {
       policy::MockCloudPolicyStoreObserver observer;
 

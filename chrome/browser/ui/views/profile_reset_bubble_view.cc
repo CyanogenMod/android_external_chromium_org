@@ -4,8 +4,6 @@
 
 #include "chrome/browser/ui/views/profile_reset_bubble_view.h"
 
-#include "base/memory/scoped_ptr.h"
-#include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profile_resetter/profile_reset_global_error.h"
@@ -85,7 +83,7 @@ class FeedbackView : public views::View {
   // |feedback| ListValue which contains a list of key/value pairs stored in
   // DictionaryValues. The key is to be displayed right aligned on the left, and
   // the value as a left aligned multiline text on the right.
-  void SetupLayoutManager(const ListValue& feedback) {
+  void SetupLayoutManager(const base::ListValue& feedback) {
     RemoveAllChildViews(true);
     set_background(views::Background::CreateSolidBackground(
         kLightGrayBackgroundColor));
@@ -101,7 +99,7 @@ class FeedbackView : public views::View {
     cs->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
                   GridLayout::FIXED, kFeedbackViewColumnWidth, 0);
     for (size_t i = 0; i < feedback.GetSize(); ++i) {
-      const DictionaryValue* dictionary = NULL;
+      const base::DictionaryValue* dictionary = NULL;
       if (!feedback.GetDictionary(i, &dictionary) || !dictionary)
         continue;
 
@@ -158,7 +156,7 @@ ProfileResetBubbleView* ProfileResetBubbleView::ShowBubble(
       global_error, anchor_view, browser, browser->profile());
   views::BubbleDelegateView::CreateBubble(reset_bubble);
   reset_bubble->StartFade(true);
-  content::RecordAction(content::UserMetricsAction("SettingsResetBubble.Show"));
+  content::RecordAction(base::UserMetricsAction("SettingsResetBubble.Show"));
   return reset_bubble;
 }
 
@@ -196,6 +194,11 @@ void ProfileResetBubbleView::ResetAllChildren() {
 
 void ProfileResetBubbleView::Init() {
   set_margins(gfx::Insets(kMarginHeight, 0, 0, 0));
+  // Start requesting the feedback data.
+  snapshot_.reset(new ResettableSettingsSnapshot(profile_));
+  snapshot_->RequestShortcuts(
+      base::Bind(&ProfileResetBubbleView::UpdateFeedbackDetails,
+                 weak_factory_.GetWeakPtr()));
   SetupLayoutManager(true);
 }
 
@@ -208,9 +211,9 @@ void ProfileResetBubbleView::SetupLayoutManager(bool report_checked) {
 
   // Bubble title label.
   views::Label* title_label = new views::Label(
-      l10n_util::GetStringFUTF16(IDS_RESET_BUBBLE_TITLE, product_name));
+      l10n_util::GetStringFUTF16(IDS_RESET_BUBBLE_TITLE, product_name),
+      rb.GetFontList(ui::ResourceBundle::BoldFont));
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  title_label->SetFont(rb.GetFont(ui::ResourceBundle::BoldFont));
 
   // Description text label.
   views::Label* text_label = new views::Label(
@@ -233,9 +236,10 @@ void ProfileResetBubbleView::SetupLayoutManager(bool report_checked) {
     reset_button_string_id = IDS_RESETTING;
   controls_.reset_button = new views::LabelButton(
       this, l10n_util::GetStringUTF16(reset_button_string_id));
-  controls_.reset_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  controls_.reset_button->SetStyle(views::Button::STYLE_BUTTON);
   controls_.reset_button->SetIsDefault(true);
-  controls_.reset_button->SetFont(rb.GetFont(ui::ResourceBundle::BoldFont));
+  controls_.reset_button->SetFontList(
+      rb.GetFontList(ui::ResourceBundle::BoldFont));
   controls_.reset_button->SetEnabled(!resetting_);
   // For the Resetting... text to fit.
   gfx::Size reset_button_size = controls_.reset_button->GetPreferredSize();
@@ -245,7 +249,7 @@ void ProfileResetBubbleView::SetupLayoutManager(bool report_checked) {
   // No thanks button.
   controls_.no_thanks_button = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_NO_THANKS));
-  controls_.no_thanks_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  controls_.no_thanks_button->SetStyle(views::Button::STYLE_BUTTON);
   controls_.no_thanks_button->SetEnabled(!resetting_);
 
   // Checkbox for reporting settings or not.
@@ -259,10 +263,12 @@ void ProfileResetBubbleView::SetupLayoutManager(bool report_checked) {
       views::Background::CreateSolidBackground(kLightGrayBackgroundColor));
   // Have a smaller margin on the right, to have the |controls_.help_button|
   // closer to the edge.
-  controls_.report_settings_checkbox->set_border(
-      views::Border::CreateSolidSidedBorder(
-        kMarginWidth, kMarginWidth, kMarginWidth, kMarginWidth / 2,
-        kLightGrayBackgroundColor));
+  controls_.report_settings_checkbox->SetBorder(
+      views::Border::CreateSolidSidedBorder(kMarginWidth,
+                                            kMarginWidth,
+                                            kMarginWidth,
+                                            kMarginWidth / 2,
+                                            kLightGrayBackgroundColor));
 
   // Help button to toggle the bottom panel on or off.
   controls_.help_button = new views::ImageButton(this);
@@ -347,29 +353,28 @@ void ProfileResetBubbleView::SetupLayoutManager(bool report_checked) {
   layout->AddView(controls_.report_settings_checkbox);
   layout->AddView(controls_.help_button);
 
-  if (show_help_pane_) {
-    scoped_ptr<ListValue> feedback(GetReadableFeedback(profile_));
-    if (feedback.get()) {
-      // We need a single row to add the scroll view containing the feedback.
-      const int kReportDetailsColumnSetId = 5;
-      cs = layout->AddColumnSet(kReportDetailsColumnSetId);
-      cs->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
-                    GridLayout::USE_PREF, 0, 0);
+  if (show_help_pane_ && snapshot_) {
+    // We need a single row to add the scroll view containing the feedback.
+    const int kReportDetailsColumnSetId = 5;
+    cs = layout->AddColumnSet(kReportDetailsColumnSetId);
+    cs->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
+                  GridLayout::USE_PREF, 0, 0);
 
-      FeedbackView* feedback_view = new FeedbackView();
-      feedback_view->SetupLayoutManager(*feedback.get());
+    FeedbackView* feedback_view = new FeedbackView();
+    scoped_ptr<base::ListValue> feedback_data =
+        GetReadableFeedbackForSnapshot(profile_, *snapshot_);
+    feedback_view->SetupLayoutManager(*feedback_data);
 
-      views::ScrollView* scroll_view = new views::ScrollView();
-      scroll_view->set_background(views::Background::CreateSolidBackground(
-          kLightGrayBackgroundColor));
-      scroll_view->SetContents(feedback_view);
+    views::ScrollView* scroll_view = new views::ScrollView();
+    scroll_view->set_background(views::Background::CreateSolidBackground(
+        kLightGrayBackgroundColor));
+    scroll_view->SetContents(feedback_view);
 
-      layout->StartRow(1, kReportDetailsColumnSetId);
-      layout->AddView(scroll_view, 1, 1, GridLayout::FILL,
-                      GridLayout::FILL, kAllColumnsWidth,
-                      std::min(feedback_view->height() + kMarginHeight,
-                               kMaxFeedbackViewHeight));
-    }
+    layout->StartRow(1, kReportDetailsColumnSetId);
+    layout->AddView(scroll_view, 1, 1, GridLayout::FILL,
+                    GridLayout::FILL, kAllColumnsWidth,
+                    std::min(feedback_view->height() + kMarginHeight,
+                             kMaxFeedbackViewHeight));
   }
 
   Layout();
@@ -381,7 +386,7 @@ void ProfileResetBubbleView::ButtonPressed(views::Button* sender,
   if (sender == controls_.reset_button) {
     DCHECK(!resetting_);
     content::RecordAction(
-        content::UserMetricsAction("SettingsResetBubble.Reset"));
+        base::UserMetricsAction("SettingsResetBubble.Reset"));
 
     // Remember that the user chose to reset, and that resetting is underway.
     chose_to_reset_ = true;
@@ -399,7 +404,7 @@ void ProfileResetBubbleView::ButtonPressed(views::Button* sender,
   } else if (sender == controls_.no_thanks_button) {
     DCHECK(!resetting_);
     content::RecordAction(
-        content::UserMetricsAction("SettingsResetBubble.NoThanks"));
+        base::UserMetricsAction("SettingsResetBubble.NoThanks"));
 
     if (global_error_)
       global_error_->OnBubbleViewNoThanksButtonPressed();
@@ -415,7 +420,7 @@ void ProfileResetBubbleView::ButtonPressed(views::Button* sender,
 
 void ProfileResetBubbleView::LinkClicked(views::Link* source, int flags) {
   content::RecordAction(
-      content::UserMetricsAction("SettingsResetBubble.LearnMore"));
+      base::UserMetricsAction("SettingsResetBubble.LearnMore"));
   navigator_->OpenURL(content::OpenURLParams(
       GURL(chrome::kResetProfileSettingsLearnMoreURL), content::Referrer(),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false));
@@ -424,6 +429,11 @@ void ProfileResetBubbleView::LinkClicked(views::Link* source, int flags) {
 void ProfileResetBubbleView::CloseBubbleView() {
   resetting_ = false;
   StartFade(false);
+}
+
+void ProfileResetBubbleView::UpdateFeedbackDetails() {
+  if (show_help_pane_)
+    SetupLayoutManager(controls_.report_settings_checkbox->checked());
 }
 
 bool IsProfileResetBubbleSupported() {

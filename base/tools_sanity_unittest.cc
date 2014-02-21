@@ -32,15 +32,24 @@ const base::subtle::Atomic32 kMagicValue = 42;
 do { if (RunningOnValgrind()) { action; } } while (0)
 #endif
 
-void ReadUninitializedValue(char *ptr) {
+void DoReadUninitializedValue(char *ptr) {
   // Comparison with 64 is to prevent clang from optimizing away the
   // jump -- valgrind only catches jumps and conditional moves, but clang uses
   // the borrow flag if the condition is just `*ptr == '\0'`.
   if (*ptr == 64) {
-    (*ptr)++;
+    VLOG(1) << "Uninit condition is true";
   } else {
-    (*ptr)--;
+    VLOG(1) << "Uninit condition is false";
   }
+}
+
+void ReadUninitializedValue(char *ptr) {
+#if defined(MEMORY_SANITIZER)
+  EXPECT_DEATH(DoReadUninitializedValue(ptr),
+               "use-of-uninitialized-value");
+#else
+  DoReadUninitializedValue(ptr);
+#endif
 }
 
 void ReadValueOutOfArrayBoundsLeft(char *ptr) {
@@ -65,14 +74,15 @@ void WriteValueOutOfArrayBoundsRight(char *ptr, size_t size) {
 
 void MakeSomeErrors(char *ptr, size_t size) {
   ReadUninitializedValue(ptr);
+
   HARMFUL_ACCESS(ReadValueOutOfArrayBoundsLeft(ptr),
-                 "heap-buffer-overflow.*2 bytes to the left");
+                 "2 bytes to the left");
   HARMFUL_ACCESS(ReadValueOutOfArrayBoundsRight(ptr, size),
-                 "heap-buffer-overflow.*1 bytes to the right");
+                 "1 bytes to the right");
   HARMFUL_ACCESS(WriteValueOutOfArrayBoundsLeft(ptr),
-                 "heap-buffer-overflow.*1 bytes to the left");
+                 "1 bytes to the left");
   HARMFUL_ACCESS(WriteValueOutOfArrayBoundsRight(ptr, size),
-                 "heap-buffer-overflow.*0 bytes to the right");
+                 "0 bytes to the right");
 }
 
 }  // namespace

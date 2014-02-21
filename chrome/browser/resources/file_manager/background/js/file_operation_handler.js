@@ -86,7 +86,7 @@ FileOperationHandler.getMessage_ = function(event) {
         }
 
       case util.FileOperationErrorType.FILESYSTEM_ERROR:
-        var detail = util.getFileErrorString(event.error.data.code);
+        var detail = util.getFileErrorString(event.error.data.name);
         switch (event.status.operationType) {
           case 'COPY': return strf('COPY_FILESYSTEM_ERROR', detail);
           case 'MOVE': return strf('MOVE_FILESYSTEM_ERROR', detail);
@@ -103,7 +103,7 @@ FileOperationHandler.getMessage_ = function(event) {
         }
     }
   } else if (event.status.numRemainingItems === 1) {
-    var name = event.status.processingEntry.name;
+    var name = event.status.processingEntryName;
     switch (event.status.operationType) {
       case 'COPY': return strf('COPY_FILE_NAME', name);
       case 'MOVE': return strf('MOVE_FILE_NAME', name);

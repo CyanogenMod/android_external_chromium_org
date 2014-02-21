@@ -29,20 +29,38 @@ void SendProcessKeyEvent(ui::EventType type,
   ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
                                ui::VKEY_PROCESSKEY,
                                ui::EF_NONE);
-  dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+  ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&event);
+  CHECK(!details.dispatcher_destroyed);
 }
 
 base::LazyInstance<base::Time> g_keyboard_load_time_start =
     LAZY_INSTANCE_INITIALIZER;
 
+bool g_accessibility_keyboard_enabled = false;
+
 }  // namespace
 
 namespace keyboard {
 
+void SetAccessibilityKeyboardEnabled(bool enabled) {
+  g_accessibility_keyboard_enabled = enabled;
+}
+
+bool GetAccessibilityKeyboardEnabled() {
+  return g_accessibility_keyboard_enabled;
+}
+
+std::string GetKeyboardLayout() {
+  // TODO(bshe): layout string is currently hard coded. We should use more
+  // standard keyboard layouts.
+  return GetAccessibilityKeyboardEnabled() ? "system-qwerty" : "qwerty";
+}
+
 bool IsKeyboardEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableVirtualKeyboard) ||
-          IsKeyboardUsabilityExperimentEnabled();
+  return g_accessibility_keyboard_enabled ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableVirtualKeyboard) ||
+      IsKeyboardUsabilityExperimentEnabled();
 }
 
 bool IsKeyboardUsabilityExperimentEnabled() {
@@ -92,17 +110,23 @@ bool MoveCursor(int swipe_direction,
   // First deal with the x movement.
   if (codex != ui::VKEY_UNKNOWN) {
     ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, modifier_flags, 0);
-    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
+    ui::EventDispatchDetails details =
+        dispatcher->OnEventFromSource(&press_event);
+    CHECK(!details.dispatcher_destroyed);
     ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, modifier_flags, 0);
-    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
+    details = dispatcher->OnEventFromSource(&release_event);
+    CHECK(!details.dispatcher_destroyed);
   }
 
   // Then deal with the y movement.
   if (codey != ui::VKEY_UNKNOWN) {
     ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, modifier_flags, 0);
-    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
+    ui::EventDispatchDetails details =
+        dispatcher->OnEventFromSource(&press_event);
+    CHECK(!details.dispatcher_destroyed);
     ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, modifier_flags, 0);
-    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
+    details = dispatcher->OnEventFromSource(&release_event);
+    CHECK(!details.dispatcher_destroyed);
   }
   return true;
 }
@@ -155,7 +179,8 @@ bool SendKeyEvent(const std::string type,
     }
 
     ui::KeyEvent event(event_type, code, key_name, modifiers, false);
-    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+    ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&event);
+    CHECK(!details.dispatcher_destroyed);
   }
   return true;
 }
@@ -166,6 +191,11 @@ const void MarkKeyboardLoadStarted() {
 }
 
 const void MarkKeyboardLoadFinished() {
+  // Possible to get a load finished without a start if navigating directly to
+  // chrome://keyboard.
+  if (!g_keyboard_load_time_start.Get().ToInternalValue())
+    return;
+
   // It should not be possible to finish loading the keyboard without starting
   // to load it first.
   DCHECK(g_keyboard_load_time_start.Get().ToInternalValue());
@@ -243,6 +273,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
     {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
     {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
+    {"keyboard/roboto_bold.ttf", IDR_KEYBOARD_ROBOTO_BOLD_TTF},
     {"keyboard/voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS},
   };
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);

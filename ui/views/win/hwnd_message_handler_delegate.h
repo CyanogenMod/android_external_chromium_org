@@ -137,7 +137,7 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when the HWND is to be focused for the first time. This is called
   // when the window is shown for the first time. Returns true if the delegate
   // set focus and no default processing should be done by the message handler.
-  virtual bool HandleInitialFocus() = 0;
+  virtual bool HandleInitialFocus(ui::WindowShowState show_state) = 0;
 
   // Called when display settings are adjusted on the system.
   virtual void HandleDisplayChange() = 0;
@@ -217,6 +217,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
                                       WPARAM w_param,
                                       LPARAM l_param) = 0;
 
+  // Invoked on entering/exiting a menu loop.
+  virtual void HandleMenuLoop(bool in_menu_loop) = 0;
+
   // Catch-all message handling and filtering. Called before
   // HWNDMessageHandler's built-in handling, which may pre-empt some
   // expectations in Views/Aura if messages are consumed. Returns true if the
@@ -233,6 +236,10 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   virtual void PostHandleMSG(UINT message,
                              WPARAM w_param,
                              LPARAM l_param) = 0;
+
+  // Called when a scroll event is received. Returns true if the event was
+  // handled by the delegate.
+  virtual bool HandleScrollEvent(const ui::ScrollEvent& event) = 0;
 
  protected:
   virtual ~HWNDMessageHandlerDelegate() {}

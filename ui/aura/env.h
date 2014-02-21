@@ -6,7 +6,6 @@
 #define UI_AURA_ENV_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
 #include "ui/aura/aura_export.h"
 #include "ui/events/event_handler.h"
@@ -27,11 +26,6 @@ class EnvObserver;
 class InputStateLookup;
 class RootWindow;
 class Window;
-
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(USE_X11)
-// Creates a platform-specific native event dispatcher.
-base::MessageLoop::Dispatcher* CreateDispatcher();
-#endif
 
 // A singleton object that tracks general state within Aura.
 // TODO(beng): manage RootWindows.
@@ -65,21 +59,13 @@ class AURA_EXPORT Env : public ui::EventTarget {
   bool is_touch_down() const { return is_touch_down_; }
   void set_touch_down(bool value) { is_touch_down_ = value; }
 
-  // Returns the native event dispatcher. The result should only be passed to
-  // base::RunLoop(dispatcher), or used to dispatch an event by
-  // |Dispatch(const NativeEvent&)| on it. It must never be stored.
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
-  base::MessageLoop::Dispatcher* GetDispatcher();
-#endif
-
   // Invoked by RootWindow when its host is activated.
   void RootWindowActivated(RootWindow* root_window);
 
  private:
   friend class test::EnvTestHelper;
   friend class Window;
-  friend class RootWindow;
+  friend class WindowTreeHost;
 
   void Init();
 
@@ -96,9 +82,6 @@ class AURA_EXPORT Env : public ui::EventTarget {
   virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
 
   ObserverList<EnvObserver> observers_;
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(USE_X11)
-  scoped_ptr<base::MessageLoop::Dispatcher> dispatcher_;
-#endif
 
   static Env* instance_;
   int mouse_button_flags_;

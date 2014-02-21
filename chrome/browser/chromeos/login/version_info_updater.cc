@@ -13,9 +13,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "grit/chromium_strings.h"
@@ -47,9 +47,10 @@ VersionInfoUpdater::VersionInfoUpdater(Delegate* delegate)
 }
 
 VersionInfoUpdater::~VersionInfoUpdater() {
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   policy::DeviceCloudPolicyManagerChromeOS* policy_manager =
-      g_browser_process->browser_policy_connector()->
-          GetDeviceCloudPolicyManager();
+      connector->GetDeviceCloudPolicyManager();
   if (policy_manager)
     policy_manager->core()->store()->RemoveObserver(this);
 }
@@ -66,9 +67,10 @@ void VersionInfoUpdater::StartUpdate(bool is_official_build) {
     UpdateVersionLabel();
   }
 
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   policy::DeviceCloudPolicyManagerChromeOS* policy_manager =
-      g_browser_process->browser_policy_connector()->
-          GetDeviceCloudPolicyManager();
+      connector->GetDeviceCloudPolicyManager();
   if (policy_manager) {
     policy_manager->core()->store()->AddObserver(this);
 
@@ -96,8 +98,8 @@ void VersionInfoUpdater::UpdateVersionLabel() {
   std::string label_text = l10n_util::GetStringFUTF8(
       IDS_LOGIN_VERSION_LABEL_FORMAT,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
-      UTF8ToUTF16(version_info.Version()),
-      UTF8ToUTF16(version_text_));
+      base::UTF8ToUTF16(version_info.Version()),
+      base::UTF8ToUTF16(version_text_));
 
   // Workaround over incorrect width calculation in old fonts.
   // TODO(glotov): remove the following line when new fonts are used.
@@ -108,8 +110,9 @@ void VersionInfoUpdater::UpdateVersionLabel() {
 }
 
 void VersionInfoUpdater::UpdateEnterpriseInfo() {
-  SetEnterpriseInfo(
-      g_browser_process->browser_policy_connector()->GetEnterpriseDomain());
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  SetEnterpriseInfo(connector->GetEnterpriseDomain());
 }
 
 void VersionInfoUpdater::SetEnterpriseInfo(const std::string& domain_name) {
@@ -118,7 +121,7 @@ void VersionInfoUpdater::SetEnterpriseInfo(const std::string& domain_name) {
     std::string enterprise_info;
     enterprise_info = l10n_util::GetStringFUTF8(
         IDS_DEVICE_OWNED_BY_NOTICE,
-        UTF8ToUTF16(domain_name));
+        base::UTF8ToUTF16(domain_name));
     delegate_->OnEnterpriseInfoUpdated(enterprise_info);
   }
 }

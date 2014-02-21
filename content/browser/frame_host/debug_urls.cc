@@ -24,7 +24,8 @@ void HandlePpapiFlashDebugURL(const GURL& url) {
   bool crash = url == GURL(kChromeUIPpapiFlashCrashURL);
 
   std::vector<PpapiPluginProcessHost*> hosts;
-  PpapiPluginProcessHost::FindByName(UTF8ToUTF16(kFlashPluginName), &hosts);
+  PpapiPluginProcessHost::FindByName(
+      base::UTF8ToUTF16(kFlashPluginName), &hosts);
   for (std::vector<PpapiPluginProcessHost*>::iterator iter = hosts.begin();
        iter != hosts.end(); ++iter) {
     if (crash)
@@ -77,6 +78,19 @@ bool HandleDebugURL(const GURL& url, PageTransition transition) {
   }
 
   return false;
+}
+
+bool IsRendererDebugURL(const GURL& url) {
+  if (!url.is_valid())
+    return false;
+
+  if (url.SchemeIs(kJavaScriptScheme))
+    return true;
+
+  return url == GURL(kChromeUICrashURL) ||
+         url == GURL(kChromeUIKillURL) ||
+         url == GURL(kChromeUIHangURL) ||
+         url == GURL(kChromeUIShorthangURL);
 }
 
 }  // namespace content

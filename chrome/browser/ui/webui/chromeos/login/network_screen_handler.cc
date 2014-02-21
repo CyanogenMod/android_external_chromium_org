@@ -6,22 +6,32 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
+#include "chrome/browser/chromeos/idle_detector.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/input_events_blocker.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/options/chromeos/cros_language_options_handler.h"
+#include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
@@ -36,6 +46,26 @@ const char kJsApiNetworkOnLanguageChanged[] = "networkOnLanguageChanged";
 const char kJsApiNetworkOnInputMethodChanged[] = "networkOnInputMethodChanged";
 const char kJsApiNetworkOnTimezoneChanged[] = "networkOnTimezoneChanged";
 
+const char kUSlayout[] = "xkb:us::eng";
+
+const int64 kDerelectDetectionTimeoutSeconds = 8 * 60 * 60; // 8 hours.
+const int64 kDerelectIdleTimeoutSeconds = 5 * 60; // 5 minutes.
+
+// Returns true if element was inserted.
+bool InsertString(const std::string& str, std::set<std::string>& to) {
+  const std::pair<std::set<std::string>::iterator, bool> result =
+      to.insert(str);
+  return result.second;
+}
+
+void AddOptgroupOtherLayouts(base::ListValue* input_methods_list) {
+  base::DictionaryValue* optgroup = new base::DictionaryValue;
+  optgroup->SetString(
+      "optionGroupName",
+      l10n_util::GetStringUTF16(IDS_OOBE_OTHER_KEYBOARD_LAYOUTS));
+  input_methods_list->Append(optgroup);
+}
+
 }  // namespace
 
 namespace chromeos {
@@ -47,9 +77,11 @@ NetworkScreenHandler::NetworkScreenHandler(CoreOobeActor* core_oobe_actor)
       screen_(NULL),
       core_oobe_actor_(core_oobe_actor),
       is_continue_enabled_(false),
+      is_derelict_(false),
       show_on_init_(false),
       weak_ptr_factory_(this) {
   DCHECK(core_oobe_actor_);
+  SetupTimeouts();
 }
 
 NetworkScreenHandler::~NetworkScreenHandler() {
@@ -73,6 +105,7 @@ void NetworkScreenHandler::Show() {
   }
 
   ShowScreen(OobeUI::kScreenOobeNetwork, NULL);
+  StartIdleDetection();
 }
 
 void NetworkScreenHandler::Hide() {
@@ -109,7 +142,7 @@ void NetworkScreenHandler::EnableContinue(bool enabled) {
 
 void NetworkScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
-  if (system::keyboard_settings::ForceKeyboardDrivenUINavigation())
+  if (system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation())
     builder->Add("networkScreenGreeting", IDS_REMORA_CONFIRM_MESSAGE);
   else
     builder->Add("networkScreenGreeting", IDS_WELCOME_SCREEN_GREETING);
@@ -156,9 +189,16 @@ void NetworkScreenHandler::RegisterMessages() {
               &NetworkScreenHandler::HandleOnTimezoneChanged);
 }
 
+
+// static
+void NetworkScreenHandler::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kDerelictMachine, false);
+}
+
 // NetworkScreenHandler, private: ----------------------------------------------
 
 void NetworkScreenHandler::HandleOnExit() {
+  detector_.reset();
   ClearErrors();
   if (screen_)
     screen_->OnContinuePressed();
@@ -186,7 +226,7 @@ void NetworkScreenHandler::OnLanguageChangedCallback(
 
   NetworkScreenHandler* const self = context->handler_.get();
 
-  DictionaryValue localized_strings;
+  base::DictionaryValue localized_strings;
   static_cast<OobeUI*>(self->web_ui()->GetController())
       ->GetLocalizedStrings(&localized_strings);
   self->core_oobe_actor_->ReloadContent(localized_strings);
@@ -208,7 +248,10 @@ void NetworkScreenHandler::HandleOnLanguageChanged(const std::string& locale) {
       new locale_util::SwitchLanguageCallback(
           base::Bind(&NetworkScreenHandler::OnLanguageChangedCallback,
                      base::Passed(callback_data.Pass()))));
-  locale_util::SwitchLanguage(locale, true, callback.Pass());
+  locale_util::SwitchLanguage(locale,
+                              true /* enableLocaleKeyboardLayouts */,
+                              true /* login_layouts_only */,
+                              callback.Pass());
 }
 
 void NetworkScreenHandler::HandleOnInputMethodChanged(const std::string& id) {
@@ -231,18 +274,70 @@ void NetworkScreenHandler::OnSystemTimezoneChanged() {
   CallJS("setTimezone", current_timezone_id);
 }
 
+void NetworkScreenHandler::StartIdleDetection() {
+  if (!detector_.get()) {
+    detector_.reset(
+        new IdleDetector(base::Closure(),
+                         base::Bind(&NetworkScreenHandler::OnIdle,
+                                    weak_ptr_factory_.GetWeakPtr())));
+  }
+
+  detector_->Start(
+      is_derelict_ ? derelict_idle_timeout_ : derelict_detection_timeout_);
+}
+
+void NetworkScreenHandler::OnIdle() {
+  if (is_derelict_) {
+    LoginDisplayHost* host = LoginDisplayHostImpl::default_host();
+    host->StartDemoAppLaunch();
+  } else {
+    is_derelict_ = true;
+    PrefService* prefs = g_browser_process->local_state();
+    prefs->SetBoolean(prefs::kDerelictMachine, true);
+
+    StartIdleDetection();
+  }
+}
+
+void NetworkScreenHandler::SetupTimeouts() {
+  CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  DCHECK(cmdline);
+
+  PrefService* prefs = g_browser_process->local_state();
+  is_derelict_ = prefs->GetBoolean(prefs::kDerelictMachine);
+
+  int64 derelict_detection_timeout;
+  if (!cmdline->HasSwitch(switches::kDerelictDetectionTimeout) ||
+      !base::StringToInt64(
+          cmdline->GetSwitchValueASCII(switches::kDerelictDetectionTimeout),
+          &derelict_detection_timeout)) {
+    derelict_detection_timeout = kDerelectDetectionTimeoutSeconds;
+  }
+  derelict_detection_timeout_ =
+      base::TimeDelta::FromSeconds(derelict_detection_timeout);
+
+  int64 derelict_idle_timeout;
+  if (!cmdline->HasSwitch(switches::kDerelictIdleTimeout) ||
+      !base::StringToInt64(
+          cmdline->GetSwitchValueASCII(switches::kDerelictIdleTimeout),
+          &derelict_idle_timeout)) {
+    derelict_idle_timeout = kDerelectIdleTimeoutSeconds;
+  }
+  derelict_idle_timeout_ = base::TimeDelta::FromSeconds(derelict_idle_timeout);
+}
+
 // static
-ListValue* NetworkScreenHandler::GetLanguageList() {
+base::ListValue* NetworkScreenHandler::GetLanguageList() {
   const std::string app_locale = g_browser_process->GetApplicationLocale();
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   // GetSupportedInputMethods() never returns NULL.
   scoped_ptr<input_method::InputMethodDescriptors> descriptors(
       manager->GetSupportedInputMethods());
-  ListValue* languages_list =
+  base::ListValue* languages_list =
       options::CrosLanguageOptionsHandler::GetUILanguageList(*descriptors);
   for (size_t i = 0; i < languages_list->GetSize(); ++i) {
-    DictionaryValue* language_info = NULL;
+    base::DictionaryValue* language_info = NULL;
     if (!languages_list->GetDictionary(i, &language_info))
       NOTREACHED();
 
@@ -253,10 +348,17 @@ ListValue* NetworkScreenHandler::GetLanguageList() {
     std::string native_name;
     language_info->GetString("nativeDisplayName", &native_name);
 
-    if (display_name != native_name)
+    // If it's option group divider, add field name.
+    if (value == options::kVendorOtherLanguagesListDivider) {
+      language_info->SetString(
+          "optionGroupName",
+          l10n_util::GetStringUTF16(IDS_OOBE_OTHER_LANGUAGES));
+    }
+    if (display_name != native_name) {
       display_name = base::StringPrintf("%s - %s",
                                         display_name.c_str(),
                                         native_name.c_str());
+    }
 
     language_info->SetString("value", value);
     language_info->SetString("title", display_name);
@@ -265,25 +367,70 @@ ListValue* NetworkScreenHandler::GetLanguageList() {
   return languages_list;
 }
 
+base::DictionaryValue* CreateInputMethodsEntry(
+    const input_method::InputMethodDescriptor& method,
+    const std::string current_input_method_id) {
+  input_method::InputMethodUtil* util =
+      input_method::InputMethodManager::Get()->GetInputMethodUtil();
+  const std::string& ime_id = method.id();
+  scoped_ptr<base::DictionaryValue> input_method(new base::DictionaryValue);
+  input_method->SetString("value", ime_id);
+  input_method->SetString("title", util->GetInputMethodLongName(method));
+  input_method->SetBoolean("selected", ime_id == current_input_method_id);
+  return input_method.release();
+}
+
 // static
-ListValue* NetworkScreenHandler::GetInputMethods() {
-  ListValue* input_methods_list = new ListValue;
+base::ListValue* NetworkScreenHandler::GetInputMethods() {
+  base::ListValue* input_methods_list = new base::ListValue;
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
   scoped_ptr<input_method::InputMethodDescriptors> input_methods(
       manager->GetActiveInputMethods());
   std::string current_input_method_id = manager->GetCurrentInputMethod().id();
+  const std::vector<std::string>& hardware_login_input_methods =
+      util->GetHardwareLoginInputMethodIds();
+  std::set<std::string> input_methods_added;
+
+  for (std::vector<std::string>::const_iterator i =
+           hardware_login_input_methods.begin();
+       i != hardware_login_input_methods.end();
+       ++i) {
+    input_methods_added.insert(*i);
+    const input_method::InputMethodDescriptor* ime =
+        util->GetInputMethodDescriptorFromId(*i);
+    DCHECK(ime != NULL);
+    // Do not crash in case of misconfiguration.
+    if (ime != NULL) {
+      input_methods_list->Append(
+          CreateInputMethodsEntry(*ime, current_input_method_id));
+    }
+  }
+
+  bool optgroup_added = false;
   for (size_t i = 0; i < input_methods->size(); ++i) {
-    const std::string ime_id = input_methods->at(i).id();
-    DictionaryValue* input_method = new DictionaryValue;
-    input_method->SetString("value", ime_id);
-    input_method->SetString(
-        "title",
-        util->GetInputMethodLongName(input_methods->at(i)));
-    input_method->SetBoolean("selected",
-        ime_id == current_input_method_id);
-    input_methods_list->Append(input_method);
+    const std::string& ime_id = input_methods->at(i).id();
+    if (!InsertString(ime_id, input_methods_added))
+      continue;
+    if (!optgroup_added) {
+      optgroup_added = true;
+      AddOptgroupOtherLayouts(input_methods_list);
+    }
+    input_methods_list->Append(
+        CreateInputMethodsEntry(input_methods->at(i), current_input_method_id));
+  }
+  // "xkb:us::eng" should always be in the list of available layouts.
+  if (input_methods_added.count(kUSlayout) == 0) {
+    const input_method::InputMethodDescriptor* us_eng_descriptor =
+        util->GetInputMethodDescriptorFromId(kUSlayout);
+    DCHECK(us_eng_descriptor != NULL);
+    if (!optgroup_added) {
+      optgroup_added = true;
+      AddOptgroupOtherLayouts(input_methods_list);
+    }
+    input_methods_list->Append(
+        CreateInputMethodsEntry(*us_eng_descriptor, current_input_method_id));
   }
   return input_methods_list;
 }

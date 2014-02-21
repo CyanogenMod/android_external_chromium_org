@@ -8,7 +8,10 @@
 namespace chromeos {
 
 FakePowerManagerClient::FakePowerManagerClient()
-    : request_restart_call_count_(0) {
+    : num_request_restart_calls_(0),
+      num_set_policy_calls_(0),
+      num_set_is_projecting_calls_(0),
+      is_projecting_(false) {
 }
 
 FakePowerManagerClient::~FakePowerManagerClient() {
@@ -31,6 +34,7 @@ void FakePowerManagerClient::RequestStatusUpdate() {
 void FakePowerManagerClient::SetPolicy(
     const power_manager::PowerManagementPolicy& policy) {
   policy_ = policy;
+  ++num_set_policy_calls_;
 }
 
 void FakePowerManagerClient::RequestShutdown() {
@@ -60,7 +64,7 @@ bool FakePowerManagerClient::HasObserver(Observer* observer) {
 }
 
 void FakePowerManagerClient::RequestRestart() {
-  ++request_restart_call_count_;
+  ++num_request_restart_calls_;
 }
 
 void FakePowerManagerClient::IncreaseKeyboardBrightness() {
@@ -76,6 +80,8 @@ void FakePowerManagerClient::DecreaseKeyboardBrightness() {
 }
 
 void FakePowerManagerClient::SetIsProjecting(bool is_projecting) {
+  ++num_set_is_projecting_calls_;
+  is_projecting_ = is_projecting;
 }
 
 void FakePowerManagerClient::NotifyUserActivity(

@@ -115,8 +115,8 @@ int ShelfViewTestAPI::GetButtonSpacing() {
   return shelf_view_->GetButtonSpacing();
 }
 
-bool ShelfViewTestAPI::SameDragType(LauncherItemType typea,
-                                    LauncherItemType typeb) const {
+bool ShelfViewTestAPI::SameDragType(ShelfItemType typea,
+                                    ShelfItemType typeb) const {
   return shelf_view_->SameDragType(typea, typeb);
 }
 
@@ -128,8 +128,8 @@ gfx::Rect ShelfViewTestAPI::GetBoundsForDragInsertInScreen() {
   return shelf_view_->GetBoundsForDragInsertInScreen();
 }
 
-bool ShelfViewTestAPI::IsDraggingShelfItem() {
-  return shelf_view_->dragging();
+bool ShelfViewTestAPI::IsRippedOffFromShelf() {
+  return shelf_view_->dragged_off_shelf_;
 }
 
 bool ShelfViewTestAPI::DraggedItemFromOverflowToShelf() {

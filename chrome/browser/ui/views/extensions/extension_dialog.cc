@@ -62,7 +62,8 @@ ExtensionDialog* ExtensionDialog::Show(
     return NULL;
   // Preferred size must be set before views::Widget::CreateWindowWithParent
   // is called because CreateWindowWithParent refers the result of CanResize().
-  host->view()->SetPreferredSize(gfx::Size(min_width, min_height));
+  host->view()->SetPreferredSize(gfx::Size(width, height));
+  host->view()->set_minimum_size(gfx::Size(min_width, min_height));
   host->SetAssociatedWebContents(web_contents);
 
   CHECK(base_window);
@@ -148,7 +149,7 @@ bool ExtensionDialog::ShouldShowWindowTitle() const {
   return !window_title_.empty();
 }
 
-string16 ExtensionDialog::GetWindowTitle() const {
+base::string16 ExtensionDialog::GetWindowTitle() const {
   return window_title_;
 }
 

@@ -56,7 +56,7 @@ LOCAL_SRC_FILES := \
 	media/audio/fake_audio_output_stream.cc \
 	media/audio/null_audio_sink.cc \
 	media/audio/sample_rates.cc \
-	media/audio/scoped_loop_observer.cc \
+	media/audio/scoped_task_runner_observer.cc \
 	media/audio/simple_sources.cc \
 	media/audio/sounds/audio_stream_handler.cc \
 	media/audio/sounds/sounds_manager.cc \
@@ -80,6 +80,7 @@ LOCAL_SRC_FILES := \
 	media/base/audio_splicer.cc \
 	media/base/audio_timestamp_helper.cc \
 	media/base/bit_reader.cc \
+	media/base/bit_reader_core.cc \
 	media/base/byte_queue.cc \
 	media/base/channel_mixer.cc \
 	media/base/clock.cc \
@@ -111,6 +112,7 @@ LOCAL_SRC_FILES := \
 	media/base/stream_parser.cc \
 	media/base/stream_parser_buffer.cc \
 	media/base/text_cue.cc \
+	media/base/text_ranges.cc \
 	media/base/text_renderer.cc \
 	media/base/text_track_config.cc \
 	media/base/user_input_monitor.cc \
@@ -124,30 +126,38 @@ LOCAL_SRC_FILES := \
 	media/cdm/aes_decryptor.cc \
 	media/cdm/json_web_key.cc \
 	media/cdm/key_system_names.cc \
-	media/filters/audio_decoder_selector.cc \
 	media/filters/audio_renderer_algorithm.cc \
 	media/filters/audio_renderer_impl.cc \
 	media/filters/chunk_demuxer.cc \
+	media/filters/decoder_selector.cc \
 	media/filters/decrypting_audio_decoder.cc \
 	media/filters/decrypting_demuxer_stream.cc \
 	media/filters/decrypting_video_decoder.cc \
 	media/filters/file_data_source.cc \
 	media/filters/gpu_video_accelerator_factories.cc \
 	media/filters/gpu_video_decoder.cc \
+	media/filters/h264_bit_reader.cc \
+	media/filters/h264_parser.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
 	media/filters/in_memory_url_protocol.cc \
-	media/filters/opus_audio_decoder.cc \
 	media/filters/skcanvas_video_renderer.cc \
 	media/filters/source_buffer_stream.cc \
 	media/filters/stream_parser_factory.cc \
-	media/filters/video_decoder_selector.cc \
+	media/filters/video_frame_painter.cc \
 	media/filters/video_frame_stream.cc \
 	media/filters/video_renderer_impl.cc \
 	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
+	media/midi/midi_manager_android.cc \
+	media/midi/midi_manager_usb.cc \
 	media/midi/midi_message_queue.cc \
 	media/midi/midi_message_util.cc \
 	media/midi/midi_port_info.cc \
+	media/midi/usb_midi_descriptor_parser.cc \
+	media/midi/usb_midi_device_android.cc \
+	media/midi/usb_midi_device_factory_android.cc \
+	media/midi/usb_midi_input_stream.cc \
+	media/midi/usb_midi_output_stream.cc \
 	media/video/capture/android/video_capture_device_android.cc \
 	media/video/capture/fake_video_capture_device.cc \
 	media/video/capture/file_video_capture_device.cc \
@@ -157,37 +167,40 @@ LOCAL_SRC_FILES := \
 	media/video/picture.cc \
 	media/video/video_decode_accelerator.cc \
 	media/video/video_encode_accelerator.cc \
-	media/webm/webm_audio_client.cc \
-	media/webm/webm_cluster_parser.cc \
-	media/webm/webm_constants.cc \
-	media/webm/webm_content_encodings.cc \
-	media/webm/webm_content_encodings_client.cc \
-	media/webm/webm_crypto_helpers.cc \
-	media/webm/webm_info_parser.cc \
-	media/webm/webm_parser.cc \
-	media/webm/webm_stream_parser.cc \
-	media/webm/webm_tracks_parser.cc \
-	media/webm/webm_video_client.cc \
-	media/webm/webm_webvtt_parser.cc \
+	media/formats/common/offset_byte_queue.cc \
+	media/formats/webm/webm_audio_client.cc \
+	media/formats/webm/webm_cluster_parser.cc \
+	media/formats/webm/webm_constants.cc \
+	media/formats/webm/webm_content_encodings.cc \
+	media/formats/webm/webm_content_encodings_client.cc \
+	media/formats/webm/webm_crypto_helpers.cc \
+	media/formats/webm/webm_info_parser.cc \
+	media/formats/webm/webm_parser.cc \
+	media/formats/webm/webm_stream_parser.cc \
+	media/formats/webm/webm_tracks_parser.cc \
+	media/formats/webm/webm_video_client.cc \
+	media/formats/webm/webm_webvtt_parser.cc \
 	media/base/media_stub.cc \
-	media/mp2t/es_parser_adts.cc \
-	media/mp2t/es_parser_h264.cc \
-	media/mp2t/mp2t_stream_parser.cc \
-	media/mp2t/ts_packet.cc \
-	media/mp2t/ts_section_pat.cc \
-	media/mp2t/ts_section_pes.cc \
-	media/mp2t/ts_section_pmt.cc \
-	media/mp2t/ts_section_psi.cc \
-	media/mp3/mp3_stream_parser.cc \
-	media/mp4/aac.cc \
-	media/mp4/avc.cc \
-	media/mp4/box_definitions.cc \
-	media/mp4/box_reader.cc \
-	media/mp4/cenc.cc \
-	media/mp4/es_descriptor.cc \
-	media/mp4/mp4_stream_parser.cc \
-	media/mp4/offset_byte_queue.cc \
-	media/mp4/track_run_iterator.cc
+	media/formats/mp2t/es_parser_adts.cc \
+	media/formats/mp2t/es_parser_h264.cc \
+	media/formats/mp2t/mp2t_stream_parser.cc \
+	media/formats/mp2t/ts_packet.cc \
+	media/formats/mp2t/ts_section_pat.cc \
+	media/formats/mp2t/ts_section_pes.cc \
+	media/formats/mp2t/ts_section_pmt.cc \
+	media/formats/mp2t/ts_section_psi.cc \
+	media/formats/mp4/aac.cc \
+	media/formats/mp4/avc.cc \
+	media/formats/mp4/box_definitions.cc \
+	media/formats/mp4/box_reader.cc \
+	media/formats/mp4/cenc.cc \
+	media/formats/mp4/es_descriptor.cc \
+	media/formats/mp4/mp4_stream_parser.cc \
+	media/formats/mp4/track_run_iterator.cc \
+	media/formats/mpeg/adts_constants.cc \
+	media/formats/mpeg/adts_stream_parser.cc \
+	media/formats/mpeg/mp3_stream_parser.cc \
+	media/formats/mpeg/mpeg_audio_stream_parser_base.cc
 
 
 # Flags passed to both C and C++ files.
@@ -216,14 +229,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -234,7 +248,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -242,14 +255,14 @@ MY_DEFS_Debug := \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -268,11 +281,10 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
-	$(gyp_shared_intermediate_dir)/media \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
@@ -290,6 +302,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/opus/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
+	$(gyp_shared_intermediate_dir)/media \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -302,7 +315,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -333,14 +345,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -351,7 +364,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -359,14 +371,14 @@ MY_DEFS_Release := \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -386,11 +398,10 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
-	$(gyp_shared_intermediate_dir)/media \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
@@ -408,6 +419,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/opus/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
+	$(gyp_shared_intermediate_dir)/media \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -420,7 +432,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

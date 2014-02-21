@@ -7,8 +7,10 @@
 #include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 
+#include "base/callback.h"
 #include "base/logging.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
 namespace {
@@ -80,6 +82,31 @@ bool GrabWindowSnapshot(gfx::NativeWindow window_handle,
                         const gfx::Rect& snapshot_bounds) {
   return GrabViewSnapshot(GTK_WIDGET(window_handle), png_representation,
       snapshot_bounds);
+}
+
+void GrabWindowSnapshotAndScaleAsync(
+    gfx::NativeWindow window,
+    const gfx::Rect& snapshot_bounds,
+    const gfx::Size& target_size,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    GrabWindowSnapshotAsyncCallback callback) {
+  callback.Run(gfx::Image());
+}
+
+void GrabViewSnapshotAsync(
+    gfx::NativeView view,
+    const gfx::Rect& source_rect,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    const GrabWindowSnapshotAsyncPNGCallback& callback) {
+  callback.Run(scoped_refptr<base::RefCountedBytes>());
+}
+
+void GrabWindowSnapshotAsync(
+    gfx::NativeWindow window,
+    const gfx::Rect& source_rect,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    const GrabWindowSnapshotAsyncPNGCallback& callback) {
+  callback.Run(scoped_refptr<base::RefCountedBytes>());
 }
 
 }  // namespace ui

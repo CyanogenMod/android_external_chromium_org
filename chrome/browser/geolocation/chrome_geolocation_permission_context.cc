@@ -9,22 +9,108 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/permission_request_id.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_request.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/process_map.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
+#include "grit/generated_resources.h"
+#include "net/base/net_util.h"
+#include "ui/base/l10n/l10n_util.h"
 
 using extensions::APIPermission;
+using extensions::ExtensionRegistry;
+
+class GeolocationPermissionRequest : public PermissionBubbleRequest {
+ public:
+  GeolocationPermissionRequest(
+      ChromeGeolocationPermissionContext* context,
+      const PermissionRequestID& id,
+      const GURL& requesting_frame,
+      base::Callback<void(bool)> callback,
+      const std::string& display_languages);
+  virtual ~GeolocationPermissionRequest();
+
+  // PermissionBubbleDelegate:
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageTextFragment() const OVERRIDE;
+  virtual base::string16 GetAlternateAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetAlternateDenyButtonText() const OVERRIDE;
+  virtual void PermissionGranted() OVERRIDE;
+  virtual void PermissionDenied() OVERRIDE;
+  virtual void Cancelled() OVERRIDE;
+  virtual void RequestFinished() OVERRIDE;
+
+ private:
+  ChromeGeolocationPermissionContext* context_;
+  PermissionRequestID id_;
+  GURL requesting_frame_;
+  base::Callback<void(bool)> callback_;
+  std::string display_languages_;
+};
+
+GeolocationPermissionRequest::GeolocationPermissionRequest(
+    ChromeGeolocationPermissionContext* context,
+    const PermissionRequestID& id,
+    const GURL& requesting_frame,
+    base::Callback<void(bool)> callback,
+    const std::string& display_languages)
+    : context_(context),
+      id_(id),
+      requesting_frame_(requesting_frame),
+      callback_(callback),
+      display_languages_(display_languages) {}
+
+GeolocationPermissionRequest::~GeolocationPermissionRequest() {}
+
+base::string16 GeolocationPermissionRequest::GetMessageText() const {
+  return l10n_util::GetStringFUTF16(IDS_GEOLOCATION_INFOBAR_QUESTION,
+      net::FormatUrl(requesting_frame_, display_languages_));
+}
+
+base::string16 GeolocationPermissionRequest::GetMessageTextFragment() const {
+  return l10n_util::GetStringUTF16(IDS_GEOLOCATION_INFOBAR_PERMISSION_FRAGMENT);
+}
+
+base::string16
+GeolocationPermissionRequest::GetAlternateAcceptButtonText() const {
+  return l10n_util::GetStringUTF16(IDS_GEOLOCATION_ALLOW_BUTTON);
+}
+
+base::string16
+GeolocationPermissionRequest::GetAlternateDenyButtonText() const {
+  return l10n_util::GetStringUTF16(IDS_GEOLOCATION_DENY_BUTTON);
+}
+
+void GeolocationPermissionRequest::PermissionGranted() {
+  context_->NotifyPermissionSet(id_, requesting_frame_, callback_, true);
+}
+
+void GeolocationPermissionRequest::PermissionDenied() {
+  context_->NotifyPermissionSet(id_, requesting_frame_, callback_, false);
+}
+
+void GeolocationPermissionRequest::Cancelled() {
+  context_->NotifyPermissionSet(id_, requesting_frame_, callback_, false);
+}
+
+void GeolocationPermissionRequest::RequestFinished() {
+  delete this;
+}
+
 
 ChromeGeolocationPermissionContext::ChromeGeolocationPermissionContext(
     Profile* profile)
@@ -62,20 +148,18 @@ void ChromeGeolocationPermissionContext::RequestGeolocationPermission(
 
   content::WebContents* web_contents =
       tab_util::GetWebContentsByID(render_process_id, render_view_id);
-  const PermissionRequestID id(render_process_id, render_view_id,
-                                          bridge_id);
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  if (extension_service) {
+  const PermissionRequestID id(render_process_id, render_view_id, bridge_id, 0);
+  ExtensionRegistry* extension_registry = ExtensionRegistry::Get(profile_);
+  if (extension_registry) {
     const extensions::Extension* extension =
-        extension_service->extensions()->GetExtensionOrAppByURL(
+        extension_registry->enabled_extensions().GetExtensionOrAppByURL(
             requesting_frame_origin);
     if (IsExtensionWithPermissionOrSuggestInConsole(APIPermission::kGeolocation,
                                                     extension,
                                                     profile_)) {
       // Make sure the extension is in the calling process.
-      if (extension_service->process_map()->Contains(extension->id(),
-                                                     id.render_process_id())) {
+      if (extensions::ProcessMap::Get(profile_)
+              ->Contains(extension->id(), id.render_process_id())) {
         NotifyPermissionSet(id, requesting_frame_origin, callback, true);
         return;
       }
@@ -104,7 +188,8 @@ void ChromeGeolocationPermissionContext::RequestGeolocationPermission(
     return;
   }
 
-  DecidePermission(id, requesting_frame_origin, embedder, callback);
+  DecidePermission(web_contents, id, requesting_frame_origin,
+                   embedder, callback);
 }
 
 void ChromeGeolocationPermissionContext::CancelGeolocationPermissionRequest(
@@ -112,11 +197,12 @@ void ChromeGeolocationPermissionContext::CancelGeolocationPermissionRequest(
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame) {
-  CancelPendingInfoBarRequest(PermissionRequestID(
-      render_process_id, render_view_id, bridge_id));
+  CancelPendingInfobarRequest(PermissionRequestID(
+      render_process_id, render_view_id, bridge_id, 0));
 }
 
 void ChromeGeolocationPermissionContext::DecidePermission(
+    content::WebContents* web_contents,
     const PermissionRequestID& id,
     const GURL& requesting_frame,
     const GURL& embedder,
@@ -135,11 +221,19 @@ void ChromeGeolocationPermissionContext::DecidePermission(
       PermissionDecided(id, requesting_frame, embedder, callback, true);
       break;
     default:
-      // setting == ask. Prompt the user.
-      QueueController()->CreateInfoBarRequest(
-          id, requesting_frame, embedder, base::Bind(
-              &ChromeGeolocationPermissionContext::NotifyPermissionSet,
-              base::Unretained(this), id, requesting_frame, callback));
+      if (PermissionBubbleManager::Enabled()) {
+        PermissionBubbleManager* mgr =
+            PermissionBubbleManager::FromWebContents(web_contents);
+        mgr->AddRequest(new GeolocationPermissionRequest(
+                this, id, requesting_frame, callback,
+                profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)));
+      } else {
+        // setting == ask. Prompt the user.
+        QueueController()->CreateInfoBarRequest(
+            id, requesting_frame, embedder, base::Bind(
+                &ChromeGeolocationPermissionContext::NotifyPermissionSet,
+                base::Unretained(this), id, requesting_frame, callback));
+      }
   }
 }
 
@@ -193,18 +287,20 @@ PermissionQueueController*
                                        CONTENT_SETTINGS_TYPE_GEOLOCATION);
 }
 
-void ChromeGeolocationPermissionContext::CancelPendingInfoBarRequest(
+void ChromeGeolocationPermissionContext::CancelPendingInfobarRequest(
     const PermissionRequestID& id) {
   if (!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
     content::BrowserThread::PostTask(
         content::BrowserThread::UI, FROM_HERE,
         base::Bind(
-            &ChromeGeolocationPermissionContext::CancelPendingInfoBarRequest,
+            &ChromeGeolocationPermissionContext::CancelPendingInfobarRequest,
             this, id));
      return;
   }
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (shutting_down_)
     return;
+
+  // TODO(gbillock): handle permission bubble cancellation.
   QueueController()->CancelInfoBarRequest(id);
 }

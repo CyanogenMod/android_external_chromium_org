@@ -65,14 +65,14 @@ void NativeViewportAndroid::SurfaceCreated(JNIEnv* env,
 }
 
 void NativeViewportAndroid::SurfaceDestroyed(JNIEnv* env, jobject obj) {
-  DCHECK(!window_);
+  DCHECK(window_);
   ReleaseWindow();
 }
 
 void NativeViewportAndroid::SurfaceSetSize(JNIEnv* env, jobject obj,
                                            jint width, jint height) {
-  size_ = gfx::Size(width, height);
-  delegate_->OnResized(size_);
+  bounds_ = gfx::Rect(width, height);
+  delegate_->OnBoundsChanged(bounds_);
 }
 
 bool NativeViewportAndroid::TouchEvent(JNIEnv* env, jobject obj,
@@ -95,10 +95,18 @@ bool NativeViewportAndroid::TouchEvent(JNIEnv* env, jobject obj,
 ////////////////////////////////////////////////////////////////////////////////
 // NativeViewportAndroid, NativeViewport implementation:
 
-void NativeViewportAndroid::Init() {
+void NativeViewportAndroid::Init(const gfx::Rect& bounds) {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_NativeViewportAndroid_createForActivity(env, context_->activity(),
                                                reinterpret_cast<jint>(this));
+}
+
+void NativeViewportAndroid::Show() {
+  // Nothing to do. View is created visible.
+}
+
+void NativeViewportAndroid::Hide() {
+  // Nothing to do. View is always visible.
 }
 
 void NativeViewportAndroid::Close() {
@@ -109,7 +117,11 @@ void NativeViewportAndroid::Close() {
 }
 
 gfx::Size NativeViewportAndroid::GetSize() {
-  return size_;
+  return bounds_.size();
+}
+
+void NativeViewportAndroid::SetBounds(const gfx::Rect& bounds) {
+  NOTIMPLEMENTED();
 }
 
 void NativeViewportAndroid::SetCapture() {

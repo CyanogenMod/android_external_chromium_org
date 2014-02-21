@@ -40,9 +40,9 @@ FileSystemOptions CreateBrowserFileSystemOptions(bool is_incognito) {
       &additional_allowed_schemes);
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAllowFileAccessFromFiles)) {
-    additional_allowed_schemes.push_back(chrome::kFileScheme);
+    additional_allowed_schemes.push_back(kFileScheme);
   }
-  return FileSystemOptions(profile_mode, additional_allowed_schemes);
+  return FileSystemOptions(profile_mode, additional_allowed_schemes, NULL);
 }
 
 }  // namespace
@@ -53,7 +53,7 @@ scoped_refptr<fileapi::FileSystemContext> CreateFileSystemContext(
     bool is_incognito,
     quota::QuotaManagerProxy* quota_manager_proxy) {
 
-  base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
+  base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
   scoped_refptr<base::SequencedTaskRunner> file_task_runner =
       pool->GetSequencedTaskRunnerWithShutdownBehavior(
           pool->GetNamedSequenceToken("FileAPI"),

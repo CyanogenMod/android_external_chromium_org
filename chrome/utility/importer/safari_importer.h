@@ -46,6 +46,8 @@ class SafariImporter : public Importer {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SafariImporterTest, BookmarkImport);
+  FRIEND_TEST_ALL_PREFIXES(SafariImporterTest,
+                           BookmarkImportWithEmptyBookmarksMenu);
   FRIEND_TEST_ALL_PREFIXES(SafariImporterTest, FaviconImport);
   FRIEND_TEST_ALL_PREFIXES(SafariImporterTest, HistoryImport);
 
@@ -61,7 +63,7 @@ class SafariImporter : public Importer {
   void ImportHistory();
 
   // Parse Safari's stored bookmarks.
-  void ParseBookmarks(const string16& toolbar_name,
+  void ParseBookmarks(const base::string16& toolbar_name,
                       std::vector<ImportedBookmarkEntry>* bookmarks);
 
   // Function to recursively read Bookmarks out of Safari plist.
@@ -71,9 +73,9 @@ class SafariImporter : public Importer {
   // |out_bookmarks| BookMark element array to write into.
   void RecursiveReadBookmarksFolder(
       NSDictionary* bookmark_folder,
-      const std::vector<string16>& parent_path_elements,
+      const std::vector<base::string16>& parent_path_elements,
       bool is_in_toolbar,
-      const string16& toolbar_name,
+      const base::string16& toolbar_name,
       std::vector<ImportedBookmarkEntry>* out_bookmarks);
 
   // Converts history time stored by Safari as a double serialized as a string,

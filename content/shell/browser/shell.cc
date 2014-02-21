@@ -29,10 +29,6 @@
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
 
-#if defined(USE_AURA) && !defined(TOOLKIT_VIEWS)
-#include "content/shell/browser/shell_aura.h"
-#endif
-
 namespace content {
 
 const int Shell::kDefaultTestWindowWidthDip = 800;
@@ -67,9 +63,6 @@ Shell::Shell(WebContents* web_contents)
       is_fullscreen_(false),
       window_(NULL),
       url_edit_view_(NULL),
-#if defined(OS_WIN) && !defined(USE_AURA)
-      default_edit_wnd_proc_(0),
-#endif
       headless_(false) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kDumpRenderTree))
@@ -92,9 +85,12 @@ Shell::~Shell() {
     }
   }
 
-  if (windows_.empty() && quit_message_loop_)
+  if (windows_.empty() && quit_message_loop_) {
+    if (headless_)
+      PlatformExit();
     base::MessageLoop::current()->PostTask(FROM_HERE,
                                            base::MessageLoop::QuitClosure());
+  }
 }
 
 Shell* Shell::CreateShell(WebContents* web_contents,
@@ -219,13 +215,16 @@ void Shell::UpdateNavigationControls() {
 }
 
 void Shell::ShowDevTools() {
-  if (devtools_frontend_) {
-    devtools_frontend_->Focus();
-    return;
-  }
-  devtools_frontend_ = ShellDevToolsFrontend::Show(web_contents());
-  devtools_observer_.reset(new DevToolsWebContentsObserver(
-      this, devtools_frontend_->frontend_shell()->web_contents()));
+  InnerShowDevTools("");
+}
+
+void Shell::ShowDevToolsForElementAt(int x, int y) {
+  InnerShowDevTools("");
+  devtools_frontend_->InspectElementAt(x, y);
+}
+
+void Shell::ShowDevToolsForTest(const std::string& settings) {
+  InnerShowDevTools(settings);
 }
 
 void Shell::CloseDevTools() {
@@ -349,9 +348,30 @@ void Shell::WorkerCrashed(WebContents* source) {
   WebKitTestController::Get()->WorkerCrashed();
 }
 
+bool Shell::HandleContextMenu(const content::ContextMenuParams& params) {
+  return PlatformHandleContextMenu(params);
+}
+
+void Shell::WebContentsFocused(WebContents* contents) {
+#if defined(TOOLKIT_VIEWS)
+  PlatformWebContentsFocused(contents);
+#endif
+}
+
 void Shell::TitleWasSet(NavigationEntry* entry, bool explicit_set) {
   if (entry)
     PlatformSetTitle(entry->GetTitle());
+}
+
+void Shell::InnerShowDevTools(const std::string& settings) {
+  if (!devtools_frontend_) {
+    devtools_frontend_ = ShellDevToolsFrontend::Show(web_contents(), settings);
+    devtools_observer_.reset(new DevToolsWebContentsObserver(
+        this, devtools_frontend_->frontend_shell()->web_contents()));
+  }
+
+  devtools_frontend_->Activate();
+  devtools_frontend_->Focus();
 }
 
 void Shell::OnDevToolsWebContentsDestroyed() {

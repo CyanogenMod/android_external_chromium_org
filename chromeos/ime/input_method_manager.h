@@ -22,7 +22,6 @@ namespace chromeos {
 class ComponentExtensionIMEManager;
 class InputMethodEngineInterface;
 namespace input_method {
-
 class InputMethodUtil;
 class XKeyboard;
 
@@ -106,27 +105,33 @@ class CHROMEOS_EXPORT InputMethodManager {
   // methods.
   virtual size_t GetNumActiveInputMethods() const = 0;
 
+  // Returns the input method descriptor from the given input method id string.
+  // If the given input method id is invalid, returns NULL.
+  virtual const InputMethodDescriptor* GetInputMethodFromId(
+      const std::string& input_method_id) const = 0;
+
   // Changes the current input method to |input_method_id|. If |input_method_id|
   // is not active, switch to the first one in the active input method list.
   virtual void ChangeInputMethod(const std::string& input_method_id) = 0;
 
-  // Enables keyboard layouts (e.g. US Qwerty, US Dvorak, French Azerty) that
-  // are necessary for the |language_code| and then switches to |initial_layout|
-  // if the string is not empty. For example, if |language_code| is "en-US", US
-  // Qwerty, US International, US Extended, US Dvorak, and US Colemak layouts
-  // would be enabled. Likewise, for Germany locale, US Qwerty which corresponds
-  // to the hardware keyboard layout and several keyboard layouts for Germany
-  // would be enabled.
-  // This method is for setting up i18n keyboard layouts for the login screen.
-  virtual void EnableLayouts(const std::string& language_code,
-                             const std::string& initial_layout) = 0;
+  // Enables "login" keyboard layouts (e.g. US Qwerty, US Dvorak, French
+  // Azerty) that are necessary for the |language_code| and then switches to
+  // |initial_layouts| if the given list is not empty. For example, if
+  // |language_code| is "en-US", US Qwerty, US International, US Extended, US
+  // Dvorak, and US Colemak layouts would be enabled. Likewise, for Germany
+  // locale, US Qwerty which corresponds to the hardware keyboard layout and
+  // several keyboard layouts for Germany would be enabled.
+  // Only layouts suitable for login screen are enabled.
+  virtual void EnableLoginLayouts(
+      const std::string& language_code,
+      const std::vector<std::string>& initial_layouts) = 0;
 
   // Activates the input method property specified by the |key|.
   virtual void ActivateInputMethodProperty(const std::string& key) = 0;
 
   // Updates the list of active input method IDs, and then starts or stops the
   // system input method framework as needed.
-  virtual bool EnableInputMethods(
+  virtual bool ReplaceEnabledInputMethods(
       const std::vector<std::string>& new_active_input_method_ids) = 0;
 
   // Adds one entry to the list of active input method IDs, and then starts or
@@ -137,12 +142,7 @@ class CHROMEOS_EXPORT InputMethodManager {
   // Adds an input method extension. This function does not takes ownership of
   // |instance|.
   virtual void AddInputMethodExtension(
-      const std::string& id,
-      const std::string& name,
-      const std::vector<std::string>& layouts,
-      const std::vector<std::string>& languages,
-      const GURL& options_url,
-      const GURL& inputview_url,
+      const std::string& imm_id,
       InputMethodEngineInterface* instance) = 0;
 
   // Removes an input method extension.
@@ -154,8 +154,8 @@ class CHROMEOS_EXPORT InputMethodManager {
   // Sets the list of extension IME ids which should be enabled.
   virtual void SetEnabledExtensionImes(std::vector<std::string>* ids) = 0;
 
-  // Sets current input method to default (first owners, then hardware).
-  virtual void SetInputMethodDefault() = 0;
+  // Sets current input method to login default (first owners, then hardware).
+  virtual void SetInputMethodLoginDefault() = 0;
 
   // Gets the descriptor of the input method which is currently selected.
   virtual InputMethodDescriptor GetCurrentInputMethod() const = 0;

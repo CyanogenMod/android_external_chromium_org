@@ -32,18 +32,19 @@ const int kHueIndicatorSize = 5;
 const int kBorderWidth = 1;
 const int kTextfieldLengthInChars = 14;
 
-string16 GetColorText(SkColor color) {
-  return ASCIIToUTF16(base::StringPrintf("#%02x%02x%02x",
-                                         SkColorGetR(color),
-                                         SkColorGetG(color),
-                                         SkColorGetB(color)));
+base::string16 GetColorText(SkColor color) {
+  return base::ASCIIToUTF16(base::StringPrintf("#%02x%02x%02x",
+                                               SkColorGetR(color),
+                                               SkColorGetG(color),
+                                               SkColorGetB(color)));
 }
 
-bool GetColorFromText(const string16& text, SkColor* result) {
+bool GetColorFromText(const base::string16& text, SkColor* result) {
   if (text.size() != 6 && !(text.size() == 7 && text[0] == '#'))
     return false;
 
-  std::string input = UTF16ToUTF8((text.size() == 6) ? text : text.substr(1));
+  std::string input =
+      base::UTF16ToUTF8((text.size() == 6) ? text : text.substr(1));
   std::vector<uint8> hex;
   if (!base::HexStringToBytes(input, &hex))
     return false;
@@ -137,7 +138,7 @@ class ColorChooserView::HueView : public LocatedEventHandlerView {
 ColorChooserView::HueView::HueView(ColorChooserView* chooser_view)
     : chooser_view_(chooser_view),
       level_(0) {
-  set_focusable(false);
+  SetFocusable(false);
 }
 
 void ColorChooserView::HueView::OnHueChanged(SkScalar hue) {
@@ -251,8 +252,8 @@ ColorChooserView::SaturationValueView::SaturationValueView(
     ColorChooserView* chooser_view)
     : chooser_view_(chooser_view),
       hue_(0) {
-  set_focusable(false);
-  set_border(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
+  SetFocusable(false);
+  SetBorder(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
 }
 
 void ColorChooserView::SaturationValueView::OnHueChanged(SkScalar hue) {
@@ -346,9 +347,9 @@ class ColorChooserView::SelectedColorPatchView : public views::View {
 };
 
 ColorChooserView::SelectedColorPatchView::SelectedColorPatchView() {
-  set_focusable(false);
+  SetFocusable(false);
   SetVisible(true);
-  set_border(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
+  SetBorder(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
 }
 
 void ColorChooserView::SelectedColorPatchView::SetColor(SkColor color) {
@@ -368,7 +369,7 @@ ColorChooserView::ColorChooserView(ColorChooserListener* listener,
     : listener_(listener) {
   DCHECK(listener_);
 
-  set_focusable(false);
+  SetFocusable(false);
   set_background(Background::CreateSolidBackground(SK_ColorLTGRAY));
   SetLayoutManager(new BoxLayout(BoxLayout::kVertical, kMarginWidth,
                                  kMarginWidth, kMarginWidth));
@@ -393,7 +394,7 @@ ColorChooserView::ColorChooserView(ColorChooserListener* listener,
       GridLayout::FILL, GridLayout::FILL, 1, GridLayout::USE_PREF, 0, 0);
   layout->StartRow(0, 0);
   textfield_ = new Textfield();
-  textfield_->SetController(this);
+  textfield_->set_controller(this);
   textfield_->set_default_width_in_chars(kTextfieldLengthInChars);
   layout->AddView(textfield_);
   selected_color_patch_ = new SelectedColorPatchView();
@@ -454,7 +455,7 @@ View* ColorChooserView::GetContentsView() {
 }
 
 void ColorChooserView::ContentsChanged(Textfield* sender,
-                                       const string16& new_contents) {
+                                       const base::string16& new_contents) {
   SkColor color = SK_ColorBLACK;
   if (GetColorFromText(new_contents, &color)) {
     SkColorToHSV(color, hsv_);

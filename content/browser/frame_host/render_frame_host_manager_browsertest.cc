@@ -9,16 +9,14 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/webui/web_ui_impl.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -30,13 +28,18 @@
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "net/base/net_util.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
+
+using base::ASCIIToUTF16;
 
 namespace content {
 
 class RenderFrameHostManagerTest : public ContentBrowserTest {
  public:
-  RenderFrameHostManagerTest() {}
+  RenderFrameHostManagerTest() : foo_com_("foo.com") {
+    replace_host_.SetHostStr(foo_com_);
+  }
 
   static bool GetFilePathWithHostAndPortReplacement(
       const std::string& original_file_path,
@@ -48,24 +51,37 @@ class RenderFrameHostManagerTest : public ContentBrowserTest {
     return net::SpawnedTestServer::GetFilePathWithReplacements(
         original_file_path, replacement_text, replacement_path);
   }
+
+  void StartServer() {
+    // Support multiple sites on the test server.
+    host_resolver()->AddRule("*", "127.0.0.1");
+    ASSERT_TRUE(test_server()->Start());
+
+    foo_host_port_ = test_server()->host_port_pair();
+    foo_host_port_.set_host(foo_com_);
+  }
+
+  // Returns a URL on foo.com with the given path.
+  GURL GetCrossSiteURL(const std::string& path) {
+    GURL cross_site_url(test_server()->GetURL(path));
+    return cross_site_url.ReplaceComponents(replace_host_);
+  }
+
+ protected:
+  std::string foo_com_;
+  GURL::Replacements replace_host_;
+  net::HostPortPair foo_host_port_;
 };
 
 // Web pages should not have script access to the swapped out page.
-IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
-                       DISABLED_NoScriptAccessAfterSwapOut) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, NoScriptAccessAfterSwapOut) {
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -103,7 +119,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_TRUE(success);
 
   // Now navigate the new window to a different site.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
   scoped_refptr<SiteInstance> new_site_instance(
       new_shell->web_contents()->GetSiteInstance());
   EXPECT_NE(orig_site_instance, new_site_instance);
@@ -121,19 +137,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // and target=_blank should create a new SiteInstance.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        SwapProcessWithRelNoreferrerAndTargetBlank) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -175,19 +185,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // targets.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        SwapProcessWithSameSiteRelNoreferrer) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -229,19 +233,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // target=_blank should not create a new SiteInstance.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        DontSwapProcessWithOnlyTargetBlank) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -277,19 +275,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // and no target=_blank should not create a new SiteInstance.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        DontSwapProcessWithOnlyRelNoreferrer) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -324,19 +316,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // named target window has swapped processes.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        AllowTargetedNavigationsAfterSwap) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -366,7 +352,8 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_EQ(orig_site_instance, blank_site_instance);
 
   // Now navigate the new tab to a different site.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  GURL cross_site_url(GetCrossSiteURL("files/title1.html"));
+  NavigateToURL(new_shell, cross_site_url);
   scoped_refptr<SiteInstance> new_site_instance(
       new_shell->web_contents()->GetSiteInstance());
   EXPECT_NE(orig_site_instance, new_site_instance);
@@ -387,7 +374,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 
   // If it navigates away to another process, the original window should
   // still be able to close it (using a cross-process close message).
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, cross_site_url);
   EXPECT_EQ(new_site_instance,
             new_shell->web_contents()->GetSiteInstance());
   WebContentsDestroyedWatcher close_watcher(new_shell->web_contents());
@@ -408,19 +395,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 #define MAYBE_DisownOpener DisownOpener
 #endif
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, MAYBE_DisownOpener) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -450,7 +431,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, MAYBE_DisownOpener) {
   EXPECT_EQ(orig_site_instance, blank_site_instance);
 
   // Now navigate the new tab to a different site.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
   scoped_refptr<SiteInstance> new_site_instance(
       new_shell->web_contents()->GetSiteInstance());
   EXPECT_NE(orig_site_instance, new_site_instance);
@@ -473,7 +454,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, MAYBE_DisownOpener) {
   EXPECT_TRUE(success);
 
   // Now navigate forward again (creating a new process) and check opener.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
   success = false;
   EXPECT_TRUE(ExecuteScriptAndExtractBool(
       new_shell->web_contents(),
@@ -507,19 +488,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, DisownSubframeOpener) {
 // 6) Post a message from _blank to a subframe of "foo".
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        SupportCrossProcessPostMessage) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -550,7 +525,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   WaitForLoadStop(foo_contents);
   EXPECT_EQ("/files/navigate_opener.html",
             foo_contents->GetLastCommittedURL().path());
-  NavigateToURL(new_shell, https_server.GetURL("files/post_message.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/post_message.html"));
   scoped_refptr<SiteInstance> foo_site_instance(
       foo_contents->GetSiteInstance());
   EXPECT_NE(orig_site_instance, foo_site_instance);
@@ -654,19 +629,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // The test will be enabled when the feature implementation lands.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        SupportCrossProcessPostMessageWithMessagePort) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -695,9 +664,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   WaitForLoadStop(foo_contents);
   EXPECT_EQ("/files/navigate_opener.html",
             foo_contents->GetLastCommittedURL().path());
-  NavigateToURL(
-      new_shell,
-      https_server.GetURL("files/post_message.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/post_message.html"));
   scoped_refptr<SiteInstance> foo_site_instance(
       foo_contents->GetSiteInstance());
   EXPECT_NE(orig_site_instance, foo_site_instance);
@@ -711,9 +678,8 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   // 2) Post a message containing a MessagePort from opener to the the foo
   // window. The foo window will reply via the passed port, causing the opener
   // to update its own title.
-  WindowedNotificationObserver title_observer(
-      NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
-      Source<WebContents>(opener_contents));
+  base::string16 expected_title = ASCIIToUTF16("msg-back-via-port");
+  TitleWatcher title_observer(opener_contents, expected_title);
   EXPECT_TRUE(ExecuteScriptAndExtractBool(
       opener_contents,
       "window.domAutomationController.send(postWithPortToFoo());",
@@ -721,7 +687,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_TRUE(success);
   ASSERT_FALSE(
       opener_manager->GetSwappedOutRenderViewHost(orig_site_instance.get()));
-  title_observer.Wait();
+  ASSERT_EQ(expected_title, title_observer.WaitAndGetTitle());
 
   // Check message counts.
   int opener_received_messages_via_port = 0;
@@ -750,19 +716,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // still work after a process swap.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        AllowTargetedNavigationsInOpenerAfterSwap) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -793,7 +753,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_EQ(orig_site_instance, blank_site_instance);
 
   // Now navigate the original (opener) tab to a different site.
-  NavigateToURL(shell(), https_server.GetURL("files/title1.html"));
+  NavigateToURL(shell(), GetCrossSiteURL("files/title1.html"));
   scoped_refptr<SiteInstance> new_site_instance(
       shell()->web_contents()->GetSiteInstance());
   EXPECT_NE(orig_site_instance, new_site_instance);
@@ -818,19 +778,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // See http://crbug.com/126333.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        ProcessExitWithSwappedOutViews) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -860,7 +814,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_EQ(orig_site_instance, opened_site_instance);
 
   // Now navigate the opened window to a different site.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
   scoped_refptr<SiteInstance> new_site_instance(
       new_shell->web_contents()->GetSiteInstance());
   EXPECT_NE(orig_site_instance, new_site_instance);
@@ -872,10 +826,10 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 
   // Navigate the first window to a different site as well.  The original
   // process should exit, since all of its views are now swapped out.
-  WindowedNotificationObserver exit_observer(
-      NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-      Source<RenderProcessHost>(orig_process));
-  NavigateToURL(shell(), https_server.GetURL("files/title1.html"));
+  RenderProcessHostWatcher exit_observer(
+      orig_process,
+      RenderProcessHostWatcher::WATCH_FOR_HOST_DESTRUCTION);
+  NavigateToURL(shell(), GetCrossSiteURL("files/title1.html"));
   exit_observer.Wait();
   scoped_refptr<SiteInstance> new_site_instance2(
       shell()->web_contents()->GetSiteInstance());
@@ -885,20 +839,14 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // Test for crbug.com/76666.  A cross-site navigation that fails with a 204
 // error should not make us ignore future renderer-initiated navigations.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, ClickLinkAfter204Error) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
-  // The links will point to the HTTPS server.
+  // The links will point to foo.com.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -908,7 +856,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, ClickLinkAfter204Error) {
   EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Load a cross-site page that fails with a 204 error.
-  NavigateToURL(shell(), https_server.GetURL("nocontent"));
+  NavigateToURL(shell(),GetCrossSiteURL("nocontent"));
 
   // We should still be looking at the normal page.  The typed URL will
   // still be visible until the user clears it manually, but the last
@@ -1032,43 +980,16 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // do not cause back/forward navigations to be considered stale by the
 // renderer.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, BackForwardNotStale) {
+  StartServer();
   NavigateToURL(shell(), GURL(kAboutBlankURL));
 
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
-
   // Visit a page on first site.
-  std::string replacement_path_a1;
-  ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
-      "files/title1.html",
-      test_server()->host_port_pair(),
-      &replacement_path_a1));
-  NavigateToURL(shell(), test_server()->GetURL(replacement_path_a1));
+  NavigateToURL(shell(), test_server()->GetURL("files/title1.html"));
 
   // Visit three pages on second site.
-  std::string replacement_path_b1;
-  ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
-      "files/title1.html",
-      https_server.host_port_pair(),
-      &replacement_path_b1));
-  NavigateToURL(shell(), https_server.GetURL(replacement_path_b1));
-  std::string replacement_path_b2;
-  ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
-      "files/title2.html",
-      https_server.host_port_pair(),
-      &replacement_path_b2));
-  NavigateToURL(shell(), https_server.GetURL(replacement_path_b2));
-  std::string replacement_path_b3;
-  ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
-      "files/title3.html",
-      https_server.host_port_pair(),
-      &replacement_path_b3));
-  NavigateToURL(shell(), https_server.GetURL(replacement_path_b3));
+  NavigateToURL(shell(), GetCrossSiteURL("files/title1.html"));
+  NavigateToURL(shell(), GetCrossSiteURL("files/title2.html"));
+  NavigateToURL(shell(), GetCrossSiteURL("files/title3.html"));
 
   // History is now [blank, A1, B1, B2, *B3].
   WebContents* contents = shell()->web_contents();
@@ -1076,7 +997,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, BackForwardNotStale) {
 
   // Open another window in same process to keep this process alive.
   Shell* new_shell = CreateBrowser();
-  NavigateToURL(new_shell, https_server.GetURL(replacement_path_b1));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
 
   // Go back three times to first site.
   {
@@ -1131,19 +1052,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, BackForwardNotStale) {
 // Swapping out a render view should update its visiblity state.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        SwappedOutViewHasCorrectVisibilityState) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Load a page with links that open in a new window.
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
       "files/click-noreferrer-links.html",
-      https_server.host_port_pair(),
+      foo_host_port_,
       &replacement_path));
   NavigateToURL(shell(), test_server()->GetURL(replacement_path));
 
@@ -1173,7 +1088,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 
   // Now navigate the new window to a different site. This should swap out the
   // tab's existing RenderView, causing it become hidden.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
 
   EXPECT_TRUE(ExecuteScriptAndExtractBool(
       rvh,
@@ -1232,13 +1147,7 @@ class RenderViewHostDestructionObserver : public WebContentsObserver {
 // ensure that a separate SiteInstance is created when navigating to view-source
 // URLs, regardless of current URL.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, LeakingRenderViewHosts) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // Observe the created render_view_host's to make sure they will not leak.
   RenderViewHostDestructionObserver rvh_observers(shell()->web_contents());
@@ -1283,7 +1192,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, LeakingRenderViewHosts) {
   EXPECT_NE(site_instance1, site_instance2);
 
   // Now navigate to a different instance so that we swap out again.
-  NavigateToURL(shell(), https_server.GetURL("files/title2.html"));
+  NavigateToURL(shell(), GetCrossSiteURL("files/title2.html"));
   rvh_observers.EnsureRVHGetsDestructed(
       shell()->web_contents()->GetRenderViewHost());
 
@@ -1299,22 +1208,16 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, LeakingRenderViewHosts) {
 // interrupt the intended navigation and show swappedout:// instead.
 // Specifically:
 // 1) Open 2 tabs in an HTTP SiteInstance, with a subframe in the opener.
-// 2) Send the second tab to a different HTTPS SiteInstance.
-//    This creates a swapped out opener for the first tab in the HTTPS process.
-// 3) Navigate the first tab to the HTTPS SiteInstance, and have the first
+// 2) Send the second tab to a different foo.com SiteInstance.
+//    This creates a swapped out opener for the first tab in the foo process.
+// 3) Navigate the first tab to the foo.com SiteInstance, and have the first
 //    tab's unload handler remove its frame.
 // This used to cause an update to the frame tree of the swapped out RV,
 // just as it was navigating to a real page.  That pre-empted the real
 // navigation and visibly sent the tab to swappedout://.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
                        DontPreemptNavigationWithFrameTreeUpdate) {
-  // Start two servers with different sites.
-  ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
+  StartServer();
 
   // 1. Load a page that deletes its iframe during unload.
   NavigateToURL(shell(),
@@ -1343,19 +1246,108 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_EQ(orig_site_instance, new_shell->web_contents()->GetSiteInstance());
 
   // 2. Send the second tab to a different process.
-  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  NavigateToURL(new_shell, GetCrossSiteURL("files/title1.html"));
   scoped_refptr<SiteInstance> new_site_instance(
       new_shell->web_contents()->GetSiteInstance());
   EXPECT_NE(orig_site_instance, new_site_instance);
 
   // 3. Send the first tab to the second tab's process.
-  NavigateToURL(shell(), https_server.GetURL("files/title1.html"));
+  NavigateToURL(shell(), GetCrossSiteURL("files/title1.html"));
 
   // Make sure it ends up at the right page.
   WaitForLoadStop(shell()->web_contents());
-  EXPECT_EQ(https_server.GetURL("files/title1.html"),
+  EXPECT_EQ(GetCrossSiteURL("files/title1.html"),
             shell()->web_contents()->GetLastCommittedURL());
   EXPECT_EQ(new_site_instance, shell()->web_contents()->GetSiteInstance());
+}
+
+// Ensure that renderer-side debug URLs do not cause a process swap, since they
+// are meant to run in the current page.  We had a bug where we expected a
+// BrowsingInstance swap to occur on pages like view-source and extensions,
+// which broke chrome://crash and javascript: URLs.
+// See http://crbug.com/335503.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, RendererDebugURLsDontSwap) {
+  ASSERT_TRUE(test_server()->Start());
+
+  GURL original_url(test_server()->GetURL("files/title2.html"));
+  GURL view_source_url(kViewSourceScheme + std::string(":") +
+                       original_url.spec());
+
+  NavigateToURL(shell(), view_source_url);
+
+  // Check that javascript: URLs work.
+  base::string16 expected_title = ASCIIToUTF16("msg");
+  TitleWatcher title_watcher(shell()->web_contents(), expected_title);
+  shell()->LoadURL(GURL("javascript:document.title='msg'"));
+  ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
+
+  // Crash the renderer of the view-source page.
+  RenderProcessHostWatcher crash_observer(
+      shell()->web_contents(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  NavigateToURL(shell(), GURL(kChromeUICrashURL));
+  crash_observer.Wait();
+}
+
+// Ensure that renderer-side debug URLs don't take effect on crashed renderers.
+// Otherwise, we might try to load an unprivileged about:blank page into a
+// WebUI-enabled RenderProcessHost, failing a safety check in InitRenderView.
+// See http://crbug.com/334214.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
+                       IgnoreRendererDebugURLsWhenCrashed) {
+  // Visit a WebUI page with bindings.
+  GURL webui_url = GURL(std::string(kChromeUIScheme) + "://" +
+                        std::string(kChromeUIGpuHost));
+  NavigateToURL(shell(), webui_url);
+  EXPECT_TRUE(ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+                  shell()->web_contents()->GetRenderProcessHost()->GetID()));
+
+  // Crash the renderer of the WebUI page.
+  RenderProcessHostWatcher crash_observer(
+      shell()->web_contents(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  NavigateToURL(shell(), GURL(kChromeUICrashURL));
+  crash_observer.Wait();
+
+  // Load the crash URL again but don't wait for any action.  If it is not
+  // ignored this time, we will fail the WebUI CHECK in InitRenderView.
+  shell()->LoadURL(GURL(kChromeUICrashURL));
+
+  // Ensure that such URLs can still work as the initial navigation of a tab.
+  // We postpone the initial navigation of the tab using an empty GURL, so that
+  // we can add a watcher for crashes.
+  Shell* shell2 = Shell::CreateNewWindow(
+      shell()->web_contents()->GetBrowserContext(), GURL(), NULL,
+      MSG_ROUTING_NONE, gfx::Size());
+  RenderProcessHostWatcher crash_observer2(
+      shell2->web_contents(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  NavigateToURL(shell2, GURL(kChromeUIKillURL));
+  crash_observer2.Wait();
+}
+
+// Ensure that pending_and_current_web_ui_ is cleared when a URL commits.
+// Otherwise it might get picked up by InitRenderView when granting bindings
+// to other RenderViewHosts.  See http://crbug.com/330811.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, ClearPendingWebUIOnCommit) {
+  // Visit a WebUI page with bindings.
+  GURL webui_url(GURL(std::string(kChromeUIScheme) + "://" +
+                      std::string(kChromeUIGpuHost)));
+  NavigateToURL(shell(), webui_url);
+  EXPECT_TRUE(ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+                  shell()->web_contents()->GetRenderProcessHost()->GetID()));
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      shell()->web_contents());
+  WebUIImpl* webui = web_contents->GetRenderManagerForTesting()->web_ui();
+  EXPECT_TRUE(webui);
+  EXPECT_FALSE(web_contents->GetRenderManagerForTesting()->pending_web_ui());
+
+  // Navigate to another WebUI URL that reuses the WebUI object.  Make sure we
+  // clear pending_web_ui() when it commits.
+  GURL webui_url2(webui_url.spec() + "#foo");
+  NavigateToURL(shell(), webui_url2);
+  EXPECT_EQ(webui, web_contents->GetRenderManagerForTesting()->web_ui());
+  EXPECT_FALSE(web_contents->GetRenderManagerForTesting()->pending_web_ui());
 }
 
 }  // namespace content

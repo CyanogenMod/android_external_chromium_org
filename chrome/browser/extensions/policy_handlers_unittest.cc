@@ -8,6 +8,7 @@
 #include "chrome/common/pref_names.h"
 #include "components/policy/core/browser/policy_error_map.h"
 #include "components/policy/core/common/policy_map.h"
+#include "extensions/browser/pref_names.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,7 +32,8 @@ TEST(ExtensionListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.empty());
 
-  list.Append(Value::CreateStringValue("abcdefghijklmnopabcdefghijklmnop"));
+  list.Append(
+      base::Value::CreateStringValue("abcdefghijklmnopabcdefghijklmnop"));
   policy_map.Set(policy::key::kExtensionInstallBlacklist,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -41,7 +43,7 @@ TEST(ExtensionListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.empty());
 
-  list.Append(Value::CreateStringValue("*"));
+  list.Append(base::Value::CreateStringValue("*"));
   policy_map.Set(policy::key::kExtensionInstallBlacklist,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -51,7 +53,7 @@ TEST(ExtensionListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.empty());
 
-  list.Append(Value::CreateStringValue("invalid"));
+  list.Append(base::Value::CreateStringValue("invalid"));
   policy_map.Set(policy::key::kExtensionInstallBlacklist,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -73,8 +75,10 @@ TEST(ExtensionListPolicyHandlerTest, ApplyPolicySettings) {
   ExtensionListPolicyHandler handler(
       policy::key::kExtensionInstallBlacklist, kTestPref, false);
 
-  policy.Append(Value::CreateStringValue("abcdefghijklmnopabcdefghijklmnop"));
-  expected.Append(Value::CreateStringValue("abcdefghijklmnopabcdefghijklmnop"));
+  policy.Append(
+      base::Value::CreateStringValue("abcdefghijklmnopabcdefghijklmnop"));
+  expected.Append(
+      base::Value::CreateStringValue("abcdefghijklmnopabcdefghijklmnop"));
 
   policy_map.Set(policy::key::kExtensionInstallBlacklist,
                  policy::POLICY_LEVEL_MANDATORY,
@@ -85,7 +89,7 @@ TEST(ExtensionListPolicyHandlerTest, ApplyPolicySettings) {
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(&expected, value));
 
-  policy.Append(Value::CreateStringValue("invalid"));
+  policy.Append(base::Value::CreateStringValue("invalid"));
   policy_map.Set(policy::key::kExtensionInstallBlacklist,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -165,7 +169,7 @@ TEST(ExtensionInstallForcelistPolicyHandlerTest, ApplyPolicySettings) {
   ExtensionInstallForcelistPolicyHandler handler;
 
   handler.ApplyPolicySettings(policy_map, &prefs);
-  EXPECT_FALSE(prefs.GetValue(prefs::kExtensionInstallForceList, &value));
+  EXPECT_FALSE(prefs.GetValue(pref_names::kInstallForceList, &value));
   EXPECT_FALSE(value);
 
   policy_map.Set(policy::key::kExtensionInstallForcelist,
@@ -174,7 +178,7 @@ TEST(ExtensionInstallForcelistPolicyHandlerTest, ApplyPolicySettings) {
                  policy.DeepCopy(),
                  NULL);
   handler.ApplyPolicySettings(policy_map, &prefs);
-  EXPECT_TRUE(prefs.GetValue(prefs::kExtensionInstallForceList, &value));
+  EXPECT_TRUE(prefs.GetValue(pref_names::kInstallForceList, &value));
   EXPECT_TRUE(base::Value::Equals(&expected, value));
 
   policy.AppendString("abcdefghijklmnopabcdefghijklmnop;http://example.com");
@@ -186,7 +190,7 @@ TEST(ExtensionInstallForcelistPolicyHandlerTest, ApplyPolicySettings) {
                  policy.DeepCopy(),
                  NULL);
   handler.ApplyPolicySettings(policy_map, &prefs);
-  EXPECT_TRUE(prefs.GetValue(prefs::kExtensionInstallForceList, &value));
+  EXPECT_TRUE(prefs.GetValue(pref_names::kInstallForceList, &value));
   EXPECT_TRUE(base::Value::Equals(&expected, value));
 
   policy.AppendString("invalid");
@@ -196,7 +200,7 @@ TEST(ExtensionInstallForcelistPolicyHandlerTest, ApplyPolicySettings) {
                  policy.DeepCopy(),
                  NULL);
   handler.ApplyPolicySettings(policy_map, &prefs);
-  EXPECT_TRUE(prefs.GetValue(prefs::kExtensionInstallForceList, &value));
+  EXPECT_TRUE(prefs.GetValue(pref_names::kInstallForceList, &value));
   EXPECT_TRUE(base::Value::Equals(&expected, value));
 }
 
@@ -216,7 +220,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.empty());
 
-  list.Append(Value::CreateStringValue("http://*.google.com/*"));
+  list.Append(base::Value::CreateStringValue("http://*.google.com/*"));
   policy_map.Set(policy::key::kExtensionInstallSources,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -226,7 +230,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.empty());
 
-  list.Append(Value::CreateStringValue("<all_urls>"));
+  list.Append(base::Value::CreateStringValue("<all_urls>"));
   policy_map.Set(policy::key::kExtensionInstallSources,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -236,7 +240,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.empty());
 
-  list.Append(Value::CreateStringValue("invalid"));
+  list.Append(base::Value::CreateStringValue("invalid"));
   policy_map.Set(policy::key::kExtensionInstallSources,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -249,7 +253,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, CheckPolicySettings) {
 
   // URLPattern syntax has a different way to express 'all urls'. Though '*'
   // would be compatible today, it would be brittle, so we disallow.
-  list.Append(Value::CreateStringValue("*"));
+  list.Append(base::Value::CreateStringValue("*"));
   policy_map.Set(policy::key::kExtensionInstallSources,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,
@@ -269,7 +273,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, ApplyPolicySettings) {
   ExtensionURLPatternListPolicyHandler handler(
       policy::key::kExtensionInstallSources, kTestPref);
 
-  list.Append(Value::CreateStringValue("https://corp.monkey.net/*"));
+  list.Append(base::Value::CreateStringValue("https://corp.monkey.net/*"));
   policy_map.Set(policy::key::kExtensionInstallSources,
                  policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER,

@@ -29,7 +29,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "cc/layers/video_frame_provider.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
@@ -37,6 +37,7 @@
 #include "media/base/pipeline.h"
 #include "media/base/text_track.h"
 #include "media/filters/skcanvas_video_renderer.h"
+#include "media/filters/video_frame_painter.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -47,6 +48,7 @@
 class RenderAudioSourceProvider;
 
 namespace blink {
+class WebContentDecryptionModule;
 class WebFrame;
 }
 
@@ -67,6 +69,7 @@ class WebLayerImpl;
 namespace content {
 class BufferedDataSource;
 class WebAudioSourceProviderImpl;
+class WebContentDecryptionModuleImpl;
 class WebMediaPlayerDelegate;
 class WebMediaPlayerParams;
 class WebTextTrackImpl;
@@ -74,15 +77,12 @@ class WebTextTrackImpl;
 class WebMediaPlayerImpl
     : public blink::WebMediaPlayer,
       public cc::VideoFrameProvider,
-      public content::RenderViewObserver,
+      public content::RenderFrameObserver,
       public base::SupportsWeakPtr<WebMediaPlayerImpl> {
  public:
   // Constructs a WebMediaPlayer implementation using Chromium's media stack.
-  // |render_view| is passed only for the purpose of registering |this| as an
-  // observer of it.
   // |delegate| may be null.
   WebMediaPlayerImpl(
-      content::RenderView* render_view,
       blink::WebFrame* frame,
       blink::WebMediaPlayerClient* client,
       base::WeakPtr<WebMediaPlayerDelegate> delegate,
@@ -91,12 +91,11 @@ class WebMediaPlayerImpl
 
   virtual void load(LoadType load_type,
                     const blink::WebURL& url,
-                    CORSMode cors_mode) OVERRIDE;
+                    CORSMode cors_mode);
 
   // Playback controls.
   virtual void play();
   virtual void pause();
-  virtual bool supportsFullscreen() const;
   virtual bool supportsSave() const;
   virtual void seek(double seconds);
   virtual void setRate(double rate);
@@ -175,10 +174,19 @@ class WebMediaPlayerImpl
       const blink::WebString& key_system,
       const blink::WebString& session_id);
 
-  // content::RenderViewObserver implementation.
+  virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm);
+
+  // RenderFrameObserver implementation.
   virtual void OnDestruct() OVERRIDE;
 
-  void Repaint();
+  // Notifies blink that the entire media element region has been invalidated.
+  // This path is slower than notifying the compositor directly as it performs
+  // more work and can trigger layouts. It should only be used in two cases:
+  //   1) Major state changes (e.g., first frame available, run time error
+  //      occured)
+  //   2) Compositing not available
+  void InvalidateOnMainThread();
 
   void OnPipelineSeek(media::PipelineStatus status);
   void OnPipelineEnded();
@@ -221,10 +229,14 @@ class WebMediaPlayerImpl
   void SetReadyState(blink::WebMediaPlayer::ReadyState state);
 
   // Destroy resources held.
-  void Destroy();
-
-  // Getter method to |client_|.
-  blink::WebMediaPlayerClient* GetClient();
+  //
+  // TODO(scherkus): Remove |reason| after tracking down cause for crashes
+  // http://crbug.com/341184 http://crbug.com/341186
+  enum DestroyReason {
+    WEBMEDIAPLAYER_DESTROYED = 1 << 0,
+    RENDERFRAME_DESTROYED = 1 << 1,
+  };
+  void Destroy(DestroyReason reason);
 
   // Lets V8 know that player uses extra resources not managed by V8.
   void IncrementExternallyAllocatedMemory();
@@ -248,18 +260,19 @@ class WebMediaPlayerImpl
   // Gets the duration value reported by the pipeline.
   double GetPipelineDuration() const;
 
-  // Notifies WebKit of the duration change.
+  // Callbacks from |pipeline_| that are forwarded to |client_|.
   void OnDurationChange();
+  void OnNaturalSizeChange(gfx::Size size);
 
   // Called by VideoRendererImpl on its internal thread with the new frame to be
   // painted.
   void FrameReady(const scoped_refptr<media::VideoFrame>& frame);
 
-  // Called when a paint or a new frame arrives to indicate that we are
-  // no longer waiting for |current_frame_| to be painted.
-  // |painting_frame| is set to true if |current_frame_| is being painted.
-  // False indicates |current_frame_| is being replaced with a new frame.
-  void DoneWaitingForPaint(bool painting_frame);
+  // Requests that this object notifies when a decryptor is ready through the
+  // |decryptor_ready_cb| provided.
+  // If |decryptor_ready_cb| is null, the existing callback will be fired with
+  // NULL immediately and reset.
+  void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
   blink::WebFrame* frame_;
 
@@ -329,9 +342,6 @@ class WebMediaPlayerImpl
   bool is_local_source_;
   bool supports_save_;
 
-  // The decryptor that manages decryption keys and decrypts encrypted frames.
-  scoped_ptr<ProxyDecryptor> decryptor_;
-
   bool starting_;
 
   // These two are mutually exclusive:
@@ -348,19 +358,10 @@ class WebMediaPlayerImpl
   // through GenerateKeyRequest() directly from WebKit.
   std::string init_data_type_;
 
-  // Video frame rendering members.
-  //
-  // |lock_| protects |current_frame_|, |current_frame_painted_|, and
-  // |frames_dropped_before_paint_| since new frames arrive on the video
-  // rendering thread, yet are accessed for rendering on either the main thread
-  // or compositing thread depending on whether accelerated compositing is used.
-  mutable base::Lock lock_;
+  // Video rendering members.
+  media::VideoFramePainter painter_;
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
-  scoped_refptr<media::VideoFrame> current_frame_;
-  bool current_frame_painted_;
-  uint32 frames_dropped_before_paint_;
-  bool pending_repaint_;
-  bool pending_size_change_;
+  gfx::Size natural_size_;
 
   // The compositor layer for displaying the video content when using composited
   // playback.
@@ -372,6 +373,19 @@ class WebMediaPlayerImpl
 
   // Text track objects get a unique index value when they're created.
   int text_track_index_;
+
+  // Manages decryption keys and decrypts encrypted frames.
+  scoped_ptr<ProxyDecryptor> proxy_decryptor_;
+
+  // Non-owned pointer to the CDM. Updated via calls to
+  // setContentDecryptionModule().
+  WebContentDecryptionModuleImpl* web_cdm_;
+
+  media::DecryptorReadyCB decryptor_ready_cb_;
+
+  // TODO(scherkus): Remove after tracking down cause for crashes
+  // http://crbug.com/341184 http://crbug.com/341186
+  uint32 destroy_reason_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

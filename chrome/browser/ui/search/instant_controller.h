@@ -19,7 +19,6 @@
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_types.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 
 class BrowserInstantController;
 class GURL;
@@ -29,10 +28,6 @@ class Profile;
 
 namespace content {
 class WebContents;
-}
-
-namespace gfx {
-class Rect;
 }
 
 // Macro used for logging debug events. |message| should be a std::string.
@@ -52,9 +47,6 @@ class InstantController : public InstantPage::Delegate {
  public:
   explicit InstantController(BrowserInstantController* browser);
   virtual ~InstantController();
-
-  // Sets the stored start-edge margin and width of the omnibox.
-  void SetOmniboxBounds(const gfx::Rect& bounds);
 
   // Sends the current SearchProvider suggestion to the Instant page if any.
   void SetSuggestionToPrefetch(const InstantSuggestion& suggestion);
@@ -95,11 +87,6 @@ class InstantController : public InstantPage::Delegate {
     return debug_events_;
   }
 
-  // Gets the stored start-edge margin and width of the omnibox.
-  const gfx::Rect omnibox_bounds() {
-    return omnibox_bounds_;
-  }
-
   // Used by BrowserInstantController to notify InstantController about the
   // instant support change event for the active web contents.
   void InstantSupportChanged(InstantSupportState instant_support);
@@ -116,18 +103,9 @@ class InstantController : public InstantPage::Delegate {
 
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, ExtendedModeIsOn);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, MostVisited);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, NTPIsPreloaded);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, PreloadedNTPIsUsedInNewTab);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, PreloadedNTPIsUsedInSameTab);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, PreloadedNTPForWrongProvider);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, PreloadedNTPRenderProcessGone);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest,
-                           PreloadedNTPDoesntSupportInstant);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, ProcessIsolation);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, UnrelatedSiteInstance);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, OnDefaultSearchProviderChanged);
-  FRIEND_TEST_ALL_PREFIXES(InstantExtendedNetworkTest,
-                           NTPReactsToNetworkChanges);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest,
                            AcceptingURLSearchDoesNotNavigate);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, AcceptingJSSearchDoesNotRunJS);
@@ -154,7 +132,6 @@ class InstantController : public InstantPage::Delegate {
   virtual void InstantPageAboutToNavigateMainFrame(
       const content::WebContents* contents,
       const GURL& url) OVERRIDE;
-  virtual void InstantPageLoadFailed(content::WebContents* contents) OVERRIDE;
 
   // Helper function to navigate the given contents to the local fallback
   // Instant URL and trim the history correctly.
@@ -190,10 +167,6 @@ class InstantController : public InstantPage::Delegate {
 
   // The search model mode for the active tab.
   SearchMode search_mode_;
-
-  // The start-edge margin and width of the omnibox, used by the page to align
-  // its suggestions with the omnibox.
-  gfx::Rect omnibox_bounds_;
 
   // List of events and their timestamps, useful in debugging Instant behaviour.
   mutable std::list<std::pair<int64, std::string> > debug_events_;

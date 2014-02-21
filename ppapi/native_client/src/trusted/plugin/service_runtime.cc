@@ -99,19 +99,6 @@ void PluginReverseInterface::ShutDown() {
   NaClLog(4, "PluginReverseInterface::Shutdown: broadcasted, exiting\n");
 }
 
-void PluginReverseInterface::Log(nacl::string message) {
-  LogToJavaScriptConsoleResource* continuation =
-      new LogToJavaScriptConsoleResource(message);
-  CHECK(continuation != NULL);
-  NaClLog(4, "PluginReverseInterface::Log(%s)\n", message.c_str());
-  plugin::WeakRefCallOnMainThread(
-      anchor_,
-      0,  /* delay in ms */
-      this,
-      &plugin::PluginReverseInterface::Log_MainThreadContinuation,
-      continuation);
-}
-
 void PluginReverseInterface::DoPostMessage(nacl::string message) {
   PostMessageResource* continuation = new PostMessageResource(message);
   CHECK(continuation != NULL);
@@ -138,15 +125,6 @@ void PluginReverseInterface::StartupInitializationComplete() {
   }
 }
 
-void PluginReverseInterface::Log_MainThreadContinuation(
-    LogToJavaScriptConsoleResource* p,
-    int32_t err) {
-  UNREFERENCED_PARAMETER(err);
-  NaClLog(4,
-          "PluginReverseInterface::Log_MainThreadContinuation(%s)\n",
-          p->message.c_str());
-  plugin_->AddToConsole(p->message);
-}
 void PluginReverseInterface::PostMessage_MainThreadContinuation(
     PostMessageResource* p,
     int32_t err) {
@@ -484,24 +462,36 @@ ServiceRuntime::ServiceRuntime(Plugin* plugin,
                                                 this,
                                                 init_done_cb, crash_cb)),
       exit_status_(-1),
-      start_sel_ldr_done_(false) {
+      start_sel_ldr_done_(false),
+      callback_factory_(this) {
   NaClSrpcChannelInitialize(&command_channel_);
   NaClXMutexCtor(&mu_);
   NaClXCondVarCtor(&cond_);
 }
 
-bool ServiceRuntime::InitCommunication(nacl::DescWrapper* nacl_desc,
-                                       ErrorInfo* error_info) {
-  NaClLog(4, "ServiceRuntime::InitCommunication"
+bool ServiceRuntime::LoadModule(nacl::DescWrapper* nacl_desc,
+                                ErrorInfo* error_info) {
+  NaClLog(4, "ServiceRuntime::LoadModule"
           " (this=%p, subprocess=%p)\n",
           static_cast<void*>(this),
           static_cast<void*>(subprocess_.get()));
+  CHECK(nacl_desc);
   // Create the command channel to the sel_ldr and load the nexe from nacl_desc.
-  if (!subprocess_->SetupCommandAndLoad(&command_channel_, nacl_desc)) {
+  if (!subprocess_->SetupCommand(&command_channel_)) {
     error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
                           "ServiceRuntime: command channel creation failed");
     return false;
   }
+
+  if (!subprocess_->LoadModule(&command_channel_, nacl_desc)) {
+    error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
+                          "ServiceRuntime: load module failed");
+    return false;
+  }
+  return true;
+}
+
+bool ServiceRuntime::InitReverseService(ErrorInfo* error_info) {
   // Hook up the reverse service channel.  We are the IMC client, but
   // provide SRPC service.
   NaClDesc* out_conn_cap;
@@ -527,19 +517,22 @@ bool ServiceRuntime::InitCommunication(nacl::DescWrapper* nacl_desc,
     return false;
   }
   out_conn_cap = NULL;  // ownership passed
-  NaClLog(4, "ServiceRuntime::InitCommunication: starting reverse service\n");
+  NaClLog(4, "ServiceRuntime::InitReverseService: starting reverse service\n");
   reverse_service_ = new nacl::ReverseService(conn_cap, rev_interface_->Ref());
   if (!reverse_service_->Start()) {
     error_info->SetReport(ERROR_SEL_LDR_COMMUNICATION_REV_SERVICE,
                           "ServiceRuntime: starting reverse services failed");
     return false;
   }
+  return true;
+}
 
+bool ServiceRuntime::StartModule(ErrorInfo* error_info) {
   // start the module.  otherwise we cannot connect for multimedia
   // subsystem since that is handled by user-level code (not secure!)
   // in libsrpc.
   int load_status = -1;
-  rpc_result =
+  NaClSrpcResultCodes rpc_result =
       NaClSrpcInvokeBySignature(&command_channel_,
                                 "start_module::i",
                                 &load_status);
@@ -549,7 +542,7 @@ bool ServiceRuntime::InitCommunication(nacl::DescWrapper* nacl_desc,
                           "ServiceRuntime: could not start nacl module");
     return false;
   }
-  NaClLog(4, "ServiceRuntime::InitCommunication (load_status=%d)\n",
+  NaClLog(4, "ServiceRuntime::StartModule (load_status=%d)\n",
           load_status);
   if (main_service_runtime_) {
     plugin_->ReportSelLdrLoadStatus(load_status);
@@ -563,40 +556,61 @@ bool ServiceRuntime::InitCommunication(nacl::DescWrapper* nacl_desc,
   return true;
 }
 
-bool ServiceRuntime::StartSelLdr(const SelLdrStartParams& params) {
+void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
+                                 pp::CompletionCallback callback) {
   NaClLog(4, "ServiceRuntime::Start\n");
 
   nacl::scoped_ptr<SelLdrLauncherChrome>
       tmp_subprocess(new SelLdrLauncherChrome());
   if (NULL == tmp_subprocess.get()) {
     NaClLog(LOG_ERROR, "ServiceRuntime::Start (subprocess create failed)\n");
-    params.error_info->SetReport(
-        ERROR_SEL_LDR_CREATE_LAUNCHER,
-        "ServiceRuntime: failed to create sel_ldr launcher");
-    return false;
+    if (main_service_runtime_) {
+      ErrorInfo error_info;
+      error_info.SetReport(
+          ERROR_SEL_LDR_CREATE_LAUNCHER,
+          "ServiceRuntime: failed to create sel_ldr launcher");
+      plugin_->ReportLoadError(error_info);
+    }
+    pp::Module::Get()->core()->CallOnMainThread(0, callback, PP_ERROR_FAILED);
+    return;
   }
-  nacl::string error_message;
-  bool started = tmp_subprocess->Start(plugin_->pp_instance(),
-                                       params.url.c_str(),
-                                       params.uses_irt,
-                                       params.uses_ppapi,
-                                       params.enable_dev_interfaces,
-                                       params.enable_dyncode_syscalls,
-                                       params.enable_exception_handling,
-                                       params.enable_crash_throttling,
-                                       &error_message);
-  if (!started) {
-    NaClLog(LOG_ERROR, "ServiceRuntime::Start (start failed)\n");
-    params.error_info->SetReportWithConsoleOnlyError(
-        ERROR_SEL_LDR_LAUNCH,
-        "ServiceRuntime: failed to start",
-        error_message);
-    return false;
-  }
+  pp::CompletionCallback internal_callback =
+      callback_factory_.NewCallback(&ServiceRuntime::StartSelLdrContinuation,
+                                    callback);
 
+  tmp_subprocess->Start(plugin_->pp_instance(),
+                        params.url.c_str(),
+                        params.uses_irt,
+                        params.uses_ppapi,
+                        params.enable_dev_interfaces,
+                        params.enable_dyncode_syscalls,
+                        params.enable_exception_handling,
+                        params.enable_crash_throttling,
+                        &start_sel_ldr_error_message_,
+                        internal_callback);
   subprocess_.reset(tmp_subprocess.release());
-  NaClLog(4, "ServiceRuntime::StartSelLdr (return 1)\n");
-  return true;
+}
+
+void ServiceRuntime::StartSelLdrContinuation(int32_t pp_error,
+                                             pp::CompletionCallback callback) {
+  if (pp_error != PP_OK) {
+    NaClLog(LOG_ERROR, "ServiceRuntime::StartSelLdrContinuation "
+                       " (start failed)\n");
+    if (main_service_runtime_) {
+      std::string error_message;
+      pp::Var var_error_message_cpp(pp::PASS_REF, start_sel_ldr_error_message_);
+      if (var_error_message_cpp.is_string()) {
+        error_message = var_error_message_cpp.AsString();
+      }
+      ErrorInfo error_info;
+      error_info.SetReportWithConsoleOnlyError(
+          ERROR_SEL_LDR_LAUNCH,
+          "ServiceRuntime: failed to start",
+          error_message);
+      plugin_->ReportLoadError(error_info);
+    }
+  }
+  pp::Module::Get()->core()->CallOnMainThread(0, callback, pp_error);
 }
 
 void ServiceRuntime::WaitForSelLdrStart() {
@@ -613,11 +627,17 @@ void ServiceRuntime::SignalStartSelLdrDone() {
 }
 
 bool ServiceRuntime::LoadNexeAndStart(nacl::DescWrapper* nacl_desc,
-                                      ErrorInfo* error_info,
                                       const pp::CompletionCallback& crash_cb) {
   NaClLog(4, "ServiceRuntime::LoadNexeAndStart (nacl_desc=%p)\n",
           reinterpret_cast<void*>(nacl_desc));
-  if (!InitCommunication(nacl_desc, error_info)) {
+  ErrorInfo error_info;
+  bool ok = LoadModule(nacl_desc, &error_info) &&
+            InitReverseService(&error_info) &&
+            StartModule(&error_info);
+  if (!ok) {
+    if (main_service_runtime_) {
+      plugin_->ReportLoadError(error_info);
+    }
     // On a load failure the service runtime does not crash itself to
     // avoid a race where the no-more-senders error on the reverse
     // channel esrvice thread might cause the crash-detection logic to

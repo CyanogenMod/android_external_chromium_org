@@ -62,7 +62,7 @@ static jlong Init(JNIEnv* env, jclass clazz) {
 }
 
 FaviconHelper::FaviconHelper() {
-  cancelable_task_tracker_.reset(new CancelableTaskTracker());
+  cancelable_task_tracker_.reset(new base::CancelableTaskTracker());
 }
 
 void FaviconHelper::Destroy(JNIEnv* env, jobject obj) {
@@ -130,8 +130,7 @@ ScopedJavaLocalRef<jobject> FaviconHelper::GetSyncedFaviconImageForURL(
     return ScopedJavaLocalRef<jobject>();
 
     // Convert favicon_image_result to java objects.
-  gfx::Image favicon_image = gfx::Image::CreateFrom1xPNGBytes(
-      favicon_png->front(), favicon_png->size());
+  gfx::Image favicon_image = gfx::Image::CreateFrom1xPNGBytes(favicon_png);
   SkBitmap favicon_bitmap = favicon_image.AsBitmap();
 
   ScopedJavaLocalRef<jobject> j_favicon_bitmap;

@@ -9,6 +9,7 @@
 #include "base/debug/alias.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/user_metrics_action.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -81,6 +82,7 @@
 #include "extensions/common/manifest_handlers/sandboxed_page_info.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/switches.h"
 #include "extensions/common/view_type.h"
 #include "grit/common_resources.h"
 #include "grit/renderer_resources.h"
@@ -103,6 +105,7 @@
 #include "chrome/renderer/extensions/cast_streaming_native_handler.h"
 #endif
 
+using base::UserMetricsAction;
 using blink::WebDataSource;
 using blink::WebDocument;
 using blink::WebFrame;
@@ -113,7 +116,6 @@ using blink::WebVector;
 using blink::WebView;
 using content::RenderThread;
 using content::RenderView;
-using content::UserMetricsAction;
 
 namespace extensions {
 
@@ -136,7 +138,7 @@ v8::Handle<v8::Value> GetOrCreateChrome(ChromeV8Context* context) {
   v8::Handle<v8::Object> global(context->v8_context()->Global());
   v8::Handle<v8::Value> chrome(global->Get(chrome_string));
   if (chrome->IsUndefined()) {
-    chrome = v8::Object::New();
+    chrome = v8::Object::New(context->isolate());
     global->Set(chrome_string, chrome);
   }
   return chrome;
@@ -233,13 +235,13 @@ class V8ContextNativeHandler : public ObjectBackedNativeHandler {
     std::string api_name = *v8::String::Utf8Value(args[0]->ToString());
     Feature::Availability availability = context_->GetAvailability(api_name);
 
-    v8::Handle<v8::Object> ret = v8::Object::New();
+    v8::Handle<v8::Object> ret = v8::Object::New(isolate);
     ret->Set(v8::String::NewFromUtf8(isolate, "is_available"),
              v8::Boolean::New(isolate, availability.is_available()));
     ret->Set(v8::String::NewFromUtf8(isolate, "message"),
              v8::String::NewFromUtf8(isolate, availability.message().c_str()));
     ret->Set(v8::String::NewFromUtf8(isolate, "result"),
-             v8::Integer::New(availability.result()));
+             v8::Integer::New(isolate, availability.result()));
     args.GetReturnValue().Set(ret);
   }
 
@@ -459,8 +461,8 @@ Dispatcher::Dispatcher()
       v8_schema_registry_(new V8SchemaRegistry) {
   const CommandLine& command_line = *(CommandLine::ForCurrentProcess());
   is_extension_process_ =
-      command_line.HasSwitch(switches::kExtensionProcess) ||
-      command_line.HasSwitch(switches::kSingleProcess);
+      command_line.HasSwitch(extensions::switches::kExtensionProcess) ||
+      command_line.HasSwitch(::switches::kSingleProcess);
 
   if (is_extension_process_) {
     RenderThread::Get()->SetIdleNotificationDelayInMs(
@@ -585,6 +587,12 @@ void Dispatcher::OnDispatchOnConnect(
     const base::DictionaryValue& source_tab,
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& tls_channel_id) {
+  DCHECK(!ContainsKey(port_to_tab_id_map_, target_port_id));
+  DCHECK_EQ(1, target_port_id % 2);  // target renderer ports have odd IDs.
+  int sender_tab_id = -1;
+  source_tab.GetInteger("id", &sender_tab_id);
+  port_to_tab_id_map_[target_port_id] = sender_tab_id;
+
   MessagingBindings::DispatchOnConnect(
       v8_context_set_.GetAll(),
       target_port_id, channel_name, source_tab,
@@ -595,6 +603,14 @@ void Dispatcher::OnDispatchOnConnect(
 
 void Dispatcher::OnDeliverMessage(int target_port_id,
                                   const Message& message) {
+  scoped_ptr<RequestSender::ScopedTabID> scoped_tab_id;
+  std::map<int, int>::const_iterator it =
+      port_to_tab_id_map_.find(target_port_id);
+  if (it != port_to_tab_id_map_.end()) {
+    scoped_tab_id.reset(new RequestSender::ScopedTabID(request_sender(),
+                                                       it->second));
+  }
+
   MessagingBindings::DeliverMessage(
       v8_context_set_.GetAll(),
       target_port_id,
@@ -694,7 +710,7 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateObject(
     return v8::Handle<v8::Object>::Cast(value);
   }
 
-  v8::Handle<v8::Object> new_object = v8::Object::New();
+  v8::Handle<v8::Object> new_object = v8::Object::New(isolate);
   object->Set(key, new_object);
   return new_object;
 }
@@ -707,7 +723,8 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
   // the same code regardless of context type.
   switch (context->context_type()) {
     case Feature::UNSPECIFIED_CONTEXT:
-    case Feature::WEB_PAGE_CONTEXT: {
+    case Feature::WEB_PAGE_CONTEXT:
+    case Feature::BLESSED_WEB_PAGE_CONTEXT: {
       // Web page context; it's too expensive to run the full bindings code.
       // Hard-code that the app and webstore APIs are available...
       RegisterBinding("app", context);
@@ -750,20 +767,12 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
         if (feature->IsInternal())
           continue;
 
-        // If this API name has parent features, then this must be a function or
-        // event, so we should not register.
-        bool parent_feature_available = false;
-        for (Feature* parent = api_feature_provider->GetParent(feature);
-             parent != NULL; parent = api_feature_provider->GetParent(parent)) {
-          if (context->IsAnyFeatureAvailableToContext(parent->name())) {
-            parent_feature_available = true;
-            break;
-          }
-        }
-        if (parent_feature_available)
+        // If this API has a parent feature (and isn't marked 'noparent'),
+        // then this must be a function or event, so we should not register.
+        if (api_feature_provider->GetParent(feature) != NULL)
           continue;
 
-        if (context->IsAnyFeatureAvailableToContext(api_name))
+        if (context->IsAnyFeatureAvailableToContext(*feature))
           RegisterBinding(api_name, context);
       }
       break;
@@ -986,6 +995,8 @@ void Dispatcher::PopulateSourceMap() {
                              IDR_DECLARATIVE_WEBREQUEST_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("desktopCapture",
                              IDR_DESKTOP_CAPTURE_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("developerPrivate",
+                             IDR_DEVELOPER_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("downloads",
                              IDR_DOWNLOADS_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("experimental.offscreen",
@@ -1113,7 +1124,8 @@ void Dispatcher::DidCreateScriptContext(
   }
 
   Feature::Context context_type = ClassifyJavaScriptContext(
-      extension_id, extension_group,
+      extension,
+      extension_group,
       UserScriptSlave::GetDataSourceURLForFrame(frame),
       frame->document().securityOrigin());
 
@@ -1184,40 +1196,36 @@ void Dispatcher::DidCreateScriptContext(
       is_within_platform_app &&
       GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV &&
       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAppWindowControls)) {
+          ::switches::kEnableAppWindowControls)) {
     module_system->Require("windowControls");
   }
 
-  // Currently only platform apps and whitelisted component extensions support
-  // the <webview> tag, because the "denyWebView" module will affect the
-  // performance of DOM modifications (http://crbug.com/196453).
   // We used to limit WebView to |BLESSED_EXTENSION_CONTEXT| within platform
   // apps. An ext/app runs in a blessed extension context, if it is the active
   // extension in the current process, in other words, if it is loaded in a top
   // frame. To support webview in a non-frame extension, we have to allow
   // unblessed extension context as well.
+  // Note: setting up the WebView class here, not the chrome.webview API.
+  // The API will be automatically set up when first used.
   if (context_type == Feature::BLESSED_EXTENSION_CONTEXT ||
       context_type == Feature::UNBLESSED_EXTENSION_CONTEXT) {
-    // Note: setting up the WebView class here, not the chrome.webview API.
-    // The API will be automatically set up when first used.
     if (extension->HasAPIPermission(APIPermission::kWebView)) {
       module_system->Require("webView");
-      bool includeExperimental =
-          GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV;
-      if (!includeExperimental) {
+      if (GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV) {
+        module_system->Require("webViewExperimental");
+      } else {
         // TODO(asargent) We need a whitelist for webview experimental.
         // crbug.com/264852
         std::string id_hash = base::SHA1HashString(extension->id());
         std::string hexencoded_id_hash = base::HexEncode(id_hash.c_str(),
-                                                         id_hash.length());
+                                                        id_hash.length());
         if (hexencoded_id_hash == "8C3741E3AF0B93B6E8E0DDD499BB0B74839EA578" ||
             hexencoded_id_hash == "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB" ||
             hexencoded_id_hash == "1A26E32DE447A17CBE5E9750CDBA78F58539B39C" ||
-            hexencoded_id_hash == "59048028102D7B4C681DBC7BC6CD980C3DC66DA3")
-          includeExperimental = true;
+            hexencoded_id_hash == "59048028102D7B4C681DBC7BC6CD980C3DC66DA3") {
+          module_system->Require("webViewExperimental");
+        }
       }
-      if (includeExperimental)
-        module_system->Require("webViewExperimental");
     } else {
       module_system->Require("denyWebView");
     }
@@ -1226,7 +1234,8 @@ void Dispatcher::DidCreateScriptContext(
   // Same comment as above for <adview> tag.
   if (context_type == Feature::BLESSED_EXTENSION_CONTEXT &&
       is_within_platform_app) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAdview)) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            ::switches::kEnableAdview)) {
       if (extension->HasAPIPermission(APIPermission::kAdView)) {
         module_system->Require("adView");
       } else {
@@ -1269,7 +1278,10 @@ void Dispatcher::WillReleaseScriptContext(
   if (!context)
     return;
 
-  context->DispatchOnUnloadEvent();
+  // If the V8 context has an OOM exception, javascript execution has been
+  // stopped, so dispatching an onUnload event is pointless.
+  if (!v8_context->HasOutOfMemoryException())
+    context->DispatchOnUnloadEvent();
   // TODO(kalman): add an invalidation observer interface to ChromeV8Context.
   request_sender_->InvalidateSource(context);
 
@@ -1289,8 +1301,7 @@ void Dispatcher::DidCreateDocumentElement(blink::WebFrame* frame) {
                                      "$FONTFAMILY", system_font_family_);
     ReplaceFirstSubstringAfterOffset(&stylesheet, 0,
                                      "$FONTSIZE", system_font_size_);
-    frame->document().insertUserStyleSheet(
-        WebString::fromUTF8(stylesheet), WebDocument::UserStyleAuthorLevel);
+    frame->document().insertStyleSheet(WebString::fromUTF8(stylesheet));
   }
 
   content_watcher_->DidCreateDocumentElement(frame);
@@ -1343,7 +1354,7 @@ void Dispatcher::InitOriginPermissions(const Extension* extension) {
   if (extension->HasAPIPermission(APIPermission::kManagement)) {
     WebSecurityPolicy::addOriginAccessWhitelistEntry(
         extension->url(),
-        WebString::fromUTF8(chrome::kChromeUIScheme),
+        WebString::fromUTF8(content::kChromeUIScheme),
         WebString::fromUTF8(chrome::kChromeUIExtensionIconHost),
         false);
   }
@@ -1363,8 +1374,8 @@ void Dispatcher::AddOrRemoveOriginPermissions(
     const char* schemes[] = {
       content::kHttpScheme,
       content::kHttpsScheme,
-      chrome::kFileScheme,
-      chrome::kChromeUIScheme,
+      content::kFileScheme,
+      content::kChromeUIScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
       if (i->MatchesScheme(schemes[j])) {
@@ -1381,7 +1392,6 @@ void Dispatcher::AddOrRemoveOriginPermissions(
 }
 
 void Dispatcher::EnableCustomElementWhiteList() {
-  blink::WebRuntimeFeatures::enableEmbedderCustomElements(true);
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
   // TODO(fsamuel): Add <adview> to the whitelist once it has been converted
   // into a custom element.
@@ -1479,7 +1489,7 @@ void Dispatcher::OnUpdateUserScripts(
 
 void Dispatcher::UpdateActiveExtensions() {
   // In single-process mode, the browser process reports the active extensions.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (CommandLine::ForCurrentProcess()->HasSwitch(::switches::kSingleProcess))
     return;
 
   std::set<std::string> active_extensions = active_extension_ids_;
@@ -1528,13 +1538,13 @@ bool Dispatcher::IsSandboxedPage(const GURL& url) const {
 }
 
 Feature::Context Dispatcher::ClassifyJavaScriptContext(
-    const std::string& extension_id,
+    const Extension* extension,
     int extension_group,
     const GURL& url,
     const blink::WebSecurityOrigin& origin) {
   DCHECK_GE(extension_group, 0);
   if (extension_group == EXTENSION_GROUP_CONTENT_SCRIPTS) {
-    return extensions_.Contains(extension_id) ?
+    return extension ?  // TODO(kalman): when does this happen?
         Feature::CONTENT_SCRIPT_CONTEXT : Feature::UNSPECIFIED_CONTEXT;
   }
 
@@ -1549,14 +1559,25 @@ Feature::Context Dispatcher::ClassifyJavaScriptContext(
   if (IsSandboxedPage(url))
     return Feature::WEB_PAGE_CONTEXT;
 
-  if (IsExtensionActive(extension_id))
-    return Feature::BLESSED_EXTENSION_CONTEXT;
+  if (extension && IsExtensionActive(extension->id())) {
+    // |extension| is active in this process, but it could be either a true
+    // extension process or within the extent of a hosted app. In the latter
+    // case this would usually be considered a (blessed) web page context,
+    // unless the extension in question is a component extension, in which case
+    // we cheat and call it blessed.
+    return (extension->is_hosted_app() &&
+            extension->location() != Manifest::COMPONENT) ?
+        Feature::BLESSED_WEB_PAGE_CONTEXT : Feature::BLESSED_EXTENSION_CONTEXT;
+  }
 
   // TODO(kalman): This isUnique() check is wrong, it should be performed as
   // part of IsSandboxedPage().
   if (!origin.isUnique() && extensions_.ExtensionBindingsAllowed(url)) {
-    return extensions_.Contains(extension_id) ?
-        Feature::UNBLESSED_EXTENSION_CONTEXT : Feature::UNSPECIFIED_CONTEXT;
+    if (!extension)  // TODO(kalman): when does this happen?
+      return Feature::UNSPECIFIED_CONTEXT;
+    return extension->is_hosted_app() ?
+        Feature::BLESSED_WEB_PAGE_CONTEXT :
+        Feature::UNBLESSED_EXTENSION_CONTEXT;
   }
 
   if (url.is_valid())
@@ -1660,6 +1681,13 @@ void Dispatcher::InvokeModuleSystemMethod(
           background_view->GetRoutingID()));
     }
   }
+}
+
+void Dispatcher::ClearPortData(int port_id) {
+  // Only the target port side has entries in |port_to_tab_id_map_|. If
+  // |port_id| is a source port, std::map::erase() will just silently fail
+  // here as a no-op.
+  port_to_tab_id_map_.erase(port_id);
 }
 
 }  // namespace extensions

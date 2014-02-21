@@ -86,7 +86,8 @@ bool ChooseFallbackFont(HDC hdc,
     log_font.lfFaceName[0] = 0;
     EnumEnhMetaFile(0, meta_file, MetaFileEnumProc, &log_font, NULL);
     if (log_font.lfFaceName[0]) {
-      *result = Font(UTF16ToUTF8(log_font.lfFaceName), font.GetFontSize());
+      *result = Font(base::UTF16ToUTF8(log_font.lfFaceName),
+                     font.GetFontSize());
       found_fallback = true;
     }
   }
@@ -117,11 +118,11 @@ void DeriveFontIfNecessary(int font_size,
   const int current_style = (font->GetStyle() & kStyleMask);
   const int current_size = font->GetFontSize();
   if (current_style != target_style || current_size != font_size)
-    *font = font->DeriveFont(font_size - current_size, target_style);
+    *font = font->Derive(font_size - current_size, target_style);
 }
 
 // Returns true if |c| is a Unicode BiDi control character.
-bool IsUnicodeBidiControlCharacter(char16 c) {
+bool IsUnicodeBidiControlCharacter(base::char16 c) {
   return c == base::i18n::kRightToLeftMark ||
          c == base::i18n::kLeftToRightMark ||
          c == base::i18n::kLeftToRightEmbeddingMark ||
@@ -799,7 +800,8 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
   GetCachedFontSmoothingSettings(&smoothing_enabled, &cleartype_enabled);
   // Note that |cleartype_enabled| corresponds to Skia's |enable_lcd_text|.
   renderer.SetFontSmoothingSettings(
-      smoothing_enabled, cleartype_enabled && !background_is_transparent());
+      smoothing_enabled, cleartype_enabled && !background_is_transparent(),
+      smoothing_enabled /* subpixel_positioning */);
 
   ApplyCompositionAndSelectionStyles();
 
@@ -926,7 +928,7 @@ void RenderTextWin::ItemizeLogicalText() {
   for (size_t run_break = 0; run_break < layout_text_length;) {
     internal::TextRun* run = new internal::TextRun();
     run->range.set_start(run_break);
-    run->font = GetPrimaryFont();
+    run->font = font_list().GetPrimaryFont();
     run->font_style = (style.style(BOLD) ? Font::BOLD : 0) |
                       (style.style(ITALIC) ? Font::ITALIC : 0);
     DeriveFontIfNecessary(run->font.GetFontSize(), run->font.GetHeight(),

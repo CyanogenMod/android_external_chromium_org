@@ -49,6 +49,9 @@ class AsyncResourceHandler : public ResourceHandler,
   virtual bool OnWillStart(int request_id,
                            const GURL& url,
                            bool* defer) OVERRIDE;
+  virtual bool OnBeforeNetworkStart(int request_id,
+                                    const GURL& url,
+                                    bool* defer) OVERRIDE;
   virtual bool OnWillRead(int request_id,
                           scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
@@ -88,6 +91,8 @@ class AsyncResourceHandler : public ResourceHandler,
   bool has_checked_for_sufficient_resources_;
   bool sent_received_response_msg_;
   bool sent_first_data_msg_;
+
+  int64_t reported_transfer_size_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncResourceHandler);
 };

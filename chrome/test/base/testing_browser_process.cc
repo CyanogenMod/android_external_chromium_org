@@ -24,17 +24,16 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
 #endif
 
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
-#include "chrome/browser/storage_monitor/test_storage_monitor.h"
+#include "components/storage_monitor/storage_monitor.h"
+#include "components/storage_monitor/test_storage_monitor.h"
 #endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/browser_policy_connector.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #else
 #include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
@@ -67,9 +66,6 @@ TestingBrowserProcess::TestingBrowserProcess()
     : notification_service_(content::NotificationService::Create()),
       module_ref_count_(0),
       app_locale_("en"),
-#if !defined(OS_IOS)
-      render_widget_snapshot_taker_(new RenderWidgetSnapshotTaker),
-#endif
       local_state_(NULL),
       io_thread_(NULL),
       system_request_context_(NULL),
@@ -120,6 +116,13 @@ ProfileManager* TestingBrowserProcess::profile_manager() {
 
 void TestingBrowserProcess::SetProfileManager(ProfileManager* profile_manager) {
 #if !defined(OS_IOS)
+  // NotificationUIManager can contain references to elements in the current
+  // ProfileManager (for example, the MessageCenterSettingsController maintains
+  // a pointer to the ProfileInfoCache). So when we change the ProfileManager
+  // (typically during test shutdown) make sure to reset any objects that might
+  // maintain references to it. See SetLocalState() for a description of a
+  // similar situation.
+  notification_ui_manager_.reset();
   profile_manager_.reset(profile_manager);
 #endif
 }
@@ -137,7 +140,7 @@ policy::BrowserPolicyConnector*
     TestingBrowserProcess::browser_policy_connector() {
 #if defined(ENABLE_CONFIGURATION_POLICY)
   if (!browser_policy_connector_)
-    browser_policy_connector_.reset(new policy::BrowserPolicyConnector());
+    browser_policy_connector_ = platform_part_->CreateBrowserPolicyConnector();
   return browser_policy_connector_.get();
 #else
   return NULL;
@@ -167,16 +170,6 @@ GLStringManager* TestingBrowserProcess::gl_string_manager() {
 
 GpuModeManager* TestingBrowserProcess::gpu_mode_manager() {
   return NULL;
-}
-
-RenderWidgetSnapshotTaker*
-TestingBrowserProcess::GetRenderWidgetSnapshotTaker() {
-#if defined(OS_IOS)
-  NOTREACHED();
-  return NULL;
-#else
-  return render_widget_snapshot_taker_.get();
-#endif
 }
 
 BackgroundModeManager* TestingBrowserProcess::background_mode_manager() {
@@ -333,7 +326,8 @@ prerender::PrerenderTracker* TestingBrowserProcess::prerender_tracker() {
 #endif
 }
 
-ComponentUpdateService* TestingBrowserProcess::component_updater() {
+component_updater::ComponentUpdateService*
+TestingBrowserProcess::component_updater() {
   return NULL;
 }
 
@@ -341,7 +335,8 @@ CRLSetFetcher* TestingBrowserProcess::crl_set_fetcher() {
   return NULL;
 }
 
-PnaclComponentInstaller* TestingBrowserProcess::pnacl_component_installer() {
+component_updater::PnaclComponentInstaller*
+TestingBrowserProcess::pnacl_component_installer() {
   return NULL;
 }
 
@@ -351,15 +346,6 @@ BookmarkPromptController* TestingBrowserProcess::bookmark_prompt_controller() {
   return NULL;
 #else
   return bookmark_prompt_controller_.get();
-#endif
-}
-
-StorageMonitor* TestingBrowserProcess::storage_monitor() {
-#if defined(OS_IOS) || defined(OS_ANDROID)
-  NOTIMPLEMENTED();
-  return NULL;
-#else
-  return storage_monitor_.get();
 #endif
 }
 
@@ -438,13 +424,6 @@ void TestingBrowserProcess::SetSafeBrowsingService(
 #if !defined(OS_IOS)
   NOTIMPLEMENTED();
   sb_service_ = sb_service;
-#endif
-}
-
-void TestingBrowserProcess::SetStorageMonitor(
-    scoped_ptr<StorageMonitor> storage_monitor) {
-#if !defined(OS_IOS) && !defined(OS_ANDROID)
-  storage_monitor_ = storage_monitor.Pass();
 #endif
 }
 

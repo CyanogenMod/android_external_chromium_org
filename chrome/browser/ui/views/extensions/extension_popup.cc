@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_manager.h"
@@ -31,6 +32,7 @@
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/window.h"
 #include "ui/views/corewm/window_animations.h"
+#include "ui/views/corewm/window_util.h"
 #endif
 
 #if defined(OS_WIN)
@@ -79,7 +81,7 @@ ExtensionPopup::ExtensionPopup(extensions::ExtensionViewHost* host,
   set_margins(gfx::Insets(margin, margin, margin, margin));
   SetLayoutManager(new views::FillLayout());
   AddChildView(host->view());
-  host->view()->SetContainer(this);
+  host->view()->set_container(this);
   // Use OnNativeFocusChange to check for child window activation on deactivate.
   set_close_on_deactivate(false);
   // Make the bubble move with its anchor (during inspection, etc.).
@@ -94,11 +96,15 @@ ExtensionPopup::ExtensionPopup(extensions::ExtensionViewHost* host,
                  content::Source<BrowserContext>(host->browser_context()));
   content::DevToolsManager::GetInstance()->AddAgentStateCallback(
       devtools_callback_);
+
+  host_->view()->browser()->tab_strip_model()->AddObserver(this);
 }
 
 ExtensionPopup::~ExtensionPopup() {
   content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
       devtools_callback_);
+
+  host_->view()->browser()->tab_strip_model()->RemoveObserver(this);
 }
 
 void ExtensionPopup::Observe(int type,
@@ -161,12 +167,17 @@ void ExtensionPopup::OnWidgetDestroying(views::Widget* widget) {
 
 void ExtensionPopup::OnWidgetActivationChanged(views::Widget* widget,
                                                bool active) {
-  BubbleDelegateView::OnWidgetActivationChanged(widget, active);
   // Dismiss only if the window being activated is not owned by this popup's
   // window. In particular, don't dismiss when we lose activation to a child
   // dialog box. Possibly relevant: http://crbug.com/106723 and
   // http://crbug.com/179786
   views::Widget* this_widget = GetWidget();
+
+  // TODO(msw): Resolve crashes and remove checks. See: http://crbug.com/327776
+  CHECK(!close_on_deactivate());
+  CHECK(this_widget);
+  CHECK(widget);
+
   gfx::NativeView activated_view = widget->GetNativeView();
   gfx::NativeView this_view = this_widget->GetNativeView();
   if (active && !inspect_with_devtools_ && activated_view != this_view &&
@@ -187,10 +198,17 @@ void ExtensionPopup::OnWindowActivated(aura::Window* gained_active,
   if (!inspect_with_devtools_ && anchor_window == gained_active &&
       host_desktop_type != chrome::HOST_DESKTOP_TYPE_ASH &&
       this_window->GetRootWindow() == anchor_window->GetRootWindow() &&
-      gained_active->transient_parent() != this_window)
+      views::corewm::GetTransientParent(gained_active) != this_window)
     GetWidget()->Close();
 }
 #endif
+
+void ExtensionPopup::ActiveTabChanged(content::WebContents* old_contents,
+                                      content::WebContents* new_contents,
+                                      int index,
+                                      int reason) {
+  GetWidget()->Close();
+}
 
 // static
 ExtensionPopup* ExtensionPopup::ShowPopup(const GURL& url,
@@ -236,8 +254,7 @@ void ExtensionPopup::ShowBubble() {
   host()->host_contents()->GetView()->Focus();
 
   if (inspect_with_devtools_) {
-    DevToolsWindow::ToggleDevToolsWindow(host()->render_view_host(),
-        true,
+    DevToolsWindow::OpenDevToolsWindow(host()->render_view_host(),
         DevToolsToggleAction::ShowConsole());
   }
 }

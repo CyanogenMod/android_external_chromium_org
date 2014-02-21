@@ -57,9 +57,12 @@ class InputMethodManagerImpl : public InputMethodManager,
   virtual const std::vector<std::string>& GetActiveInputMethodIds() const
       OVERRIDE;
   virtual size_t GetNumActiveInputMethods() const OVERRIDE;
-  virtual void EnableLayouts(const std::string& language_code,
-                             const std::string& initial_layout) OVERRIDE;
-  virtual bool EnableInputMethods(
+  virtual const InputMethodDescriptor* GetInputMethodFromId(
+      const std::string& input_method_id) const OVERRIDE;
+  virtual void EnableLoginLayouts(
+      const std::string& language_code,
+      const std::vector<std::string>& initial_layouts) OVERRIDE;
+  virtual bool ReplaceEnabledInputMethods(
       const std::vector<std::string>& new_active_input_method_ids) OVERRIDE;
   virtual bool EnableInputMethod(const std::string& new_active_input_method_id)
       OVERRIDE;
@@ -67,17 +70,12 @@ class InputMethodManagerImpl : public InputMethodManager,
   virtual void ActivateInputMethodProperty(const std::string& key) OVERRIDE;
   virtual void AddInputMethodExtension(
       const std::string& id,
-      const std::string& name,
-      const std::vector<std::string>& layouts,
-      const std::vector<std::string>& languages,
-      const GURL& options_page,
-      const GURL& input_view,
       InputMethodEngineInterface* instance) OVERRIDE;
   virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
   virtual void GetInputMethodExtensions(
       InputMethodDescriptors* result) OVERRIDE;
   virtual void SetEnabledExtensionImes(std::vector<std::string>* ids) OVERRIDE;
-  virtual void SetInputMethodDefault() OVERRIDE;
+  virtual void SetInputMethodLoginDefault() OVERRIDE;
   virtual bool SwitchToNextInputMethod() OVERRIDE;
   virtual bool SwitchToPreviousInputMethod(
       const ui::Accelerator& accelerator) OVERRIDE;

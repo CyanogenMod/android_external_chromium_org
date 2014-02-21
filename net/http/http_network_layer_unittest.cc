@@ -4,6 +4,7 @@
 
 #include "net/http/http_network_layer.h"
 
+#include "base/basictypes.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/net_log.h"
 #include "net/cert/mock_cert_verifier.h"
@@ -48,24 +49,31 @@ class HttpNetworkLayerTest : public PlatformTest {
     factory_.reset(new HttpNetworkLayer(network_session_.get()));
   }
 
-#if defined (SPDY_PROXY_AUTH_ORIGIN)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   std::string GetChromeProxy() {
     return HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)).ToString();
   }
 #endif
 
-  void ExecuteRequestExpectingContentAndHeader(const std::string& content,
+#if defined(SPDY_PROXY_AUTH_ORIGIN) && defined(DATA_REDUCTION_FALLBACK_HOST)
+  std::string GetChromeFallbackProxy() {
+    return HostPortPair::FromURL(GURL(DATA_REDUCTION_FALLBACK_HOST)).ToString();
+  }
+#endif
+
+  void ExecuteRequestExpectingContentAndHeader(const std::string& method,
+                                               const std::string& content,
                                                const std::string& header,
                                                const std::string& value) {
     TestCompletionCallback callback;
 
     HttpRequestInfo request_info;
     request_info.url = GURL("http://www.google.com/");
-    request_info.method = "GET";
+    request_info.method = method;
     request_info.load_flags = LOAD_NORMAL;
 
     scoped_ptr<HttpTransaction> trans;
-    int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+    int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
     EXPECT_EQ(OK, rv);
 
     rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -91,7 +99,8 @@ class HttpNetworkLayerTest : public PlatformTest {
                       const std::string& bad_proxy2) {
     const ProxyRetryInfoMap& retry_info = proxy_service_->proxy_retry_info();
     ASSERT_EQ(proxy_count, retry_info.size());
-    ASSERT_TRUE(retry_info.find(bad_proxy) != retry_info.end());
+    if (proxy_count > 0)
+      ASSERT_TRUE(retry_info.find(bad_proxy) != retry_info.end());
     if (proxy_count > 1)
       ASSERT_TRUE(retry_info.find(bad_proxy2) != retry_info.end());
   }
@@ -103,21 +112,44 @@ class HttpNetworkLayerTest : public PlatformTest {
   void TestProxyFallback(const std::string& bad_proxy) {
     MockRead data_reads[] = {
       MockRead("HTTP/1.1 200 OK\r\n"
-               "Connection: proxy-bypass\r\n\r\n"),
+               "Chrome-Proxy: bypass=0\r\n\r\n"),
       MockRead("Bypass message"),
       MockRead(SYNCHRONOUS, OK),
     };
-    TestProxyFallbackWithMockReads(bad_proxy, data_reads,
-                                   arraysize(data_reads));
+    TestProxyFallbackWithMockReads(bad_proxy, "", data_reads,
+                                   arraysize(data_reads), 1u);
   }
 
   void TestProxyFallbackWithMockReads(const std::string& bad_proxy,
+                                      const std::string& bad_proxy2,
                                       MockRead data_reads[],
-                                      int data_reads_size) {
+                                      int data_reads_size,
+                                      unsigned int expected_retry_info_size) {
+    TestProxyFallbackByMethodWithMockReads(bad_proxy, bad_proxy2, data_reads,
+                                           data_reads_size, "GET", "content",
+                                           true, expected_retry_info_size);
+  }
+
+  void TestProxyFallbackByMethodWithMockReads(
+      const std::string& bad_proxy,
+      const std::string& bad_proxy2,
+      MockRead data_reads[],
+      int data_reads_size,
+      std::string method,
+      std::string content_of_retry,
+      bool retry_expected,
+      unsigned int expected_retry_info_size) {
+    std::string trailer =
+        (method == "HEAD" || method == "PUT" || method == "POST") ?
+        "Content-Length: 0\r\n\r\n" : "\r\n";
+    std::string request =
+        base::StringPrintf("%s http://www.google.com/ HTTP/1.1\r\n"
+                           "Host: www.google.com\r\n"
+                           "Proxy-Connection: keep-alive\r\n"
+                           "%s", method.c_str(), trailer.c_str());
+
     MockWrite data_writes[] = {
-      MockWrite("GET http://www.google.com/ HTTP/1.1\r\n"
-                "Host: www.google.com\r\n"
-                "Proxy-Connection: keep-alive\r\n\r\n"),
+      MockWrite(request.c_str()),
     };
 
     StaticSocketDataProvider data1(data_reads, data_reads_size,
@@ -125,27 +157,32 @@ class HttpNetworkLayerTest : public PlatformTest {
     mock_socket_factory_.AddSocketDataProvider(&data1);
 
     // Second data provider returns the expected content.
-    MockRead data_reads2[] = {
-      MockRead("HTTP/1.0 200 OK\r\n"
-               "Server: not-proxy\r\n\r\n"),
-      MockRead("content"),
-      MockRead(SYNCHRONOUS, OK),
-    };
+    MockRead data_reads2[3];
+    size_t data_reads2_index = 0;
+    data_reads2[data_reads2_index++] = MockRead("HTTP/1.0 200 OK\r\n"
+                                                "Server: not-proxy\r\n\r\n");
+    if (!content_of_retry.empty())
+      data_reads2[data_reads2_index++] = MockRead(content_of_retry.c_str());
+    data_reads2[data_reads2_index++] = MockRead(SYNCHRONOUS, OK);
+
     MockWrite data_writes2[] = {
-      MockWrite("GET http://www.google.com/ HTTP/1.1\r\n"
-                "Host: www.google.com\r\n"
-                "Proxy-Connection: keep-alive\r\n\r\n"),
+      MockWrite(request.c_str()),
     };
-    StaticSocketDataProvider data2(data_reads2, arraysize(data_reads2),
+    StaticSocketDataProvider data2(data_reads2, data_reads2_index,
                                   data_writes2, arraysize(data_writes2));
     mock_socket_factory_.AddSocketDataProvider(&data2);
 
     // Expect that we get "content" and not "Bypass message", and that there's
     // a "not-proxy" "Server:" header in the final response.
-    ExecuteRequestExpectingContentAndHeader("content", "server", "not-proxy");
+    if (retry_expected) {
+      ExecuteRequestExpectingContentAndHeader(method, content_of_retry,
+                                              "server", "not-proxy");
+    } else {
+      ExecuteRequestExpectingContentAndHeader(method, "Bypass message", "", "");
+    }
 
     // We should also observe the bad proxy in the retry list.
-    TestBadProxies(1u, bad_proxy, "");
+    TestBadProxies(expected_retry_info_size, bad_proxy, bad_proxy2);
   }
 
   // Simulates a request through a proxy which returns a bypass, which is then
@@ -155,7 +192,7 @@ class HttpNetworkLayerTest : public PlatformTest {
   void TestProxyFallbackToDirect(const std::string& bad_proxy) {
     MockRead data_reads[] = {
       MockRead("HTTP/1.1 200 OK\r\n"
-               "Connection: proxy-bypass\r\n\r\n"),
+               "Chrome-Proxy: bypass=0\r\n\r\n"),
       MockRead("Bypass message"),
       MockRead(SYNCHRONOUS, OK),
     };
@@ -186,7 +223,8 @@ class HttpNetworkLayerTest : public PlatformTest {
 
     // Expect that we get "content" and not "Bypass message", and that there's
     // a "not-proxy" "Server:" header in the final response.
-    ExecuteRequestExpectingContentAndHeader("content", "server", "not-proxy");
+    ExecuteRequestExpectingContentAndHeader("GET", "content",
+                                            "server", "not-proxy");
 
     // We should also observe the bad proxy in the retry list.
     TestBadProxies(1u, bad_proxy, "");
@@ -202,7 +240,7 @@ class HttpNetworkLayerTest : public PlatformTest {
                              const std::string& bad_proxy2) {
     MockRead data_reads[] = {
       MockRead("HTTP/1.1 200 OK\r\n"
-               "Connection: proxy-bypass\r\n\r\n"),
+               "Chrome-Proxy: bypass=0\r\n\r\n"),
       MockRead("Bypass message"),
       MockRead(SYNCHRONOUS, OK),
     };
@@ -221,7 +259,7 @@ class HttpNetworkLayerTest : public PlatformTest {
       mock_socket_factory_.AddSocketDataProvider(&data2);
 
     // Expect that we get "Bypass message", and not "content"..
-    ExecuteRequestExpectingContentAndHeader("Bypass message", "", "");
+    ExecuteRequestExpectingContentAndHeader("GET", "Bypass message", "", "");
 
     // We should also observe the bad proxy or proxies in the retry list.
     TestBadProxies(proxy_count, bad_proxy, bad_proxy2);
@@ -240,28 +278,28 @@ class HttpNetworkLayerTest : public PlatformTest {
 
 TEST_F(HttpNetworkLayerTest, CreateAndDestroy) {
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
   EXPECT_TRUE(trans.get() != NULL);
 }
 
 TEST_F(HttpNetworkLayerTest, Suspend) {
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
 
   trans.reset();
 
   factory_->OnSuspend();
 
-  rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(ERR_NETWORK_IO_SUSPENDED, rv);
 
   ASSERT_TRUE(trans == NULL);
 
   factory_->OnResume();
 
-  rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
 }
 
@@ -291,7 +329,7 @@ TEST_F(HttpNetworkLayerTest, GET) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -305,7 +343,7 @@ TEST_F(HttpNetworkLayerTest, GET) {
 }
 
 // Proxy bypass tests. These tests run through various server-induced
-// proxy-bypass scenarios using both PAC file and fixed proxy params.
+// proxy bypass scenarios using both PAC file and fixed proxy params.
 // The test scenarios are:
 //  - bypass with two proxies configured and the first but not the second
 //    is bypassed.
@@ -328,6 +366,67 @@ TEST_F(HttpNetworkLayerTest, ServerTwoProxyBypassFixed) {
   ConfigureTestDependencies(
       ProxyService::CreateFixed(bad_proxy +", good:8080"));
   TestProxyFallback(bad_proxy);
+}
+
+TEST_F(HttpNetworkLayerTest, BypassAndRetryIdempotentMethods) {
+  std::string bad_proxy = GetChromeProxy();
+  const struct {
+    std::string method;
+    std::string content;
+    bool expected_to_retry;
+  } tests[] = {
+    {
+      "GET",
+      "content",
+      true,
+    },
+    {
+      "OPTIONS",
+      "content",
+      true,
+    },
+    {
+      "HEAD",
+      "",
+      true,
+    },
+    {
+      "PUT",
+      "",
+      true,
+    },
+    {
+      "DELETE",
+      "content",
+      true,
+    },
+    {
+      "TRACE",
+      "content",
+      true,
+    },
+    {
+      "POST",
+      "Bypass message",
+      false,
+    },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+    ConfigureTestDependencies(
+        ProxyService::CreateFixed(bad_proxy +", good:8080"));
+    MockRead data_reads[] = {
+      MockRead("HTTP/1.1 200 OK\r\n"
+               "Chrome-Proxy: bypass=0\r\n\r\n"),
+      MockRead("Bypass message"),
+      MockRead(SYNCHRONOUS, OK),
+    };
+    TestProxyFallbackByMethodWithMockReads(bad_proxy, "", data_reads,
+                                           arraysize(data_reads),
+                                           tests[i].method,
+                                           tests[i].content,
+                                           tests[i].expected_to_retry, 1u);
+  }
 }
 
 TEST_F(HttpNetworkLayerTest, ServerOneProxyWithDirectBypassPac) {
@@ -441,7 +540,7 @@ TEST_F(HttpNetworkLayerTest, ServerFallbackOn5xxError) {
     request_info.load_flags = LOAD_NORMAL;
 
     scoped_ptr<HttpTransaction> trans;
-    int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+    int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
     EXPECT_EQ(OK, rv);
 
     rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -468,13 +567,13 @@ TEST_F(HttpNetworkLayerTest, ServerFallbackOn5xxError) {
 #endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 TEST_F(HttpNetworkLayerTest, ProxyBypassIgnoredOnDirectConnectionPac) {
-  // Verify that a Connection: proxy-bypass header is ignored when returned
-  // from a directly connected origin server.
+  // Verify that a Chrome-Proxy header is ignored when returned from a directly
+  // connected origin server.
   ConfigureTestDependencies(ProxyService::CreateFixedFromPacResult("DIRECT"));
 
   MockRead data_reads[] = {
     MockRead("HTTP/1.1 200 OK\r\n"
-             "Connection: proxy-bypass\r\n\r\n"),
+             "Chrome-Proxy: bypass=0\r\n\r\n"),
     MockRead("Bypass message"),
     MockRead(SYNCHRONOUS, OK),
   };
@@ -494,7 +593,7 @@ TEST_F(HttpNetworkLayerTest, ProxyBypassIgnoredOnDirectConnectionPac) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -523,15 +622,121 @@ TEST_F(HttpNetworkLayerTest, ServerFallbackWithProxyTimedBypass) {
   MockRead data_reads[] = {
     MockRead("HTTP/1.1 200 OK\r\n"
              "Connection: keep-alive\r\n"
-             "Chrome-Proxy: bypass=86400\r\n\r\n"),
+             "Chrome-Proxy: bypass=86400\r\n"
+             "Via: 1.1 Chrome-Compression-Proxy\r\n\r\n"),
     MockRead("Bypass message"),
     MockRead(SYNCHRONOUS, OK),
   };
 
-  TestProxyFallbackWithMockReads(bad_proxy, data_reads, arraysize(data_reads));
+  TestProxyFallbackWithMockReads(bad_proxy, "", data_reads,
+                                 arraysize(data_reads), 1u);
   EXPECT_EQ(base::TimeDelta::FromSeconds(86400),
             (*proxy_service_->proxy_retry_info().begin()).second.current_delay);
 }
+
+TEST_F(HttpNetworkLayerTest, ServerFallbackWithWrongViaHeader) {
+  // Verify that a Via header that lacks the Chrome-Proxy induces proxy fallback
+  // to a second proxy, if configured.
+  std::string chrome_proxy = GetChromeProxy();
+  ConfigureTestDependencies(ProxyService::CreateFixedFromPacResult(
+      "PROXY " + chrome_proxy + "; PROXY good:8080"));
+
+  MockRead data_reads[] = {
+    MockRead("HTTP/1.1 200 OK\r\n"
+             "Connection: keep-alive\r\n"
+             "Via: 1.0 some-other-proxy\r\n\r\n"),
+    MockRead("Bypass message"),
+    MockRead(SYNCHRONOUS, OK),
+  };
+
+  TestProxyFallbackWithMockReads(chrome_proxy, std::string(), data_reads,
+                                 arraysize(data_reads), 1u);
+}
+
+TEST_F(HttpNetworkLayerTest, ServerFallbackWithNoViaHeader) {
+  // Verify that the lack of a Via header induces proxy fallback to a second
+  // proxy, if configured.
+  std::string chrome_proxy = GetChromeProxy();
+  ConfigureTestDependencies(ProxyService::CreateFixedFromPacResult(
+      "PROXY " + chrome_proxy + "; PROXY good:8080"));
+
+  MockRead data_reads[] = {
+    MockRead("HTTP/1.1 200 OK\r\n"
+             "Connection: keep-alive\r\n\r\n"),
+    MockRead("Bypass message"),
+    MockRead(SYNCHRONOUS, OK),
+  };
+
+  TestProxyFallbackWithMockReads(chrome_proxy, std::string(), data_reads,
+                                 arraysize(data_reads), 1u);
+}
+
+TEST_F(HttpNetworkLayerTest, NoServerFallbackWithChainedViaHeader) {
+  // Verify that Chrome will not be induced to bypass the Chrome proxy when
+  // the Chrome Proxy via header is present, even if that header is chained.
+  std::string chrome_proxy = GetChromeProxy();
+  ConfigureTestDependencies(ProxyService::CreateFixedFromPacResult(
+      "PROXY " + chrome_proxy + "; PROXY good:8080"));
+
+  MockRead data_reads[] = {
+    MockRead("HTTP/1.1 200 OK\r\n"
+             "Connection: keep-alive\r\n"
+             "Via: 1.1 Chrome-Compression-Proxy, 1.0 some-other-proxy\r\n\r\n"),
+    MockRead("Bypass message"),
+    MockRead(SYNCHRONOUS, OK),
+  };
+
+  TestProxyFallbackByMethodWithMockReads(chrome_proxy, std::string(),
+                                         data_reads, arraysize(data_reads),
+                                         "GET", std::string(), false, 0);
+}
+
+TEST_F(HttpNetworkLayerTest, NoServerFallbackWithDeprecatedViaHeader) {
+  // Verify that Chrome will not be induced to bypass the Chrome proxy when
+  // the Chrome Proxy via header is present, even if that header is chained.
+  std::string chrome_proxy = GetChromeProxy();
+  ConfigureTestDependencies(ProxyService::CreateFixedFromPacResult(
+      "PROXY " + chrome_proxy + "; PROXY good:8080"));
+
+  MockRead data_reads[] = {
+    MockRead("HTTP/1.1 200 OK\r\n"
+             "Connection: keep-alive\r\n"
+             "Via: 1.1 Chrome Compression Proxy\r\n\r\n"),
+    MockRead("Bypass message"),
+    MockRead(SYNCHRONOUS, OK),
+  };
+
+  TestProxyFallbackByMethodWithMockReads(chrome_proxy, std::string(),
+                                         data_reads, arraysize(data_reads),
+                                         "GET", std::string(), false, 0);
+}
+
+#if defined(DATA_REDUCTION_FALLBACK_HOST)
+TEST_F(HttpNetworkLayerTest, ServerFallbackWithProxyTimedBypassAll) {
+  // Verify that a Chrome-Proxy: block=<seconds> header bypasses a
+  // a configured Chrome-Proxy and fallback and induces proxy fallback to a
+  // third proxy, if configured.
+  std::string bad_proxy = GetChromeProxy();
+  std::string fallback_proxy = GetChromeFallbackProxy();
+  ConfigureTestDependencies(ProxyService::CreateFixedFromPacResult(
+      "PROXY " + bad_proxy + "; PROXY " + fallback_proxy +
+      "; PROXY good:8080"));
+
+  MockRead data_reads[] = {
+    MockRead("HTTP/1.1 200 OK\r\n"
+             "Connection: keep-alive\r\n"
+             "Chrome-Proxy: block=86400\r\n"
+             "Via: 1.1 Chrome-Compression-Proxy\r\n\r\n"),
+    MockRead("Bypass message"),
+    MockRead(SYNCHRONOUS, OK),
+  };
+
+  TestProxyFallbackWithMockReads(bad_proxy, fallback_proxy, data_reads,
+                                 arraysize(data_reads), 2u);
+  EXPECT_EQ(base::TimeDelta::FromSeconds(86400),
+            (*proxy_service_->proxy_retry_info().begin()).second.current_delay);
+}
+#endif  // defined(DATA_REDUCTION_FALLBACK_HOST)
 #endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 TEST_F(HttpNetworkLayerTest, NetworkVerified) {
@@ -560,7 +765,7 @@ TEST_F(HttpNetworkLayerTest, NetworkVerified) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -593,7 +798,7 @@ TEST_F(HttpNetworkLayerTest, NetworkUnVerified) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());

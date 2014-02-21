@@ -8,8 +8,8 @@
 
 namespace rlz_lib {
 
-bool GetRawMachineId(string16* data, int* more_data) {
-  *data = ASCIIToUTF16(ios::device_util::GetDeviceIdentifier(NULL));
+bool GetRawMachineId(base::string16* data, int* more_data) {
+  *data = base::ASCIIToUTF16(ios::device_util::GetDeviceIdentifier(NULL));
   *more_data = 1;
   return true;
 }

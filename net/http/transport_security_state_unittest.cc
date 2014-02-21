@@ -519,7 +519,8 @@ TEST_F(TransportSecurityStateTest, BuiltinCertPins) {
   EXPECT_TRUE(HasPublicKeyPins("apis.google.com"));
 
   EXPECT_TRUE(HasPublicKeyPins("ssl.gstatic.com"));
-  EXPECT_FALSE(HasPublicKeyPins("www.gstatic.com"));
+  EXPECT_TRUE(HasPublicKeyPins("gstatic.com"));
+  EXPECT_TRUE(HasPublicKeyPins("www.gstatic.com"));
   EXPECT_TRUE(HasPublicKeyPins("ssl.google-analytics.com"));
   EXPECT_TRUE(HasPublicKeyPins("www.googleplex.com"));
 
@@ -534,7 +535,6 @@ TEST_F(TransportSecurityStateTest, BuiltinCertPins) {
   EXPECT_TRUE(HasPublicKeyPins("business.twitter.com"));
   EXPECT_TRUE(HasPublicKeyPins("platform.twitter.com"));
   EXPECT_TRUE(HasPublicKeyPins("si0.twimg.com"));
-  EXPECT_TRUE(HasPublicKeyPins("twimg0-a.akamaihd.net"));
 }
 
 static bool AddHash(const std::string& type_and_base64,

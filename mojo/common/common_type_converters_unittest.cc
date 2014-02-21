@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "mojo/common/common_type_converters.h"
-#include "mojo/public/tests/simple_bindings_support.h"
+#include "mojo/public/bindings/allocation_scope.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
+namespace common {
 namespace test {
 namespace {
 
@@ -22,12 +23,7 @@ void ExpectEqualsMojoString(const std::string& expected,
 
 }  // namespace
 
-class CommonTypeConvertersTest : public testing::Test {
- private:
-  SimpleBindingsSupport bindings_support_;
-};
-
-TEST_F(CommonTypeConvertersTest, StringPiece) {
+TEST(CommonTypeConvertersTest, StringPiece) {
   AllocationScope scope;
 
   std::string kText("hello world");
@@ -48,4 +44,5 @@ TEST_F(CommonTypeConvertersTest, StringPiece) {
 }
 
 }  // namespace test
+}  // namespace common
 }  // namespace mojo

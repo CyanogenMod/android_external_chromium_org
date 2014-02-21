@@ -8,7 +8,6 @@
 
 #include "ash/root_window_controller.h"
 #include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
-#include "ash/wm/solo_window_tracker.h"
 #include "base/logging.h"  // DCHECK
 #include "grit/ash_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -21,7 +20,7 @@
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
@@ -59,8 +58,6 @@ const SkColor kHeaderContentSeparatorColor = SkColorSetRGB(128, 128, 128);
 const int kThemeFrameImageInsetX = 5;
 // Duration of crossfade animation for activating and deactivating frame.
 const int kActivationCrossfadeDurationMs = 200;
-// Alpha/opacity value for fully-opaque headers.
-const int kFullyOpaque = 255;
 
 // Tiles an image into an area, rounding the top corners. Samples |image|
 // starting |image_inset_x| pixels from the left of the image.
@@ -135,11 +132,6 @@ void PaintFrameImagesInRoundRect(gfx::Canvas* canvas,
 
 namespace ash {
 
-// static
-int HeaderPainter::kActiveWindowOpacity = 255;  // 1.0
-int HeaderPainter::kInactiveWindowOpacity = 255;  // 1.0
-int HeaderPainter::kSoloWindowOpacity = 77;  // 0.3
-
 ///////////////////////////////////////////////////////////////////////////////
 // HeaderPainter, public:
 
@@ -148,7 +140,6 @@ HeaderPainter::HeaderPainter()
       header_view_(NULL),
       window_icon_(NULL),
       caption_button_container_(NULL),
-      window_(NULL),
       header_height_(0),
       top_left_corner_(NULL),
       top_edge_(NULL),
@@ -157,15 +148,10 @@ HeaderPainter::HeaderPainter()
       header_right_edge_(NULL),
       previous_theme_frame_id_(0),
       previous_theme_frame_overlay_id_(0),
-      previous_opacity_(0),
       crossfade_theme_frame_id_(0),
-      crossfade_theme_frame_overlay_id_(0),
-      crossfade_opacity_(0) {}
+      crossfade_theme_frame_overlay_id_(0) {}
 
 HeaderPainter::~HeaderPainter() {
-  // Sometimes we are destroyed before the window closes, so ensure we clean up.
-  if (window_)
-    window_->RemoveObserver(this);
 }
 
 void HeaderPainter::Init(
@@ -194,15 +180,6 @@ void HeaderPainter::Init(
       rb.GetImageNamed(IDR_AURA_WINDOW_HEADER_SHADE_LEFT).ToImageSkia();
   header_right_edge_ =
       rb.GetImageNamed(IDR_AURA_WINDOW_HEADER_SHADE_RIGHT).ToImageSkia();
-
-  window_ = frame->GetNativeWindow();
-
-  // Observer removes itself in OnWindowDestroying() below, or in the destructor
-  // if we go away before the window.
-  window_->AddObserver(this);
-
-  // Solo-window header updates are handled by the WorkspaceLayoutManager when
-  // this window is added to the desktop.
 }
 
 // static
@@ -259,7 +236,6 @@ int HeaderPainter::GetThemeBackgroundXInset() const {
 }
 
 void HeaderPainter::PaintHeader(gfx::Canvas* canvas,
-                                HeaderMode header_mode,
                                 int theme_frame_id,
                                 int theme_frame_overlay_id) {
   bool initial_paint = (previous_theme_frame_id_ == 0);
@@ -281,7 +257,6 @@ void HeaderPainter::PaintHeader(gfx::Canvas* canvas,
       crossfade_animation_.reset(new gfx::SlideAnimation(this));
       crossfade_theme_frame_id_ = previous_theme_frame_id_;
       crossfade_theme_frame_overlay_id_ = previous_theme_frame_overlay_id_;
-      crossfade_opacity_ = previous_opacity_;
       crossfade_animation_->SetSlideDuration(kActivationCrossfadeDurationMs);
       crossfade_animation_->Show();
     } else {
@@ -289,8 +264,6 @@ void HeaderPainter::PaintHeader(gfx::Canvas* canvas,
     }
   }
 
-  int opacity =
-      GetHeaderOpacity(header_mode, theme_frame_id, theme_frame_overlay_id);
   ui::ThemeProvider* theme_provider = frame_->GetThemeProvider();
   gfx::ImageSkia* theme_frame = theme_provider->GetImageSkiaNamed(
       theme_frame_id);
@@ -317,11 +290,9 @@ void HeaderPainter::PaintHeader(gfx::Canvas* canvas,
       // Reset the animation. This case occurs when the user switches the theme
       // that they are using.
       crossfade_animation_.reset();
-      paint.setAlpha(opacity);
     } else {
-      double current_value = crossfade_animation_->GetCurrentValue();
-      int old_alpha = (1 - current_value) * crossfade_opacity_;
-      int new_alpha = current_value * opacity;
+      int old_alpha = crossfade_animation_->CurrentValueBetween(255, 0);
+      int new_alpha = 255 - old_alpha;
 
       // Draw the old header background, clipping the corners to be rounded.
       paint.setAlpha(old_alpha);
@@ -336,8 +307,6 @@ void HeaderPainter::PaintHeader(gfx::Canvas* canvas,
 
       paint.setAlpha(new_alpha);
     }
-  } else {
-    paint.setAlpha(opacity);
   }
 
   // Draw the header background, clipping the corners to be rounded.
@@ -351,15 +320,10 @@ void HeaderPainter::PaintHeader(gfx::Canvas* canvas,
 
   previous_theme_frame_id_ = theme_frame_id;
   previous_theme_frame_overlay_id_ = theme_frame_overlay_id;
-  previous_opacity_ = opacity;
 
-  // We don't need the extra lightness in the edges when we're at the top edge
-  // of the screen or when the header's corners are not rounded.
-  //
-  // TODO(sky): this isn't quite right. What we really want is a method that
-  // returns bounds ignoring transforms on certain windows (such as workspaces)
-  // and is relative to the root.
-  if (frame_->GetNativeWindow()->bounds().y() == 0 || corner_radius == 0)
+  // We don't need the extra lightness in the edges when the window is maximized
+  // or fullscreen.
+  if (frame_->IsMaximized() || frame_->IsFullscreen())
     return;
 
   // Draw the top corners and edge.
@@ -413,25 +377,28 @@ int HeaderPainter::HeaderContentSeparatorSize() const {
 }
 
 void HeaderPainter::PaintTitleBar(gfx::Canvas* canvas,
-                                  const gfx::Font& title_font) {
+                                  const gfx::FontList& title_font_list) {
   // The window icon is painted by its own views::View.
   views::WidgetDelegate* delegate = frame_->widget_delegate();
   if (delegate && delegate->ShouldShowWindowTitle()) {
-    gfx::Rect title_bounds = GetTitleBounds(title_font);
+    gfx::Rect title_bounds = GetTitleBounds(title_font_list);
+    title_bounds.set_x(header_view_->GetMirroredXForRect(title_bounds));
     SkColor title_color = (frame_->IsMaximized() || frame_->IsFullscreen()) ?
         kMaximizedWindowTitleTextColor : kNonMaximizedWindowTitleTextColor;
-    canvas->DrawStringInt(delegate->GetWindowTitle(),
-                          title_font,
-                          title_color,
-                          header_view_->GetMirroredXForRect(title_bounds),
-                          title_bounds.y(),
-                          title_bounds.width(),
-                          title_bounds.height(),
-                          gfx::Canvas::NO_SUBPIXEL_RENDERING);
+    canvas->DrawStringRectWithFlags(delegate->GetWindowTitle(),
+                                    title_font_list,
+                                    title_color,
+                                    title_bounds,
+                                    gfx::Canvas::NO_SUBPIXEL_RENDERING);
   }
 }
 
 void HeaderPainter::LayoutHeader(bool shorter_layout) {
+  // Purposefully set |header_height_| to an invalid value. We cannot use
+  // |header_height_| because the computation of |header_height_| may depend
+  // on having laid out the window controls.
+  header_height_ = -1;
+
   caption_button_container_->set_header_style(shorter_layout ?
       FrameCaptionButtonContainerView::HEADER_STYLE_SHORT :
       FrameCaptionButtonContainerView::HEADER_STYLE_TALL);
@@ -454,8 +421,9 @@ void HeaderPainter::LayoutHeader(bool shorter_layout) {
   }
 }
 
-void HeaderPainter::SchedulePaintForTitle(const gfx::Font& title_font) {
-  header_view_->SchedulePaintInRect(GetTitleBounds(title_font));
+void HeaderPainter::SchedulePaintForTitle(
+    const gfx::FontList& title_font_list) {
+  header_view_->SchedulePaintInRect(GetTitleBounds(title_font_list));
 }
 
 void HeaderPainter::OnThemeChanged() {
@@ -470,31 +438,6 @@ void HeaderPainter::OnThemeChanged() {
   if (crossfade_animation_.get() && crossfade_animation_->is_animating()) {
     crossfade_animation_.reset();
     header_view_->SchedulePaintInRect(GetHeaderLocalBounds());
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// aura::WindowObserver overrides:
-
-void HeaderPainter::OnWindowDestroying(aura::Window* destroying) {
-  DCHECK_EQ(window_, destroying);
-
-  // Must be removed here and not in the destructor, as the aura::Window is
-  // already destroyed when our destructor runs.
-  window_->RemoveObserver(this);
-
-  window_ = NULL;
-}
-
-void HeaderPainter::OnWindowBoundsChanged(aura::Window* window,
-                                         const gfx::Rect& old_bounds,
-                                         const gfx::Rect& new_bounds) {
-  // TODO(sky): this isn't quite right. What we really want is a method that
-  // returns bounds ignoring transforms on certain windows (such as workspaces).
-  if ((!frame_->IsMaximized() && !frame_->IsFullscreen()) &&
-      ((old_bounds.y() == 0 && new_bounds.y() != 0) ||
-       (old_bounds.y() != 0 && new_bounds.y() == 0))) {
-    SchedulePaintForHeader();
   }
 }
 
@@ -529,55 +472,18 @@ int HeaderPainter::GetHeaderCornerRadius() const {
   return square_corners ? 0 : kCornerRadius;
 }
 
-int HeaderPainter::GetHeaderOpacity(
-    HeaderMode header_mode,
-    int theme_frame_id,
-    int theme_frame_overlay_id) const {
-  // User-provided themes are painted fully opaque.
-  ui::ThemeProvider* theme_provider = frame_->GetThemeProvider();
-  if (theme_provider->HasCustomImage(theme_frame_id) ||
-      (theme_frame_overlay_id != 0 &&
-       theme_provider->HasCustomImage(theme_frame_overlay_id))) {
-    return kFullyOpaque;
-  }
-
-  // Maximized and fullscreen windows are fully opaque.
-  if (frame_->IsMaximized() || frame_->IsFullscreen())
-    return kFullyOpaque;
-
-  // Solo header is very transparent.
-  ash::SoloWindowTracker* solo_window_tracker =
-      internal::RootWindowController::ForWindow(window_)->solo_window_tracker();
-  if (solo_window_tracker &&
-      solo_window_tracker->GetWindowWithSoloHeader() == window_) {
-    return kSoloWindowOpacity;
-  }
-
-  // Otherwise, change transparency based on window activation status.
-  if (header_mode == ACTIVE)
-    return kActiveWindowOpacity;
-  return kInactiveWindowOpacity;
-}
-
-void HeaderPainter::SchedulePaintForHeader() {
-  int top_left_height = top_left_corner_->height();
-  int top_right_height = top_right_corner_->height();
-  header_view_->SchedulePaintInRect(
-      gfx::Rect(0, 0, header_view_->width(),
-                std::max(top_left_height, top_right_height)));
-}
-
-gfx::Rect HeaderPainter::GetTitleBounds(const gfx::Font& title_font) {
+gfx::Rect HeaderPainter::GetTitleBounds(const gfx::FontList& title_font_list) {
   int title_x = GetTitleOffsetX();
   // Center the text with respect to the caption button container. This way it
   // adapts to the caption button height and aligns exactly with the window
   // icon. Don't use |window_icon_| for this computation as it may be NULL.
-  int title_y = GetCaptionButtonContainerCenterY() - title_font.GetHeight() / 2;
+  int title_y =
+      GetCaptionButtonContainerCenterY() - title_font_list.GetHeight() / 2;
   return gfx::Rect(
       title_x,
       std::max(0, title_y),
       std::max(0, caption_button_container_->x() - kTitleLogoSpacing - title_x),
-      title_font.GetHeight());
+      title_font_list.GetHeight());
 }
 
 }  // namespace ash

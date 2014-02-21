@@ -181,16 +181,16 @@ void ResetChildSignalHandlersToDefaults(void) {
 
 }  // anonymous namespace
 
-// A class to handle auto-closing of DIR*'s.
-class ScopedDIRClose {
- public:
+// Functor for |ScopedDIR| (below).
+struct ScopedDIRClose {
   inline void operator()(DIR* x) const {
-    if (x) {
+    if (x)
       closedir(x);
-    }
   }
 };
-typedef scoped_ptr_malloc<DIR, ScopedDIRClose> ScopedDIR;
+
+// Automatically closes |DIR*|s.
+typedef scoped_ptr<DIR, ScopedDIRClose> ScopedDIR;
 
 #if defined(OS_LINUX)
 static const char kFDDir[] = "/proc/self/fd";
@@ -207,7 +207,7 @@ static const char kFDDir[] = "/proc/self/fd";
 #endif
 
 void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
-  // DANGER: no calls to malloc are allowed from now on:
+  // DANGER: no calls to malloc or locks are allowed from now on:
   // http://crbug.com/36678
 
   // Get the maximum number of FDs possible.
@@ -220,12 +220,13 @@ void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
       const int fd = static_cast<int>(i);
       if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO)
         continue;
-      InjectiveMultimap::const_iterator j;
-      for (j = saved_mapping.begin(); j != saved_mapping.end(); j++) {
-        if (fd == j->dest)
+      // Cannot use STL iterators here, since debug iterators use locks.
+      size_t j;
+      for (j = 0; j < saved_mapping.size(); j++) {
+        if (fd == saved_mapping[j].dest)
           break;
       }
-      if (j != saved_mapping.end())
+      if (j < saved_mapping.size())
         continue;
 
       // Since we're just trying to close anything we can find,
@@ -249,12 +250,13 @@ void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
       continue;
     if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO)
       continue;
-    InjectiveMultimap::const_iterator i;
-    for (i = saved_mapping.begin(); i != saved_mapping.end(); i++) {
-      if (fd == i->dest)
+    // Cannot use STL iterators here, since debug iterators use locks.
+    size_t i;
+    for (i = 0; i < saved_mapping.size(); i++) {
+      if (fd == saved_mapping[i].dest)
         break;
     }
-    if (i != saved_mapping.end())
+    if (i < saved_mapping.size())
       continue;
     if (fd == dir_fd)
       continue;
@@ -318,6 +320,9 @@ bool LaunchProcess(const std::vector<std::string>& argv,
   } else if (pid == 0) {
     // Child process
 
+    // DANGER: no calls to malloc or locks are allowed from now on:
+    // http://crbug.com/36678
+
     // DANGER: fork() rule: in the child, if you don't end up doing exec*(),
     // you call _exit() instead of exit(). This is because _exit() does not
     // call any previously-registered (in the parent) exit handlers, which
@@ -356,16 +361,14 @@ bool LaunchProcess(const std::vector<std::string>& argv,
 
     if (options.maximize_rlimits) {
       // Some resource limits need to be maximal in this child.
-      std::set<int>::const_iterator resource;
-      for (resource = options.maximize_rlimits->begin();
-           resource != options.maximize_rlimits->end();
-           ++resource) {
+      for (size_t i = 0; i < options.maximize_rlimits->size(); ++i) {
+        const int resource = (*options.maximize_rlimits)[i];
         struct rlimit limit;
-        if (getrlimit(*resource, &limit) < 0) {
+        if (getrlimit(resource, &limit) < 0) {
           RAW_LOG(WARNING, "getrlimit failed");
         } else if (limit.rlim_cur < limit.rlim_max) {
           limit.rlim_cur = limit.rlim_max;
-          if (setrlimit(*resource, &limit) < 0) {
+          if (setrlimit(resource, &limit) < 0) {
             RAW_LOG(WARNING, "setrlimit failed");
           }
         }
@@ -388,9 +391,6 @@ bool LaunchProcess(const std::vector<std::string>& argv,
     memset(reinterpret_cast<void*>(malloc), 0xff, 8);
 #endif  // 0
 
-    // DANGER: no calls to malloc are allowed from now on:
-    // http://crbug.com/36678
-
 #if defined(OS_CHROMEOS)
     if (options.ctrl_terminal_fd >= 0) {
       // Set process' controlling terminal.
@@ -406,11 +406,12 @@ bool LaunchProcess(const std::vector<std::string>& argv,
 #endif  // defined(OS_CHROMEOS)
 
     if (options.fds_to_remap) {
-      for (FileHandleMappingVector::const_iterator
-               it = options.fds_to_remap->begin();
-           it != options.fds_to_remap->end(); ++it) {
-        fd_shuffle1.push_back(InjectionArc(it->first, it->second, false));
-        fd_shuffle2.push_back(InjectionArc(it->first, it->second, false));
+      // Cannot use STL iterators here, since debug iterators use locks.
+      for (size_t i = 0; i < options.fds_to_remap->size(); ++i) {
+        const FileHandleMappingVector::value_type& value =
+            (*options.fds_to_remap)[i];
+        fd_shuffle1.push_back(InjectionArc(value.first, value.second, false));
+        fd_shuffle2.push_back(InjectionArc(value.first, value.second, false));
       }
     }
 
@@ -518,11 +519,12 @@ static GetAppOutputInternalResult GetAppOutputInternal(
       return EXECUTE_FAILURE;
     case 0:  // child
       {
+        // DANGER: no calls to malloc or locks are allowed from now on:
+        // http://crbug.com/36678
+
 #if defined(OS_MACOSX)
         RestoreDefaultExceptionHandler();
 #endif
-        // DANGER: no calls to malloc are allowed from now on:
-        // http://crbug.com/36678
 
         // Obscure fork() rule: in the child, if you don't end up doing exec*(),
         // you call _exit() instead of exit(). This is because _exit() does not
@@ -544,8 +546,8 @@ static GetAppOutputInternalResult GetAppOutputInternal(
         // Adding another element here? Remeber to increase the argument to
         // reserve(), above.
 
-        std::copy(fd_shuffle1.begin(), fd_shuffle1.end(),
-                  std::back_inserter(fd_shuffle2));
+        for (size_t i = 0; i < fd_shuffle1.size(); ++i)
+          fd_shuffle2.push_back(fd_shuffle1[i]);
 
         if (!ShuffleFileDescriptors(&fd_shuffle1))
           _exit(127);

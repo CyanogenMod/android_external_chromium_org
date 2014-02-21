@@ -16,6 +16,8 @@ usage() {
   echo "--[no-]arm: enable or disable installation of arm cross toolchain"
   echo "--[no-]chromeos-fonts: enable or disable installation of Chrome OS"\
        "fonts"
+  echo "--[no-]nacl: enable or disable installation of prerequisites for"\
+       "building standalone NaCl and all its toolchains"
   echo "--no-prompt: silently select standard options/defaults"
   echo "--quick-check: quickly try to determine if dependencies are installed"
   echo "               (this avoids interactive prompts and sudo commands,"
@@ -31,6 +33,13 @@ package_exists() {
   apt-cache pkgnames | grep -x "$1" > /dev/null 2>&1
 }
 
+# These default to on because (some) bots need them and it keeps things
+# simple for the bot setup if all bots just run the script in its default
+# mode.  Developers who don't want stuff they don't need installed on their
+# own workstations can pass --no-arm --no-nacl when running the script.
+do_inst_arm=1
+do_inst_nacl=1
+
 while test "$1" != ""
 do
   case "$1" in
@@ -42,6 +51,8 @@ do
   --no-arm)                 do_inst_arm=0;;
   --chromeos-fonts)         do_inst_chromeos_fonts=1;;
   --no-chromeos-fonts)      do_inst_chromeos_fonts=0;;
+  --nacl)                   do_inst_nacl=1;;
+  --no-nacl)                do_inst_nacl=0;;
   --no-prompt)              do_default=1
                             do_quietly="-qq --assume-yes"
     ;;
@@ -52,8 +63,8 @@ do
   shift
 done
 
-ubuntu_versions="12\.04|12\.10|13\.04"
-ubuntu_codenames="precise|quantal|raring"
+ubuntu_versions="12\.04|12\.10|13\.04|13\.10"
+ubuntu_codenames="precise|quantal|raring|saucy"
 ubuntu_issue="Ubuntu ($ubuntu_versions|$ubuntu_codenames)"
 # GCEL is an Ubuntu-derived VM image used on Google Compute Engine; /etc/issue
 # doesn't contain a version number so just trust that the user knows what
@@ -62,7 +73,7 @@ gcel_issue="^GCEL"
 
 if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
   if ! egrep -q "($ubuntu_issue|$gcel_issue)" /etc/issue; then
-    echo "ERROR: Only Ubuntu 12.04 (precise) through 13.04 (raring) are"\
+    echo "ERROR: Only Ubuntu 12.04 (precise) through 13.10 (saucy) are"\
         "currently supported" >&2
     exit 1
   fi
@@ -83,8 +94,8 @@ fi
 chromeos_dev_list="libbluetooth-dev"
 
 # Packages needed for development
-dev_list="apache2.2-bin bison curl elfutils fakeroot flex g++ git-core gperf
-          language-pack-da language-pack-fr language-pack-he
+dev_list="apache2.2-bin bison curl dpkg-dev elfutils fakeroot flex g++ git-core
+          gperf language-pack-da language-pack-fr language-pack-he
           language-pack-zh-hant libapache2-mod-php5 libasound2-dev libbrlapi-dev
           libbz2-dev libcairo2-dev libcap-dev libcups2-dev libcurl4-gnutls-dev
           libdrm-dev libelf-dev libgconf2-dev libgl1-mesa-dev libglib2.0-dev
@@ -95,7 +106,7 @@ dev_list="apache2.2-bin bison curl elfutils fakeroot flex g++ git-core gperf
           mesa-common-dev openbox patch perl php5-cgi pkg-config python
           python-cherrypy3 python-dev python-psutil rpm ruby subversion
           ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho
-          ttf-thai-tlwg wdiff xfonts-mathml $chromeos_dev_list"
+          wdiff xfonts-mathml $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries. These are always needed, regardless of whether or not we want
@@ -143,6 +154,9 @@ armel_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
 
 # TODO(sbc): remove armel once the armhf transition is complete
 arm_list="$arm_list $armel_list"
+
+# Packages to build standalone NaCl and all its toolchains.
+nacl_list="g++-mingw-w64-i686 libtinfo-dev:i386"
 
 # Some package names have changed over time
 if package_exists ttf-mscorefonts-installer; then
@@ -246,21 +260,23 @@ if file /sbin/init | grep -q 'ELF 64-bit'; then
 fi
 
 if test "$do_inst_arm" = "1" ; then
-  . /etc/lsb-release
-  if ! [ "${DISTRIB_CODENAME}" = "precise" -o \
-      1 -eq "${do_unsupported-0}" ]; then
-    echo "ERROR: Installing the ARM cross toolchain is only available on" \
-         "Ubuntu precise." >&2
-    exit 1
-  fi
   echo "Including ARM cross toolchain."
 else
   echo "Skipping ARM cross toolchain."
   arm_list=
 fi
 
-packages="$(echo "${dev_list} ${lib_list} ${dbg_list} ${arm_list}" | \
-  tr " " "\n" | sort -u | tr "\n" " ")"
+if test "$do_inst_nacl" = "1"; then
+  echo "Including standalone NaCl dependencies."
+else
+  echo "Skipping standalone NaCl dependencies."
+  nacl_list=
+fi
+
+packages="$(
+  echo "${dev_list} ${lib_list} ${dbg_list} ${arm_list} ${nacl_list}" |
+  tr " " "\n" | sort -u | tr "\n" " "
+)"
 
 if [ 1 -eq "${do_quick_check-0}" ] ; then
   failed_check="$(dpkg-query -W -f '${PackageSpec}:${Status}\n' \

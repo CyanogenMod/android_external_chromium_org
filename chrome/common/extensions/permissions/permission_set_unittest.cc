@@ -36,7 +36,7 @@ static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
 size_t IndexOf(const std::vector<base::string16>& warnings,
                const std::string& warning) {
   for (size_t i = 0; i < warnings.size(); ++i) {
-    if (warnings[i] == ASCIIToUTF16(warning))
+    if (warnings[i] == base::ASCIIToUTF16(warning))
       return i;
   }
 
@@ -255,9 +255,7 @@ TEST(PermissionsTest, CreateUnion) {
         base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
 
   // Union with an empty set.
@@ -302,9 +300,7 @@ TEST(PermissionsTest, CreateUnion) {
     value->Append(
         base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   apis2.insert(permission);
 
@@ -321,9 +317,7 @@ TEST(PermissionsTest, CreateUnion) {
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   // Insert a new permission socket permisssion which will replace the old one.
   expected_apis.insert(permission);
@@ -390,9 +384,7 @@ TEST(PermissionsTest, CreateIntersection) {
         base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   apis1.insert(permission);
 
@@ -429,9 +421,7 @@ TEST(PermissionsTest, CreateIntersection) {
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   apis2.insert(permission);
 
@@ -441,9 +431,7 @@ TEST(PermissionsTest, CreateIntersection) {
     scoped_ptr<base::ListValue> value(new base::ListValue());
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   expected_apis.insert(permission);
 
@@ -509,9 +497,7 @@ TEST(PermissionsTest, CreateDifference) {
        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   apis1.insert(permission);
 
@@ -536,9 +522,7 @@ TEST(PermissionsTest, CreateDifference) {
     value->Append(
         base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   apis2.insert(permission);
 
@@ -548,9 +532,7 @@ TEST(PermissionsTest, CreateDifference) {
     scoped_ptr<base::ListValue> value(new base::ListValue());
     value->Append(base::Value::CreateStringValue("udp-bind::8080"));
     value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    if (!permission->FromValue(value.get())) {
-      NOTREACHED();
-    }
+    ASSERT_TRUE(permission->FromValue(value.get(), NULL));
   }
   expected_apis.insert(permission);
 
@@ -582,9 +564,6 @@ TEST(PermissionsTest, CreateDifference) {
 }
 
 TEST(PermissionsTest, IsPrivilegeIncrease) {
-  // Dev channel required by "sockets" feature.
-  ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_DEV);
-
   const struct {
     const char* base_name;
     bool expect_increase;
@@ -660,9 +639,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kAdView);
   skip.insert(APIPermission::kAlarms);
   skip.insert(APIPermission::kAlwaysOnTopWindows);
-  skip.insert(APIPermission::kAppCurrentWindowInternal);
-  skip.insert(APIPermission::kAppRuntime);
-  skip.insert(APIPermission::kAppWindow);
   skip.insert(APIPermission::kAudio);
   skip.insert(APIPermission::kBrowsingData);
   skip.insert(APIPermission::kCastStreaming);
@@ -742,6 +718,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kFileBrowserHandlerInternal);
   skip.insert(APIPermission::kFileBrowserPrivate);
   skip.insert(APIPermission::kFirstRunPrivate);
+  skip.insert(APIPermission::kHotwordPrivate);
   skip.insert(APIPermission::kIdentityPrivate);
   skip.insert(APIPermission::kInfobars);
   skip.insert(APIPermission::kInputMethodPrivate);
@@ -752,6 +729,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kPreferencesPrivate);
   skip.insert(APIPermission::kPrincipalsPrivate);
   skip.insert(APIPermission::kImageWriterPrivate);
+  skip.insert(APIPermission::kReadingListPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
   skip.insert(APIPermission::kSystemPrivate);
@@ -768,12 +746,10 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDevtools);
 
   // Platform apps.
-  skip.insert(APIPermission::kBluetooth);
   skip.insert(APIPermission::kFileSystem);
   skip.insert(APIPermission::kFileSystemProvider);
   skip.insert(APIPermission::kFileSystemRetainEntries);
   skip.insert(APIPermission::kSocket);
-  skip.insert(APIPermission::kSocketsUdp);
   skip.insert(APIPermission::kUsbDevice);
 
   PermissionsInfo* info = PermissionsInfo::GetInstance();
@@ -880,7 +856,7 @@ TEST(PermissionsTest, GetWarningMessages_ManyHosts) {
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Access your data on encrypted.google.com and www.google.com",
-            UTF16ToUTF8(warnings[0]));
+            base::UTF16ToUTF8(warnings[0]));
 }
 
 TEST(PermissionsTest, GetWarningMessages_Plugins) {
@@ -897,7 +873,7 @@ TEST(PermissionsTest, GetWarningMessages_Plugins) {
 #else
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Access all data on your computer and the websites you visit",
-            UTF16ToUTF8(warnings[0]));
+            base::UTF16ToUTF8(warnings[0]));
 #endif
 }
 
@@ -1010,11 +986,11 @@ TEST(PermissionsTest, GetWarningMessages_Socket_OneDomainTwoHostnames) {
   EXPECT_EQ(2u, warnings.size());
   if (warnings.size() > 0)
     EXPECT_EQ(warnings[0],
-              UTF8ToUTF16("Exchange data with any computer in the domain "
+              base::UTF8ToUTF16("Exchange data with any computer in the domain "
                           "example.org"));
   if (warnings.size() > 1)
     EXPECT_EQ(warnings[1],
-              UTF8ToUTF16("Exchange data with the computers named: "
+              base::UTF8ToUTF16("Exchange data with the computers named: "
                           "b\xC3\xA5r.example.com foo.example.com"));
                           // "\xC3\xA5" = UTF-8 for lowercase A with ring above
 }
@@ -1035,12 +1011,12 @@ TEST(PermissionsTest, GetWarningMessages_Socket_TwoDomainsOneHostname) {
   EXPECT_EQ(2u, warnings.size());
   if (warnings.size() > 0)
     EXPECT_EQ(warnings[0],
-              UTF8ToUTF16("Exchange data with any computer in the domains: "
-                           "example.com foo.example.org"));
+              base::UTF8ToUTF16("Exchange data with any computer in the "
+                                "domains: example.com foo.example.org"));
   if (warnings.size() > 1)
     EXPECT_EQ(warnings[1],
-              UTF8ToUTF16("Exchange data with the computer named "
-                           "bar.example.org"));
+              base::UTF8ToUTF16("Exchange data with the computer named "
+                                "bar.example.org"));
 }
 
 TEST(PermissionsTest, GetWarningMessages_PlatformApppHosts) {

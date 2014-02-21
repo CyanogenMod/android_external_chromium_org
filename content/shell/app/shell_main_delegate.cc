@@ -6,6 +6,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -171,7 +172,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
 #endif
 
-    net::CookieMonster::EnableFileScheme();
+    command_line.AppendSwitch(switches::kEnableFileCookies);
 
     // Unless/until WebM files are added to the media layout tests, we need to
     // avoid removing MP4/H264/AAC so that layout tests can run on Android.
@@ -259,9 +260,10 @@ void ShellMainDelegate::InitializeResourceBundle() {
   int pak_fd =
       base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
   if (pak_fd != base::kInvalidPlatformFileValue) {
-    ui::ResourceBundle::InitSharedInstanceWithPakFile(pak_fd, false);
+    ui::ResourceBundle::InitSharedInstanceWithPakFile(base::File(pak_fd),
+                                                      false);
     ResourceBundle::GetSharedInstance().AddDataPackFromFile(
-        pak_fd, ui::SCALE_FACTOR_100P);
+        base::File(pak_fd), ui::SCALE_FACTOR_100P);
     return;
   }
 #endif

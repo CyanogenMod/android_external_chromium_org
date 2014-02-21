@@ -17,7 +17,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -38,12 +37,17 @@
 #include "v8/include/v8.h"
 #include "webkit/common/user_agent/user_agent_util.h"
 
+#if defined(OS_MACOSX)
+#include "chrome/browser/mac/obsolete_system.h"
+#endif
+
 #if defined(OS_CHROMEOS)
 #include "base/files/file_util_proxy.h"
 #include "base/i18n/time_formatting.h"
 #include "base/prefs/pref_service.h"
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/help/help_utils_chromeos.h"
@@ -59,7 +63,7 @@ using content::BrowserThread;
 namespace {
 
 // Returns the browser version as a string.
-string16 BuildBrowserVersionString() {
+base::string16 BuildBrowserVersionString() {
   chrome::VersionInfo version_info;
   DCHECK(version_info.is_valid());
 
@@ -75,14 +79,14 @@ string16 BuildBrowserVersionString() {
   browser_version += ")";
 #endif
 
-  return UTF8ToUTF16(browser_version);
+  return base::UTF8ToUTF16(browser_version);
 }
 
 #if defined(OS_CHROMEOS)
 
 // Returns message that informs user that for update it's better to
 // connect to a network of one of the allowed types.
-string16 GetAllowedConnectionTypesMessage() {
+base::string16 GetAllowedConnectionTypesMessage() {
   if (help_utils_chromeos::IsUpdateOverCellularAllowed()) {
     return l10n_util::GetStringUTF16(IDS_UPGRADE_NETWORK_LIST_CELLULAR_ALLOWED);
   } else {
@@ -93,7 +97,9 @@ string16 GetAllowedConnectionTypesMessage() {
 
 // Returns true if the device is enterprise managed, false otherwise.
 bool IsEnterpriseManaged() {
-  return g_browser_process->browser_policy_connector()->IsEnterpriseManaged();
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  return connector->IsEnterpriseManaged();
 }
 
 // Returns true if current user can change channel, false otherwise.
@@ -113,8 +119,9 @@ bool CanChangeChannel() {
     size_t at_pos = user.find('@');
     if (at_pos != std::string::npos && at_pos + 1 < user.length())
       domain = user.substr(user.find('@') + 1);
-    return domain == g_browser_process->browser_policy_connector()->
-        GetEnterpriseDomain();
+    policy::BrowserPolicyConnectorChromeOS* connector =
+        g_browser_process->platform_part()->browser_policy_connector_chromeos();
+    return domain == connector->GetEnterpriseDomain();
   } else if (chromeos::UserManager::Get()->IsCurrentUserOwner()) {
     // On non managed machines we have local owner who is the only one to change
     // anything. Ensure that ReleaseChannelDelegated is false.
@@ -215,6 +222,13 @@ void HelpHandler::GetLocalizedValues(content::WebUIDataSource* source) {
                       l10n_util::GetStringUTF16(resources[i].ids));
   }
 
+#if defined(OS_MACOSX)
+  source->AddString("updateObsoleteSystem",
+                    ObsoleteSystemMac::LocalizedObsoleteSystemString());
+  source->AddString("updateObsoleteSystemURL",
+                    chrome::kMac32BitDeprecationURL);
+#endif
+
   source->AddString(
       "browserVersion",
       l10n_util::GetStringFUTF16(IDS_ABOUT_PRODUCT_VERSION,
@@ -229,14 +243,14 @@ void HelpHandler::GetLocalizedValues(content::WebUIDataSource* source) {
 
   base::string16 license = l10n_util::GetStringFUTF16(
       IDS_ABOUT_VERSION_LICENSE,
-      ASCIIToUTF16(chrome::kChromiumProjectURL),
-      ASCIIToUTF16(chrome::kChromeUICreditsURL));
+      base::ASCIIToUTF16(chrome::kChromiumProjectURL),
+      base::ASCIIToUTF16(chrome::kChromeUICreditsURL));
   source->AddString("productLicense", license);
 
 #if defined(OS_CHROMEOS)
   base::string16 os_license = l10n_util::GetStringFUTF16(
       IDS_ABOUT_CROS_VERSION_LICENSE,
-      ASCIIToUTF16(chrome::kChromeUIOSCreditsURL));
+      base::ASCIIToUTF16(chrome::kChromeUIOSCreditsURL));
   source->AddString("productOsLicense", os_license);
 
   base::string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_OS_NAME);
@@ -258,7 +272,7 @@ void HelpHandler::GetLocalizedValues(content::WebUIDataSource* source) {
 #endif
 
   base::string16 tos = l10n_util::GetStringFUTF16(
-      IDS_ABOUT_TERMS_OF_SERVICE, UTF8ToUTF16(chrome::kChromeUITermsURL));
+      IDS_ABOUT_TERMS_OF_SERVICE, base::UTF8ToUTF16(chrome::kChromeUITermsURL));
   source->AddString("productTOS", tos);
 
   source->AddString("webkitVersion", webkit_glue::GetWebKitVersion());
@@ -316,7 +330,7 @@ void HelpHandler::Observe(int type, const content::NotificationSource& source,
   }
 }
 
-void HelpHandler::OnPageLoaded(const ListValue* args) {
+void HelpHandler::OnPageLoaded(const base::ListValue* args) {
 #if defined(OS_CHROMEOS)
   // Version information is loaded from a callback
   loader_.GetVersion(
@@ -344,6 +358,17 @@ void HelpHandler::OnPageLoaded(const ListValue* args) {
 #endif
       );
 
+#if defined(OS_MACOSX)
+  web_ui()->CallJavascriptFunction(
+      "help.HelpPage.setObsoleteSystem",
+      base::FundamentalValue(ObsoleteSystemMac::Is32BitObsoleteNowOrSoon() &&
+                             ObsoleteSystemMac::Has32BitOnlyCPU()));
+  web_ui()->CallJavascriptFunction(
+      "help.HelpPage.setObsoleteSystemEndOfTheLine",
+      base::FundamentalValue(ObsoleteSystemMac::Is32BitObsoleteNowOrSoon() &&
+                             ObsoleteSystemMac::Is32BitEndOfTheLine()));
+#endif
+
 #if defined(OS_CHROMEOS)
   web_ui()->CallJavascriptFunction(
       "help.HelpPage.updateIsEnterpriseManaged",
@@ -359,17 +384,17 @@ void HelpHandler::OnPageLoaded(const ListValue* args) {
 }
 
 #if defined(OS_MACOSX)
-void HelpHandler::PromoteUpdater(const ListValue* args) {
+void HelpHandler::PromoteUpdater(const base::ListValue* args) {
   version_updater_->PromoteUpdater();
 }
 #endif
 
-void HelpHandler::RelaunchNow(const ListValue* args) {
+void HelpHandler::RelaunchNow(const base::ListValue* args) {
   DCHECK(args->empty());
   version_updater_->RelaunchBrowser();
 }
 
-void HelpHandler::OpenFeedbackDialog(const ListValue* args) {
+void HelpHandler::OpenFeedbackDialog(const base::ListValue* args) {
   DCHECK(args->empty());
   Browser* browser = chrome::FindBrowserWithWebContents(
       web_ui()->GetWebContents());
@@ -385,7 +410,7 @@ void HelpHandler::OpenHelpPage(const base::ListValue* args) {
 
 #if defined(OS_CHROMEOS)
 
-void HelpHandler::SetChannel(const ListValue* args) {
+void HelpHandler::SetChannel(const base::ListValue* args) {
   DCHECK(args->GetSize() == 2);
 
   if (!CanChangeChannel()) {
@@ -401,7 +426,8 @@ void HelpHandler::SetChannel(const ListValue* args) {
     return;
   }
 
-  version_updater_->SetChannel(UTF16ToUTF8(channel), is_powerwash_allowed);
+  version_updater_->SetChannel(base::UTF16ToUTF8(channel),
+                               is_powerwash_allowed);
   if (chromeos::UserManager::Get()->IsCurrentUserOwner()) {
     // Check for update after switching release channel.
     version_updater_->CheckForUpdate(base::Bind(&HelpHandler::SetUpdateStatus,
@@ -409,7 +435,7 @@ void HelpHandler::SetChannel(const ListValue* args) {
   }
 }
 
-void HelpHandler::RelaunchAndPowerwash(const ListValue* args) {
+void HelpHandler::RelaunchAndPowerwash(const base::ListValue* args) {
   DCHECK(args->empty());
 
   if (IsEnterpriseManaged())

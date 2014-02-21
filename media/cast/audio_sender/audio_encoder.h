@@ -24,12 +24,14 @@ namespace cast {
 
 class AudioEncoder : public base::RefCountedThreadSafe<AudioEncoder> {
  public:
-  typedef base::Callback<void(scoped_ptr<EncodedAudioFrame>,
+  typedef base::Callback<void(scoped_ptr<transport::EncodedAudioFrame>,
                               const base::TimeTicks&)> FrameEncodedCallback;
 
   AudioEncoder(const scoped_refptr<CastEnvironment>& cast_environment,
                const AudioSenderConfig& audio_config,
                const FrameEncodedCallback& frame_encoded_callback);
+
+  CastInitializationStatus InitializationResult() const;
 
   // The |audio_bus| must be valid until the |done_callback| is called.
   // The callback is called from the main cast thread as soon as the encoder is

@@ -15,23 +15,32 @@
 #ifndef I18N_ADDRESSINPUT_ADDRESS_UI_H_
 #define I18N_ADDRESSINPUT_ADDRESS_UI_H_
 
+#include <libaddressinput/address_field.h>
+
 #include <string>
 #include <vector>
 
 namespace i18n {
 namespace addressinput {
 
-class Localization;
 struct AddressUiComponent;
 
 // Returns the list of supported CLDR region codes.
 const std::vector<std::string>& GetRegionCodes();
 
-// Returns the UI components for the CLDR |region_code|. Uses the strings from
-// |localization|. Returns an empty vector on error.
-std::vector<AddressUiComponent> BuildComponents(
-    const std::string& region_code,
-    const Localization& localization);
+// Returns the UI components for the CLDR |region_code|. Returns an empty vector
+// on error.
+std::vector<AddressUiComponent> BuildComponents(const std::string& region_code);
+
+// Returns the fields which are required for the CLDR |region_code|. Returns an
+// empty vector on error.
+std::vector<AddressField> GetRequiredFields(const std::string& region_code);
+
+// Returns the string to use as a separator between lines when displaying the
+// address in a compact form for BCP 47 |language_code|. For example, returns
+// ", " for "en".
+const std::string& GetCompactAddressLinesSeparator(
+        const std::string& language_code);
 
 }  // namespace addressinput
 }  // namespace i18n

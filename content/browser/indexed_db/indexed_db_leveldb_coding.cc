@@ -263,10 +263,11 @@ void EncodeString(const base::string16& value, std::string* into) {
   // Backing store is UTF-16BE, convert from host endianness.
   size_t length = value.length();
   size_t current = into->size();
-  into->resize(into->size() + length * sizeof(char16));
+  into->resize(into->size() + length * sizeof(base::char16));
 
-  const char16* src = value.c_str();
-  char16* dst = reinterpret_cast<char16*>(&*into->begin() + current);
+  const base::char16* src = value.c_str();
+  base::char16* dst =
+      reinterpret_cast<base::char16*>(&*into->begin() + current);
   for (unsigned i = 0; i < length; ++i)
     *dst++ = htons(*src++);
 }
@@ -324,15 +325,13 @@ void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
     case WebIDBKeyTypeDate: {
       EncodeByte(kIndexedDBKeyDateTypeByte, into);
       EncodeDouble(value.date(), into);
-      DCHECK_EQ(static_cast<size_t>(9),
-                static_cast<size_t>(into->size() - previous_size));
+      DCHECK_EQ(9u, static_cast<size_t>(into->size() - previous_size));
       return;
     }
     case WebIDBKeyTypeNumber: {
       EncodeByte(kIndexedDBKeyNumberTypeByte, into);
       EncodeDouble(value.number(), into);
-      DCHECK_EQ(static_cast<size_t>(9),
-                static_cast<size_t>(into->size() - previous_size));
+      DCHECK_EQ(9u, static_cast<size_t>(into->size() - previous_size));
       return;
     }
   }
@@ -428,16 +427,17 @@ bool DecodeString(StringPiece* slice, base::string16* value) {
   }
 
   // Backing store is UTF-16BE, convert to host endianness.
-  DCHECK(!(slice->size() % sizeof(char16)));
-  size_t length = slice->size() / sizeof(char16);
+  DCHECK(!(slice->size() % sizeof(base::char16)));
+  size_t length = slice->size() / sizeof(base::char16);
   base::string16 decoded;
   decoded.reserve(length);
-  const char16* encoded = reinterpret_cast<const char16*>(slice->begin());
+  const base::char16* encoded =
+      reinterpret_cast<const base::char16*>(slice->begin());
   for (unsigned i = 0; i < length; ++i)
     decoded.push_back(ntohs(*encoded++));
 
   *value = decoded;
-  slice->remove_prefix(length * sizeof(char16));
+  slice->remove_prefix(length * sizeof(base::char16));
   return true;
 }
 
@@ -448,7 +448,7 @@ bool DecodeStringWithLength(StringPiece* slice, base::string16* value) {
   int64 length = 0;
   if (!DecodeVarInt(slice, &length) || length < 0)
     return false;
-  size_t bytes = length * sizeof(char16);
+  size_t bytes = length * sizeof(base::char16);
   if (slice->size() < bytes)
     return false;
 
@@ -628,9 +628,9 @@ bool ConsumeEncodedIDBKey(StringPiece* slice) {
       int64 length = 0;
       if (!DecodeVarInt(slice, &length) || length < 0)
         return false;
-      if (slice->size() < static_cast<size_t>(length) * sizeof(char16))
+      if (slice->size() < static_cast<size_t>(length) * sizeof(base::char16))
         return false;
-      slice->remove_prefix(length * sizeof(char16));
+      slice->remove_prefix(length * sizeof(base::char16));
       return true;
     }
     case kIndexedDBKeyDateTypeByte:
@@ -690,19 +690,19 @@ int CompareEncodedStringsWithLength(StringPiece* slice1,
     *ok = false;
     return 0;
   }
-  DCHECK_GE(slice1->size(), len1 * sizeof(char16));
-  DCHECK_GE(slice2->size(), len2 * sizeof(char16));
-  if (slice1->size() < len1 * sizeof(char16) ||
-      slice2->size() < len2 * sizeof(char16)) {
+  DCHECK_GE(slice1->size(), len1 * sizeof(base::char16));
+  DCHECK_GE(slice2->size(), len2 * sizeof(base::char16));
+  if (slice1->size() < len1 * sizeof(base::char16) ||
+      slice2->size() < len2 * sizeof(base::char16)) {
     *ok = false;
     return 0;
   }
 
   // Extract the string data, and advance the passed slices.
-  StringPiece string1(slice1->begin(), len1 * sizeof(char16));
-  StringPiece string2(slice2->begin(), len2 * sizeof(char16));
-  slice1->remove_prefix(len1 * sizeof(char16));
-  slice2->remove_prefix(len2 * sizeof(char16));
+  StringPiece string1(slice1->begin(), len1 * sizeof(base::char16));
+  StringPiece string2(slice2->begin(), len2 * sizeof(base::char16));
+  slice1->remove_prefix(len1 * sizeof(base::char16));
+  slice2->remove_prefix(len2 * sizeof(base::char16));
 
   *ok = true;
   // Strings are UTF-16BE encoded, so a simple memcmp is sufficient.
@@ -955,12 +955,14 @@ int Compare(const StringPiece& a,
       // specialized CompareSuffix<> because metadata is relatively uncommon
       // in the database.
 
-      if (type_byte_a == kDatabaseFreeListTypeByte)
-        return Compare<DatabaseFreeListKey>(
-            a, b, only_compare_index_keys, ok);
-      if (type_byte_a == kDatabaseNameTypeByte)
+      if (type_byte_a == kDatabaseFreeListTypeByte) {
+        // TODO(jsbell): No need to pass only_compare_index_keys through here.
+        return Compare<DatabaseFreeListKey>(a, b, only_compare_index_keys, ok);
+      }
+      if (type_byte_a == kDatabaseNameTypeByte) {
         return Compare<DatabaseNameKey>(
             a, b, /*only_compare_index_keys*/ false, ok);
+      }
       break;
     }
 
@@ -989,24 +991,32 @@ int Compare(const StringPiece& a,
       // specialized CompareSuffix<> because metadata is relatively uncommon
       // in the database.
 
-      if (type_byte_a == kObjectStoreMetaDataTypeByte)
+      if (type_byte_a == kObjectStoreMetaDataTypeByte) {
+        // TODO(jsbell): No need to pass only_compare_index_keys through here.
         return Compare<ObjectStoreMetaDataKey>(
             a, b, only_compare_index_keys, ok);
-      if (type_byte_a == kIndexMetaDataTypeByte)
+      }
+      if (type_byte_a == kIndexMetaDataTypeByte) {
         return Compare<IndexMetaDataKey>(
             a, b, /*only_compare_index_keys*/ false, ok);
-      if (type_byte_a == kObjectStoreFreeListTypeByte)
+      }
+      if (type_byte_a == kObjectStoreFreeListTypeByte) {
         return Compare<ObjectStoreFreeListKey>(
             a, b, only_compare_index_keys, ok);
-      if (type_byte_a == kIndexFreeListTypeByte)
+      }
+      if (type_byte_a == kIndexFreeListTypeByte) {
         return Compare<IndexFreeListKey>(
             a, b, /*only_compare_index_keys*/ false, ok);
-      if (type_byte_a == kObjectStoreNamesTypeByte)
+      }
+      if (type_byte_a == kObjectStoreNamesTypeByte) {
+        // TODO(jsbell): No need to pass only_compare_index_keys through here.
         return Compare<ObjectStoreNamesKey>(
             a, b, only_compare_index_keys, ok);
-      if (type_byte_a == kIndexNamesKeyTypeByte)
+      }
+      if (type_byte_a == kIndexNamesKeyTypeByte) {
         return Compare<IndexNamesKey>(
             a, b, /*only_compare_index_keys*/ false, ok);
+      }
       break;
     }
 

@@ -129,6 +129,7 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
   if (request_info.extra_data) {
     RequestExtraData* extra_data =
         static_cast<RequestExtraData*>(request_info.extra_data);
+    request_.visiblity_state = extra_data->visibility_state();
     request_.render_frame_id = extra_data->render_frame_id();
     request_.is_main_frame = extra_data->is_main_frame();
     request_.frame_id = extra_data->frame_id();
@@ -144,6 +145,7 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
         extra_data->transferred_request_request_id();
     frame_origin_ = extra_data->frame_origin();
   } else {
+    request_.visiblity_state = blink::WebPageVisibilityStateVisible;
     request_.render_frame_id = MSG_ROUTING_NONE;
     request_.is_main_frame = false;
     request_.frame_id = -1;
@@ -519,10 +521,7 @@ void ResourceDispatcher::FollowPendingRedirect(
 
 void ResourceDispatcher::OnRequestComplete(
     int request_id,
-    int error_code,
-    bool was_ignored_by_handler,
-    const std::string& security_info,
-    const base::TimeTicks& browser_completion_time) {
+    const ResourceMsg_RequestCompleteData& request_complete_data) {
   TRACE_EVENT0("loader", "ResourceDispatcher::OnRequestComplete");
   SiteIsolationPolicy::OnRequestComplete(request_id);
 
@@ -538,18 +537,23 @@ void ResourceDispatcher::OnRequestComplete(
   if (delegate_) {
     ResourceLoaderBridge::Peer* new_peer =
         delegate_->OnRequestComplete(
-            request_info->peer, request_info->resource_type, error_code);
+            request_info->peer, request_info->resource_type,
+            request_complete_data.error_code);
     if (new_peer)
       request_info->peer = new_peer;
   }
 
   base::TimeTicks renderer_completion_time = ToRendererCompletionTime(
-      *request_info, browser_completion_time);
+      *request_info, request_complete_data.completion_time);
   // The request ID will be removed from our pending list in the destructor.
   // Normally, dispatching this message causes the reference-counted request to
   // die immediately.
-  peer->OnCompletedRequest(error_code, was_ignored_by_handler, security_info,
-                           renderer_completion_time);
+  peer->OnCompletedRequest(request_complete_data.error_code,
+                           request_complete_data.was_ignored_by_handler,
+                           request_complete_data.exists_in_cache,
+                           request_complete_data.security_info,
+                           renderer_completion_time,
+                           request_complete_data.encoded_data_length);
 }
 
 int ResourceDispatcher::AddPendingRequest(
@@ -585,11 +589,8 @@ void ResourceDispatcher::CancelPendingRequest(int request_id) {
     return;
   }
 
-  SiteIsolationPolicy::OnRequestComplete(request_id);
-  PendingRequestInfo& request_info = it->second;
-  ReleaseResourcesInMessageQueue(&request_info.deferred_message_queue);
-  pending_requests_.erase(it);
-
+  // |request_id| will be removed from |pending_requests_| when
+  // OnRequestComplete returns with ERR_ABORTED.
   message_sender()->Send(new ResourceHostMsg_CancelRequest(request_id));
 }
 

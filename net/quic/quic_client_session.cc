@@ -90,7 +90,7 @@ QuicClientSession::QuicClientSession(
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
-    : QuicSession(connection, config, false),
+    : QuicSession(connection, config),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
@@ -138,14 +138,39 @@ QuicClientSession::~QuicClientSession() {
   else
     RecordHandshakeState(STATE_FAILED);
 
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumTotalStreams", num_total_streams_);
   UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellos",
                        crypto_stream_->num_sent_client_hellos());
-  if (IsCryptoHandshakeConfirmed()) {
-    UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellosCryptoHandshakeConfirmed",
-                         crypto_stream_->num_sent_client_hellos());
-  }
+  if (!IsCryptoHandshakeConfirmed())
+    return;
 
-  UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumTotalStreams", num_total_streams_);
+  // Sending one client_hello means we had zero handshake-round-trips.
+  int round_trip_handshakes = crypto_stream_->num_sent_client_hellos() - 1;
+
+  // Don't bother with these histogram during tests, which mock out
+  // num_sent_client_hellos().
+  if (round_trip_handshakes < 0 || !stream_factory_)
+    return;
+
+  bool port_selected = stream_factory_->enable_port_selection();
+  SSLInfo ssl_info;
+  if (!crypto_stream_->GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+    if (port_selected) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTP",
+                                  round_trip_handshakes, 0, 3, 4);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectRandomPortForHTTP",
+                                  round_trip_handshakes, 0, 3, 4);
+    }
+  } else {
+    if (port_selected) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTPS",
+                                  round_trip_handshakes, 0, 3, 4);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectRandomPortForHTTPS",
+                                  round_trip_handshakes, 0, 3, 4);
+    }
+  }
 }
 
 bool QuicClientSession::OnStreamFrames(
@@ -214,7 +239,7 @@ void QuicClientSession::CancelRequest(StreamRequest* request) {
   }
 }
 
-QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
+QuicReliableClientStream* QuicClientSession::CreateOutgoingDataStream() {
   if (!crypto_stream_->encryption_established()) {
     DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return NULL;
@@ -277,7 +302,22 @@ int QuicClientSession::GetNumSentClientHellos() const {
   return crypto_stream_->num_sent_client_hellos();
 }
 
-ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
+bool QuicClientSession::CanPool(const std::string& hostname) const {
+  // TODO(rch): When QUIC supports channel ID or client certificates, this
+  // logic will need to be revised.
+  DCHECK(connection()->connected());
+  SSLInfo ssl_info;
+  bool unused = false;
+  DCHECK(crypto_stream_);
+  if (!crypto_stream_->GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+    // We can always pool with insecure QUIC sessions.
+    return true;
+  }
+  // Only pool secure QUIC sessions if the cert matches the new hostname.
+  return ssl_info.cert->VerifyNameMatch(hostname, &unused);
+}
+
+QuicDataStream* QuicClientSession::CreateIncomingDataStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
   return NULL;
@@ -289,8 +329,9 @@ void QuicClientSession::CloseStream(QuicStreamId stream_id) {
 }
 
 void QuicClientSession::SendRstStream(QuicStreamId id,
-                                      QuicRstStreamErrorCode error) {
-  QuicSession::SendRstStream(id, error);
+                                      QuicRstStreamErrorCode error,
+                                      QuicStreamOffset bytes_written) {
+  QuicSession::SendRstStream(id, error, bytes_written);
   OnClosedStream();
 }
 
@@ -451,15 +492,25 @@ void QuicClientSession::CloseAllObservers(int net_error) {
   }
 }
 
-base::Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
+base::Value* QuicClientSession::GetInfoAsValue(
+    const std::set<HostPortProxyPair>& aliases) const {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetString("host_port_pair", pair.ToString());
+  // TODO(rch): remove "host_port_pair" when Chrome 34 is stable.
+  dict->SetString("host_port_pair", aliases.begin()->first.ToString());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
   dict->SetString("guid", base::Uint64ToString(guid()));
   dict->SetBoolean("connected", connection()->connected());
+
+  base::ListValue* alias_list = new base::ListValue();
+  for (std::set<HostPortProxyPair>::const_iterator it = aliases.begin();
+       it != aliases.end(); it++) {
+    alias_list->Append(new base::StringValue(it->first.ToString()));
+  }
+  dict->Set("aliases", alias_list);
+
   return dict;
 }
 
@@ -492,7 +543,7 @@ void QuicClientSession::OnReadComplete(int result) {
   // use a weak pointer to be safe.
   connection()->ProcessUdpPacket(local_address, peer_address, packet);
   if (!connection()->connected()) {
-    stream_factory_->OnSessionClosed(this);
+    NotifyFactoryOfSessionClosedLater();
     return;
   }
   StartReading();

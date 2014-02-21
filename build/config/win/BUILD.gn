@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/win/visual_studio_version.gni")
+
 declare_args() {
   # Full path to the Windows SDK, not including a backslash at the end.
+  # This value is the default location, override if you have a different
+  # installation location.
   windows_sdk_path = "C:\Program Files (x86)\Windows Kits\8.0"
-
-  # Full path to the Visual Studio installation, not including a backslash
-  # at the end.
-  visual_studio_path = "C:\Program Files (x86)\Microsoft Visual Studio 10.0"
 }
 
 # Compiler setup for the Windows SDK. Applied to all targets.
@@ -61,15 +61,15 @@ config("sdk_link") {
       "$visual_studio_path\VC\lib",
       "$visual_studio_path\VC\atlmfc\lib",
     ]
-    #if (!is_asan) {  TODO(brettw) Address Sanitizer
-    #  ldflags += "/largeaddressaware"
-    #}
+    if (!is_asan) {
+      ldflags += [ "/largeaddressaware" ]
+    }
   }
 }
 
 # This default linker setup is provided separately from the SDK setup so
-# targets who want different libraries linked can remove this and specify their
-# own.
+# targets who want different library configurations can remove this and specify
+# their own.
 config("common_linker_setup") {
   ldflags = [
     "/FIXED:NO",
@@ -85,37 +85,10 @@ config("common_linker_setup") {
   # Chrome.dll don't stick from one launch to the next. For this reason, we
   # turn ASLR off in debug builds.
   if (is_debug) {
-    ldflags += "/DYNAMICBASE:NO"
+    ldflags += [ "/DYNAMICBASE:NO" ]
   } else {
-    ldflags += "/DYNAMICBASE"
+    ldflags += [ "/DYNAMICBASE" ]
   }
-
-  # Common libraries.
-  libs = [
-    "advapi32.lib",
-    "comdlg32.lib",
-    "dbghelp.lib",
-    "delayimp.lib",
-    "dnsapi.lib",
-    "gdi32.lib",
-    "kernel32.lib",
-    "msimg32.lib",
-    "odbc32.lib",
-    "odbccp32.lib",
-    "ole32.lib",
-    "oleaut32.lib",
-    "psapi.lib",
-    "shell32.lib",
-    "shlwapi.lib",
-    "user32.lib",
-    "usp10.lib",
-    "uuid.lib",
-    "version.lib",
-    "wininet.lib",
-    "winmm.lib",
-    "winspool.lib",
-    "ws2_32.lib",
-  ]
 
   # Delay loaded DLLs.
   ldflags += [

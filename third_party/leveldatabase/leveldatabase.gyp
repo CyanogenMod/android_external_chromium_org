@@ -37,16 +37,22 @@
       'target_name': 'leveldatabase',
       'type': 'static_library',
       'dependencies': [
+        '../../third_party/re2/re2.gyp:re2',
         '../../base/base.gyp:base',
         # base::LazyInstance is a template that pulls in dynamic_annotations so
         # we need to explictly link in the code for dynamic_annotations.
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../re2/re2.gyp:re2',
       ],
       'conditions': [
         ['use_snappy', {
           'dependencies': [
             '../../third_party/snappy/snappy.gyp:snappy',
+          ],
+        }],
+        ['OS=="win"', {
+          'sources': [
+            'env_chromium_win.cc',
+            'env_chromium_win.h',
           ],
         }],
       ],
@@ -72,6 +78,8 @@
         # they don't build.
         'env_chromium.cc',
         'env_chromium.h',
+        'env_chromium_stdio.cc',
+        'env_chromium_stdio.h',
         'env_idb.h',
         'port/port_chromium.cc',
         'port/port_chromium.h',

@@ -12,8 +12,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_number_conversions.h"
 #include "cc/layers/layer.h"
-#include "content/common/browser_rendering_stats.h"
-#include "content/common/gpu/gpu_rendering_stats.h"
 #include "content/common/input/synthetic_gesture_params.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
@@ -34,26 +32,24 @@
 #include "third_party/skia/include/core/SkStream.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "v8/include/v8.h"
-#include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 using blink::WebCanvas;
 using blink::WebFrame;
 using blink::WebImageCache;
 using blink::WebPrivatePtr;
-using blink::WebRenderingStatsImpl;
 using blink::WebSize;
 using blink::WebView;
 
 const char kGpuBenchmarkingExtensionName[] = "v8/GpuBenchmarking";
 
+// offset parameter is deprecated/ignored, and will be remove from the
+// signature in a future skia release. <reed@google.com>
 static SkData* EncodeBitmapToData(size_t* offset, const SkBitmap& bm) {
     SkPixelRef* pr = bm.pixelRef();
     if (pr != NULL) {
         SkData* data = pr->refEncodedData();
-        if (data != NULL) {
-            *offset = bm.pixelRefOffset();
+        if (data != NULL)
             return data;
-        }
     }
     std::vector<unsigned char> vector;
     if (gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &vector)) {
@@ -71,7 +67,7 @@ class SkPictureSerializer {
         layer_id_(0) {
     // Let skia register known effect subclasses. This basically enables
     // reflection on those subclasses required for picture serialization.
-    content::SkiaBenchmarkingExtension::InitSkGraphics();
+    content::SkiaBenchmarking::Initialize();
   }
 
   // Recursively serializes the layer tree.
@@ -102,38 +98,6 @@ class SkPictureSerializer {
  private:
   base::FilePath dirpath_;
   int layer_id_;
-};
-
-class RenderingStatsEnumerator : public cc::RenderingStats::Enumerator {
- public:
-  RenderingStatsEnumerator(v8::Isolate* isolate,
-                           v8::Handle<v8::Object> stats_object)
-      : isolate(isolate), stats_object(stats_object) {}
-
-  virtual void AddInt64(const char* name, int64 value) OVERRIDE {
-    stats_object->Set(v8::String::NewFromUtf8(isolate, name),
-                      v8::Number::New(isolate, value));
-  }
-
-  virtual void AddDouble(const char* name, double value) OVERRIDE {
-    stats_object->Set(v8::String::NewFromUtf8(isolate, name),
-                      v8::Number::New(isolate, value));
-  }
-
-  virtual void AddInt(const char* name, int value) OVERRIDE {
-    stats_object->Set(v8::String::NewFromUtf8(isolate, name),
-                      v8::Integer::New(value));
-  }
-
-  virtual void AddTimeDeltaInSecondsF(const char* name,
-                                      const base::TimeDelta& value) OVERRIDE {
-    stats_object->Set(v8::String::NewFromUtf8(isolate, name),
-                      v8::Number::New(isolate, value.InSecondsF()));
-  }
-
- private:
-  v8::Isolate* isolate;
-  v8::Handle<v8::Object> stats_object;
 };
 
 }  // namespace
@@ -264,14 +228,6 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "  native function SetRasterizeOnlyVisibleContent();"
           "  return SetRasterizeOnlyVisibleContent();"
           "};"
-          "chrome.gpuBenchmarking.renderingStats = function() {"
-          "  native function GetRenderingStats();"
-          "  return GetRenderingStats();"
-          "};"
-          "chrome.gpuBenchmarking.gpuRenderingStats = function() {"
-          "  native function GetGpuRenderingStats();"
-          "  return GetGpuRenderingStats();"
-          "};"
           "chrome.gpuBenchmarking.printToSkPicture = function(dirname) {"
           "  native function PrintToSkPicture();"
           "  return PrintToSkPicture(dirname);"
@@ -363,10 +319,6 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     if (name->Equals(
             v8::String::NewFromUtf8(isolate, "SetRasterizeOnlyVisibleContent")))
       return v8::FunctionTemplate::New(isolate, SetRasterizeOnlyVisibleContent);
-    if (name->Equals(v8::String::NewFromUtf8(isolate, "GetRenderingStats")))
-      return v8::FunctionTemplate::New(isolate, GetRenderingStats);
-    if (name->Equals(v8::String::NewFromUtf8(isolate, "GetGpuRenderingStats")))
-      return v8::FunctionTemplate::New(isolate, GetGpuRenderingStats);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "PrintToSkPicture")))
       return v8::FunctionTemplate::New(isolate, PrintToSkPicture);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "BeginSmoothScroll")))
@@ -409,48 +361,6 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     context.compositor()->SetRasterizeOnlyVisibleContent();
   }
 
-  static void GetRenderingStats(
-      const v8::FunctionCallbackInfo<v8::Value>& args) {
-
-    GpuBenchmarkingContext context;
-    if (!context.Init(false))
-      return;
-
-    WebRenderingStatsImpl stats;
-    context.render_view_impl()->GetRenderingStats(stats);
-
-    content::GpuRenderingStats gpu_stats;
-    context.render_view_impl()->GetGpuRenderingStats(&gpu_stats);
-    BrowserRenderingStats browser_stats;
-    context.render_view_impl()->GetBrowserRenderingStats(&browser_stats);
-    v8::Handle<v8::Object> stats_object = v8::Object::New();
-
-    RenderingStatsEnumerator enumerator(args.GetIsolate(), stats_object);
-    stats.rendering_stats.EnumerateFields(&enumerator);
-    gpu_stats.EnumerateFields(&enumerator);
-    browser_stats.EnumerateFields(&enumerator);
-
-    args.GetReturnValue().Set(stats_object);
-  }
-
-  static void GetGpuRenderingStats(
-      const v8::FunctionCallbackInfo<v8::Value>& args) {
-
-    GpuBenchmarkingContext context;
-    if (!context.Init(false))
-      return;
-
-    content::GpuRenderingStats gpu_stats;
-    context.render_view_impl()->GetGpuRenderingStats(&gpu_stats);
-
-    v8::Isolate* isolate = args.GetIsolate();
-    v8::Handle<v8::Object> stats_object = v8::Object::New(isolate);
-    RenderingStatsEnumerator enumerator(isolate, stats_object);
-    gpu_stats.EnumerateFields(&enumerator);
-
-    args.GetReturnValue().Set(stats_object);
-  }
-
   static void PrintToSkPicture(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (args.Length() != 1)
@@ -486,13 +396,17 @@ class GpuBenchmarkingWrapper : public v8::Extension {
 
   static void OnSyntheticGestureCompleted(
       CallbackAndContext* callback_and_context) {
-    v8::HandleScope scope(callback_and_context->isolate());
+    v8::Isolate* isolate = callback_and_context->isolate();
+    v8::HandleScope scope(isolate);
     v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
     WebFrame* frame = WebFrame::frameForContext(context);
     if (frame) {
       frame->callFunctionEvenIfScriptDisabled(
-          callback_and_context->GetCallback(), v8::Object::New(), 0, NULL);
+          callback_and_context->GetCallback(),
+          v8::Object::New(isolate),
+          0,
+          NULL);
     }
   }
 
@@ -572,8 +486,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     // Account for the 2 optional arguments, start_x and start_y.
     if (args[6]->IsUndefined() || args[7]->IsUndefined()) {
       blink::WebRect rect = context.render_view_impl()->windowRect();
-      gesture_params->anchor.SetPoint(rect.x + rect.width / 2,
-                                      rect.y + rect.height / 2);
+      gesture_params->anchor.SetPoint(rect.width / 2, rect.height / 2);
     } else if (args[6]->IsNumber() && args[7]->IsNumber()) {
       gesture_params->anchor.SetPoint(
           args[6]->IntegerValue() * page_scale_factor,
@@ -745,7 +658,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       v8::Handle<v8::Value> argv[] = { result };
 
       frame->callFunctionEvenIfScriptDisabled(
-          callback_and_context->GetCallback(), v8::Object::New(), 1, argv);
+          callback_and_context->GetCallback(),
+          v8::Object::New(isolate),
+          1,
+          argv);
     }
   }
 
@@ -778,7 +694,8 @@ class GpuBenchmarkingWrapper : public v8::Extension {
   static void OnMicroBenchmarkCompleted(
       CallbackAndContext* callback_and_context,
       scoped_ptr<base::Value> result) {
-    v8::HandleScope scope(callback_and_context->isolate());
+    v8::Isolate* isolate = callback_and_context->isolate();
+    v8::HandleScope scope(isolate);
     v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
     WebFrame* frame = WebFrame::frameForContext(context);
@@ -789,7 +706,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       v8::Handle<v8::Value> argv[] = { value };
 
       frame->callFunctionEvenIfScriptDisabled(
-          callback_and_context->GetCallback(), v8::Object::New(), 1, argv);
+          callback_and_context->GetCallback(),
+          v8::Object::New(isolate),
+          1,
+          argv);
     }
   }
 

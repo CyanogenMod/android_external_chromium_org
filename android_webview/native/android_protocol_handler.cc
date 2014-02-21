@@ -146,8 +146,7 @@ AndroidStreamReaderURLRequestJobDelegateImpl::OpenInputStream(
           GetResourceContext(env).obj(),
           jurl.obj());
 
-  // Check and clear pending exceptions.
-  if (ClearException(env) || stream.is_null()) {
+  if (stream.is_null()) {
     DLOG(ERROR) << "Unable to open input stream for Android URL";
     return scoped_ptr<InputStream>();
   }
@@ -182,7 +181,7 @@ bool AndroidStreamReaderURLRequestJobDelegateImpl::GetMimeType(
           env,
           GetResourceContext(env).obj(),
           stream_impl->jobj(), url.obj());
-  if (ClearException(env) || returned_type.is_null())
+  if (returned_type.is_null())
     return false;
 
   *mime_type = base::android::ConvertJavaStringToUTF8(returned_type);
@@ -229,10 +228,10 @@ net::URLRequestJob* AndroidProtocolHandlerBase::MaybeCreateJob(
 // AssetFileProtocolHandler ---------------------------------------------------
 
 AssetFileProtocolHandler::AssetFileProtocolHandler()
-    : asset_prefix_(std::string(chrome::kFileScheme) +
+    : asset_prefix_(std::string(content::kFileScheme) +
                     std::string(content::kStandardSchemeSeparator) +
                     android_webview::kAndroidAssetPath),
-      resource_prefix_(std::string(chrome::kFileScheme) +
+      resource_prefix_(std::string(content::kFileScheme) +
                        std::string(content::kStandardSchemeSeparator) +
                        android_webview::kAndroidResourcePath) {
 }

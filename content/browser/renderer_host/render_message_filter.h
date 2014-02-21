@@ -62,6 +62,7 @@ struct MediaLogEvent;
 }
 
 namespace net {
+class KeygenHandler;
 class URLRequestContext;
 class URLRequestContextGetter;
 }
@@ -133,11 +134,12 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnCreateFullscreenWidget(int opener_id,
                                 int* route_id,
                                 int* surface_id);
-  void OnSetCookie(const IPC::Message& message,
+  void OnSetCookie(int render_frame_id,
                    const GURL& url,
                    const GURL& first_party_for_cookies,
                    const std::string& cookie);
-  void OnGetCookies(const GURL& url,
+  void OnGetCookies(int render_frame_id,
+                    const GURL& url,
                     const GURL& first_party_for_cookies,
                     IPC::Message* reply_msg);
   void OnGetRawCookies(const GURL& url,
@@ -200,8 +202,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
                                 media::AudioParameters* output_params);
 
+#if defined(OS_WIN)
   // Used to look up the monitor color profile.
   void OnGetMonitorColorProfile(std::vector<char>* profile);
+#endif
 
   // Used to ask the browser to allocate a block of shared memory for the
   // renderer to send back data in, since shared memory can't be created
@@ -220,15 +224,15 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                     const std::vector<char>& data);
   void OnKeygen(uint32 key_size_index, const std::string& challenge_string,
                 const GURL& url, IPC::Message* reply_msg);
-  void OnKeygenOnWorkerThread(
-      int key_size_in_bits,
-      const std::string& challenge_string,
-      const GURL& url,
-      IPC::Message* reply_msg);
+  void PostKeygenToWorkerThread(IPC::Message* reply_msg,
+                                scoped_ptr<net::KeygenHandler> keygen_handler);
+  void OnKeygenOnWorkerThread(scoped_ptr<net::KeygenHandler> keygen_handler,
+                              IPC::Message* reply_msg);
   void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
 
   // Check the policy for getting cookies. Gets the cookies if allowed.
-  void CheckPolicyForCookies(const GURL& url,
+  void CheckPolicyForCookies(int render_frame_id,
+                             const GURL& url,
                              const GURL& first_party_for_cookies,
                              IPC::Message* reply_msg,
                              const net::CookieList& cookie_list);

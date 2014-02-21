@@ -295,7 +295,7 @@ cr.define('options', function() {
      */
     handleCameraAvailable_: function(onAvailable, stream) {
       if (this.cameraStartInProgress_ && onAvailable()) {
-        this.cameraVideo_.src = window.webkitURL.createObjectURL(stream);
+        this.cameraVideo_.src = URL.createObjectURL(stream);
         this.cameraStream_ = stream;
       } else {
         stream.stop();
@@ -500,7 +500,9 @@ cr.define('options', function() {
       if (this.flipPhoto_ == value)
         return;
       this.flipPhoto_ = value;
-      this.previewElement.classList.toggle('flip-x');
+      this.previewElement.classList.toggle('flip-x', value);
+      /* TODO(merkulova): remove when webkit crbug.com/126479 is fixed. */
+      this.flipPhotoElement.classList.toggle('flip-trick', value);
       if (!this.cameraLive) {
         // Flip current still photo.
         var e = new Event('photoupdated');

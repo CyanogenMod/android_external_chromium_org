@@ -288,7 +288,7 @@ void SpellingMenuObserver::ExecuteCommand(int command_id) {
       SpellcheckService* spellcheck =
           SpellcheckServiceFactory::GetForContext(profile);
       if (spellcheck) {
-        spellcheck->GetCustomDictionary()->AddWord(UTF16ToUTF8(
+        spellcheck->GetCustomDictionary()->AddWord(base::UTF16ToUTF8(
             misspelled_word_));
         spellcheck->GetFeedbackSender()->AddedToDictionary(misspelling_hash_);
       }
@@ -386,7 +386,7 @@ void SpellingMenuObserver::OnTextCheckComplete(
       result_.replace(it->location, it->length, it->replacement);
     }
     base::string16 result = base::i18n::ToLower(result_);
-    for (std::vector<string16>::const_iterator it = suggestions_.begin();
+    for (std::vector<base::string16>::const_iterator it = suggestions_.begin();
          it != suggestions_.end(); ++it) {
       if (result == base::i18n::ToLower(*it)) {
         succeeded_ = false;

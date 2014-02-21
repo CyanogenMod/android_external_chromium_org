@@ -4,7 +4,7 @@
 
 #include "ash/first_run/first_run_helper_impl.h"
 
-#include "ash/launcher/launcher.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/tray/system_tray.h"
@@ -42,6 +42,8 @@ FirstRunHelperImpl::FirstRunHelperImpl()
 
 FirstRunHelperImpl::~FirstRunHelperImpl() {
   Shell::GetInstance()->overlay_filter()->Deactivate();
+  if (IsTrayBubbleOpened())
+    CloseTrayBubble();
   widget_->Close();
 }
 
@@ -62,13 +64,13 @@ void FirstRunHelperImpl::CloseAppList() {
 }
 
 gfx::Rect FirstRunHelperImpl::GetLauncherBounds() {
-  ash::Launcher* launcher = ash::Launcher::ForPrimaryDisplay();
-  return launcher->GetVisibleItemsBoundsInScreen();
+  Shelf* shelf = Shelf::ForPrimaryDisplay();
+  return shelf->GetVisibleItemsBoundsInScreen();
 }
 
 gfx::Rect FirstRunHelperImpl::GetAppListButtonBounds() {
-  ash::Launcher* launcher = ash::Launcher::ForPrimaryDisplay();
-  views::View* app_button = launcher->GetAppListButtonView();
+  Shelf* shelf = Shelf::ForPrimaryDisplay();
+  views::View* app_button = shelf->GetAppListButtonView();
   return app_button->GetBoundsInScreen();
 }
 
@@ -78,11 +80,11 @@ gfx::Rect FirstRunHelperImpl::GetAppListBounds() {
 }
 
 void FirstRunHelperImpl::Cancel() {
-  NOTIMPLEMENTED();
+  FOR_EACH_OBSERVER(Observer, observers(), OnCancelled());
 }
 
 bool FirstRunHelperImpl::IsCancelingKeyEvent(ui::KeyEvent* event) {
-  return false;
+  return event->key_code() == ui::VKEY_ESCAPE;
 }
 
 aura::Window* FirstRunHelperImpl::GetWindow() {
@@ -118,4 +120,3 @@ gfx::Rect FirstRunHelperImpl::GetHelpButtonBounds() {
 }
 
 }  // namespace ash
-

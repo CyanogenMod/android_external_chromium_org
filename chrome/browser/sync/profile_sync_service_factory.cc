@@ -10,13 +10,14 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
@@ -30,6 +31,8 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 // static
 ProfileSyncServiceFactory* ProfileSyncServiceFactory::GetInstance() {
@@ -57,7 +60,8 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
   DependsOn(AboutSigninInternalsFactory::GetInstance());
   DependsOn(autofill::PersonalDataManagerFactory::GetInstance());
   DependsOn(BookmarkModelFactory::GetInstance());
-  DependsOn(extensions::ExtensionSystemFactory::GetInstance());
+  DependsOn(
+      extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(GlobalErrorServiceFactory::GetInstance());
   DependsOn(HistoryServiceFactory::GetInstance());
   DependsOn(invalidation::InvalidationServiceFactory::GetInstance());
@@ -91,6 +95,17 @@ BrowserContextKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
 
   SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
 
+  // Automatically load the GCMProfileService if the enabled state has been
+  // explicitly set.
+  const base::Value* gcm_enabled_value =
+      profile->GetPrefs()->GetUserPrefValue(prefs::kGCMChannelEnabled);
+  bool gcm_enabled = false;
+  if (gcm_enabled_value &&
+      gcm_enabled_value->GetAsBoolean(&gcm_enabled) &&
+      gcm_enabled) {
+    gcm::GCMProfileServiceFactory::GetForProfile(profile);
+  }
+
   // TODO(atwilson): Change AboutSigninInternalsFactory to load on startup
   // once http://crbug.com/171406 has been fixed.
   AboutSigninInternalsFactory::GetForProfile(profile);
@@ -105,7 +120,7 @@ BrowserContextKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
       new ProfileSyncComponentsFactoryImpl(profile,
                                            CommandLine::ForCurrentProcess()),
       profile,
-      signin,
+      new ManagedUserSigninManagerWrapper(signin),
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
       behavior);
 

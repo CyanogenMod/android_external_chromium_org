@@ -16,7 +16,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         'chrome_android_core',
-        'chromium_testshell_jni_headers',
         'chrome.gyp:browser_ui',
         '../content/content.gyp:content_app_browser',
       ],
@@ -28,11 +27,8 @@
         'android/testshell/chrome_main_delegate_testshell_android.h',
         "android/testshell/testshell_google_location_settings_helper.cc",
         "android/testshell/testshell_google_location_settings_helper.h",
-        'android/testshell/testshell_tab.cc',
-        'android/testshell/testshell_tab.h',
       ],
       'include_dirs': [
-        '<(SHARED_INTERMEDIATE_DIR)/chromium_testshell',
         '../skia/config',
       ],
       'conditions': [
@@ -73,18 +69,6 @@
       'includes': [ '../build/java_apk.gypi', ],
     },
     {
-      'target_name': 'chromium_testshell_jni_headers',
-      'type': 'none',
-      'sources': [
-        'android/testshell/java/src/org/chromium/chrome/testshell/TestShellTab.java',
-      ],
-      'variables': {
-        'jni_gen_package': 'chromium_testshell',
-        'jni_generator_ptr_type': 'long',
-      },
-      'includes': [ '../build/jni_generator.gypi' ],
-    },
-    {
       # chromium_testshell creates a .jar as a side effect. Any java targets
       # that need that .jar in their classpath should depend on this target,
       # chromium_testshell_java. Dependents of chromium_testshell receive its
@@ -110,8 +94,6 @@
       ],
       'include_dirs': [
         '..',
-        '<(SHARED_INTERMEDIATE_DIR)/android',
-        '<(SHARED_INTERMEDIATE_DIR)/chrome',
         '<(android_ndk_include)',
       ],
       'sources': [

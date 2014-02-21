@@ -37,12 +37,12 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsNormalCancel) {
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
 
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
   // No details provided with this permission.
-  std::vector<string16> details;
-  details.push_back(string16());
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
   prompt.SetPermissionsDetails(details);
 
   base::scoped_nsobject<ExtensionInstallViewController> controller(
@@ -92,12 +92,12 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsNormalOK) {
 
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
   // No details provided with this permission.
-  std::vector<string16> details;
-  details.push_back(string16());
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
   prompt.SetPermissionsDetails(details);
 
   base::scoped_nsobject<ExtensionInstallViewController> controller(
@@ -120,20 +120,20 @@ TEST_F(ExtensionInstallViewControllerTest, MultipleWarnings) {
 
   ExtensionInstallPrompt::Prompt one_warning_prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   one_warning_prompt.SetPermissions(permissions);
   // No details provided with this permission.
-  std::vector<string16> details;
-  details.push_back(string16());
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
   one_warning_prompt.SetPermissionsDetails(details);
 
   ExtensionInstallPrompt::Prompt two_warnings_prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  permissions.push_back(UTF8ToUTF16("warning 2"));
+  permissions.push_back(base::UTF8ToUTF16("warning 2"));
   two_warnings_prompt.SetPermissions(permissions);
   // No details provided with this permission.
-  details.push_back(string16());
+  details.push_back(base::string16());
   two_warnings_prompt.SetPermissionsDetails(details);
 
   base::scoped_nsobject<ExtensionInstallViewController> controller1(
@@ -211,7 +211,7 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsInline) {
   // No warnings should trigger skinny prompt.
   ExtensionInstallPrompt::Prompt inline_prompt(
       ExtensionInstallPrompt::INLINE_INSTALL_PROMPT);
-  inline_prompt.SetInlineInstallWebstoreData("1,000", true, 3.5, 200);
+  inline_prompt.SetWebstoreData("1,000", true, 3.5, 200);
   inline_prompt.set_extension(extension_.get());
   inline_prompt.set_icon(chrome::LoadInstallPromptIcon());
 
@@ -223,7 +223,7 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsInline) {
   [controller view];  // Force nib load.
 
   // Test the right nib loaded.
-  EXPECT_NSEQ(@"ExtensionInstallPromptInline", [controller nibName]);
+  EXPECT_NSEQ(@"ExtensionInstallPromptWebstoreData", [controller nibName]);
 
   // Check all the controls.
   EXPECT_TRUE([controller iconView]);
@@ -267,17 +267,17 @@ TEST_F(ExtensionInstallViewControllerTest, OAuthIssues) {
 
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
   // No details provided with this permission.
-  std::vector<string16> details;
-  details.push_back(string16());
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
   prompt.SetPermissionsDetails(details);
 
   IssueAdviceInfoEntry issue;
-  issue.description = UTF8ToUTF16("issue description 1");
-  issue.details.push_back(UTF8ToUTF16("issue detail 1"));
+  issue.description = base::UTF8ToUTF16("issue description 1");
+  issue.details.push_back(base::UTF8ToUTF16("issue detail 1"));
   IssueAdviceInfo issues;
   issues.push_back(issue);
   prompt.SetOAuthIssueAdvice(issues);
@@ -309,12 +309,12 @@ TEST_F(ExtensionInstallViewControllerTest, PostInstallPermissionsPrompt) {
 
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionPostInstallPermissionsPrompt(extension_.get());
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
   // No details provided with this permission.
-  std::vector<string16> details;
-  details.push_back(string16());
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
   prompt.SetPermissionsDetails(details);
 
   base::scoped_nsobject<ExtensionInstallViewController> controller(
@@ -338,10 +338,10 @@ TEST_F(ExtensionInstallViewControllerTest, PermissionsDetails) {
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
 
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
-  std::vector<string16> permissions_details;
-  permissions_details.push_back(UTF8ToUTF16("Detail 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions_details;
+  permissions_details.push_back(base::UTF8ToUTF16("Detail 1"));
   prompt.SetPermissions(permissions);
   prompt.SetPermissionsDetails(permissions_details);
   prompt.SetIsShowingDetails(

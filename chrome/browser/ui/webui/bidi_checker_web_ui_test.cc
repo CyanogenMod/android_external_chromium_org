@@ -106,8 +106,8 @@ void WebUIBidiCheckerBrowserTest::RunBidiCheckerOnPage(
     const std::string& page_url, bool is_rtl) {
   ui_test_utils::NavigateToURL(browser(), GURL(page_url));
   ASSERT_TRUE(RunJavascriptTest("runBidiChecker",
-                                Value::CreateStringValue(page_url),
-                                Value::CreateBooleanValue(is_rtl)));
+                                base::Value::CreateStringValue(page_url),
+                                base::Value::CreateBooleanValue(is_rtl)));
 }
 
 void WebUIBidiCheckerBrowserTestLTR::RunBidiCheckerOnPage(
@@ -163,7 +163,7 @@ static void SetupHistoryPageTest(Browser* browser,
   const GURL history_url = GURL(page_url);
   history_service->AddPage(
       history_url, base::Time::Now(), history::SOURCE_BROWSED);
-  history_service->SetPageTitle(history_url, UTF8ToUTF16(page_title));
+  history_service->SetPageTitle(history_url, base::UTF8ToUTF16(page_title));
 }
 
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
@@ -381,15 +381,8 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
   RunBidiCheckerOnPage(url);
 }
 
-#if defined(OS_WIN)
-// Times out on Windows. http://crbug.com/171938
-#define MAYBE_TestSettingsLanguageOptionsPage \
-    DISABLED_TestSettingsLanguageOptionsPage
-#else
-#define MAYBE_TestSettingsLanguageOptionsPage TestSettingsLanguageOptionsPage
-#endif
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
-                       MAYBE_TestSettingsLanguageOptionsPage) {
+                       TestSettingsLanguageOptionsPage) {
   std::string url(chrome::kChromeUISettingsFrameURL);
   url += std::string(chrome::kLanguageOptionsSubPage);
   RunBidiCheckerOnPage(url);

@@ -8,6 +8,7 @@
 
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -34,9 +35,11 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
+#include "grit/theme_resources.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/speech_ui_model.h"
+#include "ui/base/resource/resource_bundle.h"
 
 #if defined(USE_ASH)
 #include "chrome/browser/ui/ash/app_list/app_sync_ui_state_watcher.h"
@@ -47,6 +50,8 @@
 #endif
 
 namespace {
+
+const int kAutoLaunchDefaultTimeoutMilliSec = 50;
 
 #if defined(OS_WIN)
 void CreateShortcutInWebAppDir(
@@ -90,9 +95,19 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
   CHECK(controller_);
   RegisterForNotifications();
   g_browser_process->profile_manager()->GetProfileInfoCache().AddObserver(this);
-  OnProfileChanged();  // sets model_
+
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
+  speech_ui_.reset(new app_list::SpeechUIModel(
+      service ? service->state() : app_list::SPEECH_RECOGNITION_OFF));
+
+#if defined(GOOGLE_CHROME_BUILD)
+  speech_ui_->set_logo(
+      *ui::ResourceBundle::GetSharedInstance().
+      GetImageSkiaNamed(IDR_APP_LIST_GOOGLE_LOGO_VOICE_SEARCH));
+#endif
+
+  OnProfileChanged();  // sets model_
   if (service)
     service->AddObserver(this);
 }
@@ -104,6 +119,8 @@ AppListViewDelegate::~AppListViewDelegate() {
     service->RemoveObserver(this);
   g_browser_process->
       profile_manager()->GetProfileInfoCache().RemoveObserver(this);
+  // Ensure search controller is released prior to speech_ui_.
+  search_controller_.reset();
 }
 
 void AppListViewDelegate::RegisterForNotifications() {
@@ -123,7 +140,8 @@ void AppListViewDelegate::OnProfileChanged() {
       profile_)->model();
 
   search_controller_.reset(new app_list::SearchController(
-      profile_, model_->search_box(), model_->results(), controller_));
+      profile_, model_->search_box(), model_->results(),
+      speech_ui_.get(), controller_));
 
   signin_delegate_.SetProfile(profile_);
 
@@ -175,7 +193,7 @@ app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
 }
 
 app_list::SpeechUIModel* AppListViewDelegate::GetSpeechUI() {
-  return &speech_ui_;
+  return speech_ui_.get();
 }
 
 void AppListViewDelegate::GetShortcutPathForApp(
@@ -217,7 +235,10 @@ void AppListViewDelegate::StopSearch() {
 
 void AppListViewDelegate::OpenSearchResult(
     app_list::SearchResult* result,
+    bool auto_launch,
     int event_flags) {
+  if (auto_launch)
+    base::RecordAction(base::UserMetricsAction("AppList_AutoLaunched"));
   search_controller_->OpenResult(result, event_flags);
 }
 
@@ -228,12 +249,35 @@ void AppListViewDelegate::InvokeSearchResultAction(
   search_controller_->InvokeResultAction(result, action_index, event_flags);
 }
 
+base::TimeDelta AppListViewDelegate::GetAutoLaunchTimeout() {
+  return auto_launch_timeout_;
+}
+
+void AppListViewDelegate::AutoLaunchCanceled() {
+  base::RecordAction(base::UserMetricsAction("AppList_AutoLaunchCanceled"));
+  auto_launch_timeout_ = base::TimeDelta();
+}
+
+void AppListViewDelegate::ViewInitialized() {
+  content::WebContents* contents = GetSpeechRecognitionContents();
+  if (contents) {
+    contents->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.onAppListShown");
+  }
+}
+
 void AppListViewDelegate::Dismiss()  {
   controller_->DismissView();
 }
 
 void AppListViewDelegate::ViewClosing() {
   controller_->ViewClosing();
+
+  content::WebContents* contents = GetSpeechRecognitionContents();
+  if (contents) {
+    contents->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.onAppListHidden");
+  }
 }
 
 gfx::ImageSkia AppListViewDelegate::GetWindowIcon() {
@@ -286,18 +330,21 @@ void AppListViewDelegate::ShowForProfileByPath(
 
 void AppListViewDelegate::OnSpeechResult(const base::string16& result,
                                          bool is_final) {
-  speech_ui_.SetSpeechResult(result, is_final);
-  if (is_final)
+  speech_ui_->SetSpeechResult(result, is_final);
+  if (is_final) {
+    auto_launch_timeout_ = base::TimeDelta::FromMilliseconds(
+        kAutoLaunchDefaultTimeoutMilliSec);
     model_->search_box()->SetText(result);
+  }
 }
 
 void AppListViewDelegate::OnSpeechSoundLevelChanged(int16 level) {
-  speech_ui_.UpdateSoundLevel(level);
+  speech_ui_->UpdateSoundLevel(level);
 }
 
 void AppListViewDelegate::OnSpeechRecognitionStateChanged(
     app_list::SpeechRecognitionState new_state) {
-  speech_ui_.SetSpeechRecognitionState(new_state);
+  speech_ui_->SetSpeechRecognitionState(new_state);
 }
 
 void AppListViewDelegate::Observe(
@@ -328,7 +375,16 @@ content::WebContents* AppListViewDelegate::GetStartPageContents() {
   if (!service)
     return NULL;
 
-  return service->contents();
+  return service->GetStartPageContents();
+}
+
+content::WebContents* AppListViewDelegate::GetSpeechRecognitionContents() {
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  if (!service)
+    return NULL;
+
+  return service->GetSpeechRecognitionContents();
 }
 
 const app_list::AppListViewDelegate::Users&

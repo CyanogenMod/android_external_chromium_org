@@ -24,7 +24,8 @@ AudioRecordInputStream::AudioRecordInputStream(
           params.sample_rate(),
           params.channels(),
           params.bits_per_sample(),
-          params.GetBytesPerBuffer()));
+          params.GetBytesPerBuffer(),
+          params.effects() & AudioParameters::ECHO_CANCELLER));
 }
 
 AudioRecordInputStream::~AudioRecordInputStream() {
@@ -89,8 +90,7 @@ void AudioRecordInputStream::Stop() {
       base::android::AttachCurrentThread(), j_audio_record_.obj());
 
   // The Java thread must have been stopped at this point, so we are free to
-  // set |callback_|.
-  callback_->OnClose(this);
+  // clear |callback_|.
   callback_ = NULL;
 }
 

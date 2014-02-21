@@ -9,19 +9,21 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/input_ime.h"
 #include "chrome/common/extensions/api/input_ime/input_components_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace input_ime = extensions::api::input_ime;
 namespace KeyEventHandled = extensions::api::input_ime::KeyEventHandled;
 namespace DeleteSurroundingText =
     extensions::api::input_ime::DeleteSurroundingText;
 namespace UpdateMenuItems = extensions::api::input_ime::UpdateMenuItems;
+namespace SendKeyEvents = extensions::api::input_ime::SendKeyEvents;
+namespace HideInputView = extensions::api::input_ime::HideInputView;
 namespace SetMenuItems = extensions::api::input_ime::SetMenuItems;
 namespace SetCursorPosition = extensions::api::input_ime::SetCursorPosition;
 namespace SetCandidates = extensions::api::input_ime::SetCandidates;
@@ -162,13 +164,24 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
-    std::string request_id =
-        extensions::InputImeEventRouter::GetInstance()->AddRequest(engine_id,
-                                                                   key_data);
+    extensions::InputImeEventRouter* ime_event_router =
+        extensions::InputImeEventRouter::GetInstance();
+
+    const std::string request_id =
+        ime_event_router->AddRequest(engine_id, key_data);
+
+    // If there is no listener for the event, no need to dispatch the event to
+    // extension. Instead, releases the key event for default system behavior.
+    if (!HasKeyEventListener()) {
+      ime_event_router->OnKeyEventHandled(extension_id_, request_id, false);
+      return;
+    }
 
     input_ime::KeyboardEvent key_data_value;
     key_data_value.type = input_ime::KeyboardEvent::ParseType(event.type);
     key_data_value.request_id = request_id;
+    if (!event.extension_id.empty())
+      key_data_value.extension_id.reset(new std::string(event.extension_id));
     key_data_value.key = event.key;
     key_data_value.code = event.code;
     key_data_value.alt_key.reset(new bool(event.alt_key));
@@ -266,6 +279,13 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
   }
 
  private:
+  bool HasKeyEventListener() const {
+    return extensions::ExtensionSystem::Get(profile_)
+        ->event_router()
+        ->ExtensionHasEventListener(extension_id_,
+                                    input_ime::OnKeyEvent::kEventName);
+  }
+
   Profile* profile_;
   std::string extension_id_;
   std::string engine_id_;
@@ -499,6 +519,52 @@ bool InputImeCommitTextFunction::RunImpl() {
   return true;
 }
 
+bool InputImeHideInputViewFunction::RunImpl() {
+  InputMethodEngineInterface* engine =
+      InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
+  if (!engine) {
+    return true;
+  }
+  engine->HideInputView();
+  return true;
+}
+
+bool InputImeSendKeyEventsFunction::RunImpl() {
+  scoped_ptr<SendKeyEvents::Params> parent_params(
+      SendKeyEvents::Params::Create(*args_));
+  const SendKeyEvents::Params::Parameters& params =
+      parent_params->parameters;
+  chromeos::InputMethodEngineInterface* engine =
+      InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
+  if (!engine) {
+    error_ = kErrorEngineNotAvailable;
+    return false;
+  }
+
+  const std::vector<linked_ptr<input_ime::KeyboardEvent> >& key_data =
+      params.key_data;
+  std::vector<chromeos::InputMethodEngine::KeyboardEvent> key_data_out;
+
+  for (size_t i = 0; i < key_data.size(); ++i) {
+    chromeos::InputMethodEngine::KeyboardEvent event;
+    event.type = input_ime::KeyboardEvent::ToString(key_data[i]->type);
+    event.key = key_data[i]->key;
+    event.code = key_data[i]->code;
+    if (key_data[i]->alt_key)
+      event.alt_key = *(key_data[i]->alt_key);
+    if (key_data[i]->ctrl_key)
+      event.ctrl_key = *(key_data[i]->ctrl_key);
+    if (key_data[i]->shift_key)
+      event.shift_key = *(key_data[i]->shift_key);
+    if (key_data[i]->caps_lock)
+      event.caps_lock = *(key_data[i]->caps_lock);
+    key_data_out.push_back(event);
+  }
+
+  engine->SendKeyEvents(params.context_id, key_data_out);
+  return true;
+}
+
 bool InputImeSetCandidateWindowPropertiesFunction::RunImpl() {
   scoped_ptr<SetCandidateWindowProperties::Params> parent_params(
       SetCandidateWindowProperties::Params::Create(*args_));
@@ -554,16 +620,19 @@ bool InputImeSetCandidateWindowPropertiesFunction::RunImpl() {
     modified = true;
   }
 
-  if (modified) {
-    engine->SetCandidateWindowProperty(properties_out);
+  if (properties.auxiliary_text) {
+    properties_out.auxiliary_text = *properties.auxiliary_text;
+    modified = true;
   }
 
-  if (properties.auxiliary_text)
-    engine->SetCandidateWindowAuxText(properties.auxiliary_text->c_str());
-
   if (properties.auxiliary_text_visible) {
-    engine->SetCandidateWindowAuxTextVisible(
-        *properties.auxiliary_text_visible);
+    properties_out.is_auxiliary_text_visible =
+        *properties.auxiliary_text_visible;
+    modified = true;
+  }
+
+  if (modified) {
+    engine->SetCandidateWindowProperty(properties_out);
   }
 
   SetResult(new base::FundamentalValue(true));
@@ -725,7 +794,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<InputImeAPI>* InputImeAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void InputImeAPI::Observe(int type,

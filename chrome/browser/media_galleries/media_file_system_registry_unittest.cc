@@ -23,20 +23,19 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/media_galleries/media_file_system_context.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/media_galleries/media_galleries_test_util.h"
-#include "chrome/browser/storage_monitor/removable_device_constants.h"
-#include "chrome/browser/storage_monitor/storage_info.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
-#include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/storage_monitor/removable_device_constants.h"
+#include "components/storage_monitor/storage_info.h"
+#include "components/storage_monitor/storage_monitor.h"
+#include "components/storage_monitor/test_storage_monitor.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_factory.h"
 #include "content/public/browser/render_view_host.h"
@@ -44,6 +43,7 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -263,6 +263,14 @@ class ProfileState {
   DISALLOW_COPY_AND_ASSIGN(ProfileState);
 };
 
+base::string16 GetExpectedFolderName(const base::FilePath& path) {
+#if defined(OS_CHROMEOS)
+  return path.BaseName().LossyDisplayName();
+#else
+  return path.LossyDisplayName();
+#endif
+}
+
 }  // namespace
 
 class MediaFileSystemRegistryTest : public ChromeRenderViewHostTestHarness {
@@ -360,7 +368,7 @@ class MediaFileSystemRegistryTest : public ChromeRenderViewHostTestHarness {
 
   // Needed for extension service & friends to work.
 
-#if defined OS_CHROMEOS
+#if defined(OS_CHROMEOS)
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
   scoped_ptr<chromeos::ScopedTestUserManager> test_user_manager_;
@@ -621,9 +629,9 @@ std::string MediaFileSystemRegistryTest::AddUserGallery(
 
   for (size_t i = 0; i < profile_states_.size(); ++i) {
     profile_states_[i]->GetMediaGalleriesPrefs()->AddGallery(
-        device_id, base::FilePath(), true /*user_added*/,
+        device_id, base::FilePath(), MediaGalleryPrefInfo::kUserAdded,
         base::string16(), base::string16(), base::string16(), 0,
-        base::Time::Now());
+        base::Time::Now(), 0, 0, 0);
   }
   return device_id;
 }
@@ -779,7 +787,7 @@ void MediaFileSystemRegistryTest::TearDown() {
   MediaFileSystemRegistry* registry =
       g_browser_process->media_file_system_registry();
   EXPECT_EQ(0U, GetExtensionGalleriesHostCount(registry));
-  TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::Destroy();
 #if defined(OS_CHROMEOS)
   test_user_manager_.reset();
 #endif
@@ -1018,44 +1026,52 @@ TEST_F(MediaFileSystemRegistryTest, TestNameConstruction) {
   std::vector<MediaFileSystemInfo> one_expectation;
   one_expectation.push_back(added_info);
 
-  profile_state->AddNameForReadCompare(
-#if defined(OS_CHROMEOS)
-      empty_dir().BaseName().LossyDisplayName());
-#else
-      empty_dir().LossyDisplayName());
-#endif
-  profile_state->AddNameForAllCompare(
-#if defined(OS_CHROMEOS)
-      empty_dir().BaseName().LossyDisplayName());
-#else
-      empty_dir().LossyDisplayName());
-#endif
+  base::string16 empty_dir_name = GetExpectedFolderName(empty_dir());
+  profile_state->AddNameForReadCompare(empty_dir_name);
+  profile_state->AddNameForAllCompare(empty_dir_name);
 
   // This part of the test is conditional on default directories existing
   // on the test platform. In ChromeOS, these directories do not exist.
   base::FilePath path;
   if (num_auto_galleries() > 0) {
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_MUSIC, &path));
-#if defined(OS_CHROMEOS)
-    profile_state->AddNameForAllCompare(path.BaseName().LossyDisplayName());
-#else
-    profile_state->AddNameForAllCompare(path.LossyDisplayName());
-#endif
+    profile_state->AddNameForAllCompare(GetExpectedFolderName(path));
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_PICTURES, &path));
-#if defined(OS_CHROMEOS)
-    profile_state->AddNameForAllCompare(path.BaseName().LossyDisplayName());
-#else
-    profile_state->AddNameForAllCompare(path.LossyDisplayName());
-#endif
+    profile_state->AddNameForAllCompare(GetExpectedFolderName(path));
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_VIDEOS, &path));
-#if defined(OS_CHROMEOS)
-    profile_state->AddNameForAllCompare(path.BaseName().LossyDisplayName());
-#else
-    profile_state->AddNameForAllCompare(path.LossyDisplayName());
-#endif
+    profile_state->AddNameForAllCompare(GetExpectedFolderName(path));
 
     profile_state->CheckGalleries("names-dir", one_expectation, auto_galleries);
   } else {
     profile_state->CheckGalleries("names", one_expectation, one_expectation);
   }
+}
+
+TEST_F(MediaFileSystemRegistryTest, PreferenceListener) {
+  CreateProfileState(1);
+  AssertAllAutoAddedGalleries();
+
+  // Add a user gallery to the regular permission extension.
+  std::string device_id = AddUserGallery(StorageInfo::FIXED_MASS_STORAGE,
+                                         empty_dir().AsUTF8Unsafe(),
+                                         empty_dir());
+  ProfileState* profile_state = GetProfileState(0);
+  SetGalleryPermission(profile_state,
+                       profile_state->regular_permission_extension(),
+                       device_id,
+                       true /*has access*/);
+
+  FSInfoMap fs_info = profile_state->GetGalleriesInfo(
+      profile_state->regular_permission_extension());
+  ASSERT_EQ(1U, fs_info.size());
+  EXPECT_FALSE(test_file_system_context()->GetPathForId(
+      fs_info.begin()->second.fsid).empty());
+
+  // Revoke permission and ensure that the file system is revoked.
+  SetGalleryPermission(profile_state,
+                       profile_state->regular_permission_extension(),
+                       device_id,
+                       false /*has access*/);
+  EXPECT_TRUE(test_file_system_context()->GetPathForId(
+      fs_info.begin()->second.fsid).empty());
 }

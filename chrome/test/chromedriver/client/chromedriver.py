@@ -64,10 +64,16 @@ class ChromeDriver(object):
                android_activity=None, android_process=None,
                android_use_running_app=None, chrome_switches=None,
                chrome_extensions=None, chrome_log_path=None,
-               debugger_address=None, browser_log_level=None):
+               debugger_address=None, browser_log_level=None,
+               experimental_options=None):
     self._executor = command_executor.CommandExecutor(server_url)
 
     options = {}
+
+    if experimental_options:
+      assert isinstance(experimental_options, dict)
+      options = experimental_options.copy()
+
     if android_package:
       options['androidPackage'] = android_package
       if android_activity:
@@ -250,6 +256,15 @@ class ChromeDriver(object):
   def TouchMove(self, x, y):
     self.ExecuteCommand(Command.TOUCH_MOVE, {'x': x, 'y': y})
 
+  def TouchFlick(self, element, xoffset, yoffset, speed):
+    params = {
+        'element': element._id,
+        'xoffset': xoffset,
+        'yoffset': yoffset,
+        'speed': speed
+    }
+    self.ExecuteCommand(Command.TOUCH_FLICK, params)
+
   def GetCookies(self):
     return self.ExecuteCommand(Command.GET_COOKIES)
 
@@ -311,3 +326,9 @@ class ChromeDriver(object):
 
   def GetAvailableLogTypes(self):
     return self.ExecuteCommand(Command.GET_AVAILABLE_LOG_TYPES)
+
+  def IsAutoReporting(self):
+    return self.ExecuteCommand(Command.IS_AUTO_REPORTING)
+
+  def SetAutoReporting(self, enabled):
+    self.ExecuteCommand(Command.SET_AUTO_REPORTING, {'enabled': enabled})

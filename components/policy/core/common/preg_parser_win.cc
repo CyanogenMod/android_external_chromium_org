@@ -33,12 +33,12 @@ const char kPRegFileHeader[8] =
 const int64 kMaxPRegFileSize = 1024 * 1024 * 16;
 
 // Constants for PReg file delimiters.
-const char16 kDelimBracketOpen = L'[';
-const char16 kDelimBracketClose = L']';
-const char16 kDelimSemicolon = L';';
+const base::char16 kDelimBracketOpen = L'[';
+const base::char16 kDelimBracketClose = L']';
+const base::char16 kDelimSemicolon = L';';
 
 // Registry path separator.
-const char16 kRegistryPathSeparator[] = L"\\";
+const base::char16 kRegistryPathSeparator[] = L"\\";
 
 // Magic strings for the PReg value field to trigger special actions.
 const char kActionTriggerPrefix[] = "**";
@@ -52,12 +52,12 @@ const char kActionTriggerSoft[] = "soft";
 // Returns the character at |cursor| and increments it, unless the end is here
 // in which case -1 is returned.
 int NextChar(const uint8** cursor, const uint8* end) {
-  // Only read the character if a full char16 is available.
-  if (*cursor + sizeof(char16) > end)
+  // Only read the character if a full base::char16 is available.
+  if (*cursor + sizeof(base::char16) > end)
     return -1;
 
   int result = **cursor | (*(*cursor + 1) << 8);
-  *cursor += sizeof(char16);
+  *cursor += sizeof(base::char16);
   return result;
 }
 
@@ -87,8 +87,10 @@ bool ReadField32(const uint8** cursor, const uint8* end, uint32* data) {
   return true;
 }
 
-// Reads a string field from a  file.
-bool ReadFieldString(const uint8** cursor, const uint8* end, string16* str) {
+// Reads a string field from a file.
+bool ReadFieldString(const uint8** cursor,
+                     const uint8* end,
+                     base::string16* str) {
   int current = -1;
   while ((current = NextChar(cursor, end)) > 0x0000)
     *str += current;
@@ -97,15 +99,16 @@ bool ReadFieldString(const uint8** cursor, const uint8* end, string16* str) {
 }
 
 std::string DecodePRegStringValue(const std::vector<uint8>& data) {
-  size_t len = data.size() / sizeof(char16);
+  size_t len = data.size() / sizeof(base::char16);
   if (len <= 0)
     return std::string();
 
-  const char16* chars = reinterpret_cast<const char16*>(vector_as_array(&data));
-  string16 result;
+  const base::char16* chars =
+      reinterpret_cast<const base::char16*>(vector_as_array(&data));
+  base::string16 result;
   std::transform(chars, chars + len - 1, std::back_inserter(result),
                  std::ptr_fun(base::ByteSwapToLE16));
-  return UTF16ToUTF8(result);
+  return base::UTF16ToUTF8(result);
 }
 
 // Decodes a value from a PReg file given as a uint8 vector.
@@ -147,20 +150,20 @@ bool DecodePRegValue(uint32 type,
 
 // Adds the record data passed via parameters to |dict| in case the data is
 // relevant policy for Chromium.
-void HandleRecord(const string16& key_name,
-                  const string16& value,
+void HandleRecord(const base::string16& key_name,
+                  const base::string16& value,
                   uint32 type,
                   const std::vector<uint8>& data,
                   RegistryDict* dict) {
   // Locate/create the dictionary to place the value in.
-  std::vector<string16> path;
+  std::vector<base::string16> path;
 
   Tokenize(key_name, kRegistryPathSeparator, &path);
-  for (std::vector<string16>::const_iterator entry(path.begin());
+  for (std::vector<base::string16>::const_iterator entry(path.begin());
        entry != path.end(); ++entry) {
     if (entry->empty())
       continue;
-    const std::string name = UTF16ToUTF8(*entry);
+    const std::string name = base::UTF16ToUTF8(*entry);
     RegistryDict* subdict = dict->GetKey(name);
     if (!subdict) {
       subdict = new RegistryDict();
@@ -172,7 +175,7 @@ void HandleRecord(const string16& key_name,
   if (value.empty())
     return;
 
-  std::string value_name(UTF16ToUTF8(value));
+  std::string value_name(base::UTF16ToUTF8(value));
   if (!StartsWithASCII(value_name, kActionTriggerPrefix, true)) {
     scoped_ptr<base::Value> value;
     if (DecodePRegValue(type, data, &value))
@@ -212,7 +215,7 @@ void HandleRecord(const string16& key_name,
 }
 
 bool ReadFile(const base::FilePath& file_path,
-              const string16& root,
+              const base::string16& root,
               RegistryDict* dict,
               PolicyLoadStatusSample* status) {
   base::MemoryMappedFile mapped_file;
@@ -251,8 +254,8 @@ bool ReadFile(const base::FilePath& file_path,
       break;
 
     // Read the record fields.
-    string16 key_name;
-    string16 value;
+    base::string16 key_name;
+    base::string16 value;
     uint32 type = 0;
     uint32 size = 0;
     std::vector<uint8> data;

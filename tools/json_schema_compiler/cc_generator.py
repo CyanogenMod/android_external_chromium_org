@@ -46,7 +46,7 @@ class _Generator(object):
       .Append('#include "base/strings/string_number_conversions.h"')
       .Append('#include "base/strings/utf_string_conversions.h"')
       .Append('#include "%s/%s.h"' %
-          (self._namespace.source_file_dir, self._namespace.unix_name))
+              (self._namespace.source_file_dir, self._namespace.short_filename))
       .Cblock(self._type_helper.GenerateIncludes(include_soft=True))
       .Append()
       .Concat(cpp_util.OpenNamespace(self._cpp_namespace))
@@ -91,6 +91,7 @@ class _Generator(object):
     (c.Concat(self._type_helper.GetNamespaceEnd())
       .Cblock(cpp_util.CloseNamespace(self._cpp_namespace))
     )
+    c.Append()
     return c
 
   def _GenerateType(self, cpp_namespace, type_):
@@ -590,7 +591,6 @@ class _Generator(object):
     |failure_value|.
     """
     c = Code()
-    c.Sblock('{')
 
     underlying_type = self._type_helper.FollowRef(type_)
 
@@ -721,14 +721,16 @@ class _Generator(object):
         )
     else:
       raise NotImplementedError(type_)
-    return c.Eblock('}').Substitute({
+    if c.IsEmpty():
+      return c
+    return Code().Sblock('{').Concat(c.Substitute({
       'cpp_type': self._type_helper.GetCppType(type_),
       'src_var': src_var,
       'dst_var': dst_var,
       'failure_value': failure_value,
       'key': type_.name,
       'parent_key': type_.parent.name
-    })
+    })).Eblock('}')
 
   def _GenerateListValueToEnumArrayConversion(self,
                                               item_type,
@@ -926,7 +928,7 @@ class _Generator(object):
     if not self._generate_error_messages:
       return c
     (c.Append('if (error)')
-      .Append('  *error = UTF8ToUTF16(' + body + ');'))
+      .Append('  *error = base::UTF8ToUTF16(' + body + ');'))
     return c
 
   def _GenerateParams(self, params):

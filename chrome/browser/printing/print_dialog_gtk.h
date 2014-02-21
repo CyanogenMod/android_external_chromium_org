@@ -14,7 +14,7 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/public/browser/browser_thread.h"
 #include "printing/print_dialog_gtk_interface.h"
-#include "printing/printing_context_gtk.h"
+#include "printing/printing_context_linux.h"
 #include "ui/base/gtk/gtk_signal.h"
 
 namespace printing {
@@ -22,7 +22,7 @@ class Metafile;
 class PrintSettings;
 }
 
-using printing::PrintingContextGtk;
+using printing::PrintingContextLinux;
 
 // Needs to be freed on the UI thread to clean up its GTK members variables.
 class PrintDialogGtk
@@ -32,7 +32,7 @@ class PrintDialogGtk
  public:
   // Creates and returns a print dialog.
   static printing::PrintDialogGtkInterface* CreatePrintDialog(
-      PrintingContextGtk* context);
+      PrintingContextLinux* context);
 
   // printing::PrintDialogGtkInterface implementation.
   virtual void UseDefaultSettings() OVERRIDE;
@@ -40,7 +40,7 @@ class PrintDialogGtk
   virtual void ShowDialog(
       gfx::NativeView parent_view,
       bool has_selection,
-      const PrintingContextGtk::PrintSettingsCallback& callback) OVERRIDE;
+      const PrintingContextLinux::PrintSettingsCallback& callback) OVERRIDE;
   virtual void PrintDocument(const printing::Metafile* metafile,
                              const base::string16& document_name) OVERRIDE;
   virtual void AddRefToDialog() OVERRIDE;
@@ -51,7 +51,7 @@ class PrintDialogGtk
       content::BrowserThread::UI>;
   friend class base::DeleteHelper<PrintDialogGtk>;
 
-  explicit PrintDialogGtk(PrintingContextGtk* context);
+  explicit PrintDialogGtk(PrintingContextLinux* context);
   virtual ~PrintDialogGtk();
 
   // Handles dialog response.
@@ -71,8 +71,8 @@ class PrintDialogGtk
   void InitPrintSettings(printing::PrintSettings* settings);
 
   // Printing dialog callback.
-  PrintingContextGtk::PrintSettingsCallback callback_;
-  PrintingContextGtk* context_;
+  PrintingContextLinux::PrintSettingsCallback callback_;
+  PrintingContextLinux* context_;
 
   // Print dialog settings. PrintDialogGtk owns |dialog_| and holds references
   // to the other objects.

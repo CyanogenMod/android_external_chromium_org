@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "jni/AudioManagerAndroid_jni.h"
+#include "media/audio/android/audio_record_input.h"
 #include "media/audio/android/opensles_input.h"
 #include "media/audio/android/opensles_output.h"
 #include "media/audio/audio_manager.h"
@@ -35,9 +36,6 @@ static void AddDefaultDevice(AudioDeviceNames* device_names) {
 
 // Maximum number of output streams that can be open simultaneously.
 static const int kMaxOutputStreams = 10;
-
-static const int kAudioModeNormal = 0x00000000;
-static const int kAudioModeInCommunication = 0x00000003;
 
 static const int kDefaultInputBufferSize = 1024;
 static const int kDefaultOutputBufferSize = 2048;
@@ -74,6 +72,7 @@ bool AudioManagerAndroid::HasAudioInputDevices() {
 void AudioManagerAndroid::GetAudioInputDeviceNames(
     AudioDeviceNames* device_names) {
   // Always add default device parameters as first element.
+  DCHECK(device_names->empty());
   AddDefaultDevice(device_names);
 
   JNIEnv* env = AttachCurrentThread();
@@ -103,30 +102,37 @@ void AudioManagerAndroid::GetAudioOutputDeviceNames(
 
 AudioParameters AudioManagerAndroid::GetInputStreamParameters(
     const std::string& device_id) {
+  JNIEnv* env = AttachCurrentThread();
   // Use mono as preferred number of input channels on Android to save
   // resources. Using mono also avoids a driver issue seen on Samsung
   // Galaxy S3 and S4 devices. See http://crbug.com/256851 for details.
   ChannelLayout channel_layout = CHANNEL_LAYOUT_MONO;
   int buffer_size = Java_AudioManagerAndroid_getMinInputFrameSize(
-      base::android::AttachCurrentThread(), GetNativeOutputSampleRate(),
+      env, GetNativeOutputSampleRate(),
       ChannelLayoutToChannelCount(channel_layout));
-
-  return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout,
+  int effects = AudioParameters::NO_EFFECTS;
+  effects |= Java_AudioManagerAndroid_shouldUseAcousticEchoCanceler(env) ?
+      AudioParameters::ECHO_CANCELLER : AudioParameters::NO_EFFECTS;
+  AudioParameters params(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, 0,
       GetNativeOutputSampleRate(), 16,
-      buffer_size <= 0 ? kDefaultInputBufferSize : buffer_size);
+      buffer_size <= 0 ? kDefaultInputBufferSize : buffer_size, effects);
+  return params;
 }
 
 AudioOutputStream* AudioManagerAndroid::MakeAudioOutputStream(
     const AudioParameters& params,
-    const std::string& device_id,
-    const std::string& input_device_id) {
+    const std::string& device_id) {
+  bool had_no_streams = HadNoAudioStreams();
   AudioOutputStream* stream =
-      AudioManagerBase::MakeAudioOutputStream(params, std::string(),
-          std::string());
-  if (stream && output_stream_count() == 1) {
-    SetAudioMode(kAudioModeInCommunication);
-  }
+      AudioManagerBase::MakeAudioOutputStream(params, std::string());
+
+  // The audio manager for Android creates streams intended for real-time
+  // VoIP sessions and therefore sets the audio mode to MODE_IN_COMMUNICATION.
+  // If a Bluetooth headset is used, the audio stream will use the SCO
+  // channel and therefore have a limited bandwidth (8-16kHz).
+  if (stream && had_no_streams)
+    SetCommunicationAudioModeOn(true);
 
   {
     base::AutoLock lock(streams_lock_);
@@ -138,22 +144,37 @@ AudioOutputStream* AudioManagerAndroid::MakeAudioOutputStream(
 
 AudioInputStream* AudioManagerAndroid::MakeAudioInputStream(
     const AudioParameters& params, const std::string& device_id) {
+  bool had_no_streams = HadNoAudioStreams();
   AudioInputStream* stream =
       AudioManagerBase::MakeAudioInputStream(params, device_id);
+
+  // The audio manager for Android creates streams intended for real-time
+  // VoIP sessions and therefore sets the audio mode to MODE_IN_COMMUNICATION.
+  // If a Bluetooth headset is used, the audio stream will use the SCO
+  // channel and therefore have a limited bandwidth (8kHz).
+  if (stream && had_no_streams)
+    SetCommunicationAudioModeOn(true);
   return stream;
 }
 
 void AudioManagerAndroid::ReleaseOutputStream(AudioOutputStream* stream) {
   AudioManagerBase::ReleaseOutputStream(stream);
-  if (!output_stream_count()) {
-    SetAudioMode(kAudioModeNormal);
-  }
+
+  // Restore the audio mode which was used before the first communication-
+  // mode stream was created.
+  if (HadNoAudioStreams())
+    SetCommunicationAudioModeOn(false);
   base::AutoLock lock(streams_lock_);
   streams_.erase(static_cast<OpenSLESOutputStream*>(stream));
 }
 
 void AudioManagerAndroid::ReleaseInputStream(AudioInputStream* stream) {
   AudioManagerBase::ReleaseInputStream(stream);
+
+  // Restore the audio mode which was used before the first communication-
+  // mode stream was created.
+  if (HadNoAudioStreams())
+    SetCommunicationAudioModeOn(false);
 }
 
 AudioOutputStream* AudioManagerAndroid::MakeLinearOutputStream(
@@ -164,8 +185,7 @@ AudioOutputStream* AudioManagerAndroid::MakeLinearOutputStream(
 
 AudioOutputStream* AudioManagerAndroid::MakeLowLatencyOutputStream(
     const AudioParameters& params,
-    const std::string& device_id,
-    const std::string& input_device_id) {
+    const std::string& device_id) {
   DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   return new OpenSLESOutputStream(this, params);
@@ -184,11 +204,28 @@ AudioInputStream* AudioManagerAndroid::MakeLowLatencyInputStream(
     const AudioParameters& params, const std::string& device_id) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   DLOG_IF(ERROR, device_id.empty()) << "Invalid device ID!";
-  // Utilize the device ID to select the correct input device.
+  // Use the device ID to select the correct input device.
   // Note that the input device is always associated with a certain output
   // device, i.e., this selection does also switch the output device.
   // All input and output streams will be affected by the device selection.
-  SetAudioDevice(device_id);
+  if (!SetAudioDevice(device_id)) {
+    LOG(ERROR) << "Unable to select audio device!";
+    return NULL;
+  }
+
+  if (params.effects() != AudioParameters::NO_EFFECTS) {
+    // Platform effects can only be enabled through the AudioRecord path.
+    // An effect should only have been requested here if recommended by
+    // AudioManagerAndroid.shouldUse<Effect>.
+    //
+    // Creating this class requires Jelly Bean, which is already guaranteed by
+    // shouldUse<Effect>. Only DCHECK on that condition to allow tests to use
+    // the effect settings as a way to select the input path.
+    DCHECK_GE(base::android::BuildInfo::GetInstance()->sdk_int(), 16);
+    DVLOG(1) << "Creating AudioRecordInputStream";
+    return new AudioRecordInputStream(this, params);
+  }
+  DVLOG(1) << "Creating OpenSLESInputStream";
   return new OpenSLESInputStream(this, params);
 }
 
@@ -230,7 +267,11 @@ AudioParameters AudioManagerAndroid::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
+}
+
+bool AudioManagerAndroid::HadNoAudioStreams() {
+  return output_stream_count() == 0 && input_stream_count() == 0;
 }
 
 // static
@@ -251,7 +292,7 @@ void AudioManagerAndroid::Close() {
 }
 
 void AudioManagerAndroid::SetMute(JNIEnv* env, jobject obj, jboolean muted) {
-  GetMessageLoop()->PostTask(
+  GetTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(
           &AudioManagerAndroid::DoSetMuteOnAudioThread,
@@ -267,13 +308,13 @@ void AudioManagerAndroid::DoSetMuteOnAudioThread(bool muted) {
   }
 }
 
-void AudioManagerAndroid::SetAudioMode(int mode) {
-  Java_AudioManagerAndroid_setMode(
+void AudioManagerAndroid::SetCommunicationAudioModeOn(bool on) {
+  Java_AudioManagerAndroid_setCommunicationAudioModeOn(
       base::android::AttachCurrentThread(),
-      j_audio_manager_.obj(), mode);
+      j_audio_manager_.obj(), on);
 }
 
-void AudioManagerAndroid::SetAudioDevice(const std::string& device_id) {
+bool AudioManagerAndroid::SetAudioDevice(const std::string& device_id) {
   JNIEnv* env = AttachCurrentThread();
 
   // Send the unique device ID to the Java audio manager and make the
@@ -283,7 +324,7 @@ void AudioManagerAndroid::SetAudioDevice(const std::string& device_id) {
       env,
       device_id == AudioManagerBase::kDefaultDeviceId ?
           std::string() : device_id);
-  Java_AudioManagerAndroid_setDevice(
+  return Java_AudioManagerAndroid_setDevice(
       env, j_audio_manager_.obj(), j_device_id.obj());
 }
 

@@ -57,6 +57,22 @@ void AutocompleteMatchToAssistedQuery(
       *type = 0;
       return;
     }
+    case AutocompleteMatchType::SEARCH_SUGGEST_ENTITY: {
+      *subtype = 46;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_INFINITE: {
+      *subtype = 33;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED: {
+      *subtype = 35;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_PROFILE: {
+      *subtype = 44;
+      return;
+    }
     case AutocompleteMatchType::NAVSUGGEST: {
       *type = 5;
       return;
@@ -127,9 +143,13 @@ bool IsTrivialAutocompletion(const AutocompleteMatch& match) {
       match.type == AutocompleteMatchType::SEARCH_OTHER_ENGINE;
 }
 
-}  // namespace
+// Whether this autocomplete match type supports custom descriptions.
+bool AutocompleteMatchHasCustomDescription(const AutocompleteMatch& match) {
+  return match.type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY ||
+      match.type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE;
+}
 
-const int AutocompleteController::kNoItemSelected = -1;
+}  // namespace
 
 AutocompleteController::AutocompleteController(
     Profile* profile,
@@ -140,8 +160,7 @@ AutocompleteController::AutocompleteController(
       keyword_provider_(NULL),
       search_provider_(NULL),
       zero_suggest_provider_(NULL),
-      in_stop_timer_field_trial_(
-          OmniboxFieldTrial::InStopTimerFieldTrialExperimentGroup()),
+      stop_timer_duration_(OmniboxFieldTrial::StopTimerFieldTrialDuration()),
       done_(true),
       in_start_(false),
       in_zero_suggest_(false),
@@ -517,6 +536,8 @@ void AutocompleteController::UpdateKeywordDescriptions(
          !i->keyword.empty()) ||
         (i->provider->type() == AutocompleteProvider::TYPE_SEARCH &&
          AutocompleteMatch::IsSearchType(i->type))) {
+      if (AutocompleteMatchHasCustomDescription(*i))
+        continue;
       i->description.clear();
       i->description_class.clear();
       DCHECK(!i->keyword.empty());
@@ -625,17 +646,8 @@ void AutocompleteController::StartExpireTimer() {
 }
 
 void AutocompleteController::StartStopTimer() {
-  if (!in_stop_timer_field_trial_)
-    return;
-
-  // Amount of time (in ms) between when the user stops typing and
-  // when we send Stop() to every provider.  This is intended to avoid
-  // the disruptive effect of belated omnibox updates, updates that
-  // come after the user has had to time to read the whole dropdown
-  // and doesn't expect it to change.
-  const int kStopTimeMS = 1500;
   stop_timer_.Start(FROM_HERE,
-                    base::TimeDelta::FromMilliseconds(kStopTimeMS),
+                    stop_timer_duration_,
                     base::Bind(&AutocompleteController::Stop,
                                base::Unretained(this),
                                false));

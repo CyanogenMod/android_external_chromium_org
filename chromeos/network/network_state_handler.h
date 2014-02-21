@@ -142,10 +142,8 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // network. Note: O(N).
   const NetworkState* FirstNetworkByType(const NetworkTypePattern& type) const;
 
-  // Returns the hardware (MAC) address for the first connected network
-  // matching |type|, or an empty string if none is connected.
-  std::string HardwareAddressForType(const NetworkTypePattern& type) const;
-  // Same as above but in aa:bb format.
+  // Returns the aa:bb formatted hardware (MAC) address for the first connected
+  // network matching |type|, or an empty string if none is connected.
   std::string FormattedHardwareAddressForType(
       const NetworkTypePattern& type) const;
 
@@ -164,6 +162,10 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // the scope of the calling function (i.e. they may later become invalid, but
   // only on the UI thread).
   void GetDeviceList(DeviceStateList* list) const;
+
+  // Like GetDeviceList() but only returns networks with matching |type|.
+  void GetDeviceListByType(const NetworkTypePattern& type,
+                           DeviceStateList* list) const;
 
   // Sets |list| to contain the list of favorite (aka "preferred") networks.
   // See GetNetworkList() for usage, and notes for |favorite_list_|.

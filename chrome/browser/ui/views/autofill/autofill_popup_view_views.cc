@@ -14,58 +14,34 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
-#include "ui/gfx/screen.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/views/border.h"
-#include "ui/views/event_utils.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/views/corewm/window_animations.h"
-#endif
-
 using blink::WebAutofillClient;
-
-namespace {
-
-const SkColor kBorderColor = SkColorSetARGB(0xFF, 0xC7, 0xCA, 0xCE);
-const SkColor kHoveredBackgroundColor = SkColorSetARGB(0xFF, 0xCD, 0xCD, 0xCD);
-const SkColor kItemTextColor = SkColorSetARGB(0xFF, 0x7F, 0x7F, 0x7F);
-const SkColor kPopupBackground = SkColorSetARGB(0xFF, 0xFF, 0xFF, 0xFF);
-const SkColor kValueTextColor = SkColorSetARGB(0xFF, 0x00, 0x00, 0x00);
-const SkColor kWarningTextColor = SkColorSetARGB(0xFF, 0x7F, 0x7F, 0x7F);
-
-}  // namespace
 
 namespace autofill {
 
 AutofillPopupViewViews::AutofillPopupViewViews(
     AutofillPopupController* controller, views::Widget* observing_widget)
-    : controller_(controller),
-      observing_widget_(observing_widget) {}
+    : AutofillPopupBaseView(controller, observing_widget),
+      controller_(controller) {}
 
-AutofillPopupViewViews::~AutofillPopupViewViews() {
-  if (controller_) {
-    controller_->ViewDestroyed();
+AutofillPopupViewViews::~AutofillPopupViewViews() {}
 
-    HideInternal();
-  }
+void AutofillPopupViewViews::Show() {
+  DoShow();
 }
 
 void AutofillPopupViewViews::Hide() {
   // The controller is no longer valid after it hides us.
   controller_ = NULL;
 
-  HideInternal();
+  DoHide();
+}
 
-  if (GetWidget()) {
-    // Don't call CloseNow() because some of the functions higher up the stack
-    // assume the the widget is still valid after this point.
-    // http://crbug.com/229224
-    // NOTE: This deletes |this|.
-    GetWidget()->Close();
-  } else {
-    delete this;
-  }
+void AutofillPopupViewViews::UpdateBoundsAndRedrawPopup() {
+  DoUpdateBoundsAndRedrawPopup();
 }
 
 void AutofillPopupViewViews::OnPaint(gfx::Canvas* canvas) {
@@ -87,162 +63,8 @@ void AutofillPopupViewViews::OnPaint(gfx::Canvas* canvas) {
   }
 }
 
-void AutofillPopupViewViews::OnMouseCaptureLost() {
-  if (controller_)
-    controller_->SelectionCleared();
-}
-
-bool AutofillPopupViewViews::OnMouseDragged(const ui::MouseEvent& event) {
-  if (!controller_)
-    return false;
-
-  if (HitTestPoint(event.location())) {
-    controller_->LineSelectedAtPoint(event.x(), event.y());
-
-    // We must return true in order to get future OnMouseDragged and
-    // OnMouseReleased events.
-    return true;
-  }
-
-  // If we move off of the popup, we lose the selection.
-  controller_->SelectionCleared();
-  return false;
-}
-
-void AutofillPopupViewViews::OnMouseExited(const ui::MouseEvent& event) {
-  if (controller_)
-    controller_->SelectionCleared();
-}
-
-void AutofillPopupViewViews::OnMouseMoved(const ui::MouseEvent& event) {
-  if (!controller_)
-    return;
-
-  if (HitTestPoint(event.location()))
-    controller_->LineSelectedAtPoint(event.x(), event.y());
-  else
-    controller_->SelectionCleared();
-}
-
-bool AutofillPopupViewViews::OnMousePressed(const ui::MouseEvent& event) {
-  if (HitTestPoint(event.location()))
-    return true;
-
-  if (controller_->hide_on_outside_click()) {
-    GetWidget()->ReleaseCapture();
-
-    gfx::Point screen_loc = event.location();
-    views::View::ConvertPointToScreen(this, &screen_loc);
-
-    ui::MouseEvent mouse_event = event;
-    mouse_event.set_location(screen_loc);
-
-    if (controller_->ShouldRepostEvent(mouse_event)) {
-      gfx::NativeView native_view = GetWidget()->GetNativeView();
-      gfx::Screen* screen = gfx::Screen::GetScreenFor(native_view);
-      gfx::NativeWindow window = screen->GetWindowAtScreenPoint(screen_loc);
-      views::RepostLocatedEvent(window, mouse_event);
-    }
-
-    controller_->Hide();
-    // |this| is now deleted.
-  }
-
-  return false;
-}
-
-void AutofillPopupViewViews::OnMouseReleased(const ui::MouseEvent& event) {
-  if (!controller_)
-    return;
-
-  // Because this view can can be shown in response to a mouse press, it can
-  // receive an OnMouseReleased event just after showing. This breaks the mouse
-  // capture, so restart capturing here.
-  if (controller_->hide_on_outside_click() && GetWidget())
-    GetWidget()->SetCapture(this);
-
-  // We only care about the left click.
-  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location()))
-    controller_->LineAcceptedAtPoint(event.x(), event.y());
-}
-
-void AutofillPopupViewViews::OnGestureEvent(ui::GestureEvent* event) {
-  if (!controller_)
-    return;
-
-  switch (event->type()) {
-    case ui::ET_GESTURE_TAP_DOWN:
-    case ui::ET_GESTURE_SCROLL_BEGIN:
-    case ui::ET_GESTURE_SCROLL_UPDATE:
-      if (HitTestPoint(event->location()))
-        controller_->LineSelectedAtPoint(event->x(), event->y());
-      else
-        controller_->SelectionCleared();
-      break;
-    case ui::ET_GESTURE_TAP:
-    case ui::ET_GESTURE_SCROLL_END:
-      if (HitTestPoint(event->location()))
-        controller_->LineAcceptedAtPoint(event->x(), event->y());
-      else
-        controller_->SelectionCleared();
-      break;
-    case ui::ET_GESTURE_TAP_CANCEL:
-    case ui::ET_SCROLL_FLING_START:
-      controller_->SelectionCleared();
-      break;
-    default:
-      return;
-  }
-  event->SetHandled();
-}
-
-void AutofillPopupViewViews::OnWidgetBoundsChanged(
-    views::Widget* widget,
-    const gfx::Rect& new_bounds) {
-  DCHECK_EQ(widget, observing_widget_);
-  controller_->Hide();
-}
-
-void AutofillPopupViewViews::Show() {
-  if (!GetWidget()) {
-    observing_widget_->AddObserver(this);
-
-    // The widget is destroyed by the corresponding NativeWidget, so we use
-    // a weak pointer to hold the reference and don't have to worry about
-    // deletion.
-    views::Widget* widget = new views::Widget;
-    views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-    params.delegate = this;
-    params.parent = controller_->container_view();
-    widget->Init(params);
-    widget->SetContentsView(this);
-#if defined(USE_AURA)
-    // No animation for popup appearance (too distracting).
-    views::corewm::SetWindowVisibilityAnimationTransition(
-        widget->GetNativeView(), views::corewm::ANIMATE_HIDE);
-#endif
-  }
-
-  set_border(views::Border::CreateSolidBorder(kBorderThickness, kBorderColor));
-
-  UpdateBoundsAndRedrawPopup();
-  GetWidget()->Show();
-
-  if (controller_->hide_on_outside_click())
-    GetWidget()->SetCapture(this);
-}
-
 void AutofillPopupViewViews::InvalidateRow(size_t row) {
   SchedulePaintInRect(controller_->GetRowBounds(row));
-}
-
-void AutofillPopupViewViews::UpdateBoundsAndRedrawPopup() {
-  GetWidget()->SetBounds(controller_->popup_bounds());
-  SchedulePaint();
-}
-
-void AutofillPopupViewViews::HideInternal() {
-  observing_widget_->RemoveObserver(this);
 }
 
 void AutofillPopupViewViews::DrawAutofillEntry(gfx::Canvas* canvas,
@@ -251,21 +73,21 @@ void AutofillPopupViewViews::DrawAutofillEntry(gfx::Canvas* canvas,
   if (controller_->selected_line() == index)
     canvas->FillRect(entry_rect, kHoveredBackgroundColor);
 
-  bool is_rtl = controller_->IsRTL();
-  int value_text_width = controller_->GetNameFontForRow(index).GetStringWidth(
-      controller_->names()[index]);
-  int value_content_x = is_rtl ?
+  const bool is_rtl = controller_->IsRTL();
+  const int value_text_width =
+      gfx::GetStringWidth(controller_->names()[index],
+                          controller_->GetNameFontListForRow(index));
+  const int value_content_x = is_rtl ?
       entry_rect.width() - value_text_width - kEndPadding : kEndPadding;
 
-  canvas->DrawStringInt(
+  canvas->DrawStringRectWithFlags(
       controller_->names()[index],
-      controller_->GetNameFontForRow(index),
+      controller_->GetNameFontListForRow(index),
       controller_->IsWarning(index) ? kWarningTextColor : kValueTextColor,
-      value_content_x,
-      entry_rect.y(),
-      canvas->GetStringWidth(controller_->names()[index],
-                             controller_->GetNameFontForRow(index)),
-      entry_rect.height(),
+      gfx::Rect(value_content_x,
+                entry_rect.y(),
+                value_text_width,
+                entry_rect.height()),
       gfx::Canvas::TEXT_ALIGN_CENTER);
 
   // Use this to figure out where all the other Autofill items should be placed.
@@ -288,20 +110,20 @@ void AutofillPopupViewViews::DrawAutofillEntry(gfx::Canvas* canvas,
   }
 
   // Draw the name text.
-  if (!is_rtl) {
-    x_align_left -= canvas->GetStringWidth(controller_->subtexts()[index],
-                                           controller_->subtext_font());
-  }
+  const int subtext_width =
+      gfx::GetStringWidth(controller_->subtexts()[index],
+                          controller_->subtext_font_list());
+  if (!is_rtl)
+    x_align_left -= subtext_width;
 
-  canvas->DrawStringInt(
+  canvas->DrawStringRectWithFlags(
       controller_->subtexts()[index],
-      controller_->subtext_font(),
+      controller_->subtext_font_list(),
       kItemTextColor,
-      x_align_left,
-      entry_rect.y(),
-      canvas->GetStringWidth(controller_->subtexts()[index],
-                             controller_->subtext_font()),
-      entry_rect.height(),
+      gfx::Rect(x_align_left,
+                entry_rect.y(),
+                subtext_width,
+                entry_rect.height()),
       gfx::Canvas::TEXT_ALIGN_CENTER);
 }
 

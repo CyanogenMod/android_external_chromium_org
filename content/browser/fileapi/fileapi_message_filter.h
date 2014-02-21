@@ -137,7 +137,6 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                                   size_t buffer_size);
   void OnFinishBuildingBlob(const std::string& uuid,
                              const std::string& content_type);
-  void OnCancelBuildingBlob(const std::string& uuid);
   void OnIncrementBlobRefCount(const std::string& uuid);
   void OnDecrementBlobRefCount(const std::string& uuid);
   void OnRegisterPublicBlobURL(const GURL& public_url, const std::string& uuid);
@@ -162,35 +161,34 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   void OnRemoveStream(const GURL& url);
 
   // Callback functions to be used when each file operation is finished.
-  void DidFinish(int request_id, base::PlatformFileError result);
-  void DidCancel(int request_id, base::PlatformFileError result);
+  void DidFinish(int request_id, base::File::Error result);
   void DidGetMetadata(int request_id,
-                      base::PlatformFileError result,
-                      const base::PlatformFileInfo& info);
+                      base::File::Error result,
+                      const base::File::Info& info);
   void DidReadDirectory(int request_id,
-                        base::PlatformFileError result,
+                        base::File::Error result,
                         const std::vector<fileapi::DirectoryEntry>& entries,
                         bool has_more);
   void DidWrite(int request_id,
-                base::PlatformFileError result,
+                base::File::Error result,
                 int64 bytes,
                 bool complete);
   void DidOpenFileSystem(int request_id,
                          const GURL& root,
                          const std::string& filesystem_name,
-                         base::PlatformFileError result);
+                         base::File::Error result);
   void DidResolveURL(int request_id,
-                     base::PlatformFileError result,
+                     base::File::Error result,
                      const fileapi::FileSystemInfo& info,
                      const base::FilePath& file_path,
                      bool is_directory);
   void DidDeleteFileSystem(int request_id,
-                           base::PlatformFileError result);
+                           base::File::Error result);
   void DidCreateSnapshot(
       int request_id,
       const fileapi::FileSystemURL& url,
-      base::PlatformFileError result,
-      const base::PlatformFileInfo& info,
+      base::File::Error result,
+      const base::File::Info& info,
       const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
 

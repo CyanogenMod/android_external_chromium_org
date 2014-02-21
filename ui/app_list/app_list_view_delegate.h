@@ -11,6 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "ui/app_list/app_list_export.h"
 
 namespace base {
@@ -27,7 +28,6 @@ class ImageSkia;
 
 namespace app_list {
 
-class AppListItemModel;
 class AppListModel;
 class AppListViewDelegateObserver;
 class SearchResult;
@@ -91,13 +91,25 @@ class APP_LIST_EXPORT AppListViewDelegate {
   virtual void StopSearch() = 0;
 
   // Invoked to open the search result.
-  virtual void OpenSearchResult(SearchResult* result, int event_flags) = 0;
+  virtual void OpenSearchResult(SearchResult* result,
+                                bool auto_launch,
+                                int event_flags) = 0;
 
   // Called to invoke a custom action on |result|.  |action_index| corresponds
   // to the index of an icon in |result.action_icons()|.
   virtual void InvokeSearchResultAction(SearchResult* result,
                                         int action_index,
                                         int event_flags) = 0;
+
+  // Gets the timeout for auto-launching the first search result, or 0 if the
+  //  auto-launch should not happen for the current search session.
+  virtual base::TimeDelta GetAutoLaunchTimeout() = 0;
+
+  // Invoked when the auto-launch is canceled by the user action.
+  virtual void AutoLaunchCanceled() = 0;
+
+  // Invoked when the app list UI is created.
+  virtual void ViewInitialized() = 0;
 
   // Invoked to dismiss app list. This may leave the view open but hidden from
   // the user.
@@ -126,6 +138,10 @@ class APP_LIST_EXPORT AppListViewDelegate {
 
   // Get the start page web contents. Owned by the AppListViewDelegate.
   virtual content::WebContents* GetStartPageContents() = 0;
+
+  // Get the web contents for speech recognition or NULL if speech recognition
+  // is unavailable.
+  virtual content::WebContents* GetSpeechRecognitionContents() = 0;
 
   // Returns the list of users (for AppListMenu).
   virtual const Users& GetUsers() const = 0;

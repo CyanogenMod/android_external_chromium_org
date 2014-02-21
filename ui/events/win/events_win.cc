@@ -77,6 +77,11 @@ bool IsNonClientMouseEvent(const base::NativeEvent& native_event) {
          native_event.message <= WM_NCXBUTTONDBLCLK);
 }
 
+bool IsMouseEvent(const base::NativeEvent& native_event) {
+  return IsClientMouseEvent(native_event) ||
+         IsNonClientMouseEvent(native_event);
+}
+
 bool IsMouseWheelEvent(const base::NativeEvent& native_event) {
   return native_event.message == WM_MOUSEWHEEL ||
          native_event.message == WM_MOUSEHWHEEL;
@@ -88,6 +93,11 @@ bool IsKeyEvent(const base::NativeEvent& native_event) {
          native_event.message == WM_CHAR ||
          native_event.message == WM_KEYUP ||
          native_event.message == WM_SYSKEYUP;
+}
+
+bool IsScrollEvent(const base::NativeEvent& native_event) {
+  return native_event.message == WM_VSCROLL ||
+         native_event.message == WM_HSCROLL;
 }
 
 // Returns a mask corresponding to the set of pressed modifier keys.
@@ -175,10 +185,14 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
     case WM_NCMOUSEMOVE:
       return ET_MOUSE_MOVED;
     case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
       return ET_MOUSEWHEEL;
     case WM_MOUSELEAVE:
     case WM_NCMOUSELEAVE:
       return ET_MOUSE_EXITED;
+    case WM_VSCROLL:
+    case WM_HSCROLL:
+      return ET_SCROLL;
     default:
       // We can't NOTREACHED() here, since this function can be called for any
       // message.
@@ -200,21 +214,29 @@ base::TimeDelta EventTimeFromNative(const base::NativeEvent& native_event) {
 }
 
 gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
-  // Note: Wheel events are considered client, but their position is in screen
-  //       coordinates.
-  // Client message. The position is contained in the LPARAM.
-  if (IsClientMouseEvent(native_event) && !IsMouseWheelEvent(native_event))
+  POINT native_point;
+  if ((native_event.message == WM_MOUSELEAVE ||
+       native_event.message == WM_NCMOUSELEAVE) ||
+      IsScrollEvent(native_event)) {
+    // These events have no coordinates. For sanity with rest of events grab
+    // coordinates from the OS.
+    ::GetCursorPos(&native_point);
+  } else if (IsClientMouseEvent(native_event) &&
+             !IsMouseWheelEvent(native_event)) {
+    // Note: Wheel events are considered client, but their position is in screen
+    //       coordinates.
+    // Client message. The position is contained in the LPARAM.
     return gfx::Point(native_event.lParam);
-  DCHECK(IsNonClientMouseEvent(native_event) ||
-         IsMouseWheelEvent(native_event));
-  // Non-client message. The position is contained in a POINTS structure in
-  // LPARAM, and is in screen coordinates so we have to convert to client.
-  POINT native_point = { GET_X_LPARAM(native_event.lParam),
-                         GET_Y_LPARAM(native_event.lParam) };
+  } else {
+    DCHECK(IsNonClientMouseEvent(native_event) ||
+           IsMouseWheelEvent(native_event) || IsScrollEvent(native_event));
+    // Non-client message. The position is contained in a POINTS structure in
+    // LPARAM, and is in screen coordinates so we have to convert to client.
+    native_point.x = GET_X_LPARAM(native_event.lParam);
+    native_point.y = GET_Y_LPARAM(native_event.lParam);
+  }
   ScreenToClient(native_event.hwnd, &native_point);
-  gfx::Point location(native_point);
-  location = gfx::win::ScreenToDIPPoint(location);
-  return location;
+  return gfx::win::ScreenToDIPPoint(gfx::Point(native_point));
 }
 
 gfx::Point EventSystemLocationFromNative(
@@ -231,11 +253,6 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
 const char* CodeFromNative(const base::NativeEvent& native_event) {
   const uint16 scan_code = GetScanCodeFromLParam(native_event.lParam);
   return CodeForWindowsScanCode(scan_code);
-}
-
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  return IsClientMouseEvent(native_event) ||
-         IsNonClientMouseEvent(native_event);
 }
 
 int GetChangedMouseButtonFlagsFromNative(
@@ -255,8 +272,11 @@ int GetChangedMouseButtonFlagsFromNative(
 }
 
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
-  DCHECK(native_event.message == WM_MOUSEWHEEL);
-  return gfx::Vector2d(0, GET_WHEEL_DELTA_WPARAM(native_event.wParam));
+  DCHECK(native_event.message == WM_MOUSEWHEEL ||
+         native_event.message == WM_MOUSEHWHEEL);
+  if (native_event.message == WM_MOUSEWHEEL)
+    return gfx::Vector2d(0, GET_WHEEL_DELTA_WPARAM(native_event.wParam));
+  return gfx::Vector2d(GET_WHEEL_DELTA_WPARAM(native_event.wParam), 0);
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -294,8 +314,10 @@ bool GetScrollOffsets(const base::NativeEvent& native_event,
                       float* x_offset_ordinal,
                       float* y_offset_ordinal,
                       int* finger_count) {
-  // Not supported in Windows.
-  NOTIMPLEMENTED();
+  // TODO(ananta)
+  // Support retrieving the scroll offsets from the scroll event.
+  if (native_event.message == WM_VSCROLL || native_event.message == WM_HSCROLL)
+    return true;
   return false;
 }
 
@@ -331,16 +353,6 @@ bool IsNaturalScrollEnabled() {
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  return event.message == WM_USER + 310;
-}
-
-base::NativeEvent CreateNoopEvent() {
-  MSG event = { NULL };
-  event.message = WM_USER + 310;
-  return event;
 }
 
 int GetModifiersFromACCEL(const ACCEL& accel) {

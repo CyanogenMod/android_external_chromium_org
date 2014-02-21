@@ -9,6 +9,7 @@
 #include "chrome/browser/autofill/autofill_cc_infobar_delegate.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
@@ -21,7 +22,7 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
-#include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents_view.h"
@@ -46,10 +47,7 @@ TabAutofillManagerDelegate::~TabAutofillManagerDelegate() {
   DCHECK(!popup_controller_);
 }
 
-void TabAutofillManagerDelegate::TabActivated(int reason) {
-  if (reason != TabStripModelObserver::CHANGE_REASON_USER_GESTURE)
-    return;
-
+void TabAutofillManagerDelegate::TabActivated() {
   if (dialog_controller_.get())
     dialog_controller_->TabActivated();
 }
@@ -114,9 +112,9 @@ void TabAutofillManagerDelegate::ShowRequestAutocompleteDialog(
 void TabAutofillManagerDelegate::ShowAutofillPopup(
     const gfx::RectF& element_bounds,
     base::i18n::TextDirection text_direction,
-    const std::vector<string16>& values,
-    const std::vector<string16>& labels,
-    const std::vector<string16>& icons,
+    const std::vector<base::string16>& values,
+    const std::vector<base::string16>& labels,
+    const std::vector<base::string16>& icons,
     const std::vector<int>& identifiers,
     base::WeakPtr<AutofillPopupDelegate> delegate) {
   // Convert element_bounds to be in screen space.
@@ -147,6 +145,14 @@ void TabAutofillManagerDelegate::UpdateAutofillPopupDataListValues(
 void TabAutofillManagerDelegate::HideAutofillPopup() {
   if (popup_controller_.get())
     popup_controller_->Hide();
+
+  // Password generation popups behave in the same fashion and should also
+  // be hidden.
+  PasswordGenerationManager* generation_manager =
+      ChromePasswordManagerClient::GetGenerationManagerFromWebContents(
+          web_contents_);
+  if (generation_manager)
+    generation_manager->HidePopup();
 }
 
 bool TabAutofillManagerDelegate::IsAutocompleteEnabled() {
@@ -183,7 +189,8 @@ void TabAutofillManagerDelegate::WebContentsDestroyed(
 void TabAutofillManagerDelegate::DetectAccountCreationForms(
     const std::vector<autofill::FormStructure*>& forms) {
   PasswordGenerationManager* manager =
-      PasswordGenerationManager::FromWebContents(web_contents_);
+      ChromePasswordManagerClient::GetGenerationManagerFromWebContents(
+          web_contents_);
   if (manager)
     manager->DetectAccountCreationForms(forms);
 }

@@ -324,12 +324,6 @@ void ProxyLauncher::TerminateBrowser() {
 
   base::TimeTicks quit_start = base::TimeTicks::Now();
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-  scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
-  ASSERT_TRUE(browser.get());
-  ASSERT_TRUE(browser->TerminateSession());
-#endif  // defined(OS_WIN)
-
   ChromeProcessList processes = GetRunningChromeProcesses(process_id_);
 
   // Now, drop the automation IPC channel so that the automation provider in
@@ -482,7 +476,7 @@ bool ProxyLauncher::LaunchBrowserHelper(const LaunchState& state,
   const char* browser_wrapper = getenv("BROWSER_WRAPPER");
   if (browser_wrapper) {
 #if defined(OS_WIN)
-    command_line.PrependWrapper(ASCIIToWide(browser_wrapper));
+    command_line.PrependWrapper(base::ASCIIToWide(browser_wrapper));
 #elif defined(OS_POSIX)
     command_line.PrependWrapper(browser_wrapper);
 #endif

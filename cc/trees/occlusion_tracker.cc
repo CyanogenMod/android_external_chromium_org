@@ -19,7 +19,7 @@ namespace cc {
 
 template <typename LayerType, typename RenderSurfaceType>
 OcclusionTrackerBase<LayerType, RenderSurfaceType>::OcclusionTrackerBase(
-    gfx::Rect screen_space_clip_rect, bool record_metrics_for_frame)
+    const gfx::Rect& screen_space_clip_rect, bool record_metrics_for_frame)
     : screen_space_clip_rect_(screen_space_clip_rect),
       overdraw_metrics_(OverdrawMetrics::Create(record_metrics_for_frame)),
       occluding_screen_space_rects_(NULL),
@@ -54,22 +54,24 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::LeaveLayer(
 
 template <typename RenderSurfaceType>
 static gfx::Rect ScreenSpaceClipRectInTargetSurface(
-    const RenderSurfaceType* target_surface, gfx::Rect screen_space_clip_rect) {
+    const RenderSurfaceType* target_surface,
+    const gfx::Rect& screen_space_clip_rect) {
   gfx::Transform inverse_screen_space_transform(
       gfx::Transform::kSkipInitialization);
   if (!target_surface->screen_space_transform().GetInverse(
           &inverse_screen_space_transform))
     return target_surface->content_rect();
 
-  return gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
-      inverse_screen_space_transform, screen_space_clip_rect));
+  return MathUtil::ProjectEnclosingClippedRect(inverse_screen_space_transform,
+                                               screen_space_clip_rect);
 }
 
 template <typename RenderSurfaceType>
-static Region TransformSurfaceOpaqueRegion(const Region& region,
-                                           bool have_clip_rect,
-                                           gfx::Rect clip_rect_in_new_target,
-                                           const gfx::Transform& transform) {
+static Region TransformSurfaceOpaqueRegion(
+    const Region& region,
+    bool have_clip_rect,
+    const gfx::Rect& clip_rect_in_new_target,
+    const gfx::Transform& transform) {
   if (region.IsEmpty())
     return Region();
 
@@ -131,7 +133,7 @@ static inline bool SurfaceTransformsToScreenKnown(const RenderSurfaceImpl* rs) {
 }
 
 static inline bool LayerIsInUnsorted3dRenderingContext(const Layer* layer) {
-  return layer->parent() && layer->parent()->preserves_3d();
+  return layer->is_3d_sorted();
 }
 static inline bool LayerIsInUnsorted3dRenderingContext(const LayerImpl* layer) {
   return false;
@@ -239,15 +241,15 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::FinishedRenderTarget(
 
 template <typename LayerType>
 static void ReduceOcclusionBelowSurface(LayerType* contributing_layer,
-                                        gfx::Rect surface_rect,
+                                        const gfx::Rect& surface_rect,
                                         const gfx::Transform& surface_transform,
                                         LayerType* render_target,
                                         Region* occlusion_from_inside_target) {
   if (surface_rect.IsEmpty())
     return;
 
-  gfx::Rect affected_area_in_target = gfx::ToEnclosingRect(
-      MathUtil::MapClippedRect(surface_transform, gfx::RectF(surface_rect)));
+  gfx::Rect affected_area_in_target =
+      MathUtil::MapEnclosingClippedRect(surface_transform, surface_rect);
   if (contributing_layer->render_surface()->is_clipped()) {
     affected_area_in_target.Intersect(
         contributing_layer->render_surface()->clip_rect());
@@ -497,7 +499,7 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::
 template <typename LayerType, typename RenderSurfaceType>
 bool OcclusionTrackerBase<LayerType, RenderSurfaceType>::Occluded(
     const LayerType* render_target,
-    gfx::Rect content_rect,
+    const gfx::Rect& content_rect,
     const gfx::Transform& draw_transform,
     bool impl_draw_transform_is_unknown) const {
   DCHECK(!stack_.empty());
@@ -527,8 +529,8 @@ bool OcclusionTrackerBase<LayerType, RenderSurfaceType>::Occluded(
 
   // Take the ToEnclosingRect at each step, as we want to contain any unoccluded
   // partial pixels in the resulting Rect.
-  Region unoccluded_region_in_target_surface = gfx::ToEnclosingRect(
-      MathUtil::MapClippedRect(draw_transform, gfx::RectF(content_rect)));
+  Region unoccluded_region_in_target_surface =
+      MathUtil::MapEnclosingClippedRect(draw_transform, content_rect);
   unoccluded_region_in_target_surface.Subtract(
       stack_.back().occlusion_from_inside_target);
   gfx::RectF unoccluded_rect_in_target_surface_without_outside_occlusion =
@@ -546,7 +548,7 @@ template <typename LayerType, typename RenderSurfaceType>
 gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
     UnoccludedContentRect(
         const LayerType* render_target,
-        gfx::Rect content_rect,
+        const gfx::Rect& content_rect,
         const gfx::Transform& draw_transform,
         bool impl_draw_transform_is_unknown) const {
   DCHECK(!stack_.empty());
@@ -576,18 +578,17 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
 
   // Take the ToEnclosingRect at each step, as we want to contain any unoccluded
   // partial pixels in the resulting Rect.
-  Region unoccluded_region_in_target_surface = gfx::ToEnclosingRect(
-      MathUtil::MapClippedRect(draw_transform, gfx::RectF(content_rect)));
+  Region unoccluded_region_in_target_surface =
+      MathUtil::MapEnclosingClippedRect(draw_transform, content_rect);
   unoccluded_region_in_target_surface.Subtract(
       stack_.back().occlusion_from_inside_target);
   unoccluded_region_in_target_surface.Subtract(
       stack_.back().occlusion_from_outside_target);
 
-  gfx::RectF unoccluded_rect_in_target_surface =
+  gfx::Rect unoccluded_rect_in_target_surface =
       unoccluded_region_in_target_surface.bounds();
-  gfx::Rect unoccluded_rect = gfx::ToEnclosingRect(
-      MathUtil::ProjectClippedRect(inverse_draw_transform,
-                                   unoccluded_rect_in_target_surface));
+  gfx::Rect unoccluded_rect = MathUtil::ProjectEnclosingClippedRect(
+      inverse_draw_transform, unoccluded_rect_in_target_surface);
   unoccluded_rect.Intersect(content_rect);
 
   return unoccluded_rect;
@@ -598,7 +599,7 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
     UnoccludedContributingSurfaceContentRect(
         const LayerType* layer,
         bool for_replica,
-        gfx::Rect content_rect) const {
+        const gfx::Rect& content_rect) const {
   DCHECK(!stack_.empty());
   // The layer is a contributing render_target so it should have a surface.
   DCHECK(layer->render_surface());
@@ -634,8 +635,8 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
 
   // Take the ToEnclosingRect at each step, as we want to contain any unoccluded
   // partial pixels in the resulting Rect.
-  Region unoccluded_region_in_target_surface = gfx::ToEnclosingRect(
-      MathUtil::MapClippedRect(draw_transform, gfx::RectF(content_rect)));
+  Region unoccluded_region_in_target_surface =
+      MathUtil::MapEnclosingClippedRect(draw_transform, content_rect);
   // Layers can't clip across surfaces, so count this as internal occlusion.
   if (surface->is_clipped())
     unoccluded_region_in_target_surface.Intersect(surface->clip_rect());
@@ -655,11 +656,10 @@ gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::
           contributing_surface_render_target->render_surface(),
           screen_space_clip_rect_));
 
-  gfx::RectF unoccluded_rect_in_target_surface =
+  gfx::Rect unoccluded_rect_in_target_surface =
       unoccluded_region_in_target_surface.bounds();
-  gfx::Rect unoccluded_rect = gfx::ToEnclosingRect(
-      MathUtil::ProjectClippedRect(inverse_draw_transform,
-                                   unoccluded_rect_in_target_surface));
+  gfx::Rect unoccluded_rect = MathUtil::ProjectEnclosingClippedRect(
+      inverse_draw_transform, unoccluded_rect_in_target_surface);
   unoccluded_rect.Intersect(content_rect);
 
   return unoccluded_rect;

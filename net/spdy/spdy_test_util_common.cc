@@ -216,7 +216,6 @@ class PriorityGetter : public BufferedSpdyFramerVisitorInterface {
   virtual void OnSynStream(SpdyStreamId stream_id,
                            SpdyStreamId associated_stream_id,
                            SpdyPriority priority,
-                           uint8 credential_slot,
                            bool fin,
                            bool unidirectional,
                            const SpdyHeaderBlock& headers) OVERRIDE {
@@ -238,7 +237,7 @@ class PriorityGetter : public BufferedSpdyFramerVisitorInterface {
   virtual void OnSettings(bool clear_persisted) OVERRIDE {}
   virtual void OnSetting(
       SpdySettingsIds id, uint8 flags, uint32 value) OVERRIDE {}
-  virtual void OnPing(uint32 unique_id) OVERRIDE {}
+  virtual void OnPing(SpdyPingId unique_id) OVERRIDE {}
   virtual void OnRstStream(SpdyStreamId stream_id,
                            SpdyRstStreamStatus status) OVERRIDE {}
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
@@ -750,10 +749,8 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(
       break;
     case SYN_STREAM:
       {
-        size_t credential_slot = is_spdy2() ? 0 : header_info.credential_slot;
         frame = framer.CreateSynStream(header_info.id, header_info.assoc_id,
                                        header_info.priority,
-                                       credential_slot,
                                        header_info.control_flags,
                                        headers.get());
       }
@@ -854,18 +851,26 @@ std::string SpdyTestUtil::ConstructSpdyReplyString(
   return reply_string;
 }
 
+// TODO(jgraettinger): Eliminate uses of this method in tests (prefer
+// SpdySettingsIR).
 SpdyFrame* SpdyTestUtil::ConstructSpdySettings(
     const SettingsMap& settings) const {
-  return CreateFramer()->CreateSettings(settings);
-}
-
-SpdyFrame* SpdyTestUtil::ConstructSpdyCredential(
-    const SpdyCredential& credential) const {
-  return CreateFramer()->CreateCredentialFrame(credential);
+  SpdySettingsIR settings_ir;
+  for (SettingsMap::const_iterator it = settings.begin();
+       it != settings.end();
+       ++it) {
+    settings_ir.AddSetting(
+        it->first,
+        (it->second.first & SETTINGS_FLAG_PLEASE_PERSIST) != 0,
+        (it->second.first & SETTINGS_FLAG_PERSISTED) != 0,
+        it->second.second);
+  }
+  return CreateFramer()->SerializeSettings(settings_ir);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyPing(uint32 ping_id) const {
-  return CreateFramer()->CreatePingFrame(ping_id);
+  SpdyPingIR ping_ir(ping_id);
+  return CreateFramer()->SerializePing(ping_ir);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway() const {
@@ -874,18 +879,23 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway() const {
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway(
     SpdyStreamId last_good_stream_id) const {
-  return CreateFramer()->CreateGoAway(last_good_stream_id, GOAWAY_OK);
+  SpdyGoAwayIR go_ir(last_good_stream_id, GOAWAY_OK, "go away");
+  return CreateFramer()->SerializeGoAway(go_ir);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyWindowUpdate(
     const SpdyStreamId stream_id, uint32 delta_window_size) const {
-  return CreateFramer()->CreateWindowUpdate(stream_id, delta_window_size);
+  SpdyWindowUpdateIR update_ir(stream_id, delta_window_size);
+  return CreateFramer()->SerializeWindowUpdate(update_ir);
 }
 
+// TODO(jgraettinger): Eliminate uses of this method in tests (prefer
+// SpdyRstStreamIR).
 SpdyFrame* SpdyTestUtil::ConstructSpdyRstStream(
     SpdyStreamId stream_id,
     SpdyRstStreamStatus status) const {
-  return CreateFramer()->CreateRstStream(stream_id, status);
+  SpdyRstStreamIR rst_ir(stream_id, status, "RST");
+  return CreateFramer()->SerializeRstStream(rst_ir);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyGet(
@@ -1145,9 +1155,10 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPostSynReply(
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyBodyFrame(int stream_id, bool fin) {
   SpdyFramer framer(spdy_version_);
-  return framer.CreateDataFrame(
-      stream_id, kUploadData, kUploadDataSize,
-      fin ? DATA_FLAG_FIN : DATA_FLAG_NONE);
+  SpdyDataIR data_ir(stream_id,
+                     base::StringPiece(kUploadData, kUploadDataSize));
+  data_ir.set_fin(fin);
+  return framer.SerializeData(data_ir);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyBodyFrame(int stream_id,
@@ -1155,8 +1166,9 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyBodyFrame(int stream_id,
                                                 uint32 len,
                                                 bool fin) {
   SpdyFramer framer(spdy_version_);
-  return framer.CreateDataFrame(
-      stream_id, data, len, fin ? DATA_FLAG_FIN : DATA_FLAG_NONE);
+  SpdyDataIR data_ir(stream_id, base::StringPiece(data, len));
+  data_ir.set_fin(fin);
+  return framer.SerializeData(data_ir);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructWrappedSpdyFrame(

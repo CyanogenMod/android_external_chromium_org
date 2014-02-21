@@ -20,6 +20,15 @@ class HotwordServiceFactory : public BrowserContextKeyedServiceFactory {
 
   static HotwordServiceFactory* GetInstance();
 
+  // Returns true to show the opt in pop up for that profile.
+  static bool ShouldShowOptInPopup(Profile* profile);
+
+  // Returns true if the hotwording service is available for |profile|.
+  static bool IsServiceAvailable(Profile* profile);
+
+  // Returns true if hotwording is allowed for |profile|.
+  static bool IsHotwordAllowed(Profile* profile);
+
  private:
   friend struct DefaultSingletonTraits<HotwordServiceFactory>;
 
@@ -29,8 +38,6 @@ class HotwordServiceFactory : public BrowserContextKeyedServiceFactory {
   // Overrides from BrowserContextKeyedServiceFactory:
   virtual void RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
   virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 

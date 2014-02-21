@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/app_launch_controller.h"
 #include "chrome/browser/chromeos/login/auth_prewarmer.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
@@ -70,7 +71,7 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
       const GetAutoEnrollmentCheckResultCallback& callback) OVERRIDE;
   virtual void StartWizard(
       const std::string& first_screen_name,
-      scoped_ptr<DictionaryValue> screen_parameters) OVERRIDE;
+      scoped_ptr<base::DictionaryValue> screen_parameters) OVERRIDE;
   virtual WizardController* GetWizardController() OVERRIDE;
   virtual AppLaunchController* GetAppLaunchController() OVERRIDE;
   virtual void StartUserAdding(
@@ -79,7 +80,9 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   virtual void ResumeSignInScreen() OVERRIDE;
   virtual void OnPreferencesChanged() OVERRIDE;
   virtual void PrewarmAuthentication() OVERRIDE;
-  virtual void StartAppLaunch(const std::string& app_id) OVERRIDE;
+  virtual void StartAppLaunch(const std::string& app_id,
+                              bool diagnostic_mode) OVERRIDE;
+  virtual void StartDemoAppLaunch() OVERRIDE;
 
   // Creates WizardController instance.
   WizardController* CreateWizardController();
@@ -202,6 +205,9 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // App launch controller.
   scoped_ptr<AppLaunchController> app_launch_controller_;
 
+  // Demo app launcher.
+  scoped_ptr<DemoAppLauncher> demo_app_launcher_;
+
   // Client for enterprise auto-enrollment check.
   scoped_ptr<policy::AutoEnrollmentClient> auto_enrollment_client_;
 
@@ -258,11 +264,7 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
 
   // Stored parameters for StartWizard, required to restore in case of crash.
   std::string wizard_first_screen_name_;
-  scoped_ptr<DictionaryValue> wizard_screen_parameters_;
-
-  // Old value of the ash::internal::kIgnoreSoloWindowFramePainterPolicy
-  // property of the root window for |login_window_|.
-  bool old_ignore_solo_window_frame_painter_policy_value_;
+  scoped_ptr<base::DictionaryValue> wizard_screen_parameters_;
 
   // Called before host deletion.
   base::Closure completion_callback_;

@@ -5,6 +5,7 @@
 #include "gin/wrappable.h"
 
 #include "base/logging.h"
+#include "gin/object_template_builder.h"
 #include "gin/per_isolate_data.h"
 
 namespace gin {
@@ -16,11 +17,9 @@ WrappableBase::~WrappableBase() {
   wrapper_.Reset();
 }
 
-v8::Handle<v8::Object> WrappableBase::GetWrapperImpl(
-    v8::Isolate* isolate, WrapperInfo* wrapper_info) {
-    if (wrapper_.IsEmpty())
-      CreateWrapper(isolate, wrapper_info);
-    return v8::Local<v8::Object>::New(isolate, wrapper_);
+ObjectTemplateBuilder WrappableBase::GetObjectTemplateBuilder(
+    v8::Isolate* isolate) {
+  return ObjectTemplateBuilder(isolate);
 }
 
 void WrappableBase::WeakCallback(
@@ -30,11 +29,19 @@ void WrappableBase::WeakCallback(
   delete wrappable;
 }
 
-v8::Handle<v8::Object> WrappableBase::CreateWrapper(v8::Isolate* isolate,
-                                                    WrapperInfo* info) {
+v8::Handle<v8::Object> WrappableBase::GetWrapperImpl(v8::Isolate* isolate,
+                                                     WrapperInfo* info) {
+  if (!wrapper_.IsEmpty()) {
+    return v8::Local<v8::Object>::New(isolate, wrapper_);
+  }
+
   PerIsolateData* data = PerIsolateData::From(isolate);
   v8::Local<v8::ObjectTemplate> templ = data->GetObjectTemplate(info);
-  CHECK(!templ.IsEmpty());  // Don't forget to register an object template.
+  if (templ.IsEmpty()) {
+    templ = GetObjectTemplateBuilder(isolate).Build();
+    CHECK(!templ.IsEmpty());
+    data->SetObjectTemplate(info, templ);
+  }
   CHECK_EQ(kNumberOfInternalFields, templ->InternalFieldCount());
   v8::Handle<v8::Object> wrapper = templ->NewInstance();
   wrapper->SetAlignedPointerInInternalField(kWrapperInfoIndex, info);

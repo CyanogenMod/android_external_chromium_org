@@ -851,9 +851,10 @@ void RenderWidgetHostViewGtk::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
     const std::vector<gfx::Rect>& copy_rects,
-    const ui::LatencyInfo& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info) {
   TRACE_EVENT0("ui::gtk", "RenderWidgetHostViewGtk::DidUpdateBackingStore");
-  software_latency_info_.MergeWith(latency_info);
+  for (size_t i = 0; i < latency_info.size(); i++)
+    software_latency_info_.push_back(latency_info[i]);
 
   if (host_->is_hidden())
     return;
@@ -944,7 +945,7 @@ void RenderWidgetHostViewGtk::SetTooltipText(
     gtk_widget_set_has_tooltip(view_.get(), FALSE);
   } else {
     gtk_widget_set_tooltip_text(view_.get(),
-                                UTF16ToUTF8(clamped_tooltip).c_str());
+                                base::UTF16ToUTF8(clamped_tooltip).c_str());
   }
 }
 
@@ -1046,7 +1047,12 @@ BackingStore* RenderWidgetHostViewGtk::AllocBackingStore(
 void RenderWidgetHostViewGtk::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    SkBitmap::Config config) {
+  if (config != SkBitmap::kARGB_8888_Config) {
+    NOTIMPLEMENTED();
+    callback.Run(false, SkBitmap());
+  }
   // Grab the snapshot from the renderer as that's the only reliable way to
   // readback from the GPU for this platform right now.
   GetRenderWidgetHost()->GetSnapshotFromRenderer(src_subrect, callback);
@@ -1215,10 +1221,13 @@ void RenderWidgetHostViewGtk::Paint(const gfx::Rect& damage_rect) {
       // recorded.
       web_contents_switch_paint_time_ = base::TimeTicks();
     }
-    software_latency_info_.AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
-    render_widget_host->FrameSwapped(software_latency_info_);
-    software_latency_info_.Clear();
+
+    for (size_t i = 0; i < software_latency_info_.size(); i++) {
+      software_latency_info_[i].AddLatencyNumber(
+          ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
+      render_widget_host->FrameSwapped(software_latency_info_[i]);
+    }
+    software_latency_info_.clear();
   } else {
     if (window)
       gdk_window_clear(window);
@@ -1412,7 +1421,7 @@ bool RenderWidgetHostViewGtk::RetrieveSurrounding(std::string* text,
   DCHECK(offset <= selection_text_.length());
 
   if (offset == selection_text_.length()) {
-    *text = UTF16ToUTF8(selection_text_);
+    *text = base::UTF16ToUTF8(selection_text_);
     *cursor_index = text->length();
     return true;
   }
@@ -1566,8 +1575,7 @@ void RenderWidgetHostViewGtk::FatalAccessibilityTreeError() {
   }
 }
 
-void RenderWidgetHostViewGtk::OnAccessibilityEvents(
-    const std::vector<AccessibilityHostMsg_EventParams>& params) {
+void RenderWidgetHostViewGtk::CreateBrowserAccessibilityManagerIfNeeded() {
   if (!GetBrowserAccessibilityManager()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     SetBrowserAccessibilityManager(
@@ -1576,7 +1584,6 @@ void RenderWidgetHostViewGtk::OnAccessibilityEvents(
             BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
-  GetBrowserAccessibilityManager()->OnAccessibilityEvents(params);
 }
 
 AtkObject* RenderWidgetHostViewGtk::GetAccessible() {

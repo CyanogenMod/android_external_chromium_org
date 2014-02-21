@@ -10,6 +10,12 @@
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "google_apis/drive/auth_service_interface.h"
 
+namespace google_apis {
+class AboutResource;
+class ChangeResource;
+class FileResource;
+}
+
 namespace drive {
 
 // This class implements a fake DriveService which acts like a real Drive
@@ -61,9 +67,10 @@ class FakeDriveService : public DriveServiceInterface {
   // Changes the quota fields returned from GetAboutResource().
   void SetQuotaValue(int64 used, int64 total);
 
-  // Returns the largest changestamp, which starts from 0 by default. See
-  // also comments at LoadAccountMetadataForWapi().
-  int64 largest_changestamp() const { return largest_changestamp_; }
+  // Returns the AboutResource.
+  const google_apis::AboutResource& about_resource() const {
+    return *about_resource_;
+  }
 
   // Returns the number of times the resource list is successfully loaded by
   // GetAllResourceList().
@@ -153,6 +160,9 @@ class FakeDriveService : public DriveServiceInterface {
       const std::string& resource_id,
       const std::string& etag,
       const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback TrashResource(
+      const std::string& resource_id,
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback DownloadFile(
       const base::FilePath& local_cache_path,
       const std::string& resource_id,
@@ -164,12 +174,6 @@ class FakeDriveService : public DriveServiceInterface {
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
-  // The new resource ID for the copied document will look like
-  // |resource_id| + "_copied".
-  virtual google_apis::CancelCallback CopyHostedDocument(
-      const std::string& resource_id,
-      const std::string& new_title,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback UpdateResource(
       const std::string& resource_id,
@@ -193,18 +197,20 @@ class FakeDriveService : public DriveServiceInterface {
   virtual google_apis::CancelCallback AddNewDirectory(
       const std::string& parent_resource_id,
       const std::string& directory_title,
+      const AddNewDirectoryOptions& options,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback InitiateUploadNewFile(
       const std::string& content_type,
       int64 content_length,
       const std::string& parent_resource_id,
       const std::string& title,
+      const InitiateUploadNewFileOptions& options,
       const google_apis::InitiateUploadCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback InitiateUploadExistingFile(
       const std::string& content_type,
       int64 content_length,
       const std::string& resource_id,
-      const std::string& etag,
+      const InitiateUploadExistingFileOptions& options,
       const google_apis::InitiateUploadCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback ResumeUpload(
       const GURL& upload_url,
@@ -223,6 +229,9 @@ class FakeDriveService : public DriveServiceInterface {
       const std::string& resource_id,
       const std::string& app_id,
       const google_apis::AuthorizeAppCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback UninstallApp(
+      const std::string& app_id,
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetResourceListInDirectoryByWapi(
       const std::string& directory_resource_id,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
@@ -249,36 +258,31 @@ class FakeDriveService : public DriveServiceInterface {
       const google_apis::GetResourceEntryCallback& callback);
 
  private:
+  struct EntryInfo;
   struct UploadSession;
 
   // Returns a pointer to the entry that matches |resource_id|, or NULL if
   // not found.
-  base::DictionaryValue* FindEntryByResourceId(const std::string& resource_id);
-
-  // Returns a pointer to the entry that matches |content_url|, or NULL if
-  // not found.
-  base::DictionaryValue* FindEntryByContentUrl(const GURL& content_url);
+  EntryInfo* FindEntryByResourceId(const std::string& resource_id);
 
   // Returns a new resource ID, which looks like "resource_id_<num>" where
   // <num> is a monotonically increasing number starting from 1.
   std::string GetNewResourceId();
 
   // Increments |largest_changestamp_| and adds the new changestamp.
-  void AddNewChangestamp(base::DictionaryValue* entry);
+  void AddNewChangestamp(google_apis::ChangeResource* change);
 
-  // Update ETag of |entry| based on |largest_changestamp_|.
-  void UpdateETag(base::DictionaryValue* entry);
+  // Update ETag of |file| based on |largest_changestamp_|.
+  void UpdateETag(google_apis::FileResource* file);
 
-  // Adds a new entry based on the given parameters. |entry_kind| should be
-  // "file" or "folder". Returns a pointer to the newly added entry, or NULL
-  // if failed.
-  const base::DictionaryValue* AddNewEntry(
+  // Adds a new entry based on the given parameters.
+  // Returns a pointer to the newly added entry, or NULL if failed.
+  const EntryInfo* AddNewEntry(
     const std::string& content_type,
     const std::string& content_data,
     const std::string& parent_resource_id,
     const std::string& title,
-    bool shared_with_me,
-    const std::string& entry_kind);
+    bool shared_with_me);
 
   // Core implementation of GetResourceList.
   // This method returns the slice of the all matched entries, and its range
@@ -297,11 +301,11 @@ class FakeDriveService : public DriveServiceInterface {
   // Returns new upload session URL.
   GURL GetNewUploadSessionUrl();
 
-  scoped_ptr<base::DictionaryValue> resource_list_value_;
-  scoped_ptr<base::DictionaryValue> account_metadata_value_;
-  scoped_ptr<base::Value> app_info_value_;
+  typedef std::map<std::string, EntryInfo*> EntryInfoMap;
+  EntryInfoMap entries_;
+  scoped_ptr<google_apis::AboutResource> about_resource_;
+  scoped_ptr<base::DictionaryValue> app_info_value_;
   std::map<GURL, UploadSession> upload_sessions_;
-  int64 largest_changestamp_;
   int64 published_date_seq_;
   int64 next_upload_sequence_number_;
   int default_max_results_;

@@ -7,7 +7,7 @@
 
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
-#include "media/cast/rtp_common/rtp_defines.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
@@ -39,6 +39,8 @@ class ReceiverStats {
   int interval_min_sequence_number_;
   int interval_number_packets_;
   int interval_wrap_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(ReceiverStats);
 };
 
 }  // namespace cast

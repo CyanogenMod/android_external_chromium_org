@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 
-#include "apps/shell_window.h"
-#include "apps/shell_window_registry.h"
+#include "apps/app_window.h"
+#include "apps/app_window_registry.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/stringprintf.h"
@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
 #include "extensions/common/constants.h"
-#include "ui/aura/remote_root_window_host_win.h"
+#include "ui/aura/remote_window_tree_host_win.h"
 
 bool ChromeLauncherController::LaunchedInNativeDesktop(
     const std::string& app_id) {
@@ -22,9 +22,9 @@ bool ChromeLauncherController::LaunchedInNativeDesktop(
   // launch request through the viewer process to desktop Chrome. This allows
   // Ash to relinquish foreground window status and trigger a switch to
   // desktop mode.
-  apps::ShellWindow* any_existing_window =
-      apps::ShellWindowRegistry::Get(profile())->
-          GetCurrentShellWindowForApp(app_id);
+  apps::AppWindow* any_existing_window =
+      apps::AppWindowRegistry::Get(profile())
+          ->GetCurrentAppWindowForApp(app_id);
   if (!any_existing_window ||
       chrome::GetHostDesktopTypeForNativeWindow(
           any_existing_window->GetNativeWindow())
@@ -44,7 +44,7 @@ bool ChromeLauncherController::LaunchedInNativeDesktop(
       profile_->GetPath().BaseName().AsUTF8Unsafe().c_str(),
       switches::kAppId,
       app_id.c_str());
-  aura::RemoteRootWindowHostWin::Instance()->HandleOpenURLOnDesktop(
-      exe_path, UTF8ToUTF16(spec));
+  aura::RemoteWindowTreeHostWin::Instance()->HandleOpenURLOnDesktop(
+      exe_path, base::UTF8ToUTF16(spec));
   return true;
 }

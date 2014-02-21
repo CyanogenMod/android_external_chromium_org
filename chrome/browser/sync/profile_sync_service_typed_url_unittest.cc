@@ -23,12 +23,12 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
-#include "chrome/browser/sync/fake_oauth2_token_service.h"
-#include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/typed_url_change_processor.h"
 #include "chrome/browser/sync/glue/typed_url_data_type_controller.h"
@@ -41,6 +41,7 @@
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
+#include "components/sync_driver/data_type_error_handler_mock.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "sync/internal_api/public/read_node.h"
@@ -186,8 +187,9 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
   virtual void SetUp() {
     AbstractProfileSyncServiceTest::SetUp();
     TestingProfile::Builder builder;
-    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeOAuth2TokenService::BuildTokenService);
+    builder.AddTestingFactory(
+        ProfileOAuth2TokenServiceFactory::GetInstance(),
+        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     profile_ = builder.Build().Pass();
     invalidation::InvalidationServiceFactory::GetInstance()->
         SetBuildOnlyFakeInvalidatorsForTest(true);
@@ -215,11 +217,8 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
       SigninManagerBase* signin =
           SigninManagerFactory::GetForProfile(profile_.get());
       signin->SetAuthenticatedUsername("test");
-      sync_service_ = static_cast<TestProfileSyncService*>(
-          ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              profile_.get(),
-              &TestProfileSyncService::BuildAutoStartAsyncInit));
-      sync_service_->set_backend_init_callback(callback);
+      sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(
+          profile_.get(), callback);
       ProfileSyncComponentsFactoryMock* components =
           sync_service_->components_factory_mock();
       TypedUrlDataTypeController* data_type_controller =
@@ -267,7 +266,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
           child_node.GetTypedUrlSpecifics());
       history::URLRow new_url(GURL(typed_url.url()));
 
-      new_url.set_title(UTF8ToUTF16(typed_url.title()));
+      new_url.set_title(base::UTF8ToUTF16(typed_url.title()));
       DCHECK(typed_url.visits_size());
       DCHECK_EQ(typed_url.visits_size(), typed_url.visit_transitions_size());
       new_url.set_last_visit(base::Time::FromInternalValue(
@@ -306,7 +305,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     static int unique_url_id = 0;
     GURL gurl(url);
     URLRow history_url(gurl, ++unique_url_id);
-    history_url.set_title(UTF8ToUTF16(title));
+    history_url.set_title(base::UTF8ToUTF16(title));
     history_url.set_typed_count(typed_count);
     history_url.set_last_visit(
         base::Time::FromInternalValue(last_visit));

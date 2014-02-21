@@ -30,7 +30,6 @@
 #include "remoting/protocol/protocol_mock_objects.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_region.h"
 #include "third_party/webrtc/modules/desktop_capture/screen_capturer_mock_objects.h"
@@ -161,7 +160,7 @@ class IpcDesktopEnvironmentTest : public testing::Test {
   void OnDesktopAttached(IPC::PlatformFileForTransit desktop_pipe);
 
   // The main message loop.
-  base::MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
 
   // Runs until |desktop_session_proxy_| is connected to the desktop.
   scoped_ptr<base::RunLoop> setup_run_loop_;
@@ -216,8 +215,7 @@ class IpcDesktopEnvironmentTest : public testing::Test {
 };
 
 IpcDesktopEnvironmentTest::IpcDesktopEnvironmentTest()
-    : message_loop_(base::MessageLoop::TYPE_UI),
-      client_jid_("user@domain/rest-of-jid"),
+    : client_jid_("user@domain/rest-of-jid"),
       clipboard_stub_(NULL),
       remote_input_injector_(NULL),
       terminal_id_(-1),

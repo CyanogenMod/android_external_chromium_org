@@ -18,19 +18,19 @@
 #include "base/version.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/extension_set.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::BrowserThread;
@@ -379,9 +379,8 @@ void UserScriptMaster::Observe(int type,
       extensions_info_[extension->id()] =
           ExtensionSet::ExtensionPathAndDefaultLocale(
               extension->path(), LocaleInfo::GetDefaultLocale(extension));
-      bool incognito_enabled = extension_util::IsIncognitoEnabled(
-          extension->id(),
-          extensions::ExtensionSystem::Get(profile_)->extension_service());
+      bool incognito_enabled =
+          util::IsIncognitoEnabled(extension->id(), profile_);
       const UserScriptList& scripts =
           ContentScriptsInfo::GetContentScripts(extension);
       for (UserScriptList::const_iterator iter = scripts.begin();

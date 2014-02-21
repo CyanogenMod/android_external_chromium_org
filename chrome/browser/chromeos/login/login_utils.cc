@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/login/login_utils.h"
 
 #include <algorithm>
+#include <set>
 #include <vector>
 
 #include "base/bind.h"
@@ -42,14 +43,18 @@
 #include "chrome/browser/chromeos/login/oauth2_login_manager_factory.h"
 #include "chrome/browser/chromeos/login/parallel_authenticator.h"
 #include "chrome/browser/chromeos/login/profile_auth_data.h"
+#include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
+#include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util_chromeos.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -62,6 +67,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/cert_loader.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -79,6 +85,10 @@
 #include "url/gurl.h"
 
 using content::BrowserThread;
+
+namespace net {
+class NSSCertDatabase;
+}
 
 namespace chromeos {
 
@@ -107,7 +117,6 @@ class LoginUtilsImpl
   LoginUtilsImpl()
       : has_web_auth_cookies_(false),
         delegate_(NULL),
-        should_restore_auth_session_(false),
         exit_after_session_restore_(false),
         session_restore_strategy_(
             OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN) {
@@ -134,6 +143,7 @@ class LoginUtilsImpl
       LoginStatusConsumer* consumer) OVERRIDE;
   virtual void RestoreAuthenticationSession(Profile* profile) OVERRIDE;
   virtual void InitRlzDelayed(Profile* user_profile) OVERRIDE;
+  virtual void StartCertLoader(Profile* user_profile) OVERRIDE;
 
   // OAuth2LoginManager::Observer overrides.
   virtual void OnSessionRestoreStateChanged(
@@ -146,6 +156,8 @@ class LoginUtilsImpl
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
  private:
+  typedef std::set<std::string> SessionRestoreStateSet;
+
   // DoBrowserLaunch is split into two parts.
   // This one is called after anynchronous locale switch.
   void DoBrowserLaunchOnLocaleLoadedImpl(Profile* profile,
@@ -195,9 +207,13 @@ class LoginUtilsImpl
   // Initializes RLZ. If |disabled| is true, RLZ pings are disabled.
   void InitRlz(Profile* user_profile, bool disabled);
 
-  // Attempts exiting browser process and esures this does not happen
-  // while we are still fetching new OAuth refresh tokens.
-  void AttemptExit(Profile* profile);
+  // Starts CertLoader with the provided NSS database. It must be called at most
+  // once, and with the primary user's database.
+  void StartCertLoaderWithNSSDB(net::NSSCertDatabase* database);
+
+  // Attempts restarting the browser process and esures that this does
+  // not happen while we are still fetching new OAuth refresh tokens.
+  void AttemptRestart(Profile* profile);
 
   UserContext user_context_;
 
@@ -210,9 +226,9 @@ class LoginUtilsImpl
   // Delegate to be fired when the profile will be prepared.
   LoginUtils::Delegate* delegate_;
 
-  // True if should restore authentication session when notified about
-  // online state change.
-  bool should_restore_auth_session_;
+  // Set of user_id for those users that we should restore authentication
+  // session when notified about online state change.
+  SessionRestoreStateSet pending_restore_sessions_;
 
   // True if we should restart chrome right after session restore.
   bool exit_after_session_restore_;
@@ -306,7 +322,7 @@ void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoadedImpl(
     VLOG(1) << "Restarting to apply per-session flags...";
     DBusThreadManager::Get()->GetSessionManagerClient()->SetFlagsForUser(
         UserManager::Get()->GetActiveUser()->email(), flags);
-    AttemptExit(profile);
+    AttemptRestart(profile);
     return;
   }
 
@@ -573,6 +589,13 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
   }
   btl->AddLoginTimeMarker("TPMOwn-End", false);
 
+  if (UserManager::Get()->IsLoggedInAsRegularUser()) {
+    SAMLOfflineSigninLimiter* saml_offline_signin_limiter =
+        SAMLOfflineSigninLimiterFactory::GetForProfile(user_profile);
+    if (saml_offline_signin_limiter)
+      saml_offline_signin_limiter->SignedIn(user_context_.auth_flow);
+  }
+
   user_profile->OnLogin();
 
   // Send the notification before creating the browser so additional objects
@@ -582,10 +605,12 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
       content::NotificationService::AllSources(),
       content::Details<Profile>(user_profile));
 
-  // Initialize RLZ only for primary user.
+  // Initialize RLZ and CertLoader only for primary user.
   if (UserManager::Get()->GetPrimaryUser() ==
       UserManager::Get()->GetUserByProfile(user_profile)) {
     InitRlzDelayed(user_profile);
+    if (CertLoader::IsInitialized())
+      StartCertLoader(user_profile);
   }
   // TODO(altimofeev): This pointer should probably never be NULL, but it looks
   // like LoginUtilsImpl::OnProfileCreated() may be getting called before
@@ -636,6 +661,16 @@ void LoginUtilsImpl::InitRlz(Profile* user_profile, bool disabled) {
   if (delegate_)
     delegate_->OnRlzInitialized(user_profile);
 #endif
+}
+
+void LoginUtilsImpl::StartCertLoader(Profile* user_profile) {
+  GetNSSCertDatabaseForProfile(
+      user_profile,
+      base::Bind(&LoginUtilsImpl::StartCertLoaderWithNSSDB, AsWeakPtr()));
+}
+
+void LoginUtilsImpl::StartCertLoaderWithNSSDB(net::NSSCertDatabase* database) {
+  CertLoader::Get()->StartWithNSSDB(database);
 }
 
 void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {
@@ -717,24 +752,27 @@ scoped_refptr<Authenticator> LoginUtilsImpl::CreateAuthenticator(
 }
 
 void LoginUtilsImpl::RestoreAuthenticationSession(Profile* user_profile) {
+  UserManager* user_manager = UserManager::Get();
   // We don't need to restore session for demo/guest/stub/public account users.
-  if (!UserManager::Get()->IsUserLoggedIn() ||
-      UserManager::Get()->IsLoggedInAsGuest() ||
-      UserManager::Get()->IsLoggedInAsPublicAccount() ||
-      UserManager::Get()->IsLoggedInAsDemoUser() ||
-      UserManager::Get()->IsLoggedInAsStub()) {
+  if (!user_manager->IsUserLoggedIn() ||
+      user_manager->IsLoggedInAsGuest() ||
+      user_manager->IsLoggedInAsPublicAccount() ||
+      user_manager->IsLoggedInAsDemoUser() ||
+      user_manager->IsLoggedInAsStub()) {
     return;
   }
 
+  User* user = user_manager->GetUserByProfile(user_profile);
+  DCHECK(user);
   if (!net::NetworkChangeNotifier::IsOffline()) {
-    should_restore_auth_session_ = false;
+    pending_restore_sessions_.erase(user->email());
     RestoreAuthSession(user_profile, false);
   } else {
     // Even if we're online we should wait till initial
     // OnConnectionTypeChanged() call. Otherwise starting fetchers too early may
     // end up canceling all request when initial network connection type is
     // processed. See http://crbug.com/121643.
-    should_restore_auth_session_ = true;
+    pending_restore_sessions_.insert(user->email());
   }
 }
 
@@ -789,35 +827,44 @@ void LoginUtilsImpl::OnNewRefreshTokenAvaiable(Profile* user_profile) {
       User::OAUTH2_TOKEN_STATUS_VALID);
 
   LOG(WARNING) << "Exiting after new refresh token fetched";
-  // We need to exit cleanly in this case to make sure OAuth2 RT is actually
+  // We need to restart cleanly in this case to make sure OAuth2 RT is actually
   // saved.
-  chrome::ExitCleanly();
+  chrome::AttemptRestart();
 }
 
 void LoginUtilsImpl::OnConnectionTypeChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
-  Profile* user_profile = ProfileManager::GetDefaultProfile();
-  OAuth2LoginManager* login_manager =
-      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+  UserManager* user_manager = UserManager::Get();
+  if (type == net::NetworkChangeNotifier::CONNECTION_NONE ||
+      user_manager->IsLoggedInAsGuest() || !user_manager->IsUserLoggedIn()) {
+    return;
+  }
 
-  if (type != net::NetworkChangeNotifier::CONNECTION_NONE &&
-      UserManager::Get()->IsUserLoggedIn()) {
+  // Need to iterate over all users and their OAuth2 session state.
+  const UserList& users = user_manager->GetLoggedInUsers();
+  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+    Profile* user_profile = user_manager->GetProfileByUser(*it);
+    bool should_restore_session =
+        pending_restore_sessions_.find((*it)->email()) !=
+            pending_restore_sessions_.end();
+    OAuth2LoginManager* login_manager =
+        OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
     if (login_manager->state() ==
             OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS) {
       // If we come online for the first time after successful offline login,
       // we need to kick off OAuth token verification process again.
       login_manager->ContinueSessionRestore();
-    } else if (should_restore_auth_session_) {
-      should_restore_auth_session_ = false;
+    } else if (should_restore_session) {
+      pending_restore_sessions_.erase((*it)->email());
       RestoreAuthSession(user_profile, has_web_auth_cookies_);
     }
   }
 }
 
-void LoginUtilsImpl::AttemptExit(Profile* profile) {
+void LoginUtilsImpl::AttemptRestart(Profile* profile) {
   if (session_restore_strategy_ !=
       OAuth2LoginManager::RESTORE_FROM_COOKIE_JAR) {
-    chrome::AttemptExit();
+    chrome::AttemptRestart();
     return;
   }
 
@@ -829,7 +876,7 @@ void LoginUtilsImpl::AttemptExit(Profile* profile) {
           OAuth2LoginManager::SESSION_RESTORE_PREPARING &&
       login_manager->state() !=
           OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS) {
-    chrome::AttemptExit();
+    chrome::AttemptRestart();
     return;
   }
 
@@ -855,7 +902,8 @@ void LoginUtils::Set(LoginUtils* mock) {
 }
 
 // static
-bool LoginUtils::IsWhitelisted(const std::string& username) {
+bool LoginUtils::IsWhitelisted(const std::string& username,
+                               bool* wildcard_match) {
   // Skip whitelist check for tests.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kOobeSkipPostLogin)) {
@@ -867,7 +915,8 @@ bool LoginUtils::IsWhitelisted(const std::string& username) {
   cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
   if (allow_new_user)
     return true;
-  return cros_settings->FindEmailInList(kAccountsPrefUsers, username);
+  return cros_settings->FindEmailInList(
+      kAccountsPrefUsers, username, wildcard_match);
 }
 
 }  // namespace chromeos

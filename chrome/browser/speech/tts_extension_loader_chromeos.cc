@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 #include "base/memory/singleton.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "extensions/browser/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
@@ -83,14 +83,11 @@ bool TtsExtensionLoaderChromeOs::LoadTtsExtension() {
     return false;
 
   // Load the component extension into this profile.
-  LOG(INFO) << "Loading TTS component extension.";
+  VLOG(1) << "Loading TTS component extension.";
   tts_state_ = TTS_LOADING;
   ExtensionService* extension_service = profile_->GetExtensionService();
   DCHECK(extension_service);
-  base::FilePath path =
-      base::FilePath(extension_misc::kSpeechSynthesisExtensionPath);
-  extension_service->component_loader()->Add(IDR_SPEECH_SYNTHESIS_MANIFEST,
-                                             path);
+  extension_service->component_loader()->AddChromeOsSpeechSynthesisExtension();
   return true;
 }
 
@@ -126,7 +123,7 @@ void TtsExtensionLoaderChromeOs::OnListenerAdded(
     return;
 
   if (tts_state_ == TTS_LOADING) {
-    LOG(INFO) << "TTS component extension loaded, retrying queued utterances.";
+    VLOG(1) << "TTS component extension loaded, retrying queued utterances.";
     tts_state_ = TTS_LOADED;
     TtsController::GetInstance()->RetrySpeakingQueuedUtterances();
   }

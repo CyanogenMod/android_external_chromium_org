@@ -4,7 +4,7 @@
 
 #include "ui/views/test/child_modal_window.h"
 
-#include "base/strings/utf_string_conversions.h"  // ASCIIToUTF16
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
@@ -65,7 +65,7 @@ class ChildModalWindow : public WidgetDelegateView {
 
   // Overridden from WidgetDelegate:
   virtual View* GetContentsView() OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
 
@@ -95,8 +95,8 @@ View* ChildModalWindow::GetContentsView() {
   return this;
 }
 
-string16 ChildModalWindow::GetWindowTitle() const {
-  return ASCIIToUTF16("Examples: Child Modal Window");
+base::string16 ChildModalWindow::GetWindowTitle() const {
+  return base::ASCIIToUTF16("Examples: Child Modal Window");
 }
 
 bool ChildModalWindow::CanResize() const {
@@ -109,7 +109,8 @@ ui::ModalType ChildModalWindow::GetModalType() const {
 
 ChildModalParent::ChildModalParent(gfx::NativeView context)
     : button_(new LabelButton(this,
-                              ASCIIToUTF16("Show/Hide Child Modal Window"))),
+                              base::ASCIIToUTF16(
+                                  "Show/Hide Child Modal Window"))),
       textfield_(new Textfield),
       host_(new NativeViewHost),
       modal_parent_(NULL),
@@ -159,8 +160,8 @@ View* ChildModalParent::GetContentsView() {
   return this;
 }
 
-string16 ChildModalParent::GetWindowTitle() const {
-  return ASCIIToUTF16("Examples: Child Modal Parent");
+base::string16 ChildModalParent::GetWindowTitle() const {
+  return base::ASCIIToUTF16("Examples: Child Modal Parent");
 }
 
 bool ChildModalParent::CanResize() const {

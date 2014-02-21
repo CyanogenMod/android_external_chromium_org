@@ -18,17 +18,19 @@
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct BrowserPluginMsg_Attach_ACK_Params;
-struct BrowserPluginMsg_BuffersSwapped_Params;
 struct BrowserPluginMsg_UpdateRect_Params;
+struct FrameMsg_BuffersSwapped_Params;
 
 namespace content {
 
-class BrowserPluginCompositingHelper;
+class ChildFrameCompositingHelper;
 class BrowserPluginManager;
 class MockBrowserPlugin;
 
@@ -40,6 +42,9 @@ class CONTENT_EXPORT BrowserPlugin :
   int render_view_routing_id() const { return render_view_routing_id_; }
   int guest_instance_id() const { return guest_instance_id_; }
   bool attached() const { return attached_; }
+  BrowserPluginManager* browser_plugin_manager() const {
+    return browser_plugin_manager_.get();
+  }
 
   static BrowserPlugin* FromContainer(blink::WebPluginContainer* container);
 
@@ -151,6 +156,7 @@ class CONTENT_EXPORT BrowserPlugin :
   virtual struct _NPP* pluginNPP() OVERRIDE;
   virtual bool supportsKeyboardFocus() const OVERRIDE;
   virtual bool supportsEditCommands() const OVERRIDE;
+  virtual bool supportsInputMethod() const OVERRIDE;
   virtual bool canProcessDrag() const OVERRIDE;
   virtual void paint(
       blink::WebCanvas* canvas,
@@ -186,6 +192,15 @@ class CONTENT_EXPORT BrowserPlugin :
   virtual bool executeEditCommand(const blink::WebString& name) OVERRIDE;
   virtual bool executeEditCommand(const blink::WebString& name,
                                   const blink::WebString& value) OVERRIDE;
+  virtual bool setComposition(
+      const blink::WebString& text,
+      const blink::WebVector<blink::WebCompositionUnderline>& underlines,
+      int selectionStart,
+      int selectionEnd) OVERRIDE;
+  virtual bool confirmComposition(
+      const blink::WebString& text,
+      blink::WebWidget::ConfirmCompositionBehavior selectionBehavior) OVERRIDE;
+  virtual void extendSelectionAndDelete(int before, int after) OVERRIDE;
 
   // MouseLockDispatcher::LockTarget implementation.
   virtual void OnLockMouseACK(bool succeeded) OVERRIDE;
@@ -222,9 +237,6 @@ class CONTENT_EXPORT BrowserPlugin :
   int GetAdjustedMinHeight() const;
   // Gets the Min Width value used for auto size.
   int GetAdjustedMinWidth() const;
-  BrowserPluginManager* browser_plugin_manager() const {
-    return browser_plugin_manager_.get();
-  }
 
   // Virtual to allow for mocking in tests.
   virtual float GetDeviceScaleFactor() const;
@@ -284,7 +296,7 @@ class CONTENT_EXPORT BrowserPlugin :
   void OnAttachACK(int instance_id,
                    const BrowserPluginMsg_Attach_ACK_Params& ack_params);
   void OnBuffersSwapped(int instance_id,
-                        const BrowserPluginMsg_BuffersSwapped_Params& params);
+                        const FrameMsg_BuffersSwapped_Params& params);
   void OnCompositorFrameSwapped(const IPC::Message& message);
   void OnCopyFromCompositingSurface(int instance_id,
                                     int request_id,
@@ -349,7 +361,7 @@ class CONTENT_EXPORT BrowserPlugin :
 
   // Used for HW compositing.
   bool compositing_enabled_;
-  scoped_refptr<BrowserPluginCompositingHelper> compositing_helper_;
+  scoped_refptr<ChildFrameCompositingHelper> compositing_helper_;
 
   // Used to identify the plugin to WebBindings.
   scoped_ptr<struct _NPP> npp_;
@@ -357,11 +369,11 @@ class CONTENT_EXPORT BrowserPlugin :
   // URL for the embedder frame.
   GURL embedder_frame_url_;
 
+  std::vector<EditCommand> edit_commands_;
+
   // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
   // get called after BrowserPlugin has been destroyed.
   base::WeakPtrFactory<BrowserPlugin> weak_ptr_factory_;
-
-  std::vector<EditCommand> edit_commands_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPlugin);
 };

@@ -280,7 +280,7 @@ void BookmarkEditorView::Init() {
   title_tf_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_EDITOR_NAME_LABEL));
   title_tf_->SetText(title);
-  title_tf_->SetController(this);
+  title_tf_->set_controller(this);
 
   if (show_tree_) {
     tree_view_ = new views::TreeView;
@@ -289,7 +289,7 @@ void BookmarkEditorView::Init() {
 
     new_folder_button_.reset(new views::LabelButton(this,
         l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NEW_FOLDER_BUTTON)));
-    new_folder_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+    new_folder_button_->SetStyle(views::Button::STYLE_BUTTON);
     new_folder_button_->set_owned_by_client();
     new_folder_button_->SetEnabled(false);
   }
@@ -335,7 +335,7 @@ void BookmarkEditorView::Init() {
     PrefService* prefs =
         profile_ ? user_prefs::UserPrefs::Get(profile_) : NULL;
     url_tf_->SetText(chrome::FormatBookmarkURLForDisplay(url, prefs));
-    url_tf_->SetController(this);
+    url_tf_->set_controller(this);
     url_tf_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_EDITOR_URL_LABEL));
 
@@ -423,7 +423,8 @@ void BookmarkEditorView::Reset() {
 GURL BookmarkEditorView::GetInputURL() const {
   if (details_.GetNodeType() == BookmarkNode::FOLDER)
     return GURL();
-  return URLFixerUpper::FixupURL(UTF16ToUTF8(url_tf_->text()), std::string());
+  return URLFixerUpper::FixupURL(
+      base::UTF16ToUTF8(url_tf_->text()), std::string());
 }
 
 void BookmarkEditorView::UserInputChanged() {

@@ -23,7 +23,6 @@
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/io_thread.h"
@@ -50,10 +49,16 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
 #include "webkit/browser/database/database_tracker.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/media/protected_media_identifier_permission_context.h"
+#include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
+#endif  // defined(OS_ANDROID)
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
 #include "base/prefs/scoped_user_pref_update.h"
@@ -188,7 +193,7 @@ void OffTheRecordProfileImpl::UseSystemProxy() {
   const char kProxyBypassList[] = "bypass_list";
   const char kProxyPacUrl[] = "pac_url";
   DictionaryPrefUpdate update(prefs_, prefs::kProxy);
-  DictionaryValue* dict = update.Get();
+  base::DictionaryValue* dict = update.Get();
   dict->SetString(kProxyMode, ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
   dict->SetString(kProxyPacUrl, "");
   dict->SetString(kProxyServer, "");
@@ -295,30 +300,63 @@ OffTheRecordProfileImpl::GetMediaRequestContextForStoragePartition(
       .get();
 }
 
-void OffTheRecordProfileImpl::RequestMIDISysExPermission(
+void OffTheRecordProfileImpl::RequestMidiSysExPermission(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
-      const MIDISysExPermissionCallback& callback) {
-  ChromeMIDIPermissionContext* context =
-      ChromeMIDIPermissionContextFactory::GetForProfile(this);
-  context->RequestMIDISysExPermission(render_process_id,
+      const MidiSysExPermissionCallback& callback) {
+  ChromeMidiPermissionContext* context =
+      ChromeMidiPermissionContextFactory::GetForProfile(this);
+  context->RequestMidiSysExPermission(render_process_id,
                                       render_view_id,
                                       bridge_id,
                                       requesting_frame,
                                       callback);
 }
 
-void OffTheRecordProfileImpl::CancelMIDISysExPermissionRequest(
+void OffTheRecordProfileImpl::CancelMidiSysExPermissionRequest(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame) {
-  ChromeMIDIPermissionContext* context =
-      ChromeMIDIPermissionContextFactory::GetForProfile(this);
-  context->CancelMIDISysExPermissionRequest(
+  ChromeMidiPermissionContext* context =
+      ChromeMidiPermissionContextFactory::GetForProfile(this);
+  context->CancelMidiSysExPermissionRequest(
       render_process_id, render_view_id, bridge_id, requesting_frame);
+}
+
+void OffTheRecordProfileImpl::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+#if defined(OS_ANDROID)
+  ProtectedMediaIdentifierPermissionContext* context =
+      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
+  context->RequestProtectedMediaIdentifierPermission(render_process_id,
+                                                     render_view_id,
+                                                     bridge_id,
+                                                     group_id,
+                                                     requesting_frame,
+                                                     callback);
+#else
+  NOTIMPLEMENTED();
+  callback.Run(false);
+#endif  // defined(OS_ANDROID)
+}
+
+void OffTheRecordProfileImpl::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
+#if defined(OS_ANDROID)
+  ProtectedMediaIdentifierPermissionContext* context =
+      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
+  context->CancelProtectedMediaIdentifierPermissionRequests(group_id);
+#else
+  NOTIMPLEMENTED();
+#endif  // defined(OS_ANDROID)
 }
 
 net::URLRequestContextGetter*
@@ -463,7 +501,7 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
   virtual void InitChromeOSPreferences() OVERRIDE {
     chromeos_preferences_.reset(new chromeos::Preferences());
     chromeos_preferences_->Init(static_cast<PrefServiceSyncable*>(GetPrefs()),
-                                true /* is_primary_profile */);
+                                chromeos::UserManager::Get()->GetActiveUser());
   }
 
  private:

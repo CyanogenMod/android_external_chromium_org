@@ -11,19 +11,21 @@
 #include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/pixel_test.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
 #include "ui/gfx/rect_conversions.h"
 
+using gpu::gles2::GLES2Interface;
+
 namespace cc {
 namespace {
 
 #if !defined(OS_ANDROID)
 scoped_ptr<RenderPass> CreateTestRootRenderPass(RenderPass::Id id,
-                                                gfx::Rect rect) {
+                                                const gfx::Rect& rect) {
   scoped_ptr<RenderPass> pass = RenderPass::Create();
   const gfx::Rect output_rect = rect;
   const gfx::RectF damage_rect = rect;
@@ -34,7 +36,7 @@ scoped_ptr<RenderPass> CreateTestRootRenderPass(RenderPass::Id id,
 
 scoped_ptr<RenderPass> CreateTestRenderPass(
     RenderPass::Id id,
-    gfx::Rect rect,
+    const gfx::Rect& rect,
     const gfx::Transform& transform_to_root_target) {
   scoped_ptr<RenderPass> pass = RenderPass::Create();
   const gfx::Rect output_rect = rect;
@@ -44,7 +46,7 @@ scoped_ptr<RenderPass> CreateTestRenderPass(
 }
 
 scoped_ptr<SharedQuadState> CreateTestSharedQuadState(
-    gfx::Transform content_to_target_transform, gfx::Rect rect) {
+    gfx::Transform content_to_target_transform, const gfx::Rect& rect) {
   const gfx::Size content_bounds = rect.size();
   const gfx::Rect visible_content_rect = rect;
   const gfx::Rect clip_rect = rect;
@@ -64,8 +66,8 @@ scoped_ptr<SharedQuadState> CreateTestSharedQuadState(
 
 scoped_ptr<SharedQuadState> CreateTestSharedQuadStateClipped(
     gfx::Transform content_to_target_transform,
-    gfx::Rect rect,
-    gfx::Rect clip_rect) {
+    const gfx::Rect& rect,
+    const gfx::Rect& clip_rect) {
   const gfx::Size content_bounds = rect.size();
   const gfx::Rect visible_content_rect = clip_rect;
   const bool is_clipped = true;
@@ -83,7 +85,9 @@ scoped_ptr<SharedQuadState> CreateTestSharedQuadStateClipped(
 }
 
 scoped_ptr<DrawQuad> CreateTestRenderPassDrawQuad(
-    SharedQuadState* shared_state, gfx::Rect rect, RenderPass::Id pass_id) {
+    SharedQuadState* shared_state,
+    const gfx::Rect& rect,
+    RenderPass::Id pass_id) {
   scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
   quad->SetNew(shared_state,
                rect,
@@ -99,7 +103,7 @@ scoped_ptr<DrawQuad> CreateTestRenderPassDrawQuad(
 }
 
 scoped_ptr<TextureDrawQuad> CreateTestTextureDrawQuad(
-    gfx::Rect rect,
+    const gfx::Rect& rect,
     SkColor texel_color,
     SkColor background_color,
     bool premultiplied_alpha,
@@ -1277,35 +1281,32 @@ TEST_F(GLRendererPixelTestWithBackgroundFilter, InvertFilter) {
 class ExternalStencilPixelTest : public GLRendererPixelTest {
  protected:
   void ClearBackgroundToGreen() {
-    blink::WebGraphicsContext3D* context3d =
-        output_surface_->context_provider()->Context3d();
+    GLES2Interface* gl = output_surface_->context_provider()->ContextGL();
     output_surface_->EnsureBackbuffer();
     output_surface_->Reshape(device_viewport_size_, 1);
-    context3d->clearColor(0.f, 1.f, 0.f, 1.f);
-    context3d->clear(GL_COLOR_BUFFER_BIT);
+    gl->ClearColor(0.f, 1.f, 0.f, 1.f);
+    gl->Clear(GL_COLOR_BUFFER_BIT);
   }
 
   void PopulateStencilBuffer() {
     // Set two quadrants of the stencil buffer to 1.
-    blink::WebGraphicsContext3D* context3d =
-        output_surface_->context_provider()->Context3d();
-    ASSERT_TRUE(context3d->getContextAttributes().stencil);
+    GLES2Interface* gl = output_surface_->context_provider()->ContextGL();
     output_surface_->EnsureBackbuffer();
     output_surface_->Reshape(device_viewport_size_, 1);
-    context3d->clearStencil(0);
-    context3d->clear(GL_STENCIL_BUFFER_BIT);
-    context3d->enable(GL_SCISSOR_TEST);
-    context3d->clearStencil(1);
-    context3d->scissor(0,
-                       0,
-                       device_viewport_size_.width() / 2,
-                       device_viewport_size_.height() / 2);
-    context3d->clear(GL_STENCIL_BUFFER_BIT);
-    context3d->scissor(device_viewport_size_.width() / 2,
-                       device_viewport_size_.height() / 2,
-                       device_viewport_size_.width(),
-                       device_viewport_size_.height());
-    context3d->clear(GL_STENCIL_BUFFER_BIT);
+    gl->ClearStencil(0);
+    gl->Clear(GL_STENCIL_BUFFER_BIT);
+    gl->Enable(GL_SCISSOR_TEST);
+    gl->ClearStencil(1);
+    gl->Scissor(0,
+                0,
+                device_viewport_size_.width() / 2,
+                device_viewport_size_.height() / 2);
+    gl->Clear(GL_STENCIL_BUFFER_BIT);
+    gl->Scissor(device_viewport_size_.width() / 2,
+                device_viewport_size_.height() / 2,
+                device_viewport_size_.width(),
+                device_viewport_size_.height());
+    gl->Clear(GL_STENCIL_BUFFER_BIT);
   }
 };
 

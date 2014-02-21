@@ -13,11 +13,11 @@
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/root_window.h"
-#include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/window.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -32,40 +32,31 @@ NativeWidgetAura* Init(aura::Window* parent, Widget* widget) {
   return static_cast<NativeWidgetAura*>(widget->native_widget());
 }
 
-class NativeWidgetAuraTest : public testing::Test {
+class NativeWidgetAuraTest : public ViewsTestBase {
  public:
   NativeWidgetAuraTest() {}
   virtual ~NativeWidgetAuraTest() {}
 
   // testing::Test overrides:
   virtual void SetUp() OVERRIDE {
-    aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    aura_test_helper_->SetUp();
-    root_window()->SetBounds(gfx::Rect(0, 0, 640, 480));
-    dispatcher()->SetHostSize(gfx::Size(640, 480));
-  }
-  virtual void TearDown() OVERRIDE {
-    message_loop_.RunUntilIdle();
-    aura_test_helper_->TearDown();
+    ViewsTestBase::SetUp();
+    dispatcher()->host()->SetBounds(gfx::Rect(640, 480));
   }
 
  protected:
-  aura::Window* root_window() { return aura_test_helper_->root_window(); }
-  aura::RootWindow* dispatcher() { return aura_test_helper_->dispatcher(); }
+  aura::Window* root_window() { return GetContext(); }
+  aura::RootWindow* dispatcher() { return root_window()->GetDispatcher(); }
 
  private:
-  base::MessageLoopForUI message_loop_;
-  scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
-
   DISALLOW_COPY_AND_ASSIGN(NativeWidgetAuraTest);
 };
 
 TEST_F(NativeWidgetAuraTest, CenterWindowLargeParent) {
   // Make a parent window larger than the host represented by rootwindow.
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
-  parent->Init(ui::LAYER_NOT_DRAWN);
+  parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(0, 0, 1024, 800));
-  scoped_ptr<Widget>  widget(new Widget());
+  scoped_ptr<Widget> widget(new Widget());
   NativeWidgetAura* window = Init(parent.get(), widget.get());
 
   window->CenterWindow(gfx::Size(100, 100));
@@ -79,7 +70,7 @@ TEST_F(NativeWidgetAuraTest, CenterWindowLargeParent) {
 TEST_F(NativeWidgetAuraTest, CenterWindowSmallParent) {
   // Make a parent window smaller than the host represented by rootwindow.
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
-  parent->Init(ui::LAYER_NOT_DRAWN);
+  parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(0, 0, 480, 320));
   scoped_ptr<Widget> widget(new Widget());
   NativeWidgetAura* window = Init(parent.get(), widget.get());
@@ -97,7 +88,7 @@ TEST_F(NativeWidgetAuraTest, CenterWindowSmallParentNotAtOrigin) {
   // Make a parent window smaller than the host represented by rootwindow and
   // offset it slightly from the origin.
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
-  parent->Init(ui::LAYER_NOT_DRAWN);
+  parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(20, 40, 480, 320));
   scoped_ptr<Widget> widget(new Widget());
   NativeWidgetAura* window = Init(parent.get(), widget.get());
@@ -257,8 +248,9 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
   widget->Show();
 
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(41, 51), 1,
-                           base::TimeDelta());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+                       base::TimeDelta());
+  ui::EventDispatchDetails details = dispatcher()->OnEventFromSource(&press);
+  ASSERT_FALSE(details.dispatcher_destroyed);
   // Both views should get the press.
   EXPECT_TRUE(view->got_gesture_event());
   EXPECT_TRUE(child->got_gesture_event());
@@ -271,43 +263,11 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
   // the press.
   ui::TouchEvent release(ui::ET_TOUCH_RELEASED, gfx::Point(250, 251), 1,
                              base::TimeDelta());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&release);
+  details = dispatcher()->OnEventFromSource(&release);
+  ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_TRUE(view->got_gesture_event());
   EXPECT_FALSE(child->got_gesture_event());
   view->clear_got_gesture_event();
-
-  // Work around for bug in NativeWidgetAura.
-  // TODO: fix bug and remove this.
-  widget->Close();
-}
-
-TEST_F(NativeWidgetAuraTest, ReleaseCaptureOnTouchRelease) {
-  GestureTrackingView* view = new GestureTrackingView();
-  scoped_ptr<TestWidget> widget(new TestWidget());
-  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
-  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  params.context = root_window();
-  params.bounds = gfx::Rect(0, 0, 100, 200);
-  widget->Init(params);
-  widget->SetContentsView(view);
-  widget->Show();
-
-  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(41, 51), 1,
-                           base::TimeDelta());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
-  EXPECT_TRUE(view->got_gesture_event());
-  view->clear_got_gesture_event();
-  // Set the capture.
-  widget->SetCapture(view);
-  EXPECT_TRUE(widget->HasCapture());
-
-  // Generate a release, this should trigger releasing capture.
-  ui::TouchEvent release(ui::ET_TOUCH_RELEASED, gfx::Point(41, 51), 1,
-                             base::TimeDelta());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&release);
-  EXPECT_TRUE(view->got_gesture_event());
-  view->clear_got_gesture_event();
-  EXPECT_FALSE(widget->HasCapture());
 
   // Work around for bug in NativeWidgetAura.
   // TODO: fix bug and remove this.
@@ -399,7 +359,7 @@ TEST_F(NativeWidgetAuraTest, FlashFrame) {
 
 TEST_F(NativeWidgetAuraTest, NoCrashOnThemeAfterClose) {
   scoped_ptr<aura::Window> parent(new aura::Window(NULL));
-  parent->Init(ui::LAYER_NOT_DRAWN);
+  parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(0, 0, 480, 320));
   scoped_ptr<Widget> widget(new Widget());
   NativeWidgetAura* window = Init(parent.get(), widget.get());
@@ -407,6 +367,44 @@ TEST_F(NativeWidgetAuraTest, NoCrashOnThemeAfterClose) {
   window->Close();
   base::MessageLoop::current()->RunUntilIdle();
   widget->GetNativeTheme();  // Shouldn't crash.
+}
+
+// Used to track calls to WidgetDelegate::OnWidgetMove().
+class MoveTestWidgetDelegate : public WidgetDelegateView {
+ public:
+  MoveTestWidgetDelegate() : got_move_(false) {}
+  virtual ~MoveTestWidgetDelegate() {}
+
+  void ClearGotMove() { got_move_ = false; }
+  bool got_move() const { return got_move_; }
+
+  // WidgetDelegate overrides:
+  virtual void OnWidgetMove() OVERRIDE { got_move_ = true; }
+
+ private:
+  bool got_move_;
+
+  DISALLOW_COPY_AND_ASSIGN(MoveTestWidgetDelegate);
+};
+
+// This test simulates what happens when a window is normally maximized. That
+// is, it's layer is acquired for animation then the window is maximized.
+// Acquiring the layer resets the bounds of the window. This test verifies the
+// Widget is still notified correctly of a move in this case.
+TEST_F(NativeWidgetAuraTest, OnWidgetMovedInvokedAfterAcquireLayer) {
+  // |delegate| deletes itself when the widget is destroyed.
+  MoveTestWidgetDelegate* delegate = new MoveTestWidgetDelegate;
+  Widget* widget =
+      Widget::CreateWindowWithContextAndBounds(delegate,
+                                               root_window(),
+                                               gfx::Rect(10, 10, 100, 200));
+  widget->Show();
+  delegate->ClearGotMove();
+  // Simulate a maximize with animation.
+  delete widget->GetNativeView()->RecreateLayer();
+  widget->SetBounds(gfx::Rect(0, 0, 500, 500));
+  EXPECT_TRUE(delegate->got_move());
+  widget->CloseNow();
 }
 
 }  // namespace

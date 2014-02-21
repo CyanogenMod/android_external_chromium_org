@@ -31,11 +31,14 @@ class GaiaAuthExtensionLoader : public ProfileKeyedAPI {
  private:
   friend class ProfileKeyedAPIFactory<GaiaAuthExtensionLoader>;
 
+  // BrowserContextKeyedService overrides:
+  virtual void Shutdown() OVERRIDE;
+
   // ProfileKeyedAPI implementation.
   static const char* service_name() {
     return "GaiaAuthExtensionLoader";
   }
-  static const bool kServiceHasOwnInstanceInIncognito = true;
+  static const bool kServiceRedirectedInIncognito = true;
 
   Profile* profile_;
   int load_count_;

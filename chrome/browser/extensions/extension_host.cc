@@ -17,12 +17,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
-#include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
-#include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -32,6 +29,8 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -39,12 +38,16 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_error.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/runtime_data.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -142,7 +145,6 @@ ExtensionHost::ExtensionHost(const Extension* extension,
   SetViewType(host_contents_.get(), host_type);
 
   ExtensionWebContentsObserver::CreateForWebContents(host_contents());
-  PrefsTabHelper::CreateForWebContents(host_contents());
 
   render_view_host_ = host_contents_->GetRenderViewHost();
 
@@ -150,6 +152,8 @@ ExtensionHost::ExtensionHost(const Extension* extension,
   // be the same extension that this points to.
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::Source<BrowserContext>(browser_context_));
+
+  ExtensionsBrowserClient::Get()->OnExtensionHostCreated(host_contents());
 }
 
 ExtensionHost::~ExtensionHost() {
@@ -191,10 +195,9 @@ void ExtensionHost::CreateRenderViewSoon() {
 
 void ExtensionHost::CreateRenderViewNow() {
   LoadInitialURL();
-  if (IsBackgroundPage()) {
+  if (!IsBackgroundPage()) {
     DCHECK(IsRenderViewLive());
-    ExtensionSystem::GetForBrowserContext(browser_context_)->
-        extension_service()->DidCreateRenderViewForBackgroundPage(this);
+    ExtensionsBrowserClient::Get()->OnRenderViewCreatedForBackgroundPage(this);
   }
 }
 
@@ -315,26 +318,17 @@ void ExtensionHost::DocumentAvailableInMainFrame() {
 
 void ExtensionHost::OnDocumentAvailable() {
   DCHECK(extension_host_type_ == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
-  ExtensionSystem::GetForBrowserContext(browser_context_)->
-      extension_service()->SetBackgroundPageReady(extension_);
+  ExtensionSystem::Get(browser_context_)
+      ->runtime_data()
+      ->SetBackgroundPageReady(extension_, true);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
+      content::Source<const Extension>(extension_),
+      content::NotificationService::NoDetails());
 }
 
 void ExtensionHost::CloseContents(WebContents* contents) {
   Close();
-}
-
-void ExtensionHost::WillRunJavaScriptDialog() {
-  ProcessManager* pm = ExtensionSystem::GetForBrowserContext(
-      browser_context_)->process_manager();
-  if (pm)
-    pm->IncrementLazyKeepaliveCount(extension());
-}
-
-void ExtensionHost::DidCloseJavaScriptDialog() {
-  ProcessManager* pm = ExtensionSystem::GetForBrowserContext(
-      browser_context_)->process_manager();
-  if (pm)
-    pm->DecrementLazyKeepaliveCount(extension());
 }
 
 bool ExtensionHost::OnMessageReceived(const IPC::Message& message) {
@@ -358,21 +352,20 @@ void ExtensionHost::OnRequest(const ExtensionHostMsg_Request_Params& params) {
 }
 
 void ExtensionHost::OnEventAck() {
-  EventRouter* router =
-      ExtensionSystem::GetForBrowserContext(browser_context_)->event_router();
+  EventRouter* router = ExtensionSystem::Get(browser_context_)->event_router();
   if (router)
     router->OnEventAck(browser_context_, extension_id());
 }
 
 void ExtensionHost::OnIncrementLazyKeepaliveCount() {
-  ProcessManager* pm = ExtensionSystem::GetForBrowserContext(
+  ProcessManager* pm = ExtensionSystem::Get(
       browser_context_)->process_manager();
   if (pm)
     pm->IncrementLazyKeepaliveCount(extension());
 }
 
 void ExtensionHost::OnDecrementLazyKeepaliveCount() {
-  ProcessManager* pm = ExtensionSystem::GetForBrowserContext(
+  ProcessManager* pm = ExtensionSystem::Get(
       browser_context_)->process_manager();
   if (pm)
     pm->DecrementLazyKeepaliveCount(extension());
@@ -394,7 +387,7 @@ void ExtensionHost::OnDetailedConsoleMessageAdded(
     context_url = host_contents_->GetLastCommittedURL();
 
   ErrorConsole* console =
-      ExtensionSystem::GetForBrowserContext(browser_context_)->error_console();
+      ExtensionSystem::Get(browser_context_)->error_console();
   if (!console)
     return;
 
@@ -426,10 +419,7 @@ void ExtensionHost::RenderViewDeleted(RenderViewHost* render_view_host) {
 }
 
 content::JavaScriptDialogManager* ExtensionHost::GetJavaScriptDialogManager() {
-  if (!dialog_manager_) {
-    dialog_manager_.reset(CreateJavaScriptDialogManagerInstance(this));
-  }
-  return dialog_manager_.get();
+  return ExtensionsBrowserClient::Get()->GetJavaScriptDialogManager();
 }
 
 void ExtensionHost::AddNewContents(WebContents* source,
@@ -478,6 +468,15 @@ void ExtensionHost::RequestMediaAccessPermission(
     const content::MediaResponseCallback& callback) {
   MediaCaptureDevicesDispatcher::GetInstance()->ProcessMediaAccessRequest(
       web_contents, request, callback, extension());
+}
+
+bool ExtensionHost::PreHandleGestureEvent(
+    content::WebContents* source,
+    const blink::WebGestureEvent& event) {
+  // Disable pinch zooming.
+  return event.type == blink::WebGestureEvent::GesturePinchBegin ||
+      event.type == blink::WebGestureEvent::GesturePinchUpdate ||
+      event.type == blink::WebGestureEvent::GesturePinchEnd;
 }
 
 }  // namespace extensions

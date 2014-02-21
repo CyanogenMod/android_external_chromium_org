@@ -238,7 +238,7 @@ int HostService::RunAsService() {
 }
 
 void HostService::RunAsServiceImpl() {
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI message_loop;
   base::RunLoop run_loop;
   main_task_runner_ = message_loop.message_loop_proxy();
   weak_ptr_ = weak_factory_.GetWeakPtr();
@@ -272,8 +272,9 @@ void HostService::RunAsServiceImpl() {
   if (!com_initializer.succeeded())
     return;
 
-  if (!InitializeComSecurity(WideToUTF8(kComProcessSd),
-                             WideToUTF8(kComProcessMandatoryLabel), false)) {
+  if (!InitializeComSecurity(base::WideToUTF8(kComProcessSd),
+                             base::WideToUTF8(kComProcessMandatoryLabel),
+                             false)) {
     return;
   }
 
@@ -296,7 +297,7 @@ void HostService::RunAsServiceImpl() {
 }
 
 int HostService::RunInConsole() {
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI message_loop;
   base::RunLoop run_loop;
   main_task_runner_ = message_loop.message_loop_proxy();
   weak_ptr_ = weak_factory_.GetWeakPtr();
@@ -308,8 +309,9 @@ int HostService::RunInConsole() {
   if (!com_initializer.succeeded())
     return result;
 
-  if (!InitializeComSecurity(WideToUTF8(kComProcessSd),
-                             WideToUTF8(kComProcessMandatoryLabel), false)) {
+  if (!InitializeComSecurity(base::WideToUTF8(kComProcessSd),
+                             base::WideToUTF8(kComProcessMandatoryLabel),
+                             false)) {
     return result;
   }
 

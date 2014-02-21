@@ -11,9 +11,9 @@
 #include "ash/desktop_background/desktop_background_widget_controller.h"
 #include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/drag_drop/drag_drop_controller.h"
-#include "ash/launcher/launcher.h"
 #include "ash/root_window_controller.h"
 #include "ash/session_state_delegate.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
@@ -102,7 +102,7 @@ class ModalWindow : public views::WidgetDelegateView {
     return true;
   }
   virtual base::string16 GetWindowTitle() const OVERRIDE {
-    return ASCIIToUTF16("Modal Window");
+    return base::ASCIIToUTF16("Modal Window");
   }
   virtual ui::ModalType GetModalType() const OVERRIDE {
     return ui::MODAL_TYPE_SYSTEM;
@@ -371,7 +371,7 @@ TEST_F(ShellTest, LockScreenClosesActiveMenu) {
   SimpleMenuDelegate menu_delegate;
   scoped_ptr<ui::SimpleMenuModel> menu_model(
       new ui::SimpleMenuModel(&menu_delegate));
-  menu_model->AddItem(0, ASCIIToUTF16("Menu item"));
+  menu_model->AddItem(0, base::ASCIIToUTF16("Menu item"));
   views::Widget* widget = ash::Shell::GetPrimaryRootWindowController()->
       wallpaper_controller()->widget();
   scoped_ptr<views::MenuRunner> menu_runner(
@@ -394,13 +394,13 @@ TEST_F(ShellTest, ManagedWindowModeBasics) {
   // We start with the usual window containers.
   ExpectAllContainers();
   // Shelf is visible.
-  ShelfWidget* launcher_widget = Launcher::ForPrimaryDisplay()->shelf_widget();
-  EXPECT_TRUE(launcher_widget->IsVisible());
+  ShelfWidget* shelf_widget = Shelf::ForPrimaryDisplay()->shelf_widget();
+  EXPECT_TRUE(shelf_widget->IsVisible());
   // Shelf is at bottom-left of screen.
-  EXPECT_EQ(0, launcher_widget->GetWindowBoundsInScreen().x());
+  EXPECT_EQ(0, shelf_widget->GetWindowBoundsInScreen().x());
   EXPECT_EQ(Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->
       GetBounds().height(),
-      launcher_widget->GetWindowBoundsInScreen().bottom());
+      shelf_widget->GetWindowBoundsInScreen().bottom());
   // We have a desktop background but not a bare layer.
   // TODO (antrim): enable once we find out why it fails component build.
   //  internal::DesktopBackgroundWidgetController* background =
@@ -462,8 +462,8 @@ TEST_F(ShellTest, FullscreenWindowHidesShelf) {
 TEST_F(ShellTest, ToggleAutoHide) {
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
   window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-  window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-  window->Init(ui::LAYER_TEXTURED);
+  window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+  window->Init(aura::WINDOW_LAYER_TEXTURED);
   ParentWindowInPrimaryRootWindow(window.get());
   window->Show();
   wm::ActivateWindow(window.get());
@@ -532,7 +532,7 @@ class ShellTest2 : public test::AshTestBase {
 
 TEST_F(ShellTest2, DontCrashWhenWindowDeleted) {
   window_.reset(new aura::Window(NULL));
-  window_->Init(ui::LAYER_NOT_DRAWN);
+  window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
 }
 
 }  // namespace ash

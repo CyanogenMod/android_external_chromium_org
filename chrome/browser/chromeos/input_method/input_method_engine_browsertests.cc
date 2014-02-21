@@ -3,16 +3,17 @@
 // found in the LICENSE file.
 
 #include "base/bind_helpers.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
-#include "chromeos/ime/ibus_text.h"
+#include "chromeos/ime/composition_text.h"
 #include "chromeos/ime/input_method_descriptor.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/common/manifest_handlers/background_info.h"
-#include "ui/base/ime/chromeos/ibus_bridge.h"
+#include "ui/base/ime/chromeos/ime_bridge.h"
 #include "ui/base/ime/chromeos/mock_ime_candidate_window_handler.h"
 #include "ui/base/ime/chromeos/mock_ime_input_context_handler.h"
 #include "ui/events/event.h"
@@ -27,6 +28,7 @@ const char kToUpperIMEID[] =
     "_ext_ime_iafoklpfplgfnoimmaejoeondnjnlcfpToUpperIME";
 const char kAPIArgumentIMEID[] =
     "_ext_ime_iafoklpfplgfnoimmaejoeondnjnlcfpAPIArgumentIME";
+const char kExtensionID[] = "iafoklpfplgfnoimmaejoeondnjnlcfp";
 
 // InputMethod extension should work on 1)normal extension, 2)normal extension
 // in incognito mode 3)component extension.
@@ -158,11 +160,11 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
   scoped_ptr<MockIMECandidateWindowHandler> mock_candidate_window(
       new MockIMECandidateWindowHandler());
 
-  IBusBridge::Get()->SetInputContextHandler(mock_input_context.get());
-  IBusBridge::Get()->SetCandidateWindowHandler(mock_candidate_window.get());
+  IMEBridge::Get()->SetInputContextHandler(mock_input_context.get());
+  IMEBridge::Get()->SetCandidateWindowHandler(mock_candidate_window.get());
 
-  IBusEngineHandlerInterface* engine_handler =
-      IBusBridge::Get()->GetEngineHandler();
+  IMEEngineHandlerInterface* engine_handler =
+      IMEBridge::Get()->GetCurrentEngineHandler();
   ASSERT_TRUE(engine_handler);
 
   // onActivate event should be fired if Enable function is called.
@@ -173,8 +175,8 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
 
   // onFocus event should be fired if FocusIn function is called.
   ExtensionTestMessageListener focus_listener("onFocus:text", false);
-  IBusEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
-                                                   ui::TEXT_INPUT_MODE_DEFAULT);
+  IMEEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
+                                                  ui::TEXT_INPUT_MODE_DEFAULT);
   engine_handler->FocusIn(context);
   ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
   ASSERT_TRUE(focus_listener.was_satisfied());
@@ -223,8 +225,8 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
   ASSERT_TRUE(disabled_listener.WaitUntilSatisfied());
   ASSERT_TRUE(disabled_listener.was_satisfied());
 
-  IBusBridge::Get()->SetInputContextHandler(NULL);
-  IBusBridge::Get()->SetCandidateWindowHandler(NULL);
+  IMEBridge::Get()->SetInputContextHandler(NULL);
+  IMEBridge::Get()->SetCandidateWindowHandler(NULL);
 }
 
 IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
@@ -238,11 +240,11 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
   scoped_ptr<MockIMECandidateWindowHandler> mock_candidate_window(
       new MockIMECandidateWindowHandler());
 
-  IBusBridge::Get()->SetInputContextHandler(mock_input_context.get());
-  IBusBridge::Get()->SetCandidateWindowHandler(mock_candidate_window.get());
+  IMEBridge::Get()->SetInputContextHandler(mock_input_context.get());
+  IMEBridge::Get()->SetCandidateWindowHandler(mock_candidate_window.get());
 
-  IBusEngineHandlerInterface* engine_handler =
-      IBusBridge::Get()->GetEngineHandler();
+  IMEEngineHandlerInterface* engine_handler =
+      IMEBridge::Get()->GetCurrentEngineHandler();
   ASSERT_TRUE(engine_handler);
 
   extensions::ExtensionHost* host = FindHostWithPath(
@@ -251,15 +253,15 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
       1);
 
   engine_handler->Enable();
-  IBusEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
-                                                   ui::TEXT_INPUT_MODE_DEFAULT);
+  IMEEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
+                                                  ui::TEXT_INPUT_MODE_DEFAULT);
   engine_handler->FocusIn(context);
 
   {
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:No, Shift:No, Caps:No");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:a:KeyA:false:false:false:false";
+        "onKeyEvent::keydown:a:KeyA:false:false:false:false";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(
@@ -275,7 +277,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:Yes, alt:No, Shift:No, Caps:No");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:a:KeyA:true:false:false:false";
+        "onKeyEvent::keydown:a:KeyA:true:false:false:false";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -294,7 +296,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:Yes, Shift:No, Caps:No");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:a:KeyA:false:true:false:false";
+        "onKeyEvent::keydown:a:KeyA:false:true:false:false";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -313,7 +315,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:No, Shift:Yes, Caps:No");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:A:KeyA:false:false:true:false";
+        "onKeyEvent::keydown:A:KeyA:false:false:true:false";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -332,7 +334,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:No, Shift:No, Caps:Yes");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:a:KeyA:false:false:false:true";
+        "onKeyEvent::keydown:a:KeyA:false:false:false:true";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -351,7 +353,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:Yes, alt:Yes, Shift:No, Caps:No");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:a:KeyA:true:true:false:false";
+        "onKeyEvent::keydown:a:KeyA:true:true:false:false";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -370,7 +372,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:No, Shift:Yes, Caps:Yes");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent:keydown:A:KeyA:false:false:true:true";
+        "onKeyEvent::keydown:A:KeyA:false:false:true:true";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -403,6 +405,44 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     EXPECT_EQ("COMMIT_TEXT", mock_input_context->last_commit_text());
   }
   {
+    SCOPED_TRACE("sendKeyEvents test");
+    mock_input_context->Reset();
+    mock_candidate_window->Reset();
+
+    const char send_key_events_test_script[] =
+        "chrome.input.ime.sendKeyEvents({"
+        "  contextID: engineBridge.getFocusedContextID().contextID,"
+        "  keyData : [{"
+        "    type : 'keydown',"
+        "    requestId : '0',"
+        "    key : 'z',"
+        "    code : 'KeyZ',"
+        "  },{"
+        "    type : 'keyup',"
+        "    requestId : '1',"
+        "    key : 'z',"
+        "    code : 'KeyZ',"
+        "  }]"
+        "});";
+
+    ExtensionTestMessageListener keyevent_listener_down(
+        std::string("onKeyEvent:") + kExtensionID +
+        ":keydown:z:KeyZ:false:false:false:false",
+        false);
+    ExtensionTestMessageListener keyevent_listener_up(
+        std::string("onKeyEvent:") + kExtensionID +
+        ":keyup:z:KeyZ:false:false:false:false",
+        false);
+
+    ASSERT_TRUE(content::ExecuteScript(host->host_contents(),
+                                       send_key_events_test_script));
+
+    ASSERT_TRUE(keyevent_listener_down.WaitUntilSatisfied());
+    EXPECT_TRUE(keyevent_listener_down.was_satisfied());
+    ASSERT_TRUE(keyevent_listener_up.WaitUntilSatisfied());
+    EXPECT_TRUE(keyevent_listener_up.was_satisfied());
+  }
+  {
     SCOPED_TRACE("setComposition test");
     mock_input_context->Reset();
     mock_candidate_window->Reset();
@@ -427,21 +467,24 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
                                        set_composition_test_script));
     EXPECT_EQ(1, mock_input_context->update_preedit_text_call_count());
 
-    EXPECT_EQ(4U, mock_input_context->last_update_preedit_arg().cursor_pos);
-    EXPECT_TRUE(mock_input_context->last_update_preedit_arg().is_visible);
+    EXPECT_EQ(4U,
+              mock_input_context->last_update_composition_arg().cursor_pos);
+    EXPECT_TRUE(mock_input_context->last_update_composition_arg().is_visible);
 
-    const IBusText& ibus_text =
-        mock_input_context->last_update_preedit_arg().ibus_text;
-    EXPECT_EQ("COMPOSITION_TEXT", ibus_text.text());
-    const std::vector<IBusText::UnderlineAttribute>& underlines =
-        ibus_text.underline_attributes();
+    const CompositionText& composition_text =
+        mock_input_context->last_update_composition_arg().composition_text;
+    EXPECT_EQ(base::UTF8ToUTF16("COMPOSITION_TEXT"), composition_text.text());
+    const std::vector<CompositionText::UnderlineAttribute>& underlines =
+        composition_text.underline_attributes();
 
     ASSERT_EQ(2U, underlines.size());
-    EXPECT_EQ(IBusText::IBUS_TEXT_UNDERLINE_SINGLE, underlines[0].type);
+    EXPECT_EQ(CompositionText::COMPOSITION_TEXT_UNDERLINE_SINGLE,
+              underlines[0].type);
     EXPECT_EQ(0U, underlines[0].start_index);
     EXPECT_EQ(5U, underlines[0].end_index);
 
-    EXPECT_EQ(IBusText::IBUS_TEXT_UNDERLINE_DOUBLE, underlines[1].type);
+    EXPECT_EQ(CompositionText::COMPOSITION_TEXT_UNDERLINE_DOUBLE,
+              underlines[1].type);
     EXPECT_EQ(6U, underlines[1].start_index);
     EXPECT_EQ(10U, underlines[1].end_index);
   }
@@ -458,10 +501,11 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     ASSERT_TRUE(content::ExecuteScript(host->host_contents(),
                                        commite_text_test_script));
     EXPECT_EQ(1, mock_input_context->update_preedit_text_call_count());
-    EXPECT_FALSE(mock_input_context->last_update_preedit_arg().is_visible);
-    const IBusText& ibus_text =
-        mock_input_context->last_update_preedit_arg().ibus_text;
-    EXPECT_TRUE(ibus_text.text().empty());
+    EXPECT_FALSE(
+        mock_input_context->last_update_composition_arg().is_visible);
+    const CompositionText& composition_text =
+        mock_input_context->last_update_composition_arg().composition_text;
+    EXPECT_TRUE(composition_text.text().empty());
   }
   {
     SCOPED_TRACE("setCandidateWindowProperties:visibility test");
@@ -503,7 +547,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     EXPECT_TRUE(
         mock_candidate_window->last_update_lookup_table_arg().is_visible);
 
-    const CandidateWindow& table =
+    const ui::CandidateWindow& table =
         mock_candidate_window->last_update_lookup_table_arg().lookup_table;
     EXPECT_TRUE(table.is_cursor_visible());
   }
@@ -528,13 +572,13 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     EXPECT_TRUE(
         mock_candidate_window->last_update_lookup_table_arg().is_visible);
 
-    const CandidateWindow& table =
+    const ui::CandidateWindow& table =
         mock_candidate_window->last_update_lookup_table_arg().lookup_table;
 
     // cursor visibility is kept as before.
     EXPECT_TRUE(table.is_cursor_visible());
 
-    EXPECT_EQ(CandidateWindow::VERTICAL, table.orientation());
+    EXPECT_EQ(ui::CandidateWindow::VERTICAL, table.orientation());
   }
   {
     SCOPED_TRACE("setCandidateWindowProperties:pageSize test");
@@ -557,14 +601,14 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     EXPECT_TRUE(
         mock_candidate_window->last_update_lookup_table_arg().is_visible);
 
-    const CandidateWindow& table =
+    const ui::CandidateWindow& table =
         mock_candidate_window->last_update_lookup_table_arg().lookup_table;
 
     // cursor visibility is kept as before.
     EXPECT_TRUE(table.is_cursor_visible());
 
     // oritantation is kept as before.
-    EXPECT_EQ(CandidateWindow::VERTICAL, table.orientation());
+    EXPECT_EQ(ui::CandidateWindow::VERTICAL, table.orientation());
 
     EXPECT_EQ(7U, table.page_size());
   }
@@ -583,9 +627,11 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     ASSERT_TRUE(content::ExecuteScript(
         host->host_contents(),
         set_candidate_window_properties_test_script));
-    EXPECT_EQ(1, mock_candidate_window->update_auxiliary_text_call_count());
-    EXPECT_TRUE(
-        mock_candidate_window->last_update_auxiliary_text_arg().is_visible);
+    EXPECT_EQ(1, mock_candidate_window->update_lookup_table_call_count());
+
+    const ui::CandidateWindow& table =
+        mock_candidate_window->last_update_lookup_table_arg().lookup_table;
+    EXPECT_TRUE(table.is_auxiliary_text_visible());
   }
   {
     SCOPED_TRACE("setCandidateWindowProperties:auxText test");
@@ -602,14 +648,13 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     ASSERT_TRUE(content::ExecuteScript(
         host->host_contents(),
         set_candidate_window_properties_test_script));
-    EXPECT_EQ(1, mock_candidate_window->update_auxiliary_text_call_count());
+    EXPECT_EQ(1, mock_candidate_window->update_lookup_table_call_count());
 
     // aux text visibility is kept as before.
-    EXPECT_TRUE(
-        mock_candidate_window->last_update_auxiliary_text_arg().is_visible);
-
-    EXPECT_EQ("AUXILIARY_TEXT",
-              mock_candidate_window->last_update_auxiliary_text_arg().text);
+    const ui::CandidateWindow& table =
+        mock_candidate_window->last_update_lookup_table_arg().lookup_table;
+    EXPECT_TRUE(table.is_auxiliary_text_visible());
+    EXPECT_EQ("AUXILIARY_TEXT", table.auxiliary_text());
   }
   {
     SCOPED_TRACE("setCandidates test");
@@ -649,34 +694,42 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     EXPECT_TRUE(
         mock_candidate_window->last_update_lookup_table_arg().is_visible);
 
-    const CandidateWindow& table =
+    const ui::CandidateWindow& table =
         mock_candidate_window->last_update_lookup_table_arg().lookup_table;
 
     // cursor visibility is kept as before.
     EXPECT_TRUE(table.is_cursor_visible());
 
     // oritantation is kept as before.
-    EXPECT_EQ(CandidateWindow::VERTICAL, table.orientation());
+    EXPECT_EQ(ui::CandidateWindow::VERTICAL, table.orientation());
 
     // page size is kept as before.
     EXPECT_EQ(7U, table.page_size());
 
     ASSERT_EQ(4U, table.candidates().size());
 
-    EXPECT_EQ("CANDIDATE_1", table.candidates().at(0).value);
+    EXPECT_EQ(base::UTF8ToUTF16("CANDIDATE_1"),
+              table.candidates().at(0).value);
 
-    EXPECT_EQ("CANDIDATE_2", table.candidates().at(1).value);
-    EXPECT_EQ("LABEL_2", table.candidates().at(1).label);
+    EXPECT_EQ(base::UTF8ToUTF16("CANDIDATE_2"),
+              table.candidates().at(1).value);
+    EXPECT_EQ(base::UTF8ToUTF16("LABEL_2"), table.candidates().at(1).label);
 
-    EXPECT_EQ("CANDIDATE_3", table.candidates().at(2).value);
-    EXPECT_EQ("LABEL_3", table.candidates().at(2).label);
-    EXPECT_EQ("ANNOTACTION_3", table.candidates().at(2).annotation);
+    EXPECT_EQ(base::UTF8ToUTF16("CANDIDATE_3"),
+              table.candidates().at(2).value);
+    EXPECT_EQ(base::UTF8ToUTF16("LABEL_3"), table.candidates().at(2).label);
+    EXPECT_EQ(base::UTF8ToUTF16("ANNOTACTION_3"),
+              table.candidates().at(2).annotation);
 
-    EXPECT_EQ("CANDIDATE_4", table.candidates().at(3).value);
-    EXPECT_EQ("LABEL_4", table.candidates().at(3).label);
-    EXPECT_EQ("ANNOTACTION_4", table.candidates().at(3).annotation);
-    EXPECT_EQ("TITLE_4", table.candidates().at(3).description_title);
-    EXPECT_EQ("BODY_4", table.candidates().at(3).description_body);
+    EXPECT_EQ(base::UTF8ToUTF16("CANDIDATE_4"),
+              table.candidates().at(3).value);
+    EXPECT_EQ(base::UTF8ToUTF16("LABEL_4"), table.candidates().at(3).label);
+    EXPECT_EQ(base::UTF8ToUTF16("ANNOTACTION_4"),
+              table.candidates().at(3).annotation);
+    EXPECT_EQ(base::UTF8ToUTF16("TITLE_4"),
+              table.candidates().at(3).description_title);
+    EXPECT_EQ(base::UTF8ToUTF16("BODY_4"),
+              table.candidates().at(3).description_body);
   }
   {
     SCOPED_TRACE("setCursorPosition test");
@@ -696,14 +749,14 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     EXPECT_TRUE(
         mock_candidate_window->last_update_lookup_table_arg().is_visible);
 
-    const CandidateWindow& table =
+    const ui::CandidateWindow& table =
         mock_candidate_window->last_update_lookup_table_arg().lookup_table;
 
     // cursor visibility is kept as before.
     EXPECT_TRUE(table.is_cursor_visible());
 
     // oritantation is kept as before.
-    EXPECT_EQ(CandidateWindow::VERTICAL, table.orientation());
+    EXPECT_EQ(ui::CandidateWindow::VERTICAL, table.orientation());
 
     // page size is kept as before.
     EXPECT_EQ(7U, table.page_size());
@@ -795,7 +848,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
 
     {
       ExtensionTestMessageListener focus_listener("onFocus:text", false);
-      IBusEngineHandlerInterface::InputContext context(
+      IMEEngineHandlerInterface::InputContext context(
           ui::TEXT_INPUT_TYPE_TEXT, ui::TEXT_INPUT_MODE_DEFAULT);
       engine_handler->FocusIn(context);
       ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
@@ -803,7 +856,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     }
     {
       ExtensionTestMessageListener focus_listener("onFocus:search", false);
-      IBusEngineHandlerInterface::InputContext context(
+      IMEEngineHandlerInterface::InputContext context(
           ui::TEXT_INPUT_TYPE_SEARCH, ui::TEXT_INPUT_MODE_DEFAULT);
       engine_handler->FocusIn(context);
       ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
@@ -811,7 +864,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     }
     {
       ExtensionTestMessageListener focus_listener("onFocus:tel", false);
-      IBusEngineHandlerInterface::InputContext context(
+      IMEEngineHandlerInterface::InputContext context(
           ui::TEXT_INPUT_TYPE_TELEPHONE, ui::TEXT_INPUT_MODE_DEFAULT);
       engine_handler->FocusIn(context);
       ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
@@ -819,7 +872,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     }
     {
       ExtensionTestMessageListener focus_listener("onFocus:url", false);
-      IBusEngineHandlerInterface::InputContext context(
+      IMEEngineHandlerInterface::InputContext context(
           ui::TEXT_INPUT_TYPE_URL, ui::TEXT_INPUT_MODE_DEFAULT);
       engine_handler->FocusIn(context);
       ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
@@ -827,7 +880,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     }
     {
       ExtensionTestMessageListener focus_listener("onFocus:email", false);
-      IBusEngineHandlerInterface::InputContext context(
+      IMEEngineHandlerInterface::InputContext context(
           ui::TEXT_INPUT_TYPE_EMAIL, ui::TEXT_INPUT_MODE_DEFAULT);
       engine_handler->FocusIn(context);
       ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
@@ -835,7 +888,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     }
     {
       ExtensionTestMessageListener focus_listener("onFocus:number", false);
-      IBusEngineHandlerInterface::InputContext context(
+      IMEEngineHandlerInterface::InputContext context(
           ui::TEXT_INPUT_TYPE_NUMBER, ui::TEXT_INPUT_MODE_DEFAULT);
       engine_handler->FocusIn(context);
       ASSERT_TRUE(focus_listener.WaitUntilSatisfied());
@@ -843,8 +896,8 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     }
   }
 
-  IBusBridge::Get()->SetInputContextHandler(NULL);
-  IBusBridge::Get()->SetCandidateWindowHandler(NULL);
+  IMEBridge::Get()->SetInputContextHandler(NULL);
+  IMEBridge::Get()->SetCandidateWindowHandler(NULL);
 }
 
 }  // namespace

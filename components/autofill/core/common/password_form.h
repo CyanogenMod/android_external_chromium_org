@@ -125,6 +125,10 @@ struct PasswordForm {
   // When parsing an HTML form, this is typically empty.
   base::string16 password_value;
 
+  // False if autocomplete is set to "off" for the password input element;
+  // True otherwise.
+  bool password_autocomplete_set;
+
   // If the form was a change password form, the name of the
   // 'old password' input element. Optional.
   base::string16 old_password_element;
@@ -166,6 +170,7 @@ struct PasswordForm {
   enum Type {
     TYPE_MANUAL,
     TYPE_GENERATED,
+    TYPE_LAST = TYPE_GENERATED
   };
 
   // The form type. Not used yet. Please see http://crbug.com/152422
@@ -176,6 +181,12 @@ struct PasswordForm {
   //
   // When parsing an HTML form, this is not used.
   int times_used;
+
+  // True if additional system level authentication should be used
+  // (if available) before using this password for autofill.
+  //
+  // Default to false.
+  bool use_additional_authentication;
 
   // Autofill representation of this form. Used to communicate with the
   // Autofill servers if necessary. Currently this is only used to help

@@ -7,6 +7,7 @@
 
 
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram_samples.h"
 #include "base/prefs/testing_pref_service.h"
 #include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -16,18 +17,27 @@
 class PrefService;
 class TestingPrefServiceSimple;
 
+using spdyproxy::ProbeURLFetchResult;
+using spdyproxy::ProxyStartupState;
+
 template <class C>
 class MockDataReductionProxySettings : public C {
  public:
   MOCK_METHOD0(GetURLFetcher, net::URLFetcher*());
   MOCK_METHOD0(GetOriginalProfilePrefs, PrefService*());
   MOCK_METHOD0(GetLocalStatePrefs, PrefService*());
-  MOCK_METHOD2(LogProxyState, void(bool enabled, bool at_startup));
+  MOCK_METHOD3(LogProxyState, void(
+      bool enabled, bool restricted, bool at_startup));
+  MOCK_METHOD1(RecordProbeURLFetchResult,
+               void(ProbeURLFetchResult result));
+  MOCK_METHOD1(RecordStartupState,
+               void(ProxyStartupState state));
 
   // SetProxyConfigs should always call LogProxyState exactly once.
-  virtual void SetProxyConfigs(bool enabled, bool at_startup) OVERRIDE {
-    EXPECT_CALL(*this, LogProxyState(enabled, at_startup)).Times(1);
-    C::SetProxyConfigs(enabled, at_startup);
+  virtual void SetProxyConfigs(
+      bool enabled, bool restricted, bool at_startup) OVERRIDE {
+    EXPECT_CALL(*this, LogProxyState(enabled, restricted, at_startup)).Times(1);
+    C::SetProxyConfigs(enabled, restricted, at_startup);
   }
 };
 
@@ -46,30 +56,29 @@ class DataReductionProxySettingsTestBase : public testing::Test {
   template <class C> void SetProbeResult(
       const std::string& test_url,
       const std::string& response,
+      ProbeURLFetchResult state,
       bool success,
       int expected_calls);
   virtual void SetProbeResult(const std::string& test_url,
                               const std::string& response,
+                              ProbeURLFetchResult result,
                               bool success,
                               int expected_calls) = 0;
 
   void CheckProxyPref(const std::string& expected_servers,
                       const std::string& expected_mode);
-  void CheckProxyConfigs(bool expected_enabled);
+  void CheckProxyConfigs(bool expected_enabled, bool expected_restricted);
   void CheckProbe(bool initially_enabled,
                   const std::string& probe_url,
                   const std::string& response,
                   bool request_success,
-                  bool expected_enabled);
+                  bool expected_enabled,
+                  bool expected_restricted);
   void CheckProbeOnIPChange(const std::string& probe_url,
                             const std::string& response,
                             bool request_success,
                             bool expected_enabled);
-  void CheckOnPrefChange(bool enabled,
-                         const std::string& probe_url,
-                         const std::string& response,
-                         bool request_success,
-                         bool expected_enabled);
+  void CheckOnPrefChange(bool enabled, bool expected_enabled);
   void CheckInitDataReductionProxy(bool enabled_at_startup);
 
   TestingPrefServiceSimple pref_service_;
@@ -93,10 +102,11 @@ class ConcreteDataReductionProxySettingsTest
 
   virtual void SetProbeResult(const std::string& test_url,
                               const std::string& response,
+                              ProbeURLFetchResult result,
                               bool success,
                               int expected_calls) OVERRIDE {
     return DataReductionProxySettingsTestBase::SetProbeResult<C>(
-  test_url, response, success, expected_calls);
+  test_url, response, result, success, expected_calls);
   }
 };
 

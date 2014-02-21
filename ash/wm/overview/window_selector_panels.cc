@@ -4,7 +4,6 @@
 
 #include "ash/wm/overview/window_selector_panels.h"
 
-#include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/overview/scoped_transform_overview_window.h"
@@ -73,10 +72,8 @@ views::Widget* ScopedTransformPanelWindow::GetCalloutWidget() {
 void ScopedTransformPanelWindow::RestoreCallout() {
   scoped_ptr<ui::LayerAnimationSequence> sequence(
       new ui::LayerAnimationSequence);
-  ui::LayerAnimationElement::AnimatableProperties paused_properties;
-  paused_properties.insert(ui::LayerAnimationElement::OPACITY);
   sequence->AddElement(ui::LayerAnimationElement::CreatePauseElement(
-      paused_properties, base::TimeDelta::FromMilliseconds(
+      ui::LayerAnimationElement::OPACITY, base::TimeDelta::FromMilliseconds(
           ScopedTransformOverviewWindow::kTransitionMilliseconds)));
   sequence->AddElement(ui::LayerAnimationElement::CreateOpacityElement(1,
       base::TimeDelta::FromMilliseconds(
@@ -99,6 +96,15 @@ void WindowSelectorPanels::AddWindow(aura::Window* window) {
 
 aura::Window* WindowSelectorPanels::GetRootWindow() {
   return transform_windows_.front()->window()->GetRootWindow();
+}
+
+bool WindowSelectorPanels::HasSelectableWindow(const aura::Window* window) {
+  for (WindowList::const_iterator iter = transform_windows_.begin();
+       iter != transform_windows_.end(); ++iter) {
+    if ((*iter)->window() == window)
+      return true;
+  }
+  return false;
 }
 
 aura::Window* WindowSelectorPanels::TargetedWindow(const aura::Window* target) {
@@ -127,7 +133,7 @@ aura::Window* WindowSelectorPanels::SelectionWindow() {
 void WindowSelectorPanels::RemoveWindow(const aura::Window* window) {
   for (WindowList::iterator iter = transform_windows_.begin();
        iter != transform_windows_.end(); ++iter) {
-    if ((*iter)->Contains(window)) {
+    if ((*iter)->window() == window) {
       (*iter)->OnWindowDestroyed();
       transform_windows_.erase(iter);
       break;

@@ -4,6 +4,10 @@
 
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <string>
 
@@ -12,7 +16,7 @@
 
 namespace {
 
-const base::FilePath::CharType* const kExtraSupportedExtensions[] = {
+const base::FilePath::CharType* const kExtraSupportedImageExtensions[] = {
   // RAW picture file types.
   // Some of which are just image/tiff.
   FILE_PATH_LITERAL("3fr"),  // (Hasselblad)
@@ -45,8 +49,9 @@ const base::FilePath::CharType* const kExtraSupportedExtensions[] = {
   // - Leica / Panasonic RAW files - image/x-panasonic-raw
   // - Phase One RAW files - image/x-phaseone-raw
   FILE_PATH_LITERAL("raw"),
+};
 
-  // Video files types.
+const base::FilePath::CharType* const kExtraSupportedVideoExtensions[] = {
   FILE_PATH_LITERAL("3gp"),
   FILE_PATH_LITERAL("3gpp"),
   FILE_PATH_LITERAL("avi"),
@@ -58,9 +63,11 @@ const base::FilePath::CharType* const kExtraSupportedExtensions[] = {
   FILE_PATH_LITERAL("mpegps"),
   FILE_PATH_LITERAL("mpg"),
   FILE_PATH_LITERAL("wmv"),
+};
 
-  // Audio file types. Many of these file types are audio files in the same
-  // containers that the MIME sniffer already detects as video/subtype.
+const base::FilePath::CharType* const kExtraSupportedAudioExtensions[] = {
+  // Many of these file types are audio files in the same containers that the
+  // MIME sniffer already detects as video/subtype.
   FILE_PATH_LITERAL("aac"),   // audio/mpeg
   FILE_PATH_LITERAL("alac"),  // video/mp4
   FILE_PATH_LITERAL("flac"),  // audio/x-flac
@@ -75,7 +82,62 @@ bool IsUnsupportedExtension(const base::FilePath::StringType& extension) {
       !net::IsSupportedMimeType(mime_type);
 }
 
+std::vector<base::FilePath::StringType> GetMediaExtensionList(
+    const std::string& mime_type) {
+  std::vector<base::FilePath::StringType> extensions;
+  net::GetExtensionsForMimeType(mime_type, &extensions);
+  std::vector<base::FilePath::StringType>::iterator new_end =
+      std::remove_if(extensions.begin(),
+                     extensions.end(),
+                     &IsUnsupportedExtension);
+  extensions.erase(new_end, extensions.end());
+  return extensions;
+}
+
 }  // namespace
+
+// static
+bool MediaPathFilter::ShouldSkip(const base::FilePath& path) {
+  const base::FilePath::StringType base_name = path.BaseName().value();
+  if (base_name.empty())
+    return false;
+
+  // Dot files (aka hidden files)
+  if (base_name[0] == '.')
+    return true;
+
+  // Mac OS X file.
+  if (base_name == FILE_PATH_LITERAL("__MACOSX"))
+    return true;
+
+#if defined(OS_WIN)
+  DWORD file_attributes = ::GetFileAttributes(path.value().c_str());
+  if ((file_attributes != INVALID_FILE_ATTRIBUTES) &&
+      ((file_attributes & FILE_ATTRIBUTE_HIDDEN) != 0))
+    return true;
+#else
+  // Windows always creates a recycle bin folder in the attached device to store
+  // all the deleted contents. On non-windows operating systems, there is no way
+  // to get the hidden attribute of windows recycle bin folders that are present
+  // on the attached device. Therefore, compare the file path name to the
+  // recycle bin name and exclude those folders. For more details, please refer
+  // to http://support.microsoft.com/kb/171694.
+  const char win_98_recycle_bin_name[] = "RECYCLED";
+  const char win_xp_recycle_bin_name[] = "RECYCLER";
+  const char win_vista_recycle_bin_name[] = "$Recycle.bin";
+  if ((base::strncasecmp(base_name.c_str(),
+                         win_98_recycle_bin_name,
+                         strlen(win_98_recycle_bin_name)) == 0) ||
+      (base::strncasecmp(base_name.c_str(),
+                         win_xp_recycle_bin_name,
+                         strlen(win_xp_recycle_bin_name)) == 0) ||
+      (base::strncasecmp(base_name.c_str(),
+                         win_vista_recycle_bin_name,
+                         strlen(win_vista_recycle_bin_name)) == 0))
+    return true;
+#endif  // defined(OS_WIN)
+  return false;
+}
 
 MediaPathFilter::MediaPathFilter()
     : initialized_(false) {
@@ -86,10 +148,16 @@ MediaPathFilter::~MediaPathFilter() {
 }
 
 bool MediaPathFilter::Match(const base::FilePath& path) {
+  return GetType(path) != MEDIA_GALLERY_SCAN_FILE_TYPE_UNKNOWN;
+}
+
+MediaGalleryScanFileType MediaPathFilter::GetType(const base::FilePath& path) {
   EnsureInitialized();
-  return std::binary_search(media_file_extensions_.begin(),
-                            media_file_extensions_.end(),
-                            StringToLowerASCII(path.Extension()));
+  MediaFileExtensionMap::const_iterator it =
+      media_file_extensions_map_.find(StringToLowerASCII(path.Extension()));
+  if (it == media_file_extensions_map_.end())
+    return MEDIA_GALLERY_SCAN_FILE_TYPE_UNKNOWN;
+  return static_cast<MediaGalleryScanFileType>(it->second);
 }
 
 void MediaPathFilter::EnsureInitialized() {
@@ -97,26 +165,51 @@ void MediaPathFilter::EnsureInitialized() {
   if (initialized_)
     return;
 
-  // This may require I/O, so doing this in the ctor and removing
-  // |initialized_| would result in a ThreadRestrictions failure.
-  net::GetExtensionsForMimeType("image/*", &media_file_extensions_);
-  net::GetExtensionsForMimeType("audio/*", &media_file_extensions_);
-  net::GetExtensionsForMimeType("video/*", &media_file_extensions_);
-
-  MediaFileExtensionList::iterator new_end =
-      std::remove_if(media_file_extensions_.begin(),
-                     media_file_extensions_.end(),
-                     &IsUnsupportedExtension);
-  media_file_extensions_.erase(new_end, media_file_extensions_.end());
-
-  // Add other common extensions.
-  for (size_t i = 0; i < arraysize(kExtraSupportedExtensions); ++i)
-    media_file_extensions_.push_back(kExtraSupportedExtensions[i]);
-
-  for (MediaFileExtensionList::iterator itr = media_file_extensions_.begin();
-       itr != media_file_extensions_.end(); ++itr)
-    *itr = base::FilePath::kExtensionSeparator + *itr;
-  std::sort(media_file_extensions_.begin(), media_file_extensions_.end());
+  // This may require I/O when it calls net::GetExtensionsForMimeType(), so
+  // doing this in the ctor and removing |initialized_| would result in a
+  // ThreadRestrictions failure.
+  AddExtensionsToMediaFileExtensionMap(GetMediaExtensionList("image/*"),
+                                       MEDIA_GALLERY_SCAN_FILE_TYPE_IMAGE);
+  AddExtensionsToMediaFileExtensionMap(GetMediaExtensionList("audio/*"),
+                                       MEDIA_GALLERY_SCAN_FILE_TYPE_AUDIO);
+  AddExtensionsToMediaFileExtensionMap(GetMediaExtensionList("video/*"),
+                                       MEDIA_GALLERY_SCAN_FILE_TYPE_VIDEO);
+  AddAdditionalExtensionsToMediaFileExtensionMap(
+      kExtraSupportedImageExtensions,
+      arraysize(kExtraSupportedImageExtensions),
+      MEDIA_GALLERY_SCAN_FILE_TYPE_IMAGE);
+  AddAdditionalExtensionsToMediaFileExtensionMap(
+      kExtraSupportedAudioExtensions,
+      arraysize(kExtraSupportedAudioExtensions),
+      MEDIA_GALLERY_SCAN_FILE_TYPE_AUDIO);
+  AddAdditionalExtensionsToMediaFileExtensionMap(
+      kExtraSupportedVideoExtensions,
+      arraysize(kExtraSupportedVideoExtensions),
+      MEDIA_GALLERY_SCAN_FILE_TYPE_VIDEO);
 
   initialized_ = true;
+}
+
+void MediaPathFilter::AddExtensionsToMediaFileExtensionMap(
+    const MediaFileExtensionList& extensions_list,
+    MediaGalleryScanFileType type) {
+  for (size_t i = 0; i < extensions_list.size(); ++i)
+    AddExtensionToMediaFileExtensionMap(extensions_list[i].c_str(), type);
+}
+
+void MediaPathFilter::AddAdditionalExtensionsToMediaFileExtensionMap(
+    const base::FilePath::CharType* const* extensions_list,
+    size_t extensions_list_size,
+    MediaGalleryScanFileType type) {
+  for (size_t i = 0; i < extensions_list_size; ++i)
+    AddExtensionToMediaFileExtensionMap(extensions_list[i], type);
+}
+
+void MediaPathFilter::AddExtensionToMediaFileExtensionMap(
+    const base::FilePath::CharType* extension,
+    MediaGalleryScanFileType type) {
+  base::FilePath::StringType extension_with_sep =
+      base::FilePath::kExtensionSeparator +
+      base::FilePath::StringType(extension);
+  media_file_extensions_map_[extension_with_sep] |= type;
 }

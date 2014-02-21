@@ -10,11 +10,12 @@
 #include "base/logging.h"
 #include "base/nix/xdg_util.h"
 #include "base/stl_util.h"
+#if defined(USE_ALSA)
 #include "media/audio/alsa/audio_manager_alsa.h"
+#endif
 #include "media/audio/audio_parameters.h"
 #include "media/audio/pulse/pulse_input.h"
 #include "media/audio/pulse/pulse_output.h"
-#include "media/audio/pulse/pulse_unified.h"
 #include "media/audio/pulse/pulse_util.h"
 #include "media/base/channel_layout.h"
 
@@ -78,7 +79,9 @@ bool AudioManagerPulse::HasAudioInputDevices() {
 }
 
 void AudioManagerPulse::ShowAudioInputSettings() {
+#if defined(USE_ALSA)
   AudioManagerAlsa::ShowLinuxAudioInputSettings();
+#endif
 }
 
 void AudioManagerPulse::GetAudioDeviceNames(
@@ -129,16 +132,16 @@ AudioParameters AudioManagerPulse::GetInputStreamParameters(
 AudioOutputStream* AudioManagerPulse::MakeLinearOutputStream(
     const AudioParameters& params) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LINEAR, params.format());
-  return MakeOutputStream(params, std::string());
+  return MakeOutputStream(params, AudioManagerBase::kDefaultDeviceId);
 }
 
 AudioOutputStream* AudioManagerPulse::MakeLowLatencyOutputStream(
     const AudioParameters& params,
-    const std::string& device_id,
-    const std::string& input_device_id) {
-  DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
+    const std::string& device_id) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
-  return MakeOutputStream(params, input_device_id);
+  return MakeOutputStream(
+      params,
+      device_id.empty() ? AudioManagerBase::kDefaultDeviceId : device_id);
 }
 
 AudioInputStream* AudioManagerPulse::MakeLinearInputStream(
@@ -181,16 +184,14 @@ AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 AudioOutputStream* AudioManagerPulse::MakeOutputStream(
-    const AudioParameters& params, const std::string& input_device_id) {
-  if (params.input_channels()) {
-    return new PulseAudioUnifiedStream(params, input_device_id, this);
-  }
-
-  return new PulseAudioOutputStream(params, this);
+    const AudioParameters& params,
+    const std::string& device_id) {
+  DCHECK(!device_id.empty());
+  return new PulseAudioOutputStream(params, device_id, this);
 }
 
 AudioInputStream* AudioManagerPulse::MakeInputStream(

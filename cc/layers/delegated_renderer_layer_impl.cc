@@ -100,7 +100,7 @@ void DelegatedRendererLayerImpl::CreateChildIdIfNeeded(
 
 void DelegatedRendererLayerImpl::SetFrameData(
     const DelegatedFrameData* frame_data,
-    gfx::RectF damage_in_frame) {
+    const gfx::RectF& damage_in_frame) {
   DCHECK(child_id_) << "CreateChildIdIfNeeded must be called first.";
   DCHECK(frame_data);
   DCHECK(!frame_data->render_pass_list.empty());
@@ -148,14 +148,14 @@ void DelegatedRendererLayerImpl::SetFrameData(
   gfx::Size frame_size = new_root_pass->output_rect.size();
   gfx::RectF damage_in_layer = MathUtil::MapClippedRect(
       DelegatedFrameToLayerSpaceTransform(frame_size), damage_in_frame);
-  set_update_rect(gfx::IntersectRects(
+  SetUpdateRect(gfx::IntersectRects(
       gfx::UnionRects(update_rect(), damage_in_layer), gfx::Rect(bounds())));
 
   SetRenderPasses(&render_pass_list);
   have_render_passes_to_push_ = true;
 }
 
-void DelegatedRendererLayerImpl::SetDisplaySize(gfx::Size size) {
+void DelegatedRendererLayerImpl::SetDisplaySize(const gfx::Size& size) {
   if (display_size_ == size)
     return;
   display_size_ = size;
@@ -191,13 +191,13 @@ scoped_ptr<LayerImpl> DelegatedRendererLayerImpl::CreateLayerImpl(
       tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void DelegatedRendererLayerImpl::DidLoseOutputSurface() {
+void DelegatedRendererLayerImpl::ReleaseResources() {
   ClearRenderPasses();
   ClearChildId();
 }
 
 gfx::Transform DelegatedRendererLayerImpl::DelegatedFrameToLayerSpaceTransform(
-    gfx::Size frame_size) const {
+    const gfx::Size& frame_size) const {
   gfx::Size display_size = display_size_.IsEmpty() ? bounds() : display_size_;
 
   gfx::Transform delegated_frame_to_layer_space_transform;
@@ -394,7 +394,7 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
     QuadSink* quad_sink,
     AppendQuadsData* append_quads_data,
     const RenderPass* delegated_render_pass,
-    gfx::Size frame_size) const {
+    const gfx::Size& frame_size) const {
 
   const SharedQuadState* delegated_shared_quad_state = NULL;
   SharedQuadState* output_shared_quad_state = NULL;
@@ -423,13 +423,14 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
           DCHECK(!is_clipped());
           DCHECK(render_surface());
           DCHECK_EQ(0, num_unclipped_descendants());
-          output_shared_quad_state->clip_rect = MathUtil::MapClippedRect(
-              delegated_frame_to_target_transform,
-              output_shared_quad_state->clip_rect);
+          output_shared_quad_state->clip_rect =
+              MathUtil::MapEnclosingClippedRect(
+                  delegated_frame_to_target_transform,
+                  output_shared_quad_state->clip_rect);
         } else {
           gfx::Rect clip_rect = drawable_content_rect();
           if (output_shared_quad_state->is_clipped) {
-            clip_rect.Intersect(MathUtil::MapClippedRect(
+            clip_rect.Intersect(MathUtil::MapEnclosingClippedRect(
                 delegated_frame_to_target_transform,
                 output_shared_quad_state->clip_rect));
           }
@@ -484,6 +485,7 @@ void DelegatedRendererLayerImpl::ClearChildId() {
     provider->DestroyChild(child_id_);
   }
 
+  resources_.clear();
   child_id_ = 0;
 }
 

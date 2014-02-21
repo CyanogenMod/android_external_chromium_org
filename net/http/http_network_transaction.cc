@@ -61,7 +61,14 @@
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "url/gurl.h"
 
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+#include <algorithm>
+#include "net/proxy/proxy_server.h"
+#endif
+
+
 using base::Time;
+using base::TimeDelta;
 
 namespace net {
 
@@ -129,6 +136,7 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       fallback_error_code_(ERR_SSL_INAPPROPRIATE_FALLBACK),
       request_headers_(),
       read_buf_len_(0),
+      total_received_bytes_(0),
       next_state_(STATE_NONE),
       establishing_tunnel_(false),
       websocket_handshake_stream_base_create_helper_(NULL) {
@@ -191,7 +199,7 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
       (request_->privacy_mode == kPrivacyModeDisabled);
   server_ssl_config_.channel_id_enabled = channel_id_enabled;
 
-  next_state_ = STATE_CREATE_STREAM;
+  next_state_ = STATE_NOTIFY_BEFORE_CREATE_STREAM;
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
     callback_ = callback;
@@ -300,6 +308,7 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
   DCHECK(!stream_request_.get());
 
   if (stream_.get()) {
+    total_received_bytes_ += stream_->GetTotalReceivedBytes();
     HttpStream* new_stream = NULL;
     if (keep_alive && stream_->IsConnectionReusable()) {
       // We should call connection_->set_idle_time(), but this doesn't occur
@@ -316,6 +325,8 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
       stream_->Close(true);
       next_state_ = STATE_CREATE_STREAM;
     } else {
+      // Renewed streams shouldn't carry over received bytes.
+      DCHECK_EQ(0, new_stream->GetTotalReceivedBytes());
       next_state_ = STATE_INIT_STREAM;
     }
     stream_.reset(new_stream);
@@ -369,12 +380,23 @@ int HttpNetworkTransaction::Read(IOBuffer* buf, int buf_len,
   return rv;
 }
 
+void HttpNetworkTransaction::StopCaching() {}
+
 bool HttpNetworkTransaction::GetFullRequestHeaders(
     HttpRequestHeaders* headers) const {
   // TODO(ttuttle): Make sure we've populated request_headers_.
   *headers = request_headers_;
   return true;
 }
+
+int64 HttpNetworkTransaction::GetTotalReceivedBytes() const {
+  int64 total_received_bytes = total_received_bytes_;
+  if (stream_)
+    total_received_bytes += stream_->GetTotalReceivedBytes();
+  return total_received_bytes;
+}
+
+void HttpNetworkTransaction::DoneReading() {}
 
 const HttpResponseInfo* HttpNetworkTransaction::GetResponseInfo() const {
   return ((headers_valid_ && response_.headers.get()) ||
@@ -387,6 +409,8 @@ LoadState HttpNetworkTransaction::GetLoadState() const {
   // TODO(wtc): Define a new LoadState value for the
   // STATE_INIT_CONNECTION_COMPLETE state, which delays the HTTP request.
   switch (next_state_) {
+    case STATE_CREATE_STREAM:
+      return LOAD_STATE_WAITING_FOR_DELEGATE;
     case STATE_CREATE_STREAM_COMPLETE:
       return stream_request_->GetLoadState();
     case STATE_GENERATE_PROXY_AUTH_TOKEN_COMPLETE:
@@ -409,6 +433,9 @@ UploadProgress HttpNetworkTransaction::GetUploadProgress() const {
   // TODO(bashi): This cast is temporary. Remove later.
   return static_cast<HttpStream*>(stream_.get())->GetUploadProgress();
 }
+
+void HttpNetworkTransaction::SetQuicServerInfo(
+    QuicServerInfo* quic_server_info) {}
 
 bool HttpNetworkTransaction::GetLoadTimingInfo(
     LoadTimingInfo* load_timing_info) const {
@@ -436,12 +463,24 @@ void HttpNetworkTransaction::SetWebSocketHandshakeStreamCreateHelper(
   websocket_handshake_stream_base_create_helper_ = create_helper;
 }
 
+void HttpNetworkTransaction::SetBeforeNetworkStartCallback(
+    const BeforeNetworkStartCallback& callback) {
+  before_network_start_callback_ = callback;
+}
+
+int HttpNetworkTransaction::ResumeNetworkStart() {
+  DCHECK_EQ(next_state_, STATE_CREATE_STREAM);
+  return DoLoop(OK);
+}
+
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
                                            const ProxyInfo& used_proxy_info,
                                            HttpStreamBase* stream) {
   DCHECK_EQ(STATE_CREATE_STREAM_COMPLETE, next_state_);
   DCHECK(stream_request_.get());
 
+  if (stream_)
+    total_received_bytes_ += stream_->GetTotalReceivedBytes();
   stream_.reset(stream);
   server_ssl_config_ = used_ssl_config;
   proxy_info_ = used_proxy_info;
@@ -535,6 +574,8 @@ void HttpNetworkTransaction::OnHttpsProxyTunnelResponse(
   response_ = response_info;
   server_ssl_config_ = used_ssl_config;
   proxy_info_ = used_proxy_info;
+  if (stream_)
+    total_received_bytes_ += stream_->GetTotalReceivedBytes();
   stream_.reset(stream);
   stream_request_.reset();  // we're done with the stream request
   OnIOComplete(ERR_HTTPS_PROXY_TUNNEL_RESPONSE);
@@ -568,6 +609,10 @@ int HttpNetworkTransaction::DoLoop(int result) {
     State state = next_state_;
     next_state_ = STATE_NONE;
     switch (state) {
+      case STATE_NOTIFY_BEFORE_CREATE_STREAM:
+        DCHECK_EQ(OK, rv);
+        rv = DoNotifyBeforeCreateStream();
+        break;
       case STATE_CREATE_STREAM:
         DCHECK_EQ(OK, rv);
         rv = DoCreateStream();
@@ -661,9 +706,18 @@ int HttpNetworkTransaction::DoLoop(int result) {
   return rv;
 }
 
+int HttpNetworkTransaction::DoNotifyBeforeCreateStream() {
+  next_state_ = STATE_CREATE_STREAM;
+  bool defer = false;
+  if (!before_network_start_callback_.is_null())
+    before_network_start_callback_.Run(&defer);
+  if (!defer)
+    return OK;
+  return ERR_IO_PENDING;
+}
+
 int HttpNetworkTransaction::DoCreateStream() {
   next_state_ = STATE_CREATE_STREAM_COMPLETE;
-
   if (ForWebSocketHandshake()) {
     stream_request_.reset(
         session_->http_stream_factory_for_websocket()
@@ -724,6 +778,8 @@ int HttpNetworkTransaction::DoInitStreamComplete(int result) {
       result = HandleIOError(result);
 
     // The stream initialization failed, so this stream will never be useful.
+    if (stream_)
+        total_received_bytes_ += stream_->GetTotalReceivedBytes();
     stream_.reset();
   }
 
@@ -951,7 +1007,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   if (response_.was_fetched_via_proxy && response_.headers.get() != NULL) {
     ProxyService::DataReductionProxyBypassEventType proxy_bypass_event =
         ProxyService::BYPASS_EVENT_TYPE_MAX;
-    base::TimeDelta bypass_duration;
+    net::HttpResponseHeaders::ChromeProxyInfo chrome_proxy_info;
     bool chrome_proxy_used =
         proxy_info_.proxy_server().isDataReductionProxy();
     bool chrome_fallback_proxy_used = false;
@@ -963,15 +1019,17 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
 #endif
 
     if (chrome_proxy_used || chrome_fallback_proxy_used) {
-      if (response_.headers->GetChromeProxyInfo(&bypass_duration)) {
-        proxy_bypass_event =
-            (bypass_duration < base::TimeDelta::FromMinutes(30) ?
-                ProxyService::SHORT_BYPASS :
-                ProxyService::LONG_BYPASS);
+      if (!response_.headers->IsChromeProxyResponse()) {
+        proxy_bypass_event = ProxyService::MISSING_VIA_HEADER;
+      } else if (response_.headers->GetChromeProxyInfo(&chrome_proxy_info)) {
+        if (chrome_proxy_info.bypass_duration < TimeDelta::FromMinutes(30))
+          proxy_bypass_event = ProxyService::SHORT_BYPASS;
+        else
+          proxy_bypass_event = ProxyService::LONG_BYPASS;
       } else {
-        // Additionally, fallback if a 500 or 502 is returned via the data
-        // reduction proxy. This is conservative, as the 500 or 502 might have
-        // been generated by the origin, and not the proxy.
+        // Additionally, fallback if a 500, 502 or 503 is returned via the data
+        // reduction proxy. This is conservative, as the 500, 502 or 503 might
+        // have been generated by the origin, and not the proxy.
         if (response_.headers->response_code() == HTTP_INTERNAL_SERVER_ERROR ||
             response_.headers->response_code() == HTTP_BAD_GATEWAY ||
             response_.headers->response_code() == HTTP_SERVICE_UNAVAILABLE) {
@@ -985,11 +1043,31 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
         proxy_service->RecordDataReductionProxyBypassInfo(
             chrome_proxy_used, proxy_info_.proxy_server(), proxy_bypass_event);
 
-        if (proxy_service->MarkProxyAsBad(proxy_info_, bypass_duration,
-                                          net_log_)) {
-          // Only retry in the case of GETs. We don't want to resubmit a POST
+        ProxyServer proxy_server;
+#if defined(DATA_REDUCTION_FALLBACK_HOST)
+        if (chrome_proxy_used && chrome_proxy_info.bypass_all) {
+          // TODO(bengr): Rename as DATA_REDUCTION_FALLBACK_ORIGIN.
+          GURL proxy_url(DATA_REDUCTION_FALLBACK_HOST);
+          if (proxy_url.SchemeIsHTTPOrHTTPS()) {
+            proxy_server = ProxyServer(proxy_url.SchemeIs("http") ?
+                                           ProxyServer::SCHEME_HTTP :
+                                           ProxyServer::SCHEME_HTTPS,
+                                       HostPortPair::FromURL(proxy_url));
+            }
+        }
+#endif
+        if (proxy_service->MarkProxiesAsBad(proxy_info_,
+                                            chrome_proxy_info.bypass_duration,
+                                            proxy_server,
+                                            net_log_)) {
+          // Only retry idempotent methods. We don't want to resubmit a POST
           // if the proxy took some action.
-          if (request_->method == "GET") {
+          if (request_->method == "GET" ||
+              request_->method == "OPTIONS" ||
+              request_->method == "HEAD" ||
+              request_->method == "PUT" ||
+              request_->method == "DELETE" ||
+              request_->method == "TRACE") {
             ResetConnectionAndRequestForResend();
             return OK;
           }
@@ -997,7 +1075,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
       }
     }
   }
-#endif
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
   // Like Net.HttpResponseCode, but only for MAIN_FRAME loads.
   if (request_->load_flags & LOAD_MAIN_FRAME) {
@@ -1222,6 +1300,7 @@ int HttpNetworkTransaction::HandleCertificateRequest(int error) {
     // Since we already have a stream, we're being called as part of SSL
     // renegotiation.
     DCHECK(!stream_request_.get());
+    total_received_bytes_ += stream_->GetTotalReceivedBytes();
     stream_->Close(true);
     stream_.reset();
   }
@@ -1270,7 +1349,7 @@ void HttpNetworkTransaction::HandleClientAuthError(int error) {
   if (server_ssl_config_.send_client_cert &&
       (error == ERR_SSL_PROTOCOL_ERROR || IsClientCertificateError(error))) {
     session_->ssl_client_auth_cache()->Remove(
-        GetHostAndPort(request_->url));
+        HostPortPair::FromURL(request_->url));
   }
 }
 
@@ -1399,6 +1478,8 @@ int HttpNetworkTransaction::HandleIOError(int error) {
 
 void HttpNetworkTransaction::ResetStateForRestart() {
   ResetStateForAuthRestart();
+  if (stream_)
+    total_received_bytes_ += stream_->GetTotalReceivedBytes();
   stream_.reset();
 }
 
@@ -1522,6 +1603,7 @@ bool HttpNetworkTransaction::ForWebSocketHandshake() const {
 std::string HttpNetworkTransaction::DescribeState(State state) {
   std::string description;
   switch (state) {
+    STATE_CASE(STATE_NOTIFY_BEFORE_CREATE_STREAM);
     STATE_CASE(STATE_CREATE_STREAM);
     STATE_CASE(STATE_CREATE_STREAM_COMPLETE);
     STATE_CASE(STATE_INIT_REQUEST_BODY);

@@ -5,9 +5,6 @@
 #include "mojo/apps/js/bindings/waiting_callback.h"
 
 #include "gin/per_context_data.h"
-#include "gin/per_isolate_data.h"
-
-INIT_WRAPPABLE(mojo::js::WaitingCallback);
 
 namespace mojo {
 namespace js {
@@ -19,6 +16,8 @@ v8::Handle<v8::String> GetHiddenPropertyName(v8::Isolate* isolate) {
 }
 
 }  // namespace
+
+gin::WrapperInfo WaitingCallback::kWrapperInfo = { gin::kEmbedderNativeGin };
 
 WaitingCallback::WaitingCallback(v8::Isolate* isolate,
                                  v8::Handle<v8::Function> callback)
@@ -37,18 +36,13 @@ gin::Handle<WaitingCallback> WaitingCallback::Create(
   return gin::CreateHandle(isolate, new WaitingCallback(isolate, callback));
 }
 
-void WaitingCallback::EnsureRegistered(v8::Isolate* isolate) {
-  gin::PerIsolateData* data = gin::PerIsolateData::From(isolate);
-  if (!data->GetObjectTemplate(&WaitingCallback::kWrapperInfo).IsEmpty()) {
-    return;
-  }
-  v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
-  templ->SetInternalFieldCount(gin::kNumberOfInternalFields);
-  data->SetObjectTemplate(&WaitingCallback::kWrapperInfo, templ);
+// static
+void WaitingCallback::CallOnHandleReady(void* closure, MojoResult result) {
+  static_cast<WaitingCallback*>(closure)->OnHandleReady(result);
 }
 
 void WaitingCallback::OnHandleReady(MojoResult result) {
-  wait_id_ = NULL;
+  wait_id_ = 0;
 
   if (!runner_)
     return;

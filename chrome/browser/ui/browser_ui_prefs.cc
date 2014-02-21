@@ -9,6 +9,7 @@
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/translate/core/common/translate_pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 namespace chrome {
@@ -125,14 +126,6 @@ void RegisterBrowserUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kDevToolsDisabled,
       false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(
-      prefs::kDevToolsHSplitLocation,
-      -1,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterIntegerPref(
-      prefs::kDevToolsVSplitLocation,
-      -1,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterDictionaryPref(
       prefs::kBrowserWindowPlacement,

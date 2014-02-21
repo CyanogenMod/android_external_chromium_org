@@ -66,7 +66,6 @@ cr.define('options', function() {
           this.showAvatarGridOrSubmit_.bind(this);
 
       $('create-new-user-link').onclick = function(event) {
-        OptionsPage.closeOverlay();
         OptionsPage.navigateToPage('createProfile');
       };
     },
@@ -75,7 +74,9 @@ cr.define('options', function() {
      * @override
      */
     didShowPage: function() {
-      chrome.send('requestManagedUserImportUpdate');
+      options.ManagedUserListData.requestExistingManagedUsers().then(
+          this.receiveExistingManagedUsers_, this.onSigninError_.bind(this));
+      options.ManagedUserListData.addObserver(this);
 
       this.updateImportInProgress_(false);
       $('managed-user-import-error-bubble').hidden = true;
@@ -89,6 +90,13 @@ cr.define('options', function() {
           loadTimeData.getString('managedUserImportText');
       $('managed-user-import-title').textContent =
           loadTimeData.getString('managedUserImportTitle');
+    },
+
+    /**
+     * @override
+     */
+    didClosePage: function() {
+      options.ManagedUserListData.removeObserver(this);
     },
 
     /**
@@ -157,8 +165,7 @@ cr.define('options', function() {
     },
 
     /**
-     * Adds all the existing |managedUsers| to the list. If |managedUsers|
-     * is undefined, then the list is cleared.
+     * Sets the data model of the managed user list to |managedUsers|.
      * @param {Array.<Object>} managedUsers An array of managed user objects.
      *     Each object is of the form:
      *       managedUser = {
@@ -171,12 +178,9 @@ cr.define('options', function() {
      * @private
      */
     receiveExistingManagedUsers_: function(managedUsers) {
-      if (!managedUsers) {
-        $('managed-user-list').dataModel = null;
-        return;
-      }
-
       managedUsers.sort(function(a, b) {
+        if (a.onCurrentDevice != b.onCurrentDevice)
+          return a.onCurrentDevice ? 1 : -1;
         return a.name.localeCompare(b.name);
       });
 
@@ -184,14 +188,15 @@ cr.define('options', function() {
       if (managedUsers.length == 0) {
         this.onError_(loadTimeData.getString('noExistingManagedUsers'));
         $('managed-user-import-ok').disabled = true;
+      } else {
+        // Hide the error bubble.
+        $('managed-user-import-error-bubble').hidden = true;
       }
     },
 
-    /**
-     * @private
-     */
-    hideErrorBubble_: function() {
-      $('managed-user-import-error-bubble').hidden = true;
+    onSigninError_: function() {
+      $('managed-user-list').dataModel = null;
+      this.onError_(loadTimeData.getString('managedUserImportSigninError'));
     },
 
     /**
@@ -209,21 +214,21 @@ cr.define('options', function() {
     },
 
     /**
-     * Closes the overlay if importing the managed user was successful.
+     * Closes the overlay if importing the managed user was successful. Also
+     * reset the cached list of managed users in order to get an updated list
+     * when the overlay is reopened.
      * @private
      */
     onSuccess_: function() {
       this.updateImportInProgress_(false);
+      options.ManagedUserListData.resetPromise();
       OptionsPage.closeOverlay();
     },
   };
 
   // Forward public APIs to private implementations.
   [
-    'hideErrorBubble',
-    'onError',
     'onSuccess',
-    'receiveExistingManagedUsers',
   ].forEach(function(name) {
     ManagedUserImportOverlay[name] = function() {
       var instance = ManagedUserImportOverlay.getInstance();

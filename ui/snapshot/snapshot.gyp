@@ -14,6 +14,7 @@
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         '../ui.gyp:ui',
       ],
       'defines': [
@@ -36,6 +37,7 @@
       'conditions': [
         ['use_aura==1', {
           'dependencies': [
+            '../../cc/cc.gyp:cc',
             '../aura/aura.gyp:aura',
             '../compositor/compositor.gyp:compositor',
           ],
@@ -51,6 +53,7 @@
         '../../base/base.gyp:test_support_base',
         '../../testing/gtest.gyp:gtest',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         '../ui.gyp:ui',
         'snapshot'
       ],

@@ -123,7 +123,6 @@ WARNING
 name=http://crbug.com/223255 - prefetches in vp8
 instruction=prefetch*
 ffmpegsumo.dll!ff_prefetch_mmxext
-ffmpegsumo.dll!vp8_decode_mb_row_no_filter
 
 ############################
 # Intentional errors in Chromium tests (ToolsSanityTests)
@@ -202,12 +201,14 @@ base_unittests.exe!base::ToolsSanityTest_SingleElementDeletedWithBraces_Test::Te
 UNINITIALIZED READ
 name=sanity test 14 (malloc/read uninit)
 base_unittests.exe!*ReadUninitializedValue
+...
 base_unittests.exe!*MakeSomeErrors
 base_unittests.exe!base::ToolsSanityTest_AccessesToMallocMemory_Test::TestBody
 
 UNINITIALIZED READ
 name=sanity test 15 (new/read uninit)
 base_unittests.exe!*ReadUninitializedValue
+...
 base_unittests.exe!*MakeSomeErrors
 base_unittests.exe!base::ToolsSanityTest_AccessesToNewMemory_Test::TestBody
 
@@ -230,6 +231,13 @@ name=CrashingChildProcess deliberate crash
 UNADDRESSABLE ACCESS
 name=::Crasher::Run deliberate crash
 *!base::`anonymous namespace'::Crasher::Run
+
+UNADDRESSABLE ACCESS
+name=intentional OOM in layout test: fast/js/string-replacement-outofmemory.html
+*!WebCore::reportFatalErrorInMainThread
+*!v8::internal::V8::FatalProcessOutOfMemory
+...
+*!WebCore::HTMLScriptRunner::executePendingScriptAndDispatchEvent
 
 ############################
 # Benign issues in Chromium
@@ -256,12 +264,8 @@ instruction=mov    0xfffffffc(%esp) -> %eax
 chrome.dll!WebCore::RenderStyle::resetBorder*
 
 INVALID HEAP ARGUMENT
-name=http://crbug.com/101537
-*!scoped_ptr<_TOKEN_USER>*
-
-INVALID HEAP ARGUMENT
-name=http://crbug.com/101717 (1)
-*!scoped_ptr<_TOKEN_DEFAULT_DACL>*
+name=http://crbug.com/101537, http://crbug.com/101717 (1)
+*!scoped_ptr<>*
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101717 (2)
@@ -269,12 +273,12 @@ name=http://crbug.com/101717 (2)
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101717 (3)
-*!scoped_ptr<_UNICODE_STRING>::~scoped_ptr<_UNICODE_STRING>
+*!scoped_ptr<>::~scoped_ptr<>
 *!sandbox::GetHandleName
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101717 (4)
-*!scoped_ptr<_OBJECT_NAME_INFORMATION>::~scoped_ptr<_OBJECT_NAME_INFORMATION>
+*!scoped_ptr<>::~scoped_ptr<>
 *!sandbox::GetPathFromHandle
 
 GDI USAGE ERROR
@@ -359,7 +363,7 @@ name=http://crbug.com/158090
 ...
 content.dll!content::*::FontCache::PreCacheFont
 content.dll!content::FontCacheDispatcher::OnPreCacheFont
-content.dll!DispatchToMethod<content::FontCacheDispatcher*
+content.dll!DispatchToMethod<>
 
 GDI USAGE ERROR
 name=http://crbug.com/158090 c#4
@@ -398,13 +402,13 @@ MSVCR100D.dll!operator new
 *!operator new
 *!operator new[]
 *!`anonymous namespace'::SecurityTest_NewOverflow_Test::TestBody
-*!testing::internal::HandleExceptionsInMethodIfSupported<testing::Test,void>
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
 
 WARNING
 name=Security test (calloc overflow)
 *!`anonymous namespace'::CallocReturnsNull
 *!`anonymous namespace'::SecurityTest_CallocOverflow_Test::TestBody
-*!testing::internal::HandleExceptionsInMethodIfSupported<testing::Test,void>
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
 
 GDI USAGE ERROR
 name=http://crbug.com/234484

@@ -31,7 +31,7 @@ ProxyHandler::~ProxyHandler() {
 }
 
 void ProxyHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   // Proxy page - ChromeOS
@@ -69,7 +69,7 @@ void ProxyHandler::InitializePage() {
   ::options::OptionsPageUIHandler::InitializePage();
 
   bool keyboard_driven_oobe =
-      system::keyboard_settings::ForceKeyboardDrivenUINavigation();
+      system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation();
   if (keyboard_driven_oobe) {
     web_ui()->CallJavascriptFunction(
         "DetailsInternetPage.initializeKeyboardFlow");

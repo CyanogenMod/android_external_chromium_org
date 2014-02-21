@@ -108,6 +108,11 @@ Status ExecuteIsLoading(
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value);
 
+Status ExecuteLaunchApp(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value);
+
 Status ExecuteGetLocation(
     Session* session,
     const base::DictionaryValue& params,
@@ -149,6 +154,16 @@ Status ExecuteGetLog(
     scoped_ptr<base::Value>* value);
 
 Status ExecuteUploadFile(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value);
+
+Status ExecuteIsAutoReporting(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value);
+
+Status ExecuteSetAutoReporting(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value);

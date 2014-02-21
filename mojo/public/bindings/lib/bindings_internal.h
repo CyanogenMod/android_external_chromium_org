@@ -8,8 +8,6 @@
 #include "mojo/public/system/core_cpp.h"
 
 namespace mojo {
-template <typename T, typename U> class TypeConverter {};
-
 namespace internal {
 template <typename T> class Array_Data;
 
@@ -123,6 +121,12 @@ template <> struct TypeTraits<double> {
   static const bool kIsObject = false;
 };
 template <> struct TypeTraits<Handle> {
+  static const bool kIsObject = false;
+};
+template <> struct TypeTraits<DataPipeConsumerHandle> {
+  static const bool kIsObject = false;
+};
+template <> struct TypeTraits<DataPipeProducerHandle> {
   static const bool kIsObject = false;
 };
 template <> struct TypeTraits<MessagePipeHandle> {

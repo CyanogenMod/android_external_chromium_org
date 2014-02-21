@@ -40,6 +40,20 @@ int XKeyEventType(ui::EventType type) {
   }
 }
 
+int XIButtonEventType(ui::EventType type) {
+  switch (type) {
+    case ui::ET_MOUSEWHEEL:
+    case ui::ET_MOUSE_PRESSED:
+      // The button release X events for mouse wheels are dropped by Aura.
+      return XI_ButtonPress;
+    case ui::ET_MOUSE_RELEASED:
+      return XI_ButtonRelease;
+    default:
+      NOTREACHED();
+      return 0;
+  }
+}
+
 // Converts EventType to XButtonEvent type.
 int XButtonEventType(ui::EventType type) {
   switch (type) {
@@ -74,14 +88,12 @@ unsigned int XButtonEventButton(ui::EventType type,
   if (type == ui::ET_MOUSEWHEEL)
     return Button4;
 
-  switch (flags) {
-    case ui::EF_LEFT_MOUSE_BUTTON:
-      return Button1;
-    case ui::EF_MIDDLE_MOUSE_BUTTON:
-      return Button2;
-    case ui::EF_RIGHT_MOUSE_BUTTON:
-      return Button3;
-  }
+  if (flags & ui::EF_LEFT_MOUSE_BUTTON)
+    return Button1;
+  if (flags & ui::EF_MIDDLE_MOUSE_BUTTON)
+    return Button2;
+  if (flags & ui::EF_RIGHT_MOUSE_BUTTON)
+    return Button3;
 
   return 0;
 }
@@ -111,7 +123,11 @@ XEvent* CreateXInput2Event(int deviceid,
   xiev->detail = tracking_id;
   xiev->event_x = location.x();
   xiev->event_y = location.y();
-
+  if (evtype == XI_ButtonPress || evtype == XI_ButtonRelease) {
+    xiev->buttons.mask_len = 8;
+    xiev->buttons.mask = new unsigned char[xiev->buttons.mask_len];
+    memset(xiev->buttons.mask, 0, xiev->buttons.mask_len);
+  }
   return event;
 }
 
@@ -119,15 +135,28 @@ XEvent* CreateXInput2Event(int deviceid,
 
 namespace ui {
 
-ScopedXI2Event::ScopedXI2Event() {}
-ScopedXI2Event::~ScopedXI2Event() {
-  Cleanup();
+// XInput2 events contain additional data that need to be explicitly freed (see
+// |CreateXInput2Event()|.
+void XEventDeleter::operator()(XEvent* event) {
+  if (event->type == GenericEvent) {
+    XIDeviceEvent* xiev =
+        static_cast<XIDeviceEvent*>(event->xcookie.data);
+    if (xiev) {
+      delete[] xiev->valuators.mask;
+      delete[] xiev->valuators.values;
+      delete[] xiev->buttons.mask;
+      delete xiev;
+    }
+  }
+  delete event;
 }
+
+ScopedXI2Event::ScopedXI2Event() {}
+ScopedXI2Event::~ScopedXI2Event() {}
 
 void ScopedXI2Event::InitKeyEvent(EventType type,
                                   KeyboardCode key_code,
                                   int flags) {
-  Cleanup();
   XDisplay* display = gfx::GetXDisplay();
   event_.reset(new XEvent);
   memset(event_.get(), 0, sizeof(XEvent));
@@ -149,9 +178,19 @@ void ScopedXI2Event::InitKeyEvent(EventType type,
   event_->xkey.same_screen = 1;
 }
 
+void ScopedXI2Event::InitGenericButtonEvent(int deviceid,
+                                            EventType type,
+                                            int flags) {
+  event_.reset(CreateXInput2Event(deviceid,
+                                  XIButtonEventType(type), 0, gfx::Point()));
+  XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(event_->xcookie.data);
+  xievent->mods.effective = XEventState(flags);
+  xievent->detail = XButtonEventButton(type, flags);
+  XISetMask(xievent->buttons.mask, xievent->detail);
+}
+
 void ScopedXI2Event::InitButtonEvent(EventType type,
                                      int flags) {
-  Cleanup();
   event_.reset(new XEvent);
   memset(event_.get(), 0, sizeof(XEvent));
   event_->type = XButtonEventType(type);
@@ -186,7 +225,6 @@ void ScopedXI2Event::InitScrollEvent(int deviceid,
                                      int x_offset_ordinal,
                                      int y_offset_ordinal,
                                      int finger_count) {
-  Cleanup();
   event_.reset(CreateXInput2Event(deviceid, XI_Motion, 0, gfx::Point()));
 
   Valuator valuators[] = {
@@ -206,7 +244,6 @@ void ScopedXI2Event::InitFlingScrollEvent(int deviceid,
                                           int x_velocity_ordinal,
                                           int y_velocity_ordinal,
                                           bool is_cancel) {
-  Cleanup();
   event_.reset(CreateXInput2Event(deviceid, XI_Motion, deviceid, gfx::Point()));
 
   Valuator valuators[] = {
@@ -226,22 +263,8 @@ void ScopedXI2Event::InitTouchEvent(int deviceid,
                                     int tracking_id,
                                     const gfx::Point& location,
                                     const std::vector<Valuator>& valuators) {
-  Cleanup();
   event_.reset(CreateXInput2Event(deviceid, evtype, tracking_id, location));
   SetUpValuators(valuators);
-}
-
-void ScopedXI2Event::Cleanup() {
-  if (event_.get() && event_->type == GenericEvent) {
-    XIDeviceEvent* xiev =
-        static_cast<XIDeviceEvent*>(event_->xcookie.data);
-    if (xiev) {
-      delete[] xiev->valuators.mask;
-      delete[] xiev->valuators.values;
-      delete xiev;
-    }
-  }
-  event_.reset();
 }
 
 void ScopedXI2Event::SetUpValuators(const std::vector<Valuator>& valuators) {

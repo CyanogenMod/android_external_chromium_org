@@ -20,6 +20,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using base::ASCIIToUTF16;
 using base::DictionaryValue;
 
 namespace extensions {
@@ -93,7 +94,7 @@ bool BackgroundInfo::HasLazyBackgroundPage(const Extension* extension) {
   return GetBackgroundInfo(extension).has_lazy_background_page();
 }
 
-bool BackgroundInfo::Parse(const Extension* extension, string16* error) {
+bool BackgroundInfo::Parse(const Extension* extension, base::string16* error) {
   const std::string& bg_scripts_key = extension->is_platform_app() ?
       keys::kPlatformAppBackgroundScripts : keys::kBackgroundScripts;
   if (!LoadBackgroundScripts(extension, bg_scripts_key, error) ||
@@ -107,7 +108,7 @@ bool BackgroundInfo::Parse(const Extension* extension, string16* error) {
 
 bool BackgroundInfo::LoadBackgroundScripts(const Extension* extension,
                                            const std::string& key,
-                                           string16* error) {
+                                           base::string16* error) {
   const base::Value* background_scripts_value = NULL;
   if (!extension->manifest()->Get(key, &background_scripts_value))
     return true;
@@ -135,7 +136,7 @@ bool BackgroundInfo::LoadBackgroundScripts(const Extension* extension,
 
 bool BackgroundInfo::LoadBackgroundPage(const Extension* extension,
                                         const std::string& key,
-                                        string16* error) {
+                                        base::string16* error) {
   const base::Value* background_page_value = NULL;
   if (!extension->manifest()->Get(key, &background_page_value))
     return true;
@@ -180,7 +181,7 @@ bool BackgroundInfo::LoadBackgroundPage(const Extension* extension,
 }
 
 bool BackgroundInfo::LoadBackgroundPage(const Extension* extension,
-                                        string16* error) {
+                                        base::string16* error) {
   if (extension->is_platform_app()) {
     return LoadBackgroundPage(
         extension, keys::kPlatformAppBackgroundPage, error);
@@ -194,7 +195,7 @@ bool BackgroundInfo::LoadBackgroundPage(const Extension* extension,
 }
 
 bool BackgroundInfo::LoadBackgroundPersistent(const Extension* extension,
-                                              string16* error) {
+                                              base::string16* error) {
   if (extension->is_platform_app()) {
     is_persistent_ = false;
     return true;
@@ -219,7 +220,7 @@ bool BackgroundInfo::LoadBackgroundPersistent(const Extension* extension,
 }
 
 bool BackgroundInfo::LoadAllowJSAccess(const Extension* extension,
-                                       string16* error) {
+                                       base::string16* error) {
   const base::Value* allow_js_access = NULL;
   if (!extension->manifest()->Get(keys::kBackgroundAllowJsAccess,
                                   &allow_js_access))
@@ -240,7 +241,8 @@ BackgroundManifestHandler::BackgroundManifestHandler() {
 BackgroundManifestHandler::~BackgroundManifestHandler() {
 }
 
-bool BackgroundManifestHandler::Parse(Extension* extension, string16* error) {
+bool BackgroundManifestHandler::Parse(Extension* extension,
+                                      base::string16* error) {
   scoped_ptr<BackgroundInfo> info(new BackgroundInfo);
   if (!info->Parse(extension, error))
     return false;
@@ -274,7 +276,7 @@ bool BackgroundManifestHandler::Validate(
             extension->GetResource(background_scripts[i]).GetFilePath())) {
       *error = l10n_util::GetStringFUTF8(
           IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
-          UTF8ToUTF16(background_scripts[i]));
+          base::UTF8ToUTF16(background_scripts[i]));
       return false;
     }
   }

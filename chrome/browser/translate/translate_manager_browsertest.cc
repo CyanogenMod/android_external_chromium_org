@@ -19,10 +19,8 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
-#include "chrome/browser/translate/translate_language_list.h"
 #include "chrome/browser/translate/translate_manager.h"
-#include "chrome/browser/translate/translate_prefs.h"
-#include "chrome/browser/translate/translate_script.h"
+#include "chrome/browser/translate/translate_service.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -32,13 +30,19 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/translate/core/browser/translate_accept_languages.h"
+#include "components/translate/core/browser/translate_download_manager.h"
+#include "components/translate/core/browser/translate_language_list.h"
+#include "components/translate/core/browser/translate_prefs.h"
+#include "components/translate/core/browser/translate_script.h"
+#include "components/translate/core/common/language_detection_details.h"
+#include "components/translate/core/common/translate_pref_names.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -176,7 +180,8 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
   }
 
   void ExpireTranslateScriptImmediately() {
-    TranslateManager::GetInstance()->SetTranslateScriptExpirationDelay(0);
+    TranslateDownloadManager::GetInstance()->SetTranslateScriptExpirationDelay(
+        0);
   }
 
   // If there is 1 infobar and it is a translate infobar, deny translation and
@@ -233,10 +238,13 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
     // WebContents second).  Also clears the translate script so it is fetched
     // everytime and sets the expiration delay to a large value by default (in
     // case it was zeroed in a previous test).
-    TranslateManager::GetInstance()->ClearTranslateScript();
-    TranslateManager::GetInstance()->
-        SetTranslateScriptExpirationDelay(60 * 60 * 1000);
+    TranslateService::Initialize();
+    TranslateDownloadManager* download_manager =
+        TranslateDownloadManager::GetInstance();
+    download_manager->ClearTranslateScriptForTesting();
+    download_manager->SetTranslateScriptExpirationDelay(60 * 60 * 1000);
     TranslateManager::GetInstance()->set_translate_max_reload_attemps(0);
+    TranslateService::SetUseInfobar(true);
 
     ChromeRenderViewHostTestHarness::SetUp();
     InfoBarService::CreateForWebContents(web_contents());
@@ -256,6 +264,12 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
 
     ChromeRenderViewHostTestHarness::TearDown();
     TestingBrowserProcess::DeleteInstance();
+  }
+
+  void SetApplicationLocale(const std::string& locale) {
+    g_browser_process->SetApplicationLocale(locale);
+    TranslateDownloadManager::GetInstance()->set_application_locale(
+        g_browser_process->GetApplicationLocale());
   }
 
   void SimulateTranslateScriptURLFetch(bool success) {
@@ -340,29 +354,27 @@ class MockTranslateBubbleFactory : public TranslateBubbleFactory {
   MockTranslateBubbleFactory() {
   }
 
-  virtual void ShowImplementation(
-      BrowserWindow* window,
-      content::WebContents* web_contents,
-      TranslateBubbleModel::ViewState view_state,
-      TranslateErrors::Type error_type) OVERRIDE {
+  virtual void ShowImplementation(BrowserWindow* window,
+                                  content::WebContents* web_contents,
+                                  TranslateTabHelper::TranslateStep step,
+                                  TranslateErrors::Type error_type) OVERRIDE {
     if (model_) {
-      model_->SetViewState(view_state);
+      model_->SetViewState(
+          TranslateBubbleModelImpl::TranslateStepToViewState(step));
       return;
     }
 
     TranslateTabHelper* translate_tab_helper =
         TranslateTabHelper::FromWebContents(web_contents);
     std::string source_language =
-        translate_tab_helper->language_state().original_language();
-    std::string target_language = TranslateManager::GetLanguageCode(
+        translate_tab_helper->GetLanguageState().original_language();
+    std::string target_language = TranslateDownloadManager::GetLanguageCode(
         g_browser_process->GetApplicationLocale());
     scoped_ptr<TranslateUIDelegate> ui_delegate(
         new TranslateUIDelegate(web_contents,
                                 source_language,
-                                target_language,
-                                error_type));
-    model_.reset(
-        new TranslateBubbleModelImpl(view_state, ui_delegate.Pass()));
+                                target_language));
+    model_.reset(new TranslateBubbleModelImpl(step, ui_delegate.Pass()));
   }
 
   TranslateBubbleModel* model() { return model_.get(); }
@@ -394,7 +406,7 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
     params.writing_direction_right_to_left = 0;
 #endif  // OS_MACOSX
     params.edit_flags = blink::WebContextMenuData::CanTranslate;
-    return new TestRenderViewContextMenu(web_contents, params);
+    return new TestRenderViewContextMenu(web_contents->GetMainFrame(), params);
   }
 
   bool IsItemPresent(int id) {
@@ -408,9 +420,9 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
       ui::Accelerator* accelerator) OVERRIDE { return false; }
 
  private:
-  TestRenderViewContextMenu(content::WebContents* web_contents,
+  TestRenderViewContextMenu(content::RenderFrameHost* render_frame_host,
                             const content::ContextMenuParams& params)
-      : RenderViewContextMenu(web_contents, params) {
+      : RenderViewContextMenu(render_frame_host, params) {
   }
 
   DISALLOW_COPY_AND_ASSIGN(TestRenderViewContextMenu);
@@ -424,8 +436,7 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   // We should have an infobar.
   TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, infobar->translate_step());
 
   // Simulate clicking translate.
   process()->sink().ClearMessages();
@@ -434,7 +445,7 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   // The "Translating..." infobar should be showing.
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATING, infobar->translate_step());
 
   // Simulate the translate script being retrieved (it only needs to be done
   // once in the test as it is cached).
@@ -453,7 +464,7 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   // The after translate infobar should be showing.
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::AFTER_TRANSLATE, infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::AFTER_TRANSLATE, infobar->translate_step());
 
   // Simulate changing the original language and translating.
   process()->sink().ClearMessages();
@@ -486,14 +497,13 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   ReloadAndWait(true);
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, infobar->translate_step());
   infobar->UpdateTargetLanguageIndex(1);
   infobar->ToggleAlwaysTranslate();
   ReloadAndWait(true);
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATING, infobar->translate_step());
   EXPECT_EQ(new_target_lang, infobar->target_language_code());
 }
 
@@ -503,8 +513,7 @@ TEST_F(TranslateManagerBrowserTest, TranslateScriptNotAvailable) {
   // We should have an infobar.
   TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, infobar->translate_step());
 
   // Simulate clicking translate.
   process()->sink().ClearMessages();
@@ -517,8 +526,7 @@ TEST_F(TranslateManagerBrowserTest, TranslateScriptNotAvailable) {
   // And we should have an error infobar showing.
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATION_ERROR,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATE_ERROR, infobar->translate_step());
 }
 
 // Ensures we deal correctly with pages for which the browser does not recognize
@@ -542,8 +550,7 @@ TEST_F(TranslateManagerBrowserTest, TranslateUnknownLanguage) {
   SimulateTranslateScriptURLFetch(false);
   TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATION_ERROR,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATE_ERROR, infobar->translate_step());
   EXPECT_TRUE(infobar->is_error());
   infobar->MessageInfoBarButtonPressed();
   SimulateTranslateScriptURLFetch(true);  // This time succeed.
@@ -555,7 +562,7 @@ TEST_F(TranslateManagerBrowserTest, TranslateUnknownLanguage) {
   // The after translate infobar should be showing.
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::AFTER_TRANSLATE, infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::AFTER_TRANSLATE, infobar->translate_step());
   EXPECT_EQ("fr", infobar->original_language_code());
   EXPECT_EQ("en", infobar->target_language_code());
 
@@ -568,8 +575,7 @@ TEST_F(TranslateManagerBrowserTest, TranslateUnknownLanguage) {
   SimulateOnPageTranslated(1, "en", "en", TranslateErrors::IDENTICAL_LANGUAGES);
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATION_ERROR,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATE_ERROR, infobar->translate_step());
   EXPECT_EQ(TranslateErrors::IDENTICAL_LANGUAGES, infobar->error_type());
 
   // Let's run the same steps again but this time the server fails to detect the
@@ -582,8 +588,7 @@ TEST_F(TranslateManagerBrowserTest, TranslateUnknownLanguage) {
                            TranslateErrors::UNKNOWN_LANGUAGE);
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATION_ERROR,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATE_ERROR, infobar->translate_step());
   EXPECT_EQ(TranslateErrors::UNKNOWN_LANGUAGE, infobar->error_type());
 }
 
@@ -613,8 +618,8 @@ TEST_F(TranslateManagerBrowserTest, TestLanguages) {
 
     // Verify we have/don't have an info-bar as expected.
     infobar = GetTranslateInfoBar();
-    bool expected = TranslateManager::IsSupportedLanguage(lang) &&
-        lang != "en";
+    bool expected =
+        TranslateDownloadManager::IsSupportedLanguage(lang) && lang != "en";
     EXPECT_EQ(expected, infobar != NULL);
 
     if (infobar != NULL)
@@ -642,27 +647,27 @@ TEST_F(TranslateManagerBrowserTest, FetchLanguagesFromTranslateServer) {
   // First, get the default languages list. Note that calling
   // GetSupportedLanguages() invokes RequestLanguageList() internally.
   std::vector<std::string> default_supported_languages;
-  TranslateManager::GetSupportedLanguages(&default_supported_languages);
+  TranslateDownloadManager::GetSupportedLanguages(&default_supported_languages);
   // To make sure we got the defaults and don't confuse them with the mocks.
   ASSERT_NE(default_supported_languages.size(), server_languages.size());
 
   // Check that we still get the defaults until the URLFetch has completed.
   std::vector<std::string> current_supported_languages;
-  TranslateManager::GetSupportedLanguages(&current_supported_languages);
+  TranslateDownloadManager::GetSupportedLanguages(&current_supported_languages);
   EXPECT_EQ(default_supported_languages, current_supported_languages);
 
   // Also check that it didn't change if we failed the URL fetch.
   SimulateSupportedLanguagesURLFetch(false, std::vector<std::string>(),
                                      true, std::vector<std::string>());
   current_supported_languages.clear();
-  TranslateManager::GetSupportedLanguages(&current_supported_languages);
+  TranslateDownloadManager::GetSupportedLanguages(&current_supported_languages);
   EXPECT_EQ(default_supported_languages, current_supported_languages);
 
   // Now check that we got the appropriate set of languages from the server.
   SimulateSupportedLanguagesURLFetch(true, server_languages,
                                      true, alpha_languages);
   current_supported_languages.clear();
-  TranslateManager::GetSupportedLanguages(&current_supported_languages);
+  TranslateDownloadManager::GetSupportedLanguages(&current_supported_languages);
   // "xx" can't be displayed in the Translate inforbar, so this is eliminated.
   EXPECT_EQ(server_languages.size() - 1, current_supported_languages.size());
   // Not sure we need to guarantee the order of languages, so we find them.
@@ -677,7 +682,7 @@ TEST_F(TranslateManagerBrowserTest, FetchLanguagesFromTranslateServer) {
     bool is_alpha = std::find(alpha_languages.begin(),
                               alpha_languages.end(),
                               lang) != alpha_languages.end();
-    EXPECT_EQ(TranslateManager::IsAlphaLanguage(lang), is_alpha);
+    EXPECT_EQ(TranslateDownloadManager::IsAlphaLanguage(lang), is_alpha);
   }
 }
 
@@ -701,13 +706,13 @@ TEST_F(TranslateManagerBrowserTest,
 
   // call GetSupportedLanguages to call RequestLanguageList internally.
   std::vector<std::string> default_supported_languages;
-  TranslateManager::GetSupportedLanguages(&default_supported_languages);
+  TranslateDownloadManager::GetSupportedLanguages(&default_supported_languages);
 
   SimulateSupportedLanguagesURLFetch(true, server_languages,
                                      false, alpha_languages);
 
   std::vector<std::string> current_supported_languages;
-  TranslateManager::GetSupportedLanguages(&current_supported_languages);
+  TranslateDownloadManager::GetSupportedLanguages(&current_supported_languages);
 
   // "xx" can't be displayed in the Translate inforbar, so this is eliminated.
   EXPECT_EQ(server_languages.size() - 1, current_supported_languages.size());
@@ -720,7 +725,7 @@ TEST_F(TranslateManagerBrowserTest,
               std::find(current_supported_languages.begin(),
                         current_supported_languages.end(),
                         lang));
-    EXPECT_FALSE(TranslateManager::IsAlphaLanguage(lang));
+    EXPECT_FALSE(TranslateDownloadManager::IsAlphaLanguage(lang));
   }
 }
 
@@ -962,8 +967,7 @@ TEST_F(TranslateManagerBrowserTest, ServerReportsUnsupportedLanguage) {
   // language.
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATION_ERROR,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATE_ERROR, infobar->translate_step());
 
   // This infobar should have a button (so the string should not be empty).
   ASSERT_FALSE(infobar->GetMessageInfoBarButtonText().empty());
@@ -983,7 +987,7 @@ TEST_F(TranslateManagerBrowserTest, ServerReportsUnsupportedLanguage) {
 // Chrome is in a language that the translate server does not support.
 TEST_F(TranslateManagerBrowserTest, UnsupportedUILanguage) {
   std::string original_lang = g_browser_process->GetApplicationLocale();
-  g_browser_process->SetApplicationLocale("qbz");
+  SetApplicationLocale("qbz");
 
   // Make sure that the accept language list only contains unsupported languages
   Profile* profile =
@@ -1005,14 +1009,14 @@ TEST_F(TranslateManagerBrowserTest, UnsupportedUILanguage) {
   EXPECT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_TRANSLATE));
   EXPECT_FALSE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_TRANSLATE));
 
-  g_browser_process->SetApplicationLocale(original_lang);
+  SetApplicationLocale(original_lang);
 }
 
 // Tests that the first supported accept language is selected
 TEST_F(TranslateManagerBrowserTest, TranslateAcceptLanguage) {
   // Set locate to non-existant language
   std::string original_lang = g_browser_process->GetApplicationLocale();
-  g_browser_process->SetApplicationLocale("qbz");
+  SetApplicationLocale("qbz");
 
   // Set Qbz and French as the only accepted languages
   Profile* profile =
@@ -1084,14 +1088,17 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
   registrar.Init(prefs);
   registrar.Add(TranslatePrefs::kPrefTranslateBlockedLanguages,
                 pref_callback_);
-  TranslatePrefs translate_prefs(prefs);
-  EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
-  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
+  scoped_ptr<TranslatePrefs> translate_prefs(
+      TranslateTabHelper::CreateTranslatePrefs(prefs));
+  EXPECT_FALSE(translate_prefs->IsBlockedLanguage("fr"));
+  TranslateAcceptLanguages* accept_languages =
+      TranslateTabHelper::GetTranslateAcceptLanguages(profile);
+  EXPECT_TRUE(translate_prefs->CanTranslateLanguage(accept_languages, "fr"));
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateBlockedLanguages);
-  translate_prefs.BlockLanguage("fr");
-  EXPECT_TRUE(translate_prefs.IsBlockedLanguage("fr"));
-  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
-  EXPECT_FALSE(translate_prefs.CanTranslateLanguage(profile, "fr"));
+  translate_prefs->BlockLanguage("fr");
+  EXPECT_TRUE(translate_prefs->IsBlockedLanguage("fr"));
+  EXPECT_FALSE(translate_prefs->IsSiteBlacklisted(url.host()));
+  EXPECT_FALSE(translate_prefs->CanTranslateLanguage(accept_languages, "fr"));
 
   EXPECT_TRUE(CloseTranslateInfoBar());
 
@@ -1103,10 +1110,10 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
 
   // Remove the language from the blacklist.
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateBlockedLanguages);
-  translate_prefs.UnblockLanguage("fr");
-  EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
-  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
-  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
+  translate_prefs->UnblockLanguage("fr");
+  EXPECT_FALSE(translate_prefs->IsBlockedLanguage("fr"));
+  EXPECT_FALSE(translate_prefs->IsSiteBlacklisted(url.host()));
+  EXPECT_TRUE(translate_prefs->CanTranslateLanguage(accept_languages, "fr"));
 
   // Navigate to a page in French.
   SimulateNavigation(url, "fr", true);
@@ -1131,13 +1138,16 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateSitePref) {
   PrefChangeRegistrar registrar;
   registrar.Init(prefs);
   registrar.Add(TranslatePrefs::kPrefTranslateSiteBlacklist, pref_callback_);
-  TranslatePrefs translate_prefs(prefs);
-  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(host));
-  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
+  scoped_ptr<TranslatePrefs> translate_prefs(
+      TranslateTabHelper::CreateTranslatePrefs(prefs));
+  EXPECT_FALSE(translate_prefs->IsSiteBlacklisted(host));
+  TranslateAcceptLanguages* accept_languages =
+      TranslateTabHelper::GetTranslateAcceptLanguages(profile);
+  EXPECT_TRUE(translate_prefs->CanTranslateLanguage(accept_languages, "fr"));
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateSiteBlacklist);
-  translate_prefs.BlacklistSite(host);
-  EXPECT_TRUE(translate_prefs.IsSiteBlacklisted(host));
-  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
+  translate_prefs->BlacklistSite(host);
+  EXPECT_TRUE(translate_prefs->IsSiteBlacklisted(host));
+  EXPECT_TRUE(translate_prefs->CanTranslateLanguage(accept_languages, "fr"));
 
   EXPECT_TRUE(CloseTranslateInfoBar());
 
@@ -1149,9 +1159,9 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateSitePref) {
 
   // Remove the site from the blacklist.
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateSiteBlacklist);
-  translate_prefs.RemoveSiteFromBlacklist(host);
-  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(host));
-  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
+  translate_prefs->RemoveSiteFromBlacklist(host);
+  EXPECT_FALSE(translate_prefs->IsSiteBlacklisted(host));
+  EXPECT_TRUE(translate_prefs->CanTranslateLanguage(accept_languages, "fr"));
 
   // Navigate to a page in French.
   SimulateNavigation(url, "fr", true);
@@ -1169,9 +1179,10 @@ TEST_F(TranslateManagerBrowserTest, AlwaysTranslateLanguagePref) {
   PrefChangeRegistrar registrar;
   registrar.Init(prefs);
   registrar.Add(TranslatePrefs::kPrefTranslateWhitelists, pref_callback_);
-  TranslatePrefs translate_prefs(prefs);
+  scoped_ptr<TranslatePrefs> translate_prefs(
+      TranslateTabHelper::CreateTranslatePrefs(prefs));
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateWhitelists);
-  translate_prefs.WhitelistLanguagePair("fr", "en");
+  translate_prefs->WhitelistLanguagePair("fr", "en");
 
   // Load a page in French.
   SimulateNavigation(GURL("http://www.google.fr"), "fr", true);
@@ -1181,7 +1192,7 @@ TEST_F(TranslateManagerBrowserTest, AlwaysTranslateLanguagePref) {
   // The translating infobar should be showing.
   TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATING, infobar->translate_step());
   SimulateTranslateScriptURLFetch(true);
   int page_id = 0;
   std::string original_lang, target_lang;
@@ -1210,13 +1221,12 @@ TEST_F(TranslateManagerBrowserTest, AlwaysTranslateLanguagePref) {
   // Now revert the always translate pref and make sure we go back to expected
   // behavior, which is show a "before translate" infobar.
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateWhitelists);
-  translate_prefs.RemoveLanguagePairFromWhitelist("fr", "en");
+  translate_prefs->RemoveLanguagePairFromWhitelist("fr", "en");
   SimulateNavigation(GURL("http://www.google.fr"), "fr", true);
   EXPECT_FALSE(GetTranslateMessage(&page_id, &original_lang, &target_lang));
   infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, infobar->translate_step());
 }
 
 // Context menu.
@@ -1225,11 +1235,12 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
   GURL url("http://www.google.fr");
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-  TranslatePrefs translate_prefs(profile->GetPrefs());
-  translate_prefs.BlockLanguage("fr");
-  translate_prefs.BlacklistSite(url.host());
-  EXPECT_TRUE(translate_prefs.IsBlockedLanguage("fr"));
-  EXPECT_TRUE(translate_prefs.IsSiteBlacklisted(url.host()));
+  scoped_ptr<TranslatePrefs> translate_prefs(
+      TranslateTabHelper::CreateTranslatePrefs(profile->GetPrefs()));
+  translate_prefs->BlockLanguage("fr");
+  translate_prefs->BlacklistSite(url.host());
+  EXPECT_TRUE(translate_prefs->IsBlockedLanguage("fr"));
+  EXPECT_TRUE(translate_prefs->IsSiteBlacklisted(url.host()));
 
   // Simulate navigating to a page in French. The translate menu should show but
   // should only be enabled when the page language has been received.
@@ -1254,7 +1265,7 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
   // The "translating..." infobar should be showing.
   TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
   ASSERT_TRUE(infobar != NULL);
-  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::TRANSLATING, infobar->translate_step());
   SimulateTranslateScriptURLFetch(true);
   int page_id = 0;
   std::string original_lang, target_lang;
@@ -1264,8 +1275,8 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
   process()->sink().ClearMessages();
 
   // This should also have reverted the blacklisting of this site and language.
-  EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
-  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
+  EXPECT_FALSE(translate_prefs->IsBlockedLanguage("fr"));
+  EXPECT_FALSE(translate_prefs->IsSiteBlacklisted(url.host()));
 
   // Let's simulate the page being translated.
   SimulateOnPageTranslated("fr", "en");
@@ -1331,11 +1342,12 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
 TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-  TranslatePrefs translate_prefs(profile->GetPrefs());
-  translate_prefs.ResetTranslationAcceptedCount("fr");
-  translate_prefs.ResetTranslationDeniedCount("fr");
-  translate_prefs.ResetTranslationAcceptedCount("de");
-  translate_prefs.ResetTranslationDeniedCount("de");
+  scoped_ptr<TranslatePrefs> translate_prefs(
+      TranslateTabHelper::CreateTranslatePrefs(profile->GetPrefs()));
+  translate_prefs->ResetTranslationAcceptedCount("fr");
+  translate_prefs->ResetTranslationDeniedCount("fr");
+  translate_prefs->ResetTranslationAcceptedCount("de");
+  translate_prefs->ResetTranslationDeniedCount("de");
 
   // We'll do 4 times in incognito mode first to make sure the button is not
   // shown in that case, then 4 times in normal mode.
@@ -1352,8 +1364,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
     SimulateNavigation(GURL("http://www.google.fr"), "fr", true);
     infobar = GetTranslateInfoBar();
     ASSERT_TRUE(infobar != NULL);
-    EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-              infobar->infobar_type());
+    EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, infobar->translate_step());
     if (i < 7) {
       EXPECT_FALSE(infobar->ShouldShowAlwaysTranslateShortcut());
       infobar->Translate();
@@ -1366,7 +1377,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
   }
   // Simulate the user pressing "Always translate French".
   infobar->AlwaysTranslatePageLanguage();
-  EXPECT_TRUE(translate_prefs.IsLanguagePairWhitelisted("fr", "en"));
+  EXPECT_TRUE(translate_prefs->IsLanguagePairWhitelisted("fr", "en"));
   // Simulate the translate script being retrieved (it only needs to be done
   // once in the test as it is cached).
   SimulateTranslateScriptURLFetch(true);
@@ -1385,8 +1396,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
     SimulateNavigation(GURL("http://www.google.de"), "de", true);
     infobar = GetTranslateInfoBar();
     ASSERT_TRUE(infobar != NULL);
-    EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-              infobar->infobar_type());
+    EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, infobar->translate_step());
     if (i < 7) {
       EXPECT_FALSE(infobar->ShouldShowNeverTranslateShortcut());
       infobar->TranslationDeclined();
@@ -1398,7 +1408,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
   }
   // Simulate the user pressing "Never translate French".
   infobar->NeverTranslatePageLanguage();
-  EXPECT_TRUE(translate_prefs.IsBlockedLanguage("de"));
+  EXPECT_TRUE(translate_prefs->IsBlockedLanguage("de"));
   // No translation should have occured and the infobar should be gone.
   EXPECT_FALSE(GetTranslateMessage(&page_id, &original_lang, &target_lang));
   process()->sink().ClearMessages();
@@ -1464,12 +1474,11 @@ TEST_F(TranslateManagerBrowserTest, DownloadsAndHistoryNotTranslated) {
       GURL(chrome::kChromeUIHistoryURL)));
 }
 
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#if defined(USE_AURA)
 
 TEST_F(TranslateManagerBrowserTest, BubbleNormalTranslate) {
   // Prepare for the bubble
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  command_line->AppendSwitch(switches::kEnableTranslateNewUX);
+  TranslateService::SetUseInfobar(false);
   MockTranslateBubbleFactory* factory = new MockTranslateBubbleFactory;
   scoped_ptr<TranslateBubbleFactory> factory_ptr(factory);
   TranslateBubbleFactory::SetFactory(factory);
@@ -1510,8 +1519,7 @@ TEST_F(TranslateManagerBrowserTest, BubbleNormalTranslate) {
 
 TEST_F(TranslateManagerBrowserTest, BubbleTranslateScriptNotAvailable) {
   // Prepare for the bubble
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  command_line->AppendSwitch(switches::kEnableTranslateNewUX);
+  TranslateService::SetUseInfobar(false);
   MockTranslateBubbleFactory* factory = new MockTranslateBubbleFactory;
   scoped_ptr<TranslateBubbleFactory> factory_ptr(factory);
   TranslateBubbleFactory::SetFactory(factory);
@@ -1543,8 +1551,7 @@ TEST_F(TranslateManagerBrowserTest, BubbleTranslateScriptNotAvailable) {
 
 TEST_F(TranslateManagerBrowserTest, BubbleUnknownLanguage) {
   // Prepare for the bubble
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  command_line->AppendSwitch(switches::kEnableTranslateNewUX);
+  TranslateService::SetUseInfobar(false);
   MockTranslateBubbleFactory* factory = new MockTranslateBubbleFactory;
   scoped_ptr<TranslateBubbleFactory> factory_ptr(factory);
   TranslateBubbleFactory::SetFactory(factory);
@@ -1571,7 +1578,7 @@ TEST_F(TranslateManagerBrowserTest, BubbleUnknownLanguage) {
             bubble->GetViewState());
 }
 
-#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+#endif  // defined(USE_AURA)
 
 // Test is flaky on Win http://crbug.com/166334
 #if defined(OS_WIN)
@@ -1605,7 +1612,7 @@ IN_PROC_BROWSER_TEST_F(InProcessBrowserTest,
   EXPECT_TRUE(fr_language_detected_signal.GetDetailsFor(
         source.map_key(), &details));
   EXPECT_EQ("fr", details.adopted_language);
-  EXPECT_EQ("fr", translate_tab_helper->language_state().original_language());
+  EXPECT_EQ("fr", translate_tab_helper->GetLanguageState().original_language());
 }
 
 #if defined (OS_WIN)

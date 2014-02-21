@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/callback_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
@@ -19,9 +20,11 @@
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chromeos/chromeos_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/task_util.h"
 #include "net/base/mime_sniffer.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "third_party/cros_system_api/constants/cryptohome.h"
 
 using content::BrowserThread;
 
@@ -147,11 +150,8 @@ FileError FileCache::Store(const std::string& id,
   if (!FreeDiskSpaceIfNeededFor(file_size))
     return FILE_ERROR_NO_LOCAL_SPACE;
 
-  FileCacheEntry cache_entry;
-  storage_->GetCacheEntry(id, &cache_entry);
-
-  // If file is dirty or mounted, return error.
-  if (cache_entry.is_dirty() || mounted_files_.count(id))
+  // If file is mounted, return error.
+  if (mounted_files_.count(id))
     return FILE_ERROR_IN_USE;
 
   base::FilePath dest_path = GetCacheFilePath(id);
@@ -176,9 +176,12 @@ FileError FileCache::Store(const std::string& id,
   }
 
   // Now that file operations have completed, update metadata.
+  FileCacheEntry cache_entry;
+  storage_->GetCacheEntry(id, &cache_entry);
   cache_entry.set_md5(md5);
   cache_entry.set_is_present(true);
-  cache_entry.set_is_dirty(false);
+  if (md5.empty())
+    cache_entry.set_is_dirty(true);
   return storage_->PutCacheEntry(id, cache_entry) ?
       FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
@@ -247,7 +250,9 @@ FileError FileCache::MarkAsMounted(const std::string& id,
   return FILE_ERROR_OK;
 }
 
-FileError FileCache::MarkDirty(const std::string& id) {
+FileError FileCache::OpenForWrite(
+    const std::string& id,
+    scoped_ptr<base::ScopedClosureRunner>* file_closer) {
   AssertOnSequencedWorkerPool();
 
   // Marking a file dirty means its entry and actual file blob must exist in
@@ -259,16 +264,51 @@ FileError FileCache::MarkDirty(const std::string& id) {
     return FILE_ERROR_NOT_FOUND;
   }
 
-  if (cache_entry.is_dirty())
-    return FILE_ERROR_OK;
-
   cache_entry.set_is_dirty(true);
+  cache_entry.clear_md5();
+  if (!storage_->PutCacheEntry(id, cache_entry))
+    return FILE_ERROR_FAILED;
+
+  write_opened_files_[id]++;
+  file_closer->reset(new base::ScopedClosureRunner(
+      base::Bind(&google_apis::RunTaskOnThread,
+                 blocking_task_runner_,
+                 base::Bind(&FileCache::CloseForWrite,
+                            weak_ptr_factory_.GetWeakPtr(),
+                            id))));
+  return FILE_ERROR_OK;
+}
+
+bool FileCache::IsOpenedForWrite(const std::string& id) {
+  AssertOnSequencedWorkerPool();
+  return write_opened_files_.count(id);
+}
+
+FileError FileCache::UpdateMd5(const std::string& id) {
+  AssertOnSequencedWorkerPool();
+
+  if (IsOpenedForWrite(id))
+    return FILE_ERROR_IN_USE;
+
+  FileCacheEntry cache_entry;
+  if (!storage_->GetCacheEntry(id, &cache_entry) ||
+      !cache_entry.is_present())
+    return FILE_ERROR_NOT_FOUND;
+
+  const std::string& md5 = util::GetMd5Digest(GetCacheFilePath(id));
+  if (md5.empty())
+    return FILE_ERROR_NOT_FOUND;
+
+  cache_entry.set_md5(md5);
   return storage_->PutCacheEntry(id, cache_entry) ?
       FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
-FileError FileCache::ClearDirty(const std::string& id, const std::string& md5) {
+FileError FileCache::ClearDirty(const std::string& id) {
   AssertOnSequencedWorkerPool();
+
+  if (IsOpenedForWrite(id))
+    return FILE_ERROR_IN_USE;
 
   // Clearing a dirty file means its entry and actual file blob must exist in
   // cache.
@@ -280,14 +320,13 @@ FileError FileCache::ClearDirty(const std::string& id, const std::string& md5) {
     return FILE_ERROR_NOT_FOUND;
   }
 
-  // If a file is not dirty (it should have been marked dirty via
-  // MarkDirtyInCache), clearing its dirty state is an invalid operation.
+  // If a file is not dirty (it should have been marked dirty via OpenForWrite),
+  // clearing its dirty state is an invalid operation.
   if (!cache_entry.is_dirty()) {
     LOG(WARNING) << "Can't clear dirty state of a non-dirty file: " << id;
     return FILE_ERROR_INVALID_OPERATION;
   }
 
-  cache_entry.set_md5(md5);
   cache_entry.set_is_dirty(false);
   return storage_->PutCacheEntry(id, cache_entry) ?
       FILE_ERROR_OK : FILE_ERROR_FAILED;
@@ -343,6 +382,19 @@ bool FileCache::ClearAll() {
 bool FileCache::Initialize() {
   AssertOnSequencedWorkerPool();
 
+  // Older versions do not clear MD5 when marking entries dirty.
+  // Clear MD5 of all dirty entries to deal with old data.
+  scoped_ptr<ResourceMetadataStorage::CacheEntryIterator> it =
+      storage_->GetCacheEntryIterator();
+  for (; !it->IsAtEnd(); it->Advance()) {
+    if (it->GetValue().is_dirty()) {
+      FileCacheEntry new_entry(it->GetValue());
+      new_entry.clear_md5();
+      if (!storage_->PutCacheEntry(it->GetID(), new_entry))
+        return false;
+    }
+  }
+
   if (!RenameCacheFilesToNewFormat())
     return false;
   return true;
@@ -350,9 +402,6 @@ bool FileCache::Initialize() {
 
 void FileCache::Destroy() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Invalidate the weak pointer.
-  weak_ptr_factory_.InvalidateWeakPtrs();
 
   // Destroy myself on the blocking pool.
   // Note that base::DeletePointer<> cannot be used as the destructor of this
@@ -488,7 +537,7 @@ bool FileCache::HasEnoughSpaceFor(int64 num_bytes,
     free_space = base::SysInfo::AmountOfFreeDiskSpace(path);
 
   // Subtract this as if this portion does not exist.
-  free_space -= kMinFreeSpace;
+  free_space -= cryptohome::kMinFreeSpaceInBytes;
   return (free_space >= num_bytes);
 }
 
@@ -511,6 +560,19 @@ bool FileCache::RenameCacheFilesToNewFormat() {
       return false;
   }
   return true;
+}
+
+void FileCache::CloseForWrite(const std::string& id) {
+  AssertOnSequencedWorkerPool();
+
+  std::map<std::string, int>::iterator it = write_opened_files_.find(id);
+  if (it == write_opened_files_.end())
+    return;
+
+  DCHECK_LT(0, it->second);
+  --it->second;
+  if (it->second == 0)
+    write_opened_files_.erase(it);
 }
 
 }  // namespace internal

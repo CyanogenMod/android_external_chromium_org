@@ -8,7 +8,7 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=193323
+CLANG_REVISION=198389
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
@@ -23,8 +23,16 @@ STAMP_FILE="${LLVM_BUILD_DIR}/cr_build_revision"
 # ${A:-a} returns $A if it's set, a else.
 LLVM_REPO_URL=${LLVM_URL:-https://llvm.org/svn/llvm-project}
 
-# Die if any command dies.
-set -e
+if [[ -z "$GYP_DEFINES" ]]; then
+  GYP_DEFINES=
+fi
+if [[ -z "$GYP_GENERATORS" ]]; then
+  GYP_GENERATORS=
+fi
+
+
+# Die if any command dies, error on undefined variable expansions.
+set -eu
 
 OS="$(uname -s)"
 
@@ -34,10 +42,16 @@ mac_only=
 run_tests=
 bootstrap=
 with_android=yes
-chrome_tools="plugins"
+chrome_tools="plugins blink_gc_plugin"
+gcc_toolchain=
 
 if [[ "${OS}" = "Darwin" ]]; then
   with_android=
+fi
+if [ "${OS}" = "FreeBSD" ]; then
+  MAKE=gmake
+else
+  MAKE=make
 fi
 
 while [[ $# > 0 ]]; do
@@ -65,6 +79,21 @@ while [[ $# > 0 ]]; do
       fi
       chrome_tools=$1
       ;;
+    --gcc-toolchain)
+      shift
+      if [[ $# == 0 ]]; then
+        echo "--gcc-toolchain requires an argument."
+        exit 1
+      fi
+      if [[ -x "$1/bin/gcc" ]]; then
+        gcc_toolchain=$1
+      else
+        echo "Invalid --gcc-toolchain: '$1'."
+        echo "'$1/bin/gcc' does not appear to be valid."
+        exit 1
+      fi
+      ;;
+
     --help)
       echo "usage: $0 [--force-local-build] [--mac-only] [--run-tests] "
       echo "--bootstrap: First build clang with CC, then with itself."
@@ -75,7 +104,15 @@ while [[ $# > 0 ]]; do
       echo "--with-chrome-tools: Select which chrome tools to build." \
            "Defaults to plugins."
       echo "    Example: --with-chrome-tools 'plugins empty-string'"
+      echo "--gcc-toolchain: Set the prefix for which GCC version should"
+      echo "    be used for building. For example, to use gcc in"
+      echo "    /opt/foo/bin/gcc, use '--gcc-toolchain '/opt/foo"
       echo
+      exit 1
+      ;;
+    *)
+      echo "Unknown argument: '$1'."
+      echo "Use --help for help."
       exit 1
       ;;
   esac
@@ -87,7 +124,7 @@ done
 # --mac-only is passed in and the system isn't a mac. People who don't like this
 # can just delete their third_party/llvm-build directory.
 if [[ -n "$mac_only" ]] && [[ "${OS}" != "Darwin" ]] &&
-    [[ ! ( "$GYP_DEFINES" =~ .*(clang|tsan|asan)=1.* ) ]] &&
+    [[ ! ( "$GYP_DEFINES" =~ .*(clang|tsan|asan|lsan|msan)=1.* ) ]] &&
     ! [[ -d "${LLVM_BUILD_DIR}" ]]; then
   exit 0
 fi
@@ -221,9 +258,18 @@ set -x
 NUM_JOBS=3
 if [[ "${OS}" = "Linux" ]]; then
   NUM_JOBS="$(grep -c "^processor" /proc/cpuinfo)"
-elif [ "${OS}" = "Darwin" ]; then
+elif [ "${OS}" = "Darwin" -o "${OS}" = "FreeBSD" ]; then
   NUM_JOBS="$(sysctl -n hw.ncpu)"
 fi
+
+if [[ -n "${gcc_toolchain}" ]]; then
+  # Use the specified gcc installation for building.
+  export CC="$gcc_toolchain/bin/gcc"
+  export CXX="$gcc_toolchain/bin/g++"
+fi
+
+export CFLAGS=""
+export CXXFLAGS=""
 
 # Build bootstrap clang if requested.
 if [[ -n "${bootstrap}" ]]; then
@@ -243,13 +289,31 @@ if [[ -n "${bootstrap}" ]]; then
         --without-llvmgcc \
         --without-llvmgxx
   fi
-  MACOSX_DEPLOYMENT_TARGET=10.5 make -j"${NUM_JOBS}"
+
+  if [[ -n "${gcc_toolchain}" ]]; then
+    # Copy that gcc's stdlibc++.so.6 to the build dir, so the bootstrap
+    # compiler can start.
+    mkdir -p Release+Asserts/lib
+    cp -v "$(${CXX} -print-file-name=libstdc++.so.6)" \
+      "Release+Asserts/lib/"
+  fi
+
+
+  MACOSX_DEPLOYMENT_TARGET=10.5 ${MAKE} -j"${NUM_JOBS}"
   if [[ -n "${run_tests}" ]]; then
-    make check-all
+    ${MAKE} check-all
   fi
   cd -
   export CC="${PWD}/${LLVM_BOOTSTRAP_DIR}/Release+Asserts/bin/clang"
   export CXX="${PWD}/${LLVM_BOOTSTRAP_DIR}/Release+Asserts/bin/clang++"
+
+  if [[ -n "${gcc_toolchain}" ]]; then
+    # Tell the bootstrap compiler to use a specific gcc prefix to search
+    # for standard library headers and shared object file.
+    export CFLAGS="--gcc-toolchain=${gcc_toolchain}"
+    export CXXFLAGS="--gcc-toolchain=${gcc_toolchain}"
+  fi
+
   echo "Building final compiler"
 fi
 
@@ -267,7 +331,13 @@ if [[ ! -f ./config.status ]]; then
       --without-llvmgxx
 fi
 
-MACOSX_DEPLOYMENT_TARGET=10.5 make -j"${NUM_JOBS}"
+if [[ -n "${gcc_toolchain}" ]]; then
+  # Copy in the right stdlibc++.so.6 so clang can start.
+  mkdir -p Release+Asserts/lib
+  cp -v "$(${CXX} ${CXXFLAGS} -print-file-name=libstdc++.so.6)" \
+    Release+Asserts/lib/
+fi
+MACOSX_DEPLOYMENT_TARGET=10.5 ${MAKE} -j"${NUM_JOBS}"
 STRIP_FLAGS=
 if [ "${OS}" = "Darwin" ]; then
   # See http://crbug.com/256342
@@ -288,7 +358,7 @@ if [[ -n "${with_android}" ]]; then
   # Note: LLVM_ANDROID_TOOLCHAIN_DIR is not relative to PWD, but to where we
   # build the runtime, i.e. third_party/llvm/projects/compiler-rt.
   cd "${LLVM_BUILD_DIR}"
-  make -C tools/clang/runtime/ \
+  ${MAKE} -C tools/clang/runtime/ \
     LLVM_ANDROID_TOOLCHAIN_DIR="../../../llvm-build/android-toolchain"
   cd -
 fi
@@ -306,15 +376,19 @@ for CHROME_TOOL_DIR in ${chrome_tools}; do
   rm -rf "${TOOL_BUILD_DIR}"
   mkdir -p "${TOOL_BUILD_DIR}"
   cp "${TOOL_SRC_DIR}/Makefile" "${TOOL_BUILD_DIR}"
-  MACOSX_DEPLOYMENT_TARGET=10.5 make -j"${NUM_JOBS}" -C "${TOOL_BUILD_DIR}"
+  MACOSX_DEPLOYMENT_TARGET=10.5 ${MAKE} -j"${NUM_JOBS}" -C "${TOOL_BUILD_DIR}"
 done
 
 if [[ -n "$run_tests" ]]; then
   # Run a few tests.
-  PLUGIN_SRC_DIR="${THIS_DIR}/../plugins"
-  "${PLUGIN_SRC_DIR}/tests/test.sh" "${LLVM_BUILD_DIR}/Release+Asserts"
+  for CHROME_TOOL_DIR in ${chrome_tools}; do
+    TOOL_SRC_DIR="${THIS_DIR}/../${CHROME_TOOL_DIR}"
+    if [[ -f "${TOOL_SRC_DIR}/tests/test.sh" ]]; then
+      "${TOOL_SRC_DIR}/tests/test.sh" "${LLVM_BUILD_DIR}/Release+Asserts"
+    fi
+  done
   cd "${LLVM_BUILD_DIR}"
-  make check-all
+  ${MAKE} check-all
   cd -
 fi
 

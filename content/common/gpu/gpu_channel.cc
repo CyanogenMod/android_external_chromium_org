@@ -15,7 +15,6 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
 #include "content/common/gpu/devtools_gpu_agent.h"
@@ -24,7 +23,6 @@
 #include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_switches.h"
-#include "crypto/hmac.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
@@ -37,10 +35,6 @@
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "content/common/gpu/stream_texture_manager_android.h"
 #endif
 
 namespace content {
@@ -79,8 +73,7 @@ const int64 kStopPreemptThresholdMs = kVsyncIntervalMs;
 class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
  public:
   // Takes ownership of gpu_channel (see below).
-  GpuChannelMessageFilter(const std::string& private_key,
-                          base::WeakPtr<GpuChannel>* gpu_channel,
+  GpuChannelMessageFilter(base::WeakPtr<GpuChannel>* gpu_channel,
                           scoped_refptr<SyncPointManager> sync_point_manager,
                           scoped_refptr<base::MessageLoopProxy> message_loop)
       : preemption_state_(IDLE),
@@ -89,10 +82,7 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
         sync_point_manager_(sync_point_manager),
         message_loop_(message_loop),
         messages_forwarded_to_channel_(0),
-        a_stub_is_descheduled_(false),
-        hmac_(crypto::HMAC::SHA256) {
-    bool success = hmac_.Init(base::StringPiece(private_key));
-    DCHECK(success);
+        a_stub_is_descheduled_(false) {
   }
 
   virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
@@ -108,18 +98,11 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     DCHECK(channel_);
 
-    bool handled = true;
-    IPC_BEGIN_MESSAGE_MAP(GpuChannelMessageFilter, message)
-      IPC_MESSAGE_HANDLER(GpuChannelMsg_GenerateMailboxNames,
-                          OnGenerateMailboxNames)
-      IPC_MESSAGE_HANDLER(GpuChannelMsg_GenerateMailboxNamesAsync,
-                          OnGenerateMailboxNamesAsync)
-      IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP()
-
+    bool handled = false;
     if (message.type() == GpuCommandBufferMsg_RetireSyncPoint::ID) {
       // This message should not be sent explicitly by the renderer.
-      NOTREACHED();
+      DLOG(ERROR) << "Client should not send "
+                     "GpuCommandBufferMsg_RetireSyncPoint message";
       handled = true;
     }
 
@@ -177,32 +160,6 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
   }
 
  private:
-  // Message handlers.
-  void OnGenerateMailboxNames(unsigned num, std::vector<gpu::Mailbox>* result) {
-    TRACE_EVENT1("gpu", "OnGenerateMailboxNames", "num", num);
-
-    result->resize(num);
-
-    for (unsigned i = 0; i < num; ++i) {
-      char name[GL_MAILBOX_SIZE_CHROMIUM];
-      base::RandBytes(name, sizeof(name) / 2);
-
-      bool success = hmac_.Sign(
-          base::StringPiece(name, sizeof(name) / 2),
-          reinterpret_cast<unsigned char*>(name) + sizeof(name) / 2,
-          sizeof(name) / 2);
-      DCHECK(success);
-
-      (*result)[i].SetName(reinterpret_cast<int8*>(name));
-    }
-  }
-
-  void OnGenerateMailboxNamesAsync(unsigned num) {
-    std::vector<gpu::Mailbox> names;
-    OnGenerateMailboxNames(num, &names);
-    Send(new GpuChannelMsg_GenerateMailboxNamesReply(names));
-  }
-
   enum PreemptionState {
     // Either there's no other channel to preempt, there are no messages
     // pending processing, or we just finished preempting and have to wait
@@ -427,8 +384,6 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
   base::OneShotTimer<GpuChannelMessageFilter> timer_;
 
   bool a_stub_is_descheduled_;
-
-  crypto::HMAC hmac_;
 };
 
 GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
@@ -456,11 +411,6 @@ GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
   channel_id_ = IPC::Channel::GenerateVerifiedChannelID("gpu");
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   log_messages_ = command_line->HasSwitch(switches::kLogPluginMessages);
-  disallowed_features_.multisampling =
-      command_line->HasSwitch(switches::kDisableGLMultisampling);
-#if defined(OS_ANDROID)
-  stream_texture_manager_.reset(new StreamTextureManagerAndroid(this));
-#endif
 }
 
 
@@ -481,7 +431,6 @@ bool GpuChannel::Init(base::MessageLoopProxy* io_message_loop,
       weak_factory_.GetWeakPtr()));
 
   filter_ = new GpuChannelMessageFilter(
-      mailbox_manager_->private_key(),
       weak_ptr,
       gpu_channel_manager_->sync_point_manager(),
       base::MessageLoopProxy::current());
@@ -706,8 +655,8 @@ void GpuChannel::DestroySoon() {
       FROM_HERE, base::Bind(&GpuChannel::OnDestroy, this));
 }
 
-int GpuChannel::GenerateRouteID() {
-  static int last_id = 0;
+int32 GpuChannel::GenerateRouteID() {
+  static int32 last_id = 0;
   return ++last_id;
 }
 
@@ -764,17 +713,6 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
                         OnDevToolsStartEventsRecording)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DevToolsStopEventsRecording,
                         OnDevToolsStopEventsRecording)
-#if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(GpuChannelMsg_RegisterStreamTextureProxy,
-                        OnRegisterStreamTextureProxy)
-    IPC_MESSAGE_HANDLER(GpuChannelMsg_EstablishStreamTexture,
-                        OnEstablishStreamTexture)
-    IPC_MESSAGE_HANDLER(GpuChannelMsg_SetStreamTextureSize,
-                        OnSetStreamTextureSize)
-#endif
-    IPC_MESSAGE_HANDLER(
-        GpuChannelMsg_CollectRenderingStatsForSurface,
-        OnCollectRenderingStatsForSurface)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled) << msg.type();
@@ -931,56 +869,6 @@ void GpuChannel::OnDevToolsStartEventsRecording(int32* route_id) {
 
 void GpuChannel::OnDevToolsStopEventsRecording() {
   devtools_gpu_agent_->StopEventsRecording();
-}
-
-#if defined(OS_ANDROID)
-void GpuChannel::OnRegisterStreamTextureProxy(
-    int32 stream_id, int32* route_id) {
-  // Note that route_id is only used for notifications sent out from here.
-  // StreamTextureManager owns all texture objects and for incoming messages
-  // it finds the correct object based on stream_id.
-  *route_id = GenerateRouteID();
-  stream_texture_manager_->RegisterStreamTextureProxy(stream_id, *route_id);
-}
-
-void GpuChannel::OnEstablishStreamTexture(
-    int32 stream_id, int32 primary_id, int32 secondary_id) {
-  stream_texture_manager_->EstablishStreamTexture(
-      stream_id, primary_id, secondary_id);
-}
-
-void GpuChannel::OnSetStreamTextureSize(
-    int32 stream_id, const gfx::Size& size) {
-  stream_texture_manager_->SetStreamTextureSize(stream_id, size);
-}
-#endif
-
-void GpuChannel::OnCollectRenderingStatsForSurface(
-    int32 surface_id, GpuRenderingStats* stats) {
-  for (StubMap::Iterator<GpuCommandBufferStub> it(&stubs_);
-       !it.IsAtEnd(); it.Advance()) {
-    int texture_upload_count =
-        it.GetCurrentValue()->decoder()->GetTextureUploadCount();
-    base::TimeDelta total_texture_upload_time =
-        it.GetCurrentValue()->decoder()->GetTotalTextureUploadTime();
-    base::TimeDelta total_processing_commands_time =
-        it.GetCurrentValue()->decoder()->GetTotalProcessingCommandsTime();
-
-    stats->global_texture_upload_count += texture_upload_count;
-    stats->global_total_texture_upload_time += total_texture_upload_time;
-    stats->global_total_processing_commands_time +=
-        total_processing_commands_time;
-    if (it.GetCurrentValue()->surface_id() == surface_id) {
-      stats->texture_upload_count += texture_upload_count;
-      stats->total_texture_upload_time += total_texture_upload_time;
-      stats->total_processing_commands_time += total_processing_commands_time;
-    }
-  }
-
-  GPUVideoMemoryUsageStats usage_stats;
-  gpu_channel_manager_->gpu_memory_manager()->GetVideoMemoryUsageStats(
-      &usage_stats);
-  stats->global_video_memory_bytes_allocated = usage_stats.bytes_allocated;
 }
 
 void GpuChannel::MessageProcessed() {

@@ -245,8 +245,10 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
   virtual void OnCompletedRequest(
       int error_code,
       bool was_ignored_by_handler,
+      bool stale_copy_in_cache,
       const std::string& security_info,
-      const base::TimeTicks& completion_time) OVERRIDE;
+      const base::TimeTicks& completion_time,
+      int64 total_transfer_size) OVERRIDE;
 
  private:
   friend class base::RefCounted<Context>;
@@ -360,6 +362,11 @@ void WebURLLoaderImpl::Context::Start(
   if (!request.allowStoredCredentials())
     load_flags |= net::LOAD_DO_NOT_SEND_AUTH_DATA;
 
+  if (request.targetType() == WebURLRequest::TargetIsXHR &&
+      (url.has_username() || url.has_password())) {
+    load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
+  }
+
   HeaderFlattener flattener(load_flags);
   request.visitHTTPHeaderFields(&flattener);
 
@@ -386,11 +393,8 @@ void WebURLLoaderImpl::Context::Start(
   request_info.download_to_file = request.downloadToFile();
   request_info.has_user_gesture = request.hasUserGesture();
   request_info.extra_data = request.extraData();
-  if (request.extraData()) {
-    referrer_policy_ = static_cast<WebURLRequestExtraDataImpl*>(
-        request.extraData())->referrer_policy();
-    request_info.referrer_policy = referrer_policy_;
-  }
+  referrer_policy_ = request.referrerPolicy();
+  request_info.referrer_policy = request.referrerPolicy();
   bridge_.reset(platform->CreateResourceLoader(request_info));
 
   if (!request.httpBody().isNull()) {
@@ -485,11 +489,14 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
       new_url,
       request_.httpHeaderField(referrer_string));
   if (!referrer.isEmpty())
-    new_request.setHTTPHeaderField(referrer_string, referrer);
+    new_request.setHTTPReferrer(referrer, referrer_policy_);
 
+  std::string method = request_.httpMethod().utf8();
   std::string new_method = net::URLRequest::ComputeMethodForRedirect(
-             request_.httpMethod().utf8(), response.httpStatusCode());
+      method, response.httpStatusCode());
   new_request.setHTTPMethod(WebString::fromUTF8(new_method));
+  if (new_method == method)
+    new_request.setHTTPBody(request_.httpBody());
 
   client_->willSendRequest(loader_, new_request, response);
   request_ = new_request;
@@ -596,8 +603,10 @@ void WebURLLoaderImpl::Context::OnReceivedCachedMetadata(
 void WebURLLoaderImpl::Context::OnCompletedRequest(
     int error_code,
     bool was_ignored_by_handler,
+    bool stale_copy_in_cache,
     const std::string& security_info,
-    const base::TimeTicks& completion_time) {
+    const base::TimeTicks& completion_time,
+    int64 total_transfer_size) {
   if (ftp_listing_delegate_) {
     ftp_listing_delegate_->OnCompletedRequest();
     ftp_listing_delegate_.reset(NULL);
@@ -613,10 +622,13 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
 
   if (client_) {
     if (error_code != net::OK) {
-      client_->didFail(loader_, CreateError(request_.url(), error_code));
+      client_->didFail(loader_, CreateError(request_.url(),
+                                            stale_copy_in_cache,
+                                            error_code));
     } else {
       client_->didFinishLoading(
-          loader_, (completion_time - TimeTicks()).InSecondsF());
+          loader_, (completion_time - TimeTicks()).InSecondsF(),
+          total_transfer_size);
     }
   }
 
@@ -667,8 +679,8 @@ void WebURLLoaderImpl::Context::HandleDataURL() {
       OnReceivedData(data.data(), data.size(), 0);
   }
 
-  OnCompletedRequest(error_code, false, info.security_info,
-                     base::TimeTicks::Now());
+  OnCompletedRequest(error_code, false, false, info.security_info,
+                     base::TimeTicks::Now(), 0);
 }
 
 // WebURLLoaderImpl -----------------------------------------------------------
@@ -683,11 +695,13 @@ WebURLLoaderImpl::~WebURLLoaderImpl() {
 }
 
 WebURLError WebURLLoaderImpl::CreateError(const WebURL& unreachable_url,
+                                          bool stale_copy_in_cache,
                                           int reason) {
   WebURLError error;
   error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = reason;
   error.unreachableURL = unreachable_url;
+  error.staleCopyInCache = stale_copy_in_cache;
   if (reason == net::ERR_ABORTED) {
     error.isCancellation = true;
   } else if (reason == net::ERR_TEMPORARILY_THROTTLED) {

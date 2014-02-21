@@ -16,7 +16,7 @@
 #include "cc/debug/traced_picture.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
-#include "skia/ext/lazy_pixel_ref_utils.h"
+#include "skia/ext/pixel_ref_utils.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkDrawFilter.h"
@@ -81,11 +81,23 @@ bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
 
 }  // namespace
 
-scoped_refptr<Picture> Picture::Create(gfx::Rect layer_rect) {
-  return make_scoped_refptr(new Picture(layer_rect));
+scoped_refptr<Picture> Picture::Create(
+    const gfx::Rect& layer_rect,
+    ContentLayerClient* client,
+    const SkTileGridPicture::TileGridInfo& tile_grid_info,
+    bool gather_pixel_refs,
+    int num_raster_threads) {
+  scoped_refptr<Picture> picture = make_scoped_refptr(new Picture(layer_rect));
+
+  picture->Record(client, tile_grid_info);
+  if (gather_pixel_refs)
+    picture->GatherPixelRefs(tile_grid_info);
+  picture->CloneForDrawing(num_raster_threads);
+
+  return picture;
 }
 
-Picture::Picture(gfx::Rect layer_rect)
+Picture::Picture(const gfx::Rect& layer_rect)
   : layer_rect_(layer_rect),
     cell_size_(layer_rect.size()) {
   // Instead of recording a trace event for object creation here, we wait for
@@ -152,8 +164,8 @@ scoped_refptr<Picture> Picture::CreateFromValue(const base::Value* raw_value) {
 }
 
 Picture::Picture(SkPicture* picture,
-                 gfx::Rect layer_rect,
-                 gfx::Rect opaque_rect) :
+                 const gfx::Rect& layer_rect,
+                 const gfx::Rect& opaque_rect) :
     layer_rect_(layer_rect),
     opaque_rect_(opaque_rect),
     picture_(skia::AdoptRef(picture)),
@@ -161,8 +173,8 @@ Picture::Picture(SkPicture* picture,
 }
 
 Picture::Picture(const skia::RefPtr<SkPicture>& picture,
-                 gfx::Rect layer_rect,
-                 gfx::Rect opaque_rect,
+                 const gfx::Rect& layer_rect,
+                 const gfx::Rect& opaque_rect,
                  const PixelRefMap& pixel_refs) :
     layer_rect_(layer_rect),
     opaque_rect_(opaque_rect),
@@ -176,31 +188,37 @@ Picture::~Picture() {
     TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::Picture", this);
 }
 
-scoped_refptr<Picture> Picture::GetCloneForDrawingOnThread(
-    unsigned thread_index) const {
+Picture* Picture::GetCloneForDrawingOnThread(unsigned thread_index) {
   // SkPicture is not thread-safe to rasterize with, this returns a clone
   // to rasterize with on a specific thread.
-  CHECK_GT(clones_.size(), thread_index);
-  return clones_[thread_index];
+  CHECK_GE(clones_.size(), thread_index);
+  return thread_index == clones_.size() ? this : clones_[thread_index].get();
 }
 
 void Picture::CloneForDrawing(int num_threads) {
   TRACE_EVENT1("cc", "Picture::CloneForDrawing", "num_threads", num_threads);
 
   DCHECK(picture_);
-  scoped_ptr<SkPicture[]> clones(new SkPicture[num_threads]);
-  picture_->clone(&clones[0], num_threads);
+  DCHECK(clones_.empty());
 
-  clones_.clear();
-  for (int i = 0; i < num_threads; i++) {
-    scoped_refptr<Picture> clone = make_scoped_refptr(
-        new Picture(skia::AdoptRef(new SkPicture(clones[i])),
-                    layer_rect_,
-                    opaque_rect_,
-                    pixel_refs_));
-    clones_.push_back(clone);
+  // We can re-use this picture for one raster worker thread.
+  raster_thread_checker_.DetachFromThread();
 
-    clone->EmitTraceSnapshotAlias(this);
+  if (num_threads > 1) {
+    scoped_ptr<SkPicture[]> clones(new SkPicture[num_threads - 1]);
+    picture_->clone(&clones[0], num_threads - 1);
+
+    for (int i = 0; i < num_threads - 1; i++) {
+      scoped_refptr<Picture> clone = make_scoped_refptr(
+          new Picture(skia::AdoptRef(new SkPicture(clones[i])),
+                      layer_rect_,
+                      opaque_rect_,
+                      pixel_refs_));
+      clones_.push_back(clone);
+
+      clone->EmitTraceSnapshotAlias(this);
+      clone->raster_thread_checker_.DetachFromThread();
+    }
   }
 }
 
@@ -209,6 +227,7 @@ void Picture::Record(ContentLayerClient* painter,
   TRACE_EVENT1("cc", "Picture::Record",
                "data", AsTraceableRecordData());
 
+  DCHECK(!picture_);
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
   picture_ = skia::AdoptRef(new SkTileGridPicture(
       layer_rect_.width(), layer_rect_.height(), tile_grid_info));
@@ -248,6 +267,9 @@ void Picture::GatherPixelRefs(
                "height", layer_rect_.height());
 
   DCHECK(picture_);
+  DCHECK(pixel_refs_.empty());
+  if (!WillPlayBackBitmaps())
+    return;
   cell_size_ = gfx::Size(
       tile_grid_info.fTileInterval.width() +
           2 * tile_grid_info.fMargin.width(),
@@ -261,9 +283,9 @@ void Picture::GatherPixelRefs(
   int max_x = 0;
   int max_y = 0;
 
-  skia::LazyPixelRefList pixel_refs;
-  skia::LazyPixelRefUtils::GatherPixelRefs(picture_.get(), &pixel_refs);
-  for (skia::LazyPixelRefList::const_iterator it = pixel_refs.begin();
+  skia::DiscardablePixelRefList pixel_refs;
+  skia::PixelRefUtils::GatherDiscardablePixelRefs(picture_.get(), &pixel_refs);
+  for (skia::DiscardablePixelRefList::const_iterator it = pixel_refs.begin();
        it != pixel_refs.end();
        ++it) {
     gfx::Point min(
@@ -280,7 +302,7 @@ void Picture::GatherPixelRefs(
     for (int y = min.y(); y <= max.y(); y += cell_size_.height()) {
       for (int x = min.x(); x <= max.x(); x += cell_size_.width()) {
         PixelRefMapKey key(x, y);
-        pixel_refs_[key].push_back(it->lazy_pixel_ref);
+        pixel_refs_[key].push_back(it->pixel_ref);
       }
     }
 
@@ -299,6 +321,7 @@ int Picture::Raster(
     SkDrawPictureCallback* callback,
     const Region& negated_content_region,
     float contents_scale) {
+  DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN1(
       "cc",
       "Picture::Raster",
@@ -325,6 +348,7 @@ int Picture::Raster(
 }
 
 void Picture::Replay(SkCanvas* canvas) {
+  DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
   DCHECK(picture_);
 
@@ -356,12 +380,12 @@ scoped_ptr<base::Value> Picture::AsValue() const {
   return res.PassAs<base::Value>();
 }
 
-void Picture::EmitTraceSnapshot() {
+void Picture::EmitTraceSnapshot() const {
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
       "cc::Picture", this, TracedPicture::AsTraceablePicture(this));
 }
 
-void Picture::EmitTraceSnapshotAlias(Picture* original) {
+void Picture::EmitTraceSnapshotAlias(Picture* original) const {
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
       TRACE_DISABLED_BY_DEFAULT("cc.debug"),
       "cc::Picture",
@@ -383,7 +407,7 @@ Picture::PixelRefIterator::PixelRefIterator()
 }
 
 Picture::PixelRefIterator::PixelRefIterator(
-    gfx::Rect query_rect,
+    const gfx::Rect& rect,
     const Picture* picture)
     : picture_(picture),
       current_pixel_refs_(empty_pixel_refs_.Pointer()),
@@ -392,6 +416,7 @@ Picture::PixelRefIterator::PixelRefIterator(
   gfx::Size cell_size = picture->cell_size_;
   DCHECK(!cell_size.IsEmpty());
 
+  gfx::Rect query_rect(rect);
   // Early out if the query rect doesn't intersect this picture.
   if (!query_rect.Intersects(layer_rect)) {
     min_point_ = gfx::Point(0, 0);

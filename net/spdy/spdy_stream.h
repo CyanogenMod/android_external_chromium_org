@@ -124,6 +124,9 @@ class NET_EXPORT_PRIVATE SpdyStream {
     //
     // TODO(akalin): Treat headers received after data has been
     // received as a protocol error for non-bidirectional streams.
+    // TODO(jgraettinger): This should be at the semantic (HTTP) rather
+    // than stream layer. Streams shouldn't have a notion of header
+    // completeness. Move to SpdyHttpStream/SpdyWebsocketStream.
     virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
         const SpdyHeaderBlock& response_headers) = 0;
 
@@ -315,6 +318,14 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // in bytes, including framing overhead.
   void OnFrameWriteComplete(SpdyFrameType frame_type, size_t frame_size);
 
+  // SYN_STREAM-specific write handler invoked by OnFrameWriteComplete().
+  int OnRequestHeadersSent();
+
+  // DATA-specific write handler invoked by OnFrameWriteComplete().
+  // If more data is already available to be written, the next write is
+  // queued and ERR_IO_PENDING is returned. Returns OK otherwise.
+  int OnDataSent(size_t frame_size);
+
   // Called by the SpdySession when the request is finished.  This callback
   // will always be called at the end of the request and signals to the
   // stream that the stream has no more network events.  No further callbacks
@@ -378,9 +389,17 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // OnClose() method.
   bool IsClosed() const;
 
-  // Returns whether or not this stream has finished sending its
-  // request headers and is ready to send/receive more data.
+  // Returns whether the streams local endpoint is closed.
+  // The remote endpoint may still be active.
+  bool IsLocallyClosed() const;
+
+  // Returns whether this stream is IDLE: request and response headers
+  // have neither been sent nor receieved.
   bool IsIdle() const;
+
+  // Returns whether or not this stream is fully open: that request and
+  // response headers are complete, and it is not in a half-closed state.
+  bool IsOpen() const;
 
   // Returns the protocol used by this stream. Always between
   // kProtoSPDYMinimumVersion and kProtoSPDYMaximumVersion.
@@ -416,32 +435,34 @@ class NET_EXPORT_PRIVATE SpdyStream {
   class SynStreamBufferProducer;
   class HeaderBufferProducer;
 
+  // SpdyStream states and transitions are modeled
+  // on the HTTP/2 stream state machine. All states and transitions
+  // are modeled, with the exceptions of RESERVED_LOCAL (the client
+  // cannot initate push streams), and the transition to OPEN due to
+  // a remote SYN_STREAM (the client can only initate streams).
+  // TODO(jgraettinger): RESERVED_REMOTE must be added to the state
+  // machine when PUSH_PROMISE is implemented.
   enum State {
-    STATE_NONE,
-    STATE_SEND_REQUEST_HEADERS,
-    STATE_SEND_REQUEST_HEADERS_COMPLETE,
     STATE_IDLE,
-    STATE_CLOSED
+    STATE_OPEN,
+    STATE_HALF_CLOSED_LOCAL_UNCLAIMED,
+    STATE_HALF_CLOSED_LOCAL,
+    STATE_HALF_CLOSED_REMOTE,
+    STATE_CLOSED,
   };
-
-  // Try to make progress sending/receiving the request/response.
-  int DoLoop(int result);
-
-  // The implementations of each state of the state machine.
-  int DoSendRequestHeaders();
-  int DoSendRequestHeadersComplete();
-  int DoReadHeaders();
-  int DoReadHeadersComplete(int result);
-  int DoOpen();
 
   // Update the histograms.  Can safely be called repeatedly, but should only
   // be called after the stream has completed.
   void UpdateHistograms();
 
-  // When a server-pushed stream is first created, this function is
-  // posted on the current MessageLoop to replay the data that the
-  // server has already sent.
-  void PushedStreamReplayData();
+  // When a server-push stream is claimed by SetDelegate(), this function is
+  // posted on the current MessageLoop to replay everything the server has sent.
+  // From the perspective of SpdyStream's state machine, headers, data, and
+  // FIN states received prior to the delegate being attached have not yet been
+  // read. While buffered by |pending_recv_data_| it's not until
+  // PushedStreamReplay() is invoked that reads are considered
+  // to have occurred, driving the state machine forward.
+  void PushedStreamReplay();
 
   // Produces the SYN_STREAM frame for the stream. The stream must
   // already be activated.
@@ -463,23 +484,15 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // by this function.
   int MergeWithResponseHeaders(const SpdyHeaderBlock& new_response_headers);
 
+  static std::string DescribeState(State state);
+
   const SpdyStreamType type_;
 
   base::WeakPtrFactory<SpdyStream> weak_ptr_factory_;
 
-  // Sentinel variable used to make sure we don't get destroyed by a
-  // function called from DoLoop().
-  bool in_do_loop_;
-
-  // There is a small period of time between when a server pushed stream is
-  // first created, and the pushed data is replayed. Any data received during
-  // this time should continue to be buffered.
-  bool continue_buffering_data_;
-
   SpdyStreamId stream_id_;
   const GURL url_;
   const RequestPriority priority_;
-  size_t slot_;
 
   // Flow control variables.
   bool send_stalled_by_flow_control_;
@@ -494,17 +507,22 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // The transaction should own the delegate.
   SpdyStream::Delegate* delegate_;
 
-  // Whether or not we have more data to send on this stream.
-  SpdySendStatus send_status_;
-
   // The headers for the request to send.
   //
   // TODO(akalin): Hang onto this only until we send it. This
   // necessitates stashing the URL separately.
   scoped_ptr<SpdyHeaderBlock> request_headers_;
 
-  // The data waiting to be sent.
+  // Data waiting to be sent, and the close state of the local endpoint
+  // after the data is fully written.
   scoped_refptr<DrainableIOBuffer> pending_send_data_;
+  SpdySendStatus pending_send_status_;
+
+  // Data waiting to be received, and the close state of the remote endpoint
+  // after the data is fully read. Specifically, data received before the
+  // delegate is attached must be buffered and later replayed. A remote FIN
+  // is represented by a final, zero-length buffer.
+  ScopedVector<SpdyBuffer> pending_recv_data_;
 
   // The time at which the request was made that resulted in this response.
   // For cached responses, this time could be "far" in the past.
@@ -535,16 +553,9 @@ class NET_EXPORT_PRIVATE SpdyStream {
   int send_bytes_;
   int recv_bytes_;
 
-  // Data received before delegate is attached.
-  ScopedVector<SpdyBuffer> pending_buffers_;
-
   std::string domain_bound_private_key_;
   std::string domain_bound_cert_;
   ServerBoundCertService::RequestHandle domain_bound_cert_request_handle_;
-
-  // When OnFrameWriteComplete() is called, these variables are set.
-  SpdyFrameType just_completed_frame_type_;
-  size_t just_completed_frame_size_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyStream);
 };

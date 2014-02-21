@@ -86,7 +86,7 @@ scoped_ptr<HostWindow> HostWindow::CreateDisconnectWindow() {
   self = [super initWithWindowNibName:@"disconnect_window"];
   if (self) {
     disconnect_callback_ = disconnect_callback;
-    username_ = UTF8ToUTF16(username);
+    username_ = base::UTF8ToUTF16(username);
   }
   return self;
 }
@@ -111,9 +111,9 @@ scoped_ptr<HostWindow> HostWindow::CreateDisconnectWindow() {
 }
 
 - (void)windowDidLoad {
-  [connectedToField_ setStringValue:l10n_util::GetNSStringF(IDR_MESSAGE_SHARED,
+  [connectedToField_ setStringValue:l10n_util::GetNSStringF(IDS_MESSAGE_SHARED,
                                                             username_)];
-  [disconnectButton_ setTitle:l10n_util::GetNSString(IDR_STOP_SHARING_BUTTON)];
+  [disconnectButton_ setTitle:l10n_util::GetNSString(IDS_STOP_SHARING_BUTTON)];
 
   // Resize the window dynamically based on the content.
   CGFloat oldConnectedWidth = NSWidth([connectedToField_ bounds]);

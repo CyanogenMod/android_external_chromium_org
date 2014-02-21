@@ -5,8 +5,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
@@ -71,16 +69,14 @@ class MockClient : public media::VideoCaptureDevice::Client {
   explicit MockClient(base::Callback<void(const VideoCaptureFormat&)> frame_cb)
       : main_thread_(base::MessageLoopProxy::current()), frame_cb_(frame_cb) {}
 
-  virtual void OnError() OVERRIDE {
+  virtual void OnError(const std::string& error_message) OVERRIDE {
     OnErr();
   }
 
   virtual void OnIncomingCapturedFrame(const uint8* data,
                                        int length,
-                                       base::Time timestamp,
+                                       base::TimeTicks timestamp,
                                        int rotation,
-                                       bool flip_vert,
-                                       bool flip_horiz,
                                        const VideoCaptureFormat& format)
       OVERRIDE {
     main_thread_->PostTask(FROM_HERE, base::Bind(frame_cb_, format));
@@ -89,13 +85,13 @@ class MockClient : public media::VideoCaptureDevice::Client {
   virtual void OnIncomingCapturedBuffer(const scoped_refptr<Buffer>& buffer,
                                         media::VideoFrame::Format format,
                                         const gfx::Size& dimensions,
-                                        base::Time timestamp,
+                                        base::TimeTicks timestamp,
                                         int frame_rate) OVERRIDE {
     NOTREACHED();
   }
 
  private:
-  scoped_refptr<base::MessageLoopProxy> main_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
   base::Callback<void(const VideoCaptureFormat&)> frame_cb_;
 };
 
@@ -363,18 +359,24 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_CaptureMjpeg) {
   device->StopAndDeAllocate();
 }
 
+#if defined(OS_ANDROID)
+// TODO(mcasas): Reenable this test that is disabled in Android due to
+// http://crbug.com/327043.
+TEST_F(VideoCaptureDeviceTest, DISABLED_GetDeviceSupportedFormats) {
+#else
 TEST_F(VideoCaptureDeviceTest, GetDeviceSupportedFormats) {
+#endif
   VideoCaptureDevice::GetDeviceNames(&names_);
   if (!names_.size()) {
     DVLOG(1) << "No camera available. Exiting test.";
     return;
   }
-  VideoCaptureCapabilities capture_capabilities;
+  VideoCaptureFormats supported_formats;
   VideoCaptureDevice::Names::iterator names_iterator;
   for (names_iterator = names_.begin(); names_iterator != names_.end();
        ++names_iterator) {
     VideoCaptureDevice::GetDeviceSupportedFormats(*names_iterator,
-                                                  &capture_capabilities);
+                                                  &supported_formats);
     // Nothing to test here since we cannot forecast the hardware capabilities.
   }
 }
@@ -413,20 +415,22 @@ TEST_F(VideoCaptureDeviceTest, FakeGetDeviceSupportedFormats) {
   VideoCaptureDevice::Names names;
   FakeVideoCaptureDevice::GetDeviceNames(&names);
 
-  VideoCaptureCapabilities capture_capabilities;
+  VideoCaptureFormats supported_formats;
   VideoCaptureDevice::Names::iterator names_iterator;
 
   for (names_iterator = names.begin(); names_iterator != names.end();
        ++names_iterator) {
     FakeVideoCaptureDevice::GetDeviceSupportedFormats(*names_iterator,
-                                                      &capture_capabilities);
-    EXPECT_GE(capture_capabilities.size(), 1u);
-    EXPECT_EQ(capture_capabilities[0].supported_format.frame_size.width(), 640);
-    EXPECT_EQ(capture_capabilities[0].supported_format.frame_size.height(),
-              480);
-    EXPECT_EQ(capture_capabilities[0].supported_format.pixel_format,
-              media::PIXEL_FORMAT_I420);
-    EXPECT_GE(capture_capabilities[0].supported_format.frame_rate, 20);
+                                                      &supported_formats);
+    EXPECT_EQ(supported_formats.size(), 2u);
+    EXPECT_EQ(supported_formats[0].frame_size.width(), 640);
+    EXPECT_EQ(supported_formats[0].frame_size.height(), 480);
+    EXPECT_EQ(supported_formats[0].pixel_format, media::PIXEL_FORMAT_I420);
+    EXPECT_GE(supported_formats[0].frame_rate, 20);
+    EXPECT_EQ(supported_formats[1].frame_size.width(), 320);
+    EXPECT_EQ(supported_formats[1].frame_size.height(), 240);
+    EXPECT_EQ(supported_formats[1].pixel_format, media::PIXEL_FORMAT_I420);
+    EXPECT_GE(supported_formats[1].frame_rate, 20);
   }
 }
 

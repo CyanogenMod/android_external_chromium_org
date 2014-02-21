@@ -31,7 +31,6 @@ class WebMouseEvent;
 class WebNode;
 class WebTouchEvent;
 class WebURL;
-struct WebContextMenuData;
 struct WebURLError;
 }
 
@@ -62,7 +61,7 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                       const blink::WebURLError& error) {}
   virtual void DidCommitProvisionalLoad(blink::WebFrame* frame,
                                         bool is_new_navigation) {}
-  virtual void DidClearWindowObject(blink::WebFrame* frame) {}
+  virtual void DidClearWindowObject(blink::WebFrame* frame, int world_id) {}
   virtual void DidCreateDocumentElement(blink::WebFrame* frame) {}
   virtual void FrameCreated(blink::WebFrame* parent,
                             blink::WebFrame* frame) {}
@@ -85,9 +84,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   virtual void ZoomLevelChanged() {};
   virtual void DidChangeScrollOffset(blink::WebFrame* frame) {}
   virtual void DraggableRegionsChanged(blink::WebFrame* frame) {}
-  virtual void DidRequestShowContextMenu(
-      blink::WebFrame* frame,
-      const blink::WebContextMenuData& data) {}
   virtual void DidCommitCompositorFrame() {}
   virtual void DidUpdateLayout() {}
 
@@ -111,6 +107,8 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
   virtual void OrientationChangeEvent(int orientation) {}
+
+  virtual void OnStop() {}
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

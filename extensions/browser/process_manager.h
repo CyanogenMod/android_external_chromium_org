@@ -24,6 +24,7 @@ namespace content {
 class BrowserContext;
 class DevToolsAgentHost;
 class RenderViewHost;
+class RenderFrameHost;
 class SiteInstance;
 };
 
@@ -104,10 +105,10 @@ class ProcessManager : public content::NotificationObserver {
   // Same as above, for the Suspend message.
   void OnSuspendAck(const std::string& extension_id);
 
-  // Tracks network requests for a given RenderViewHost, used to know
+  // Tracks network requests for a given RenderFrameHost, used to know
   // when network activity is idle for lazy background pages.
-  void OnNetworkRequestStarted(content::RenderViewHost* render_view_host);
-  void OnNetworkRequestDone(content::RenderViewHost* render_view_host);
+  void OnNetworkRequestStarted(content::RenderFrameHost* render_frame_host);
+  void OnNetworkRequestDone(content::RenderFrameHost* render_frame_host);
 
   // Prevents |extension|'s background page from being closed and sends the
   // onSuspendCanceled() event to it.
@@ -119,6 +120,14 @@ class ProcessManager : public content::NotificationObserver {
   // Gets the BrowserContext associated with site_instance_ and all other
   // related SiteInstances.
   content::BrowserContext* GetBrowserContext() const;
+
+  // Sets callbacks for testing keepalive impulse behavior.
+  typedef base::Callback<void(const std::string& extension_id)>
+      ImpulseCallbackForTesting;
+  void SetKeepaliveImpulseCallbackForTesting(
+      const ImpulseCallbackForTesting& callback);
+  void SetKeepaliveImpulseDecrementCallbackForTesting(
+      const ImpulseCallbackForTesting& callback);
 
  protected:
   // If |context| is incognito pass the master context as |original_context|.
@@ -181,7 +190,9 @@ class ProcessManager : public content::NotificationObserver {
 
   // Potentially registers a RenderViewHost, if it is associated with an
   // extension. Does nothing if this is not an extension renderer.
-  void RegisterRenderViewHost(content::RenderViewHost* render_view_host);
+  // Returns true, if render_view_host was registered (it is associated
+  // with an extension).
+  bool RegisterRenderViewHost(content::RenderViewHost* render_view_host);
 
   // Unregister RenderViewHosts and clear background page data for an extension
   // which has been unloaded.
@@ -214,6 +225,9 @@ class ProcessManager : public content::NotificationObserver {
   bool startup_background_hosts_created_;
 
   base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
+
+  ImpulseCallbackForTesting keepalive_impulse_callback_for_testing_;
+  ImpulseCallbackForTesting keepalive_impulse_decrement_callback_for_testing_;
 
   base::WeakPtrFactory<ProcessManager> weak_ptr_factory_;
 

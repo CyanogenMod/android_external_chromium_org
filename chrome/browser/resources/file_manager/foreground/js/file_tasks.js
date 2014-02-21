@@ -7,6 +7,7 @@
 /**
  * This object encapsulates everything related to tasks execution.
  *
+ * TODO(hirono): Pass each component instead of the entire FileManager.
  * @param {FileManager} fileManager FileManager instance.
  * @param {Object=} opt_params File manager load parameters.
  * @constructor
@@ -26,15 +27,6 @@ function FileTasks(fileManager, opt_params) {
    */
   this.pendingInvocations_ = [];
 }
-
-/**
- * Location of the FAQ about the file actions.
- *
- * @const
- * @type {string}
- */
-FileTasks.NO_ACTION_FOR_FILE_URL = 'http://support.google.com/chromeos/bin/' +
-    'answer.py?answer=1700055&topic=29026&ctx=topic';
 
 /**
  * Location of the Chrome Web Store.
@@ -133,14 +125,14 @@ FileTasks.prototype.onTasks_ = function(tasks) {
  * @type {Array.<string>}
  * @private
  */
-FileTasks.knownExtensions_ = [
+FileTasks.UMA_INDEX_KNOWN_EXTENSIONS_ = Object.freeze([
   'other', '.3ga', '.3gp', '.aac', '.alac', '.asf', '.avi', '.bmp', '.csv',
-  '.doc', '.docx', '.flac', '.gif', '.ico', '.jpeg', '.jpg', '.log', '.m3u',
-  '.m3u8', '.m4a', '.m4v', '.mid', '.mkv', '.mov', '.mp3', '.mp4', '.mpg',
-  '.odf', '.odp', '.ods', '.odt', '.oga', '.ogg', '.ogv', '.pdf', '.png',
-  '.ppt', '.pptx', '.ra', '.ram', '.rar', '.rm', '.rtf', '.wav', '.webm',
-  '.webp', '.wma', '.wmv', '.xls', '.xlsx',
-];
+  '.doc', '.docx', '.flac', '.gif', '.jpeg', '.jpg', '.log', '.m3u', '.m3u8',
+  '.m4a', '.m4v', '.mid', '.mkv', '.mov', '.mp3', '.mp4', '.mpg', '.odf',
+  '.odp', '.ods', '.odt', '.oga', '.ogg', '.ogv', '.pdf', '.png', '.ppt',
+  '.pptx', '.ra', '.ram', '.rar', '.rm', '.rtf', '.wav', '.webm', '.webp',
+  '.wma', '.wmv', '.xls', '.xlsx',
+]);
 
 /**
  * The list of excutable file extensions.
@@ -172,11 +164,11 @@ FileTasks.recordViewingFileTypeUMA_ = function(entries) {
   for (var i = 0; i < entries.length; i++) {
     var entry = entries[i];
     var extension = FileType.getExtension(entry).toLowerCase();
-    if (FileTasks.knownExtensions_.indexOf(extension) < 0) {
+    if (FileTasks.UMA_INDEX_KNOWN_EXTENSIONS_.indexOf(extension) < 0) {
       extension = 'other';
     }
     metrics.recordEnum(
-        'ViewingFileType', extension, FileTasks.knownExtensions_);
+        'ViewingFileType', extension, FileTasks.UMA_INDEX_KNOWN_EXTENSIONS_);
   }
 };
 
@@ -211,8 +203,10 @@ FileTasks.prototype.processTasks_ = function(tasks) {
   this.tasks_ = [];
   var id = chrome.runtime.id;
   var isOnDrive = false;
+  var fm = this.fileManager_;
   for (var index = 0; index < this.entries_.length; ++index) {
-    if (FileType.isOnDrive(this.entries_[index])) {
+    var locationInfo = fm.volumeManager.getLocationInfo(this.entries_[index]);
+    if (locationInfo && locationInfo.isDriveBased) {
       isOnDrive = true;
       break;
     }
@@ -348,9 +342,7 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
     }
 
     var webStoreUrl = FileTasks.createWebStoreLink(extension, mimeType);
-    var text = strf(textMessageId,
-                    webStoreUrl,
-                    FileTasks.NO_ACTION_FOR_FILE_URL);
+    var text = strf(textMessageId, webStoreUrl, str('NO_ACTION_FOR_FILE_URL'));
     var title = titleMessageId ? str(titleMessageId) : filename;
     this.fileManager_.alert.showHtml(title, text, function() {});
     callback(false, urls);
@@ -358,11 +350,6 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
 
   var onViewFilesFailure = function() {
     var fm = this.fileManager_;
-    if (fm.enableExperimentalWebStoreIntegration_) {
-      showAlert();
-      return;
-    }
-
     if (!fm.isOnDrive() ||
         !entries[0] ||
         FileTasks.EXTENSIONS_TO_SKIP_SUGGEST_APPS_.indexOf(extension) !== -1) {
@@ -385,17 +372,34 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
         showAlert);
   }.bind(this);
 
-  var onViewFiles = function(success) {
-    if (success)
-      callback(success, entries);
-    else
-      onViewFilesFailure();
+  var onViewFiles = function(result) {
+    switch (result) {
+      case 'opened':
+        callback(success, entries);
+        break;
+      case 'message_sent':
+        util.isTeleported(window).then(function(teleported) {
+          if (teleported) {
+            util.showOpenInOtherDesktopAlert(
+                this.fileManager_.ui.alertDialog, entries);
+          }
+        }.bind(this));
+        callback(success, entries);
+        break;
+      case 'empty':
+        callback(success, entries);
+        break;
+      case 'failed':
+        onViewFilesFailure();
+        break;
+    }
   }.bind(this);
 
   this.checkAvailability_(function() {
     // TODO(mtomasz): Pass entries instead.
     var urls = util.entriesToURLs(entries);
-    util.viewFilesInBrowser(urls, onViewFiles);
+    var taskId = chrome.runtime.id + '|file|view-in-browser';
+    chrome.fileBrowserPrivate.executeTask(taskId, urls, onViewFiles);
   }.bind(this));
 };
 
@@ -428,7 +432,16 @@ FileTasks.prototype.executeInternal_ = function(taskId, entries) {
     } else {
       // TODO(mtomasz): Pass entries instead.
       var urls = util.entriesToURLs(entries);
-      chrome.fileBrowserPrivate.executeTask(taskId, urls);
+      chrome.fileBrowserPrivate.executeTask(taskId, urls, function(result) {
+        if (result !== 'message_sent')
+          return;
+        util.isTeleported(window).then(function(teleported) {
+          if (teleported) {
+            util.showOpenInOtherDesktopAlert(
+                this.fileManager_.ui.alertDialog, entries);
+          }
+        }.bind(this));
+      }.bind(this));
     }
   }.bind(this));
 };
@@ -451,7 +464,10 @@ FileTasks.prototype.checkAvailability_ = function(callback) {
   var fm = this.fileManager_;
   var entries = this.entries_;
 
-  if (fm.isOnDrive() && fm.isDriveOffline()) {
+  var isDriveOffline = fm.volumeManager.getDriveConnectionState().type ===
+      util.DriveConnectionType.OFFLINE;
+
+  if (fm.isOnDrive() && isDriveOffline) {
     fm.metadataCache_.get(entries, 'drive', function(props) {
       if (areAll(props, 'availableOffline')) {
         callback();
@@ -474,7 +490,10 @@ FileTasks.prototype.checkAvailability_ = function(callback) {
     return;
   }
 
-  if (fm.isOnDrive() && fm.isDriveOnMeteredConnection()) {
+  var isOnMetered = fm.volumeManager.getDriveConnectionState().type ===
+      util.DriveConnectionType.METERED;
+
+  if (fm.isOnDrive() && isOnMetered) {
     fm.metadataCache_.get(entries, 'drive', function(driveProps) {
       if (areAll(driveProps, 'availableWhenMetered')) {
         callback();
@@ -523,14 +542,23 @@ FileTasks.prototype.executeInternalTask_ = function(id, entries) {
     }
     // TODO(mtomasz): Pass entries instead.
     var urls = util.entriesToURLs(entries);
-    fm.backgroundPage.launchAudioPlayer({items: urls, position: position});
+    chrome.fileBrowserPrivate.getProfiles(function(profiles,
+                                                   currentId,
+                                                   displayedId) {
+      fm.backgroundPage.launchAudioPlayer({items: urls, position: position},
+                                          displayedId);
+    });
     return;
   }
 
   if (id === 'watch') {
     console.assert(entries.length === 1, 'Cannot open multiple videos');
     // TODO(mtomasz): Pass an entry instead.
-    fm.backgroundPage.launchVideoPlayer(entries[0].toURL());
+    chrome.fileBrowserPrivate.getProfiles(function(profiles,
+                                                   currentId,
+                                                   displayedId) {
+      fm.backgroundPage.launchVideoPlayer(entries[0].toURL(), displayedId);
+    });
     return;
   }
 
@@ -575,10 +603,21 @@ FileTasks.prototype.mountArchivesInternal_ = function(entries) {
     for (var index = 0; index < resolvedURLs.length; ++index) {
       // TODO(mtomasz): Pass Entry instead of URL.
       fm.volumeManager.mountArchive(resolvedURLs[index],
-        function(mountPath) {
-          tracker.stop();
-          if (!tracker.hasChanged)
-            fm.directoryModel.changeDirectory(mountPath);
+        function(volumeInfo) {
+          if (tracker.hasChanged) {
+            tracker.stop();
+            return;
+          }
+          volumeInfo.resolveDisplayRoot(function(displayRoot) {
+            if (tracker.hasChanged) {
+              tracker.stop();
+              return;
+            }
+            fm.directoryModel.changeDirectoryEntry(displayRoot);
+          }, function() {
+            console.warn('Failed to resolve the display root after mounting.');
+            tracker.stop();
+          });
         }, function(url, error) {
           tracker.stop();
           var path = util.extractFilePath(url);
@@ -619,10 +658,14 @@ FileTasks.prototype.openGalleryInternal_ = function(entries) {
 
   if (this.params_ && this.params_.gallery) {
     // Remove the Gallery state from the location, we do not need it any more.
-    util.updateAppState(null /* keep path */, '' /* remove search. */);
+    // TODO(mtomasz): Consider keeping the selection path.
+    util.updateAppState(
+        null, /* keep current directory */
+        '', /* remove current selection */
+        '' /* remove search. */);
   }
 
-  var savedAppState = window.appState;
+  var savedAppState = JSON.parse(JSON.stringify(window.appState));
   var savedTitle = document.title;
 
   // Push a temporary state which will be replaced every time the selection
@@ -662,10 +705,15 @@ FileTasks.prototype.openGalleryInternal_ = function(entries) {
     var downloadsDir = downloadsVolume && downloadsVolume.root;
     var readonlyDirName = null;
     if (readonly && currentDir) {
-      var rootPath = PathUtil.getRootPath(currentDir.fullPath);
-      readonlyDirName = fm.isOnDrive() ?
-          PathUtil.getRootLabel(rootPath) :
-          PathUtil.basename(rootPath);
+      // TODO(mtomasz): Pass Entry instead of localized name. Conversion to a
+      //     display string should be done in gallery.js.
+      var locationInfo = fm.volumeManager.getLocationInfo(currentDir);
+      if (locationInfo && locationInfo.isRootEntry) {
+        readonlyDirName = PathUtil.getRootTypeLabel(currentDir.rootType) ||
+            currentDir.name;
+      } else {
+        readonlyDirName = currentDir.name;
+      }
     }
 
     var context = {
@@ -681,7 +729,7 @@ FileTasks.prototype.openGalleryInternal_ = function(entries) {
       onClose: onClose,
       onMaximize: onMaximize,
       onAppRegionChanged: onAppRegionChanged,
-      displayStringFunction: strf
+      loadTimeData: fm.backgroundPage.background.stringData
     };
     galleryFrame.contentWindow.Gallery.open(
         context, fm.volumeManager, allEntries, entries);
@@ -781,26 +829,6 @@ FileTasks.prototype.createCombobuttonItem_ = function(task, opt_title,
   };
 };
 
-
-/**
- * Decorates a FileTasks method, so it will be actually executed after the tasks
- * are available.
- * This decorator expects an implementation called |method + '_'|.
- *
- * @param {string} method The method name.
- */
-FileTasks.decorate = function(method) {
-  var privateMethod = method + '_';
-  FileTasks.prototype[method] = function() {
-    if (this.tasks_) {
-      this[privateMethod].apply(this, arguments);
-    } else {
-      this.pendingInvocations_.push([privateMethod, arguments]);
-    }
-    return this;
-  };
-};
-
 /**
  * Shows modal action picker dialog with currently available list of tasks.
  *
@@ -826,6 +854,25 @@ FileTasks.prototype.showTaskPicker = function(actionDialog, title, message,
       function(item) {
         onSuccess(item.task);
       });
+};
+
+/**
+ * Decorates a FileTasks method, so it will be actually executed after the tasks
+ * are available.
+ * This decorator expects an implementation called |method + '_'|.
+ *
+ * @param {string} method The method name.
+ */
+FileTasks.decorate = function(method) {
+  var privateMethod = method + '_';
+  FileTasks.prototype[method] = function() {
+    if (this.tasks_) {
+      this[privateMethod].apply(this, arguments);
+    } else {
+      this.pendingInvocations_.push([privateMethod, arguments]);
+    }
+    return this;
+  };
 };
 
 FileTasks.decorate('display');

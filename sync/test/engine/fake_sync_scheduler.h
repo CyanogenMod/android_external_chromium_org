@@ -56,7 +56,10 @@ class FakeSyncScheduler : public SyncScheduler {
       const base::TimeDelta& new_delay) OVERRIDE;
   virtual void OnReceivedClientInvalidationHintBufferSize(int size) OVERRIDE;
   virtual void OnSyncProtocolError(
-      const sessions::SyncSessionSnapshot& snapshot) OVERRIDE;
+      const SyncProtocolError& error) OVERRIDE;
+  virtual void OnReceivedGuRetryDelay(
+      const base::TimeDelta& delay) OVERRIDE;
+  virtual void OnReceivedMigrationRequest(ModelTypeSet types) OVERRIDE;
 };
 
 }  // namespace syncer

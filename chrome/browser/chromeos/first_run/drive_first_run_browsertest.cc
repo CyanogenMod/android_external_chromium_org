@@ -11,11 +11,11 @@
 #include "chrome/browser/chromeos/first_run/drive_first_run_controller.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_notification_observer.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_status_code.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -96,7 +96,7 @@ void DriveFirstRunTest::SetUpOnMainThread() {
   host_resolver()->AddRule("example.com", "127.0.0.1");
 
   // |controller_| will delete itself when it completes.
-  controller_ = new DriveFirstRunController();
+  controller_ = new DriveFirstRunController(browser()->profile());
   controller_->AddObserver(this);
   controller_->SetDelaysForTest(0, 10);
   controller_->SetAppInfoForTest(kTestAppId, kTestEndpointUrl);

@@ -75,7 +75,6 @@ class VideoRendererImplTest : public ::testing::Test {
 
   // Callbacks passed into Initialize().
   MOCK_METHOD1(OnTimeUpdate, void(base::TimeDelta));
-  MOCK_METHOD1(OnNaturalSizeChanged, void(const gfx::Size&));
 
   void Initialize() {
     InitializeWithDuration(kVideoDurationInMs);
@@ -102,10 +101,6 @@ class VideoRendererImplTest : public ::testing::Test {
     // Initialize, we shouldn't have any reads.
     InitializeRenderer(PIPELINE_OK);
 
-    // We expect the video size to be set.
-    EXPECT_CALL(*this,
-                OnNaturalSizeChanged(TestVideoConfig::NormalCodedSize()));
-
     // Start prerolling.
     QueuePrerollFrames(0);
     Preroll(0, PIPELINE_OK);
@@ -125,8 +120,6 @@ class VideoRendererImplTest : public ::testing::Test {
         base::Bind(&MockStatisticsCB::OnStatistics,
                    base::Unretained(&statistics_cb_object_)),
         base::Bind(&VideoRendererImplTest::OnTimeUpdate,
-                   base::Unretained(this)),
-        base::Bind(&VideoRendererImplTest::OnNaturalSizeChanged,
                    base::Unretained(this)),
         ended_event_.GetClosure(),
         error_event_.GetPipelineStatusCB(),
@@ -211,7 +204,7 @@ class VideoRendererImplTest : public ::testing::Test {
     DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     scoped_refptr<VideoFrame> null_frame;
     decode_results_.push_back(std::make_pair(
-        VideoDecoder::kOk, null_frame));
+        VideoDecoder::kAborted, null_frame));
   }
 
   void QueuePrerollFrames(int timestamp_ms) {

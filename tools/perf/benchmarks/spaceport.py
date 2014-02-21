@@ -6,8 +6,8 @@
 
 import logging
 import os
-import sys
 
+from metrics import power
 from telemetry import test
 from telemetry.core import util
 from telemetry.page import page_measurement
@@ -15,12 +15,23 @@ from telemetry.page import page_set
 
 
 class _SpaceportMeasurement(page_measurement.PageMeasurement):
+  def __init__(self):
+    super(_SpaceportMeasurement, self).__init__()
+    self._power_metric = power.PowerMetric()
+
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--disable-gpu-vsync')
+    power.PowerMetric.CustomizeBrowserOptions(options)
 
-  def MeasurePage(self, _, tab, results):
+  def DidNavigateToPage(self, page, tab):
+    self._power_metric.Start(page, tab)
+
+  def MeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression(
         '!document.getElementById("start-performance-tests").disabled', 60)
+
+    self._power_metric.Stop(page, tab)
+    self._power_metric.AddResults(tab, results)
 
     tab.ExecuteJavaScript("""
         window.__results = {};
@@ -53,12 +64,11 @@ class _SpaceportMeasurement(page_measurement.PageMeasurement):
                 [float(x) for x in result_dict.values()])
 
 
+# crbug.com/166703: This test frequently times out on Windows.
+@test.Disabled('mac', 'win')
 class Spaceport(test.Test):
   """spaceport.io's PerfMarks benchmark."""
   test = _SpaceportMeasurement
-
-  # crbug.com/166703: This test frequently times out on Windows.
-  enabled = sys.platform != 'darwin' and not sys.platform.startswith('win')
 
   def CreatePageSet(self, options):
     spaceport_dir = os.path.join(util.GetChromiumSrcDir(), 'chrome', 'test',

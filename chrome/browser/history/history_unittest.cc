@@ -810,6 +810,7 @@ const InterruptReasonAssociation historical_reasons[] = {
   {"NETWORK_TIMEOUT",  21},
   {"NETWORK_DISCONNECTED",  22},
   {"NETWORK_SERVER_DOWN",  23},
+  {"NETWORK_INVALID_REQUEST", 24},
   {"SERVER_FAILED",  30},
   {"SERVER_NO_RANGE",  31},
   {"SERVER_PRECONDITION",  32},
@@ -1274,7 +1275,7 @@ TEST_F(HistoryTest, SetTitle) {
       existing_url, base::Time::Now(), history::SOURCE_BROWSED);
 
   // Set some title.
-  const base::string16 existing_title = UTF8ToUTF16("Google");
+  const base::string16 existing_title = base::UTF8ToUTF16("Google");
   history_service_->SetPageTitle(existing_url, existing_title);
 
   // Make sure the title got set.
@@ -1283,12 +1284,12 @@ TEST_F(HistoryTest, SetTitle) {
 
   // set a title on a nonexistent page
   const GURL nonexistent_url("http://news.google.com/");
-  const base::string16 nonexistent_title = UTF8ToUTF16("Google News");
+  const base::string16 nonexistent_title = base::UTF8ToUTF16("Google News");
   history_service_->SetPageTitle(nonexistent_url, nonexistent_title);
 
   // Make sure nothing got written.
   EXPECT_FALSE(QueryURL(history_service_.get(), nonexistent_url));
-  EXPECT_EQ(string16(), query_url_row_.title());
+  EXPECT_EQ(base::string16(), query_url_row_.title());
 
   // TODO(brettw) this should also test redirects, which get the title of the
   // destination page.
@@ -1826,7 +1827,7 @@ TEST_F(HistoryBackendDBTest, MigratePresentations) {
   const URLID url_id = 3;
   const GURL url("http://www.foo.com");
   const std::string url_name(VisitSegmentDatabase::ComputeSegmentName(url));
-  const base::string16 title(ASCIIToUTF16("Title1"));
+  const base::string16 title(base::ASCIIToUTF16("Title1"));
   const Time segment_time(Time::Now());
 
   {

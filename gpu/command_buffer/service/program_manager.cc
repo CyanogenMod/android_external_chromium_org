@@ -18,7 +18,6 @@
 #include "base/time/time.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/program_cache.h"
@@ -180,7 +179,7 @@ std::string Program::ProcessLogInfo(
   std::string prior_log;
   std::string hashed_name;
   while (RE2::Consume(&input,
-                      "(.*)(webgl_[0123456789abcdefABCDEF]+)",
+                      "(.*?)(webgl_[0123456789abcdefABCDEF]+)",
                       &prior_log,
                       &hashed_name)) {
     output += prior_log;
@@ -358,13 +357,13 @@ void Program::Update() {
 #if !defined(NDEBUG)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableGPUServiceLoggingGPU)) {
-    DLOG(INFO) << "----: attribs for service_id: " << service_id();
+    DVLOG(1) << "----: attribs for service_id: " << service_id();
     for (size_t ii = 0; ii < attrib_infos_.size(); ++ii) {
       const VertexAttrib& info = attrib_infos_[ii];
-      DLOG(INFO) << ii << ": loc = " << info.location
-                 << ", size = " << info.size
-                 << ", type = " << GLES2Util::GetStringEnum(info.type)
-                 << ", name = " << info.name;
+      DVLOG(1) << ii << ": loc = " << info.location
+               << ", size = " << info.size
+               << ", type = " << GLES2Util::GetStringEnum(info.type)
+               << ", name = " << info.name;
     }
   }
 #endif
@@ -436,14 +435,14 @@ void Program::Update() {
 #if !defined(NDEBUG)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableGPUServiceLoggingGPU)) {
-    DLOG(INFO) << "----: uniforms for service_id: " << service_id();
+    DVLOG(1) << "----: uniforms for service_id: " << service_id();
     for (size_t ii = 0; ii < uniform_infos_.size(); ++ii) {
       const UniformInfo& info = uniform_infos_[ii];
       if (info.IsValid()) {
-        DLOG(INFO) << ii << ": loc = " << info.element_locations[0]
-                   << ", size = " << info.size
-                   << ", type = " << GLES2Util::GetStringEnum(info.type)
-                   << ", name = " << info.name;
+        DVLOG(1) << ii << ": loc = " << info.element_locations[0]
+                 << ", size = " << info.size
+                 << ", type = " << GLES2Util::GetStringEnum(info.type)
+                 << ", name = " << info.name;
       }
     }
   }
@@ -461,9 +460,10 @@ void Program::ExecuteBindAttribLocationCalls() {
   }
 }
 
-void ProgramManager::DoCompileShader(Shader* shader,
-                                     ShaderTranslator* translator,
-                                     FeatureInfo* feature_info) {
+void ProgramManager::DoCompileShader(
+    Shader* shader,
+    ShaderTranslator* translator,
+    ProgramManager::TranslatedShaderSourceType translated_shader_source_type) {
   // Translate GL ES 2.0 shader to Desktop GL shader and pass that to
   // glShaderSource and then glCompileShader.
   const std::string* source = shader->source();
@@ -474,13 +474,13 @@ void ProgramManager::DoCompileShader(Shader* shader,
       return;
     }
     shader_src = translator->translated_shader();
-    if (!feature_info->feature_flags().angle_translated_shader_source)
+    if (translated_shader_source_type != kANGLE)
       shader->UpdateTranslatedSource(shader_src);
   }
 
   glShaderSource(shader->service_id(), 1, &shader_src, NULL);
   glCompileShader(shader->service_id());
-  if (feature_info->feature_flags().angle_translated_shader_source) {
+  if (translated_shader_source_type == kANGLE) {
     GLint max_len = 0;
     glGetShaderiv(shader->service_id(),
                   GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE,
@@ -522,7 +522,7 @@ void ProgramManager::DoCompileShader(Shader* shader,
 bool Program::Link(ShaderManager* manager,
                    ShaderTranslator* vertex_translator,
                    ShaderTranslator* fragment_translator,
-                   FeatureInfo* feature_info,
+                   Program::VaryingsPackingOption varyings_packing_option,
                    const ShaderCacheCallback& shader_callback) {
   ClearLinkStatus();
   if (!CanLink()) {
@@ -533,21 +533,27 @@ bool Program::Link(ShaderManager* manager,
     set_log_info("glBindAttribLocation() conflicts");
     return false;
   }
-  if (DetectUniformsMismatch()) {
-    set_log_info("Uniforms with the same name but different type/precision");
+  std::string conflicting_name;
+  if (DetectUniformsMismatch(&conflicting_name)) {
+    std::string info_log = "Uniforms with the same name but different "
+                           "type/precision: " + conflicting_name;
+    set_log_info(ProcessLogInfo(info_log).c_str());
     return false;
   }
-  if (DetectVaryingsMismatch()) {
-    set_log_info("Varyings with the same name but different type, "
-                 "or statically used varyings in fragment shader are not "
-                 "declared in vertex shader");
+  if (DetectVaryingsMismatch(&conflicting_name)) {
+    std::string info_log = "Varyings with the same name but different type, "
+                           "or statically used varyings in fragment shader are "
+                           "not declared in vertex shader: " + conflicting_name;
+    set_log_info(ProcessLogInfo(info_log).c_str());
     return false;
   }
-  if (DetectGlobalNameConflicts()) {
-    set_log_info("Name conflicts between an uniform and an attribute");
+  if (DetectGlobalNameConflicts(&conflicting_name)) {
+    std::string info_log = "Name conflicts between an uniform and an "
+                           "attribute: " + conflicting_name;
+    set_log_info(ProcessLogInfo(info_log).c_str());
     return false;
   }
-  if (!CheckVaryingsPacking()) {
+  if (!CheckVaryingsPacking(varyings_packing_option)) {
     set_log_info("Varyings over maximum register limit");
     return false;
   }
@@ -1005,7 +1011,7 @@ bool Program::DetectAttribLocationBindingConflicts() const {
   return false;
 }
 
-bool Program::DetectUniformsMismatch() const {
+bool Program::DetectUniformsMismatch(std::string* conflicting_name) const {
   typedef std::map<std::string, UniformType> UniformMap;
   UniformMap uniform_map;
   for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
@@ -1024,6 +1030,7 @@ bool Program::DetectUniformsMismatch() const {
         // declared by other shader, then the type and precision must match.
         if (map_entry->second == type)
           continue;
+        *conflicting_name = name;
         return true;
       }
     }
@@ -1031,7 +1038,7 @@ bool Program::DetectUniformsMismatch() const {
   return false;
 }
 
-bool Program::DetectVaryingsMismatch() const {
+bool Program::DetectVaryingsMismatch(std::string* conflicting_name) const {
   DCHECK(attached_shaders_[0] &&
          attached_shaders_[0]->shader_type() == GL_VERTEX_SHADER &&
          attached_shaders_[1] &&
@@ -1051,20 +1058,24 @@ bool Program::DetectVaryingsMismatch() const {
     ShaderTranslator::VariableMap::const_iterator hit =
         vertex_varyings->find(name);
     if (hit == vertex_varyings->end()) {
-      if (iter->second.static_use)
+      if (iter->second.static_use) {
+        *conflicting_name = name;
         return true;
+      }
       continue;
     }
 
     if (hit->second.type != iter->second.type ||
-        hit->second.size != iter->second.size)
+        hit->second.size != iter->second.size) {
+      *conflicting_name = name;
       return true;
+    }
 
   }
   return false;
 }
 
-bool Program::DetectGlobalNameConflicts() const {
+bool Program::DetectGlobalNameConflicts(std::string* conflicting_name) const {
   DCHECK(attached_shaders_[0] &&
          attached_shaders_[0]->shader_type() == GL_VERTEX_SHADER &&
          attached_shaders_[1] &&
@@ -1078,14 +1089,17 @@ bool Program::DetectGlobalNameConflicts() const {
   for (ShaderTranslator::VariableMap::const_iterator iter =
            attribs->begin(); iter != attribs->end(); ++iter) {
     for (int ii = 0; ii < 2; ++ii) {
-      if (uniforms[ii]->find(iter->first) != uniforms[ii]->end())
+      if (uniforms[ii]->find(iter->first) != uniforms[ii]->end()) {
+        *conflicting_name = iter->first;
         return true;
+      }
     }
   }
   return false;
 }
 
-bool Program::CheckVaryingsPacking() const {
+bool Program::CheckVaryingsPacking(
+    Program::VaryingsPackingOption option) const {
   DCHECK(attached_shaders_[0] &&
          attached_shaders_[0]->shader_type() == GL_VERTEX_SHADER &&
          attached_shaders_[1] &&
@@ -1100,13 +1114,14 @@ bool Program::CheckVaryingsPacking() const {
   for (ShaderTranslator::VariableMap::const_iterator iter =
            fragment_varyings->begin();
        iter != fragment_varyings->end(); ++iter) {
-    if (!iter->second.static_use)
+    if (!iter->second.static_use && option == kCountOnlyStaticallyUsed)
       continue;
     if (!IsBuiltInVarying(iter->first)) {
       ShaderTranslator::VariableMap::const_iterator vertex_iter =
           vertex_varyings->find(iter->first);
       if (vertex_iter == vertex_varyings->end() ||
-          !vertex_iter->second.static_use)
+          (!vertex_iter->second.static_use &&
+           option == kCountOnlyStaticallyUsed))
         continue;
     }
 
@@ -1238,9 +1253,6 @@ ProgramManager::ProgramManager(ProgramCache* program_cache,
                                uint32 max_varying_vectors)
     : program_count_(0),
       have_context_(true),
-      disable_workarounds_(
-          CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kDisableGpuDriverBugWorkarounds)),
       program_cache_(program_cache),
       max_varying_vectors_(max_varying_vectors) { }
 
@@ -1335,7 +1347,6 @@ void ProgramManager::UseProgram(Program* program) {
   DCHECK(program);
   DCHECK(IsOwned(program));
   program->IncUseCount();
-  ClearUniforms(program);
 }
 
 void ProgramManager::UnuseProgram(
@@ -1350,9 +1361,7 @@ void ProgramManager::UnuseProgram(
 
 void ProgramManager::ClearUniforms(Program* program) {
   DCHECK(program);
-  if (!disable_workarounds_) {
-    program->ClearUniforms(&zero_);
-  }
+  program->ClearUniforms(&zero_);
 }
 
 int32 ProgramManager::MakeFakeLocation(int32 index, int32 element) {

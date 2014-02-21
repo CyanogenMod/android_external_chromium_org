@@ -9,9 +9,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/managed_mode/custodian_profile_downloader_service.h"
 #include "chrome/browser/managed_mode/custodian_profile_downloader_service_factory.h"
 #include "chrome/browser/managed_mode/managed_mode_site_list.h"
@@ -21,7 +21,11 @@
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
+#include "chrome/browser/managed_mode/supervised_user_pref_mapping_service.h"
+#include "chrome/browser/managed_mode/supervised_user_pref_mapping_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_info_cache.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -33,12 +37,13 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -55,6 +60,7 @@ using content::BrowserThread;
 const char kManagedUserAccessRequestKeyPrefix[] =
     "X-ManagedUser-AccessRequests";
 const char kManagedUserAccessRequestTime[] = "timestamp";
+const char kManagedUserName[] = "name";
 const char kOpenManagedProfileKeyPrefix[] = "X-ManagedUser-Events-OpenProfile";
 const char kQuitBrowserKeyPrefix[] = "X-ManagedUser-Events-QuitBrowser";
 const char kSwitchFromManagedProfileKeyPrefix[] =
@@ -240,8 +246,8 @@ std::string ManagedUserService::GetCustodianEmailAddress() const {
 
 std::string ManagedUserService::GetCustodianName() const {
 #if defined(OS_CHROMEOS)
-  return UTF16ToUTF8(chromeos::UserManager::Get()->GetSupervisedUserManager()->
-      GetManagerDisplayName(
+  return base::UTF16ToUTF8(chromeos::UserManager::Get()->
+      GetSupervisedUserManager()->GetManagerDisplayName(
           chromeos::UserManager::Get()->GetActiveUser()->email()));
 #else
   std::string name = profile_->GetPrefs()->GetString(
@@ -397,8 +403,8 @@ ScopedVector<ManagedModeSiteList> ManagedUserService::GetActiveSiteLists() {
   if (!extension_service)
     return site_lists.Pass();
 
-  const ExtensionSet* extensions = extension_service->extensions();
-  for (ExtensionSet::const_iterator it = extensions->begin();
+  const extensions::ExtensionSet* extensions = extension_service->extensions();
+  for (extensions::ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     const extensions::Extension* extension = it->get();
     if (!extension_service->IsExtensionEnabled(extension->id()))
@@ -454,17 +460,19 @@ void ManagedUserService::AddAccessRequest(const GURL& url) {
   std::string key = ManagedUserSettingsService::MakeSplitSettingKey(
       kManagedUserAccessRequestKeyPrefix, output);
 
-  scoped_ptr<DictionaryValue> dict(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
 
   // TODO(sergiu): Use sane time here when it's ready.
   dict->SetDouble(kManagedUserAccessRequestTime, base::Time::Now().ToJsTime());
 
-  GetSettingsService()->UploadItem(key, dict.PassAs<Value>());
+  dict->SetString(kManagedUserName, profile_->GetProfileName());
+
+  GetSettingsService()->UploadItem(key, dict.PassAs<base::Value>());
 }
 
 ManagedUserService::ManualBehavior ManagedUserService::GetManualBehaviorForHost(
     const std::string& hostname) {
-  const DictionaryValue* dict =
+  const base::DictionaryValue* dict =
       profile_->GetPrefs()->GetDictionary(prefs::kManagedModeManualHosts);
   bool allow = false;
   if (!dict->GetBooleanWithoutPathExpansion(hostname, &allow))
@@ -475,7 +483,7 @@ ManagedUserService::ManualBehavior ManagedUserService::GetManualBehaviorForHost(
 
 ManagedUserService::ManualBehavior ManagedUserService::GetManualBehaviorForURL(
     const GURL& url) {
-  const DictionaryValue* dict =
+  const base::DictionaryValue* dict =
       profile_->GetPrefs()->GetDictionary(prefs::kManagedModeManualURLs);
   GURL normalized_url = ManagedModeURLFilter::Normalize(url);
   bool allow = false;
@@ -487,9 +495,9 @@ ManagedUserService::ManualBehavior ManagedUserService::GetManualBehaviorForURL(
 
 void ManagedUserService::GetManualExceptionsForHost(const std::string& host,
                                                     std::vector<GURL>* urls) {
-  const DictionaryValue* dict =
+  const base::DictionaryValue* dict =
       profile_->GetPrefs()->GetDictionary(prefs::kManagedModeManualURLs);
-  for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
+  for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
     GURL url(it.key());
     if (url.host() == host)
       urls->push_back(url);
@@ -527,16 +535,18 @@ void ManagedUserService::Init() {
 
   settings_service->Activate();
 
+  SupervisedUserPrefMappingServiceFactory::GetForBrowserContext(profile_)
+      ->Init();
+
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kManagedUserSyncToken)) {
     InitSync(
         command_line->GetSwitchValueASCII(switches::kManagedUserSyncToken));
   }
 
-  // TODO(rogerta): Remove this once PO2TS has replaced TokenService.
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  token_service->LoadCredentials();
+  token_service->LoadCredentials(managed_users::kManagedUserPseudoEmail);
 
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile_);
@@ -583,7 +593,7 @@ void ManagedUserService::RegisterAndInitSync(
   DCHECK(ProfileIsManaged());
   DCHECK(!custodian_profile->IsManaged());
 
-  base::string16 name = UTF8ToUTF16(
+  base::string16 name = base::UTF8ToUTF16(
       profile_->GetPrefs()->GetString(prefs::kProfileName));
   int avatar_index = profile_->GetPrefs()->GetInteger(
       prefs::kProfileAvatarIndex);
@@ -608,7 +618,7 @@ void ManagedUserService::RegisterAndInitSync(
 void ManagedUserService::OnCustodianProfileDownloaded(
     const base::string16& full_name) {
   profile_->GetPrefs()->SetString(prefs::kManagedUserCustodianName,
-                                  UTF16ToUTF8(full_name));
+                                  base::UTF16ToUTF8(full_name));
 }
 
 void ManagedUserService::OnManagedUserRegistered(
@@ -622,6 +632,12 @@ void ManagedUserService::OnManagedUserRegistered(
         SigninManagerFactory::GetForProfile(custodian_profile);
     profile_->GetPrefs()->SetString(prefs::kManagedUserCustodianEmail,
                                     signin->GetAuthenticatedUsername());
+
+    // The managed-user profile is now ready for use.
+    ProfileManager* profile_manager = g_browser_process->profile_manager();
+    ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+    size_t index = cache.GetIndexOfProfileWithPath(profile_->GetPath());
+    cache.SetIsOmittedProfileAtIndex(index, false);
   } else {
     DCHECK_EQ(std::string(), token);
   }
@@ -630,11 +646,11 @@ void ManagedUserService::OnManagedUserRegistered(
 }
 
 void ManagedUserService::UpdateManualHosts() {
-  const DictionaryValue* dict =
+  const base::DictionaryValue* dict =
       profile_->GetPrefs()->GetDictionary(prefs::kManagedModeManualHosts);
   scoped_ptr<std::map<std::string, bool> > host_map(
       new std::map<std::string, bool>());
-  for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
+  for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
     bool allow = false;
     bool result = it.value().GetAsBoolean(&allow);
     DCHECK(result);
@@ -644,10 +660,10 @@ void ManagedUserService::UpdateManualHosts() {
 }
 
 void ManagedUserService::UpdateManualURLs() {
-  const DictionaryValue* dict =
+  const base::DictionaryValue* dict =
       profile_->GetPrefs()->GetDictionary(prefs::kManagedModeManualURLs);
   scoped_ptr<std::map<GURL, bool> > url_map(new std::map<GURL, bool>());
-  for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
+  for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
     bool allow = false;
     bool result = it.value().GetAsBoolean(&allow);
     DCHECK(result);
@@ -672,10 +688,10 @@ void ManagedUserService::RecordProfileAndBrowserEventsHelper(
       key_prefix,
       base::Int64ToString(base::TimeTicks::Now().ToInternalValue()));
 
-  scoped_ptr<DictionaryValue> dict(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
 
   // TODO(bauerb): Use sane time when ready.
   dict->SetDouble(kEventTimestamp, base::Time::Now().ToJsTime());
 
-  GetSettingsService()->UploadItem(key, dict.PassAs<Value>());
+  GetSettingsService()->UploadItem(key, dict.PassAs<base::Value>());
 }

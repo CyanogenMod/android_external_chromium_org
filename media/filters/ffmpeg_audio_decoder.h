@@ -19,7 +19,7 @@ struct AVCodecContext;
 struct AVFrame;
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -33,7 +33,7 @@ class ScopedPtrAVFreeFrame;
 class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
  public:
   explicit FFmpegAudioDecoder(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop);
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
   virtual ~FFmpegAudioDecoder();
 
   // AudioDecoder implementation.
@@ -45,6 +45,7 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   virtual ChannelLayout channel_layout() OVERRIDE;
   virtual int samples_per_second() OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
+  virtual void Stop(const base::Closure& closure) OVERRIDE;
 
   // Callback called from within FFmpeg to allocate a buffer based on
   // the dimensions of |codec_context|. See AVCodecContext.get_buffer2
@@ -52,6 +53,9 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   int GetAudioBuffer(AVCodecContext* codec, AVFrame* frame, int flags);
 
  private:
+  void DoStop();
+  void DoReset();
+
   // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
   void BufferReady(DemuxerStream::Status status,
@@ -63,7 +67,7 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   void RunDecodeLoop(const scoped_refptr<DecoderBuffer>& input,
                      bool skip_eos_append);
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WeakPtrFactory<FFmpegAudioDecoder> weak_factory_;
   base::WeakPtr<FFmpegAudioDecoder> weak_this_;
 
@@ -92,6 +96,8 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   scoped_ptr_malloc<AVFrame, ScopedPtrAVFreeFrame> av_frame_;
 
   ReadCB read_cb_;
+  base::Closure stop_cb_;
+  base::Closure reset_cb_;
 
   // Since multiple frames may be decoded from the same packet we need to queue
   // them up and hand them out as we receive Read() calls.

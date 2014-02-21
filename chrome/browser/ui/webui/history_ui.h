@@ -8,12 +8,12 @@
 #include <string>
 
 #include "base/strings/string16.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/web_history_service.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -47,10 +47,10 @@ class BrowsingHistoryHandler : public content::WebUIMessageHandler,
     virtual ~HistoryEntry();
 
     // Formats this entry's URL and title and adds them to |result|.
-    void SetUrlAndTitle(DictionaryValue* result) const;
+    void SetUrlAndTitle(base::DictionaryValue* result) const;
 
     // Converts the entry to a DictionaryValue to be owned by the caller.
-    scoped_ptr<DictionaryValue> ToValue(
+    scoped_ptr<base::DictionaryValue> ToValue(
         BookmarkModel* bookmark_model,
         ManagedUserService* managed_user_service,
         const ProfileSyncService* sync_service) const;
@@ -129,7 +129,8 @@ class BrowsingHistoryHandler : public content::WebUIMessageHandler,
   };
 
   // Core implementation of history querying.
-  void QueryHistory(string16 search_text, const history::QueryOptions& options);
+  void QueryHistory(base::string16 search_text,
+                    const history::QueryOptions& options);
 
   // Combines the query results from the local history database and the history
   // server, and sends the combined results to the front end.
@@ -185,7 +186,7 @@ class BrowsingHistoryHandler : public content::WebUIMessageHandler,
   scoped_ptr<history::WebHistoryService::Request> web_history_delete_request_;
 
   // Tracker for delete requests to the history service.
-  CancelableTaskTracker delete_task_tracker_;
+  base::CancelableTaskTracker delete_task_tracker_;
 
   // The list of URLs that are in the process of being deleted.
   std::set<GURL> urls_to_be_deleted_;

@@ -8,7 +8,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/image_view.h"
@@ -17,6 +16,7 @@
 
 namespace views {
 
+class LabelButtonBorder;
 class Painter;
 
 // LabelButton is an alternative to TextButton, it's not focusable by default.
@@ -28,7 +28,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   static const char kViewClassName[];
 
-  LabelButton(ButtonListener* listener, const string16& text);
+  LabelButton(ButtonListener* listener, const base::string16& text);
   virtual ~LabelButton();
 
   // Get or set the image shown for the specified button state.
@@ -37,8 +37,8 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   void SetImage(ButtonState for_state, const gfx::ImageSkia& image);
 
   // Get or set the text shown on the button.
-  const string16& GetText() const;
-  void SetText(const string16& text);
+  const base::string16& GetText() const;
+  void SetText(const base::string16& text);
 
   // Set the text color shown for the specified button state.
   void SetTextColor(ButtonState for_state, SkColor color);
@@ -47,9 +47,9 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   bool GetTextMultiLine() const;
   void SetTextMultiLine(bool text_multi_line);
 
-  // Get or set the font used by this button.
-  const gfx::Font& GetFont() const;
-  void SetFont(const gfx::Font& font);
+  // Get or set the font list used by this button.
+  const gfx::FontList& GetFontList() const;
+  void SetFontList(const gfx::FontList& font_list);
 
   // Set the elide behavior of this button.
   void SetElideBehavior(Label::ElideBehavior elide_behavior);
@@ -61,6 +61,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // Call set_min_size(gfx::Size()) to clear the monotonically increasing size.
   void set_min_size(const gfx::Size& min_size) { min_size_ = min_size; }
+  void set_min_width(const int min_width) { min_size_.set_width(min_width); }
   void set_max_size(const gfx::Size& max_size) { max_size_ = max_size; }
 
   // Get or set the option to handle the return key; false by default.
@@ -96,6 +97,11 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   // Updates the image view to contain the appropriate button state image.
   void UpdateImage();
 
+  // Updates our border with a specific Border instance which has different
+  // insets, etc. This may wrap the border in an object which will draw a
+  // native style border.
+  void UpdateThemedBorder(scoped_ptr<Border> border);
+
   // NativeThemeDelegate:
   virtual gfx::Rect GetThemePaintRect() const OVERRIDE;
 
@@ -104,7 +110,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Label);
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Image);
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, LabelAndImage);
-  FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Font);
+  FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, FontList);
 
   // CustomButton:
   virtual void StateChanged() OVERRIDE;
@@ -126,6 +132,10 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   // The image and label shown in the button.
   ImageView* image_;
   Label* label_;
+
+  // The cached font lists in the normal and bold style.
+  gfx::FontList cached_normal_font_list_;
+  gfx::FontList cached_bold_font_list_;
 
   // The images and colors for each button state.
   gfx::ImageSkia button_state_images_[STATE_COUNT];

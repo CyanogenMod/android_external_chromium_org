@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/safe_numerics.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -34,6 +33,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -635,7 +635,7 @@ syncer::SyncError SessionModelAssociator::AssociateModels(
 
       // Write the initial values to the specifics so that in case of a crash or
       // error we don't persist a half-written node.
-      write_node.SetTitle(UTF8ToWide(current_machine_tag_));
+      write_node.SetTitle(base::UTF8ToWide(current_machine_tag_));
       sync_pb::SessionSpecifics base_specifics;
       base_specifics.set_session_tag(current_machine_tag_);
       sync_pb::SessionHeader* header_s = base_specifics.mutable_header();
@@ -1138,7 +1138,7 @@ bool SessionModelAssociator::TabHasValidEntry(
       return false;
     const GURL& virtual_url = entry->GetVirtualURL();
     if (virtual_url.is_valid() &&
-        !virtual_url.SchemeIs(chrome::kChromeUIScheme) &&
+        !virtual_url.SchemeIs(content::kChromeUIScheme) &&
         !virtual_url.SchemeIs(chrome::kChromeNativeScheme) &&
         !virtual_url.SchemeIsFile()) {
       found_valid_url = true;

@@ -28,8 +28,8 @@ using content::BrowserThread;
 namespace {
 
 std::string GetThemePath() {
-  return std::string(chrome::kChromeUIScheme) +
-      "://" + std::string(chrome::kChromeUIThemePath) + "/";
+  return std::string(content::kChromeUIScheme) + "://" +
+         std::string(chrome::kChromeUIThemePath) + "/";
 }
 
 // use a resource map rather than hard-coded strings.
@@ -59,7 +59,7 @@ std::string ThemeSource::GetSource() const {
 void ThemeSource::StartDataRequest(
     const std::string& path,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   // Default scale factor if not specified.
   ui::ScaleFactor scale_factor;

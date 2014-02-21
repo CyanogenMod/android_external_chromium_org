@@ -39,8 +39,8 @@ scoped_ptr<base::DictionaryValue> WiFiService::NetworkProperties::ToValue(
       if (frequency != WiFiService::kFrequencyUnknown)
         wifi->SetInteger(onc::wifi::kFrequency, frequency);
       scoped_ptr<base::ListValue> frequency_list(new base::ListValue());
-      for (FrequencyList::const_iterator it = this->frequency_list.begin();
-           it != this->frequency_list.end();
+      for (FrequencySet::const_iterator it = this->frequency_set.begin();
+           it != this->frequency_set.end();
            ++it) {
         frequency_list->AppendInteger(*it);
       }
@@ -54,7 +54,7 @@ scoped_ptr<base::DictionaryValue> WiFiService::NetworkProperties::ToValue(
   } else {
     // Add properites from json extra if present.
     if (!json_extra.empty()) {
-      Value* value_extra = base::JSONReader::Read(json_extra);
+      base::Value* value_extra = base::JSONReader::Read(json_extra);
       value->Set(type, value_extra);
     }
   }
@@ -72,12 +72,10 @@ bool WiFiService::NetworkProperties::UpdateFromValue(
     type = network_type;
   }
   if (value.GetDictionary(onc::network_type::kWiFi, &wifi)) {
-    std::string wifi_security;
-    if (wifi->GetString(onc::wifi::kSecurity, &wifi_security))
-      security = wifi_security;
-    std::string wifi_ssid;
-    if (wifi->GetString(onc::wifi::kSSID, &wifi_ssid))
-      ssid = wifi_ssid;
+    wifi->GetString(onc::wifi::kSecurity, &security);
+    wifi->GetString(onc::wifi::kSSID, &ssid);
+    wifi->GetString(onc::wifi::kPassphrase, &password);
+    wifi->GetBoolean(onc::wifi::kAutoConnect, &auto_connect);
     return true;
   }
   return false;

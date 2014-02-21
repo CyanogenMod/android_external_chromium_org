@@ -107,11 +107,12 @@ void AppInfoView::Init(const base::string16& title_text,
   icon_->SetImageSize(gfx::Size(kIconPreviewSizePixels,
                                 kIconPreviewSizePixels));
 
-  title_ = new views::Label(title_text);
+  title_ = new views::Label(
+      title_text,
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::BoldFont));
   title_->SetMultiLine(true);
   title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  title_->SetFont(ui::ResourceBundle::GetSharedInstance().GetFont(
-      ui::ResourceBundle::BaseFont).DeriveFont(0, gfx::Font::BOLD));
 
   PrepareDescriptionLabel(description_text);
 
@@ -124,7 +125,7 @@ void AppInfoView::PrepareDescriptionLabel(const base::string16& description) {
     return;
 
   const size_t kMaxLength = 200;
-  const base::string16 kEllipsis(ASCIIToUTF16(" ... "));
+  const base::string16 kEllipsis(base::ASCIIToUTF16(" ... "));
 
   base::string16 text = description;
   if (text.length() > kMaxLength) {
@@ -339,7 +340,7 @@ gfx::Size CreateApplicationShortcutView::GetPreferredSize() {
   return gfx::Size(kDialogWidth, height);
 }
 
-string16 CreateApplicationShortcutView::GetDialogButtonLabel(
+base::string16 CreateApplicationShortcutView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_COMMIT);
@@ -362,7 +363,7 @@ ui::ModalType CreateApplicationShortcutView::GetModalType() const {
   return ui::MODAL_TYPE_WINDOW;
 }
 
-string16 CreateApplicationShortcutView::GetWindowTitle() const {
+base::string16 CreateApplicationShortcutView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_TITLE);
 }
 
@@ -522,8 +523,8 @@ CreateChromeApplicationShortcutView::CreateChromeApplicationShortcutView(
           close_callback_(close_callback),
           weak_ptr_factory_(this) {
   // Required by InitControls().
-  shortcut_info_.title = UTF8ToUTF16(app->name());
-  shortcut_info_.description = UTF8ToUTF16(app->description());
+  shortcut_info_.title = base::UTF8ToUTF16(app->name());
+  shortcut_info_.description = base::UTF8ToUTF16(app->description());
 
   // Place Chrome app shortcuts in the "Chrome Apps" submenu.
   create_in_chrome_apps_subdir_ = true;

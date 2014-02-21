@@ -12,6 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -31,6 +32,10 @@ class SingleThreadTaskRunner;
 namespace fileapi {
 class FileSystemContext;
 class FileSystemURL;
+}
+
+namespace leveldb {
+class Env;
 }
 
 namespace webkit_blob {
@@ -71,6 +76,7 @@ class LocalFileSyncContext
       HasPendingLocalChangeCallback;
 
   LocalFileSyncContext(const base::FilePath& base_path,
+                       leveldb::Env* env_override,
                        base::SingleThreadTaskRunner* ui_task_runner,
                        base::SingleThreadTaskRunner* io_task_runner);
 
@@ -182,6 +188,10 @@ class LocalFileSyncContext
       const fileapi::FileSystemURL& url,
       const HasPendingLocalChangeCallback& callback);
 
+  void PromoteDemotedChanges(const GURL& origin,
+                             fileapi::FileSystemContext* file_system_context);
+  void UpdateChangesForOrigin(const GURL& origin);
+
   // They must be called on UI thread.
   void AddOriginChangeObserver(LocalOriginChangeObserver* observer);
   void RemoveOriginChangeObserver(LocalOriginChangeObserver* observer);
@@ -204,7 +214,7 @@ class LocalFileSyncContext
   virtual void OnWriteEnabled(const fileapi::FileSystemURL& url) OVERRIDE;
 
  private:
-  typedef base::Callback<void(base::PlatformFileError result)> StatusCallback;
+  typedef base::Callback<void(base::File::Error result)> StatusCallback;
   typedef std::deque<SyncStatusCallback> StatusCallbackQueue;
   friend class base::RefCountedThreadSafe<LocalFileSyncContext>;
   friend class CannedSyncableFileSystem;
@@ -230,7 +240,7 @@ class LocalFileSyncContext
       fileapi::FileSystemContext* file_system_context,
       const GURL& /* root */,
       const std::string& /* name */,
-      base::PlatformFileError error);
+      base::File::Error error);
   SyncStatusCode InitializeChangeTrackerOnFileThread(
       scoped_ptr<LocalFileChangeTracker>* tracker_ptr,
       fileapi::FileSystemContext* file_system_context,
@@ -297,18 +307,18 @@ class LocalFileSyncContext
       const base::FilePath& local_path,
       const fileapi::FileSystemURL& url,
       const SyncStatusCallback& callback,
-      base::PlatformFileError error);
+      base::File::Error error);
 
   // Callback routine for ApplyRemoteChange.
   void DidApplyRemoteChange(
       const fileapi::FileSystemURL& url,
       const SyncStatusCallback& callback_on_ui,
-      base::PlatformFileError file_error);
+      base::File::Error file_error);
 
   void DidGetFileMetadata(
       const SyncFileMetadataCallback& callback,
-      base::PlatformFileError file_error,
-      const base::PlatformFileInfo& file_info);
+      base::File::Error file_error,
+      const base::File::Info& file_info);
 
   base::TimeDelta NotifyChangesDuration();
 
@@ -317,9 +327,10 @@ class LocalFileSyncContext
       const base::FilePath& local_file_path,
       const fileapi::FileSystemURL& dest_url,
       const StatusCallback& callback,
-      base::PlatformFileError error);
+      base::File::Error error);
 
   const base::FilePath local_base_path_;
+  leveldb::Env* env_override_;
 
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;

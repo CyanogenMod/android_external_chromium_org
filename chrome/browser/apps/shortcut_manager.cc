@@ -13,7 +13,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -21,12 +20,13 @@
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 
 #if defined(OS_MACOSX)
 #include "apps/app_shim/app_shim_mac.h"
@@ -126,7 +126,8 @@ void AppShortcutManager::Observe(int type,
         base::Callback<void(const ShellIntegration::ShortcutInfo&)>
             create_or_update;
         if (installed_info->is_update) {
-          base::string16 old_title = UTF8ToUTF16(installed_info->old_name);
+          base::string16 old_title =
+              base::UTF8ToUTF16(installed_info->old_name);
           create_or_update = base::Bind(&web_app::UpdateAllShortcuts,
                                         old_title);
         } else {
@@ -162,9 +163,8 @@ void AppShortcutManager::OnProfileWillBeRemoved(
 void AppShortcutManager::OnceOffCreateShortcuts() {
   bool was_enabled = prefs_->GetBoolean(prefs::kAppShortcutsHaveBeenCreated);
 
-  // Creation of shortcuts on Mac currently sits behind --enable-app-shims.
-  // Until it is enabled permanently, we need to check the flag, and set the
-  // pref accordingly.
+  // Creation of shortcuts on Mac currently can be disabled with
+  // --disable-app-shims, so check the flag, and set the pref accordingly.
 #if defined(OS_MACOSX)
   bool is_now_enabled = apps::IsAppShimsEnabled();
 #else
@@ -186,8 +186,8 @@ void AppShortcutManager::OnceOffCreateShortcuts() {
     return;
 
   // Create an applications menu shortcut for each app in this profile.
-  const ExtensionSet* apps = extension_service->extensions();
-  for (ExtensionSet::const_iterator it = apps->begin();
+  const extensions::ExtensionSet* apps = extension_service->extensions();
+  for (extensions::ExtensionSet::const_iterator it = apps->begin();
        it != apps->end(); ++it) {
     if (ShouldCreateShortcutFor(it->get()))
       web_app::UpdateShortcutInfoAndIconForApp(

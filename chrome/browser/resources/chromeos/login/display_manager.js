@@ -22,7 +22,7 @@
     'managed-user-creation';
 /** @const */ var SCREEN_APP_LAUNCH_SPLASH = 'app-launch-splash';
 /** @const */ var SCREEN_CONFIRM_PASSWORD = 'confirm-password';
-/** @const */ var SCREEN_MESSAGE_BOX = 'message-box';
+/** @const */ var SCREEN_FATAL_ERROR = 'fatal-error';
 
 /* Accelerator identifiers. Must be kept in sync with webui_login_view.cc. */
 /** @const */ var ACCELERATOR_CANCEL = 'cancel';
@@ -30,8 +30,8 @@
 /** @const */ var ACCELERATOR_KIOSK_ENABLE = 'kiosk_enable';
 /** @const */ var ACCELERATOR_VERSION = 'version';
 /** @const */ var ACCELERATOR_RESET = 'reset';
-/** @const */ var ACCELERATOR_LEFT = 'left';
-/** @const */ var ACCELERATOR_RIGHT = 'right';
+/** @const */ var ACCELERATOR_FOCUS_PREV = 'focus_prev';
+/** @const */ var ACCELERATOR_FOCUS_NEXT = 'focus_next';
 /** @const */ var ACCELERATOR_DEVICE_REQUISITION = 'device_requisition';
 /** @const */ var ACCELERATOR_DEVICE_REQUISITION_REMORA =
     'device_requisition_remora';
@@ -44,6 +44,7 @@
   ACCOUNT_PICKER: 2,
   WRONG_HWID_WARNING: 3,
   MANAGED_USER_CREATION_FLOW: 4,
+  SAML_PASSWORD_CONFIRM: 5,
 };
 
 /* Possible UI states of the error screen. */
@@ -138,6 +139,10 @@ cr.define('cr.ui.login', function() {
       document.documentElement.setAttribute('screen', displayType);
     },
 
+    get newKioskUI() {
+      return loadTimeData.getString('newKioskUI') == 'on';
+    },
+
     /**
      * Returns dimensions of screen exluding header bar.
      * @type {Object}
@@ -159,6 +164,10 @@ cr.define('cr.ui.login', function() {
      * Hides/shows header (Shutdown/Add User/Cancel buttons).
      * @param {boolean} hidden Whether header is hidden.
      */
+    get headerHidden() {
+      return $('login-header-bar').hidden;
+    },
+
     set headerHidden(hidden) {
       $('login-header-bar').hidden = hidden;
     },
@@ -180,8 +189,10 @@ cr.define('cr.ui.login', function() {
      */
     set forceKeyboardFlow(value) {
       this.forceKeyboardFlow_ = value;
-      if (value)
+      if (value) {
         keyboard.initializeKeyboardFlow();
+        cr.ui.Dropdown.enableKeyboardFlow();
+      }
     },
 
     /**
@@ -249,9 +260,9 @@ cr.define('cr.ui.login', function() {
         return;
 
       // Handle special accelerators for keyboard enhanced navigation flow.
-      if (name == ACCELERATOR_LEFT)
+      if (name == ACCELERATOR_FOCUS_PREV)
         keyboard.raiseKeyFocusPrevious(document.activeElement);
-      else if (name == ACCELERATOR_RIGHT)
+      else if (name == ACCELERATOR_FOCUS_NEXT)
         keyboard.raiseKeyFocusNext(document.activeElement);
     },
 
@@ -620,8 +631,7 @@ cr.define('cr.ui.login', function() {
         this.deviceRequisitionRemoraDialog_.setCancelLabel(
             loadTimeData.getString('deviceRequisitionRemoraPromptCancel'));
       }
-      this.deviceRequisitionRemoraDialog_.showWithTitle(
-          loadTimeData.getString('deviceRequisitionRemoraPromptTitle'),
+      this.deviceRequisitionRemoraDialog_.show(
           loadTimeData.getString('deviceRequisitionRemoraPromptText'),
           function() {
             chrome.send('setDeviceRequisition', ['remora']);

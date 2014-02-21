@@ -33,6 +33,13 @@ using ::testing::Contains;
 using ::testing::Not;
 using ::testing::Pair;
 
+namespace {
+
+// The first RenderFrame is routing ID 1, and the first RenderView is 2.
+const int kRenderViewRoutingId = 2;
+
+}
+
 namespace safe_browsing {
 
 class PhishingClassifierTest : public InProcessBrowserTest {
@@ -46,7 +53,7 @@ class PhishingClassifierTest : public InProcessBrowserTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kSingleProcess);
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
     // Don't want to try to create a GPU process.
     command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
 #endif
@@ -92,7 +99,7 @@ class PhishingClassifierTest : public InProcessBrowserTest {
     ASSERT_TRUE(scorer_.get());
 
     classifier_.reset(new PhishingClassifier(
-        content::RenderView::FromRoutingID(1),
+        content::RenderView::FromRoutingID(kRenderViewRoutingId),
         clock_));
   }
 
@@ -218,7 +225,7 @@ IN_PROC_BROWSER_TEST_F(PhishingClassifierTest, MAYBE_TestClassification) {
   EXPECT_CALL(*clock_, Now())
       .WillRepeatedly(::testing::Return(base::TimeTicks::Now()));
 
-  base::string16 page_text = ASCIIToUTF16("login");
+  base::string16 page_text = base::ASCIIToUTF16("login");
   float phishy_score;
   FeatureMap features;
 

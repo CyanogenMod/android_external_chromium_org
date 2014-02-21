@@ -81,20 +81,10 @@ void EnsureSearchTermsAreSet(content::WebContents* contents,
 InstantController::InstantController(BrowserInstantController* browser)
     : browser_(browser),
       omnibox_focus_state_(OMNIBOX_FOCUS_NONE),
-      omnibox_focus_change_reason_(OMNIBOX_FOCUS_CHANGE_EXPLICIT),
-      omnibox_bounds_(-1, -1, 0, 0) {
+      omnibox_focus_change_reason_(OMNIBOX_FOCUS_CHANGE_EXPLICIT) {
 }
 
 InstantController::~InstantController() {
-}
-
-void InstantController::SetOmniboxBounds(const gfx::Rect& bounds) {
-  if (omnibox_bounds_ == bounds)
-    return;
-
-  omnibox_bounds_ = bounds;
-  if (instant_tab_)
-    instant_tab_->sender()->SetOmniboxBounds(omnibox_bounds_);
 }
 
 void InstantController::SetSuggestionToPrefetch(
@@ -109,37 +99,12 @@ void InstantController::SetSuggestionToPrefetch(
     }
   } else {
     if (chrome::ShouldPrefetchSearchResults()) {
-      InstantService* instant_service = GetInstantService();
       InstantSearchPrerenderer* prerenderer =
-          instant_service ? instant_service->instant_search_prerenderer() :
-              NULL;
+          InstantSearchPrerenderer::GetForProfile(profile());
       if (prerenderer)
         prerenderer->Prerender(suggestion);
     }
   }
-}
-
-void InstantController::InstantPageLoadFailed(content::WebContents* contents) {
-  DCHECK(IsContentsFrom(instant_tab(), contents));
-
-  // Verify we're not already on a local page and that the URL precisely
-  // equals the instant_url (minus the query params, as those will be filled
-  // in by template values).  This check is necessary to make sure we don't
-  // inadvertently redirect to the local NTP if someone, say, reloads a SRP
-  // while offline, as a committed results page still counts as an instant
-  // url.  We also check to make sure there's no forward history, as if
-  // someone hits the back button a lot when offline and returns to a NTP
-  // we don't want to redirect and nuke their forward history stack.
-  const GURL& current_url = contents->GetURL();
-  GURL instant_url = chrome::GetInstantURL(profile(),
-                                           chrome::kDisableStartMargin, false);
-  if (instant_tab_->IsLocal() ||
-      !search::MatchesOriginAndPath(instant_url, current_url) ||
-      !current_url.ref().empty() ||
-      contents->GetController().CanGoForward())
-    return;
-  LOG_INSTANT_DEBUG_EVENT(this, "InstantPageLoadFailed: instant_tab");
-  RedirectToLocalNTP(contents);
 }
 
 bool InstantController::SubmitQuery(const base::string16& search_terms) {
@@ -278,8 +243,6 @@ void InstantController::ResetInstantTab() {
 
 void InstantController::UpdateInfoForInstantTab() {
   if (instant_tab_) {
-    instant_tab_->sender()->SetOmniboxBounds(omnibox_bounds_);
-
     // Update theme details.
     InstantService* instant_service = GetInstantService();
     if (instant_service) {
@@ -296,17 +259,6 @@ void InstantController::UpdateInfoForInstantTab() {
 bool InstantController::IsInputInProgress() const {
   return !search_mode_.is_ntp() &&
       omnibox_focus_state_ == OMNIBOX_FOCUS_VISIBLE;
-}
-
-void InstantController::RedirectToLocalNTP(content::WebContents* contents) {
-  contents->GetController().LoadURL(
-      GURL(chrome::kChromeSearchLocalNtpUrl),
-      content::Referrer(),
-      content::PAGE_TRANSITION_SERVER_REDIRECT,
-      std::string());  // No extra headers.
-  // TODO(dcblack): Remove extraneous history entry caused by 404s.
-  // Note that the base case of a 204 being returned doesn't push a history
-  // entry.
 }
 
 InstantService* InstantController::GetInstantService() const {

@@ -26,6 +26,7 @@
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/win/src/sandbox_factory.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace {
 
@@ -120,17 +121,19 @@ bool AttemptFastNotify(const CommandLine& command_line) {
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prev, wchar_t*, int) {
   startup_metric_utils::RecordExeMainEntryTime();
+
+  // Signal Chrome Elf that Chrome has begun to start.
+  SignalChromeElf();
+
   // Initialize the commandline singleton from the environment.
   CommandLine::Init(0, NULL);
   // The exit manager is in charge of calling the dtors of singletons.
   base::AtExitManager exit_manager;
 
+  gfx::EnableHighDPISupport();
+
   if (AttemptFastNotify(*CommandLine::ForCurrentProcess()))
     return 0;
-
-  // The purpose of this call is to force the addition of an entry in the IAT
-  // for chrome_elf.dll to force a load time dependency.
-  InitChromeElf();
 
   MetroDriver metro_driver;
   if (metro_driver.in_metro_mode())

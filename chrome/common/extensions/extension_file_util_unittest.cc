@@ -90,7 +90,8 @@ TEST_F(ExtensionFileUtilTest, InstallUninstallGarbageCollect) {
   extension_paths.insert(std::make_pair(extension_id,
       base::FilePath().AppendASCII(extension_id).Append(version_3.BaseName())));
   extension_file_util::GarbageCollectExtensions(all_extensions,
-                                                extension_paths);
+                                                extension_paths,
+                                                true);
   ASSERT_FALSE(base::DirectoryExists(version_1));
   ASSERT_TRUE(base::DirectoryExists(version_2));
   ASSERT_TRUE(base::DirectoryExists(version_3));
@@ -311,7 +312,8 @@ TEST_F(ExtensionFileUtilTest, BackgroundScriptsMustExist) {
   EXPECT_FALSE(extension_file_util::ValidateExtension(
       extension.get(), &error, &warnings));
   EXPECT_EQ(l10n_util::GetStringFUTF8(
-      IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED, ASCIIToUTF16("foo.js")),
+      IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
+      base::ASCIIToUTF16("foo.js")),
            error);
   EXPECT_EQ(0U, warnings.size());
 
@@ -327,7 +329,7 @@ TEST_F(ExtensionFileUtilTest, BackgroundScriptsMustExist) {
       extension.get(), &error, &warnings));
   EXPECT_EQ(l10n_util::GetStringFUTF8(
       IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
-      ASCIIToUTF16("http://google.com/foo.js")),
+      base::ASCIIToUTF16("http://google.com/foo.js")),
            error);
   EXPECT_EQ(0U, warnings.size());
 }

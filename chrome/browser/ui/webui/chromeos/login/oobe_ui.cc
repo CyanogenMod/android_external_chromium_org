@@ -149,7 +149,7 @@ const char OobeUI::kScreenTermsOfService[]  = "terms-of-service";
 const char OobeUI::kScreenWrongHWID[]       = "wrong-hwid";
 const char OobeUI::kScreenAppLaunchSplash[] = "app-launch-splash";
 const char OobeUI::kScreenConfirmPassword[] = "confirm-password";
-const char OobeUI::kScreenMessageBox[]      = "message-box";
+const char OobeUI::kScreenFatalError[]      = "fatal-error";
 
 OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     : WebUIController(web_ui),
@@ -375,9 +375,13 @@ void OobeUI::GetLocalizedStrings(base::DictionaryValue* localized_strings) {
   }
 
   bool keyboard_driven_oobe =
-      system::keyboard_settings::ForceKeyboardDrivenUINavigation();
+      system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation();
   localized_strings->SetString("highlightStrength",
                                keyboard_driven_oobe ? "strong" : "normal");
+
+  bool new_kiosk_ui = !CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kDisableNewKioskUI);
+  localized_strings->SetString("newKioskUI", new_kiosk_ui ? "on" : "off");
 }
 
 void OobeUI::InitializeScreenMaps() {
@@ -400,7 +404,7 @@ void OobeUI::InitializeScreenMaps() {
   screen_names_[SCREEN_WRONG_HWID] = kScreenWrongHWID;
   screen_names_[SCREEN_APP_LAUNCH_SPLASH] = kScreenAppLaunchSplash;
   screen_names_[SCREEN_CONFIRM_PASSWORD] = kScreenConfirmPassword;
-  screen_names_[SCREEN_MESSAGE_BOX] = kScreenMessageBox;
+  screen_names_[SCREEN_FATAL_ERROR] = kScreenFatalError;
 
   screen_ids_.clear();
   for (size_t i = 0; i < screen_names_.size(); ++i)

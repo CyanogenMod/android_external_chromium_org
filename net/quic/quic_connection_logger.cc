@@ -11,8 +11,11 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/net_log.h"
-#include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/crypto_handshake_message.h"
+#include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/quic_socket_address_coder.h"
 
+using base::StringPiece;
 using std::string;
 
 namespace net {
@@ -96,6 +99,7 @@ base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
   received_info->SetString(
       "largest_observed",
       base::Uint64ToString(frame->received_info.largest_observed));
+  received_info->SetBoolean("truncated", frame->received_info.is_truncated);
   base::ListValue* missing = new base::ListValue();
   received_info->Set("missing_packets", missing);
   const SequenceNumberSet& missing_packets =
@@ -114,8 +118,6 @@ base::Value* NetLogQuicCongestionFeedbackFrameCallback(
   switch (frame->type) {
     case kInterArrival: {
       dict->SetString("type", "InterArrival");
-      dict->SetInteger("accumulated_number_of_lost_packets",
-                       frame->inter_arrival.accumulated_number_of_lost_packets);
       base::ListValue* received = new base::ListValue();
       dict->Set("received_packets", received);
       for (TimeMap::const_iterator it =
@@ -134,8 +136,6 @@ base::Value* NetLogQuicCongestionFeedbackFrameCallback(
       break;
     case kTCP:
       dict->SetString("type", "TCP");
-      dict->SetInteger("accumulated_number_of_lost_packets",
-                       frame->tcp.accumulated_number_of_lost_packets);
       dict->SetInteger("receive_window", frame->tcp.receive_window);
       break;
   }
@@ -198,6 +198,65 @@ void UpdatePacketGapSentHistogram(size_t num_consecutive_missing_packets) {
                        num_consecutive_missing_packets);
 }
 
+void UpdatePublicResetAddressMismatchHistogram(
+    const IPEndPoint& server_hello_address,
+    const IPEndPoint& public_reset_address) {
+  enum {
+    // The addresses don't match.
+    kAddressMismatch_base = 0,
+    kAddressMismatch_v4_v4 = 0,
+    kAddressMismatch_v6_v6 = 1,
+    kAddressMismatch_v4_v6 = 2,
+    kAddressMismatch_v6_v4 = 3,
+
+    // The addresses match, but the ports don't match.
+    kPortMismatch_base = 4,
+    kPortMismatch_v4_v4 = 4,
+    kPortMismatch_v6_v6 = 5,
+
+    kAddressAndPortMatch_base = 6,
+    kAddressAndPortMatch_v4_v4 = 6,
+    kAddressAndPortMatch_v6_v6 = 7,
+
+    kBoundaryValue,
+  };
+
+  // We are seemingly talking to an older server that does not support the
+  // feature, so we can't report the results in the histogram.
+  if (server_hello_address.address().empty() ||
+      public_reset_address.address().empty()) {
+    return;
+  }
+
+  int sample;
+  if (server_hello_address.address() != public_reset_address.address()) {
+    sample = kAddressMismatch_base;
+  } else if (server_hello_address.port() != public_reset_address.port()) {
+    sample = kPortMismatch_base;
+  } else {
+    sample = kAddressAndPortMatch_base;
+  }
+
+  // Add an offset to |sample|:
+  //   v4_v4: add 0
+  //   v6_v6: add 1
+  //   v4_v6: add 2
+  //   v6_v4: add 3
+  bool first_ipv4 =
+    (server_hello_address.address().size() == kIPv4AddressSize);
+  bool second_ipv4 =
+    (public_reset_address.address().size() == kIPv4AddressSize);
+  if (first_ipv4 != second_ipv4) {
+    CHECK_EQ(sample, kAddressMismatch_base);
+    sample += 2;
+  }
+  if (!first_ipv4) {
+    sample += 1;
+  }
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.PublicResetAddressMismatch",
+                            sample, kBoundaryValue);
+}
+
 }  // namespace
 
 QuicConnectionLogger::QuicConnectionLogger(const BoundNetLog& net_log)
@@ -205,12 +264,18 @@ QuicConnectionLogger::QuicConnectionLogger(const BoundNetLog& net_log)
       last_received_packet_sequence_number_(0),
       largest_received_packet_sequence_number_(0),
       largest_received_missing_packet_sequence_number_(0),
-      out_of_order_recieved_packet_count_(0) {
+      out_of_order_recieved_packet_count_(0),
+      num_truncated_acks_sent_(0),
+      num_truncated_acks_received_(0) {
 }
 
 QuicConnectionLogger::~QuicConnectionLogger() {
   UMA_HISTOGRAM_COUNTS("Net.QuicSession.OutOfOrderPacketsReceived",
                        out_of_order_recieved_packet_count_);
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.TruncatedAcksSent",
+                       num_truncated_acks_sent_);
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.TruncatedAcksReceived",
+                       num_truncated_acks_received_);
 }
 
 void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
@@ -226,6 +291,8 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_ACK_FRAME_SENT,
           base::Bind(&NetLogQuicAckFrameCallback, frame.ack_frame));
+      if (frame.ack_frame->received_info.is_truncated)
+        ++num_truncated_acks_sent_;
       break;
     case CONGESTION_FEEDBACK_FRAME:
       net_log_.AddEvent(
@@ -324,6 +391,9 @@ void QuicConnectionLogger::OnAckFrame(const QuicAckFrame& frame) {
       NetLog::TYPE_QUIC_SESSION_ACK_FRAME_RECEIVED,
       base::Bind(&NetLogQuicAckFrameCallback, &frame));
 
+  if (frame.received_info.is_truncated)
+    ++num_truncated_acks_received_;
+
   if (frame.received_info.missing_packets.empty())
     return;
 
@@ -385,6 +455,8 @@ void QuicConnectionLogger::OnConnectionCloseFrame(
 void QuicConnectionLogger::OnPublicResetPacket(
     const QuicPublicResetPacket& packet) {
   net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED);
+  UpdatePublicResetAddressMismatchHistogram(client_address_,
+                                            packet.client_address);
 }
 
 void QuicConnectionLogger::OnVersionNegotiationPacket(
@@ -407,6 +479,15 @@ void QuicConnectionLogger::OnCryptoHandshakeMessageReceived(
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_RECEIVED,
       base::Bind(&NetLogQuicCryptoHandshakeMessageCallback, &message));
+
+  if (message.tag() == kSHLO) {
+    StringPiece address;
+    QuicSocketAddressCoder decoder;
+    if (message.GetStringPiece(kCADR, &address) &&
+        decoder.Decode(address.data(), address.size())) {
+      client_address_ = IPEndPoint(decoder.ip(), decoder.port());
+    }
+  }
 }
 
 void QuicConnectionLogger::OnCryptoHandshakeMessageSent(

@@ -8,9 +8,9 @@
 #include "content/child/child_process.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/child/shared_worker_devtools_agent.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
-#include "content/worker/shared_worker_devtools_agent.h"
 #include "content/worker/worker_thread.h"
 #include "third_party/WebKit/public/web/WebSharedWorker.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -19,14 +19,15 @@
 namespace content {
 
 WebSharedWorkerStub::WebSharedWorkerStub(
+    const GURL& url,
     const base::string16& name,
-    int route_id,
-    const WorkerAppCacheInitInfo& appcache_init_info)
+    const base::string16& content_security_policy,
+    blink::WebContentSecurityPolicyType security_policy_type,
+    int route_id)
     : route_id_(route_id),
-      appcache_init_info_(appcache_init_info),
       client_(route_id, this),
-      name_(name),
-      started_(false) {
+      running_(false),
+      url_(url) {
 
   WorkerThread* worker_thread = WorkerThread::current();
   DCHECK(worker_thread);
@@ -38,6 +39,8 @@ WebSharedWorkerStub::WebSharedWorkerStub(
   impl_ = blink::WebSharedWorker::create(client());
   worker_devtools_agent_.reset(new SharedWorkerDevToolsAgent(route_id, impl_));
   client()->set_devtools_agent(worker_devtools_agent_.get());
+  impl_->startWorkerContext(url_, name,
+                            content_security_policy, security_policy_type);
 }
 
 WebSharedWorkerStub::~WebSharedWorkerStub() {
@@ -63,7 +66,6 @@ bool WebSharedWorkerStub::OnMessageReceived(const IPC::Message& message) {
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebSharedWorkerStub, message)
-    IPC_MESSAGE_HANDLER(WorkerMsg_StartWorkerContext, OnStartWorkerContext)
     IPC_MESSAGE_HANDLER(WorkerMsg_TerminateWorkerContext,
                         OnTerminateWorkerContext)
     IPC_MESSAGE_HANDLER(WorkerMsg_Connect, OnConnect)
@@ -80,44 +82,22 @@ const GURL& WebSharedWorkerStub::url() {
   return url_;
 }
 
-void WebSharedWorkerStub::OnStartWorkerContext(
-    const GURL& url, const base::string16& user_agent,
-    const base::string16& source_code,
-    const base::string16& content_security_policy,
-    blink::WebContentSecurityPolicyType policy_type) {
-  // Ignore multiple attempts to start this worker (can happen if two pages
-  // try to start it simultaneously).
-  if (started_)
-    return;
-
-  impl_->startWorkerContext(url, name_, user_agent, source_code,
-                            content_security_policy, policy_type, 0);
-  started_ = true;
-  url_ = url;
-
-  // Process any pending connections.
-  for (PendingConnectInfoList::const_iterator iter = pending_connects_.begin();
-       iter != pending_connects_.end();
-       ++iter) {
-    OnConnect(iter->first, iter->second);
-  }
-  pending_connects_.clear();
-}
-
 void WebSharedWorkerStub::OnConnect(int sent_message_port_id, int routing_id) {
-  if (started_) {
-    blink::WebMessagePortChannel* channel =
-        new WebMessagePortChannelImpl(routing_id,
-                                      sent_message_port_id,
-                                      base::MessageLoopProxy::current().get());
-    impl_->connect(channel, NULL);
+  WebMessagePortChannelImpl* channel =
+      new WebMessagePortChannelImpl(routing_id,
+                                    sent_message_port_id,
+                                    base::MessageLoopProxy::current().get());
+  if (running_) {
+    impl_->connect(channel);
+    WorkerThread::current()->Send(
+        new WorkerHostMsg_WorkerConnected(channel->message_port_id(),
+                                          route_id_));
   } else {
     // If two documents try to load a SharedWorker at the same time, the
     // WorkerMsg_Connect for one of the documents can come in before the
     // worker is started. Just queue up the connect and deliver it once the
     // worker starts.
-    PendingConnectInfo pending_connect(sent_message_port_id, routing_id);
-    pending_connects_.push_back(pending_connect);
+    pending_channels_.push_back(channel);
   }
 }
 
@@ -126,7 +106,32 @@ void WebSharedWorkerStub::OnTerminateWorkerContext() {
 
   // Call the client to make sure context exits.
   EnsureWorkerContextTerminates();
-  started_ = false;
+  running_ = false;
+}
+
+void WebSharedWorkerStub::WorkerScriptLoaded() {
+  running_ = true;
+  // Process any pending connections.
+  for (PendingChannelList::const_iterator iter = pending_channels_.begin();
+       iter != pending_channels_.end();
+       ++iter) {
+    impl_->connect(*iter);
+    WorkerThread::current()->Send(
+        new WorkerHostMsg_WorkerConnected((*iter)->message_port_id(),
+                                          route_id_));
+  }
+  pending_channels_.clear();
+}
+
+void WebSharedWorkerStub::WorkerScriptLoadFailed() {
+  for (PendingChannelList::const_iterator iter = pending_channels_.begin();
+       iter != pending_channels_.end();
+       ++iter) {
+    blink::WebMessagePortChannel* channel = *iter;
+    channel->destroy();
+  }
+  pending_channels_.clear();
+  Shutdown();
 }
 
 }  // namespace content

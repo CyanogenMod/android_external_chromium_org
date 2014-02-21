@@ -12,3 +12,4 @@ adb shell am start \
   -a android.intent.action.VIEW \
   -n org.chromium.mojo_shell_apk/.MojoShellActivity \
   $INTENT_ARGS
+adb logcat -s MojoShellApplication MojoShellActivity chromium

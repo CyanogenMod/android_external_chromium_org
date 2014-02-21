@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
@@ -110,9 +109,11 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, DisableOneAtATime) {
 
   for (syncer::ModelTypeSet::Iterator it = registered_types.First();
        it.Good(); it.Inc()) {
-    // MANAGED_USERS is always synced.
+    // MANAGED_USERS and MANAGED_USER_SETTINGS are always synced.
     if (it.Get() == syncer::MANAGED_USERS ||
-        it.Get() == syncer::SYNCED_NOTIFICATIONS)
+        it.Get() == syncer::MANAGED_USER_SHARED_SETTINGS ||
+        it.Get() == syncer::SYNCED_NOTIFICATIONS ||
+        it.Get() == syncer::SYNCED_NOTIFICATION_APP_INFO)
       continue;
 
     ASSERT_TRUE(GetClient(0)->DisableSyncForDatatype(it.Get()));

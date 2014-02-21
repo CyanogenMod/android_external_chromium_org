@@ -25,10 +25,11 @@
         'base/strings/ui_strings.gyp:ui_strings',
         'events/events.gyp:events_base',
         'gfx/gfx.gyp:gfx',
+        'gfx/gfx.gyp:gfx_geometry',
         'resources/ui_resources.gyp:ui_resources',
       ],
       'defines': [
-        'UI_IMPLEMENTATION',
+        'UI_BASE_IMPLEMENTATION',
       ],
       'export_dependent_settings': [
         '../net/net.gyp:net',
@@ -124,14 +125,16 @@
         'base/cocoa/window_size_constants.mm',
         'base/cursor/cursor.cc',
         'base/cursor/cursor.h',
+        'base/cursor/cursor_android.cc',
         'base/cursor/cursor_loader.h',
-        'base/cursor/cursor_loader_null.cc',
-        'base/cursor/cursor_loader_null.h',
+        'base/cursor/cursor_loader_ozone.cc',
+        'base/cursor/cursor_loader_ozone.h',
         'base/cursor/cursor_loader_win.cc',
         'base/cursor/cursor_loader_win.h',
         'base/cursor/cursor_loader_x11.cc',
         'base/cursor/cursor_loader_x11.h',
-        'base/cursor/cursor_null.cc',
+        'base/cursor/cursor_ozone.cc',
+        'base/cursor/cursor_mac.mm',
         'base/cursor/cursor_win.cc',
         'base/cursor/cursor_x11.cc',
         'base/cursor/cursors_aura.cc',
@@ -233,6 +236,8 @@
         'base/models/tree_model.h',
         'base/models/tree_node_iterator.h',
         'base/models/tree_node_model.h',
+        'base/nine_image_painter_factory.cc',
+        'base/nine_image_painter_factory.h',
         'base/resource/data_pack.cc',
         'base/resource/data_pack.h',
         'base/resource/resource_bundle.cc',
@@ -270,7 +275,7 @@
         'base/ui_base_switches_util.h',
         'base/ui_base_types.cc',
         'base/ui_base_types.h',
-        'base/ui_export.h',
+        'base/ui_base_export.h',
         'base/view_prop.cc',
         'base/view_prop.h',
         'base/webui/jstemplate_builder.cc',
@@ -289,6 +294,8 @@
         'base/win/hidden_window.h',
         'base/win/hwnd_subclass.cc',
         'base/win/hwnd_subclass.h',
+        'base/win/lock_state.cc',
+        'base/win/lock_state.h',
         'base/win/message_box_win.cc',
         'base/win/message_box_win.h',
         'base/win/mouse_wheel_util.cc',
@@ -355,6 +362,8 @@
         }],
         ['use_aura==1', {
           'sources/': [
+            ['exclude', 'base/clipboard/clipboard_mac.mm'],
+            ['exclude', 'base/layout_mac.mm'],
             ['exclude', 'base/work_area_watcher_observer.h'],
             ['exclude', 'base/x/active_window_watcher_x.cc'],
             ['exclude', 'base/x/active_window_watcher_x.h'],
@@ -373,8 +382,11 @@
             'base/cursor/cursor.h',
             'base/cursor/cursor_loader_x11.cc',
             'base/cursor/cursor_loader_x11.h',
+            'base/cursor/cursor_mac.mm',
             'base/cursor/cursor_win.cc',
             'base/cursor/cursor_x11.cc',
+            'base/nine_image_painter_factory.cc',
+            'base/nine_image_painter_factory.h',
             'base/x/selection_owner.cc',
             'base/x/selection_owner.h',
             'base/x/selection_requestor.cc',
@@ -425,15 +437,22 @@
             '../build/linux/system.gyp:pangocairo',
           ],
         }],
-        ['chromeos==1 or (use_aura==1 and OS=="linux" and use_x11==0)', {
+        ['OS=="win" or use_clipboard_aurax11==1', {
+          'sources!': [
+            'base/clipboard/clipboard_aura.cc',
+          ],
+        }, {
           'sources!': [
             'base/clipboard/clipboard_aurax11.cc',
+          ],
+        }],
+        ['chromeos==1 or (use_aura==1 and OS=="linux" and use_x11==0)', {
+          'sources!': [
             'base/dragdrop/os_exchange_data_provider_aurax11.cc',
             'base/touch/touch_device.cc',
           ],
         }, {
           'sources!': [
-            'base/clipboard/clipboard_aura.cc',
             'base/dragdrop/os_exchange_data_provider_aura.cc',
             'base/dragdrop/os_exchange_data_provider_aura.h',
             'base/touch/touch_device_aurax11.cc',
@@ -486,9 +505,6 @@
             'base/dragdrop/drag_drop_types.h',
             'base/dragdrop/os_exchange_data.cc',
           ],
-          'sources/': [
-            ['exclude', '^base/win/'],
-          ],
         }],
         ['OS=="mac"', {
           'dependencies': [
@@ -511,32 +527,13 @@
             'ldflags': [
               '-L<(PRODUCT_DIR)',
             ],
-            'link_settings': {
-              'libraries': [
-                '-lX11',
-                '-lXcursor',
-                '-lXrender',  # For XRender* function calls in x11_util.cc.
-              ],
-            },
-          },
-          'link_settings': {
-            'libraries': [
-              '-lX11',
-              '-lXcursor',
-              '-lXrender',  # For XRender* function calls in x11_util.cc.
-            ],
           },
           'dependencies': [
             '../build/linux/system.gyp:x11',
+            '../build/linux/system.gyp:xcursor',
             '../build/linux/system.gyp:xext',
             '../build/linux/system.gyp:xfixes',
-          ],
-        }],
-        ['use_ozone==0', {
-          'sources!': [
-            'base/cursor/cursor_null.cc',
-            'base/cursor/cursor_loader_null.cc',
-            'base/cursor/cursor_loader_null.h',
+            '../build/linux/system.gyp:xrender',  # For XRender* function calls in x11_util.cc.
           ],
         }],
         ['toolkit_views==0', {
@@ -563,9 +560,6 @@
           'dependencies': [
             'ui_base_jni_headers',
           ],
-          'include_dirs': [
-            '<(SHARED_INTERMEDIATE_DIR)/ui',
-          ],
           'link_settings': {
             'libraries': [
               '-ljnigraphics',
@@ -575,6 +569,16 @@
         ['OS=="android" and android_webview_build==0', {
           'dependencies': [
             'android/ui_android.gyp:ui_java',
+          ],
+        }],
+        ['OS=="android" and use_aura==0', {
+          'sources!': [
+            'base/cursor/cursor_android.cc'
+          ],
+        }],
+        ['OS=="android" and use_aura==1', {
+          'sources!': [
+            'base/clipboard/clipboard_aura.cc'
           ],
         }],
         ['OS=="android" or OS=="ios"', {
@@ -611,11 +615,6 @@
          {
            'target_name': 'ui_base_jni_headers',
            'type': 'none',
-           'direct_dependent_settings': {
-             'include_dirs': [
-               '<(SHARED_INTERMEDIATE_DIR)/ui',
-             ],
-           },
            'sources': [
              'android/java/src/org/chromium/ui/base/Clipboard.java',
              'android/java/src/org/chromium/ui/base/LocalizationUtils.java',
@@ -630,64 +629,6 @@
            'includes': [ '../build/jni_generator.gypi' ],
          },
        ],
-    }],
-    ['OS=="mac"', {
-      'targets': [
-        {
-          'target_name': 'ui_cocoa_third_party_toolkits',
-          'type': '<(component)',
-          'sources': [
-            # Build the necessary GTM sources
-            '../third_party/GTM/AppKit/GTMFadeTruncatingTextFieldCell.h',
-            '../third_party/GTM/AppKit/GTMFadeTruncatingTextFieldCell.m',
-            '../third_party/GTM/AppKit/GTMIBArray.h',
-            '../third_party/GTM/AppKit/GTMIBArray.m',
-            '../third_party/GTM/AppKit/GTMKeyValueAnimation.h',
-            '../third_party/GTM/AppKit/GTMKeyValueAnimation.m',
-            '../third_party/GTM/AppKit/GTMNSAnimation+Duration.h',
-            '../third_party/GTM/AppKit/GTMNSAnimation+Duration.m',
-            '../third_party/GTM/AppKit/GTMNSBezierPath+CGPath.h',
-            '../third_party/GTM/AppKit/GTMNSBezierPath+CGPath.m',
-            '../third_party/GTM/AppKit/GTMNSBezierPath+RoundRect.h',
-            '../third_party/GTM/AppKit/GTMNSBezierPath+RoundRect.m',
-            '../third_party/GTM/AppKit/GTMNSColor+Luminance.m',
-            '../third_party/GTM/AppKit/GTMUILocalizer.h',
-            '../third_party/GTM/AppKit/GTMUILocalizer.m',
-            '../third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h',
-            '../third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.m',
-            '../third_party/GTM/Foundation/GTMNSNumber+64Bit.h',
-            '../third_party/GTM/Foundation/GTMNSNumber+64Bit.m',
-            '../third_party/GTM/Foundation/GTMNSObject+KeyValueObserving.h',
-            '../third_party/GTM/Foundation/GTMNSObject+KeyValueObserving.m',
-          ],
-          'include_dirs': [
-            '..',
-            '../third_party/GTM',
-            '../third_party/GTM/AppKit',
-            '../third_party/GTM/DebugUtils',
-            '../third_party/GTM/Foundation',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Cocoa.framework',
-              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
-            ],
-          },
-          'conditions': [
-            ['component=="shared_library"', {
-              # GTM is third-party code, so we don't want to add _EXPORT
-              # annotations to it, so build it without -fvisibility=hidden
-              # (else the interface class symbols will be hidden in a 64bit
-              # build). Only do this in a component build, so that the shipping
-              # chrome binary doesn't end up with unnecessarily exported
-              # symbols.
-              'xcode_settings': {
-                'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',
-              },
-            }],
-          ],
-        },
-      ],
     }],
   ],
 }

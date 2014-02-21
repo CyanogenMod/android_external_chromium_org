@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/lazy_instance.h"
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/profiles/profile.h"
@@ -14,6 +15,7 @@
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
 #include "chrome/browser/speech/tts_controller.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace constants = tts_extension_api_constants;
@@ -80,7 +82,9 @@ namespace extensions {
 
 // One of these is constructed for each utterance, and deleted
 // when the utterance gets any final event.
-class TtsExtensionEventHandler : public UtteranceEventDelegate {
+class TtsExtensionEventHandler
+    : public UtteranceEventDelegate,
+      public base::SupportsWeakPtr<TtsExtensionEventHandler> {
  public:
   virtual void OnTtsEvent(Utterance* utterance,
                           TtsEventType event_type,
@@ -108,7 +112,7 @@ void TtsExtensionEventHandler::OnTtsEvent(Utterance* utterance,
   }
 
   const char *event_type_string = TtsEventTypeToString(event_type);
-  scoped_ptr<DictionaryValue> details(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> details(new base::DictionaryValue());
   if (char_index >= 0)
     details->SetInteger(constants::kCharIndexKey, char_index);
   details->SetString(constants::kEventTypeKey, event_type_string);
@@ -118,7 +122,7 @@ void TtsExtensionEventHandler::OnTtsEvent(Utterance* utterance,
   details->SetInteger(constants::kSrcIdKey, utterance->src_id());
   details->SetBoolean(constants::kIsFinalEventKey, utterance->finished());
 
-  scoped_ptr<ListValue> arguments(new ListValue());
+  scoped_ptr<base::ListValue> arguments(new base::ListValue());
   arguments->Set(0, details.release());
 
   scoped_ptr<extensions::Event> event(
@@ -141,9 +145,9 @@ bool TtsSpeakFunction::RunImpl() {
     return false;
   }
 
-  scoped_ptr<DictionaryValue> options(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> options(new base::DictionaryValue());
   if (args_->GetSize() >= 2) {
-    DictionaryValue* temp_options = NULL;
+    base::DictionaryValue* temp_options = NULL;
     if (args_->GetDictionary(1, &temp_options))
       options.reset(temp_options->DeepCopy());
   }
@@ -216,7 +220,7 @@ bool TtsSpeakFunction::RunImpl() {
 
   std::set<TtsEventType> required_event_types;
   if (options->HasKey(constants::kRequiredEventTypesKey)) {
-    ListValue* list;
+    base::ListValue* list;
     EXTENSION_FUNCTION_VALIDATE(
         options->GetList(constants::kRequiredEventTypesKey, &list));
     for (size_t i = 0; i < list->GetSize(); ++i) {
@@ -228,7 +232,7 @@ bool TtsSpeakFunction::RunImpl() {
 
   std::set<TtsEventType> desired_event_types;
   if (options->HasKey(constants::kDesiredEventTypesKey)) {
-    ListValue* list;
+    base::ListValue* list;
     EXTENSION_FUNCTION_VALIDATE(
         options->GetList(constants::kDesiredEventTypesKey, &list));
     for (size_t i = 0; i < list->GetSize(); ++i) {
@@ -275,7 +279,8 @@ bool TtsSpeakFunction::RunImpl() {
   utterance->set_desired_event_types(desired_event_types);
   utterance->set_extension_id(voice_extension_id);
   utterance->set_options(options.get());
-  utterance->set_event_delegate(new TtsExtensionEventHandler());
+  utterance->set_event_delegate(
+      (new TtsExtensionEventHandler())->AsWeakPtr());
 
   TtsController* controller = TtsController::GetInstance();
   controller->SpeakOrEnqueue(utterance);
@@ -298,7 +303,7 @@ bool TtsResumeFunction::RunImpl() {
 }
 
 bool TtsIsSpeakingFunction::RunImpl() {
-  SetResult(Value::CreateBooleanValue(
+  SetResult(base::Value::CreateBooleanValue(
       TtsController::GetInstance()->IsSpeaking()));
   return true;
 }
@@ -307,10 +312,10 @@ bool TtsGetVoicesFunction::RunImpl() {
   std::vector<VoiceData> voices;
   TtsController::GetInstance()->GetVoices(GetProfile(), &voices);
 
-  scoped_ptr<ListValue> result_voices(new ListValue());
+  scoped_ptr<base::ListValue> result_voices(new base::ListValue());
   for (size_t i = 0; i < voices.size(); ++i) {
     const VoiceData& voice = voices[i];
-    DictionaryValue* result_voice = new DictionaryValue();
+    base::DictionaryValue* result_voice = new base::DictionaryValue();
     result_voice->SetString(constants::kVoiceNameKey, voice.name);
     result_voice->SetBoolean(constants::kRemoteKey, voice.remote);
     if (!voice.lang.empty())
@@ -322,11 +327,11 @@ bool TtsGetVoicesFunction::RunImpl() {
     if (!voice.extension_id.empty())
       result_voice->SetString(constants::kExtensionIdKey, voice.extension_id);
 
-    ListValue* event_types = new ListValue();
+    base::ListValue* event_types = new base::ListValue();
     for (std::set<TtsEventType>::iterator iter = voice.events.begin();
          iter != voice.events.end(); ++iter) {
       const char* event_name_constant = TtsEventTypeToString(*iter);
-      event_types->Append(Value::CreateStringValue(event_name_constant));
+      event_types->Append(base::Value::CreateStringValue(event_name_constant));
     }
     result_voice->Set(constants::kEventTypesKey, event_types);
 
@@ -361,7 +366,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<TtsAPI> >
 g_factory = LAZY_INSTANCE_INITIALIZER;
 
 ProfileKeyedAPIFactory<TtsAPI>* TtsAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 }  // namespace extensions

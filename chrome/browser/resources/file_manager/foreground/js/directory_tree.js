@@ -5,46 +5,6 @@
 'use strict';
 
 ////////////////////////////////////////////////////////////////////////////////
-// DirectoryTreeUtil
-
-/**
- * Utility methods. They are intended for use only in this file.
- */
-var DirectoryTreeUtil = {};
-
-/**
- * Generate a list of the directory entries for the top level on the tree.
- * @return {Array.<DirectoryEntry>} Entries for the top level on the tree.
- */
-DirectoryTreeUtil.generateTopLevelEntries = function() {
-  var entries = [
-    DirectoryModel.fakeDriveEntry_,
-    DirectoryModel.fakeDriveOfflineEntry_,
-    DirectoryModel.fakeDriveSharedWithMeEntry_,
-    DirectoryModel.fakeDriveRecentEntry_,
-  ];
-
-  for (var i = 0; i < entries.length; i++) {
-    entries[i]['label'] = PathUtil.getRootLabel(entries[i].fullPath);
-  }
-
-  return entries;
-};
-
-/**
- * Checks if the given directory can be on the tree or not.
- *
- * @param {string} path Path to be checked.
- * @return {boolean} True if the path is eligible for the directory tree.
- *     Otherwise, false.
- */
-DirectoryTreeUtil.isEligiblePathForDirectoryTree = function(path) {
-  return PathUtil.isDriveBasedPath(path);
-};
-
-Object.freeze(DirectoryTreeUtil);
-
-////////////////////////////////////////////////////////////////////////////////
 // DirectoryTreeBase
 
 /**
@@ -70,20 +30,27 @@ DirectoryItemTreeBaseMethods.updateSubElementsFromList = function(recursive) {
     var currentEntry = this.entries_[index];
     var currentElement = this.items[index];
 
+    var locationInfo = tree.volumeManager_.getLocationInfo(currentEntry);
+    var label;
+    if (locationInfo && locationInfo.isRootEntry)
+      label = PathUtil.getRootTypeLabel(locationInfo.rootType);
+    else
+      label = currentEntry.name;
+
     if (index >= this.items.length) {
-      var item = new DirectoryItem(currentEntry, this, tree);
+      var item = new DirectoryItem(label, currentEntry, this, tree);
       this.add(item);
       index++;
-    } else if (currentEntry.fullPath == currentElement.fullPath) {
+    } else if (util.isSameEntry(currentEntry, currentElement.entry)) {
       if (recursive && this.expanded)
         currentElement.updateSubDirectories(true /* recursive */);
 
       index++;
-    } else if (currentEntry.fullPath < currentElement.fullPath) {
-      var item = new DirectoryItem(currentEntry, this, tree);
+    } else if (currentEntry.toURL() < currentElement.entry.toURL()) {
+      var item = new DirectoryItem(label, currentEntry, this, tree);
       this.addAt(item, index);
       index++;
-    } else if (currentEntry.fullPath > currentElement.fullPath) {
+    } else if (currentEntry.toURL() > currentElement.entry.toURL()) {
       this.remove(currentElement);
     }
   }
@@ -93,7 +60,7 @@ DirectoryItemTreeBaseMethods.updateSubElementsFromList = function(recursive) {
     this.remove(removedChild);
   }
 
-  if (index == 0) {
+  if (index === 0) {
     this.hasChildren = false;
     this.expanded = false;
   } else {
@@ -112,7 +79,8 @@ DirectoryItemTreeBaseMethods.updateSubElementsFromList = function(recursive) {
 DirectoryItemTreeBaseMethods.searchAndSelectByEntry = function(entry) {
   for (var i = 0; i < this.items.length; i++) {
     var item = this.items[i];
-    if (util.isParentEntry(item.entry, entry)) {
+    if (util.isDescendantEntry(item.entry, entry) ||
+        util.isSameEntry(item.entry, entry)) {
       item.selectByEntry(entry);
       return true;
     }
@@ -128,29 +96,31 @@ Object.freeze(DirectoryItemTreeBaseMethods);
 /**
  * A directory in the tree. Each element represents one directory.
  *
+ * @param {string} label Label for this item.
  * @param {DirectoryEntry} dirEntry DirectoryEntry of this item.
  * @param {DirectoryItem|DirectoryTree} parentDirItem Parent of this item.
  * @param {DirectoryTree} tree Current tree, which contains this item.
  * @extends {cr.ui.TreeItem}
  * @constructor
  */
-function DirectoryItem(dirEntry, parentDirItem, tree) {
-  var item = cr.doc.createElement('div');
-  DirectoryItem.decorate(item, dirEntry, parentDirItem, tree);
+function DirectoryItem(label, dirEntry, parentDirItem, tree) {
+  var item = new cr.ui.TreeItem();
+  DirectoryItem.decorate(item, label, dirEntry, parentDirItem, tree);
   return item;
 }
 
 /**
  * @param {HTMLElement} el Element to be DirectoryItem.
+ * @param {string} label Label for this item.
  * @param {DirectoryEntry} dirEntry DirectoryEntry of this item.
  * @param {DirectoryItem|DirectoryTree} parentDirItem Parent of this item.
  * @param {DirectoryTree} tree Current tree, which contains this item.
  */
 DirectoryItem.decorate =
-    function(el, dirEntry, parentDirItem, tree) {
+    function(el, label, dirEntry, parentDirItem, tree) {
   el.__proto__ = DirectoryItem.prototype;
   (/** @type {DirectoryItem} */ el).decorate(
-      dirEntry, parentDirItem, tree);
+      label, dirEntry, parentDirItem, tree);
 };
 
 DirectoryItem.prototype = {
@@ -188,6 +158,7 @@ DirectoryItem.prototype.updateSubElementsFromList = function(recursive) {
 
 /**
  * Calls DirectoryItemTreeBaseMethods.updateSubElementsFromList().
+ *
  * @param {DirectoryEntry|Object} entry The entry to be searched for. Can be
  *     a fake.
  * @return {boolean} True if the parent item is found.
@@ -197,17 +168,13 @@ DirectoryItem.prototype.searchAndSelectByEntry = function(entry) {
 };
 
 /**
+ * @param {string} label Localized label for this item.
  * @param {DirectoryEntry} dirEntry DirectoryEntry of this item.
  * @param {DirectoryItem|DirectoryTree} parentDirItem Parent of this item.
  * @param {DirectoryTree} tree Current tree, which contains this item.
  */
 DirectoryItem.prototype.decorate = function(
-    dirEntry, parentDirItem, tree) {
-  var path = dirEntry.fullPath;
-  var label;
-  label = dirEntry.label ? dirEntry.label : dirEntry.name;
-
-  this.className = 'tree-item';
+    label, dirEntry, parentDirItem, tree) {
   this.innerHTML =
       '<div class="tree-row">' +
       ' <span class="expand-icon"></span>' +
@@ -215,26 +182,24 @@ DirectoryItem.prototype.decorate = function(
       ' <span class="label"></span>' +
       '</div>' +
       '<div class="tree-children"></div>';
-  this.setAttribute('role', 'treeitem');
 
   this.parentTree_ = tree;
   this.directoryModel_ = tree.directoryModel;
   this.parent_ = parentDirItem;
   this.label = label;
-  this.fullPath = path;
   this.dirEntry_ = dirEntry;
   this.fileFilter_ = this.directoryModel_.getFileFilter();
 
   // Sets hasChildren=false tentatively. This will be overridden after
-  // scanning sub-directories in DirectoryTreeUtil.updateSubElementsFromList.
+  // scanning sub-directories in updateSubElementsFromList().
   this.hasChildren = false;
 
   this.addEventListener('expand', this.onExpand_.bind(this), false);
   var icon = this.querySelector('.icon');
   icon.classList.add('volume-icon');
-  var iconType = PathUtil.getRootType(path);
-  if (iconType && PathUtil.isRootPath(path))
-    icon.setAttribute('volume-type-icon', iconType);
+  var location = tree.volumeManager.getLocationInfo(dirEntry);
+  if (location && location.rootType && location.isRootEntry)
+    icon.setAttribute('volume-type-icon', location.rootType);
   else
     icon.setAttribute('file-type-icon', 'folder');
 
@@ -337,21 +302,23 @@ DirectoryItem.prototype.updateSubDirectories = function(
 };
 
 /**
- * Updates sub-elements of {@code parentElement} reading {@code DirectoryEntry}
- * with calling {@code iterator}.
+ * Searches for the changed directory in the current subtree, and if it is found
+ * then updates it.
  *
- * @param {string} changedDirectryPath The path of the changed directory.
+ * @param {DirectoryEntry} changedDirectoryEntry The entry ot the changed
+ *     directory.
  */
-DirectoryItem.prototype.updateItemByPath = function(changedDirectryPath) {
-  if (changedDirectryPath === this.entry.fullPath) {
+DirectoryItem.prototype.updateItemByEntry = function(changedDirectoryEntry) {
+  if (util.isSameEntry(changedDirectoryEntry, this.entry)) {
     this.updateSubDirectories(false /* recursive */);
     return;
   }
 
+  // Traverse the entire subtree to find the changed element.
   for (var i = 0; i < this.items.length; i++) {
     var item = this.items[i];
-    if (PathUtil.isParentPath(item.entry.fullPath, changedDirectryPath)) {
-      item.updateItemByPath(changedDirectryPath);
+    if (util.isDescendantEntry(item.entry, changedDirectoryEntry)) {
+      item.updateItemByEntry(changedDirectoryEntry);
       break;
     }
   }
@@ -380,7 +347,7 @@ DirectoryItem.prototype.selectByEntry = function(entry) {
   if (this.searchAndSelectByEntry(entry))
     return;
 
-  // If the path doesn't exist, updates sub directories and tryes again.
+  // If the entry doesn't exist, updates sub directories and tries again.
   this.updateSubDirectories(
       false /* recursive */,
       this.searchAndSelectByEntry.bind(this, entry));
@@ -397,8 +364,11 @@ DirectoryItem.prototype.doDropTargetAction = function() {
  * Executes the assigned action. DirectoryItem performs changeDirectory.
  */
 DirectoryItem.prototype.doAction = function() {
-  if (this.fullPath != this.directoryModel_.getCurrentDirPath())
-    this.directoryModel_.changeDirectory(this.fullPath);
+  if (!this.directoryModel_.getCurrentDirEntry() ||
+      !util.isSameEntry(this.entry,
+                        this.directoryModel_.getCurrentDirEntry())) {
+    this.directoryModel_.changeDirectoryEntry(this.entry);
+  }
 };
 
 /**
@@ -406,7 +376,9 @@ DirectoryItem.prototype.doAction = function() {
  * @param {cr.ui.Menu} menu Menu to be set.
  */
 DirectoryItem.prototype.setContextMenu = function(menu) {
-  if (this.entry && PathUtil.isEligibleForFolderShortcut(this.entry.fullPath))
+  var tree = this.parentTree_ || this;  // If no parent, 'this' itself is tree.
+  var locationInfo = tree.volumeManager_.getLocationInfo(this.entry);
+  if (locationInfo && locationInfo.isEligibleForFolderShortcut)
     cr.ui.contextMenuHandler.setContextMenu(this, menu);
 };
 
@@ -485,6 +457,7 @@ DirectoryTree.prototype.updateSubElementsFromList = function(recursive) {
 
 /**
  * Calls DirectoryItemTreeBaseMethods.updateSubElementsFromList().
+ *
  * @param {DirectoryEntry|Object} entry The entry to be searched for. Can be
  *     a fake.
  * @return {boolean} True if the parent item is found.
@@ -501,9 +474,11 @@ DirectoryTree.prototype.searchAndSelectByEntry = function(entry) {
 DirectoryTree.prototype.decorate = function(directoryModel, volumeManager) {
   cr.ui.Tree.prototype.decorate.call(this);
 
+  this.sequence_ = 0;
   this.directoryModel_ = directoryModel;
   this.volumeManager_ = volumeManager;
-  this.entries_ = DirectoryTreeUtil.generateTopLevelEntries();
+  this.entries_ = [];
+  this.currentVolumeInfo_ = null;
 
   this.fileFilter_ = this.directoryModel_.getFileFilter();
   this.fileFilter_.addEventListener('changed',
@@ -530,14 +505,6 @@ DirectoryTree.prototype.decorate = function(directoryModel, volumeManager) {
 
   this.scrollBar_ = MainPanelScrollBar();
   this.scrollBar_.initialize(this.parentNode, this);
-
-  // Once, draws the list with the fake '/drive/' entry.
-  this.redraw(false /* recursive */);
-  // Resolves 'My Drive' entry and replaces the fake with the true one.
-  this.maybeResolveMyDriveRoot_(function() {
-    // After the true entry is resolved, draws the list again.
-    this.redraw(true /* recursive */);
-  }.bind(this));
 };
 
 /**
@@ -547,69 +514,62 @@ DirectoryTree.prototype.decorate = function(directoryModel, volumeManager) {
  */
 DirectoryTree.prototype.selectByEntry = function(entry) {
   // If the target directory is not in the tree, do nothing.
-  if (!DirectoryTreeUtil.isEligiblePathForDirectoryTree(entry.fullPath))
+  var locationInfo = this.volumeManager_.getLocationInfo(entry);
+  if (!locationInfo || !locationInfo.isDriveBased)
     return;
 
-  this.maybeResolveMyDriveRoot_(function() {
-    if (this.selectedItem && util.isSameEntry(entry, this.selectedItem.entry))
-      return;
+  var volumeInfo = this.volumeManager_.getVolumeInfo(entry);
+  if (this.selectedItem && util.isSameEntry(entry, this.selectedItem.entry))
+    return;
 
-    if (this.searchAndSelectByEntry(entry))
-      return;
+  if (this.searchAndSelectByEntry(entry))
+    return;
 
-    this.selectedItem = null;
-    this.updateSubDirectories(
-        false /* recursive */,
-        // Success callback, failure is not handled.
-        function() {
-          if (!this.searchAndSelectByEntry(entry))
-            this.selectedItem = null;
-        }.bind(this));
+  this.updateSubDirectories(false /* recursive */);
+  var currentSequence = ++this.sequence_;
+  volumeInfo.resolveDisplayRoot(function() {
+    if (this.sequence_ !== currentSequence)
+      return;
+    if (!this.searchAndSelectByEntry(entry))
+      this.selectedItem = null;
   }.bind(this));
 };
 
 /**
- * Resolves the My Drive root's entry, if it is a fake. If the entry is already
- * resolved to a DirectoryEntry, completionCallback() will be called
- * immediately.
- * @param {function()} completionCallback Called when the resolving is
- *     done (or the entry is already resolved), regardless if it is
- *     successfully done or not.
- * @private
- */
-DirectoryTree.prototype.maybeResolveMyDriveRoot_ = function(
-    completionCallback) {
-  var myDriveItem = this.items[0];
-  if (!util.isFakeEntry(myDriveItem.entry)) {
-    // The entry is already resolved. Don't need to try again.
-    completionCallback();
-    return;
-  }
-
-  // The entry is a fake.
-  this.directoryModel_.resolveDirectory(
-      myDriveItem.fullPath,
-      function(entry) {
-        if (!util.isFakeEntry(entry))
-          myDriveItem.dirEntry_ = entry;
-
-        completionCallback();
-      },
-      completionCallback);
-};
-
-/**
  * Retrieves the latest subdirectories and update them on the tree.
+ *
  * @param {boolean} recursive True if the update is recursively.
- * @param {function()=} opt_successCallback Callback called on success.
- * @param {function()=} opt_errorCallback Callback called on error.
+ * @param {function()=} opt_callback Called when subdirectories are fully
+ *     updated.
  */
 DirectoryTree.prototype.updateSubDirectories = function(
-    recursive, opt_successCallback, opt_errorCallback) {
-  this.entries_ = DirectoryTreeUtil.generateTopLevelEntries();
-  this.redraw(recursive);
-  if (opt_successCallback)
-    opt_successCallback();
+    recursive, opt_callback) {
+  var callback = opt_callback || function() {};
+  this.entries_ = [];
+
+  var compareEntries = function(a, b) {
+    return a.toURL() < b.toURL();
+  };
+
+  // Add fakes (if any).
+  for (var key in this.currentVolumeInfo_.fakeEntries) {
+    this.entries_.push(this.currentVolumeInfo_.fakeEntries[key]);
+  }
+
+  // If the display root is not available yet, then redraw anyway with what
+  // we have. However, concurrently try to resolve the display root and then
+  // redraw.
+  if (!this.currentVolumeInfo_.displayRoot) {
+    this.entries_.sort(compareEntries);
+    this.redraw(recursive);
+  }
+
+  this.currentVolumeInfo_.resolveDisplayRoot(function(displayRoot) {
+    this.entries_.push(this.currentVolumeInfo_.displayRoot);
+    this.entries_.sort(compareEntries);
+    this.redraw(recursive);  // Redraw.
+    callback();
+  }.bind(this), callback /* Ignore errors. */);
 };
 
 /**
@@ -639,15 +599,16 @@ DirectoryTree.prototype.onFilterChanged_ = function() {
  * @private
  */
 DirectoryTree.prototype.onDirectoryContentChanged_ = function(event) {
-  if (event.eventType == 'changed') {
-    // TODO: Use Entry instead of urls. This will stop working once migrating
-    // to separate file systems. See: crbug.com/325052.
-    if (!DirectoryTreeUtil.isEligiblePathForDirectoryTree(event.entry.fullPath))
-      return;
+  if (event.eventType !== 'changed')
+    return;
 
-    var myDriveItem = this.items[0];
-    myDriveItem.updateItemByPath(event.entry.fullPath);
-  }
+  var locationInfo = this.volumeManager_.getLocationInfo(event.entry);
+  if (!locationInfo || !locationInfo.isDriveBased)
+    return;
+
+  var myDriveItem = this.items[0];
+  if (myDriveItem)
+    myDriveItem.updateItemByEntry(event.entry);
 };
 
 /**
@@ -656,6 +617,8 @@ DirectoryTree.prototype.onDirectoryContentChanged_ = function(event) {
  * @private
  */
 DirectoryTree.prototype.onCurrentDirectoryChanged_ = function(event) {
+  this.currentVolumeInfo_ =
+      this.volumeManager_.getVolumeInfo(event.newDirEntry);
   this.selectByEntry(event.newDirEntry);
 };
 

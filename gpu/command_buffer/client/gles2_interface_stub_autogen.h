@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -306,7 +306,6 @@ virtual void GetMultipleIntegervCHROMIUM(
 virtual void GetProgramInfoCHROMIUM(
     GLuint program, GLsizei bufsize, GLsizei* size, void* info) OVERRIDE;
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
-virtual void DestroyStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
 virtual GLuint CreateImageCHROMIUM(
     GLsizei width, GLsizei height, GLenum internalformat) OVERRIDE;
 virtual void DestroyImageCHROMIUM(GLuint image_id) OVERRIDE;
@@ -353,5 +352,6 @@ virtual void LoseContextCHROMIUM(GLenum current, GLenum other) OVERRIDE;
 virtual GLuint InsertSyncPointCHROMIUM() OVERRIDE;
 virtual void WaitSyncPointCHROMIUM(GLuint sync_point) OVERRIDE;
 virtual void DrawBuffersEXT(GLsizei count, const GLenum* bufs) OVERRIDE;
+virtual void DiscardBackbufferCHROMIUM() OVERRIDE;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_AUTOGEN_H_
 

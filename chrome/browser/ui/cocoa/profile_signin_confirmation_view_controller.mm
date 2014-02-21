@@ -24,7 +24,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "ui/base/cocoa/controls/hyperlink_button_cell.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -252,8 +252,8 @@ NSTextField* AddTextField(
   // Prompt text.
   size_t offset;
   const base::string16 domain =
-      ASCIIToUTF16(gaia::ExtractDomainName(username_));
-  const base::string16 username = ASCIIToUTF16(username_);
+      base::ASCIIToUTF16(gaia::ExtractDomainName(username_));
+  const base::string16 username = base::ASCIIToUTF16(username_);
   const base::string16 prompt_text =
       l10n_util::GetStringFUTF16(
           IDS_ENTERPRISE_SIGNIN_ALERT_NEW_STYLE,

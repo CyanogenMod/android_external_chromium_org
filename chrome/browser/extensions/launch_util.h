@@ -9,7 +9,18 @@
 
 #include "chrome/common/extensions/extension_constants.h"
 
+class ExtensionService;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 namespace extensions {
+namespace launch_util {
+
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+}  // namespace launch_util
 
 class Extension;
 class ExtensionPrefs;
@@ -21,8 +32,13 @@ class ExtensionPrefs;
 LaunchType GetLaunchType(const ExtensionPrefs* prefs,
                          const Extension* extension);
 
-// Sets an extension's launch type preference.
-void SetLaunchType(ExtensionPrefs* prefs,
+// Returns the LaunchType that is set in the prefs. Returns LAUNCH_TYPE_INVALID
+// if no value is set in prefs.
+LaunchType GetLaunchTypePrefValue(const ExtensionPrefs* prefs,
+                                  const std::string& extension_id);
+
+// Sets an extension's launch type preference and syncs the value if necessary.
+void SetLaunchType(ExtensionService* prefs,
                    const std::string& extension_id,
                    LaunchType launch_type);
 

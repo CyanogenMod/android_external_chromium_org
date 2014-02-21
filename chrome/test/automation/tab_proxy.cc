@@ -60,7 +60,7 @@ int TabProxy::FindInPage(const std::wstring& search_string,
     return -1;
 
   AutomationMsg_Find_Params params;
-  params.search_string = WideToUTF16Hack(search_string);
+  params.search_string = base::WideToUTF16Hack(search_string);
   params.find_next = find_next;
   params.match_case = (match_case == CASE_SENSITIVE);
   params.forward = (forward == FWD);
@@ -169,19 +169,19 @@ bool TabProxy::NavigateToURLAsync(const GURL& url) {
 bool TabProxy::ExecuteAndExtractString(const std::wstring& frame_xpath,
                                        const std::wstring& jscript,
                                        std::wstring* string_value) {
-  scoped_ptr<Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
+  scoped_ptr<base::Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
   if (root == NULL)
     return false;
 
-  DCHECK(root->IsType(Value::TYPE_LIST));
-  Value* value = NULL;
-  bool succeeded = static_cast<ListValue*>(root.get())->Get(0, &value);
+  DCHECK(root->IsType(base::Value::TYPE_LIST));
+  base::Value* value = NULL;
+  bool succeeded = static_cast<base::ListValue*>(root.get())->Get(0, &value);
   if (succeeded) {
-    string16 read_value;
+    base::string16 read_value;
     succeeded = value->GetAsString(&read_value);
     if (succeeded) {
       // TODO(viettrungluu): remove conversion. (But should |jscript| be UTF-8?)
-      *string_value = UTF16ToWideHack(read_value);
+      *string_value = base::UTF16ToWideHack(read_value);
     }
   }
   return succeeded;
@@ -190,14 +190,14 @@ bool TabProxy::ExecuteAndExtractString(const std::wstring& frame_xpath,
 bool TabProxy::ExecuteAndExtractBool(const std::wstring& frame_xpath,
                                      const std::wstring& jscript,
                                      bool* bool_value) {
-  scoped_ptr<Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
+  scoped_ptr<base::Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
   if (root == NULL)
     return false;
 
   bool read_value = false;
-  DCHECK(root->IsType(Value::TYPE_LIST));
-  Value* value = NULL;
-  bool succeeded = static_cast<ListValue*>(root.get())->Get(0, &value);
+  DCHECK(root->IsType(base::Value::TYPE_LIST));
+  base::Value* value = NULL;
+  bool succeeded = static_cast<base::ListValue*>(root.get())->Get(0, &value);
   if (succeeded) {
     succeeded = value->GetAsBoolean(&read_value);
     if (succeeded) {
@@ -210,14 +210,14 @@ bool TabProxy::ExecuteAndExtractBool(const std::wstring& frame_xpath,
 bool TabProxy::ExecuteAndExtractInt(const std::wstring& frame_xpath,
                                     const std::wstring& jscript,
                                     int* int_value) {
-  scoped_ptr<Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
+  scoped_ptr<base::Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
   if (root == NULL)
     return false;
 
   int read_value = 0;
-  DCHECK(root->IsType(Value::TYPE_LIST));
-  Value* value = NULL;
-  bool succeeded = static_cast<ListValue*>(root.get())->Get(0, &value);
+  DCHECK(root->IsType(base::Value::TYPE_LIST));
+  base::Value* value = NULL;
+  bool succeeded = static_cast<base::ListValue*>(root.get())->Get(0, &value);
   if (succeeded) {
     succeeded = value->GetAsInteger(&read_value);
     if (succeeded) {
@@ -227,8 +227,8 @@ bool TabProxy::ExecuteAndExtractInt(const std::wstring& frame_xpath,
   return succeeded;
 }
 
-Value* TabProxy::ExecuteAndExtractValue(const std::wstring& frame_xpath,
-                                        const std::wstring& jscript) {
+base::Value* TabProxy::ExecuteAndExtractValue(const std::wstring& frame_xpath,
+                                              const std::wstring& jscript) {
   if (!is_valid())
     return NULL;
 
@@ -288,67 +288,6 @@ bool TabProxy::Close(bool wait_until_closed) {
   return succeeded;
 }
 
-#if defined(OS_WIN)
-bool TabProxy::ProcessUnhandledAccelerator(const MSG& msg) {
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(
-      new AutomationMsg_ProcessUnhandledAccelerator(handle_, msg));
-  // This message expects no response
-}
-
-bool TabProxy::SetInitialFocus(bool reverse, bool restore_focus_to_view) {
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(
-      new AutomationMsg_SetInitialFocus(handle_, reverse,
-                                        restore_focus_to_view));
-  // This message expects no response
-}
-
-AutomationMsg_NavigationResponseValues TabProxy::NavigateInExternalTab(
-    const GURL& url, const GURL& referrer) {
-  if (!is_valid())
-    return AUTOMATION_MSG_NAVIGATION_ERROR;
-
-  AutomationMsg_NavigationResponseValues rv = AUTOMATION_MSG_NAVIGATION_ERROR;
-  sender_->Send(new AutomationMsg_NavigateInExternalTab(handle_, url,
-                                                        referrer, &rv));
-  return rv;
-}
-
-AutomationMsg_NavigationResponseValues TabProxy::NavigateExternalTabAtIndex(
-    int index) {
-  if (!is_valid())
-    return AUTOMATION_MSG_NAVIGATION_ERROR;
-
-  AutomationMsg_NavigationResponseValues rv = AUTOMATION_MSG_NAVIGATION_ERROR;
-  sender_->Send(new AutomationMsg_NavigateExternalTabAtIndex(handle_, index,
-                                                             &rv));
-  return rv;
-}
-
-void TabProxy::HandleMessageFromExternalHost(const std::string& message,
-                                             const std::string& origin,
-                                             const std::string& target) {
-  if (!is_valid())
-    return;
-
-  sender_->Send(
-      new AutomationMsg_HandleMessageFromExternalHost(
-          handle_, message, origin, target));
-}
-#endif  // defined(OS_WIN)
-
-bool TabProxy::PrintAsync() {
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(new AutomationMsg_PrintAsync(handle_));
-}
-
 bool TabProxy::WaitForInfoBarCount(size_t target_count) {
   if (!is_valid())
     return false;
@@ -368,48 +307,6 @@ bool TabProxy::OverrideEncoding(const std::string& encoding) {
   return succeeded;
 }
 
-#if defined(OS_WIN)
-void TabProxy::Reposition(HWND window, HWND window_insert_after, int left,
-                          int top, int width, int height, int flags,
-                          HWND parent_window) {
-  Reposition_Params params;
-  params.window = window;
-  params.window_insert_after = window_insert_after;
-  params.left = left;
-  params.top = top;
-  params.width = width;
-  params.height = height;
-  params.flags = flags;
-  params.set_parent = (::IsWindow(parent_window) ? true : false);
-  params.parent_window = parent_window;
-  sender_->Send(new AutomationMsg_TabReposition(handle_, params));
-}
-
-void TabProxy::SendContextMenuCommand(int selected_command) {
-  sender_->Send(new AutomationMsg_ForwardContextMenuCommandToChrome(
-      handle_, selected_command));
-}
-
-void TabProxy::OnHostMoved() {
-  sender_->Send(new AutomationMsg_BrowserMove(handle_));
-}
-#endif  // defined(OS_WIN)
-
-void TabProxy::SelectAll() {
-  sender_->Send(new AutomationMsg_SelectAll(handle_));
-}
-
-void TabProxy::Cut() {
-  sender_->Send(new AutomationMsg_Cut(handle_));
-}
-
-void TabProxy::Copy() {
-  sender_->Send(new AutomationMsg_Copy(handle_));
-}
-
-void TabProxy::Paste() {
-  sender_->Send(new AutomationMsg_Paste(handle_));
-}
 
 void TabProxy::ReloadAsync() {
   sender_->Send(new AutomationMsg_ReloadAsync(handle_));
@@ -417,10 +314,6 @@ void TabProxy::ReloadAsync() {
 
 void TabProxy::StopAsync() {
   sender_->Send(new AutomationMsg_StopAsync(handle_));
-}
-
-void TabProxy::SaveAsAsync() {
-  sender_->Send(new AutomationMsg_SaveAsAsync(handle_));
 }
 
 void TabProxy::JavaScriptStressTestControl(int cmd, int param) {

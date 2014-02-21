@@ -30,12 +30,12 @@ bool ConvertKeyCodeToText(
   if (code <= 0 || (code == 1 && iswcntrl(chars[0])))
     *text = std::string();
   else
-    WideToUTF8(chars, code, text);
+    base::WideToUTF8(chars, code, text);
   return true;
 }
 
 bool ConvertCharToKeyCode(
-    char16 key, ui::KeyboardCode* key_code, int *necessary_modifiers,
+    base::char16 key, ui::KeyboardCode* key_code, int *necessary_modifiers,
     std::string* error_msg) {
   short vkey_and_modifiers = ::VkKeyScanW(key);
   bool translated = vkey_and_modifiers != -1 &&

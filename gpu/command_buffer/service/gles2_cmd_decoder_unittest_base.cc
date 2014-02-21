@@ -22,6 +22,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
+#include "ui/gl/gl_surface.h"
 
 using ::gfx::MockGLInterface;
 using ::testing::_;
@@ -62,6 +63,7 @@ GLES2DecoderTestBase::~GLES2DecoderTestBase() {}
 void GLES2DecoderTestBase::SetUp() {
   InitDecoder(
       "",      // extensions
+      "3.0",   // gl version
       true,    // has alpha
       true,    // has depth
       false,   // has stencil
@@ -81,6 +83,7 @@ void GLES2DecoderTestBase::AddExpectationsForVertexAttribManager() {
 
 void GLES2DecoderTestBase::InitDecoder(
     const char* extensions,
+    const char* gl_version,
     bool has_alpha,
     bool has_depth,
     bool has_stencil,
@@ -89,6 +92,7 @@ void GLES2DecoderTestBase::InitDecoder(
     bool request_stencil,
     bool bind_generates_resource) {
   InitDecoderWithCommandLine(extensions,
+                             gl_version,
                              has_alpha,
                              has_depth,
                              has_stencil,
@@ -101,6 +105,7 @@ void GLES2DecoderTestBase::InitDecoder(
 
 void GLES2DecoderTestBase::InitDecoderWithCommandLine(
     const char* extensions,
+    const char* gl_version,
     bool has_alpha,
     bool has_depth,
     bool has_stencil,
@@ -110,15 +115,16 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
     bool bind_generates_resource,
     const CommandLine* command_line) {
   Framebuffer::ClearFramebufferCompleteComboMap();
+
+  gfx::SetGLGetProcAddressProc(gfx::MockGLInterface::GetGLProcAddress);
+  gfx::GLSurface::InitializeOneOffWithMockBindingsForTests();
+
   gl_.reset(new StrictMock<MockGLInterface>());
-  ::gfx::GLInterface::SetGLInterface(gl_.get());
+  ::gfx::MockGLInterface::SetGLInterface(gl_.get());
 
   // Only create stream texture manager if extension is requested.
   std::vector<std::string> list;
   base::SplitString(std::string(extensions), ' ', &list);
-  if (std::find(list.begin(), list.end(),
-                "GL_CHROMIUM_stream_texture") != list.end())
-      stream_texture_manager_.reset(new StrictMock<MockStreamTextureManager>);
   scoped_refptr<FeatureInfo> feature_info;
   if (command_line)
     feature_info = new FeatureInfo(*command_line);
@@ -126,7 +132,6 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
       NULL,
       NULL,
       memory_tracker_,
-      stream_texture_manager_.get(),
       feature_info.get(),
       bind_generates_resource));
   // These two workarounds are always turned on.
@@ -136,8 +141,21 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
 
   InSequence sequence;
 
+  surface_ = new gfx::GLSurfaceStub;
+  surface_->SetSize(gfx::Size(kBackBufferWidth, kBackBufferHeight));
+
+  // Context needs to be created before initializing ContextGroup, which will
+  // in turn initialize FeatureInfo, which needs a context to determine
+  // extension support.
+  context_ = new gfx::GLContextStubWithExtensions;
+  context_->AddExtensionsString(extensions);
+  context_->SetGLVersionString(gl_version);
+
+  context_->MakeCurrent(surface_.get());
+  gfx::GLSurface::InitializeDynamicMockBindingsForTests(context_);
+
   TestHelper::SetupContextGroupInitExpectations(gl_.get(),
-      DisallowedFeatures(), extensions);
+      DisallowedFeatures(), extensions, gl_version);
 
   // We initialize the ContextGroup with a MockGLES2Decoder so that
   // we can use the ContextGroup to figure out how the real GLES2Decoder
@@ -276,13 +294,6 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   shared_memory_id_ = kSharedMemoryId;
   shared_memory_base_ = buffer.ptr;
 
-  surface_ = new gfx::GLSurfaceStub;
-  surface_->SetSize(gfx::Size(kBackBufferWidth, kBackBufferHeight));
-
-  context_ = new gfx::GLContextStub;
-
-  context_->MakeCurrent(surface_.get());
-
   int32 attributes[] = {
     EGL_ALPHA_SIZE, request_alpha ? 8 : 0,
     EGL_DEPTH_SIZE, request_depth ? 24 : 0,
@@ -300,6 +311,7 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
                        attribs);
   decoder_->MakeCurrent();
   decoder_->set_engine(engine_.get());
+  decoder_->BeginDecoding();
 
   EXPECT_CALL(*gl_, GenBuffersARB(_, _))
       .WillOnce(SetArgumentPointee<1>(kServiceBufferId))
@@ -336,11 +348,12 @@ void GLES2DecoderTestBase::TearDown() {
       .Times(2)
       .RetiresOnSaturation();
 
+  decoder_->EndDecoding();
   decoder_->Destroy(true);
   decoder_.reset();
   group_->Destroy(mock_decoder_.get(), false);
   engine_.reset();
-  ::gfx::GLInterface::SetGLInterface(NULL);
+  ::gfx::MockGLInterface::SetGLInterface(NULL);
   gl_.reset();
 }
 
@@ -824,6 +837,28 @@ void GLES2DecoderTestBase::DoTexImage2D(
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
 
+void GLES2DecoderTestBase::DoTexImage2DConvertInternalFormat(
+    GLenum target, GLint level, GLenum requested_internal_format,
+    GLsizei width, GLsizei height, GLint border,
+    GLenum format, GLenum type,
+    uint32 shared_memory_id, uint32 shared_memory_offset,
+    GLenum expected_internal_format) {
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, TexImage2D(target, level, expected_internal_format,
+                               width, height, border, format, type, _))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  cmds::TexImage2D cmd;
+  cmd.Init(target, level, requested_internal_format, width, height, border,
+           format, type, shared_memory_id, shared_memory_offset);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+}
+
 void GLES2DecoderTestBase::DoCompressedTexImage2D(
     GLenum target, GLint level, GLenum format,
     GLsizei width, GLsizei height, GLint border,
@@ -1253,9 +1288,6 @@ void GLES2DecoderTestBase::SetupShader(
   link_cmd.Init(program_client_id);
 
   EXPECT_EQ(error::kNoError, ExecuteCmd(link_cmd));
-
-  // Assume the next command will be UseProgram.
-  SetupExpectationsForClearingUniforms(uniforms, num_uniforms);
 }
 
 void GLES2DecoderTestBase::DoEnableVertexAttribArray(GLint index) {

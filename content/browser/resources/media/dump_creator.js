@@ -4,9 +4,7 @@
 
 
 /**
- * Provides the UI to start and stop RTP recording, forwards the start/stop
- * commands to Chrome, and updates the UI based on dump updates. Also provides
- * creating a file containing all PeerConnection updates and stats.
+ * Provides the UI for dump creation.
  */
 var DumpCreator = (function() {
   /**
@@ -15,30 +13,6 @@ var DumpCreator = (function() {
    * @constructor
    */
   function DumpCreator(containerElement) {
-    /**
-     * True if the RTP packets are being recorded.
-     * @type {bool}
-     * @private
-     */
-    this.recording_ = false;
-
-    /**
-     * @type {!Object.<string>}
-     * @private
-     * @const
-     */
-    this.StatusStrings_ = {
-      NOT_STARTED: 'not started.',
-      RECORDING: 'recording...',
-    },
-
-    /**
-     * The status of dump creation.
-     * @type {string}
-     * @private
-     */
-    this.status_ = this.StatusStrings_.NOT_STARTED;
-
     /**
      * The root element of the dump creation UI.
      * @type {Element}
@@ -51,79 +25,71 @@ var DumpCreator = (function() {
     var summary = document.createElement('summary');
     this.root_.appendChild(summary);
     summary.textContent = 'Create Dump';
-    var content = document.createElement('pre');
+    var content = document.createElement('div');
     this.root_.appendChild(content);
 
-    content.innerHTML = '<button disabled></button> Status: <span></span>' +
-        '<div><a><button>' +
+    content.innerHTML = '<div><a><button>' +
         'Download the PeerConnection updates and stats data' +
-        '</button></a></div>';
-    content.getElementsByTagName('button')[0].addEventListener(
-        'click', this.onRtpToggled_.bind(this));
+        '</button></a></div>' +
+        '<p><label><input type=checkbox>' +
+        'Enable diagnostic audio recordings.</label></p>' +
+        '<p>A diagnostic audio recording is used for analyzing audio' +
+        ' problems. It contains the audio played out from the speaker and' +
+        ' recorded from the microphone and is saved to the local disk.' +
+        ' Checking this box will enable the recording for an ongoing WebRTC' +
+        ' call and for future WebRTC calls. When the box is unchecked or this' +
+        ' page is closed, this recording functionality will be disabled for' +
+        ' future WebRTC calls, but an ongoing call will continue to record' +
+        ' until the call is ended. Only recording in one tab is supported.' +
+        ' If several tabs are running WebRTC calls, the resulting file will' +
+        ' be invalid. To restart the dump, the tab with the call being' +
+        ' recorded must be closed and recording disabled and enabled again.' +
+        ' When enabling, you select a file to save the dump to. Choose a' +
+        ' non-existing file name. Selecting an existing file will append to' +
+        ' it, not overwrite it, rendering the file invalid. </p>';
+
     content.getElementsByTagName('a')[0].addEventListener(
         'click', this.onDownloadData_.bind(this));
-
-    this.updateDisplay_();
+    content.getElementsByTagName('input')[0].addEventListener(
+        'click', this.onAecRecordingChanged_.bind(this));
   }
 
   DumpCreator.prototype = {
+    /** Mark the AEC recording checkbox checked.*/
+    enableAecRecording: function() {
+      this.root_.getElementsByTagName('input')[0].checked = true;
+    },
+
     /**
      * Downloads the PeerConnection updates and stats data as a file.
      *
      * @private
      */
     onDownloadData_: function() {
-      var textBlob =
-          new Blob([JSON.stringify(peerConnectionDataStore, null, ' ')],
-                                   {type: 'octet/stream'});
-      var URL = window.webkitURL.createObjectURL(textBlob);
+      var dump_object =
+      {
+        'getUserMedia': userMediaRequests,
+        'PeerConnections': peerConnectionDataStore,
+      };
+      var textBlob = new Blob([JSON.stringify(dump_object, null, ' ')],
+                              {type: 'octet/stream'});
+      var URL = window.URL.createObjectURL(textBlob);
+
       this.root_.getElementsByTagName('a')[0].href = URL;
       // The default action of the anchor will download the URL.
     },
 
     /**
-     * Handles the event of toggling the rtp recording state.
+     * Handles the event of toggling the AEC recording state.
      *
      * @private
      */
-    onRtpToggled_: function() {
-      if (this.recording_) {
-        this.recording_ = false;
-        this.status_ = this.StatusStrings_.NOT_STARTED;
-        chrome.send('stopRtpRecording');
+    onAecRecordingChanged_: function() {
+      var enabled = this.root_.getElementsByTagName('input')[0].checked;
+      if (enabled) {
+        chrome.send('enableAecRecording');
       } else {
-        this.recording_ = true;
-        this.status_ = this.StatusStrings_.RECORDING;
-        chrome.send('startRtpRecording');
-      }
-      this.updateDisplay_();
-    },
-
-    /**
-     * Updates the UI based on the recording status.
-     *
-     * @private
-     */
-    updateDisplay_: function() {
-      if (this.recording_) {
-        this.root_.getElementsByTagName('button')[0].textContent =
-            'Stop Recording RTP Packets';
-      } else {
-        this.root_.getElementsByTagName('button')[0].textContent =
-            'Start Recording RTP Packets';
-      }
-
-      this.root_.getElementsByTagName('span')[0].textContent = this.status_;
-    },
-
-    /**
-     * Set the status to the content of the update.
-     * @param {!Object} update
-     */
-    onUpdate: function(update) {
-      if (this.recording_) {
-        this.status_ = JSON.stringify(update);
-        this.updateDisplay_();
+        chrome.send('disableAecRecording');
       }
     },
   };

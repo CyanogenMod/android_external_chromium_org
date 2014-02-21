@@ -20,7 +20,7 @@ const char kReadFile[] = "read_file";
 const char kReadFile_Help[] =
     "read_file: Read a file into a variable.\n"
     "\n"
-    "  read_file(filename, how_to_read)\n"
+    "  read_file(filename, input_conversion)\n"
     "\n"
     "  Whitespace will be trimmed from the end of the file. Throws an error\n"
     "  if the file can not be opened.\n"
@@ -42,7 +42,7 @@ Value RunReadFile(Scope* scope,
                   const std::vector<Value>& args,
                   Err* err) {
   if (args.size() != 2) {
-    *err = Err(function->function(), "Wrong number of args to read_file",
+    *err = Err(function->function(), "Wrong number of arguments to read_file",
                "I expected two arguments.");
     return Value();
   }

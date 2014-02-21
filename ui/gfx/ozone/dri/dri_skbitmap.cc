@@ -31,14 +31,16 @@ void DestroyDumbBuffer(int fd, uint32_t handle) {
 // pixel memory.
 class DriSkPixelRef : public SkPixelRef {
  public:
-  DriSkPixelRef(void* pixels,
+  DriSkPixelRef(const SkImageInfo& info,
+                void* pixels,
                 SkColorTable* color_table_,
                 size_t size,
+                size_t row_bites,
                 int fd,
                 uint32_t handle);
   virtual ~DriSkPixelRef();
 
-  virtual void* onLockPixels(SkColorTable** ct) OVERRIDE;
+  virtual bool onNewLockPixels(LockRec* rec) OVERRIDE;
   virtual void onUnlockPixels() OVERRIDE;
 
   SK_DECLARE_UNFLATTENABLE_OBJECT()
@@ -51,6 +53,9 @@ class DriSkPixelRef : public SkPixelRef {
 
   // Size of the allocated memory.
   size_t size_;
+
+  // Number of bytes between subsequent rows in the bitmap (stride).
+  size_t row_bytes_;
 
   // File descriptor to the graphics card used to allocate/deallocate the
   // memory.
@@ -66,14 +71,18 @@ class DriSkPixelRef : public SkPixelRef {
 // DriSkPixelRef implementation
 
 DriSkPixelRef::DriSkPixelRef(
+    const SkImageInfo& info,
     void* pixels,
     SkColorTable* color_table,
     size_t size,
+    size_t row_bytes,
     int fd,
     uint32_t handle)
-  : pixels_(pixels),
+  : SkPixelRef(info),
+    pixels_(pixels),
     color_table_(color_table),
     size_(size),
+    row_bytes_(row_bytes),
     fd_(fd),
     handle_(handle) {
 }
@@ -83,9 +92,11 @@ DriSkPixelRef::~DriSkPixelRef() {
   DestroyDumbBuffer(fd_, handle_);
 }
 
-void* DriSkPixelRef::onLockPixels(SkColorTable** ct) {
-  *ct = color_table_;
-  return pixels_;
+bool DriSkPixelRef::onNewLockPixels(LockRec* rec) {
+  rec->fPixels = pixels_;
+  rec->fRowBytes = row_bytes_;
+  rec->fColorTable = color_table_;
+  return true;
 }
 
 void DriSkPixelRef::onUnlockPixels() {
@@ -158,10 +169,19 @@ bool DriAllocator::AllocatePixels(DriSkBitmap* bitmap,
     return false;
   }
 
+  SkImageInfo info;
+  if (!bitmap->asImageInfo(&info)) {
+    DLOG(ERROR) << "Cannot get skia image info";
+    DestroyDumbBuffer(bitmap->get_fd(), bitmap->get_handle());
+    return false;
+  }
+
   bitmap->setPixelRef(new DriSkPixelRef(
+      info,
       pixels,
       color_table,
       bitmap->getSize(),
+      bitmap->rowBytes(),
       bitmap->get_fd(),
       bitmap->get_handle()))->unref();
   bitmap->lockPixels();

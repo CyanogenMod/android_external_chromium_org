@@ -23,8 +23,8 @@ namespace spellcheck {
 // Stores user feedback to spellcheck suggestions. Sample usage:
 //    Feedback feedback;
 //    feedback.AddMisspelling(renderer_process_id, Misspelling(
-//        ASCIIToUTF16("Helllo world"), 0, 6, std::vector<string16>(),
-//        GenerateRandomHash()));
+//        base::ASCIIToUTF16("Helllo world"), 0, 6,
+//        std::vector<base::string16>(), GenerateRandomHash()));
 //    feedback.FinalizeRemovedMisspellings(renderer_process_id,
 //                                         std::vector<uint32>());
 //    ProcessFeedback(feedback.GetMisspellingsInRenderer(renderer_process_id));
@@ -88,7 +88,7 @@ class Feedback {
   typedef std::map<uint32, Misspelling> HashMisspellingMap;
   typedef std::set<uint32> HashCollection;
   typedef std::map<int, HashCollection> RendererHashesMap;
-  typedef std::map<string16, HashCollection> TextHashesMap;
+  typedef std::map<base::string16, HashCollection> TextHashesMap;
 
   // An empty hash collection to return when FindMisspellings() does not find
   // misspellings.

@@ -21,10 +21,6 @@ class Value;
 
 namespace chromeos {
 class ManagedNetworkConfigurationHandler;
-
-namespace onc {
-class CertificateImporter;
-}
 }
 
 namespace policy {
@@ -41,14 +37,6 @@ class NetworkConfigurationUpdater : public PolicyService::Observer {
  public:
   virtual ~NetworkConfigurationUpdater();
 
-  // Creates an updater that applies the ONC device policy from |policy_service|
-  // once the policy service is completely initialized and on each policy
-  // change.
-  static scoped_ptr<NetworkConfigurationUpdater> CreateForDevicePolicy(
-      scoped_ptr<chromeos::onc::CertificateImporter> certificate_importer,
-      PolicyService* policy_service,
-      chromeos::ManagedNetworkConfigurationHandler* network_config_handler);
-
   // PolicyService::Observer overrides
   virtual void OnPolicyUpdated(const PolicyNamespace& ns,
                                const PolicyMap& previous,
@@ -59,27 +47,25 @@ class NetworkConfigurationUpdater : public PolicyService::Observer {
   NetworkConfigurationUpdater(
       onc::ONCSource onc_source,
       std::string policy_key,
-      scoped_ptr<chromeos::onc::CertificateImporter> certificate_importer,
       PolicyService* policy_service,
       chromeos::ManagedNetworkConfigurationHandler* network_config_handler);
 
-  void Init();
+  virtual void Init();
 
   // Imports the certificates part of the policy.
-  virtual void ImportCertificates(const base::ListValue& certificates_onc);
+  virtual void ImportCertificates(const base::ListValue& certificates_onc) = 0;
 
   // Pushes the network part of the policy to the
   // ManagedNetworkConfigurationHandler. This can be overridden by subclasses to
   // modify |network_configs_onc| before the actual application.
-  virtual void ApplyNetworkPolicy(base::ListValue* network_configs_onc,
-                                  base::DictionaryValue* global_network_config);
+  virtual void ApplyNetworkPolicy(
+      base::ListValue* network_configs_onc,
+      base::DictionaryValue* global_network_config) = 0;
 
   onc::ONCSource onc_source_;
 
   // Pointer to the global singleton or a test instance.
   chromeos::ManagedNetworkConfigurationHandler* network_config_handler_;
-
-  scoped_ptr<chromeos::onc::CertificateImporter> certificate_importer_;
 
  private:
   // Called if the ONC policy changed.

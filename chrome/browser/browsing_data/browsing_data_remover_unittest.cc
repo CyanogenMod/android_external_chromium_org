@@ -42,13 +42,14 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "net/cookies/cookie_monster.h"
+#include "net/cookies/cookie_store.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/server_bound_cert_store.h"
 #include "net/ssl/ssl_client_cert_type.h"
@@ -186,6 +187,10 @@ class TestStoragePartition : public StoragePartition {
   virtual content::IndexedDBContext* GetIndexedDBContext() OVERRIDE {
     return NULL;
   }
+  virtual content::ServiceWorkerContextWrapper*
+  GetServiceWorkerContext() OVERRIDE {
+    return NULL;
+  }
 
   virtual void ClearDataForOrigin(
       uint32 remove_mask,
@@ -195,7 +200,7 @@ class TestStoragePartition : public StoragePartition {
 
   virtual void ClearData(uint32 remove_mask,
                          uint32 quota_storage_remove_mask,
-                         const GURL* storage_origin,
+                         const GURL& storage_origin,
                          const OriginMatcherFunction& origin_matcher,
                          const base::Time begin,
                          const base::Time end,
@@ -204,8 +209,7 @@ class TestStoragePartition : public StoragePartition {
     storage_partition_removal_data_.remove_mask = remove_mask;
     storage_partition_removal_data_.quota_storage_remove_mask =
         quota_storage_remove_mask;
-    storage_partition_removal_data_.remove_origin =
-        storage_origin ? *storage_origin : GURL();
+    storage_partition_removal_data_.remove_origin = storage_origin;
     storage_partition_removal_data_.remove_begin = begin;
     storage_partition_removal_data_.remove_end = end;
     storage_partition_removal_data_.origin_matcher = origin_matcher;
@@ -236,13 +240,13 @@ class TestStoragePartition : public StoragePartition {
 
 class RemoveCookieTester {
  public:
-  RemoveCookieTester() : get_cookie_success_(false), monster_(NULL) {
+  RemoveCookieTester() : get_cookie_success_(false), cookie_store_(NULL) {
   }
 
   // Returns true, if the given cookie exists in the cookie store.
   bool ContainsCookie() {
     get_cookie_success_ = false;
-    monster_->GetCookiesWithOptionsAsync(
+    cookie_store_->GetCookiesWithOptionsAsync(
         kOrigin1, net::CookieOptions(),
         base::Bind(&RemoveCookieTester::GetCookieCallback,
                    base::Unretained(this)));
@@ -251,7 +255,7 @@ class RemoveCookieTester {
   }
 
   void AddCookie() {
-    monster_->SetCookieWithOptionsAsync(
+    cookie_store_->SetCookieWithOptionsAsync(
         kOrigin1, "A=1", net::CookieOptions(),
         base::Bind(&RemoveCookieTester::SetCookieCallback,
                    base::Unretained(this)));
@@ -260,7 +264,7 @@ class RemoveCookieTester {
 
  protected:
   void SetMonster(net::CookieStore* monster) {
-    monster_ = monster;
+    cookie_store_ = monster;
   }
 
  private:
@@ -281,7 +285,7 @@ class RemoveCookieTester {
 
   bool get_cookie_success_;
   AwaitCompletionHelper await_completion_;
-  net::CookieStore* monster_;
+  net::CookieStore* cookie_store_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoveCookieTester);
 };
@@ -299,7 +303,8 @@ class RemoveSafeBrowsingCookieTester : public RemoveCookieTester {
 
     // Create a cookiemonster that does not have persistant storage, and replace
     // the SafeBrowsingService created one with it.
-    net::CookieStore* monster = new net::CookieMonster(NULL, NULL);
+    net::CookieStore* monster =
+        content::CreateCookieStore(content::CookieStoreConfig());
     sb_service->url_request_context()->GetURLRequestContext()->
         set_cookie_store(monster);
     SetMonster(monster);
@@ -489,12 +494,12 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
     autofill::AutofillProfile profile;
     profile.set_guid(base::GenerateGUID());
     profile.set_origin(kWebOrigin);
-    profile.SetRawInfo(autofill::NAME_FIRST, ASCIIToUTF16("Bob"));
-    profile.SetRawInfo(autofill::NAME_LAST, ASCIIToUTF16("Smith"));
-    profile.SetRawInfo(autofill::ADDRESS_HOME_ZIP, ASCIIToUTF16("94043"));
+    profile.SetRawInfo(autofill::NAME_FIRST, base::ASCIIToUTF16("Bob"));
+    profile.SetRawInfo(autofill::NAME_LAST, base::ASCIIToUTF16("Smith"));
+    profile.SetRawInfo(autofill::ADDRESS_HOME_ZIP, base::ASCIIToUTF16("94043"));
     profile.SetRawInfo(autofill::EMAIL_ADDRESS,
-                       ASCIIToUTF16("sue@example.com"));
-    profile.SetRawInfo(autofill::COMPANY_NAME, ASCIIToUTF16("Company X"));
+                       base::ASCIIToUTF16("sue@example.com"));
+    profile.SetRawInfo(autofill::COMPANY_NAME, base::ASCIIToUTF16("Company X"));
     profiles.push_back(profile);
 
     profile.set_guid(base::GenerateGUID());
@@ -509,7 +514,7 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
     card.set_guid(base::GenerateGUID());
     card.set_origin(kWebOrigin);
     card.SetRawInfo(autofill::CREDIT_CARD_NUMBER,
-                    ASCIIToUTF16("1234-5678-9012-3456"));
+                    base::ASCIIToUTF16("1234-5678-9012-3456"));
     cards.push_back(card);
 
     card.set_guid(base::GenerateGUID());

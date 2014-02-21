@@ -53,7 +53,9 @@ class RenderWidgetHostViewMacEditCommandHelper;
                 BrowserAccessibilityDelegateCocoa> {
  @private
   scoped_ptr<content::RenderWidgetHostViewMac> renderWidgetHostView_;
-  NSObject<RenderWidgetHostViewMacDelegate>* delegate_;  // weak
+  // This ivar is the cocoa delegate of the NSResponder.
+  base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate>>
+      responderDelegate_;
   BOOL canBeKeyView_;
   BOOL takesFocusOnlyOnMouseDown_;
   BOOL closeOnDeactivate_;
@@ -204,6 +206,9 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   RenderWidgetHostViewCocoa* cocoa_view() const { return cocoa_view_; }
 
+  // |delegate| is used to separate out the logic from the NSResponder delegate.
+  // |delegate| is retained by this class.
+  // |delegate| should be set at most once.
   CONTENT_EXPORT void SetDelegate(
     NSObject<RenderWidgetHostViewMacDelegate>* delegate);
   void SetAllowOverlappingViews(bool overlapping);
@@ -260,7 +265,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
-      const ui::LatencyInfo& latency_info) OVERRIDE;
+      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -275,7 +280,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      SkBitmap::Config config) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -290,9 +296,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
-  virtual void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params
-      ) OVERRIDE;
+  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 
@@ -305,7 +309,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void AcceleratedSurfaceSuspend() OVERRIDE;
   virtual void AcceleratedSurfaceRelease() OVERRIDE;
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
-  virtual void AboutToWaitForBackingStoreMsg() OVERRIDE;
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
@@ -347,7 +350,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   void CompositorSwapBuffers(uint64 surface_handle,
                              const gfx::Size& size,
                              float scale_factor,
-                             const ui::LatencyInfo& latency_info);
+                             const std::vector<ui::LatencyInfo>& latency_info);
 
   // Draw the IOSurface by making its context current to this view.
   bool DrawIOSurfaceWithoutCoreAnimation();
@@ -432,6 +435,11 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   scoped_ptr<CompositingIOSurfaceMac> compositing_iosurface_;
   scoped_refptr<CompositingIOSurfaceContext> compositing_iosurface_context_;
 
+  // Timer used to dynamically transition the compositing layer in and out of
+  // asynchronous mode.
+  base::DelayTimer<RenderWidgetHostViewMac>
+      compositing_iosurface_layer_async_timer_;
+
   // This holds the current software compositing framebuffer, if any.
   scoped_ptr<SoftwareFrameManager> software_frame_manager_;
 
@@ -441,7 +449,16 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Whether to use the CoreAnimation path to draw content.
   bool use_core_animation_;
 
-  ui::LatencyInfo software_latency_info_;
+  // Latency info to send back when the next frame appears on the
+  // screen.
+  std::vector<ui::LatencyInfo> pending_latency_info_;
+
+  // When taking a screenshot when using CoreAnimation, add a delay of
+  // a few frames to ensure that the contents have reached the screen
+  // before reporting latency info.
+  uint32 pending_latency_info_delay_;
+  base::WeakPtrFactory<RenderWidgetHostViewMac>
+      pending_latency_info_delay_weak_ptr_factory_;
 
   NSWindow* pepper_fullscreen_window() const {
     return pepper_fullscreen_window_;
@@ -461,14 +478,14 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   float scale_factor() const;
 
-  void FrameSwapped();
+  void AddPendingLatencyInfo(
+      const std::vector<ui::LatencyInfo>& latency_info);
+  void SendPendingLatencyInfoToHost();
+  void TickPendingLatencyInfoDelay();
 
  private:
   friend class RenderWidgetHostView;
   friend class RenderWidgetHostViewMacTest;
-
-  void GetVSyncParameters(
-      base::TimeTicks* timebase, base::TimeDelta* interval);
 
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
@@ -500,27 +517,12 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Called when a software DIB is received.
   void GotSoftwareFrame();
 
-  // Ack pending SwapBuffers requests, if any, to unblock the GPU process. Has
-  // no effect if there are no pending requests.
-  void AckPendingSwapBuffers();
-
-  // Ack pending SwapBuffers requests, but no more frequently than the vsync
-  // rate if the renderer is not throttling the swap rate.
-  void ThrottledAckPendingSwapBuffers();
+  // Called if it has been a quarter-second since a GPU SwapBuffers has been
+  // received. In this case, switch from polling for frames to pushing them.
+  void TimerSinceGotAcceleratedFrameFired();
 
   void OnPluginFocusChanged(bool focused, int plugin_id);
   void OnStartPluginIme();
-  CONTENT_EXPORT void OnAcceleratedSurfaceSetIOSurface(
-      gfx::PluginWindowHandle window,
-      int32 width,
-      int32 height,
-      uint64 mach_port);
-  void OnAcceleratedSurfaceSetTransportDIB(gfx::PluginWindowHandle window,
-                                           int32 width,
-                                           int32 height,
-                                           TransportDIB::Handle transport_dib);
-  void OnAcceleratedSurfaceBuffersSwapped(gfx::PluginWindowHandle window,
-                                          uint64 surface_handle);
 
   // Convert |rect| from the views coordinate (upper-left origin) into
   // the OpenGL coordinate (lower-left origin) and scale for HiDPI displays.
@@ -552,14 +554,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Our parent host view, if this is fullscreen.  NULL otherwise.
   RenderWidgetHostViewMac* fullscreen_parent_host_view_;
 
-  // List of pending swaps for deferred acking:
-  //   pairs of (route_id, gpu_host_id).
-  std::list<std::pair<int32, int32> > pending_swap_buffers_acks_;
-
-  // Factory used to cancel outstanding throttled AckPendingSwapBuffers calls.
-  base::WeakPtrFactory<RenderWidgetHostViewMac>
-      pending_swap_buffers_acks_weak_factory_;
-
   // The overlay view which is rendered above this one in the same
   // accelerated IOSurface.
   // Overlay view has |underlay_view_| set to this view.
@@ -580,11 +574,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Factory used to safely reference overlay view set in SetOverlayView.
   base::WeakPtrFactory<RenderWidgetHostViewMac>
       overlay_view_weak_factory_;
-
-  // The earliest time at which the next swap ack may be sent. Only relevant
-  // when swaps are not being throttled by the renderer (when threaded
-  // compositing is off).
-  base::Time next_swap_ack_time_;
 
   // The current composition character range and its bounds.
   gfx::Range composition_range_;

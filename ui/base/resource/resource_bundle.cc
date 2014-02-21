@@ -68,14 +68,15 @@ ResourceBundle* g_shared_instance_ = NULL;
 
 void InitDefaultFontList() {
 #if defined(OS_CHROMEOS)
-  gfx::FontList::SetDefaultFontDescription(
-      l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS));
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  std::string font_family = base::UTF16ToUTF8(
+      rb.GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
+  gfx::FontList::SetDefaultFontDescription(font_family);
 
   // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
   // the font list is done.  We will no longer need SetDefaultFontDescription()
   // after every client gets started using a FontList instead of a Font.
-  gfx::PlatformFontPango::SetDefaultFontDescription(
-      l10n_util::GetStringUTF8(IDS_UI_FONT_FAMILY_CROS));
+  gfx::PlatformFontPango::SetDefaultFontDescription(font_family);
 #else
   // Use a single default font as the default font list.
   gfx::FontList::SetDefaultFontDescription(std::string());
@@ -162,14 +163,14 @@ std::string ResourceBundle::InitSharedInstanceLocaleOnly(
 
 // static
 void ResourceBundle::InitSharedInstanceWithPakFile(
-    base::PlatformFile pak_file, bool should_load_common_resources) {
+    base::File pak_file, bool should_load_common_resources) {
   InitSharedInstance(NULL);
   if (should_load_common_resources)
     g_shared_instance_->LoadCommonResources();
 
   scoped_ptr<DataPack> data_pack(
       new DataPack(SCALE_FACTOR_100P));
-  if (!data_pack->LoadFromFile(pak_file)) {
+  if (!data_pack->LoadFromFile(pak_file.Pass())) {
     NOTREACHED() << "failed to load pak file";
     return;
   }
@@ -219,11 +220,11 @@ void ResourceBundle::AddOptionalDataPackFromPath(const base::FilePath& path,
   AddDataPackFromPathInternal(path, scale_factor, true);
 }
 
-void ResourceBundle::AddDataPackFromFile(base::PlatformFile file,
+void ResourceBundle::AddDataPackFromFile(base::File file,
                                          ScaleFactor scale_factor) {
   scoped_ptr<DataPack> data_pack(
       new DataPack(scale_factor));
-  if (data_pack->LoadFromFile(file)) {
+  if (data_pack->LoadFromFile(file.Pass())) {
     AddDataPack(data_pack.release());
   } else {
     LOG(ERROR) << "Failed to load data pack from file."
@@ -405,8 +406,7 @@ base::RefCountedStaticMemory* ResourceBundle::LoadDataResourceBytesForScale(
     base::StringPiece data =
         GetRawDataResourceForScale(resource_id, scale_factor);
     if (!data.empty()) {
-      bytes = new base::RefCountedStaticMemory(
-          reinterpret_cast<const unsigned char*>(data.data()), data.length());
+      bytes = new base::RefCountedStaticMemory(data.data(), data.length());
     }
   }
 
@@ -481,7 +481,7 @@ base::string16 ResourceBundle::GetLocalizedString(int message_id) {
     msg = base::string16(reinterpret_cast<const base::char16*>(data.data()),
                          data.length() / 2);
   } else if (encoding == ResourceHandle::UTF8) {
-    msg = UTF8ToUTF16(data);
+    msg = base::UTF8ToUTF16(data);
   }
   return msg;
 }
@@ -571,6 +571,8 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
 #elif defined(OS_CHROMEOS)
   // TODO(oshima): Include 200P only if the device support 200P
   supported_scale_factors.push_back(SCALE_FACTOR_200P);
+#elif defined(OS_LINUX) && defined(ENABLE_HIDPI)
+  supported_scale_factors.push_back(SCALE_FACTOR_200P);
 #endif
   ui::SetSupportedScaleFactors(supported_scale_factors);
 #if defined(OS_WIN)
@@ -636,43 +638,43 @@ void ResourceBundle::LoadFontsIfNecessary() {
 
     if (!bold_font_list_.get()) {
       bold_font_list_.reset(new gfx::FontList());
-      *bold_font_list_ = base_font_list_->DeriveFontList(
+      *bold_font_list_ = base_font_list_->DeriveWithStyle(
           base_font_list_->GetFontStyle() | gfx::Font::BOLD);
     }
 
     if (!small_font_list_.get()) {
       small_font_list_.reset(new gfx::FontList());
-      *small_font_list_ = base_font_list_->DeriveFontListWithSize(
-          base_font_list_->GetFontSize() + kSmallFontSizeDelta);
+      *small_font_list_ =
+          base_font_list_->DeriveWithSizeDelta(kSmallFontSizeDelta);
     }
 
     if (!small_bold_font_list_.get()) {
       small_bold_font_list_.reset(new gfx::FontList());
-      *small_bold_font_list_ = small_font_list_->DeriveFontList(
+      *small_bold_font_list_ = small_font_list_->DeriveWithStyle(
           small_font_list_->GetFontStyle() | gfx::Font::BOLD);
     }
 
     if (!medium_font_list_.get()) {
       medium_font_list_.reset(new gfx::FontList());
-      *medium_font_list_ = base_font_list_->DeriveFontListWithSize(
-          base_font_list_->GetFontSize() + kMediumFontSizeDelta);
+      *medium_font_list_ =
+          base_font_list_->DeriveWithSizeDelta(kMediumFontSizeDelta);
     }
 
     if (!medium_bold_font_list_.get()) {
       medium_bold_font_list_.reset(new gfx::FontList());
-      *medium_bold_font_list_ = medium_font_list_->DeriveFontList(
+      *medium_bold_font_list_ = medium_font_list_->DeriveWithStyle(
           medium_font_list_->GetFontStyle() | gfx::Font::BOLD);
     }
 
     if (!large_font_list_.get()) {
       large_font_list_.reset(new gfx::FontList());
-      *large_font_list_ = base_font_list_->DeriveFontListWithSize(
-          base_font_list_->GetFontSize() + kLargeFontSizeDelta);
+      *large_font_list_ =
+          base_font_list_->DeriveWithSizeDelta(kLargeFontSizeDelta);
     }
 
     if (!large_bold_font_list_.get()) {
       large_bold_font_list_.reset(new gfx::FontList());
-      *large_bold_font_list_ = large_font_list_->DeriveFontList(
+      *large_bold_font_list_ = large_font_list_->DeriveWithStyle(
           large_font_list_->GetFontStyle() | gfx::Font::BOLD);
     }
   }

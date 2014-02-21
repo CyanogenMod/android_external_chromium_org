@@ -250,8 +250,8 @@ void ParseEncodingListSeparatedWithComma(
   }
 }
 
-string16 GetEncodingDisplayName(const std::string& encoding_name,
-                                int category_string_id) {
+base::string16 GetEncodingDisplayName(const std::string& encoding_name,
+                                      int category_string_id) {
   base::string16 category_name = l10n_util::GetStringUTF16(category_string_id);
   if (category_string_id != IDS_ENCODING_KOREAN &&
       category_string_id != IDS_ENCODING_THAI &&
@@ -265,7 +265,7 @@ string16 GetEncodingDisplayName(const std::string& encoding_name,
     DCHECK(found_name != map->end());
     return l10n_util::GetStringFUTF16(IDS_ENCODING_DISPLAY_TEMPLATE,
                                       category_name,
-                                      ASCIIToUTF16(found_name->second));
+                                      base::ASCIIToUTF16(found_name->second));
   }
   return category_name;
 }
@@ -293,7 +293,7 @@ std::string GetEncodingCategoryStringByCommandId(int id) {
 CharacterEncoding::EncodingInfo::EncodingInfo(int id)
     : encoding_id(id) {
   encoding_category_name =
-      UTF8ToUTF16(GetEncodingCategoryStringByCommandId(id));
+      base::UTF8ToUTF16(GetEncodingCategoryStringByCommandId(id));
   encoding_display_name = GetCanonicalEncodingDisplayNameByCommandId(id);
 }
 
@@ -324,7 +324,7 @@ std::string CharacterEncoding::GetCanonicalEncodingNameByCommandId(int id) {
 }
 
 // Static.
-string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByCommandId(
+base::string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByCommandId(
     int id) {
   const IdToCanonicalEncodingNameMapType* map =
       CanonicalEncodingMapSingleton()->GetIdToCanonicalEncodingNameMapData();
@@ -351,7 +351,7 @@ std::string CharacterEncoding::GetCanonicalEncodingNameByIndex(int index) {
 }
 
 // Static.
-string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByIndex(
+base::string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByIndex(
     int index) {
   if (index < kCanonicalEncodingNamesLength)
     return GetEncodingDisplayName(kCanonicalEncodingNames[index].name,

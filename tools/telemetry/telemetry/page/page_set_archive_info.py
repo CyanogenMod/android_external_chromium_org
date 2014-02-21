@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import shutil
-import sys
 
 from telemetry.page import cloud_storage
 
@@ -25,23 +24,14 @@ class PageSetArchiveInfo(object):
     for archive_path in data['archives']:
       archive_path = self._WprFileNameToPath(archive_path)
       try:
-        cloud_storage.GetIfChanged(cloud_storage.INTERNAL_BUCKET, archive_path)
+        cloud_storage.GetIfChanged(archive_path)
       except (cloud_storage.CredentialsError,
-              cloud_storage.PermissionError) as e:
+              cloud_storage.PermissionError):
         if os.path.exists(archive_path):
           # If the archive exists, assume the user recorded their own and
           # simply warn.
-          logging.warning('Could not download WPR archive: %s', archive_path)
-        else:
-          # If the archive doesn't exist, this is fatal.
-          logging.error('Can not run without required WPR archive: %s. '
-                        'If you believe you have credentials, follow the '
-                        'instructions below. If you do not have credentials, '
-                        'you may use record_wpr to make your own recording or '
-                        'run against live sites with --allow-live-sites.',
-                        archive_path)
-          logging.error(e)
-          sys.exit(1)
+          logging.warning('Need credentials to update WPR archive: %s',
+                          archive_path)
 
     # Map from the relative path (as it appears in the metadata file) of the
     # .wpr file to a list of urls it supports.

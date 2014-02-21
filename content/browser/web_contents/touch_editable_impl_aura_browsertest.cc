@@ -137,7 +137,7 @@ class TouchEditableImplAuraTest : public ContentBrowserTest {
     NavigateToURL(shell(), test_url);
     aura::Window* content =
         shell()->web_contents()->GetView()->GetContentNativeView();
-    content->GetDispatcher()->SetHostSize(gfx::Size(800, 600));
+    content->GetDispatcher()->host()->SetBounds(gfx::Rect(800, 600));
   }
 
   void TestTouchSelectionOriginatingFromWebpage() {
@@ -285,7 +285,7 @@ class TouchEditableImplAuraTest : public ContentBrowserTest {
                                   0,
                                   ui::EventTimeForNow(),
                                   ui::GestureEventDetails(
-                                      ui::ET_GESTURE_LONG_PRESS, 0, 0),
+                                      ui::ET_GESTURE_SCROLL_BEGIN, 0, 0),
                                   1);
     rwhva->OnGestureEvent(&scroll_begin);
     EXPECT_FALSE(touch_editable->touch_selection_controller_.get());
@@ -297,7 +297,7 @@ class TouchEditableImplAuraTest : public ContentBrowserTest {
                                 0,
                                 ui::EventTimeForNow(),
                                 ui::GestureEventDetails(
-                                    ui::ET_GESTURE_LONG_PRESS, 0, 0),
+                                    ui::ET_GESTURE_SCROLL_END, 0, 0),
                                 1);
     rwhva->OnGestureEvent(&scroll_end);
     EXPECT_TRUE(touch_editable->touch_selection_controller_.get());
@@ -328,10 +328,9 @@ class TouchEditableImplAuraTest : public ContentBrowserTest {
     // Tap textfield
     touch_editable->Reset();
     generator.GestureTapAt(gfx::Point(bounds.x() + 50, bounds.y() + 40));
+    // Tap Down and Tap acks are sent synchronously.
     touch_editable->WaitForSelectionChangeCallback();
-    // No Tap Down Ack is coming, it's async.
     touch_editable->Reset();
-    touch_editable->WaitForGestureAck();  // Wait for Tap Ack.
 
     // Check if cursor handle is showing.
     ui::TouchSelectionController* controller =

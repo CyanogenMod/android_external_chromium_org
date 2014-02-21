@@ -25,7 +25,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #import "ui/base/cocoa/find_pasteboard.h"
 #import "ui/base/cocoa/focus_tracker.h"
 
@@ -212,7 +212,7 @@ const float kRightEdgeOffset = 25;
     // The textbox is empty so we reset.
     findTabHelper->StopFinding(FindBarController::kClearSelectionOnPage);
     [self updateUIForFindResult:findTabHelper->find_result()
-                       withText:string16()];
+                       withText:base::string16()];
   }
 }
 
@@ -383,7 +383,7 @@ const float kRightEdgeOffset = 25;
 - (void)clearResults:(const FindNotificationDetails&)results {
   // Just call updateUIForFindResult, which will take care of clearing
   // the search text and the results label.
-  [self updateUIForFindResult:results withText:string16()];
+  [self updateUIForFindResult:results withText:base::string16()];
 }
 
 - (void)updateUIForFindResult:(const FindNotificationDetails&)result

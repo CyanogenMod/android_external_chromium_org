@@ -8,9 +8,10 @@
 
 #include "base/stl_util.h"
 #include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
-#include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/crypto/crypto_server_config_protobuf.h"
 #include "net/quic/crypto/quic_random.h"
+#include "net/quic/crypto/strike_register_client.h"
 #include "net/quic/quic_time.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -41,6 +42,10 @@ class QuicCryptoServerConfigPeer {
                                   IPEndPoint ip,
                                   QuicWallTime now) {
     return server_config_->ValidateSourceAddressToken(srct, ip, now);
+  }
+
+  base::Lock* GetStrikeRegisterClientLock() {
+    return &server_config_->strike_register_client_lock_;
   }
 
   // CheckConfigs compares the state of the Configs in |server_config_| to the
@@ -144,6 +149,40 @@ class QuicCryptoServerConfigPeer {
   const QuicCryptoServerConfig* server_config_;
 };
 
+class TestStrikeRegisterClient : public StrikeRegisterClient {
+ public:
+  explicit TestStrikeRegisterClient(QuicCryptoServerConfig* config)
+      : config_(config),
+        is_known_orbit_called_(false) {
+  }
+
+  virtual bool IsKnownOrbit(StringPiece orbit) const OVERRIDE {
+    // Ensure that the strike register client lock is not held.
+    QuicCryptoServerConfigPeer peer(config_);
+    base::Lock* m = peer.GetStrikeRegisterClientLock();
+    // In Chromium, we will dead lock if the lock is held by the current thread.
+    // Chromium doesn't have AssertNotHeld API call.
+    // m->AssertNotHeld();
+    base::AutoLock lock(*m);
+
+    is_known_orbit_called_ = true;
+    return true;
+  }
+
+  virtual void VerifyNonceIsValidAndUnique(
+      StringPiece nonce,
+      QuicWallTime now,
+      ResultCallback* cb) OVERRIDE {
+    LOG(FATAL) << "Not implemented";
+  }
+
+  bool is_known_orbit_called() { return is_known_orbit_called_; }
+
+ private:
+  QuicCryptoServerConfig* config_;
+  mutable bool is_known_orbit_called_;
+};
+
 TEST(QuicCryptoServerConfigTest, ServerConfig) {
   QuicRandom* rand = QuicRandom::GetInstance();
   QuicCryptoServerConfig server(QuicCryptoServerConfig::TESTING, rand);
@@ -152,6 +191,21 @@ TEST(QuicCryptoServerConfigTest, ServerConfig) {
   scoped_ptr<CryptoHandshakeMessage>(
       server.AddDefaultConfig(rand, &clock,
                               QuicCryptoServerConfig::ConfigOptions()));
+}
+
+TEST(QuicCryptoServerConfigTest, GetOrbitIsCalledWithoutTheStrikeRegisterLock) {
+  QuicRandom* rand = QuicRandom::GetInstance();
+  QuicCryptoServerConfig server(QuicCryptoServerConfig::TESTING, rand);
+  MockClock clock;
+
+  TestStrikeRegisterClient* strike_register =
+      new TestStrikeRegisterClient(&server);
+  server.SetStrikeRegisterClient(strike_register);
+
+  QuicCryptoServerConfig::ConfigOptions options;
+  scoped_ptr<CryptoHandshakeMessage>(
+      server.AddDefaultConfig(rand, &clock, options));
+  EXPECT_TRUE(strike_register->is_known_orbit_called());
 }
 
 TEST(QuicCryptoServerConfigTest, SourceAddressTokens) {
@@ -202,18 +256,23 @@ class CryptoServerConfigsTest : public ::testing::Test {
   //   SetConfigs(NULL);  // calls |config_.SetConfigs| with no protobufs.
   //
   //   // Calls |config_.SetConfigs| with two protobufs: one for a Config with
-  //   // a |primary_time| of 900, and another with a |primary_time| of 1000.
+  //   // a |primary_time| of 900 and priority 1, and another with
+  //   // a |primary_time| of 1000 and priority 2.
+
   //   CheckConfigs(
-  //     "id1", 900,
-  //     "id2", 1000,
+  //     "id1", 900, 1,
+  //     "id2", 1000, 2,
   //     NULL);
   //
   // If the server config id starts with "INVALID" then the generated protobuf
   // will be invalid.
   void SetConfigs(const char* server_config_id1, ...) {
+    const char kOrbit[] = "12345678";
+
     va_list ap;
     va_start(ap, server_config_id1);
     bool has_invalid = false;
+    bool is_empty = true;
 
     vector<QuicServerConfigProtobuf*> protobufs;
     bool first = true;
@@ -230,13 +289,17 @@ class CryptoServerConfigsTest : public ::testing::Test {
         break;
       }
 
+      is_empty = false;
       int primary_time = va_arg(ap, int);
+      int priority = va_arg(ap, int);
 
       QuicCryptoServerConfig::ConfigOptions options;
       options.id = server_config_id;
+      options.orbit = kOrbit;
       QuicServerConfigProtobuf* protobuf(
-          QuicCryptoServerConfig::DefaultConfig(rand_, &clock_, options));
+          QuicCryptoServerConfig::GenerateConfig(rand_, &clock_, options));
       protobuf->set_primary_time(primary_time);
+      protobuf->set_priority(priority);
       if (string(server_config_id).find("INVALID") == 0) {
         protobuf->clear_key();
         has_invalid = true;
@@ -244,7 +307,8 @@ class CryptoServerConfigsTest : public ::testing::Test {
       protobufs.push_back(protobuf);
     }
 
-    ASSERT_EQ(!has_invalid, config_.SetConfigs(protobufs, clock_.WallNow()));
+    ASSERT_EQ(!has_invalid && !is_empty,
+              config_.SetConfigs(protobufs, clock_.WallNow()));
     STLDeleteElements(&protobufs);
   }
 
@@ -261,8 +325,8 @@ TEST_F(CryptoServerConfigsTest, NoConfigs) {
 
 TEST_F(CryptoServerConfigsTest, MakePrimaryFirst) {
   // Make sure that "b" is primary even though "a" comes first.
-  SetConfigs("a", 1100,
-             "b", 900,
+  SetConfigs("a", 1100, 1,
+             "b", 900, 1,
              NULL);
   test_peer_.CheckConfigs(
       "a", false,
@@ -272,8 +336,8 @@ TEST_F(CryptoServerConfigsTest, MakePrimaryFirst) {
 
 TEST_F(CryptoServerConfigsTest, MakePrimarySecond) {
   // Make sure that a remains primary after b is added.
-  SetConfigs("a", 900,
-             "b", 1100,
+  SetConfigs("a", 900, 1,
+             "b", 1100, 1,
              NULL);
   test_peer_.CheckConfigs(
       "a", true,
@@ -283,39 +347,166 @@ TEST_F(CryptoServerConfigsTest, MakePrimarySecond) {
 
 TEST_F(CryptoServerConfigsTest, Delete) {
   // Ensure that configs get deleted when removed.
-  SetConfigs("a", 800,
-             "b", 900,
-             "c", 1100,
-             NULL);
-  SetConfigs("b", 900,
-             "c", 1100,
-             NULL);
-  test_peer_.CheckConfigs(
-      "b", true,
-      "c", false,
-      NULL);
-}
-
-TEST_F(CryptoServerConfigsTest, DontDeletePrimary) {
-  // Ensure that the primary config isn't deleted when removed.
-  SetConfigs("a", 800,
-             "b", 900,
-             "c", 1100,
-             NULL);
-  SetConfigs("a", 800,
-             "c", 1100,
+  SetConfigs("a", 800, 1,
+             "b", 900, 1,
+             "c", 1100, 1,
              NULL);
   test_peer_.CheckConfigs(
       "a", false,
       "b", true,
       "c", false,
       NULL);
+  SetConfigs("b", 900, 1,
+             "c", 1100, 1,
+             NULL);
+  test_peer_.CheckConfigs(
+      "b", true,
+      "c", false,
+      NULL);
+}
+
+TEST_F(CryptoServerConfigsTest, DeletePrimary) {
+  // Ensure that deleting the primary config works.
+  SetConfigs("a", 800, 1,
+             "b", 900, 1,
+             "c", 1100, 1,
+             NULL);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", true,
+      "c", false,
+      NULL);
+  SetConfigs("a", 800, 1,
+             "c", 1100, 1,
+             NULL);
+  test_peer_.CheckConfigs(
+      "a", true,
+      "c", false,
+      NULL);
+}
+
+TEST_F(CryptoServerConfigsTest, FailIfDeletingAllConfigs) {
+  // Ensure that configs get deleted when removed.
+  SetConfigs("a", 800, 1,
+             "b", 900, 1,
+             NULL);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", true,
+      NULL);
+  SetConfigs(NULL);
+  // Config change is rejected, still using old configs.
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", true,
+      NULL);
+}
+
+TEST_F(CryptoServerConfigsTest, ChangePrimaryTime) {
+  // Check that updates to primary time get picked up.
+  SetConfigs("a", 400, 1,
+             "b", 800, 1,
+             "c", 1200, 1,
+             NULL);
+  test_peer_.SelectNewPrimaryConfig(500);
+  test_peer_.CheckConfigs(
+      "a", true,
+      "b", false,
+      "c", false,
+      NULL);
+  SetConfigs("a", 1200, 1,
+             "b", 800, 1,
+             "c", 400, 1,
+             NULL);
+  test_peer_.SelectNewPrimaryConfig(500);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", false,
+      "c", true,
+      NULL);
+}
+
+TEST_F(CryptoServerConfigsTest, AllConfigsInThePast) {
+  // Check that the most recent config is selected.
+  SetConfigs("a", 400, 1,
+             "b", 800, 1,
+             "c", 1200, 1,
+             NULL);
+  test_peer_.SelectNewPrimaryConfig(1500);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", false,
+      "c", true,
+      NULL);
+}
+
+TEST_F(CryptoServerConfigsTest, AllConfigsInTheFuture) {
+  // Check that the first config is selected.
+  SetConfigs("a", 400, 1,
+             "b", 800, 1,
+             "c", 1200, 1,
+             NULL);
+  test_peer_.SelectNewPrimaryConfig(100);
+  test_peer_.CheckConfigs(
+      "a", true,
+      "b", false,
+      "c", false,
+      NULL);
+}
+
+TEST_F(CryptoServerConfigsTest, SortByPriority) {
+  // Check that priority is used to decide on a primary config when
+  // configs have the same primary time.
+  SetConfigs("a", 900, 1,
+             "b", 900, 2,
+             "c", 900, 3,
+             NULL);
+  test_peer_.CheckConfigs(
+      "a", true,
+      "b", false,
+      "c", false,
+      NULL);
+  test_peer_.SelectNewPrimaryConfig(800);
+  test_peer_.CheckConfigs(
+      "a", true,
+      "b", false,
+      "c", false,
+      NULL);
+  test_peer_.SelectNewPrimaryConfig(1000);
+  test_peer_.CheckConfigs(
+      "a", true,
+      "b", false,
+      "c", false,
+      NULL);
+
+  // Change priorities and expect sort order to change.
+  SetConfigs("a", 900, 2,
+             "b", 900, 1,
+             "c", 900, 0,
+             NULL);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", false,
+      "c", true,
+      NULL);
+  test_peer_.SelectNewPrimaryConfig(800);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", false,
+      "c", true,
+      NULL);
+  test_peer_.SelectNewPrimaryConfig(1000);
+  test_peer_.CheckConfigs(
+      "a", false,
+      "b", false,
+      "c", true,
+      NULL);
 }
 
 TEST_F(CryptoServerConfigsTest, AdvancePrimary) {
   // Check that a new primary config is enabled at the right time.
-  SetConfigs("a", 900,
-             "b", 1100,
+  SetConfigs("a", 900, 1,
+             "b", 1100, 1,
              NULL);
   test_peer_.SelectNewPrimaryConfig(1000);
   test_peer_.CheckConfigs(
@@ -331,18 +522,18 @@ TEST_F(CryptoServerConfigsTest, AdvancePrimary) {
 
 TEST_F(CryptoServerConfigsTest, InvalidConfigs) {
   // Ensure that invalid configs don't change anything.
-  SetConfigs("a", 800,
-             "b", 900,
-             "c", 1100,
+  SetConfigs("a", 800, 1,
+             "b", 900, 1,
+             "c", 1100, 1,
              NULL);
   test_peer_.CheckConfigs(
       "a", false,
       "b", true,
       "c", false,
       NULL);
-  SetConfigs("a", 800,
-             "c", 1100,
-             "INVALID1", 1000,
+  SetConfigs("a", 800, 1,
+             "c", 1100, 1,
+             "INVALID1", 1000, 1,
              NULL);
   test_peer_.CheckConfigs(
       "a", false,

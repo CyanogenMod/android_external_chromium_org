@@ -13,8 +13,8 @@
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #import "chrome/browser/ui/cocoa/styled_text_field_cell.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/password_generator.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_generation_util.h"
 #include "content/public/browser/render_view_host.h"
@@ -23,6 +23,7 @@
 #import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font_list.h"
 
 namespace {
 
@@ -327,7 +328,7 @@ const CGFloat kIconSize = 26.0;
 
 - (void)performLayout {
   NSView* contentView = [[self window] contentView];
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   textField_ = [[[PasswordGenerationTextField alloc]
       initWithFrame:NSMakeRect(kBorderSize,
@@ -338,9 +339,9 @@ const CGFloat kIconSize = 26.0;
         normalImage:rb.GetNativeImageNamed(IDR_RELOAD_DIMMED).ToNSImage()
          hoverImage:rb.GetNativeImageNamed(IDR_RELOAD)
              .ToNSImage()] autorelease];
-  gfx::Font smallBoldFont =
-      rb.GetFont(ResourceBundle::SmallFont).DeriveFont(0, gfx::Font::BOLD);
-  [textField_ setFont:smallBoldFont.GetNativeFont()];
+  const gfx::FontList& smallBoldFont =
+      rb.GetFontList(ui::ResourceBundle::SmallBoldFont);
+  [textField_ setFont:smallBoldFont.GetPrimaryFont().GetNativeFont()];
   [textField_
     setStringValue:base::SysUTF8ToNSString(passwordGenerator_->Generate())];
   [textField_ setDelegate:self];

@@ -201,7 +201,7 @@ class NSSSSLInitSingleton {
   PRFileDesc* model_fd_;
 };
 
-static base::LazyInstance<NSSSSLInitSingleton> g_nss_ssl_init_singleton =
+static base::LazyInstance<NSSSSLInitSingleton>::Leaky g_nss_ssl_init_singleton =
     LAZY_INSTANCE_INITIALIZER;
 
 // Initialize the NSS SSL library if it isn't already initialized.  This must
@@ -330,6 +330,8 @@ int MapNSSError(PRErrorCode err) {
       return ERR_SSL_BAD_RECORD_MAC_ALERT;
     case SSL_ERROR_DECRYPT_ERROR_ALERT:
       return ERR_SSL_DECRYPT_ERROR_ALERT;
+    case SSL_ERROR_UNRECOGNIZED_NAME_ALERT:
+      return ERR_SSL_UNRECOGNIZED_NAME_ALERT;
     case SSL_ERROR_UNSAFE_NEGOTIATION:
       return ERR_SSL_UNSAFE_NEGOTIATION;
     case SSL_ERROR_WEAK_SERVER_EPHEMERAL_DH_KEY:

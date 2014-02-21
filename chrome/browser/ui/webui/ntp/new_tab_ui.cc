@@ -178,11 +178,6 @@ void NewTabUI::PaintTimeout() {
   if ((now - last_paint_) >= base::TimeDelta::FromMilliseconds(kTimeoutMs)) {
     // Painting has quieted down.  Log this as the full time to run.
     base::TimeDelta load_time = last_paint_ - start_;
-    int load_time_ms = static_cast<int>(load_time.InMilliseconds());
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD,
-        content::Source<Profile>(GetProfile()),
-        content::Details<int>(&load_time_ms));
     UMA_HISTOGRAM_TIMES("NewTabUI load", load_time);
   } else {
     // Not enough quiet time has elapsed.
@@ -243,7 +238,7 @@ void NewTabUI::EmitNtpStatistics() {
 }
 
 void NewTabUI::OnShowBookmarkBarChanged() {
-  StringValue attached(
+  base::StringValue attached(
       GetProfile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar) ?
           "true" : "false");
   web_ui()->CallJavascriptFunction("ntp.setBookmarkBarAttached", attached);
@@ -293,7 +288,7 @@ bool NewTabUI::IsDiscoveryInNTPEnabled() {
 }
 
 // static
-void NewTabUI::SetUrlTitleAndDirection(DictionaryValue* dictionary,
+void NewTabUI::SetUrlTitleAndDirection(base::DictionaryValue* dictionary,
                                        const base::string16& title,
                                        const GURL& gurl) {
   dictionary->SetString("url", gurl.spec());
@@ -302,7 +297,7 @@ void NewTabUI::SetUrlTitleAndDirection(DictionaryValue* dictionary,
   base::string16 title_to_set(title);
   if (title_to_set.empty()) {
     using_url_as_the_title = true;
-    title_to_set = UTF8ToUTF16(gurl.spec());
+    title_to_set = base::UTF8ToUTF16(gurl.spec());
   }
 
   // We set the "dir" attribute of the title, so that in RTL locales, a LTR
@@ -358,7 +353,7 @@ std::string NewTabUI::NewTabHTMLSource::GetSource() const {
 void NewTabUI::NewTabHTMLSource::StartDataRequest(
     const std::string& path,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 

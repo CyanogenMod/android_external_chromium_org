@@ -4,10 +4,14 @@
 
 #include "chrome/browser/chromeos/login/app_launch_controller.h"
 
-#include "apps/shell_window_registry.h"
+#include "apps/app_window.h"
+#include "apps/app_window_registry.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/memory/weak_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -20,13 +24,12 @@
 #include "chrome/browser/chromeos/login/oobe_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
 #include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "net/base/network_change_notifier.h"
 
@@ -52,31 +55,47 @@ AppLaunchController::ReturnBoolCallback*
 // AppLaunchController::AppWindowWatcher
 
 class AppLaunchController::AppWindowWatcher
-    : public apps::ShellWindowRegistry::Observer {
+    : public apps::AppWindowRegistry::Observer {
  public:
-  explicit AppWindowWatcher(AppLaunchController* controller)
-    : controller_(controller),
-      window_registry_(apps::ShellWindowRegistry::Get(controller->profile_)) {
-    window_registry_->AddObserver(this);
+  explicit AppWindowWatcher(AppLaunchController* controller,
+                            const std::string& app_id)
+      : controller_(controller),
+        app_id_(app_id),
+        window_registry_(apps::AppWindowRegistry::Get(controller->profile_)),
+        weak_factory_(this) {
+    if (!window_registry_->GetAppWindowsForApp(app_id).empty()) {
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&AppWindowWatcher::NotifyAppWindowCreated,
+                     weak_factory_.GetWeakPtr()));
+      return;
+    } else {
+      window_registry_->AddObserver(this);
+    }
   }
   virtual ~AppWindowWatcher() {
     window_registry_->RemoveObserver(this);
   }
 
  private:
-  // apps::ShellWindowRegistry::Observer overrides:
-  virtual void OnShellWindowAdded(apps::ShellWindow* shell_window) OVERRIDE {
-    if (controller_) {
-      controller_->OnAppWindowCreated();
-      controller_= NULL;
+  // apps::AppWindowRegistry::Observer overrides:
+  virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE {
+    if (app_window->extension_id() == app_id_) {
+      window_registry_->RemoveObserver(this);
+      NotifyAppWindowCreated();
     }
   }
-  virtual void OnShellWindowIconChanged(
-      apps::ShellWindow* shell_window) OVERRIDE {}
-  virtual void OnShellWindowRemoved(apps::ShellWindow* shell_window) OVERRIDE {}
+  virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) OVERRIDE {}
+  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE {}
+
+  void NotifyAppWindowCreated() {
+    controller_->OnAppWindowCreated();
+  }
 
   AppLaunchController* controller_;
-  apps::ShellWindowRegistry* window_registry_;
+  std::string app_id_;
+  apps::AppWindowRegistry* window_registry_;
+  base::WeakPtrFactory<AppWindowWatcher> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppWindowWatcher);
 };
@@ -85,10 +104,12 @@ class AppLaunchController::AppWindowWatcher
 // AppLaunchController
 
 AppLaunchController::AppLaunchController(const std::string& app_id,
+                                         bool diagnostic_mode,
                                          LoginDisplayHost* host,
                                          OobeDisplay* oobe_display)
     : profile_(NULL),
       app_id_(app_id),
+      diagnostic_mode_(diagnostic_mode),
       host_(host),
       oobe_display_(oobe_display),
       app_launch_splash_screen_actor_(
@@ -119,8 +140,11 @@ void AppLaunchController::StartAppLaunch() {
   app_launch_splash_screen_actor_->SetDelegate(this);
   app_launch_splash_screen_actor_->Show(app_id_);
 
+  KioskAppManager::App app;
+  CHECK(KioskAppManager::Get() &&
+        KioskAppManager::Get()->GetApp(app_id_, &app));
   kiosk_profile_loader_.reset(
-      new KioskProfileLoader(KioskAppManager::Get(), app_id_, this));
+      new KioskProfileLoader(app.user_id, false, this));
   kiosk_profile_loader_->Start();
 }
 
@@ -207,7 +231,8 @@ void AppLaunchController::OnProfileLoaded(Profile* profile) {
   profile_ = profile;
 
   kiosk_profile_loader_.reset();
-  startup_app_launcher_.reset(new StartupAppLauncher(profile_, app_id_, this));
+  startup_app_launcher_.reset(
+      new StartupAppLauncher(profile_, app_id_, diagnostic_mode_, this));
   startup_app_launcher_->Initialize();
 }
 
@@ -219,6 +244,7 @@ void AppLaunchController::OnProfileLoadFailed(
 void AppLaunchController::CleanUp() {
   kiosk_profile_loader_.reset();
   startup_app_launcher_.reset();
+  splash_wait_timer_.Stop();
 
   if (host_)
     host_->Finalize();
@@ -245,7 +271,9 @@ bool AppLaunchController::CanConfigureNetwork() {
   if (can_configure_network_callback_)
     return can_configure_network_callback_->Run();
 
-  if (g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  if (connector->IsEnterpriseManaged()) {
     bool should_prompt;
     if (CrosSettings::Get()->GetBoolean(
             kAccountsPrefDeviceLocalAccountPromptForNetworkWhenOffline,
@@ -264,7 +292,9 @@ bool AppLaunchController::NeedOwnerAuthToConfigureNetwork() {
   if (need_owner_auth_to_configure_network_callback_)
     return need_owner_auth_to_configure_network_callback_->Run();
 
-  return !g_browser_process->browser_policy_connector()->IsEnterpriseManaged();
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  return !connector->IsEnterpriseManaged();
 }
 
 void AppLaunchController::MaybeShowNetworkConfigureUI() {
@@ -292,6 +322,10 @@ void AppLaunchController::InitializeNetwork() {
 
   app_launch_splash_screen_actor_->UpdateAppLaunchState(
       AppLaunchSplashScreenActor::APP_LAUNCH_STATE_PREPARING_NETWORK);
+}
+
+bool AppLaunchController::IsNetworkReady() {
+  return app_launch_splash_screen_actor_->IsNetworkReady();
 }
 
 void AppLaunchController::OnLoadingOAuthFile() {
@@ -326,6 +360,9 @@ void AppLaunchController::OnReadyToLaunch() {
   if (!webui_visible_)
     return;
 
+  if (splash_wait_timer_.IsRunning())
+    return;
+
   const int64 time_taken_ms = (base::TimeTicks::Now() -
       base::TimeTicks::FromInternalValue(launch_splash_start_time_)).
       InMilliseconds();
@@ -333,12 +370,12 @@ void AppLaunchController::OnReadyToLaunch() {
   // Enforce that we show app install splash screen for some minimum amount
   // of time.
   if (!skip_splash_wait_ && time_taken_ms < kAppInstallSplashScreenMinTimeMS) {
-    content::BrowserThread::PostDelayedTask(
-        content::BrowserThread::UI,
+    splash_wait_timer_.Start(
         FROM_HERE,
-        base::Bind(&AppLaunchController::OnReadyToLaunch, AsWeakPtr()),
         base::TimeDelta::FromMilliseconds(
-            kAppInstallSplashScreenMinTimeMS - time_taken_ms));
+            kAppInstallSplashScreenMinTimeMS - time_taken_ms),
+        this,
+        &AppLaunchController::OnReadyToLaunch);
     return;
   }
 
@@ -351,11 +388,12 @@ void AppLaunchController::OnLaunchSucceeded() {
       AppLaunchSplashScreenActor::APP_LAUNCH_STATE_WAITING_APP_WINDOW);
 
   DCHECK(!app_window_watcher_);
-  app_window_watcher_.reset(new AppWindowWatcher(this));
+  app_window_watcher_.reset(new AppWindowWatcher(this, app_id_));
 }
 
 void AppLaunchController::OnLaunchFailed(KioskAppLaunchError::Error error) {
-  LOG(ERROR) << "Kiosk launch failed. Will now shut down.";
+  LOG(ERROR) << "Kiosk launch failed. Will now shut down."
+             << ", error=" << error;
   DCHECK_NE(KioskAppLaunchError::NONE, error);
 
   // Saves the error and ends the session to go back to login screen.

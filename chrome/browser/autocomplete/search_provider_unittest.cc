@@ -45,6 +45,8 @@
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+
 namespace {
 
 // Returns the first match in |matches| with |allowed_to_be_default_match|
@@ -291,13 +293,16 @@ void SearchProviderTest::RunTest(TestData* cases,
                                  bool prefer_keyword) {
   ACMatches matches;
   for (int i = 0; i < num_cases; ++i) {
-    AutocompleteInput input(cases[i].input, base::string16::npos, base::string16(), GURL(),
+    AutocompleteInput input(cases[i].input, base::string16::npos,
+                            base::string16(), GURL(),
                             AutocompleteInput::INVALID_SPEC, false,
                             prefer_keyword, true,
                             AutocompleteInput::ALL_MATCHES);
     provider_->Start(input, false);
     matches = provider_->matches();
-    base::string16 diagnostic_details = ASCIIToUTF16("Input was: ") + cases[i].input +
+    base::string16 diagnostic_details =
+        ASCIIToUTF16("Input was: ") +
+        cases[i].input +
         ASCIIToUTF16("; prefer_keyword was: ") +
         (prefer_keyword ? ASCIIToUTF16("true") : ASCIIToUTF16("false"));
     EXPECT_EQ(cases[i].num_results, matches.size()) << diagnostic_details;
@@ -561,7 +566,7 @@ TEST_F(SearchProviderTest, QueryKeywordProvider) {
   EXPECT_FALSE(match.keyword.empty());
 
   // The fill into edit should contain the keyword.
-  EXPECT_EQ(keyword_t_url_->keyword() + char16(' ') + keyword_term_,
+  EXPECT_EQ(keyword_t_url_->keyword() + base::char16(' ') + keyword_term_,
             match.fill_into_edit);
 }
 
@@ -1382,6 +1387,14 @@ TEST_F(SearchProviderTest, DefaultFetcherSuggestRelevance) {
       std::string() },
   };
 
+  std::map<std::string, std::string> params;
+  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
+      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleDisabled;
+  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16("a"), false, false);
     net::TestURLFetcher* fetcher =
@@ -1640,14 +1653,6 @@ TEST_F(SearchProviderTest, DefaultFetcherSuggestRelevanceWithReorder) {
         kEmptyMatch },
       std::string() },
   };
-
-  std::map<std::string, std::string> params;
-  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
-      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleEnabled;
-  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
-  base::FieldTrialList::CreateFieldTrial(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16("a"), false, false);
@@ -2112,6 +2117,14 @@ TEST_F(SearchProviderTest, KeywordFetcherSuggestRelevance) {
         kEmptyMatch },
       "3" },
   };
+
+  std::map<std::string, std::string> params;
+  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
+      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleDisabled;
+  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16("k a"), false, true);
@@ -2579,14 +2592,6 @@ TEST_F(SearchProviderTest, KeywordFetcherSuggestRelevanceWithReorder) {
       "3" },
   };
 
-  std::map<std::string, std::string> params;
-  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
-      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleEnabled;
-  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
-  base::FieldTrialList::CreateFieldTrial(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
-
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16("k a"), false, true);
 
@@ -2695,21 +2700,7 @@ TEST_F(SearchProviderTest, LocalAndRemoteRelevances) {
        "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"QUERY\", \"QUERY\"],"
         "\"google:verbatimrelevance\":1450,"
         "\"google:suggestrelevance\":[1430, 1410, 1390, 1370]}]",
-      { "term", "a1", "a2", "term2", "a3", "a4" } },
-    // When the input looks like a URL, we disallow having a query as the
-    // highest-ranking result.  If the query was provided by a suggestion, we
-    // reset the suggest scores to enforce this (see
-    // SearchProvider::UpdateMatches()).  Even if we reset the suggest scores,
-    // however, we should still allow navsuggestions to be treated as
-    // server-provided.
-    { ASCIIToUTF16("a.com"),
-      "[\"a.com\",[\"a1\", \"a2\", \"a.com/1\", \"a.com/2\"],[],[],"
-       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"NAVIGATION\","
-                                "\"NAVIGATION\"],"
-        // A verbatim query for URL-like input scores 850, so the navigation
-        // scores here should bracket it.
-        "\"google:suggestrelevance\":[9999, 9998, 900, 800]}]",
-      { "a.com/1", "a.com", "a.com/2", "a1", kNotApplicable, kNotApplicable } },
+      { "term", "a1", "a2", "term2", "a3", "a4" } }
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
@@ -2816,6 +2807,14 @@ TEST_F(SearchProviderTest, DefaultProviderSuggestRelevanceScoringUrlInput) {
         { "a.com/a", AutocompleteMatchType::SEARCH_SUGGEST,        true },
         kEmptyMatch } },
   };
+
+  std::map<std::string, std::string> params;
+  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
+      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleDisabled;
+  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16(cases[i].input), false, false);
@@ -2942,14 +2941,6 @@ TEST_F(SearchProviderTest,
         { "a.com", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED, true },
         kEmptyMatch, kEmptyMatch } },
   };
-
-  std::map<std::string, std::string> params;
-  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
-      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleEnabled;
-  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
-  base::FieldTrialList::CreateFieldTrial(
-      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16(cases[i].input), false, false);
@@ -3178,7 +3169,7 @@ TEST_F(SearchProviderTest, NavigationInline) {
     AutocompleteMatch match(
         provider_->NavigationToMatch(SearchProvider::NavigationResult(
             *provider_.get(), GURL(cases[i].url), base::string16(), false, 0,
-            false)));
+            false, ASCIIToUTF16(cases[i].input), std::string())));
     EXPECT_EQ(ASCIIToUTF16(cases[i].inline_autocompletion),
               match.inline_autocompletion);
     EXPECT_EQ(ASCIIToUTF16(cases[i].fill_into_edit), match.fill_into_edit);
@@ -3192,7 +3183,8 @@ TEST_F(SearchProviderTest, NavigationInlineSchemeSubstring) {
   const base::string16 input(ASCIIToUTF16("ht"));
   const base::string16 url(ASCIIToUTF16("http://a.com"));
   const SearchProvider::NavigationResult result(
-      *provider_.get(), GURL(url), base::string16(), false, 0, false);
+      *provider_.get(), GURL(url), base::string16(), false, 0, false,
+      input, std::string());
 
   // Check the offset and strings when inline autocompletion is allowed.
   QueryForInput(input, false, false);
@@ -3216,8 +3208,8 @@ TEST_F(SearchProviderTest, NavigationInlineDomainClassify) {
   QueryForInput(ASCIIToUTF16("w"), false, false);
   AutocompleteMatch match(
       provider_->NavigationToMatch(SearchProvider::NavigationResult(
-          *provider_.get(), GURL("http://www.wow.com"), base::string16(), false, 0,
-          false)));
+          *provider_.get(), GURL("http://www.wow.com"), base::string16(), false,
+          0, false, ASCIIToUTF16("w"), std::string())));
   EXPECT_EQ(ASCIIToUTF16("ow.com"), match.inline_autocompletion);
   EXPECT_TRUE(match.allowed_to_be_default_match);
   EXPECT_EQ(ASCIIToUTF16("www.wow.com"), match.fill_into_edit);
@@ -3366,6 +3358,14 @@ TEST_F(SearchProviderTest, RemoveStaleResultsTest) {
         { "http://friend.com/", true,  1255, true  } } },
   };
 
+  std::map<std::string, std::string> params;
+  params[std::string(OmniboxFieldTrial::kReorderForLegalDefaultMatchRule) +
+      ":*:*"] = OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleDisabled;
+  ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     // Initialize cached results for this test case.
     provider_->default_results_.verbatim_relevance =
@@ -3380,21 +3380,22 @@ TEST_F(SearchProviderTest, RemoveStaleResultsTest) {
         provider_->default_results_.navigation_results.push_back(
             SearchProvider::NavigationResult(
                 *provider_.get(), GURL(suggestion), base::string16(), false,
-                cases[i].results[j].relevance, false));
+                cases[i].results[j].relevance, false,
+                ASCIIToUTF16(cases[i].omnibox_input), std::string()));
       } else {
         provider_->default_results_.suggest_results.push_back(
-            SearchProvider::SuggestResult(ASCIIToUTF16(suggestion), base::string16(),
-                                          base::string16(), std::string(),
-                                          std::string(), false,
-                                          cases[i].results[j].relevance,
-                                          false, false));
+            SearchProvider::SuggestResult(
+                ASCIIToUTF16(suggestion), AutocompleteMatchType::SEARCH_SUGGEST,
+                ASCIIToUTF16(suggestion), base::string16(), std::string(),
+                std::string(), false, cases[i].results[j].relevance, false,
+                false, ASCIIToUTF16(cases[i].omnibox_input)));
       }
     }
 
     provider_->input_ = AutocompleteInput(
-        ASCIIToUTF16(cases[i].omnibox_input), base::string16::npos, base::string16(),
-        GURL(), AutocompleteInput::INVALID_SPEC, false, false, true,
-        AutocompleteInput::ALL_MATCHES);
+        ASCIIToUTF16(cases[i].omnibox_input), base::string16::npos,
+        base::string16(), GURL(), AutocompleteInput::INVALID_SPEC, false, false,
+        true, AutocompleteInput::ALL_MATCHES);
     provider_->RemoveAllStaleResults();
 
     // Check cached results.
@@ -3432,19 +3433,14 @@ TEST_F(SearchProviderTest, RemoveStaleResultsTest) {
 TEST_F(SearchProviderTest, ParseEntitySuggestion) {
   struct Match {
     std::string contents;
+    std::string description;
     std::string query_params;
     std::string fill_into_edit;
     AutocompleteMatchType::Type type;
-    size_t classification_offsets[3];
-    int classification_styles[3];
   };
-  const size_t invalid_offset = 10;
-  const int invalid_style = -1;
   const Match kEmptyMatch = {
-    kNotApplicable, kNotApplicable, kNotApplicable,
-    AutocompleteMatchType::NUM_TYPES,
-    { invalid_offset, invalid_offset, invalid_offset },
-    { invalid_style, invalid_style, invalid_style } };
+    kNotApplicable, kNotApplicable, kNotApplicable, kNotApplicable,
+    AutocompleteMatchType::NUM_TYPES};
 
   struct {
     const std::string input_text;
@@ -3453,21 +3449,14 @@ TEST_F(SearchProviderTest, ParseEntitySuggestion) {
   } cases[] = {
     // A query and an entity suggestion with different search terms.
     { "x",
-      "[\"x\",[\"xy\", \"xy\"],[\"\",\"\"],[],"
+      "[\"x\",[\"xy\", \"yy\"],[\"\",\"\"],[],"
       " {\"google:suggestdetail\":[{},"
-      "   {\"a\":\"A\",\"dq\":\"yy\",\"q\":\"p=v\"}],"
+      "   {\"a\":\"A\",\"t\":\"xy\",\"q\":\"p=v\"}],"
       "\"google:suggesttype\":[\"QUERY\",\"ENTITY\"]}]",
-      { { "x", "", "x", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
-          { 0, invalid_offset, invalid_offset },
-          { ACMatchClassification::NONE, invalid_style, invalid_style } },
-        { "xy", "", "xy", AutocompleteMatchType::SEARCH_SUGGEST,
-          { 0, 1, invalid_offset },
-          { ACMatchClassification::NONE, ACMatchClassification::MATCH,
-            invalid_style } },
-        { "xy - A", "p=v", "yy", AutocompleteMatchType::SEARCH_SUGGEST,
-          { 0, 1, 2 },
-          { ACMatchClassification::NONE, ACMatchClassification::MATCH,
-            ACMatchClassification::DIM } },
+      { { "x", "", "", "x", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+        { "xy", "", "", "xy", AutocompleteMatchType::SEARCH_SUGGEST },
+        { "xy", "A", "p=v", "yy",
+          AutocompleteMatchType::SEARCH_SUGGEST_ENTITY },
         kEmptyMatch,
         kEmptyMatch
       },
@@ -3476,19 +3465,12 @@ TEST_F(SearchProviderTest, ParseEntitySuggestion) {
     { "x",
       "[\"x\",[\"xy\", \"xy\"],[\"\",\"\"],[],"
       " {\"google:suggestdetail\":[{},"
-      "   {\"a\":\"A\",\"dq\":\"xy\",\"q\":\"p=v\"}],"
+      "   {\"a\":\"A\",\"t\":\"xy\",\"q\":\"p=v\"}],"
       "\"google:suggesttype\":[\"QUERY\",\"ENTITY\"]}]",
-      { { "x", "", "x", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
-          { 0, invalid_offset, invalid_offset },
-          { ACMatchClassification::NONE, invalid_style, invalid_style } },
-        { "xy", "", "xy", AutocompleteMatchType::SEARCH_SUGGEST,
-          { 0, 1, invalid_offset },
-          { ACMatchClassification::NONE, ACMatchClassification::MATCH,
-            invalid_style } },
-        { "xy - A", "p=v", "xy", AutocompleteMatchType::SEARCH_SUGGEST,
-          { 0, 1, 2 },
-          { ACMatchClassification::NONE, ACMatchClassification::MATCH,
-            ACMatchClassification::DIM } },
+      { { "x", "", "", "x", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+        { "xy", "", "", "xy", AutocompleteMatchType::SEARCH_SUGGEST },
+        { "xy", "A", "p=v", "xy",
+          AutocompleteMatchType::SEARCH_SUGGEST_ENTITY },
         kEmptyMatch,
         kEmptyMatch
       },
@@ -3520,31 +3502,20 @@ TEST_F(SearchProviderTest, ParseEntitySuggestion) {
       const Match& match = cases[i].matches[j];
       SCOPED_TRACE(" and match index: " + base::IntToString(j));
       EXPECT_EQ(match.contents,
-                UTF16ToUTF8(matches[j].contents));
+                base::UTF16ToUTF8(matches[j].contents));
+      EXPECT_EQ(match.description,
+                base::UTF16ToUTF8(matches[j].description));
       EXPECT_EQ(match.query_params,
                 matches[j].search_terms_args->suggest_query_params);
       EXPECT_EQ(match.fill_into_edit,
-                UTF16ToUTF8(matches[j].fill_into_edit));
+                base::UTF16ToUTF8(matches[j].fill_into_edit));
       EXPECT_EQ(match.type, matches[j].type);
-
-      size_t k = 0;
-      for (; k < matches[j].contents_class.size(); k++) {
-        SCOPED_TRACE(" and contents class: " + base::IntToString(k));
-        EXPECT_EQ(match.classification_offsets[k],
-            matches[j].contents_class[k].offset);
-        EXPECT_EQ(match.classification_styles[k],
-            matches[j].contents_class[k].style);
-      }
-      for (; k < ARRAYSIZE_UNSAFE(match.classification_offsets); k++) {
-        SCOPED_TRACE(" and contents class: " + base::IntToString(k));
-        EXPECT_EQ(match.classification_offsets[k], invalid_offset);
-        EXPECT_EQ(match.classification_styles[k], invalid_style);
-      }
     }
     // Ensure that no expected matches are missing.
     for (; j < ARRAYSIZE_UNSAFE(cases[i].matches); ++j) {
       SCOPED_TRACE(" and match index: " + base::IntToString(j));
       EXPECT_EQ(cases[i].matches[j].contents, kNotApplicable);
+      EXPECT_EQ(cases[i].matches[j].description, kNotApplicable);
       EXPECT_EQ(cases[i].matches[j].query_params, kNotApplicable);
       EXPECT_EQ(cases[i].matches[j].fill_into_edit, kNotApplicable);
       EXPECT_EQ(cases[i].matches[j].type, AutocompleteMatchType::NUM_TYPES);
@@ -3553,96 +3524,6 @@ TEST_F(SearchProviderTest, ParseEntitySuggestion) {
 }
 #endif  // !defined(OS_WIN)
 
-TEST_F(SearchProviderTest, SearchHistorySuppressesEntitySuggestion) {
-  struct Match {
-    std::string contents;
-    std::string query_params;
-    std::string fill_into_edit;
-    AutocompleteMatchType::Type type;
-  };
-  const Match kEmptyMatch = { kNotApplicable, kNotApplicable, kNotApplicable,
-                              AutocompleteMatchType::NUM_TYPES};
-
-  struct {
-    const std::string input_text;
-    const std::string history_search_term;
-    const std::string response_json;
-    const Match matches[5];
-  } cases[] = {
-    // Search history suppresses both query and entity suggestions.
-    { "x", "xy",
-      "[\"x\",[\"xy\", \"xy\"],[\"\",\"\"],[],"
-      " {\"google:suggestdetail\":[{},"
-      "   {\"a\":\"A\",\"dq\":\"xy\",\"q\":\"p=v\"}],"
-      "\"google:suggesttype\":[\"QUERY\",\"ENTITY\"]}]",
-      {
-        {"xy", "", "xy", AutocompleteMatchType::SEARCH_HISTORY},
-        {"x", "", "x", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED},
-        {"xy - A", "p=v", "xy", AutocompleteMatchType::SEARCH_SUGGEST},
-        kEmptyMatch,
-        kEmptyMatch,
-      },
-    },
-    // Search history suppresses only query suggestion.
-    { "x", "xyy",
-      "[\"x\",[\"xy\", \"xy\"],[\"\",\"\"],[],"
-      " {\"google:suggestdetail\":[{},"
-      "   {\"a\":\"A\",\"dq\":\"xyy\",\"q\":\"p=v\"}],"
-      "\"google:suggesttype\":[\"QUERY\",\"ENTITY\"]}]",
-      {
-        {"xyy", "", "xyy", AutocompleteMatchType::SEARCH_HISTORY},
-        {"xy", "", "xy", AutocompleteMatchType::SEARCH_HISTORY},
-        {"x", "", "x", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED},
-        {"xy - A", "p=v", "xyy", AutocompleteMatchType::SEARCH_SUGGEST},
-        kEmptyMatch,
-      },
-    }
-  };
-
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
-    GURL term_url(AddSearchToHistory(
-        default_t_url_, ASCIIToUTF16(cases[i].history_search_term), 10));
-    profile_.BlockUntilHistoryProcessesPendingRequests();
-    QueryForInput(ASCIIToUTF16(cases[i].input_text), false, false);
-
-    // Set up a default fetcher with provided results.
-    net::TestURLFetcher* fetcher =
-        test_factory_.GetFetcherByID(
-            SearchProvider::kDefaultProviderURLFetcherID);
-    ASSERT_TRUE(fetcher);
-    fetcher->set_response_code(200);
-    fetcher->SetResponseString(cases[i].response_json);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
-
-    RunTillProviderDone();
-
-    const ACMatches& matches = provider_->matches();
-    ASSERT_FALSE(matches.empty());
-    SCOPED_TRACE("for case: " + base::IntToString(i));
-
-    ASSERT_LE(matches.size(), ARRAYSIZE_UNSAFE(cases[i].matches));
-    size_t j = 0;
-    // Ensure that the returned matches equal the expectations.
-    for (; j < matches.size(); ++j) {
-      SCOPED_TRACE(" and match index: " + base::IntToString(j));
-      EXPECT_EQ(cases[i].matches[j].contents,
-                UTF16ToUTF8(matches[j].contents));
-      EXPECT_EQ(cases[i].matches[j].query_params,
-                matches[j].search_terms_args->suggest_query_params);
-      EXPECT_EQ(cases[i].matches[j].fill_into_edit,
-                UTF16ToUTF8(matches[j].fill_into_edit));
-      EXPECT_EQ(cases[i].matches[j].type, matches[j].type);
-    }
-    // Ensure that no expected matches are missing.
-    for (; j < ARRAYSIZE_UNSAFE(cases[i].matches); ++j) {
-      SCOPED_TRACE(" and match index: " + base::IntToString(j));
-      EXPECT_EQ(cases[i].matches[j].contents, kNotApplicable);
-      EXPECT_EQ(cases[i].matches[j].query_params, kNotApplicable);
-      EXPECT_EQ(cases[i].matches[j].fill_into_edit, kNotApplicable);
-      EXPECT_EQ(cases[i].matches[j].type, AutocompleteMatchType::NUM_TYPES);
-    }
-  }
-}
 
 // A basic test that verifies the prefetch metadata parsing logic.
 TEST_F(SearchProviderTest, PrefetchMetadataParsing) {
@@ -3769,7 +3650,8 @@ TEST_F(SearchProviderTest, PrefetchMetadataParsing) {
     // Ensure that the returned matches equal the expectations.
     for (size_t j = 0; j < matches.size(); ++j) {
       SCOPED_TRACE(description);
-      EXPECT_EQ(cases[i].matches[j].contents, UTF16ToUTF8(matches[j].contents));
+      EXPECT_EQ(cases[i].matches[j].contents,
+                base::UTF16ToUTF8(matches[j].contents));
       EXPECT_EQ(cases[i].matches[j].allowed_to_be_prefetched,
                 SearchProvider::ShouldPrefetch(matches[j]));
       EXPECT_EQ(cases[i].matches[j].type, matches[j].type);
@@ -3800,7 +3682,7 @@ TEST_F(SearchProviderTest, XSSIGuardedJSONParsing_InvalidResponse) {
 
   // Should have exactly one "search what you typed" match
   ASSERT_TRUE(matches.size() == 1);
-  EXPECT_EQ(input_str, UTF16ToUTF8(matches[0].contents));
+  EXPECT_EQ(input_str, base::UTF16ToUTF8(matches[0].contents));
   EXPECT_EQ(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
             matches[0].type);
 }
@@ -3882,7 +3764,8 @@ TEST_F(SearchProviderTest, XSSIGuardedJSONParsing_ValidResponses) {
     // Ensure that the returned matches equal the expectations.
     for (; j < matches.size(); ++j) {
       SCOPED_TRACE("and match: " + base::IntToString(j));
-      EXPECT_EQ(cases[i].matches[j].contents, UTF16ToUTF8(matches[j].contents));
+      EXPECT_EQ(cases[i].matches[j].contents,
+                base::UTF16ToUTF8(matches[j].contents));
       EXPECT_EQ(cases[i].matches[j].type, matches[j].type);
     }
     for (; j < ARRAYSIZE_UNSAFE(cases[i].matches); ++j) {
@@ -3963,7 +3846,7 @@ TEST_F(SearchProviderTest, ParseDeletionUrl) {
        for (size_t j = 0; j < matches.size(); ++j) {
          const Match& match = cases[i].matches[j];
          SCOPED_TRACE(" and match index: " + base::IntToString(j));
-         EXPECT_EQ(match.contents, UTF16ToUTF8(matches[j].contents));
+         EXPECT_EQ(match.contents, base::UTF16ToUTF8(matches[j].contents));
          EXPECT_EQ(match.deletion_url, matches[j].GetAdditionalInfo(
              "deletion_url"));
        }

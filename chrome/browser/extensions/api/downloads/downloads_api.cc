@@ -26,6 +26,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -39,9 +40,7 @@
 #include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/download/drag_download_item.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_warning_service.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/icon_loader.h"
@@ -52,7 +51,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/api/downloads.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/download_interrupt_reasons.h"
@@ -64,13 +62,14 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "net/base/load_flags.h"
@@ -79,6 +78,7 @@
 #include "net/url_request/url_request.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/image/image_skia.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -89,6 +89,7 @@ namespace download_extension_errors {
 
 const char kEmptyFile[] = "Filename not yet determined";
 const char kFileAlreadyDeleted[] = "Download file already deleted";
+const char kFileNotRemoved[] = "Unable to remove file";
 const char kIconNotFound[] = "Icon not found";
 const char kInvalidDangerType[] = "Invalid danger type";
 const char kInvalidFilename[] = "Invalid filename";
@@ -258,15 +259,17 @@ scoped_ptr<base::DictionaryValue> DownloadItemToJSON(
   json->SetBoolean(kPausedKey, download_item->IsPaused());
   json->SetString(kMimeKey, download_item->GetMimeType());
   json->SetString(kStartTimeKey, TimeToISO8601(download_item->GetStartTime()));
-  json->SetInteger(kBytesReceivedKey, download_item->GetReceivedBytes());
-  json->SetInteger(kTotalBytesKey, download_item->GetTotalBytes());
+  json->SetDouble(kBytesReceivedKey, download_item->GetReceivedBytes());
+  json->SetDouble(kTotalBytesKey, download_item->GetTotalBytes());
   json->SetBoolean(kIncognitoKey, profile->IsOffTheRecord());
   if (download_item->GetState() == DownloadItem::INTERRUPTED) {
-    json->SetString(kErrorKey, content::InterruptReasonDebugString(
-        download_item->GetLastReason()));
+    json->SetString(kErrorKey,
+                    content::DownloadInterruptReasonToString(
+                        download_item->GetLastReason()));
   } else if (download_item->GetState() == DownloadItem::CANCELLED) {
-    json->SetString(kErrorKey, content::InterruptReasonDebugString(
-        content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED));
+    json->SetString(kErrorKey,
+                    content::DownloadInterruptReasonToString(
+                        content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED));
   }
   if (!download_item->GetEndTime().is_null())
     json->SetString(kEndTimeKey, TimeToISO8601(download_item->GetEndTime()));
@@ -290,7 +293,7 @@ scoped_ptr<base::DictionaryValue> DownloadItemToJSON(
       json->SetString(kByExtensionNameKey, extension->name());
   }
   // TODO(benjhayden): Implement fileSize.
-  json->SetInteger(kFileSizeKey, download_item->GetTotalBytes());
+  json->SetDouble(kFileSizeKey, download_item->GetTotalBytes());
   return scoped_ptr<base::DictionaryValue>(json);
 }
 
@@ -301,20 +304,21 @@ class DownloadFileIconExtractorImpl : public DownloadFileIconExtractor {
   virtual ~DownloadFileIconExtractorImpl() {}
 
   virtual bool ExtractIconURLForPath(const base::FilePath& path,
+                                     float scale,
                                      IconLoader::IconSize icon_size,
                                      IconURLCallback callback) OVERRIDE;
  private:
-  void OnIconLoadComplete(gfx::Image* icon);
+  void OnIconLoadComplete(
+      float scale, const IconURLCallback& callback, gfx::Image* icon);
 
-  CancelableTaskTracker cancelable_task_tracker_;
-  IconURLCallback callback_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 };
 
 bool DownloadFileIconExtractorImpl::ExtractIconURLForPath(
     const base::FilePath& path,
+    float scale,
     IconLoader::IconSize icon_size,
     IconURLCallback callback) {
-  callback_ = callback;
   IconManager* im = g_browser_process->icon_manager();
   // The contents of the file at |path| may have changed since a previous
   // request, in which case the associated icon may also have changed.
@@ -322,17 +326,16 @@ bool DownloadFileIconExtractorImpl::ExtractIconURLForPath(
   im->LoadIcon(path,
                icon_size,
                base::Bind(&DownloadFileIconExtractorImpl::OnIconLoadComplete,
-                          base::Unretained(this)),
+                          base::Unretained(this), scale, callback),
                &cancelable_task_tracker_);
   return true;
 }
 
-void DownloadFileIconExtractorImpl::OnIconLoadComplete(gfx::Image* icon) {
+void DownloadFileIconExtractorImpl::OnIconLoadComplete(
+    float scale, const IconURLCallback& callback, gfx::Image* icon) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::string url;
-  if (icon)
-    url = webui::GetBitmapDataUrl(icon->AsBitmap());
-  callback_.Run(url);
+  callback.Run(!icon ? std::string() : webui::GetBitmapDataUrl(
+      icon->ToImageSkia()->GetRepresentation(scale).sk_bitmap()));
 }
 
 IconLoader::IconSize IconLoaderSizeFromPixelSize(int pixel_size) {
@@ -897,7 +900,7 @@ void OnDeterminingFilenameWillDispatchCallback(
     const extensions::Extension* extension,
     base::ListValue* event_args) {
   *any_determiners = true;
-  base::Time installed = extensions::ExtensionSystem::GetForBrowserContext(
+  base::Time installed = extensions::ExtensionSystem::Get(
       context)->extension_service()->extension_prefs()->
     GetInstallTime(extension->id());
   data->AddPendingDeterminer(extension->id(), installed);
@@ -1039,11 +1042,11 @@ void DownloadsDownloadFunction::OnStarted(
     const base::FilePath& creator_suggested_filename,
     downloads::FilenameConflictAction creator_conflict_action,
     DownloadItem* item,
-    net::Error error) {
+    content::DownloadInterruptReason interrupt_reason) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  VLOG(1) << __FUNCTION__ << " " << item << " " << error;
+  VLOG(1) << __FUNCTION__ << " " << item << " " << interrupt_reason;
   if (item) {
-    DCHECK_EQ(net::OK, error);
+    DCHECK_EQ(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
     SetResult(new base::FundamentalValue(static_cast<int>(item->GetId())));
     if (!creator_suggested_filename.empty()) {
       ExtensionDownloadsEventRouterData* data =
@@ -1060,8 +1063,8 @@ void DownloadsDownloadFunction::OnStarted(
         item, GetExtension()->id(), GetExtension()->name());
     item->UpdateObservers();
   } else {
-    DCHECK_NE(net::OK, error);
-    error_ = net::ErrorToString(error);
+    DCHECK_NE(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
+    error_ = content::DownloadInterruptReasonToString(interrupt_reason);
   }
   SendResponse(error_.empty());
 }
@@ -1198,15 +1201,10 @@ bool DownloadsEraseFunction::RunImpl() {
   return true;
 }
 
-DownloadsRemoveFileFunction::DownloadsRemoveFileFunction()
-    : item_(NULL) {
+DownloadsRemoveFileFunction::DownloadsRemoveFileFunction() {
 }
 
 DownloadsRemoveFileFunction::~DownloadsRemoveFileFunction() {
-  if (item_) {
-    item_->RemoveObserver(this);
-    item_ = NULL;
-  }
 }
 
 bool DownloadsRemoveFileFunction::RunImpl() {
@@ -1221,29 +1219,18 @@ bool DownloadsRemoveFileFunction::RunImpl() {
       Fault(download_item->GetFileExternallyRemoved(),
             errors::kFileAlreadyDeleted, &error_))
     return false;
-  item_ = download_item;
-  item_->AddObserver(this);
   RecordApiFunctions(DOWNLOADS_FUNCTION_REMOVE_FILE);
-  download_item->DeleteFile();
+  download_item->DeleteFile(
+      base::Bind(&DownloadsRemoveFileFunction::Done, this));
   return true;
 }
 
-void DownloadsRemoveFileFunction::OnDownloadUpdated(DownloadItem* download) {
+void DownloadsRemoveFileFunction::Done(bool success) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(item_, download);
-  if (!item_->GetFileExternallyRemoved())
-    return;
-  item_->RemoveObserver(this);
-  item_ = NULL;
-  SendResponse(true);
-}
-
-void DownloadsRemoveFileFunction::OnDownloadDestroyed(DownloadItem* download) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(item_, download);
-  item_->RemoveObserver(this);
-  item_ = NULL;
-  SendResponse(true);
+  if (!success) {
+    error_ = errors::kFileNotRemoved;
+  }
+  SendResponse(error_.empty());
 }
 
 DownloadsAcceptDangerFunction::DownloadsAcceptDangerFunction() {}
@@ -1351,8 +1338,9 @@ bool DownloadsShowDefaultFolderFunction::RunImpl() {
   DownloadManager* manager = NULL;
   DownloadManager* incognito_manager = NULL;
   GetManagers(GetProfile(), include_incognito(), &manager, &incognito_manager);
-  platform_util::OpenItem(DownloadPrefs::FromDownloadManager(
-      manager)->DownloadPath());
+  platform_util::OpenItem(
+      GetProfile(),
+      DownloadPrefs::FromDownloadManager(manager)->DownloadPath());
   RecordApiFunctions(DOWNLOADS_FUNCTION_SHOW_DEFAULT_FOLDER);
   return true;
 }
@@ -1497,8 +1485,16 @@ bool DownloadsGetFileIconFunction::RunImpl() {
   // found, so use GetTargetFilePath() instead.
   DCHECK(icon_extractor_.get());
   DCHECK(icon_size == 16 || icon_size == 32);
+  float scale = 1.0;
+  content::WebContents* web_contents =
+      dispatcher()->delegate()->GetVisibleWebContents();
+  if (web_contents) {
+    scale = ui::GetImageScale(ui::GetScaleFactorForNativeView(
+        web_contents->GetRenderWidgetHostView()->GetNativeView()));
+  }
   EXTENSION_FUNCTION_VALIDATE(icon_extractor_->ExtractIconURLForPath(
       download_item->GetTargetFilePath(),
+      scale,
       IconLoaderSizeFromPixelSize(icon_size),
       base::Bind(&DownloadsGetFileIconFunction::OnIconURLExtracted, this)));
   return true;

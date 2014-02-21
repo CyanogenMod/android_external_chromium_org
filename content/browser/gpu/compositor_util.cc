@@ -24,12 +24,7 @@ struct GpuFeatureInfo {
   bool fallback_to_software;
 };
 
-#if defined(OS_CHROMEOS)
-const size_t kNumFeatures = 14;
-#else
-const size_t kNumFeatures = 13;
-#endif
-const GpuFeatureInfo GetGpuFeatureInfo(size_t index) {
+const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
 
@@ -83,14 +78,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index) {
           false
       },
       {
-          "multisampling",
-          manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING),
-          command_line.HasSwitch(switches::kDisableGLMultisampling),
-          "Multisampling has been disabled, either via about:flags or command"
-          " line.",
-          false
-      },
-      {
           "flash_3d",
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FLASH3D),
           command_line.HasSwitch(switches::kDisableFlash3d),
@@ -114,14 +101,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index) {
           command_line.HasSwitch(switches::kDisableFlashStage3d),
           "Using Stage3d Baseline profile in Flash has been disabled, either"
           " via about:flags or command line.",
-          false
-      },
-      {
-          "texture_sharing",
-          manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_TEXTURE_SHARING),
-          command_line.HasSwitch(switches::kDisableImageTransportSurface),
-          "Sharing textures between processes has been disabled, either via"
-          " about:flags or command line.",
           false
       },
       {
@@ -177,6 +156,8 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index) {
           false
       },
   };
+  DCHECK(index < arraysize(kGpuFeatureInfo));
+  *eof = (index == arraysize(kGpuFeatureInfo) - 1);
   return kGpuFeatureInfo[index];
 }
 
@@ -219,18 +200,19 @@ bool IsThreadedCompositingEnabled() {
     return true;
   }
 
-#if defined(USE_AURA)
-  // We always want threaded compositing on Aura.
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  // We always want threaded compositing on Aura and Mac (the fallback is a
+  // threaded software compositor).
   return true;
 #endif
 
   if (!CanDoAcceleratedCompositing() || IsForceCompositingModeBlacklisted())
     return false;
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_WIN)
   // Windows Vista+ has been shipping with TCM enabled at 100% since M24 and
-  // Mac OSX 10.8+ since M28. The blacklist check above takes care of returning
-  // false before this hits on unsupported Win/Mac versions.
+  // The blacklist check above takes care of returning false before this hits
+  // on unsupported Win versions.
   return true;
 #endif
 
@@ -309,8 +291,9 @@ base::Value* GetFeatureStatus() {
 
   base::DictionaryValue* feature_status_dict = new base::DictionaryValue();
 
-  for (size_t i = 0; i < kNumFeatures; ++i) {
-    const GpuFeatureInfo gpu_feature_info = GetGpuFeatureInfo(i);
+  bool eof = false;
+  for (size_t i = 0; !eof; ++i) {
+    const GpuFeatureInfo gpu_feature_info = GetGpuFeatureInfo(i, &eof);
     // force_compositing_mode status is part of the compositing status.
     if (gpu_feature_info.name == "force_compositing_mode")
       continue;
@@ -391,8 +374,9 @@ base::Value* GetProblems() {
     problem_list->Insert(0, problem);
   }
 
-  for (size_t i = 0; i < kNumFeatures; ++i) {
-    const GpuFeatureInfo gpu_feature_info = GetGpuFeatureInfo(i);
+  bool eof = false;
+  for (size_t i = 0; !eof; ++i) {
+    const GpuFeatureInfo gpu_feature_info = GetGpuFeatureInfo(i, &eof);
     if (gpu_feature_info.disabled) {
       base::DictionaryValue* problem = new base::DictionaryValue();
       problem->SetString(

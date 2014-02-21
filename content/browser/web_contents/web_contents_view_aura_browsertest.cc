@@ -128,12 +128,6 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
       : screenshot_manager_(NULL) {
   }
 
-  virtual void SetUp() OVERRIDE {
-    // TODO(jbauman): Remove this. http://crbug.com/268644
-    UseRealGLContexts();
-    ContentBrowserTest::SetUp();
-  }
-
   // Executes the javascript synchronously and makes sure the returned value is
   // freed properly.
   void ExecuteSyncJSFunction(RenderViewHost* rvh, const std::string& jscript) {
@@ -196,7 +190,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
 
     {
       // Do a swipe-right now. That should navigate backwards.
-      base::string16 expected_title = ASCIIToUTF16("Title: #1");
+      base::string16 expected_title = base::ASCIIToUTF16("Title: #1");
       content::TitleWatcher title_watcher(web_contents, expected_title);
       generator.GestureScrollSequence(
           gfx::Point(bounds.x() + 2, bounds.y() + 10),
@@ -214,7 +208,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
 
     {
       // Do a fling-right now. That should navigate backwards.
-      base::string16 expected_title = ASCIIToUTF16("Title:");
+      base::string16 expected_title = base::ASCIIToUTF16("Title:");
       content::TitleWatcher title_watcher(web_contents, expected_title);
       generator.GestureScrollSequence(
           gfx::Point(bounds.x() + 2, bounds.y() + 10),
@@ -232,7 +226,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
 
     {
       // Do a swipe-left now. That should navigate forward.
-      base::string16 expected_title = ASCIIToUTF16("Title: #1");
+      base::string16 expected_title = base::ASCIIToUTF16("Title: #1");
       content::TitleWatcher title_watcher(web_contents, expected_title);
       generator.GestureScrollSequence(
           gfx::Point(bounds.right() - 10, bounds.y() + 10),
@@ -335,14 +329,16 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
       gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
       0, timestamp);
-  dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+  ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&press);
+  ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_EQ(1, GetCurrentIndex());
 
   timestamp += base::TimeDelta::FromMilliseconds(10);
   ui::TouchEvent move1(ui::ET_TOUCH_MOVED,
       gfx::Point(bounds.right() - 10, bounds.y() + 5),
       0, timestamp);
-  dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&move1);
+  details = dispatcher->OnEventFromSource(&move1);
+  ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_EQ(1, GetCurrentIndex());
 
   // Swipe back from the right edge, back to the left edge, back to the right
@@ -353,7 +349,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     ui::TouchEvent inc(ui::ET_TOUCH_MOVED,
         gfx::Point(x, bounds.y() + 5),
         0, timestamp);
-    dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
+    details = dispatcher->OnEventFromSource(&inc);
+    ASSERT_FALSE(details.dispatcher_destroyed);
     EXPECT_EQ(1, GetCurrentIndex());
   }
 
@@ -362,7 +359,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     ui::TouchEvent inc(ui::ET_TOUCH_MOVED,
         gfx::Point(x, bounds.y() + 5),
         0, timestamp);
-    dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
+    details = dispatcher->OnEventFromSource(&inc);
+    ASSERT_FALSE(details.dispatcher_destroyed);
     EXPECT_EQ(1, GetCurrentIndex());
   }
 
@@ -371,7 +369,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     ui::TouchEvent inc(ui::ET_TOUCH_MOVED,
         gfx::Point(x, bounds.y() + 5),
         0, timestamp);
-    dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
+    details = dispatcher->OnEventFromSource(&inc);
+    ASSERT_FALSE(details.dispatcher_destroyed);
     EXPECT_EQ(1, GetCurrentIndex());
   }
 
@@ -438,7 +437,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, OverscrollScreenshot) {
   {
     // Now, swipe right to navigate backwards. This should navigate away from
     // index 3 to index 2, and index 3 should have a screenshot.
-    base::string16 expected_title = ASCIIToUTF16("Title: #2");
+    base::string16 expected_title = base::ASCIIToUTF16("Title: #2");
     content::TitleWatcher title_watcher(web_contents, expected_title);
     aura::Window* content = web_contents->GetView()->GetContentNativeView();
     gfx::Rect bounds = content->GetBoundsInRootWindow();
@@ -469,7 +468,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, OverscrollScreenshot) {
 
   {
     // Navigate back in history.
-    base::string16 expected_title = ASCIIToUTF16("Title: #3");
+    base::string16 expected_title = base::ASCIIToUTF16("Title: #3");
     content::TitleWatcher title_watcher(web_contents, expected_title);
     web_contents->GetController().GoBack();
     base::string16 actual_title = title_watcher.WaitAndGetTitle();
@@ -565,7 +564,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
       StartTestWithPage("files/overscroll_navigation.html"));
 
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
-  window->Init(ui::LAYER_NOT_DRAWN);
+  window->Init(aura::WINDOW_LAYER_NOT_DRAWN);
 
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -641,7 +640,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 
   // Do a swipe left to start a forward navigation. Then quickly do a swipe
   // right.
-  base::string16 expected_title = ASCIIToUTF16("Title: #2");
+  base::string16 expected_title = base::ASCIIToUTF16("Title: #2");
   content::TitleWatcher title_watcher(web_contents, expected_title);
   NavigationWatcher nav_watcher(web_contents);
 

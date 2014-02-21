@@ -146,7 +146,7 @@ void EncodeFieldForFieldAssignments(const AutofillField& field,
     field_element->SetAttr(buzz::QName(kAttributeFieldType),
                            base::IntToString(*field_type));
     field_element->SetAttr(buzz::QName(kAttributeName),
-                           UTF16ToUTF8(field.name));
+                           base::UTF16ToUTF8(field.name));
     parent->AddElement(field_element);
   }
 }
@@ -308,12 +308,12 @@ std::string StripDigitsIfRequired(const base::string16& input) {
 
   std::string return_string;
   status = U_ZERO_ERROR;
-  UTF16ToUTF8(replaced_string.getBuffer(),
-              static_cast<size_t>(replaced_string.length()),
-              &return_string);
+  base::UTF16ToUTF8(replaced_string.getBuffer(),
+                    static_cast<size_t>(replaced_string.length()),
+                    &return_string);
   if (status != U_ZERO_ERROR) {
-    DVLOG(1) << "Couldn't strip digits in " << UTF16ToUTF8(input);
-    return UTF16ToUTF8(input);
+    DVLOG(1) << "Couldn't strip digits in " << base::UTF16ToUTF8(input);
+    return base::UTF16ToUTF8(input);
   }
 
   return return_string;
@@ -351,12 +351,12 @@ FormStructure::FormStructure(const FormData& form)
       unique_names[field->name] = 1;
     else
       ++unique_names[field->name];
-    base::string16 unique_name = field->name + ASCIIToUTF16("_") +
+    base::string16 unique_name = field->name + base::ASCIIToUTF16("_") +
         base::IntToString16(unique_names[field->name]);
     fields_.push_back(new AutofillField(*field, unique_name));
   }
 
-  std::string method = UTF16ToUTF8(form.method);
+  std::string method = base::UTF16ToUTF8(form.method);
   if (StringToLowerASCII(method) == kFormMethodPost) {
     method_ = POST;
   } else {
@@ -614,7 +614,7 @@ void FormStructure::GetFieldTypePredictions(
     FormDataPredictions form;
     form.data.name = form_structure->form_name_;
     form.data.method =
-        ASCIIToUTF16((form_structure->method_ == POST) ? "POST" : "GET");
+        base::ASCIIToUTF16((form_structure->method_ == POST) ? "POST" : "GET");
     form.data.origin = form_structure->source_url_;
     form.data.action = form_structure->target_url_;
     form.signature = form_structure->FormSignature();
@@ -651,7 +651,7 @@ std::string FormStructure::FormSignature() const {
   }
 
   std::string form_string = scheme + "://" + host + "&" +
-                            UTF16ToUTF8(form_name_) +
+                            base::UTF16ToUTF8(form_name_) +
                             form_signature_field_names_;
 
   return Hash64Bit(form_string);
@@ -766,6 +766,12 @@ void FormStructure::LogQualityMetrics(
     const ServerFieldTypeSet& field_types = field->possible_types();
     DCHECK(!field_types.empty());
     if (field_types.count(EMPTY_TYPE) || field_types.count(UNKNOWN_TYPE))
+      continue;
+
+    // Similarly, no further logging for password fields.  Those are primarily
+    // related to a different feature code path, and so make more sense to track
+    // outside of this metric.
+    if (field->form_control_type == "password")
       continue;
 
     ++num_detected_field_types;
@@ -956,7 +962,7 @@ FormData FormStructure::ToFormData() const {
   data.name = form_name_;
   data.origin = source_url_;
   data.action = target_url_;
-  data.method = ASCIIToUTF16(method_ == POST ? "POST" : "GET");
+  data.method = base::ASCIIToUTF16(method_ == POST ? "POST" : "GET");
 
   for (size_t i = 0; i < fields_.size(); ++i) {
     data.fields.push_back(FormFieldData(*fields_[i]));
@@ -1144,6 +1150,27 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes(
   }
 }
 
+bool FormStructure::FillFields(
+    const std::vector<ServerFieldType>& types,
+    const InputFieldComparator& matches,
+    const base::Callback<base::string16(const AutofillType&)>& get_info,
+    const std::string& app_locale) {
+  bool filled_something = false;
+  for (size_t i = 0; i < field_count(); ++i) {
+    for (size_t j = 0; j < types.size(); ++j) {
+      if (matches.Run(types[j], *field(i))) {
+        AutofillField::FillFormField(*field(i),
+                                     get_info.Run(field(i)->Type()),
+                                     app_locale,
+                                     field(i));
+        filled_something = true;
+        break;
+      }
+    }
+  }
+  return filled_something;
+}
+
 void FormStructure::IdentifySections(bool has_author_specified_sections) {
   if (fields_.empty())
     return;
@@ -1189,7 +1216,7 @@ void FormStructure::IdentifySections(bool has_author_specified_sections) {
       }
 
       seen_types.insert(current_type);
-      (*field)->set_section(UTF16ToUTF8(current_section));
+      (*field)->set_section(base::UTF16ToUTF8(current_section));
     }
   }
 

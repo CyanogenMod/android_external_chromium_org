@@ -46,6 +46,7 @@
       'sources': [
         'file_descriptor_set_posix_unittest.cc',
         'ipc_channel_posix_unittest.cc',
+        'ipc_channel_proxy_unittest.cc',
         'ipc_channel_unittest.cc',
         'ipc_fuzzing_tests.cc',
         'ipc_message_unittest.cc',
@@ -156,7 +157,7 @@
             'ipc_target': 1,
           },
           'dependencies': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
             # TODO(viettrungluu): Needed for base/lazy_instance.h, which is
             # suspect.
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',

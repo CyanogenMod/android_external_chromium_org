@@ -13,6 +13,7 @@
 #include "ui/aura/window_observer.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/animation/animation_delegate.h"
+#include "ui/views/corewm/transient_window_observer.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -40,11 +41,21 @@ namespace ash {
 class ASH_EXPORT ImmersiveFullscreenController
     : public gfx::AnimationDelegate,
       public ui::EventHandler,
+      public views::corewm::TransientWindowObserver,
       public views::FocusChangeListener,
       public views::WidgetObserver,
-      public aura::WindowObserver,
       public ImmersiveRevealedLock::Delegate {
  public:
+  // The enum is used for an enumerated histogram. New items should be only
+  // added to the end.
+  enum WindowType {
+    WINDOW_TYPE_OTHER,
+    WINDOW_TYPE_BROWSER,
+    WINDOW_TYPE_HOSTED_APP,
+    WINDOW_TYPE_PACKAGED_APP,
+    WINDOW_TYPE_COUNT
+  };
+
   class Delegate {
    public:
     // Called when a reveal of the top-of-window views starts.
@@ -85,7 +96,9 @@ class ASH_EXPORT ImmersiveFullscreenController
             views::View* top_container);
 
   // Enables or disables immersive fullscreen.
-  void SetEnabled(bool enable);
+  // |window_type| is the type of window which is put in immersive fullscreen.
+  // It is only used for histogramming.
+  void SetEnabled(WindowType window_type, bool enable);
 
   // Returns true if |native_window_| is in immersive fullscreen.
   bool IsEnabled() const;
@@ -130,11 +143,11 @@ class ASH_EXPORT ImmersiveFullscreenController
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
-  // aura::WindowObserver overrides:
-  virtual void OnAddTransientChild(aura::Window* window,
-                                   aura::Window* transient) OVERRIDE;
-  virtual void OnRemoveTransientChild(aura::Window* window,
-                                      aura::Window* transient) OVERRIDE;
+  // views::corewm::TransientWindowObserver overrides:
+  virtual void OnTransientChildAdded(aura::Window* window,
+                                     aura::Window* transient) OVERRIDE;
+  virtual void OnTransientChildRemoved(aura::Window* window,
+                                       aura::Window* transient) OVERRIDE;
 
   // ash::ImmersiveRevealedLock::Delegate overrides:
   virtual void LockRevealedState(AnimateReveal animate_reveal) OVERRIDE;

@@ -77,8 +77,11 @@ cr.define('options', function() {
       $('advanced-settings').addEventListener('webkitTransitionEnd',
           this.updateAdvancedSettingsExpander_.bind(this));
 
-      if (cr.isChromeOS)
+      if (cr.isChromeOS) {
         UIAccountTweaks.applyGuestModeVisibility(document);
+        if (loadTimeData.getBoolean('secondaryUser'))
+          $('secondary-user-banner').hidden = false;
+      }
 
       // Sync (Sign in) section.
       this.updateSyncState_(loadTimeData.getValue('syncData'));
@@ -98,6 +101,14 @@ cr.define('options', function() {
       // Internet connection section (ChromeOS only).
       if (cr.isChromeOS) {
         options.network.NetworkList.decorate($('network-list'));
+        // Show that the network settings are shared if this is a secondary user
+        // in a multi-profile session.
+        if (loadTimeData.getBoolean('secondaryUser')) {
+          var networkIndicator = document.querySelector(
+              '#network-section-header > .controlled-setting-indicator');
+          networkIndicator.setAttribute('controlled-by', 'shared');
+          networkIndicator.location = cr.ui.ArrowLocation.TOP_START;
+        }
         options.network.NetworkList.refreshNetworkData(
             loadTimeData.getValue('networkData'));
       }
@@ -127,6 +138,8 @@ cr.define('options', function() {
       $('change-home-page').onclick = function(event) {
         OptionsPage.navigateToPage('homePageOverlay');
       };
+
+      chrome.send('requestHotwordAvailable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
@@ -177,6 +190,7 @@ cr.define('options', function() {
 
       // Users section.
       if (loadTimeData.valueExists('profilesInfo')) {
+        $('sync-users-section').hidden = false;
         $('profiles-section').hidden = false;
 
         var profilesList = $('profiles-list');
@@ -228,6 +242,15 @@ cr.define('options', function() {
           chrome.send('coreOptionsUserMetricsAction',
               ['Options_ManageAccounts']);
         };
+
+        document.querySelector(
+            '#enable-screen-lock + span > .controlled-setting-indicator').
+            setAttribute('textshared',
+                         loadTimeData.getString('screenLockShared'));
+
+        $('hotword-app-list').hidden =
+            !loadTimeData.getBoolean('shouldShowAppListHotword');
+
       } else {
         $('import-data').onclick = function(event) {
           ImportDataOverlay.show();
@@ -243,6 +266,9 @@ cr.define('options', function() {
 
       // Default browser section.
       if (!cr.isChromeOS) {
+        if (!loadTimeData.getBoolean('showSetDefault')) {
+          $('set-default-browser-section').hidden = true;
+        }
         $('set-as-default-browser').onclick = function(event) {
           chrome.send('becomeDefaultBrowser');
         };
@@ -424,10 +450,22 @@ cr.define('options', function() {
 
       // Accessibility section (CrOS only).
       if (cr.isChromeOS) {
+        var updateAccessibilitySettingsButton = function() {
+          $('accessibility-settings').hidden =
+              !($('accessibility-spoken-feedback-check').checked);
+        };
+        Preferences.getInstance().addEventListener(
+            'settings.accessibility',
+            updateAccessibilitySettingsButton);
+        $('accessibility-settings-button').onclick = function(event) {
+          window.open(loadTimeData.getString('accessibilitySettingsURL'));
+        };
         $('accessibility-spoken-feedback-check').onchange = function(event) {
           chrome.send('spokenFeedbackChange',
                       [$('accessibility-spoken-feedback-check').checked]);
+          updateAccessibilitySettingsButton();
         };
+        updateAccessibilitySettingsButton();
 
         $('accessibility-high-contrast-check').onchange = function(event) {
           chrome.send('highContrastChange',
@@ -441,9 +479,6 @@ cr.define('options', function() {
         Preferences.getInstance().addEventListener(
             $('accessibility-autoclick-check').getAttribute('pref'),
             updateDelayDropdown);
-
-        $('accessibility-sticky-keys').hidden =
-            !loadTimeData.getBoolean('enableStickyKeys');
       }
 
       // Display management section (CrOS only).
@@ -482,6 +517,8 @@ cr.define('options', function() {
       $('reset-profile-settings').onclick = function(event) {
         OptionsPage.navigateToPage('resetProfileSettings');
       };
+      $('reset-profile-settings-section').hidden =
+          !loadTimeData.getBoolean('enableResetProfileSettings');
     },
 
     /** @override */
@@ -696,7 +733,7 @@ cr.define('options', function() {
 
     updateAdvancedSettingsExpander_: function() {
       var expander = $('advanced-settings-expander');
-      if ($('advanced-settings').style.height == '')
+      if ($('advanced-settings').style.height == '0px')
         expander.textContent = loadTimeData.getString('showAdvancedSettings');
       else
         expander.textContent = loadTimeData.getString('hideAdvancedSettings');
@@ -831,7 +868,12 @@ cr.define('options', function() {
      *     users.
      */
     updateManagesSupervisedUsers_: function(value) {
-      $('profiles-supervised-dashboard-tip').hidden = !value;
+      if (value) {
+        $('sync-users-section').hidden = false;
+        $('profiles-supervised-dashboard-tip').hidden = false;
+      } else {
+        $('profiles-supervised-dashboard-tip').hidden = true;
+      }
     },
 
     /**
@@ -861,6 +903,14 @@ cr.define('options', function() {
         section.hidden = !event.value.value;
         this.onShowHomeButtonChangedCalled_ = true;
       }
+    },
+
+    /**
+     * Activates the Hotword section from the System settings page.
+     * @private
+     */
+    showHotwordSection_: function() {
+      $('hotword-search').hidden = false;
     },
 
     /**
@@ -914,12 +964,13 @@ cr.define('options', function() {
     onDefaultDownloadDirectoryChanged_: function(event) {
       $('downloadLocationPath').value = event.value.value;
       if (cr.isChromeOS) {
-        // On ChromeOS, replace /special/drive/root with Drive for drive paths,
-        // /home/chronos/user/Downloads or /home/chronos/u-<hash>/Downloads
-        // with Downloads for local paths, and '/' with ' \u203a ' (angled quote
-        // sign) everywhere. The modified path is used only for display purpose.
+        // On ChromeOS, replace /special/drive-<hash>/root with "Google Drive"
+        // for remote files, /home/chronos/user/Downloads or
+        // /home/chronos/u-<hash>/Downloads with "Downloads" for local paths,
+        // and '/' with ' \u203a ' (angled quote sign) everywhere. The modified
+        // path is used only for display purpose.
         var path = $('downloadLocationPath').value;
-        path = path.replace(/^\/special\/drive\/root/, 'Google Drive');
+        path = path.replace(/^\/special\/drive[^\/]*\/root/, 'Google Drive');
         path = path.replace(/^\/home\/chronos\/(user|u-[^\/]*)\//, '');
         path = path.replace(/\//g, ' \u203a ');
         $('downloadLocationPath').value = path;
@@ -1252,17 +1303,6 @@ cr.define('options', function() {
     },
 
     /**
-     * Set the visibility of the password generation checkbox.
-     * @private
-     */
-    setPasswordGenerationSettingVisibility_: function(visible) {
-      if (visible)
-        $('password-generation-checkbox').style.display = 'block';
-      else
-        $('password-generation-checkbox').style.display = 'none';
-    },
-
-    /**
      * Set the font size selected item. This item actually reflects two
      * preferences: the default font size and the default fixed font size.
      *
@@ -1559,7 +1599,6 @@ cr.define('options', function() {
     'setHighContrastCheckboxState',
     'setMetricsReportingCheckboxState',
     'setMetricsReportingSettingVisibility',
-    'setPasswordGenerationSettingVisibility',
     'setProfilesInfo',
     'setSpokenFeedbackCheckboxState',
     'setThemesResetButtonEnabled',
@@ -1571,6 +1610,7 @@ cr.define('options', function() {
     'showCreateProfileError',
     'showCreateProfileSuccess',
     'showCreateProfileWarning',
+    'showHotwordSection',
     'showManagedUserImportError',
     'showManagedUserImportSuccess',
     'showMouseControls',

@@ -12,6 +12,16 @@
 #import "chrome/browser/ui/cocoa/autofill/autofill_section_container.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 
+typedef BOOL (^FieldFilterBlock)(NSView<AutofillInputField>*);
+
+@interface AutofillDetailsContainer ()
+
+// Find the editable input field that is closest to the top of the dialog and
+// matches the |predicateBlock|.
+- (NSView*)firstEditableFieldMatchingBlock:(FieldFilterBlock)predicateBlock;
+
+@end
+
 @implementation AutofillDetailsContainer
 
 - (id)initWithDelegate:(autofill::AutofillDialogViewDelegate*)delegate {
@@ -90,6 +100,14 @@
 }
 
 - (BOOL)validate {
+  // Account for a subtle timing issue. -validate is called from the dialog's
+  // -accept. -accept then hides the dialog. If the data does not validate the
+  // dialog is then reshown, focusing on the first invalid field. This happens
+  // without running the message loop, so windowWillClose has not fired when
+  // the dialog and error bubble is reshown, leading to a missing error bubble.
+  // Resetting the anchor view here forces the bubble to show.
+  errorBubbleAnchorView_ = nil;
+
   bool allValid = true;
   for (AutofillSectionContainer* details in details_.get()) {
     if (![[details view] isHidden])
@@ -99,37 +117,17 @@
 }
 
 - (NSView*)firstInvalidField {
-  base::scoped_nsobject<NSMutableArray> fields([[NSMutableArray alloc] init]);
+  return [self firstEditableFieldMatchingBlock:
+      ^BOOL (NSView<AutofillInputField>* field) {
+          return [field invalid];
+      }];
+}
 
-  for (AutofillSectionContainer* details in details_.get()) {
-    if (![[details view] isHidden])
-      [details addInputsToArray:fields];
-  }
-
-  NSPoint selectedFieldOrigin = NSZeroPoint;
-  NSView* selectedField = nil;
-  for (NSView<AutofillInputField>* field in fields.get()) {
-    if (!base::mac::ObjCCast<NSView>(field))
-      continue;
-    if (![field conformsToProtocol:@protocol(AutofillInputField)])
-      continue;
-    if ([field isHiddenOrHasHiddenAncestor])
-      continue;
-    if (![field invalid])
-      continue;
-
-    NSPoint fieldOrigin = [field convertPoint:[field bounds].origin toView:nil];
-    if (fieldOrigin.y < selectedFieldOrigin.y)
-      continue;
-    if (fieldOrigin.y == selectedFieldOrigin.y &&
-        fieldOrigin.x > selectedFieldOrigin.x)
-      continue;
-
-    selectedField = field;
-    selectedFieldOrigin = fieldOrigin;
-  }
-
-  return selectedField;
+- (NSView*)firstVisibleField {
+  return [self firstEditableFieldMatchingBlock:
+      ^BOOL (NSView<AutofillInputField>* field) {
+          return YES;
+      }];
 }
 
 - (void)scrollToView:(NSView*)field {
@@ -146,7 +144,7 @@
     return;
 
   NSPoint scrollPoint = [clipView constrainScrollPoint:
-      NSMakePoint(NSMinX(fieldRect), NSMinY(fieldRect) - bottomPadding)];
+      NSMakePoint(0, NSMinY(fieldRect) - bottomPadding)];
   [clipView scrollToPoint:scrollPoint];
   [scrollView_ reflectScrolledClipView:clipView];
   [self updateErrorBubble];
@@ -166,9 +164,17 @@
                     name:NSWindowWillCloseNotification
                   object:[errorBubbleController_ window]];
   errorBubbleController_ = nil;
+  errorBubbleAnchorView_ = nil;
 }
 
 - (void)showErrorBubbleForField:(NSControl<AutofillInputField>*)field {
+  // If there is already a bubble controller handling this field, reuse.
+  if (errorBubbleController_ && errorBubbleAnchorView_ == field) {
+    [errorBubbleController_ setMessage:[field validityMessage]];
+
+    return;
+  }
+
   if (errorBubbleController_)
     [errorBubbleController_ close];
   DCHECK(!errorBubbleController_);
@@ -213,11 +219,12 @@
   [errorBubbleController_ setAnchorPoint:
       [parentWindow convertBaseToScreen:anchorPoint]];
 
+  errorBubbleAnchorView_ = field;
   [errorBubbleController_ showWindow:self];
 }
 
 - (void)hideErrorBubble {
-  [errorBubble_ setHidden:YES];
+  [errorBubbleController_ close];
 }
 
 - (void)updateMessageForField:(NSControl<AutofillInputField>*)field {
@@ -238,6 +245,45 @@
   } else {
     [errorBubbleController_ close];
   }
+}
+
+- (NSView*)firstEditableFieldMatchingBlock:(FieldFilterBlock)predicateBlock {
+  base::scoped_nsobject<NSMutableArray> fields([[NSMutableArray alloc] init]);
+
+  for (AutofillSectionContainer* details in details_.get()) {
+    if (![[details view] isHidden])
+      [details addInputsToArray:fields];
+  }
+
+  NSPoint selectedFieldOrigin = NSZeroPoint;
+  NSView* selectedField = nil;
+  for (NSControl<AutofillInputField>* field in fields.get()) {
+    if (!base::mac::ObjCCast<NSControl>(field))
+      continue;
+    if (![field conformsToProtocol:@protocol(AutofillInputField)])
+      continue;
+    if ([field isHiddenOrHasHiddenAncestor])
+      continue;
+    if (![field isEnabled])
+      continue;
+    if (![field canBecomeKeyView])
+      continue;
+    if (!predicateBlock(field))
+      continue;
+
+    NSPoint fieldOrigin = [field convertPoint:[field bounds].origin toView:nil];
+    if (fieldOrigin.y < selectedFieldOrigin.y)
+      continue;
+    if (fieldOrigin.y == selectedFieldOrigin.y &&
+        fieldOrigin.x > selectedFieldOrigin.x) {
+      continue;
+    }
+
+    selectedField = field;
+    selectedFieldOrigin = fieldOrigin;
+  }
+
+  return selectedField;
 }
 
 @end

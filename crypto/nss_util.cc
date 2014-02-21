@@ -13,10 +13,7 @@
 #include <prtime.h>
 #include <secmod.h>
 
-#if defined(OS_LINUX)
-#include <linux/nfs_fs.h>
-#include <sys/vfs.h>
-#elif defined(OS_OPENBSD)
+#if defined(OS_OPENBSD)
 #include <sys/mount.h>
 #include <sys/param.h>
 #endif
@@ -24,6 +21,7 @@
 #include <map>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/cpu.h"
 #include "base/debug/alias.h"
@@ -31,10 +29,10 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/native_library.h"
 #include "base/stl_util.h"
@@ -49,7 +47,7 @@
 // certificate and key databases.
 #if defined(USE_NSS)
 #include "base/synchronization/lock.h"
-#include "crypto/crypto_module_blocking_password_delegate.h"
+#include "crypto/nss_crypto_module_delegate.h"
 #endif  // defined(USE_NSS)
 
 namespace crypto {
@@ -146,21 +144,25 @@ char* PKCS11PasswordFunc(PK11SlotInfo* slot, PRBool retry, void* arg) {
 // Because this function sets an environment variable it must be run before we
 // go multi-threaded.
 void UseLocalCacheOfNSSDatabaseIfNFS(const base::FilePath& database_dir) {
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
-  struct statfs buf;
-  if (statfs(database_dir.value().c_str(), &buf) == 0) {
+  bool db_on_nfs = false;
 #if defined(OS_LINUX)
-    if (buf.f_type == NFS_SUPER_MAGIC) {
+  file_util::FileSystemType fs_type = file_util::FILE_SYSTEM_UNKNOWN;
+  if (file_util::GetFileSystemType(database_dir, &fs_type))
+    db_on_nfs = (fs_type == file_util::FILE_SYSTEM_NFS);
 #elif defined(OS_OPENBSD)
-    if (strcmp(buf.f_fstypename, MOUNT_NFS) == 0) {
+  struct statfs buf;
+  if (statfs(database_dir.value().c_str(), &buf) == 0)
+    db_on_nfs = (strcmp(buf.f_fstypename, MOUNT_NFS) == 0);
+#else
+  NOTIMPLEMENTED();
 #endif
-      scoped_ptr<base::Environment> env(base::Environment::Create());
-      const char* use_cache_env_var = "NSS_SDB_USE_CACHE";
-      if (!env->HasVar(use_cache_env_var))
-        env->SetVar(use_cache_env_var, "yes");
-    }
+
+  if (db_on_nfs) {
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    static const char kUseCacheEnvVar[] = "NSS_SDB_USE_CACHE";
+    if (!env->HasVar(kUseCacheEnvVar))
+      env->SetVar(kUseCacheEnvVar, "yes");
   }
-#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 }
 
 #endif  // defined(USE_NSS)
@@ -436,7 +438,7 @@ class NSSInitSingleton {
   void InitializePrivateSoftwareSlotForChromeOSUser(
       const std::string& username_hash) {
     DCHECK(thread_checker_.CalledOnValidThread());
-    LOG(WARNING) << "using software private slot for " << username_hash;
+    VLOG(1) << "using software private slot for " << username_hash;
     DCHECK(chromeos_user_map_.find(username_hash) != chromeos_user_map_.end());
     chromeos_user_map_[username_hash]->SetPrivateSlot(
         chromeos_user_map_[username_hash]->GetPublicSlot());
@@ -445,6 +447,12 @@ class NSSInitSingleton {
   ScopedPK11Slot GetPublicSlotForChromeOSUser(
       const std::string& username_hash) {
     DCHECK(thread_checker_.CalledOnValidThread());
+
+    if (username_hash.empty()) {
+      DVLOG(2) << "empty username_hash";
+      return ScopedPK11Slot();
+    }
+
     if (test_slot_) {
       DVLOG(2) << "returning test_slot_ for " << username_hash;
       return ScopedPK11Slot(PK11_ReferenceSlot(test_slot_));
@@ -461,6 +469,16 @@ class NSSInitSingleton {
       const std::string& username_hash,
       const base::Callback<void(ScopedPK11Slot)>& callback) {
     DCHECK(thread_checker_.CalledOnValidThread());
+
+    if (username_hash.empty()) {
+      DVLOG(2) << "empty username_hash";
+      if (!callback.is_null()) {
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, base::Bind(callback, base::Passed(ScopedPK11Slot())));
+      }
+      return ScopedPK11Slot();
+    }
+
     DCHECK(chromeos_user_map_.find(username_hash) != chromeos_user_map_.end());
 
     if (test_slot_) {
@@ -469,6 +487,14 @@ class NSSInitSingleton {
     }
 
     return chromeos_user_map_[username_hash]->GetPrivateSlot(callback);
+  }
+
+  void CloseTestChromeOSUser(const std::string& username_hash) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    ChromeOSUserMap::iterator i = chromeos_user_map_.find(username_hash);
+    DCHECK(i != chromeos_user_map_.end());
+    delete i->second;
+    chromeos_user_map_.erase(i);
   }
 #endif  // defined(OS_CHROMEOS)
 
@@ -884,10 +910,10 @@ void LoadNSSLibraries() {
   paths.push_back(base::FilePath("/usr/lib/arm-linux-gnueabihf/nss"));
 #else
   paths.push_back(base::FilePath("/usr/lib/arm-linux-gnueabi/nss"));
-#endif
+#endif  // defined(__ARM_PCS_VFP)
 #elif defined(ARCH_CPU_MIPSEL)
   paths.push_back(base::FilePath("/usr/lib/mipsel-linux-gnu/nss"));
-#endif
+#endif  // defined(ARCH_CPU_X86_64)
 
   // A list of library files to load.
   std::vector<std::string> libs;
@@ -913,7 +939,7 @@ void LoadNSSLibraries() {
   } else {
     LOG(ERROR) << "Failed to load NSS libraries.";
   }
-#endif
+#endif  // defined(USE_NSS)
 }
 
 bool CheckNSSVersion(const char* version) {
@@ -981,6 +1007,27 @@ bool IsTPMTokenReady(const base::Closure& callback) {
 
 bool InitializeTPMToken(int token_slot_id) {
   return g_nss_singleton.Get().InitializeTPMToken(token_slot_id);
+}
+
+ScopedTestNSSChromeOSUser::ScopedTestNSSChromeOSUser(
+    const std::string& username_hash)
+    : username_hash_(username_hash), constructed_successfully_(false) {
+  if (!temp_dir_.CreateUniqueTempDir())
+    return;
+  constructed_successfully_ =
+      InitializeNSSForChromeOSUser(username_hash,
+                                   username_hash,
+                                   false /* is_primary_user */,
+                                   temp_dir_.path());
+}
+
+ScopedTestNSSChromeOSUser::~ScopedTestNSSChromeOSUser() {
+  if (constructed_successfully_)
+    g_nss_singleton.Get().CloseTestChromeOSUser(username_hash_);
+}
+
+void ScopedTestNSSChromeOSUser::FinishInit() {
+  InitializePrivateSoftwareSlotForChromeOSUser(username_hash_);
 }
 
 bool InitializeNSSForChromeOSUser(

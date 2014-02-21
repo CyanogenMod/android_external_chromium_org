@@ -6,6 +6,7 @@
 #define CHROME_UTILITY_WIFI_WIFI_SERVICE_H_
 
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -21,7 +22,8 @@ namespace wifi {
 // WiFiService interface used by implementation of chrome.networkingPrivate
 // JavaScript extension API. All methods should be called on worker thread.
 // It could be created on any (including UI) thread, so nothing expensive should
-// be done in the constructor.
+// be done in the constructor. See |NetworkingPrivateService| for wrapper
+// accessible on UI thread.
 class WIFI_EXPORT WiFiService {
  public:
   typedef std::vector<std::string> NetworkGuidList;
@@ -45,7 +47,7 @@ class WIFI_EXPORT WiFiService {
   // Get Properties of network identified by |network_guid|. Populates
   // |properties| on success, |error| on failure.
   virtual void GetProperties(const std::string& network_guid,
-                             DictionaryValue* properties,
+                             base::DictionaryValue* properties,
                              std::string* error) = 0;
 
   // Gets the merged properties of the network with id |network_guid| from the
@@ -53,7 +55,7 @@ class WIFI_EXPORT WiFiService {
   // the currently active settings. Populates |managed_properties| on success,
   // |error| on failure.
   virtual void GetManagedProperties(const std::string& network_guid,
-                                    DictionaryValue* managed_properties,
+                                    base::DictionaryValue* managed_properties,
                                     std::string* error) = 0;
 
   // Get the cached read-only properties of the network with id |network_guid|.
@@ -62,7 +64,7 @@ class WIFI_EXPORT WiFiService {
   // returns a subset of the properties returned by |GetProperties|. Populates
   // |properties| on success, |error| on failure.
   virtual void GetState(const std::string& network_guid,
-                        DictionaryValue* properties,
+                        base::DictionaryValue* properties,
                         std::string* error) = 0;
 
   // Set Properties of network identified by |network_guid|. Populates |error|
@@ -83,7 +85,7 @@ class WIFI_EXPORT WiFiService {
   // Get list of visible networks of |network_type| (one of onc::network_type).
   // Populates |network_list| on success.
   virtual void GetVisibleNetworks(const std::string& network_type,
-                                  ListValue* network_list) = 0;
+                                  base::ListValue* network_list) = 0;
 
   // Request network scan. Send |NetworkListChanged| event on completion.
   virtual void RequestNetworkScan() = 0;
@@ -98,12 +100,24 @@ class WIFI_EXPORT WiFiService {
   virtual void StartDisconnect(const std::string& network_guid,
                                std::string* error) = 0;
 
+  // Get WiFi Key for network identified by |network_guid| from the
+  // system (if it has one) and store it in |key_data|. User privilege elevation
+  // may be required, and function will fail if user privileges are not
+  // sufficient. Populates |error| on failure.
+  virtual void GetKeyFromSystem(const std::string& network_guid,
+                                std::string* key_data,
+                                std::string* error) = 0;
+
   // Set observers to run when |NetworksChanged| and |NetworksListChanged|
   // events needs to be sent. Notifications are posted on |message_loop_proxy|.
   virtual void SetEventObservers(
       scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
       const NetworkGuidListCallback& networks_changed_observer,
       const NetworkGuidListCallback& network_list_changed_observer) = 0;
+
+  // Request update of Connected Network information. Send |NetworksChanged|
+  // event on completion.
+  virtual void RequestConnectedNetworkUpdate() = 0;
 
  protected:
   WiFiService() {}
@@ -116,7 +130,7 @@ class WIFI_EXPORT WiFiService {
     kFrequency5000 = 5000
   };
 
-  typedef std::list<Frequency> FrequencyList;
+  typedef std::set<Frequency> FrequencySet;
   // Network Properties, used as result of |GetProperties| and
   // |GetVisibleNetworks|.
   struct WIFI_EXPORT NetworkProperties {
@@ -130,15 +144,20 @@ class WIFI_EXPORT WiFiService {
     std::string bssid;
     std::string type;
     std::string security;
+    // |password| field is used to pass wifi password for network creation via
+    // |CreateNetwork| or connection via |StartConnect|. It does not persist
+    // once operation is completed.
+    std::string password;
     // WiFi Signal Strength. 0..100
     uint32 signal_strength;
     bool auto_connect;
     Frequency frequency;
-    FrequencyList frequency_list;
+    FrequencySet frequency_set;
 
     std::string json_extra;  // Extra JSON properties for unit tests
 
     scoped_ptr<base::DictionaryValue> ToValue(bool network_list) const;
+    // Updates only properties set in |value|.
     bool UpdateFromValue(const base::DictionaryValue& value);
     static std::string MacAddressAsString(const uint8 mac_as_int[6]);
     static bool OrderByType(const NetworkProperties& l,

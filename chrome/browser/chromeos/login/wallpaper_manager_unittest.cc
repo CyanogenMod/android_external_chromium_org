@@ -14,17 +14,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/testing_pref_service.h"
+#include "chrome/browser/chromeos/login/fake_user_manager.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "chromeos/settings/cros_settings_provider.h"
-#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -82,6 +82,10 @@ class WallpaperManagerTest : public test::AshTestBase {
     WallpaperManager::Get()->set_command_line_for_testing(&command_line_);
   }
 
+  void WaitAsyncWallpaperLoad() {
+    base::MessageLoop::current()->RunUntilIdle();
+  }
+
  protected:
   CommandLine command_line_;
 
@@ -123,8 +127,76 @@ TEST_F(WallpaperManagerTest, GuestUserUseGuestWallpaper) {
   EXPECT_TRUE(test_api->current_wallpaper_path().empty());
   UserManager::Get()->UserLoggedIn(UserManager::kGuestUserName,
                                    UserManager::kGuestUserName, false);
+  WaitAsyncWallpaperLoad();
   EXPECT_FALSE(ash::Shell::GetInstance()->desktop_background_controller()->
       SetDefaultWallpaper(true));
+}
+
+class WallpaperManagerCacheTest : public test::AshTestBase {
+ public:
+  WallpaperManagerCacheTest()
+      : fake_user_manager_(new FakeUserManager()),
+        scoped_user_manager_(fake_user_manager_) {
+  }
+
+ protected:
+  virtual ~WallpaperManagerCacheTest() {}
+
+  FakeUserManager* fake_user_manager() { return fake_user_manager_; }
+
+  virtual void SetUp() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kMultiProfiles);
+    test::AshTestBase::SetUp();
+  }
+
+  // Creates a test image of size 1x1.
+  gfx::ImageSkia CreateTestImage(SkColor color) {
+    SkBitmap bitmap;
+    bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
+    bitmap.allocPixels();
+    bitmap.eraseColor(color);
+    return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+  }
+
+ private:
+  FakeUserManager* fake_user_manager_;
+  ScopedUserManagerEnabler scoped_user_manager_;
+};
+
+TEST_F(WallpaperManagerCacheTest, VerifyWallpaperCache) {
+  // Add three users to known users.
+  std::string test_user_1 = "test1@example.com";
+  std::string test_user_2 = "test2@example.com";
+  std::string test_user_3 = "test3@example.com";
+  fake_user_manager()->AddUser(test_user_1);
+  fake_user_manager()->AddUser(test_user_2);
+  fake_user_manager()->AddUser(test_user_3);
+
+  // Login two users.
+  fake_user_manager()->LoginUser(test_user_1);
+  fake_user_manager()->LoginUser(test_user_2);
+
+  scoped_ptr<WallpaperManager::TestApi> test_api;
+  test_api.reset(new WallpaperManager::TestApi(WallpaperManager::Get()));
+
+  gfx::ImageSkia test_user_1_wallpaper = CreateTestImage(SK_ColorRED);
+  gfx::ImageSkia test_user_2_wallpaper = CreateTestImage(SK_ColorGREEN);
+  gfx::ImageSkia test_user_3_wallpaper = CreateTestImage(SK_ColorWHITE);
+  test_api->SetWallpaperCache(test_user_1, test_user_1_wallpaper);
+  test_api->SetWallpaperCache(test_user_2, test_user_2_wallpaper);
+  test_api->SetWallpaperCache(test_user_3, test_user_3_wallpaper);
+
+  test_api->ClearWallpaperCache();
+
+  gfx::ImageSkia cached_wallpaper;
+  EXPECT_TRUE(test_api->GetWallpaperFromCache(test_user_1, &cached_wallpaper));
+  // Logged in users' wallpaper cache should be kept.
+  EXPECT_TRUE(cached_wallpaper.BackedBySameObjectAs(test_user_1_wallpaper));
+  EXPECT_TRUE(test_api->GetWallpaperFromCache(test_user_2, &cached_wallpaper));
+  EXPECT_TRUE(cached_wallpaper.BackedBySameObjectAs(test_user_2_wallpaper));
+
+  // Not logged in user's wallpaper cache should be cleared.
+  EXPECT_FALSE(test_api->GetWallpaperFromCache(test_user_3, &cached_wallpaper));
 }
 
 }  // namespace chromeos

@@ -4,10 +4,12 @@
 
 #include "ash/wm/caption_buttons/alternate_frame_size_button.h"
 
+#include "ash/metrics/user_metrics_recorder.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/touch/touch_uma.h"
 #include "ash/wm/window_state.h"
+#include "ash/wm/workspace/phantom_window_controller.h"
 #include "ash/wm/workspace/snap_sizer.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/views/widget/widget.h"
@@ -176,6 +178,25 @@ void AlternateFrameSizeButton::UpdatePressedButton(
         break;
     }
   }
+
+  if (snap_type_ == SNAP_LEFT || snap_type_ == SNAP_RIGHT) {
+    if (!phantom_window_controller_.get()) {
+      phantom_window_controller_.reset(
+          new internal::PhantomWindowController(frame_->GetNativeWindow()));
+    }
+
+    using internal::SnapSizer;
+    SnapSizer snap_sizer(wm::GetWindowState(frame_->GetNativeWindow()),
+                         gfx::Point(),
+                         snap_type_ == SNAP_LEFT ?
+                             SnapSizer::LEFT_EDGE : SnapSizer::RIGHT_EDGE,
+                         SnapSizer::OTHER_INPUT);
+    phantom_window_controller_->Show(ScreenUtil::ConvertRectToScreen(
+          frame_->GetNativeView()->parent(),
+          snap_sizer.target_bounds()));
+  } else {
+    phantom_window_controller_.reset();
+  }
 }
 
 bool AlternateFrameSizeButton::CommitSnap(const ui::LocatedEvent& event) {
@@ -189,7 +210,7 @@ bool AlternateFrameSizeButton::CommitSnap(const ui::LocatedEvent& event) {
     SnapSizer::SnapWindow(ash::wm::GetWindowState(frame_->GetNativeWindow()),
                           snap_type_ == SNAP_LEFT ?
                               SnapSizer::LEFT_EDGE : SnapSizer::RIGHT_EDGE);
-    ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+    ash::Shell::GetInstance()->metrics()->RecordUserMetricsAction(
         snap_type_ == SNAP_LEFT ?
             ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_LEFT :
             ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_RIGHT);
@@ -206,6 +227,7 @@ void AlternateFrameSizeButton::SetButtonsToNormalMode(
   snap_type_ = SNAP_NONE;
   set_buttons_to_snap_mode_timer_.Stop();
   delegate_->SetButtonsToNormal(animate);
+  phantom_window_controller_.reset();
 }
 
 }  // namespace ash

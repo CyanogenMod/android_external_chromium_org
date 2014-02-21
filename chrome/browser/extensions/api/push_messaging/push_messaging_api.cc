@@ -14,8 +14,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/token_cache/token_cache_service.h"
 #include "chrome/browser/extensions/token_cache/token_cache_service_factory.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
@@ -23,17 +21,20 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/extensions/api/push_messaging.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "google_apis/gaia/gaia_constants.h"
-#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -83,7 +84,8 @@ void PushMessagingEventRouter::OnMessage(const std::string& extension_id,
 // GetChannelId class functions
 
 PushMessagingGetChannelIdFunction::PushMessagingGetChannelIdFunction()
-    : interactive_(false) {}
+    : OAuth2TokenService::Consumer("push_messaging"),
+      interactive_(false) {}
 
 PushMessagingGetChannelIdFunction::~PushMessagingGetChannelIdFunction() {}
 
@@ -125,8 +127,10 @@ void PushMessagingGetChannelIdFunction::StartAccessTokenFetch() {
   OAuth2TokenService::ScopeSet scopes(scope_vector.begin(), scope_vector.end());
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(GetProfile());
   fetcher_access_token_request_ = token_service->StartRequest(
-      token_service->GetPrimaryAccountId(), scopes, this);
+      signin_manager->GetAuthenticatedAccountId(), scopes, this);
 }
 
 void PushMessagingGetChannelIdFunction::OnRefreshTokenAvailable(
@@ -189,8 +193,10 @@ void PushMessagingGetChannelIdFunction::StartGaiaIdFetch(
 bool PushMessagingGetChannelIdFunction::IsUserLoggedIn() const {
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(GetProfile());
   return token_service->RefreshTokenIsAvailable(
-      token_service->GetPrimaryAccountId());
+      signin_manager->GetAuthenticatedAccountId());
 }
 
 void PushMessagingGetChannelIdFunction::ReportResult(
@@ -303,7 +309,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 // static
 ProfileKeyedAPIFactory<PushMessagingAPI>*
 PushMessagingAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void PushMessagingAPI::Observe(int type,
@@ -358,7 +364,7 @@ void PushMessagingAPI::SetMapperForTest(
 
 template <>
 void ProfileKeyedAPIFactory<PushMessagingAPI>::DeclareFactoryDependencies() {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(invalidation::InvalidationServiceFactory::GetInstance());
 }
 

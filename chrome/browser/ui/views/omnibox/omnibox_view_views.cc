@@ -142,7 +142,7 @@ OmniboxViewViews::OmniboxViewViews(OmniboxEditController* controller,
       ime_candidate_window_open_(false),
       select_all_on_mouse_release_(false),
       select_all_on_gesture_tap_(false) {
-  RemoveBorder();
+  SetBorder(views::Border::NullBorder());
   set_id(VIEW_ID_OMNIBOX);
   SetFontList(font_list);
 }
@@ -162,7 +162,7 @@ OmniboxViewViews::~OmniboxViewViews() {
 // OmniboxViewViews public:
 
 void OmniboxViewViews::Init() {
-  SetController(this);
+  set_controller(this);
   SetTextInputType(DetermineTextInputType());
   SetBackgroundColor(location_bar_view_->GetColor(
       ToolbarModel::NONE, LocationBarView::BACKGROUND));
@@ -170,12 +170,9 @@ void OmniboxViewViews::Init() {
   if (popup_window_mode_)
     SetReadOnly(true);
 
-  if (chrome::ShouldDisplayOriginChip())
-    set_placeholder_text(l10n_util::GetStringUTF16(IDS_OMNIBOX_EMPTY_HINT));
-
   // Initialize the popup view using the same font.
   popup_view_.reset(OmniboxPopupContentsView::Create(
-      font_list(), this, model(), location_bar_view_));
+      GetFontList(), this, model(), location_bar_view_));
 
 #if defined(OS_CHROMEOS)
   chromeos::input_method::InputMethodManager::Get()->
@@ -186,20 +183,27 @@ void OmniboxViewViews::Init() {
 ////////////////////////////////////////////////////////////////////////////////
 // OmniboxViewViews, views::Textfield implementation:
 
+void OmniboxViewViews::AboutToRequestFocusFromTabTraversal(bool reverse) {
+  if (chrome::GetOriginChipV2HideTrigger() ==
+      chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) {
+    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
+    controller()->OnChanged();
+  }
+}
+
 const char* OmniboxViewViews::GetClassName() const {
   return kViewClassName;
 }
 
 void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
-  views::Textfield::OnGestureEvent(event);
   if (!HasFocus() && event->type() == ui::ET_GESTURE_TAP_DOWN) {
     select_all_on_gesture_tap_ = true;
 
     // If we're trying to select all on tap, invalidate any saved selection lest
     // restoring it fights with the "select all" action.
     saved_selection_for_focus_change_ = gfx::Range::InvalidRange();
-    return;
   }
+
   if (select_all_on_gesture_tap_ && event->type() == ui::ET_GESTURE_TAP)
     SelectAll(false);
 
@@ -212,6 +216,8 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
       event->type() == ui::ET_GESTURE_LONG_TAP) {
     select_all_on_gesture_tap_ = false;
   }
+
+  views::Textfield::OnGestureEvent(event);
 }
 
 void OmniboxViewViews::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -241,21 +247,34 @@ bool OmniboxViewViews::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 bool OmniboxViewViews::OnMouseDragged(const ui::MouseEvent& event) {
-  select_all_on_mouse_release_ = false;
+  if (ExceededDragThreshold(event.location() - last_click_location()))
+    select_all_on_mouse_release_ = false;
   return views::Textfield::OnMouseDragged(event);
 }
 
 void OmniboxViewViews::OnMouseReleased(const ui::MouseEvent& event) {
   views::Textfield::OnMouseReleased(event);
-  // When the user has clicked and released to give us focus, select all unless
-  // we're omitting the URL (in which case refining an existing query is common
-  // enough that we do click-to-place-cursor).
-  if ((event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton()) &&
-      select_all_on_mouse_release_ &&
-      !controller()->GetToolbarModel()->WouldReplaceURL()) {
-    // Select all in the reverse direction so as not to scroll the caret
-    // into view and shift the contents jarringly.
-    SelectAll(true);
+  if (event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton()) {
+    // When the user has clicked and released to give us focus, select all
+    // unless we're omitting the URL (in which case refining an existing query
+    // is common enough that we do click-to-place-cursor).
+    if (select_all_on_mouse_release_ &&
+        !controller()->GetToolbarModel()->WouldReplaceURL()) {
+      // Select all in the reverse direction so as not to scroll the caret
+      // into view and shift the contents jarringly.
+      SelectAll(true);
+    }
+
+    // If we should hide the origin chip in response to mouse release, check
+    // first that only the left or only the right button was pressed prior to
+    // the release.  If multiple buttons were pressed, we don't want to hide the
+    // chip yet.  If only the middle mouse button was pressed, the Omnibox won't
+    // receive focus so we don't want to hide the chip in this case.
+    if (chrome::GetOriginChipV2HideTrigger() ==
+        chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) {
+      controller()->GetToolbarModel()->set_origin_chip_enabled(false);
+      controller()->OnChanged();
+    }
   }
   select_all_on_mouse_release_ = false;
 }
@@ -283,11 +302,17 @@ bool OmniboxViewViews::OnKeyPressed(const ui::KeyEvent& event) {
         model()->popup_model()->TryDeletingCurrentItem();
       break;
     case ui::VKEY_UP:
-      model()->OnUpOrDownKeyPressed(-1);
-      return true;
+      if (!read_only()) {
+        model()->OnUpOrDownKeyPressed(-1);
+        return true;
+      }
+      break;
     case ui::VKEY_DOWN:
-      model()->OnUpOrDownKeyPressed(1);
-      return true;
+      if (!read_only()) {
+        model()->OnUpOrDownKeyPressed(1);
+        return true;
+      }
+      break;
     case ui::VKEY_PRIOR:
       if (control || alt || shift)
         return false;
@@ -392,8 +417,25 @@ void OmniboxViewViews::OnBlur() {
   // Tell the model to reset itself.
   model()->OnKillFocus();
 
+  // If user input is not in progress, re-enable the origin chip and URL
+  // replacement.  This addresses the case where the URL was shown by a call
+  // to ShowURL().  If the Omnibox acheived focus by other means, the calls to
+  // set_url_replacement_enabled, UpdatePermanentText and RevertAll are not
+  // required (a call to OnChanged would be sufficient) but do no harm.
+  if (chrome::ShouldDisplayOriginChipV2() &&
+      !model()->user_input_in_progress()) {
+    controller()->GetToolbarModel()->set_origin_chip_enabled(true);
+    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
+    model()->UpdatePermanentText();
+    RevertAll();
+  }
+
   // Make sure the beginning of the text is visible.
   SelectRange(gfx::Range(0));
+}
+
+base::string16 OmniboxViewViews::GetSelectionClipboardText() const {
+  return SanitizeTextForPaste(Textfield::GetSelectionClipboardText());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -437,6 +479,9 @@ void OmniboxViewViews::OnTabChanged(const content::WebContents* web_contents) {
 }
 
 void OmniboxViewViews::Update() {
+  if (chrome::ShouldDisplayOriginChip() || chrome::ShouldDisplayOriginChipV2())
+    set_placeholder_text(GetHintText());
+
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
   if (model()->UpdatePermanentText()) {
@@ -449,8 +494,8 @@ void OmniboxViewViews::Update() {
     // change it right before the permanent URL is changed.  Since the new URL
     // is still fully selected, the user's typing will replace the edit contents
     // as they'd intended.
-    const gfx::Range range(GetSelectedRange());
-    const bool was_select_all = (range.length() == text().length());
+    const bool was_select_all = !text().empty() && IsSelectAll();
+    const bool was_reversed = GetSelectedRange().is_reversed();
 
     RevertAll();
 
@@ -463,7 +508,7 @@ void OmniboxViewViews::Update() {
     // and address cases like this, but it seems better to just not muck with
     // things when the omnibox isn't focused to begin with.
     if (was_select_all && model()->has_focus())
-      SelectAll(range.is_reversed());
+      SelectAll(was_reversed);
   } else if (old_security_level != security_level_) {
     EmphasizeURLComponents();
   }
@@ -499,7 +544,7 @@ void OmniboxViewViews::SetForcedQuery() {
   const base::string16 current_text(text());
   const size_t start = current_text.find_first_not_of(base::kWhitespaceUTF16);
   if (start == base::string16::npos || (current_text[start] != '?'))
-    OmniboxView::SetUserText(ASCIIToUTF16("?"));
+    OmniboxView::SetUserText(base::ASCIIToUTF16("?"));
   else
     SelectRange(gfx::Range(current_text.size(), start + 1));
 }
@@ -666,8 +711,14 @@ base::string16 OmniboxViewViews::GetGrayTextAutocompletion() const {
 #endif
 }
 
-int OmniboxViewViews::TextWidth() const {
-  return native_wrapper_->GetWidthNeededForText();
+int OmniboxViewViews::GetTextWidth() const {
+  // Returns the width necessary to display the current text, including any
+  // necessary space for the cursor or border/margin.
+  return GetRenderText()->GetContentWidth() + GetInsets().width();
+}
+
+int OmniboxViewViews::GetWidth() const {
+  return location_bar_view_->width();
 }
 
 bool OmniboxViewViews::IsImeComposing() const {
@@ -683,13 +734,56 @@ bool OmniboxViewViews::IsImeShowingPopup() const {
 #endif
 }
 
-int OmniboxViewViews::GetMaxEditWidth(int entry_width) const {
-  return entry_width;
+void OmniboxViewViews::ShowImeIfNeeded() {
+  GetInputMethod()->ShowImeIfNeeded();
 }
 
-int OmniboxViewViews::OnPerformDrop(const ui::DropTargetEvent& event) {
-  NOTIMPLEMENTED();
-  return ui::DragDropTypes::DRAG_NONE;
+bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
+  if (command_id == IDS_APP_PASTE)
+    return !read_only() && !GetClipboardText().empty();
+  if (command_id == IDS_PASTE_AND_GO)
+    return !read_only() && model()->CanPasteAndGo(GetClipboardText());
+  if (command_id == IDS_SHOW_URL)
+    return controller()->GetToolbarModel()->WouldReplaceURL();
+  return Textfield::IsCommandIdEnabled(command_id) ||
+         command_updater()->IsCommandEnabled(command_id);
+}
+
+bool OmniboxViewViews::IsItemForCommandIdDynamic(int command_id) const {
+  return command_id == IDS_PASTE_AND_GO;
+}
+
+base::string16 OmniboxViewViews::GetLabelForCommandId(int command_id) const {
+  DCHECK_EQ(IDS_PASTE_AND_GO, command_id);
+  return l10n_util::GetStringUTF16(
+      model()->IsPasteAndSearch(GetClipboardText()) ?
+          IDS_PASTE_AND_SEARCH : IDS_PASTE_AND_GO);
+}
+
+void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
+  switch (command_id) {
+    // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
+    case IDS_PASTE_AND_GO:
+      model()->PasteAndGo(GetClipboardText());
+      break;
+    case IDS_SHOW_URL:
+      ShowURL();
+      break;
+    case IDC_EDIT_SEARCH_ENGINES:
+      command_updater()->ExecuteCommand(command_id);
+      break;
+
+    default:
+      OnBeforePossibleChange();
+      if (command_id == IDS_APP_PASTE)
+        OnPaste();
+      else if (Textfield::IsCommandIdEnabled(command_id))
+        Textfield::ExecuteCommand(command_id, event_flags);
+      else
+        command_updater()->ExecuteCommand(command_id);
+      OnAfterPossibleChange();
+      break;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -805,8 +899,10 @@ int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
   if (data.HasURL()) {
     GURL url;
     base::string16 title;
-    if (data.GetURLAndTitle(&url, &title)) {
-      base::string16 text(StripJavascriptSchemas(UTF8ToUTF16(url.spec())));
+    if (data.GetURLAndTitle(
+            ui::OSExchangeData::CONVERT_FILENAMES, &url, &title)) {
+      base::string16 text(
+          StripJavascriptSchemas(base::UTF8ToUTF16(url.spec())));
       if (model()->CanPasteAndGo(text)) {
         model()->PasteAndGo(text);
         return ui::DragDropTypes::DRAG_COPY;
@@ -833,7 +929,8 @@ void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
 
   menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
 
-  if (chrome::IsQueryExtractionEnabled() || chrome::ShouldDisplayOriginChip()) {
+  if (chrome::IsQueryExtractionEnabled() || chrome::ShouldDisplayOriginChip() ||
+      chrome::ShouldDisplayOriginChipV2()) {
     int select_all_position = menu_contents->GetIndexOfCommandId(
         IDS_APP_SELECT_ALL);
     DCHECK_GE(select_all_position, 0);
@@ -846,56 +943,6 @@ void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
   // on IDC_ for now.
   menu_contents->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
       IDS_EDIT_SEARCH_ENGINES);
-}
-
-bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
-  if (command_id == IDS_APP_PASTE)
-    return !read_only() && !GetClipboardText().empty();
-  if (command_id == IDS_PASTE_AND_GO)
-    return !read_only() && model()->CanPasteAndGo(GetClipboardText());
-  if (command_id == IDS_SHOW_URL)
-    return controller()->GetToolbarModel()->WouldReplaceURL();
-  return command_updater()->IsCommandEnabled(command_id);
-}
-
-bool OmniboxViewViews::IsItemForCommandIdDynamic(int command_id) const {
-  return command_id == IDS_PASTE_AND_GO;
-}
-
-base::string16 OmniboxViewViews::GetLabelForCommandId(int command_id) const {
-  DCHECK_EQ(IDS_PASTE_AND_GO, command_id);
-  return l10n_util::GetStringUTF16(
-      model()->IsPasteAndSearch(GetClipboardText()) ?
-          IDS_PASTE_AND_SEARCH : IDS_PASTE_AND_GO);
-}
-
-bool OmniboxViewViews::HandlesCommand(int command_id) const {
-  // See description in OnPaste() for details on why we need to handle paste.
-  return command_id == IDS_APP_PASTE;
-}
-
-void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
-  switch (command_id) {
-    // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
-    case IDS_PASTE_AND_GO:
-      model()->PasteAndGo(GetClipboardText());
-      break;
-    case IDS_SHOW_URL:
-      ShowURL();
-      break;
-    case IDC_EDIT_SEARCH_ENGINES:
-      command_updater()->ExecuteCommand(command_id);
-      break;
-
-    default:
-      OnBeforePossibleChange();
-      if (command_id == IDS_APP_PASTE)
-        OnPaste();
-      else
-        command_updater()->ExecuteCommand(command_id);
-      OnAfterPossibleChange();
-      break;
-  }
 }
 
 #if defined(OS_CHROMEOS)
@@ -928,7 +975,7 @@ void OmniboxViewViews::EmphasizeURLComponents() {
   url_parse::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(text(), &scheme, &host);
   bool grey_out_url = text().substr(scheme.begin, scheme.len) ==
-      UTF8ToUTF16(extensions::kExtensionScheme);
+      base::UTF8ToUTF16(extensions::kExtensionScheme);
   bool grey_base = model()->CurrentTextIsURL() &&
       (host.is_nonempty() || grey_out_url);
   SetColor(location_bar_view_->GetColor(

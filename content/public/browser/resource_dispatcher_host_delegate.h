@@ -33,7 +33,6 @@ class Sender;
 
 namespace net {
 class AuthChallengeInfo;
-class SSLCertRequestInfo;
 class URLRequest;
 }
 
@@ -65,15 +64,6 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       int route_id,
       ScopedVector<ResourceThrottle>* throttles);
 
-  // Called if a navigation request is transferred from one process to another.
-  virtual void WillTransferRequestToNewProcess(
-      int old_child_id,
-      int old_route_id,
-      int old_request_id,
-      int new_child_id,
-      int new_route_id,
-      int new_request_id);
-
   // Allows an embedder to add additional resource handlers for a download.
   // |must_download| is set if the request must be handled as a download.
   virtual void DownloadStarting(
@@ -85,19 +75,6 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       bool is_content_initiated,
       bool must_download,
       ScopedVector<ResourceThrottle>* throttles);
-
-  // Called when an SSL Client Certificate is requested. If false is returned,
-  // the request is canceled. Otherwise, the certificate is chosen.
-  virtual bool AcceptSSLClientCertificateRequest(
-      net::URLRequest* request,
-      net::SSLCertRequestInfo* cert_request_info);
-
-  // Called when authentication is required and credentials are needed. If
-  // false is returned, CancelAuth() is called on the URLRequest and the error
-  // page is shown. If true is returned, the user will be prompted for
-  // authentication credentials.
-  virtual bool AcceptAuthRequest(net::URLRequest* request,
-                                 net::AuthChallengeInfo* auth_info);
 
   // Creates a ResourceDispatcherHostLoginDelegate that asks the user for a
   // username and password.
@@ -156,6 +133,9 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       net::URLRequest* request,
       ResourceContext* resource_context,
       ResourceResponse* response);
+
+  // Notification that a request has completed.
+  virtual void RequestComplete(net::URLRequest* url_request);
 
  protected:
   ResourceDispatcherHostDelegate();

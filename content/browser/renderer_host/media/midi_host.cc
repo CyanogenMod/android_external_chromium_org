@@ -19,8 +19,8 @@
 #include "media/midi/midi_message_queue.h"
 #include "media/midi/midi_message_util.h"
 
-using media::MIDIManager;
-using media::MIDIPortInfoList;
+using media::MidiManager;
+using media::MidiPortInfoList;
 
 namespace content {
 namespace {
@@ -35,9 +35,6 @@ const size_t kMaxInFlightBytes = 10 * 1024 * 1024;  // 10 MB.
 // how many bytes will be sent before reporting back to the renderer.
 const size_t kAcknowledgementThresholdBytes = 1024 * 1024;  // 1 MB.
 
-const uint8 kSysExMessage = 0xf0;
-const uint8 kEndOfSysExMessage = 0xf7;
-
 bool IsDataByte(uint8 data) {
   return (data & 0x80) == 0;
 }
@@ -48,40 +45,43 @@ bool IsSystemRealTimeMessage(uint8 data) {
 
 }  // namespace
 
-MIDIHost::MIDIHost(int renderer_process_id, media::MIDIManager* midi_manager)
-    : renderer_process_id_(renderer_process_id),
+using media::kSysExByte;
+using media::kEndOfSysExByte;
+
+MidiHost::MidiHost(int renderer_process_id, media::MidiManager* midi_manager)
+    : BrowserMessageFilter(MidiMsgStart),
+      renderer_process_id_(renderer_process_id),
       has_sys_ex_permission_(false),
       midi_manager_(midi_manager),
       sent_bytes_in_flight_(0),
       bytes_sent_since_last_acknowledgement_(0) {
 }
 
-MIDIHost::~MIDIHost() {
+MidiHost::~MidiHost() {
   if (midi_manager_)
     midi_manager_->EndSession(this);
 }
 
-void MIDIHost::OnDestruct() const {
+void MidiHost::OnDestruct() const {
   BrowserThread::DeleteOnIOThread::Destruct(this);
 }
 
-///////////////////////////////////////////////////////////////////////////////
 // IPC Messages handler
-bool MIDIHost::OnMessageReceived(const IPC::Message& message,
+bool MidiHost::OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(MIDIHost, message, *message_was_ok)
-    IPC_MESSAGE_HANDLER(MIDIHostMsg_StartSession, OnStartSession)
-    IPC_MESSAGE_HANDLER(MIDIHostMsg_SendData, OnSendData)
+  IPC_BEGIN_MESSAGE_MAP_EX(MidiHost, message, *message_was_ok)
+    IPC_MESSAGE_HANDLER(MidiHostMsg_StartSession, OnStartSession)
+    IPC_MESSAGE_HANDLER(MidiHostMsg_SendData, OnSendData)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
   return handled;
 }
 
-void MIDIHost::OnStartSession(int client_id) {
-  MIDIPortInfoList input_ports;
-  MIDIPortInfoList output_ports;
+void MidiHost::OnStartSession(int client_id) {
+  MidiPortInfoList input_ports;
+  MidiPortInfoList output_ports;
 
   // Initialize devices and register to receive MIDI data.
   bool success = false;
@@ -93,20 +93,20 @@ void MIDIHost::OnStartSession(int client_id) {
       received_messages_queues_.clear();
       received_messages_queues_.resize(input_ports.size());
       // ChildSecurityPolicy is set just before OnStartSession by
-      // MIDIDispatcherHost. So we can safely cache the policy.
+      // MidiDispatcherHost. So we can safely cache the policy.
       has_sys_ex_permission_ = ChildProcessSecurityPolicyImpl::GetInstance()->
-          CanSendMIDISysExMessage(renderer_process_id_);
+          CanSendMidiSysExMessage(renderer_process_id_);
     }
   }
 
-  Send(new MIDIMsg_SessionStarted(
+  Send(new MidiMsg_SessionStarted(
        client_id,
        success,
        input_ports,
        output_ports));
 }
 
-void MIDIHost::OnSendData(uint32 port,
+void MidiHost::OnSendData(uint32 port,
                           const std::vector<uint8>& data,
                           double timestamp) {
   if (!midi_manager_)
@@ -119,8 +119,8 @@ void MIDIHost::OnSendData(uint32 port,
   // in JavaScript. The actual permission check for security purposes
   // happens here in the browser process.
   if (!has_sys_ex_permission_ &&
-      (std::find(data.begin(), data.end(), kSysExMessage) != data.end())) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_MIDI"));
+      std::find(data.begin(), data.end(), kSysExByte) != data.end()) {
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_MIDI"));
     BadMessageReceived();
     return;
   }
@@ -128,29 +128,31 @@ void MIDIHost::OnSendData(uint32 port,
   if (!IsValidWebMIDIData(data))
     return;
 
-  base::AutoLock auto_lock(in_flight_lock_);
-  // Sanity check that we won't send too much data.
-  // TODO(yukawa): Consider to send an error event back to the renderer
-  // after some future discussion in W3C.
-  if (data.size() + sent_bytes_in_flight_ > kMaxInFlightBytes)
-    return;
-  midi_manager_->DispatchSendMIDIData(this, port, data, timestamp);
-  sent_bytes_in_flight_ += data.size();
+  {
+    base::AutoLock auto_lock(in_flight_lock_);
+    // Sanity check that we won't send too much data.
+    // TODO(yukawa): Consider to send an error event back to the renderer
+    // after some future discussion in W3C.
+    if (data.size() + sent_bytes_in_flight_ > kMaxInFlightBytes)
+      return;
+    sent_bytes_in_flight_ += data.size();
+  }
+  midi_manager_->DispatchSendMidiData(this, port, data, timestamp);
 }
 
-void MIDIHost::ReceiveMIDIData(
+void MidiHost::ReceiveMidiData(
     uint32 port,
     const uint8* data,
     size_t length,
     double timestamp) {
-  TRACE_EVENT0("midi", "MIDIHost::ReceiveMIDIData");
+  TRACE_EVENT0("midi", "MidiHost::ReceiveMidiData");
 
   if (received_messages_queues_.size() <= port)
     return;
 
   // Lazy initialization
   if (received_messages_queues_[port] == NULL)
-    received_messages_queues_[port] = new media::MIDIMessageQueue(true);
+    received_messages_queues_[port] = new media::MidiMessageQueue(true);
 
   received_messages_queues_[port]->Add(data, length);
   std::vector<uint8> message;
@@ -162,15 +164,15 @@ void MIDIHost::ReceiveMIDIData(
     // MIDI devices may send a system exclusive messages even if the renderer
     // doesn't have a permission to receive it. Don't kill the renderer as
     // OnSendData() does.
-    if (message[0] == kSysExMessage && !has_sys_ex_permission_)
+    if (message[0] == kSysExByte && !has_sys_ex_permission_)
       continue;
 
     // Send to the renderer.
-    Send(new MIDIMsg_DataReceived(port, message, timestamp));
+    Send(new MidiMsg_DataReceived(port, message, timestamp));
   }
 }
 
-void MIDIHost::AccumulateMIDIBytesSent(size_t n) {
+void MidiHost::AccumulateMidiBytesSent(size_t n) {
   {
     base::AutoLock auto_lock(in_flight_lock_);
     if (n <= sent_bytes_in_flight_)
@@ -183,14 +185,14 @@ void MIDIHost::AccumulateMIDIBytesSent(size_t n) {
 
   if (bytes_sent_since_last_acknowledgement_ >=
       kAcknowledgementThresholdBytes) {
-    Send(new MIDIMsg_AcknowledgeSentData(
+    Send(new MidiMsg_AcknowledgeSentData(
         bytes_sent_since_last_acknowledgement_));
     bytes_sent_since_last_acknowledgement_ = 0;
   }
 }
 
 // static
-bool MIDIHost::IsValidWebMIDIData(const std::vector<uint8>& data) {
+bool MidiHost::IsValidWebMIDIData(const std::vector<uint8>& data) {
   bool in_sysex = false;
   size_t waiting_data_length = 0;
   for (size_t i = 0; i < data.size(); ++i) {
@@ -204,17 +206,17 @@ bool MIDIHost::IsValidWebMIDIData(const std::vector<uint8>& data) {
       continue;  // Found data byte as expected.
     }
     if (in_sysex) {
-      if (data[i] == kEndOfSysExMessage)
+      if (data[i] == kEndOfSysExByte)
         in_sysex = false;
       else if (!IsDataByte(current))
         return false;  // Error: |current| should have been data byte.
       continue;  // Found data byte as expected.
     }
-    if (current == kSysExMessage) {
+    if (current == kSysExByte) {
       in_sysex = true;
       continue;  // Found SysEX
     }
-    waiting_data_length = media::GetMIDIMessageLength(current);
+    waiting_data_length = media::GetMidiMessageLength(current);
     if (waiting_data_length == 0)
       return false;  // Error: |current| should have been a valid status byte.
     --waiting_data_length;  // Found status byte

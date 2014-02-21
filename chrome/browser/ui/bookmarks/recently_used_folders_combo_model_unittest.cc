@@ -17,8 +17,8 @@
 
 using content::BrowserThread;
 
-// Implementation of ComboboxModelObserver that records when OnModelChanged()
-// is invoked.
+// Implementation of ComboboxModelObserver that records when
+// OnComboboxModelChanged() is invoked.
 class TestComboboxModelObserver : public ui::ComboboxModelObserver {
  public:
   TestComboboxModelObserver() : changed_(false) {}
@@ -32,7 +32,7 @@ class TestComboboxModelObserver : public ui::ComboboxModelObserver {
   }
 
   // ComboboxModelObserver:
-  virtual void OnModelChanged() OVERRIDE {
+  virtual void OnComboboxModelChanged(ui::ComboboxModel* model) OVERRIDE {
     changed_ = true;
   }
 
@@ -84,10 +84,10 @@ BookmarkModel* RecentlyUsedFoldersComboModelTest::GetModel() {
 // Verifies there are no duplicate nodes in the model.
 TEST_F(RecentlyUsedFoldersComboModelTest, NoDups) {
   const BookmarkNode* new_node = GetModel()->AddURL(
-      GetModel()->bookmark_bar_node(), 0, ASCIIToUTF16("a"),
+      GetModel()->bookmark_bar_node(), 0, base::ASCIIToUTF16("a"),
       GURL("http://a"));
   RecentlyUsedFoldersComboModel model(GetModel(), new_node);
-  std::set<string16> items;
+  std::set<base::string16> items;
   for (int i = 0; i < model.GetItemCount(); ++i) {
     if (!model.IsItemSeparatorAt(i))
       EXPECT_EQ(0u, items.count(model.GetItemAt(i)));
@@ -97,11 +97,11 @@ TEST_F(RecentlyUsedFoldersComboModelTest, NoDups) {
 // Verifies that observers are notified on changes.
 TEST_F(RecentlyUsedFoldersComboModelTest, NotifyObserver) {
   const BookmarkNode* folder = GetModel()->AddFolder(
-      GetModel()->bookmark_bar_node(), 0, ASCIIToUTF16("a"));
+      GetModel()->bookmark_bar_node(), 0, base::ASCIIToUTF16("a"));
   const BookmarkNode* sub_folder = GetModel()->AddFolder(
-      folder, 0, ASCIIToUTF16("b"));
+      folder, 0, base::ASCIIToUTF16("b"));
   const BookmarkNode* new_node = GetModel()->AddURL(
-      sub_folder, 0, ASCIIToUTF16("a"), GURL("http://a"));
+      sub_folder, 0, base::ASCIIToUTF16("a"), GURL("http://a"));
   RecentlyUsedFoldersComboModel model(GetModel(), new_node);
   TestComboboxModelObserver observer;
   model.AddObserver(&observer);

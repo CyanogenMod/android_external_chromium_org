@@ -17,6 +17,8 @@ using ui::TreeModel;
 using ui::TreeModelNode;
 using ui::TreeNode;
 
+using base::ASCIIToUTF16;
+
 namespace views {
 
 class TestNode : public TreeNode<TestNode> {
@@ -68,7 +70,7 @@ class TreeViewTest : public ViewsTestBase {
  private:
   std::string InternalNodeAsString(TreeView::InternalNode* node);
 
-  TestNode* GetNodeByTitleImpl(TestNode* node, const string16& title);
+  TestNode* GetNodeByTitleImpl(TestNode* node, const base::string16& title);
 
   DISALLOW_COPY_AND_ASSIGN(TreeViewTest);
 };
@@ -118,7 +120,7 @@ int TreeViewTest::GetRowCount() {
 }
 
 TestNode* TreeViewTest::GetNodeByTitleImpl(TestNode* node,
-                                           const string16& title) {
+                                           const base::string16& title) {
   if (node->GetTitle() == title)
     return node;
   for (int i = 0; i < node->child_count(); ++i) {

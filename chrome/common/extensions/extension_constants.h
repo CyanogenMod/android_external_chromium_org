@@ -109,6 +109,9 @@ namespace extension_misc {
   // The extension id of the Crosh component app for ChromeOS.
   extern const char kCroshBuiltinAppId[];
 
+  // The extension id of the hotword voice search trigger extension.
+  extern const char kHotwordExtensionId[];
+
   // The extension id of the PDF extension.
   extern const char kPdfExtensionId[];
 
@@ -138,9 +141,6 @@ namespace extension_misc {
 
   // The extension id of the in-app payments support application.
   extern const char kInAppPaymentsSupportAppId[];
-
-  // The extension id of the Tips & Tricks application.
-  extern const char kTipsAndTricksAppId[];
 
   // Note: this structure is an ASN.1 which encodes the algorithm used
   // with its parameters. This is defined in PKCS #1 v2.1 (RFC 3447).
@@ -247,7 +247,8 @@ namespace extension_misc {
   extern const char kChromeVoxExtensionId[];
 
 #if defined(OS_CHROMEOS)
-  // Path to preinstalled ChromeVox screen reader extension.
+  // Path to preinstalled ChromeVox screen reader extension (relative to
+  // |chrome::DIR_RESOURCES|).
   extern const char kChromeVoxExtensionPath[];
   // Path to preinstalled Connectivity Diagnostics extension.
   extern const char kConnectivityDiagnosticsPath[];
@@ -307,9 +308,6 @@ namespace extension_misc {
   extern const int kExtensionActionIconSizes[];
   extern const size_t kNumExtensionActionIconSizes;
 
-  // List of sizes for extension icons that can be defined in the manifest.
-  extern const int kScriptBadgeIconSizes[];
-  extern const size_t kNumScriptBadgeIconSizes;
 }  // namespace extension_misc
 
 namespace extensions {
@@ -318,10 +316,13 @@ namespace extensions {
   // Do not remove items or re-order this enum as it is used in preferences
   // and histograms.
   enum LaunchType {
-    LAUNCH_TYPE_PINNED,
-    LAUNCH_TYPE_REGULAR,
-    LAUNCH_TYPE_FULLSCREEN,
-    LAUNCH_TYPE_WINDOW,
+    LAUNCH_TYPE_INVALID = -1,
+    LAUNCH_TYPE_FIRST = 0,
+    LAUNCH_TYPE_PINNED = LAUNCH_TYPE_FIRST,
+    LAUNCH_TYPE_REGULAR = 1,
+    LAUNCH_TYPE_FULLSCREEN = 2,
+    LAUNCH_TYPE_WINDOW = 3,
+    NUM_LAUNCH_TYPES,
 
     // Launch an app in the in the way a click on the NTP would,
     // if no user pref were set.  Update this constant to change

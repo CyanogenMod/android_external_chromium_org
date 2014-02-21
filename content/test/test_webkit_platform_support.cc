@@ -11,6 +11,7 @@
 #include "base/metrics/stats_counters.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/common/content_switches.h"
 #include "content/test/mock_webclipboard_impl.h"
 #include "content/test/web_gesture_curve_mock.h"
 #include "content/test/web_layer_tree_view_impl_for_testing.h"
@@ -27,24 +28,16 @@
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
-#include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
 #include "v8/include/v8.h"
 #include "webkit/browser/database/vfs_backend.h"
 #include "webkit/child/webkitplatformsupport_impl.h"
-#include "webkit/glue/simple_webmimeregistry_impl.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
-#if defined(OS_WIN)
-#include "third_party/WebKit/public/platform/win/WebThemeEngine.h"
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #endif
-
-using blink::WebScriptController;
-using webkit::WebLayerTreeViewImplForTesting;
 
 namespace content {
 
@@ -63,7 +56,6 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport() {
       blink::WebString::fromUTF8("test-shell-resource"));
   blink::WebSecurityPolicy::registerURLSchemeAsEmptyDocument(
       blink::WebString::fromUTF8("test-shell-resource"));
-  WebScriptController::enableV8SingleThreadMode();
   blink::WebRuntimeFeatures::enableApplicationCache(true);
   blink::WebRuntimeFeatures::enableDatabase(true);
   blink::WebRuntimeFeatures::enableNotifications(true);
@@ -83,10 +75,6 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport() {
   blink::WebRuntimeFeatures::enableMediaPlayer(enable_media);
   LOG_IF(WARNING, !enable_media) << "Failed to initialize the media library.\n";
 
-  // TODO(joth): Make a dummy geolocation service implemenation for
-  // test_shell, and set this to true. http://crbug.com/36451
-  blink::WebRuntimeFeatures::enableGeolocation(false);
-
   file_utilities_.set_sandbox_enabled(false);
 
   if (!file_system_root_.CreateUniqueTempDir()) {
@@ -100,10 +88,11 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport() {
   SetThemeEngine(NULL);
 #endif
 
-  net::CookieMonster::EnableFileScheme();
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableFileCookies);
 
   // Test shell always exposes the GC.
-  webkit_glue::SetJavaScriptFlags(" --expose-gc");
+  std::string flags("--expose-gc");
+  v8::V8::SetFlagsFromString(flags.c_str(), static_cast<int>(flags.size()));
 }
 
 TestWebKitPlatformSupport::~TestWebKitPlatformSupport() {
@@ -162,23 +151,23 @@ blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
   // Returns placeholder strings to check if they are correctly localized.
   switch (name) {
     case blink::WebLocalizedString::OtherDateLabel:
-      return ASCIIToUTF16("<<OtherDateLabel>>");
+      return base::ASCIIToUTF16("<<OtherDateLabel>>");
     case blink::WebLocalizedString::OtherMonthLabel:
-      return ASCIIToUTF16("<<OtherMonthLabel>>");
+      return base::ASCIIToUTF16("<<OtherMonthLabel>>");
     case blink::WebLocalizedString::OtherTimeLabel:
-      return ASCIIToUTF16("<<OtherTimeLabel>>");
+      return base::ASCIIToUTF16("<<OtherTimeLabel>>");
     case blink::WebLocalizedString::OtherWeekLabel:
-      return ASCIIToUTF16("<<OtherWeekLabel>>");
+      return base::ASCIIToUTF16("<<OtherWeekLabel>>");
     case blink::WebLocalizedString::CalendarClear:
-      return ASCIIToUTF16("<<CalendarClear>>");
+      return base::ASCIIToUTF16("<<CalendarClear>>");
     case blink::WebLocalizedString::CalendarToday:
-      return ASCIIToUTF16("<<CalendarToday>>");
+      return base::ASCIIToUTF16("<<CalendarToday>>");
     case blink::WebLocalizedString::ThisMonthButtonLabel:
-      return ASCIIToUTF16("<<ThisMonthLabel>>");
+      return base::ASCIIToUTF16("<<ThisMonthLabel>>");
     case blink::WebLocalizedString::ThisWeekButtonLabel:
-      return ASCIIToUTF16("<<ThisWeekLabel>>");
+      return base::ASCIIToUTF16("<<ThisWeekLabel>>");
     case blink::WebLocalizedString::WeekFormatTemplate:
-      return ASCIIToUTF16("Week $2, $1");
+      return base::ASCIIToUTF16("Week $2, $1");
     default:
       return WebKitPlatformSupportImpl::queryLocalizedString(name);
   }
@@ -188,9 +177,9 @@ blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
     blink::WebLocalizedString::Name name,
     const blink::WebString& value) {
   if (name == blink::WebLocalizedString::ValidationRangeUnderflow)
-    return ASCIIToUTF16("range underflow");
+    return base::ASCIIToUTF16("range underflow");
   if (name == blink::WebLocalizedString::ValidationRangeOverflow)
-    return ASCIIToUTF16("range overflow");
+    return base::ASCIIToUTF16("range overflow");
   return WebKitPlatformSupportImpl::queryLocalizedString(name, value);
 }
 
@@ -199,14 +188,14 @@ blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
     const blink::WebString& value1,
     const blink::WebString& value2) {
   if (name == blink::WebLocalizedString::ValidationTooLong)
-    return ASCIIToUTF16("too long");
+    return base::ASCIIToUTF16("too long");
   if (name == blink::WebLocalizedString::ValidationStepMismatch)
-    return ASCIIToUTF16("step mismatch");
+    return base::ASCIIToUTF16("step mismatch");
   return WebKitPlatformSupportImpl::queryLocalizedString(name, value1, value2);
 }
 
 blink::WebString TestWebKitPlatformSupport::defaultLocale() {
-  return ASCIIToUTF16("en-US");
+  return base::ASCIIToUTF16("en-US");
 }
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -303,8 +292,7 @@ TestWebKitPlatformSupport::createLayerTreeViewForTesting() {
   scoped_ptr<WebLayerTreeViewImplForTesting> view(
       new WebLayerTreeViewImplForTesting());
 
-  if (!view->Initialize())
-    return NULL;
+  view->Initialize();
   return view.release();
 }
 

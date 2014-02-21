@@ -8,12 +8,12 @@
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/tooltip_client.h"
-#include "ui/aura/client/window_types.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_screen.h"
+#include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
@@ -23,9 +23,11 @@
 #include "ui/gfx/text_elider.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/corewm/tooltip_controller_test_helper.h"
+#include "ui/views/corewm/wm_state.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
@@ -35,6 +37,8 @@
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
 #endif
+
+using base::ASCIIToUTF16;
 
 namespace views {
 namespace corewm {
@@ -72,6 +76,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
   virtual ~TooltipControllerTest() {}
 
   virtual void SetUp() OVERRIDE {
+    wm_state_.reset(new views::corewm::WMState);
     aura::test::AuraTestBase::SetUp();
 #if defined(OS_CHROMEOS)
     controller_.reset(new TooltipController(
@@ -100,6 +105,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
     helper_.reset();
     widget_.reset();
     aura::test::AuraTestBase::TearDown();
+    wm_state_.reset();
   }
 
  protected:
@@ -126,24 +132,27 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
 
  private:
   scoped_ptr<TooltipController> controller_;
+
 #if defined(OS_WIN)
   ui::ScopedOleInitializer ole_initializer_;
 #endif
+
+  scoped_ptr<views::corewm::WMState> wm_state_;
 
   DISALLOW_COPY_AND_ASSIGN(TooltipControllerTest);
 };
 
 TEST_F(TooltipControllerTest, ViewTooltip) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
   generator_->MoveMouseToCenterOf(GetWindow());
 
   EXPECT_EQ(GetWindow(), GetRootWindow()->GetEventHandlerForPoint(
       generator_->current_location()));
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
   EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(GetWindow()));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(GetWindow(), helper_->GetTooltipWindow());
 
   // Fire tooltip timer so tooltip becomes visible.
@@ -160,7 +169,7 @@ TEST_F(TooltipControllerTest, ViewTooltip) {
 
 TEST_F(TooltipControllerTest, TooltipsInMultipleViews) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   PrepareSecondView();
@@ -176,7 +185,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleViews) {
     EXPECT_TRUE(helper_->IsTooltipVisible());
     EXPECT_EQ(window, root_window->GetEventHandlerForPoint(
             generator_->current_location()));
-    string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+    base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
     EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
     EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
     EXPECT_EQ(window, helper_->GetTooltipWindow());
@@ -186,7 +195,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleViews) {
     EXPECT_FALSE(helper_->IsTooltipVisible());
     EXPECT_EQ(window, root_window->GetEventHandlerForPoint(
             generator_->current_location()));
-    string16 expected_tooltip;  // = ""
+    base::string16 expected_tooltip;  // = ""
     EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
     EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
     EXPECT_EQ(window, helper_->GetTooltipWindow());
@@ -195,11 +204,11 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleViews) {
 
 TEST_F(TooltipControllerTest, EnableOrDisableTooltips) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   generator_->MoveMouseRelativeTo(GetWindow(), view_->bounds().CenterPoint());
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
 
   // Fire tooltip timer so tooltip becomes visible.
   helper_->FireTooltipTimer();
@@ -221,7 +230,7 @@ TEST_F(TooltipControllerTest, EnableOrDisableTooltips) {
 // Verifies tooltip isn't shown if tooltip text consists entirely of whitespace.
 TEST_F(TooltipControllerTest, DontShowEmptyTooltips) {
   view_->set_tooltip_text(ASCIIToUTF16("                     "));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   generator_->MoveMouseRelativeTo(GetWindow(), view_->bounds().CenterPoint());
@@ -232,7 +241,7 @@ TEST_F(TooltipControllerTest, DontShowEmptyTooltips) {
 
 TEST_F(TooltipControllerTest, TooltipHidesOnKeyPressAndStaysHiddenUntilChange) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text for view 1"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   TooltipTestView* view2 = PrepareSecondView();
@@ -261,7 +270,7 @@ TEST_F(TooltipControllerTest, TooltipHidesOnKeyPressAndStaysHiddenUntilChange) {
     EXPECT_EQ(window,
               GetRootWindow()->GetEventHandlerForPoint(
                   generator_->current_location()));
-    string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 1");
+    base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 1");
     EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
     EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
     EXPECT_EQ(window, helper_->GetTooltipWindow());
@@ -273,7 +282,7 @@ TEST_F(TooltipControllerTest, TooltipHidesOnKeyPressAndStaysHiddenUntilChange) {
   helper_->FireTooltipTimer();
   EXPECT_TRUE(helper_->IsTooltipVisible());
   EXPECT_TRUE(helper_->IsTooltipShownTimerRunning());
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 2");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 2");
   EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
   EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
   EXPECT_EQ(window, helper_->GetTooltipWindow());
@@ -281,7 +290,7 @@ TEST_F(TooltipControllerTest, TooltipHidesOnKeyPressAndStaysHiddenUntilChange) {
 
 TEST_F(TooltipControllerTest, TooltipHidesOnTimeoutAndStaysHiddenUntilChange) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text for view 1"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   TooltipTestView* view2 = PrepareSecondView();
@@ -309,7 +318,7 @@ TEST_F(TooltipControllerTest, TooltipHidesOnTimeoutAndStaysHiddenUntilChange) {
     EXPECT_FALSE(helper_->IsTooltipShownTimerRunning());
     EXPECT_EQ(window, GetRootWindow()->GetEventHandlerForPoint(
                   generator_->current_location()));
-    string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 1");
+    base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 1");
     EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
     EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
     EXPECT_EQ(window, helper_->GetTooltipWindow());
@@ -321,7 +330,7 @@ TEST_F(TooltipControllerTest, TooltipHidesOnTimeoutAndStaysHiddenUntilChange) {
   helper_->FireTooltipTimer();
   EXPECT_TRUE(helper_->IsTooltipVisible());
   EXPECT_TRUE(helper_->IsTooltipShownTimerRunning());
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 2");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text for view 2");
   EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
   EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
   EXPECT_EQ(window, helper_->GetTooltipWindow());
@@ -331,9 +340,9 @@ TEST_F(TooltipControllerTest, TooltipHidesOnTimeoutAndStaysHiddenUntilChange) {
 TEST_F(TooltipControllerTest, HideOnExit) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
   generator_->MoveMouseToCenterOf(GetWindow());
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
   EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(GetWindow()));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(GetWindow(), helper_->GetTooltipWindow());
 
   // Fire tooltip timer so tooltip becomes visible.
@@ -342,6 +351,44 @@ TEST_F(TooltipControllerTest, HideOnExit) {
   EXPECT_TRUE(helper_->IsTooltipVisible());
   generator_->SendMouseExit();
   EXPECT_FALSE(helper_->IsTooltipVisible());
+}
+
+TEST_F(TooltipControllerTest, ReshowOnClickAfterEnterExit) {
+  // Owned by |view_|.
+  TooltipTestView* v1 = new TooltipTestView;
+  TooltipTestView* v2 = new TooltipTestView;
+  view_->AddChildView(v1);
+  view_->AddChildView(v2);
+  gfx::Rect view_bounds(view_->GetLocalBounds());
+  view_bounds.set_height(view_bounds.height() / 2);
+  v1->SetBoundsRect(view_bounds);
+  view_bounds.set_y(view_bounds.height());
+  v2->SetBoundsRect(view_bounds);
+  const base::string16 v1_tt(ASCIIToUTF16("v1"));
+  const base::string16 v2_tt(ASCIIToUTF16("v2"));
+  v1->set_tooltip_text(v1_tt);
+  v2->set_tooltip_text(v2_tt);
+
+  gfx::Point v1_point(1, 1);
+  View::ConvertPointToWidget(v1, &v1_point);
+  generator_->MoveMouseRelativeTo(GetWindow(), v1_point);
+
+  // Fire tooltip timer so tooltip becomes visible.
+  helper_->FireTooltipTimer();
+  EXPECT_TRUE(helper_->IsTooltipVisible());
+  EXPECT_EQ(v1_tt, helper_->GetTooltipText());
+
+  // Press the mouse, move to v2 and back to v1.
+  generator_->ClickLeftButton();
+
+  gfx::Point v2_point(1, 1);
+  View::ConvertPointToWidget(v2, &v2_point);
+  generator_->MoveMouseRelativeTo(GetWindow(), v2_point);
+  generator_->MoveMouseRelativeTo(GetWindow(), v1_point);
+
+  helper_->FireTooltipTimer();
+  EXPECT_TRUE(helper_->IsTooltipVisible());
+  EXPECT_EQ(v1_tt, helper_->GetTooltipText());
 }
 
 namespace {
@@ -421,9 +468,9 @@ TEST_F(TooltipControllerCaptureTest, CloseOnCaptureLost) {
   view_->GetWidget()->SetCapture(view_);
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
   generator_->MoveMouseToCenterOf(GetWindow());
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
   EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(GetWindow()));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(GetWindow(), helper_->GetTooltipWindow());
 
   // Fire tooltip timer so tooltip becomes visible.
@@ -444,8 +491,8 @@ TEST_F(TooltipControllerCaptureTest, CloseOnCaptureLost) {
 #endif
 // Verifies the correct window is found for tooltips when there is a capture.
 TEST_F(TooltipControllerCaptureTest, MAYBE_Capture) {
-  const string16 tooltip_text(ASCIIToUTF16("1"));
-  const string16 tooltip_text2(ASCIIToUTF16("2"));
+  const base::string16 tooltip_text(ASCIIToUTF16("1"));
+  const base::string16 tooltip_text2(ASCIIToUTF16("2"));
 
   widget_->SetBounds(gfx::Rect(0, 0, 200, 200));
   view_->set_tooltip_text(tooltip_text);
@@ -490,14 +537,17 @@ TEST_F(TooltipControllerCaptureTest, MAYBE_Capture) {
   widget2.reset();
 }
 
-#if !defined(OS_CHROMEOS)
+// These tests search for a specific aura::Window to identify the
+// tooltip. Windows shows the tooltip using a native tooltip, so these tests
+// don't apply.
+#if !defined(OS_WIN) && !defined(OS_CHROMEOS)
 // This test creates two top level windows and verifies that the tooltip
 // displays correctly when mouse moves are dispatched to these windows.
 // Additionally it also verifies that the tooltip is reparented to the new
 // window when mouse moves are dispatched to it.
 TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text For RootWindow1"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
 
   aura::Window* window = GetWindow();
@@ -512,7 +562,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
     EXPECT_TRUE(helper_->IsTooltipVisible());
     EXPECT_EQ(window, root_window->GetEventHandlerForPoint(
             generator_->current_location()));
-    string16 expected_tooltip =
+    base::string16 expected_tooltip =
         ASCIIToUTF16("Tooltip Text For RootWindow1");
     EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window));
     EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
@@ -545,7 +595,8 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
     EXPECT_TRUE(helper_->IsTooltipVisible());
     EXPECT_EQ(window2, root_window2->GetEventHandlerForPoint(
               generator_->current_location()));
-    string16 expected_tooltip = ASCIIToUTF16("Tooltip Text For RootWindow2");
+    base::string16 expected_tooltip =
+        ASCIIToUTF16("Tooltip Text For RootWindow2");
     EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(window2));
     EXPECT_EQ(expected_tooltip, helper_->GetTooltipText());
     EXPECT_EQ(window2, helper_->GetTooltipWindow());
@@ -553,8 +604,7 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
 
   bool tooltip_reparented = false;
   for (size_t i = 0; i < root_window2->children().size(); ++i) {
-    if (root_window2->children()[i]->type() ==
-        aura::client::WINDOW_TYPE_TOOLTIP) {
+    if (root_window2->children()[i]->type() == ui::wm::WINDOW_TYPE_TOOLTIP) {
       tooltip_reparented = true;
       break;
     }
@@ -567,15 +617,15 @@ TEST_F(TooltipControllerTest, TooltipsInMultipleRootWindows) {
 // top of the ZOrder in its root window after activation changes.
 TEST_F(TooltipControllerTest, TooltipAtTopOfZOrderAfterActivation) {
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(NULL, helper_->GetTooltipWindow());
   generator_->MoveMouseToCenterOf(GetWindow());
 
   EXPECT_EQ(GetWindow(), GetRootWindow()->GetEventHandlerForPoint(
       generator_->current_location()));
-  string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
+  base::string16 expected_tooltip = ASCIIToUTF16("Tooltip Text");
   EXPECT_EQ(expected_tooltip, aura::client::GetTooltipText(GetWindow()));
-  EXPECT_EQ(string16(), helper_->GetTooltipText());
+  EXPECT_EQ(base::string16(), helper_->GetTooltipText());
   EXPECT_EQ(GetWindow(), helper_->GetTooltipWindow());
 
   // Fire tooltip timer so tooltip becomes visible.
@@ -600,10 +650,117 @@ TEST_F(TooltipControllerTest, TooltipAtTopOfZOrderAfterActivation) {
 
   EXPECT_EQ(
       widget_->GetNativeWindow()->GetRootWindow()->children().back()->type(),
-      aura::client::WINDOW_TYPE_TOOLTIP);
+      ui::wm::WINDOW_TYPE_TOOLTIP);
+}
+#endif
+
+namespace {
+
+class TestTooltip : public Tooltip {
+ public:
+  TestTooltip() : is_visible_(false) {}
+  virtual ~TestTooltip() {}
+
+  const base::string16& tooltip_text() const { return tooltip_text_; }
+
+  // Tooltip:
+  virtual void SetText(aura::Window* window,
+                       const base::string16& tooltip_text,
+                       const gfx::Point& location) OVERRIDE {
+    tooltip_text_ = tooltip_text;
+  }
+  virtual void Show() OVERRIDE {
+    is_visible_ = true;
+  }
+  virtual void Hide() OVERRIDE {
+    is_visible_ = false;
+  }
+  virtual bool IsVisible() OVERRIDE {
+    return is_visible_;
+  }
+
+ private:
+  bool is_visible_;
+  base::string16 tooltip_text_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestTooltip);
+};
+
+}  // namespace
+
+// Use for tests that don't depend upon views.
+class TooltipControllerTest2 : public aura::test::AuraTestBase {
+ public:
+  TooltipControllerTest2() : test_tooltip_(new TestTooltip) {}
+  virtual ~TooltipControllerTest2() {}
+
+  virtual void SetUp() OVERRIDE {
+    wm_state_.reset(new views::corewm::WMState);
+    aura::test::AuraTestBase::SetUp();
+    controller_.reset(new TooltipController(
+                          scoped_ptr<views::corewm::Tooltip>(test_tooltip_)));
+    root_window()->AddPreTargetHandler(controller_.get());
+    SetTooltipClient(root_window(), controller_.get());
+    helper_.reset(new TooltipControllerTestHelper(controller_.get()));
+    generator_.reset(new aura::test::EventGenerator(root_window()));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    root_window()->RemovePreTargetHandler(controller_.get());
+    aura::client::SetTooltipClient(root_window(), NULL);
+    controller_.reset();
+    generator_.reset();
+    helper_.reset();
+    aura::test::AuraTestBase::TearDown();
+    wm_state_.reset();
+  }
+
+ protected:
+  // Owned by |controller_|.
+  TestTooltip* test_tooltip_;
+  scoped_ptr<TooltipControllerTestHelper> helper_;
+  scoped_ptr<aura::test::EventGenerator> generator_;
+
+ private:
+  scoped_ptr<TooltipController> controller_;
+  scoped_ptr<views::corewm::WMState> wm_state_;
+
+  DISALLOW_COPY_AND_ASSIGN(TooltipControllerTest2);
+};
+
+TEST_F(TooltipControllerTest2, VerifyLeadingTrailingWhitespaceStripped) {
+  aura::test::TestWindowDelegate test_delegate;
+  scoped_ptr<aura::Window> window(
+      CreateNormalWindow(100, root_window(), &test_delegate));
+  window->SetBounds(gfx::Rect(0, 0, 300, 300));
+  base::string16 tooltip_text(ASCIIToUTF16(" \nx  "));
+  aura::client::SetTooltipText(window.get(), &tooltip_text);
+  generator_->MoveMouseToCenterOf(window.get());
+  helper_->FireTooltipTimer();
+  EXPECT_EQ(ASCIIToUTF16("x"), test_tooltip_->tooltip_text());
 }
 
-#endif
+// Verifies that tooltip is hidden and tooltip window closed upon cancel mode.
+TEST_F(TooltipControllerTest2, CloseOnCancelMode) {
+  aura::test::TestWindowDelegate test_delegate;
+  scoped_ptr<aura::Window> window(
+      CreateNormalWindow(100, root_window(), &test_delegate));
+  window->SetBounds(gfx::Rect(0, 0, 300, 300));
+  base::string16 tooltip_text(ASCIIToUTF16("Tooltip Text"));
+  aura::client::SetTooltipText(window.get(), &tooltip_text);
+  generator_->MoveMouseToCenterOf(window.get());
+
+  // Fire tooltip timer so tooltip becomes visible.
+  helper_->FireTooltipTimer();
+  EXPECT_TRUE(helper_->IsTooltipVisible());
+
+  // Send OnCancelMode event and verify that tooltip becomes invisible and
+  // the tooltip window is closed.
+  ui::CancelModeEvent event;
+  helper_->controller()->OnCancelMode(&event);
+  EXPECT_FALSE(helper_->IsTooltipVisible());
+  EXPECT_TRUE(helper_->GetTooltipWindow() == NULL);
+}
 
 }  // namespace test
 }  // namespace corewm

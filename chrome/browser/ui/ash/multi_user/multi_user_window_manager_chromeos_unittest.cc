@@ -11,6 +11,8 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
 #include "chrome/common/chrome_switches.h"
@@ -19,6 +21,7 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/views/corewm/window_util.h"
 
 namespace ash {
 namespace test {
@@ -37,6 +40,17 @@ class MultiUserWindowManagerChromeOSTest : public AshTestBase {
  protected:
   // Set up the test environment for this many windows.
   void SetUpForThisManyWindows(int windows);
+
+  // Switch the user and wait until the animation is finished.
+  void SwitchUserAndWaitForAnimation(const std::string& user_id) {
+    multi_user_window_manager_->ActiveUserChanged(user_id);
+    base::TimeTicks now = base::TimeTicks::Now();
+    while (multi_user_window_manager_->IsAnimationRunningForTest()) {
+      // This should never take longer then a second.
+      ASSERT_GE(1000, (base::TimeTicks::Now() - now).InMilliseconds());
+      base::MessageLoop::current()->RunUntilIdle();
+    }
+  }
 
   // Return the window with the given index.
   aura::Window* window(size_t index) {
@@ -62,6 +76,9 @@ class MultiUserWindowManagerChromeOSTest : public AshTestBase {
   // shown by A, and "D,..." would mean that window#0 is deleted.
   std::string GetStatus();
 
+  // Returns a test-friendly string format of GetOwnersOfVisibleWindows().
+  std::string GetOwnersOfVisibleWindowsAsString();
+
   TestSessionStateDelegate* session_state_delegate() {
     return session_state_delegate_;
   }
@@ -72,6 +89,21 @@ class MultiUserWindowManagerChromeOSTest : public AshTestBase {
         window->GetRootWindow()->GetChildById(
             ash::internal::kShellWindowId_SystemModalContainer);
     system_modal_container->AddChild(window);
+  }
+
+  void ShowWindowForUserNoUserTransition(aura::Window* window,
+                                         const std::string& user_id) {
+    multi_user_window_manager_->ShowWindowForUserIntern(window, user_id);
+  }
+
+  // The test session state observer does not automatically call the window
+  // manager. This function gets the current user from it and also sets it to
+  // the multi user window manager.
+  std::string GetAndValidateCurrentUserFromSessionStateObserver() {
+    const std::string& user = session_state_delegate()->get_activated_user();
+    if (user != multi_user_window_manager_->GetCurrentUserForTest())
+      multi_user_window_manager()->ActiveUserChanged(user);
+    return user;
   }
 
  private:
@@ -102,6 +134,7 @@ void MultiUserWindowManagerChromeOSTest::SetUpForThisManyWindows(int windows) {
     window_[i]->Show();
   }
   multi_user_window_manager_ = new chrome::MultiUserWindowManagerChromeOS("A");
+  multi_user_window_manager_->SetAnimationsForTest(true);
   chrome::MultiUserWindowManager::SetInstanceForTest(multi_user_window_manager_,
         chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_SEPARATED);
   EXPECT_TRUE(multi_user_window_manager_);
@@ -115,8 +148,8 @@ void MultiUserWindowManagerChromeOSTest::TearDown() {
     window_.erase(window_.begin());
   }
 
-  AshTestBase::TearDown();
   chrome::MultiUserWindowManager::DeleteInstance();
+  AshTestBase::TearDown();
 }
 
 std::string MultiUserWindowManagerChromeOSTest::GetStatus() {
@@ -141,6 +174,16 @@ std::string MultiUserWindowManagerChromeOSTest::GetStatus() {
     s += "]";
   }
   return s;
+}
+
+std::string
+MultiUserWindowManagerChromeOSTest::GetOwnersOfVisibleWindowsAsString() {
+  std::set<std::string> owners;
+  multi_user_window_manager_->GetOwnersOfVisibleWindows(&owners);
+
+  std::vector<std::string> owner_list;
+  owner_list.insert(owner_list.begin(), owners.begin(), owners.end());
+  return JoinString(owner_list, ' ');
 }
 
 // Testing basic assumptions like default state and existence of manager.
@@ -176,7 +219,7 @@ TEST_F(MultiUserWindowManagerChromeOSTest, BasicTests) {
 
   // Overriding it with another state should show it on the other user's
   // desktop.
-  multi_user_window_manager()->ShowWindowForUser(window(0), "B");
+  ShowWindowForUserNoUserTransition(window(0), "B");
   EXPECT_EQ("A", multi_user_window_manager()->GetWindowOwner(window(0)));
   EXPECT_EQ("B",
       multi_user_window_manager()->GetUserPresentingWindow(window(0)));
@@ -222,9 +265,10 @@ TEST_F(MultiUserWindowManagerChromeOSTest, CloseWindowTests) {
   SetUpForThisManyWindows(1);
   multi_user_window_manager()->SetWindowOwner(window(0), "B");
   EXPECT_EQ("H[B]", GetStatus());
-  multi_user_window_manager()->ShowWindowForUser(window(0), "A");
+  ShowWindowForUserNoUserTransition(window(0), "A");
   EXPECT_EQ("S[B,A]", GetStatus());
   EXPECT_TRUE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
+  EXPECT_EQ("B", GetOwnersOfVisibleWindowsAsString());
 
   aura::Window* to_be_deleted = window(0);
 
@@ -239,6 +283,7 @@ TEST_F(MultiUserWindowManagerChromeOSTest, CloseWindowTests) {
   delete_window_at(0);
 
   EXPECT_EQ("D", GetStatus());
+  EXPECT_EQ("", GetOwnersOfVisibleWindowsAsString());
   // There should be no owner anymore for that window and the shared windows
   // should be gone as well.
   EXPECT_EQ(std::string(),
@@ -259,44 +304,53 @@ TEST_F(MultiUserWindowManagerChromeOSTest, SharedWindowTests) {
   multi_user_window_manager()->SetWindowOwner(window(4), "C");
   EXPECT_EQ("S[A], S[A], H[B], H[B], H[C]", GetStatus());
   EXPECT_FALSE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
+  EXPECT_EQ("A", GetOwnersOfVisibleWindowsAsString());
 
   // For all following tests we override window 2 to be shown by user B.
-  multi_user_window_manager()->ShowWindowForUser(window(1), "B");
+  ShowWindowForUserNoUserTransition(window(1), "B");
 
   // Change window 3 between two users and see that it changes
   // accordingly (or not).
-  multi_user_window_manager()->ShowWindowForUser(window(2), "A");
+  ShowWindowForUserNoUserTransition(window(2), "A");
   EXPECT_EQ("S[A], H[A,B], S[B,A], H[B], H[C]", GetStatus());
   EXPECT_TRUE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
-  multi_user_window_manager()->ShowWindowForUser(window(2), "C");
+  EXPECT_EQ("A B", GetOwnersOfVisibleWindowsAsString());
+  ShowWindowForUserNoUserTransition(window(2), "C");
   EXPECT_EQ("S[A], H[A,B], H[B,C], H[B], H[C]", GetStatus());
   EXPECT_TRUE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
+  EXPECT_EQ("A", GetOwnersOfVisibleWindowsAsString());
 
   // Switch the users and see that the results are correct.
   multi_user_window_manager()->ActiveUserChanged("B");
   EXPECT_EQ("H[A], S[A,B], H[B,C], S[B], H[C]", GetStatus());
+  EXPECT_EQ("A B", GetOwnersOfVisibleWindowsAsString());
   multi_user_window_manager()->ActiveUserChanged("C");
   EXPECT_EQ("H[A], H[A,B], S[B,C], H[B], S[C]", GetStatus());
+  EXPECT_EQ("B C", GetOwnersOfVisibleWindowsAsString());
 
   // Showing on the desktop of the already owning user should have no impact.
-  multi_user_window_manager()->ShowWindowForUser(window(4), "C");
+  ShowWindowForUserNoUserTransition(window(4), "C");
   EXPECT_EQ("H[A], H[A,B], S[B,C], H[B], S[C]", GetStatus());
+  EXPECT_EQ("B C", GetOwnersOfVisibleWindowsAsString());
 
   // Changing however a shown window back to the original owner should hide it.
-  multi_user_window_manager()->ShowWindowForUser(window(2), "B");
+  ShowWindowForUserNoUserTransition(window(2), "B");
   EXPECT_EQ("H[A], H[A,B], H[B], H[B], S[C]", GetStatus());
   EXPECT_TRUE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
+  EXPECT_EQ("C", GetOwnersOfVisibleWindowsAsString());
 
   // And the change should be "permanent" - switching somewhere else and coming
   // back.
   multi_user_window_manager()->ActiveUserChanged("B");
   EXPECT_EQ("H[A], S[A,B], S[B], S[B], H[C]", GetStatus());
+  EXPECT_EQ("A B", GetOwnersOfVisibleWindowsAsString());
   multi_user_window_manager()->ActiveUserChanged("C");
   EXPECT_EQ("H[A], H[A,B], H[B], H[B], S[C]", GetStatus());
+  EXPECT_EQ("C", GetOwnersOfVisibleWindowsAsString());
 
   // After switching window 2 back to its original desktop, all desktops should
   // be "clean" again.
-  multi_user_window_manager()->ShowWindowForUser(window(1), "A");
+  ShowWindowForUserNoUserTransition(window(1), "A");
   EXPECT_FALSE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
 }
 
@@ -306,8 +360,8 @@ TEST_F(MultiUserWindowManagerChromeOSTest, DoubleSharedWindowTests) {
   multi_user_window_manager()->SetWindowOwner(window(0), "B");
 
   // Add two references to the same window.
-  multi_user_window_manager()->ShowWindowForUser(window(0), "A");
-  multi_user_window_manager()->ShowWindowForUser(window(0), "A");
+  ShowWindowForUserNoUserTransition(window(0), "A");
+  ShowWindowForUserNoUserTransition(window(0), "A");
   EXPECT_TRUE(multi_user_window_manager()->AreWindowsSharedAmongUsers());
 
   // Close the window.
@@ -329,8 +383,8 @@ TEST_F(MultiUserWindowManagerChromeOSTest, PreserveWindowVisibilityTests) {
   multi_user_window_manager()->SetWindowOwner(window(1), "A");
   multi_user_window_manager()->SetWindowOwner(window(2), "B");
   multi_user_window_manager()->SetWindowOwner(window(3), "B");
-  multi_user_window_manager()->ShowWindowForUser(window(2), "A");
-  multi_user_window_manager()->ShowWindowForUser(window(3), "A");
+  ShowWindowForUserNoUserTransition(window(2), "A");
+  ShowWindowForUserNoUserTransition(window(3), "A");
   EXPECT_EQ("S[A], S[A], S[B,A], S[B,A], S[]", GetStatus());
 
   // Hiding a window should be respected - no matter if it is owned by that user
@@ -373,26 +427,27 @@ TEST_F(MultiUserWindowManagerChromeOSTest, PreserveWindowVisibilityTests) {
 }
 
 // Check that minimizing a window which is owned by another user will move it
-// back.
+// back and gets restored upon switching back to the original user.
 TEST_F(MultiUserWindowManagerChromeOSTest, MinimizeChangesOwnershipBack) {
   SetUpForThisManyWindows(4);
   multi_user_window_manager()->SetWindowOwner(window(0), "A");
   multi_user_window_manager()->SetWindowOwner(window(1), "B");
   multi_user_window_manager()->SetWindowOwner(window(2), "B");
-  multi_user_window_manager()->ShowWindowForUser(window(1), "A");
+  ShowWindowForUserNoUserTransition(window(1), "A");
   EXPECT_EQ("S[A], S[B,A], H[B], S[]", GetStatus());
   EXPECT_TRUE(multi_user_window_manager()->IsWindowOnDesktopOfUser(window(1),
                                                                    "A"));
   wm::GetWindowState(window(1))->Minimize();
-  EXPECT_EQ("S[A], H[B], H[B], S[]", GetStatus());
-  EXPECT_FALSE(multi_user_window_manager()->IsWindowOnDesktopOfUser(window(1),
-                                                                    "A"));
-
+  // At this time the window is still on the desktop of that user, but the user
+  // does not have a way to get to it.
+  EXPECT_EQ("S[A], H[B,A], H[B], S[]", GetStatus());
+  EXPECT_TRUE(multi_user_window_manager()->IsWindowOnDesktopOfUser(window(1),
+                                                                   "A"));
+  EXPECT_TRUE(wm::GetWindowState(window(1))->IsMinimized());
   // Change to user B and make sure that minimizing does not change anything.
   multi_user_window_manager()->ActiveUserChanged("B");
-  EXPECT_EQ("H[A], H[B], S[B], S[]", GetStatus());
-  wm::GetWindowState(window(1))->Minimize();
-  EXPECT_EQ("H[A], H[B], S[B], S[]", GetStatus());
+  EXPECT_EQ("H[A], S[B], S[B], S[]", GetStatus());
+  EXPECT_FALSE(wm::GetWindowState(window(1))->IsMinimized());
 }
 
 // Check that we cannot transfer the ownership of a minimized window.
@@ -403,7 +458,7 @@ TEST_F(MultiUserWindowManagerChromeOSTest, MinimizeSuppressesViewTransfer) {
   EXPECT_EQ("H[A]", GetStatus());
 
   // Try to transfer the window to user B - which should get ignored.
-  multi_user_window_manager()->ShowWindowForUser(window(0), "B");
+  ShowWindowForUserNoUserTransition(window(0), "B");
   EXPECT_EQ("H[A]", GetStatus());
 }
 
@@ -465,15 +520,15 @@ TEST_F(MultiUserWindowManagerChromeOSTest, TransientWindows) {
   //    3                      - ..
   multi_user_window_manager()->SetWindowOwner(window(0), "A");
   multi_user_window_manager()->SetWindowOwner(window(4), "B");
-  window(0)->AddTransientChild(window(1));
+  views::corewm::AddTransientChild(window(0), window(1));
   // We first attach 2->3 and then 1->2 to see that the ownership gets
   // properly propagated through the sub tree upon assigning.
-  window(2)->AddTransientChild(window(3));
-  window(1)->AddTransientChild(window(2));
-  window(4)->AddTransientChild(window(5));
-  window(4)->AddTransientChild(window(6));
-  window(7)->AddTransientChild(window(8));
-  window(7)->AddTransientChild(window(9));
+  views::corewm::AddTransientChild(window(2), window(3));
+  views::corewm::AddTransientChild(window(1), window(2));
+  views::corewm::AddTransientChild(window(4), window(5));
+  views::corewm::AddTransientChild(window(4), window(6));
+  views::corewm::AddTransientChild(window(7), window(8));
+  views::corewm::AddTransientChild(window(7), window(9));
 
   // By now the hierarchy should have updated itself to show all windows of A
   // and hide all windows of B. Unowned windows should remain in what ever state
@@ -510,15 +565,15 @@ TEST_F(MultiUserWindowManagerChromeOSTest, TransientWindows) {
   //    1      5       8
   //                   |
   //                   9
-  window(2)->RemoveTransientChild(window(3));
-  window(4)->RemoveTransientChild(window(6));
+  views::corewm::RemoveTransientChild(window(2), window(3));
+  views::corewm::RemoveTransientChild(window(4), window(6));
   EXPECT_EQ("S[A], S[], H[], H[], H[B], H[], S[], S[], S[], H[]", GetStatus());
   // Before we leave we need to reverse all transient window ownerships.
-  window(0)->RemoveTransientChild(window(1));
-  window(1)->RemoveTransientChild(window(2));
-  window(4)->RemoveTransientChild(window(5));
-  window(7)->RemoveTransientChild(window(8));
-  window(7)->RemoveTransientChild(window(9));
+  views::corewm::RemoveTransientChild(window(0), window(1));
+  views::corewm::RemoveTransientChild(window(1), window(2));
+  views::corewm::RemoveTransientChild(window(4), window(5));
+  views::corewm::RemoveTransientChild(window(7), window(8));
+  views::corewm::RemoveTransientChild(window(7), window(9));
 }
 
 // Test that the initial visibility state gets remembered.
@@ -545,10 +600,10 @@ TEST_F(MultiUserWindowManagerChromeOSTest, PreserveInitialVisibility) {
 
   // Second test: Transferring the window to another desktop preserves the
   // show state.
-  multi_user_window_manager()->ShowWindowForUser(window(0), "B");
-  multi_user_window_manager()->ShowWindowForUser(window(1), "B");
-  multi_user_window_manager()->ShowWindowForUser(window(2), "A");
-  multi_user_window_manager()->ShowWindowForUser(window(3), "A");
+  ShowWindowForUserNoUserTransition(window(0), "B");
+  ShowWindowForUserNoUserTransition(window(1), "B");
+  ShowWindowForUserNoUserTransition(window(2), "A");
+  ShowWindowForUserNoUserTransition(window(3), "A");
   EXPECT_EQ("H[A,B], H[A,B], S[B,A], H[B,A]", GetStatus());
   multi_user_window_manager()->ActiveUserChanged("B");
   EXPECT_EQ("S[A,B], H[A,B], H[B,A], H[B,A]", GetStatus());
@@ -595,7 +650,7 @@ TEST_F(MultiUserWindowManagerChromeOSTest,
 
   window(0)->Hide();
   multi_user_window_manager()->SetWindowOwner(window(0), "b");
-  multi_user_window_manager()->ShowWindowForUser(window(0), "a");
+  ShowWindowForUserNoUserTransition(window(0), "a");
   MakeWindowSystemModal(window(0));
   // Showing the window should trigger no user switch.
   window(0)->Show();
@@ -611,11 +666,80 @@ TEST_F(MultiUserWindowManagerChromeOSTest,
 
   window(0)->Hide();
   multi_user_window_manager()->SetWindowOwner(window(0), "a");
-  multi_user_window_manager()->ShowWindowForUser(window(0), "b");
+  ShowWindowForUserNoUserTransition(window(0), "b");
   MakeWindowSystemModal(window(0));
   // Showing the window should trigger a user switch.
   window(0)->Show();
   EXPECT_EQ("b", session_state_delegate()->get_activated_user());
+}
+
+// Test that using the full user switch animations are working as expected.
+TEST_F(MultiUserWindowManagerChromeOSTest, FullUserSwitchAnimationTests) {
+  SetUpForThisManyWindows(3);
+  // Turn the use of delays and animation on.
+  multi_user_window_manager()->SetAnimationsForTest(false);
+  // Set some owners and make sure we got what we asked for.
+  multi_user_window_manager()->SetWindowOwner(window(0), "A");
+  multi_user_window_manager()->SetWindowOwner(window(1), "B");
+  multi_user_window_manager()->SetWindowOwner(window(2), "C");
+  EXPECT_EQ("S[A], H[B], H[C]", GetStatus());
+  EXPECT_EQ("A", GetOwnersOfVisibleWindowsAsString());
+
+  // Switch the user fore and back and see that the results are correct.
+  SwitchUserAndWaitForAnimation("B");
+
+  EXPECT_EQ("H[A], S[B], H[C]", GetStatus());
+  EXPECT_EQ("B", GetOwnersOfVisibleWindowsAsString());
+
+  SwitchUserAndWaitForAnimation("A");
+
+  EXPECT_EQ("S[A], H[B], H[C]", GetStatus());
+
+  // Switch the user quickly to another user and before the animation is done
+  // switch back and see that this works.
+  multi_user_window_manager()->ActiveUserChanged("B");
+  // Check that at this time we have nothing visible (in the middle of the
+  // animation).
+  EXPECT_EQ("H[A], H[B], H[C]", GetStatus());
+  // Check that after switching to C, C is fully visible.
+  SwitchUserAndWaitForAnimation("C");
+  EXPECT_EQ("H[A], H[B], S[C]", GetStatus());
+}
+
+// Test that showing a window for another user also switches the desktop.
+TEST_F(MultiUserWindowManagerChromeOSTest, ShowForUserSwitchesDesktop) {
+  SetUpForThisManyWindows(3);
+  multi_user_window_manager()->ActiveUserChanged("a");
+  session_state_delegate()->SwitchActiveUser("a");
+
+  // Set some owners and make sure we got what we asked for.
+  multi_user_window_manager()->SetWindowOwner(window(0), "a");
+  multi_user_window_manager()->SetWindowOwner(window(1), "b");
+  multi_user_window_manager()->SetWindowOwner(window(2), "c");
+  EXPECT_EQ("S[a], H[b], H[c]", GetStatus());
+
+  // SetWindowOwner should not have changed the active user.
+  EXPECT_EQ("a", GetAndValidateCurrentUserFromSessionStateObserver());
+
+  // Check that teleporting the window of the currently active user will
+  // teleport to the new desktop.
+  multi_user_window_manager()->ShowWindowForUser(window(0), "b");
+  EXPECT_EQ("b", GetAndValidateCurrentUserFromSessionStateObserver());
+  EXPECT_EQ("S[a,b], S[b], H[c]", GetStatus());
+
+  // Check that teleporting a window from a currently inactive user will not
+  // trigger a switch.
+  multi_user_window_manager()->ShowWindowForUser(window(2), "a");
+  EXPECT_EQ("b", GetAndValidateCurrentUserFromSessionStateObserver());
+  EXPECT_EQ("S[a,b], S[b], H[c,a]", GetStatus());
+  multi_user_window_manager()->ShowWindowForUser(window(2), "b");
+  EXPECT_EQ("b", GetAndValidateCurrentUserFromSessionStateObserver());
+  EXPECT_EQ("S[a,b], S[b], S[c,b]", GetStatus());
+
+  // Check that teleporting back will also change the desktop.
+  multi_user_window_manager()->ShowWindowForUser(window(2), "c");
+  EXPECT_EQ("c", GetAndValidateCurrentUserFromSessionStateObserver());
+  EXPECT_EQ("H[a,b], H[b], S[c]", GetStatus());
 }
 
 }  // namespace test

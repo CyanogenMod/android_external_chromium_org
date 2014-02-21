@@ -6,6 +6,7 @@
 
 #include "base/run_loop.h"
 #include "content/common/dom_storage/dom_storage_types.h"
+#include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -22,16 +23,18 @@
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/glue/webkit_glue.h"
+#include "v8/include/v8.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/scoped_nsautorelease_pool.h"
+#endif
 
 using blink::WebFrame;
 using blink::WebInputEvent;
 using blink::WebMouseEvent;
-using blink::WebScriptController;
 using blink::WebScriptSource;
 using blink::WebString;
 using blink::WebURLRequest;
@@ -41,6 +44,7 @@ const int32 kOpenerId = -2;
 const int32 kRouteId = 5;
 const int32 kMainFrameRouteId = 6;
 const int32 kNewWindowRouteId = 7;
+const int32 kNewFrameRouteId = 10;
 const int32 kSurfaceId = 42;
 
 }  // namespace
@@ -140,7 +144,11 @@ void RenderViewTest::SetUp() {
   render_thread_->set_routing_id(kRouteId);
   render_thread_->set_surface_id(kSurfaceId);
   render_thread_->set_new_window_routing_id(kNewWindowRouteId);
+  render_thread_->set_new_frame_routing_id(kNewFrameRouteId);
 
+#if defined(OS_MACOSX)
+  autorelease_pool_.reset(new base::mac::ScopedNSAutoreleasePool());
+#endif
   command_line_.reset(new CommandLine(CommandLine::NO_PROGRAM));
   params_.reset(new MainFunctionParams(*command_line_));
   platform_.reset(new RendererMainPlatformDelegate(*params_));
@@ -148,7 +156,8 @@ void RenderViewTest::SetUp() {
 
   // Setting flags and really doing anything with WebKit is fairly fragile and
   // hacky, but this is the world we live in...
-  webkit_glue::SetJavaScriptFlags(" --expose-gc");
+  std::string flags("--expose-gc");
+  v8::V8::SetFlagsFromString(flags.c_str(), static_cast<int>(flags.size()));
   blink::initialize(webkit_platform_support_.Get());
 
   // Ensure that we register any necessary schemes when initializing WebKit,
@@ -207,6 +216,11 @@ void RenderViewTest::TearDown() {
   // (http://crbug.com/21508).
   base::RunLoop().RunUntilIdle();
 
+#if defined(OS_MACOSX)
+  // Needs to run before blink::shutdown().
+  autorelease_pool_.reset(NULL);
+#endif
+
   blink::shutdown();
 
   platform_->PlatformUninitialize();
@@ -259,7 +273,8 @@ gfx::Rect RenderViewTest::GetElementBounds(const std::string& element_id) {
   std::string script =
       ReplaceStringPlaceholders(kGetCoordinatesScript, params, NULL);
 
-  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::Value>  value = GetMainFrame()->executeScriptAndReturnValue(
       WebScriptSource(WebString::fromUTF8(script)));
   if (value.IsEmpty() || !value->IsArray())
@@ -270,7 +285,7 @@ gfx::Rect RenderViewTest::GetElementBounds(const std::string& element_id) {
     return gfx::Rect();
   std::vector<int> coords;
   for (int i = 0; i < 4; ++i) {
-    v8::Handle<v8::Number> index = v8::Number::New(i);
+    v8::Handle<v8::Number> index = v8::Number::New(isolate, i);
     v8::Local<v8::Value> value = array->Get(index);
     if (value.IsEmpty() || !value->IsInt32())
       return gfx::Rect();
@@ -310,15 +325,15 @@ void RenderViewTest::ClearHistory() {
 }
 
 void RenderViewTest::Reload(const GURL& url) {
-  ViewMsg_Navigate_Params params;
+  FrameMsg_Navigate_Params params;
   params.url = url;
-  params.navigation_type = ViewMsg_Navigate_Type::RELOAD;
+  params.navigation_type = FrameMsg_Navigate_Type::RELOAD;
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
-  impl->OnNavigate(params);
+  impl->main_render_frame()->OnNavigate(params);
 }
 
 uint32 RenderViewTest::GetNavigationIPCType() {
-  return ViewHostMsg_FrameNavigate::ID;
+  return FrameHostMsg_DidCommitProvisionalLoad::ID;
 }
 
 void RenderViewTest::Resize(gfx::Size new_size,
@@ -364,8 +379,8 @@ void RenderViewTest::GoToOffset(int offset,
                             impl->historyForwardListCount() + 1;
   int pending_offset = offset + impl->history_list_offset();
 
-  ViewMsg_Navigate_Params navigate_params;
-  navigate_params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  FrameMsg_Navigate_Params navigate_params;
+  navigate_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   navigate_params.transition = PAGE_TRANSITION_FORWARD_BACK;
   navigate_params.current_history_list_length = history_list_length;
   navigate_params.current_history_list_offset = impl->history_list_offset();
@@ -374,8 +389,9 @@ void RenderViewTest::GoToOffset(int offset,
   navigate_params.page_state = HistoryItemToPageState(history_item);
   navigate_params.request_time = base::Time::Now();
 
-  ViewMsg_Navigate navigate_message(impl->GetRoutingID(), navigate_params);
-  OnMessageReceived(navigate_message);
+  FrameMsg_Navigate navigate_message(impl->main_render_frame()->GetRoutingID(),
+                                     navigate_params);
+  impl->main_render_frame()->OnMessageReceived(navigate_message);
 
   // The load actually happens asynchronously, so we pump messages to process
   // the pending continuation.

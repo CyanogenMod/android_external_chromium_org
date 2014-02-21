@@ -37,7 +37,8 @@
         '<(DEPTH)/chrome/chrome_resources.gyp:theme_resources',
         '<(DEPTH)/chrome/common_constants.gyp:common_constants',
         '<(DEPTH)/components/components.gyp:json_schema',
-        '<(DEPTH)/components/components.gyp:policy_component',
+        '<(DEPTH)/components/components.gyp:policy_component_common',
+        '<(DEPTH)/components/components.gyp:translate_core_common',
         '<(DEPTH)/components/components.gyp:variations',
         '<(DEPTH)/content/content.gyp:content_common',
         '<(DEPTH)/net/net.gyp:net',
@@ -62,13 +63,10 @@
         'common/autocomplete_match_type.h',
         'common/automation_constants.cc',
         'common/automation_constants.h',
-        'common/automation_messages.cc',
         'common/automation_messages.h',
         'common/automation_messages_internal.h',
         'common/badge_util.cc',
         'common/badge_util.h',
-        'common/cancelable_task_tracker.cc',
-        'common/cancelable_task_tracker.h',
         'common/child_process_logging.h',
         'common/child_process_logging_win.cc',
         'common/chrome_content_client.cc',
@@ -112,9 +110,13 @@
         'common/custom_handlers/protocol_handler.cc',
         'common/custom_handlers/protocol_handler.h',
         'common/descriptors_android.h',
-        'common/dump_without_crashing.cc',
-        'common/dump_without_crashing.h',
         'common/encrypted_media_messages_android.h',
+        'common/extensions/api/bluetooth/bluetooth_manifest_data.cc',
+        'common/extensions/api/bluetooth/bluetooth_manifest_data.h',
+        'common/extensions/api/bluetooth/bluetooth_manifest_handler.cc',
+        'common/extensions/api/bluetooth/bluetooth_manifest_handler.h',
+        'common/extensions/api/bluetooth/bluetooth_manifest_permission.cc',
+        'common/extensions/api/bluetooth/bluetooth_manifest_permission.h',
         'common/extensions/api/commands/commands_handler.cc',
         'common/extensions/api/commands/commands_handler.h',
         'common/extensions/api/extension_action/action_info.cc',
@@ -123,8 +125,6 @@
         'common/extensions/api/extension_action/browser_action_handler.h',
         'common/extensions/api/extension_action/page_action_handler.cc',
         'common/extensions/api/extension_action/page_action_handler.h',
-        'common/extensions/api/extension_action/script_badge_handler.cc',
-        'common/extensions/api/extension_action/script_badge_handler.h',
         'common/extensions/api/file_browser_handlers/file_browser_handler.cc',
         'common/extensions/api/file_browser_handlers/file_browser_handler.h',
         'common/extensions/api/file_handlers/file_handlers_parser.cc',
@@ -179,8 +179,6 @@
         'common/extensions/extension_messages.h',
         'common/extensions/extension_process_policy.cc',
         'common/extensions/extension_process_policy.h',
-        'common/extensions/extension_set.cc',
-        'common/extensions/extension_set.h',
         'common/extensions/features/api_feature.cc',
         'common/extensions/features/api_feature.h',
         'common/extensions/features/base_feature_provider.cc',
@@ -221,10 +219,6 @@
         'common/extensions/message_bundle.h',
         'common/extensions/mime_types_handler.cc',
         'common/extensions/mime_types_handler.h',
-        'common/extensions/permissions/bluetooth_permission.cc',
-        'common/extensions/permissions/bluetooth_permission.h',
-        'common/extensions/permissions/bluetooth_permission_data.cc',
-        'common/extensions/permissions/bluetooth_permission_data.h',
         'common/extensions/permissions/chrome_api_permissions.cc',
         'common/extensions/permissions/chrome_api_permissions.h',
         'common/extensions/permissions/chrome_permission_message_provider.cc',
@@ -254,14 +248,12 @@
         'common/extensions/update_manifest.h',
         'common/extensions/value_counter.cc',
         'common/extensions/value_counter.h',
-        'common/extensions/web_accessible_resources_handler.cc',
-        'common/extensions/web_accessible_resources_handler.h',
-        'common/extensions/webview_handler.cc',
-        'common/extensions/webview_handler.h',
         'common/favicon/favicon_types.cc',
         'common/favicon/favicon_types.h',
         'common/favicon/favicon_url_parser.cc',
         'common/favicon/favicon_url_parser.h',
+        'common/profile_management_switches.cc',
+        'common/profile_management_switches.h',
         'common/icon_with_badge_image_source.cc',
         'common/icon_with_badge_image_source.h',
         'common/importer/firefox_importer_utils.cc',
@@ -326,8 +318,6 @@
         'common/multi_process_lock_linux.cc',
         'common/multi_process_lock_mac.cc',
         'common/multi_process_lock_win.cc',
-        'common/omaha_query_params/omaha_query_params.cc',
-        'common/omaha_query_params/omaha_query_params.h',
         'common/omnibox_focus_state.h',
         'common/partial_circular_buffer.cc',
         'common/partial_circular_buffer.h',
@@ -337,6 +327,7 @@
         'common/pepper_permission_util.h',
         'common/pref_names_util.cc',
         'common/pref_names_util.h',
+        'common/prerender_types.h',
         'common/print_messages.cc',
         'common/print_messages.h',
         'common/profiling.cc',
@@ -370,15 +361,11 @@
         'common/switch_utils.h',
         'common/thumbnail_score.cc',
         'common/thumbnail_score.h',
-        'common/translate/language_detection_details.cc',
-        'common/translate/language_detection_details.h',
-        'common/translate/translate_errors.h',
         'common/tts_messages.h',
         'common/tts_utterance_request.cc',
         'common/tts_utterance_request.h',
         'common/url_constants.cc',
         'common/url_constants.h',
-        'common/validation_message_messages.h',
         'common/web_application_info.cc',
         'common/web_application_info.h',
         'common/worker_thread_ticker.cc',
@@ -424,15 +411,16 @@
         }],
         ['OS != "ios"', {
           'dependencies': [
-            '<(DEPTH)/chrome/app/policy/cloud_policy_codegen.gyp:policy',
+            '<(DEPTH)/third_party/re2/re2.gyp:re2',
             '<(DEPTH)/chrome/common/extensions/api/api.gyp:api',
             '<(DEPTH)/components/components.gyp:autofill_core_common',
+            '<(DEPTH)/components/components.gyp:autofill_content_common',
+            '<(DEPTH)/components/components.gyp:password_manager_core_common',
             '<(DEPTH)/components/nacl.gyp:nacl_common',
             '<(DEPTH)/components/components.gyp:visitedlink_common',
             '<(DEPTH)/extensions/extensions.gyp:extensions_common',
             '<(DEPTH)/ipc/ipc.gyp:ipc',
             '<(DEPTH)/third_party/adobe/flash/flash_player.gyp:flapper_version_h',
-            '<(DEPTH)/third_party/re2/re2.gyp:re2',
             '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
           ],
         }, {  # OS == ios
@@ -472,11 +460,6 @@
             '<(DEPTH)/printing/printing.gyp:printing',
           ],
         }],
-        ['OS!="ios" and chrome_multiple_dll!=1', {
-          'dependencies': [
-            '<(DEPTH)/webkit/glue/webkit_glue.gyp:glue',
-          ],
-        }],
         ['OS=="android"', {
           'sources/': [
             ['exclude', '^common/chrome_version_info_posix.cc'],
@@ -497,9 +480,6 @@
             'common/net/url_util.cc',
             'common/spellcheck_common.cc',
           ],
-          'dependencies!': [
-            '<(DEPTH)/chrome/app/policy/cloud_policy_codegen.gyp:policy',
-          ],
         }],
         ['OS=="win"', {
           'include_dirs': [
@@ -515,18 +495,13 @@
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
+            '../build/linux/system.gyp:x11',
+            '../build/linux/system.gyp:xrender',
+            '../build/linux/system.gyp:xext',
           ],
           'export_dependent_settings': [
             '../third_party/sqlite/sqlite.gyp:sqlite',
           ],
-          'link_settings': {
-            'libraries': [
-              '-lX11',
-              '-lXrender',
-              '-lXss',
-              '-lXext',
-            ],
-          },
         }],
         ['chromeos==1', {
           'sources!': [
@@ -535,11 +510,11 @@
         }],
         ['OS=="mac"', {
           'dependencies': [
+            '../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac',
             '../third_party/mach_override/mach_override.gyp:mach_override',
           ],
           'include_dirs': [
             '<(DEPTH)/breakpad/src',
-            '../third_party/GTM',
           ],
           'sources!': [
             'common/child_process_logging_posix.cc',
@@ -561,11 +536,6 @@
             'common/pepper_permission_util.cc',
           ],
         }],
-        ['use_system_nspr==1', {
-          'dependencies': [
-            '<(DEPTH)/base/third_party/nspr/nspr.gyp:nspr',
-          ],
-        }],
         ['enable_webrtc==0', {
           'sources!': [
             'common/media/webrtc_logging_messages.h',
@@ -576,6 +546,11 @@
             'common/print_messages.cc',
             'common/print_messages.h',
           ]
+        }],
+        ['configuration_policy==1', {
+          'dependencies': [
+            '<(DEPTH)/components/components.gyp:policy',
+          ],
         }],
       ],
       'target_conditions': [
@@ -708,8 +683,10 @@
             'dependencies': [
               '../third_party/openssl/openssl.gyp:openssl',
             ],
-          },
-        ],
+            'sources!': [
+              'common/net/x509_certificate_model.cc',
+            ],
+        }],
         ['use_openssl==1', {
             'sources!': [
               'common/net/x509_certificate_model_nss.cc',
@@ -736,6 +713,7 @@
       'type': 'static_library',
       'sources': [
         'common/safe_browsing/client_model.proto',
+        'common/safe_browsing/crx_info.proto',
         'common/safe_browsing/csd.proto'
       ],
       'variables': {

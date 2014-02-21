@@ -14,6 +14,7 @@
 #include "base/strings/string_split.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/loader/cross_site_resource_handler.h"
 #include "content/browser/loader/detachable_resource_handler.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_loader.h"
@@ -210,6 +211,33 @@ class ForwardingFilter : public ResourceMessageFilter {
   DISALLOW_COPY_AND_ASSIGN(ForwardingFilter);
 };
 
+// This class is a variation on URLRequestTestJob that will call
+// URLRequest::OnBeforeNetworkStart before starting.
+class URLRequestTestDelayedNetworkJob : public net::URLRequestTestJob {
+ public:
+  URLRequestTestDelayedNetworkJob(net::URLRequest* request,
+                                  net::NetworkDelegate* network_delegate)
+      : net::URLRequestTestJob(request, network_delegate) {}
+
+  // Only start if not deferred for network start.
+  virtual void Start() OVERRIDE {
+    bool defer = false;
+    NotifyBeforeNetworkStart(&defer);
+    if (defer)
+      return;
+    net::URLRequestTestJob::Start();
+  }
+
+  virtual void ResumeNetworkStart() OVERRIDE {
+    net::URLRequestTestJob::StartAsync();
+  }
+
+ private:
+  virtual ~URLRequestTestDelayedNetworkJob() {}
+
+  DISALLOW_COPY_AND_ASSIGN(URLRequestTestDelayedNetworkJob);
+};
+
 // This class is a variation on URLRequestTestJob in that it does
 // not complete start upon entry, only when specifically told to.
 class URLRequestTestDelayedStartJob : public net::URLRequestTestJob {
@@ -394,7 +422,8 @@ enum GenericResourceThrottleFlags {
   NONE                      = 0,
   DEFER_STARTING_REQUEST    = 1 << 0,
   DEFER_PROCESSING_RESPONSE = 1 << 1,
-  CANCEL_BEFORE_START       = 1 << 2
+  CANCEL_BEFORE_START       = 1 << 2,
+  DEFER_NETWORK_START       = 1 << 3
 };
 
 // Throttle that tracks the current throttle blocking a request.  Only one
@@ -436,6 +465,15 @@ class GenericResourceThrottle : public ResourceThrottle {
   virtual void WillProcessResponse(bool* defer) OVERRIDE {
     ASSERT_EQ(NULL, active_throttle_);
     if (flags_ & DEFER_PROCESSING_RESPONSE) {
+      active_throttle_ = this;
+      *defer = true;
+    }
+  }
+
+  virtual void OnBeforeNetworkStart(bool* defer) OVERRIDE {
+    ASSERT_EQ(NULL, active_throttle_);
+
+    if (flags_ & DEFER_NETWORK_START) {
       active_throttle_ = this;
       *defer = true;
     }
@@ -573,6 +611,7 @@ class ResourceDispatcherHostTest : public testing::Test,
     EnsureTestSchemeIsAllowed();
     delay_start_ = false;
     delay_complete_ = false;
+    network_start_notification_ = false;
     url_request_jobs_created_count_ = 0;
   }
 
@@ -616,6 +655,11 @@ class ResourceDispatcherHostTest : public testing::Test,
                                        ResourceType::Type type);
 
   void CancelRequest(int request_id);
+  void RendererCancelRequest(int request_id) {
+    ResourceMessageFilter* old_filter = SetFilter(filter_.get());
+    host_.OnCancelRequest(request_id);
+    SetFilter(old_filter);
+  }
 
   void CompleteStartRequest(int request_id);
   void CompleteStartRequest(ResourceMessageFilter* filter, int request_id);
@@ -670,6 +714,8 @@ class ResourceDispatcherHostTest : public testing::Test,
       } else if (delay_complete_) {
         return new URLRequestTestDelayedCompletionJob(request,
                                                       network_delegate);
+      } else if (network_start_notification_) {
+        return new URLRequestTestDelayedNetworkJob(request, network_delegate);
       } else if (scheme == "big-job") {
         return new URLRequestBigJob(request, network_delegate);
       } else {
@@ -703,6 +749,10 @@ class ResourceDispatcherHostTest : public testing::Test,
     delay_complete_ = delay_job_complete;
   }
 
+  void SetNetworkStartNotificationJobGeneration(bool notification) {
+    network_start_notification_ = notification;
+  }
+
   void GenerateDataReceivedACK(const IPC::Message& msg) {
     EXPECT_EQ(ResourceMsg_DataReceived::ID, msg.type());
 
@@ -715,6 +765,14 @@ class ResourceDispatcherHostTest : public testing::Test,
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&GenerateIPCMessage, filter_, base::Passed(&ack)));
+  }
+
+  // Setting filters for testing renderer messages.
+  // Returns the previous filter.
+  ResourceMessageFilter* SetFilter(ResourceMessageFilter* new_filter) {
+    ResourceMessageFilter* old_filter = host_.filter_;
+    host_.filter_ = new_filter;
+    return old_filter;
   }
 
   base::MessageLoopForIO message_loop_;
@@ -736,12 +794,14 @@ class ResourceDispatcherHostTest : public testing::Test,
   static ResourceDispatcherHostTest* test_fixture_;
   static bool delay_start_;
   static bool delay_complete_;
+  static bool network_start_notification_;
   static int url_request_jobs_created_count_;
 };
 // Static.
 ResourceDispatcherHostTest* ResourceDispatcherHostTest::test_fixture_ = NULL;
 bool ResourceDispatcherHostTest::delay_start_ = false;
 bool ResourceDispatcherHostTest::delay_complete_ = false;
+bool ResourceDispatcherHostTest::network_start_notification_ = false;
 int ResourceDispatcherHostTest::url_request_jobs_created_count_ = 0;
 
 void ResourceDispatcherHostTest::MakeTestRequest(int render_view_id,
@@ -769,7 +829,7 @@ void ResourceDispatcherHostTest::MakeTestRequestWithResourceType(
 }
 
 void ResourceDispatcherHostTest::CancelRequest(int request_id) {
-  host_.CancelRequest(filter_->child_id(), request_id, false);
+  host_.CancelRequest(filter_->child_id(), request_id);
 }
 
 void ResourceDispatcherHostTest::CompleteStartRequest(int request_id) {
@@ -940,7 +1000,7 @@ TEST_F(ResourceDispatcherHostTest, Cancel) {
 
   // Cancel request must come from the renderer for a detachable resource to
   // delay.
-  host_.CancelRequest(filter_->child_id(), 4, true);
+  RendererCancelRequest(4);
 
   // The handler should have been detached now.
   GlobalRequestID global_request_id(filter_->child_id(), 4);
@@ -965,14 +1025,13 @@ TEST_F(ResourceDispatcherHostTest, Cancel) {
   CheckSuccessfulRequest(msgs[2], net::URLRequestTestJob::test_data_3());
 
   // Check that request 2 and 4 got canceled, as far as the renderer is
-  // concerned.
-  ASSERT_EQ(2U, msgs[1].size());
+  // concerned.  Request 2 will have been deleted.
+  ASSERT_EQ(1U, msgs[1].size());
   ASSERT_EQ(ResourceMsg_ReceivedResponse::ID, msgs[1][0].type());
-  CheckRequestCompleteErrorCode(msgs[1][1], net::ERR_ABORTED);
 
   ASSERT_EQ(2U, msgs[3].size());
   ASSERT_EQ(ResourceMsg_ReceivedResponse::ID, msgs[3][0].type());
-  CheckRequestCompleteErrorCode(msgs[1][1], net::ERR_ABORTED);
+  CheckRequestCompleteErrorCode(msgs[3][1], net::ERR_ABORTED);
 
   // However, request 4 should have actually gone to completion. (Only request 2
   // was canceled.)
@@ -994,7 +1053,8 @@ TEST_F(ResourceDispatcherHostTest, DetachedResourceTimesOut) {
   info->detachable_handler()->set_cancel_delay(
       base::TimeDelta::FromMilliseconds(200));
   base::MessageLoop::current()->RunUntilIdle();
-  host_.CancelRequest(filter_->child_id(), 1, true);
+
+  RendererCancelRequest(1);
 
   // From the renderer's perspective, the request was cancelled.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -1135,7 +1195,9 @@ TEST_F(ResourceDispatcherHostTest, CancelWhileStartIsDeferred) {
   host_.SetDelegate(&delegate);
 
   MakeTestRequest(0, 1, net::URLRequestTestJob::test_url_1());
-  CancelRequest(1);
+  // We cancel from the renderer because all non-renderer cancels delete
+  // the request synchronously.
+  RendererCancelRequest(1);
 
   // Our TestResourceThrottle should not have been deleted yet.  This is to
   // ensure that destruction of the URLRequest happens asynchronously to
@@ -1161,7 +1223,7 @@ TEST_F(ResourceDispatcherHostTest, DetachWhileStartIsDeferred) {
                                   ResourceType::PREFETCH);  // detachable type
   // Cancel request must come from the renderer for a detachable resource to
   // detach.
-  host_.CancelRequest(filter_->child_id(), 1, true);
+  RendererCancelRequest(1);
 
   // Even after driving the event loop, the request has not been deleted.
   EXPECT_FALSE(was_deleted);
@@ -1225,6 +1287,33 @@ TEST_F(ResourceDispatcherHostTest, PausedStartError) {
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
   base::MessageLoop::current()->RunUntilIdle();
 
+  EXPECT_EQ(0, host_.pending_requests());
+}
+
+// Test the OnBeforeNetworkStart throttle.
+TEST_F(ResourceDispatcherHostTest, ThrottleNetworkStart) {
+  // Arrange to have requests deferred before processing response headers.
+  TestResourceDispatcherHostDelegate delegate;
+  delegate.set_flags(DEFER_NETWORK_START);
+  host_.SetDelegate(&delegate);
+
+  SetNetworkStartNotificationJobGeneration(true);
+  MakeTestRequest(0, 1, net::URLRequestTestJob::test_url_2());
+
+  // Should have deferred for network start.
+  GenericResourceThrottle* first_throttle =
+      GenericResourceThrottle::active_throttle();
+  ASSERT_TRUE(first_throttle);
+  EXPECT_EQ(0, network_delegate()->completed_requests());
+  EXPECT_EQ(1, host_.pending_requests());
+
+  first_throttle->Resume();
+
+  // Flush all the pending requests.
+  while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, host_.pending_requests());
 }
 
@@ -2022,7 +2111,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextDetached) {
                                   ResourceType::PREFETCH);  // detachable type
 
   // Simulate a cancel coming from the renderer.
-  host_.CancelRequest(filter_->child_id(), request_id, true);
+  RendererCancelRequest(request_id);
 
   // Since the request had already started processing as detachable,
   // the cancellation above should have been ignored and the request
@@ -2059,8 +2148,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextTransferred) {
 
 
   GlobalRequestID global_request_id(filter_->child_id(), request_id);
-  host_.MarkAsTransferredNavigation(global_request_id,
-                                    GURL("http://example.com/blah"));
+  host_.MarkAsTransferredNavigation(global_request_id);
 
   // And now simulate a cancellation coming from the renderer.
   ResourceHostMsg_CancelRequest msg(request_id);
@@ -2084,6 +2172,10 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextTransferred) {
 // Test transferred navigations with text/html, which doesn't trigger any
 // content sniffing.
 TEST_F(ResourceDispatcherHostTest, TransferNavigationHtml) {
+  // This test expects the cross site request to be leaked, so it can transfer
+  // the request directly.
+  CrossSiteResourceHandler::SetLeakRequestsForTesting(true);
+
   EXPECT_EQ(0, host_.pending_requests());
 
   int render_view_id = 0;
@@ -2156,6 +2248,10 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationHtml) {
 // BufferedResourceHandler to buffer the response to sniff the content
 // before the transfer occurs.
 TEST_F(ResourceDispatcherHostTest, TransferNavigationText) {
+  // This test expects the cross site request to be leaked, so it can transfer
+  // the request directly.
+  CrossSiteResourceHandler::SetLeakRequestsForTesting(true);
+
   EXPECT_EQ(0, host_.pending_requests());
 
   int render_view_id = 0;
@@ -2227,6 +2323,10 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationText) {
 }
 
 TEST_F(ResourceDispatcherHostTest, TransferNavigationWithProcessCrash) {
+  // This test expects the cross site request to be leaked, so it can transfer
+  // the request directly.
+  CrossSiteResourceHandler::SetLeakRequestsForTesting(true);
+
   EXPECT_EQ(0, host_.pending_requests());
 
   int render_view_id = 0;
@@ -2317,6 +2417,10 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithProcessCrash) {
 }
 
 TEST_F(ResourceDispatcherHostTest, TransferNavigationWithTwoRedirects) {
+  // This test expects the cross site request to be leaked, so it can transfer
+  // the request directly.
+  CrossSiteResourceHandler::SetLeakRequestsForTesting(true);
+
   EXPECT_EQ(0, host_.pending_requests());
 
   int render_view_id = 0;

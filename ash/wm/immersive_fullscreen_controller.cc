@@ -6,8 +6,11 @@
 
 #include <set>
 
+#include "ash/ash_constants.h"
 #include "ash/shell.h"
+#include "ash/wm/resize_handle_window_targeter.h"
 #include "ash/wm/window_state.h"
+#include "base/metrics/histogram.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
@@ -22,6 +25,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_delegate.h"
+#include "ui/views/corewm/transient_window_manager.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -45,11 +50,6 @@ const int kMouseRevealDelayMs = 200;
 // considered "stopped". This allows the user to reveal the top-of-window views
 // without holding the cursor completely still.
 const int kMouseRevealXThresholdPixels = 3;
-
-// How many pixels a gesture can start away from |top_container_| when in
-// closed state and still be considered near it. This is needed to overcome
-// issues with poor location values near the edge of the display.
-const int kNearTopContainerDistance = 8;
 
 // Used to multiply x value of an update in check to determine if gesture is
 // vertical. This is used to make sure that gesture is close to vertical instead
@@ -87,7 +87,7 @@ bool IsWindowTransientChildOf(aura::Window* maybe_transient,
     return false;
 
   for (aura::Window* window = maybe_transient; window;
-       window = window->transient_parent()) {
+       window = views::corewm::GetTransientParent(window)) {
     if (window == toplevel)
       return true;
   }
@@ -255,9 +255,12 @@ void ImmersiveFullscreenController::Init(Delegate* delegate,
   top_container_ = top_container;
   widget_ = widget;
   native_window_ = widget_->GetNativeWindow();
+  native_window_->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
+      new ResizeHandleWindowTargeter(native_window_, this)));
 }
 
-void ImmersiveFullscreenController::SetEnabled(bool enabled) {
+void ImmersiveFullscreenController::SetEnabled(WindowType window_type,
+                                               bool enabled) {
   if (enabled_ == enabled)
     return;
   enabled_ = enabled;
@@ -300,6 +303,12 @@ void ImmersiveFullscreenController::SetEnabled(bool enabled) {
     reveal_state_ = CLOSED;
 
     delegate_->OnImmersiveFullscreenExited();
+  }
+
+  if (enabled_) {
+    UMA_HISTOGRAM_ENUMERATION("Ash.ImmersiveFullscreen.WindowType",
+                              window_type,
+                              WINDOW_TYPE_COUNT);
   }
 }
 
@@ -464,8 +473,9 @@ void ImmersiveFullscreenController::AnimationProgressed(
 ////////////////////////////////////////////////////////////////////////////////
 // aura::WindowObserver overrides:
 
-void ImmersiveFullscreenController::OnAddTransientChild(aura::Window* window,
-                                                     aura::Window* transient) {
+void ImmersiveFullscreenController::OnTransientChildAdded(
+    aura::Window* window,
+    aura::Window* transient) {
   views::BubbleDelegateView* bubble_delegate = AsBubbleDelegate(transient);
   if (bubble_delegate &&
       bubble_delegate->GetAnchorView() &&
@@ -477,7 +487,7 @@ void ImmersiveFullscreenController::OnAddTransientChild(aura::Window* window,
   }
 }
 
-void ImmersiveFullscreenController::OnRemoveTransientChild(
+void ImmersiveFullscreenController::OnTransientChildRemoved(
     aura::Window* window,
     aura::Window* transient) {
   bubble_manager_->StopObserving(transient);
@@ -517,14 +527,16 @@ void ImmersiveFullscreenController::EnableWindowObservers(bool enable) {
     widget_->AddObserver(this);
     focus_manager->AddFocusChangeListener(this);
     Shell::GetInstance()->AddPreTargetHandler(this);
-    native_window_->AddObserver(this);
+    views::corewm::TransientWindowManager::Get(native_window_)->
+        AddObserver(this);
 
     RecreateBubbleManager();
   } else {
     widget_->RemoveObserver(this);
     focus_manager->RemoveFocusChangeListener(this);
     Shell::GetInstance()->RemovePreTargetHandler(this);
-    native_window_->RemoveObserver(this);
+    views::corewm::TransientWindowManager::Get(native_window_)->
+        RemoveObserver(this);
 
     // We have stopped observing whether transient children are added or removed
     // to |native_window_|. The set of bubbles that BubbleManager is observing
@@ -888,7 +900,7 @@ bool ImmersiveFullscreenController::ShouldHandleGestureEvent(
   // When the top-of-window views are not fully revealed, handle gestures which
   // start in the top few pixels of the screen.
   gfx::Rect hit_bounds_in_screen(GetDisplayBoundsInScreen(native_window_));
-  hit_bounds_in_screen.set_height(kNearTopContainerDistance);
+  hit_bounds_in_screen.set_height(kImmersiveFullscreenTopEdgeInset);
   if (hit_bounds_in_screen.Contains(location))
     return true;
 
@@ -907,7 +919,7 @@ bool ImmersiveFullscreenController::ShouldHandleGestureEvent(
 void ImmersiveFullscreenController::RecreateBubbleManager() {
   bubble_manager_.reset(new BubbleManager(this));
   const std::vector<aura::Window*> transient_children =
-      native_window_->transient_children();
+      views::corewm::GetTransientChildren(native_window_);
   for (size_t i = 0; i < transient_children.size(); ++i) {
     aura::Window* transient_child = transient_children[i];
     views::BubbleDelegateView* bubble_delegate =

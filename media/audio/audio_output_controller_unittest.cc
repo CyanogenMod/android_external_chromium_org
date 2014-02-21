@@ -121,7 +121,7 @@ class AudioOutputControllerTest : public testing::Test {
 
     controller_ = AudioOutputController::Create(
         audio_manager_.get(), &mock_event_handler_, params_, std::string(),
-        std::string(), &mock_sync_reader_);
+        &mock_sync_reader_);
     if (controller_.get())
       controller_->SetVolume(kTestVolume);
 
@@ -166,7 +166,7 @@ class AudioOutputControllerTest : public testing::Test {
 
     // Simulate a device change event to AudioOutputController from the
     // AudioManager.
-    audio_manager_->GetMessageLoop()->PostTask(
+    audio_manager_->GetTaskRunner()->PostTask(
         FROM_HERE,
         base::Bind(&AudioOutputController::OnDeviceChange, controller_));
   }

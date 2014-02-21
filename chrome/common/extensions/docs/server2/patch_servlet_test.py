@@ -6,7 +6,6 @@
 from HTMLParser import HTMLParser
 import unittest
 
-from empty_dir_file_system import EmptyDirFileSystem
 from fake_fetchers import ConfigureFakeFetchers
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
@@ -125,25 +124,21 @@ class PatchServletTest(unittest.TestCase):
     # '_patch' is not included in paths below because it's stripped by Handler.
     issue = '14096030'
 
-    # extensions_sidenav.json is modified in the patch.
-    self._RenderAndAssertNotEqual('extensions/index.html', issue)
-
-    # apps_sidenav.json is not patched.
-    self._RenderAndAssertEqual('apps/about_apps.html', issue)
+    # TODO(kalman): Test with chrome_sidenav.json once the sidenav logic has
+    # stabilised.
 
     # extensions/runtime.html is removed in the patch, should redirect to the
     # apps version.
-    self._AssertRedirect('extensions/runtime.html', issue,
-                         'apps/runtime.html')
+    self._AssertRedirect('extensions/runtime', issue, 'apps/runtime')
 
     # apps/runtime.html is not removed.
-    self._RenderAndAssertEqual('apps/runtime.html', issue)
+    self._RenderAndAssertEqual('apps/runtime', issue)
 
     # test_foo.html is added in the patch.
-    self._AssertOk('extensions/test_foo.html', issue)
+    self._AssertOk('extensions/test_foo', issue)
 
     # Invalid issue number results in a 404.
-    self._AssertNotFound('extensions/index.html', '11111')
+    self._AssertNotFound('extensions/index', '11111')
 
   def testXssRedirect(self):
     def is_redirect(from_host, from_path, to_url):

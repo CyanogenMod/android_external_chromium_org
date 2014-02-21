@@ -66,6 +66,14 @@ void MultiProfileFirstRunNotification::RegisterProfilePrefs(
       prefs::kMultiProfileNotificationDismissed,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kMultiProfileNeverShowIntro,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kMultiProfileWarningShowDismissed,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 void MultiProfileFirstRunNotification::UserProfilePrepared(

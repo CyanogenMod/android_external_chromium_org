@@ -8,10 +8,10 @@
 
 import os
 import re
-import sys
 
 import appengine_wrappers
 from extensions_paths import SERVER2
+from path_util import IsDirectory
 from test_util import ReadFile, ChromiumPath
 import url_constants
 
@@ -54,14 +54,14 @@ def _ExtractPathFromSvnUrl(url):
 
 class _FakeSubversionServer(_FakeFetcher):
   def fetch(self, url):
-    path = ChromiumPath(_ExtractPathFromSvnUrl(url))
-    if self._IsDir(path):
+    path = _ExtractPathFromSvnUrl(url)
+    if IsDirectory(path):
       html = ['<html>Revision 000000']
       try:
-        for f in self._ListDir(path):
+        for f in self._ListDir(ChromiumPath(path)):
           if f.startswith('.'):
             continue
-          if self._IsDir(os.path.join(path, f)):
+          if self._IsDir(ChromiumPath(path, f)):
             html.append('<a>' + f + '/</a>')
           else:
             html.append('<a>' + f + '</a>')
@@ -138,8 +138,8 @@ def ConfigureFakeFetchers():
   '''Configure the fake fetcher paths relative to the docs directory.
   '''
   appengine_wrappers.ConfigureFakeUrlFetch({
+    url_constants.OMAHA_HISTORY: _FakeOmahaHistory(),
     url_constants.OMAHA_PROXY_URL: _FakeOmahaProxy(),
-    re.escape(url_constants.OMAHA_DEV_HISTORY): _FakeOmahaHistory(),
     '%s/.*' % url_constants.SVN_URL: _FakeSubversionServer(),
     '%s/.*' % url_constants.VIEWVC_URL: _FakeViewvcServer(),
     '%s/.*/commits/.*' % url_constants.GITHUB_REPOS: _FakeGithubStat(),

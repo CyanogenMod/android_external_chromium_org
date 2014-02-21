@@ -83,14 +83,14 @@ class TargetBase : public content::DevToolsTarget {
 
  protected:
   explicit TargetBase(WebContents* web_contents)
-      : title_(UTF16ToUTF8(web_contents->GetTitle())),
+      : title_(base::UTF16ToUTF8(web_contents->GetTitle())),
         url_(web_contents->GetURL()),
         favicon_url_(GetFaviconURL(web_contents)),
-        last_activity_time_(web_contents->GetLastSelectedTime()) {
+        last_activity_time_(web_contents->GetLastActiveTime()) {
   }
 
   TargetBase(const base::string16& title, const GURL& url)
-      : title_(UTF16ToUTF8(title)),
+      : title_(base::UTF16ToUTF8(title)),
         url_(url)
   {}
 
@@ -285,16 +285,14 @@ class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
     if (top_sites) {
       scoped_refptr<base::RefCountedMemory> data;
       if (top_sites->GetPageThumbnail(url, false, &data))
-        return std::string(reinterpret_cast<const char*>(data->front()),
-                           data->size());
+        return std::string(data->front_as<char>(), data->size());
     }
     return "";
   }
 
   virtual scoped_ptr<content::DevToolsTarget> CreateNewTarget(
       const GURL& url) OVERRIDE {
-    Profile* profile =
-        g_browser_process->profile_manager()->GetDefaultProfile();
+    Profile* profile = ProfileManager::GetActiveUserProfile();
     TabModel* tab_model = TabModelList::GetTabModelWithProfile(profile);
     if (!tab_model)
       return scoped_ptr<content::DevToolsTarget>();

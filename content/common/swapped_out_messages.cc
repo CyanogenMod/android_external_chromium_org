@@ -17,14 +17,13 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
   // important (e.g., ACKs) for keeping the browser and renderer state
   // consistent in case we later return to the same renderer.
   switch (msg->type()) {
-    // Handled by RenderWidget.
+    // Handled by RenderWidgetHost.
     case InputHostMsg_HandleInputEvent_ACK::ID:
-    case ViewHostMsg_PaintAtSize_ACK::ID:
     case ViewHostMsg_UpdateRect::ID:
     // Allow targeted navigations while swapped out.
     case ViewHostMsg_OpenURL::ID:
     case ViewHostMsg_Focus::ID:
-    // Handled by RenderView.
+    // Handled by RenderViewHost.
     case ViewHostMsg_RenderProcessGone::ID:
     case ViewHostMsg_ShouldClose_ACK::ID:
     case ViewHostMsg_SwapOut_ACK::ID:
@@ -36,8 +35,15 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     // Allow cross-process JavaScript calls.
     case ViewHostMsg_RouteCloseEvent::ID:
     case ViewHostMsg_RouteMessageEvent::ID:
+    // Handled by RenderFrameHost.
+    case FrameHostMsg_SwapOut_ACK::ID:
     // Frame detach must occur after the RenderView has swapped out.
     case FrameHostMsg_Detach::ID:
+    case FrameHostMsg_CompositorFrameSwappedACK::ID:
+    case FrameHostMsg_BuffersSwappedACK::ID:
+    case FrameHostMsg_ReclaimCompositorResources::ID:
+    // Input events propagate from parent to child.
+    case FrameHostMsg_ForwardInputEvent::ID:
       return true;
     default:
       break;

@@ -6,7 +6,46 @@
   'targets': [
     {
       'target_name': 'chrome',
+      'type': 'none',
+      'dependencies': [ 'chrome_initial', ],
+      'conditions': [
+        ['OS == "win"', {
+          'actions': [
+            {
+              'variables': {
+                'reorder_py_path': '<(DEPTH)/build/win/reorder-imports.py',
+                # See comment in chrome_dll.gypi in the hardlink_to_output
+                # target for why this cannot be 'initial' like the DLL.
+                'exe_input_path':'$(OutDir)\\initialexe',
+                'exe_output_path':'<(PRODUCT_DIR)',
+              },
+              'action_name': 'reorder_imports',
+              'inputs': [
+                '<(reorder_py_path)',
+                '$(OutDir)\\initialexe\\chrome.exe',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)\\chrome.exe',
+                '<(PRODUCT_DIR)\\chrome.exe.pdb',
+              ],
+              'action': [
+                'python',
+                '<(reorder_py_path)',
+                '-i', '<(exe_input_path)',
+                '-o', '<(exe_output_path)',
+                '-a', '<(target_arch)',
+              ],
+              'message': 'Reordering Imports',
+            },
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'chrome_initial',
       'type': 'executable',
+      # Name the exe chrome.exe, not chrome_initial.exe.
+      'product_name': 'chrome',
       'mac_bundle': 1,
       'variables': {
         'use_system_xdg_utils%': 0,
@@ -22,6 +61,8 @@
         'app/client_util.h',
         'app/metro_driver_win.cc',
         'app/metro_driver_win.h',
+        'app/signature_validator_win.cc',
+        'app/signature_validator_win.h',
         '<(DEPTH)/content/app/startup_helper_win.cc',
         '<(DEPTH)/content/public/common/content_switches.cc',
       ],
@@ -57,10 +98,13 @@
             }],
           ]
         }],
-        ['OS == "win" and use_aura==1', {
+        ['OS == "win"', {
           'sources!': [
             # We still want the _win entry point for sandbox, etc.
             'app/chrome_exe_main_aura.cc',
+          ],
+          'dependencies': [
+            '../ui/gfx/gfx.gyp:gfx',
           ],
         }],
         ['OS == "android"', {
@@ -178,14 +222,14 @@
           'conditions': [
             ['branding=="Chrome"', {
               'mac_bundle_resources': [
-                'app/theme/google_chrome/app.icns',
-                'app/theme/google_chrome/document.icns',
+                'app/theme/google_chrome/mac/app.icns',
+                'app/theme/google_chrome/mac/document.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }, {  # else: 'branding!="Chrome"
               'mac_bundle_resources': [
-                'app/theme/chromium/app.icns',
-                'app/theme/chromium/document.icns',
+                'app/theme/chromium/mac/app.icns',
+                'app/theme/chromium/mac/document.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }],
@@ -251,10 +295,10 @@
             'CHROMIUM_SHORT_NAME': '<(branding)',
           },
           'dependencies': [
+            '../components/components.gyp:chrome_manifest_bundle',
             'helper_app',
             'infoplist_strings_tool',
             'interpose_dependency_shim',
-            'chrome_manifest_bundle',
             # On Mac, make sure we've built chrome_dll, which contains all of
             # the library code with Chromium functionality.
             'chrome_dll',
@@ -474,8 +518,8 @@
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:breakpad_component',
+            '../components/components.gyp:policy',
             '../sandbox/sandbox.gyp:sandbox',
-            'app/policy/cloud_policy_codegen.gyp:policy',
           ],
           'sources': [
             'app/chrome_breakpad_client.cc',
@@ -488,6 +532,7 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'ImportLibrary': '$(OutDir)\\lib\\chrome_exe.lib',
+              'OutputFile': '$(OutDir)\\initialexe\\chrome.exe',
               'DelayLoadDLLs': [
                 'dbghelp.dll',
                 'dwmapi.dll',
@@ -495,13 +540,14 @@
                 'ole32.dll',
                 'oleaut32.dll',
               ],
+              'AdditionalDependencies': [ 'wintrust.lib' ],
               # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
               'SubSystem': '2',
             },
             'VCManifestTool': {
               'AdditionalManifestFiles': [
                 '$(ProjectDir)\\app\\chrome.exe.manifest',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome_elf/version_assembly.manifest',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome/app/version_assembly/version_assembly.manifest',
               ],
             },
           },
@@ -514,20 +560,19 @@
               'outputs': [
                   '<(PRODUCT_DIR)/First Run',
               ],
-              'action': ['cp', '-f', '<@(_inputs)', '<@(_outputs)'],
+              'action': ['python', '../build/cp.py', '<@(_inputs)', '<@(_outputs)'],
               'message': 'Copy first run complete sentinel file',
-              'msvs_cygwin_shell': 1,
             },
             {
               'action_name': 'chrome_exe_manifest',
               'includes': [
-                  '../chrome_elf/chrome_exe_manifest_action.gypi',
+                  'app/version_assembly/chrome_exe_manifest_action.gypi',
               ],
             },
             {
               'action_name': 'version_assembly_manifest',
               'includes': [
-                  '../chrome_elf/version_assembly_manifest_action.gypi',
+                  'app/version_assembly/version_assembly_manifest_action.gypi',
               ],
             },
           ],
@@ -581,17 +626,17 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
               ],
               'dependencies': [
-                'app/policy/cloud_policy_codegen.gyp:policy_win64',
                 'chrome_version_resources',
                 'installer_util_nacl_win64',
                 '../base/base.gyp:base_i18n_nacl_win64',
-                '../base/base.gyp:base_nacl_win64',
+                '../base/base.gyp:base_win64',
                 '../base/base.gyp:base_static_win64',
                 '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
                 '../breakpad/breakpad.gyp:breakpad_handler_win64',
                 '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../components/components.gyp:breakpad_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
+                '../components/components.gyp:policy_win64',
                 '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',

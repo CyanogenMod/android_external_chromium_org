@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/extensions_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
 using extensions_helper::AllProfilesHaveSameExtensionsAsVerifier;
@@ -50,8 +50,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientExtensionsSyncTest, InstallSomeExtensions) {
     InstallExtension(verifier(), i);
   }
 
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for extension changes."));
+  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
 
   ASSERT_TRUE(AllProfilesHaveSameExtensionsAsVerifier());
 }

@@ -13,7 +13,6 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
-#include "chrome/browser/ui/search/instant_ntp_prerenderer.h"
 #include "chrome/browser/ui/search/instant_test_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/omnibox_focus_state.h"
@@ -93,36 +92,10 @@ class InstantExtendedManualTest : public InProcessBrowserTest,
       disable_network_change_notifier_;
 };
 
-IN_PROC_BROWSER_TEST_F(InstantExtendedManualTest, MANUAL_ShowsGoogleNTP) {
-  set_browser(browser());
-  InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(browser()->profile());
-  ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
-  instant_service->ntp_prerenderer()->ReloadInstantNTP();
-
-  FocusOmniboxAndWaitForInstantNTPSupport();
-  content::WindowedNotificationObserver observer(
-      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::NotificationService::AllSources());
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(),
-      GURL(chrome::kChromeUINewTabURL),
-      CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_NONE);
-  observer.Wait();
-  content::WebContents* active_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_TRUE(IsGooglePage(active_tab));
-}
-
 IN_PROC_BROWSER_TEST_F(InstantExtendedManualTest, MANUAL_SearchesFromFakebox) {
   set_browser(browser());
-  InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(browser()->profile());
-  ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
-  instant_service->ntp_prerenderer()->ReloadInstantNTP();
 
-  FocusOmniboxAndWaitForInstantNTPSupport();
+  FocusOmnibox();
   // Open a new tab page.
   content::WindowedNotificationObserver observer(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
@@ -166,7 +139,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedManualTest, MANUAL_SearchesFromFakebox) {
   EXPECT_EQ(OMNIBOX_FOCUS_VISIBLE, omnibox()->model()->focus_state());
 
   // Pressing enter should search for [test].
-  const base::string16& search_title = ASCIIToUTF16("test - Google Search");
+  const base::string16& search_title =
+      base::ASCIIToUTF16("test - Google Search");
   content::TitleWatcher title_watcher(active_tab, search_title);
   PressEnterAndWaitForNavigation();
   EXPECT_EQ(search_title, title_watcher.WaitAndGetTitle());

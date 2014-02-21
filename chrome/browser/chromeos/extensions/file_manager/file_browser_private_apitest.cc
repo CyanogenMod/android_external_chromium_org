@@ -128,10 +128,13 @@ class FileBrowserPrivateApiTest : public ExtensionApiTest {
         disk_mount_manager_mock_);
     disk_mount_manager_mock_->SetupDefaultReplies();
 
-    // OVERRIDE FindDiskBySourcePath mock function.
-    ON_CALL(*disk_mount_manager_mock_, FindDiskBySourcePath(_)).
-        WillByDefault(Invoke(
-            this, &FileBrowserPrivateApiTest::FindVolumeBySourcePath));
+    // OVERRIDE mock functions.
+    ON_CALL(*disk_mount_manager_mock_, FindDiskBySourcePath(_)).WillByDefault(
+        Invoke(this, &FileBrowserPrivateApiTest::FindVolumeBySourcePath));
+    EXPECT_CALL(*disk_mount_manager_mock_, disks())
+        .WillRepeatedly(ReturnRef(volumes_));
+    EXPECT_CALL(*disk_mount_manager_mock_, mount_points())
+        .WillRepeatedly(ReturnRef(mount_points_));
   }
 
   // ExtensionApiTest override
@@ -170,7 +173,9 @@ class FileBrowserPrivateApiTest : public ExtensionApiTest {
         2
       },
       {
-        "archive_path",
+        // Set source path inside another mounted volume.
+        chromeos::CrosDisksClient::GetRemovableDiskMountPoint().AppendASCII(
+            "mount_path3/archive.zip").AsUTF8Unsafe(),
         chromeos::CrosDisksClient::GetArchiveMountPoint().AppendASCII(
             "archive_mount_path").AsUTF8Unsafe(),
         chromeos::MOUNT_TYPE_ARCHIVE,
@@ -240,19 +245,13 @@ IN_PROC_BROWSER_TEST_F(FileBrowserPrivateApiTest, Mount) {
 
   // We will call fileBrowserPrivate.unmountVolume once. To test that method, we
   // check that UnmountPath is really called with the same value.
-  EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_, _,  _))
+  EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_, _, _))
       .Times(0);
   EXPECT_CALL(*disk_mount_manager_mock_,
               UnmountPath(
                   chromeos::CrosDisksClient::GetArchiveMountPoint().AppendASCII(
                       "archive_mount_path").AsUTF8Unsafe(),
                   chromeos::UNMOUNT_OPTIONS_NONE, _)).Times(1);
-
-  EXPECT_CALL(*disk_mount_manager_mock_, disks())
-      .WillRepeatedly(ReturnRef(volumes_));
-
-  EXPECT_CALL(*disk_mount_manager_mock_, mount_points())
-      .WillRepeatedly(ReturnRef(mount_points_));
 
   ASSERT_TRUE(RunComponentExtensionTest("file_browser/mount_test"))
       << message_;

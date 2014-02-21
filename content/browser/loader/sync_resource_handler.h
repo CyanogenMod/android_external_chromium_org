@@ -46,6 +46,9 @@ class SyncResourceHandler : public ResourceHandler {
   virtual bool OnWillStart(int request_id,
                            const GURL& url,
                            bool* defer) OVERRIDE;
+  virtual bool OnBeforeNetworkStart(int request_id,
+                                    const GURL& url,
+                                    bool* defer) OVERRIDE;
   virtual bool OnWillRead(int request_id,
                           scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
@@ -67,6 +70,7 @@ class SyncResourceHandler : public ResourceHandler {
   SyncLoadResult result_;
   IPC::Message* result_message_;
   ResourceDispatcherHostImpl* rdh_;
+  int64 total_transfer_size_;
 };
 
 }  // namespace content

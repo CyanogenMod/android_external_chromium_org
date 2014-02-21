@@ -20,14 +20,11 @@ class CommonSwitches {
       : easy_off_store_install(
             switches::kEasyOffStoreExtensionInstall,
             FeatureSwitch::DEFAULT_DISABLED),
+        force_dev_mode_highlighting(
+            switches::kForceDevModeHighlighting,
+            FeatureSwitch::DEFAULT_DISABLED),
         global_commands(
             switches::kGlobalCommands,
-            FeatureSwitch::DEFAULT_DISABLED),
-        script_badges(
-            switches::kScriptBadges,
-            FeatureSwitch::DEFAULT_DISABLED),
-        script_bubble(
-            switches::kScriptBubble,
             FeatureSwitch::DEFAULT_DISABLED),
         prompt_for_external_extensions(
             switches::kPromptForExternalExtensions,
@@ -38,14 +35,17 @@ class CommonSwitches {
 #endif
         error_console(
             switches::kErrorConsole,
+            FeatureSwitch::DEFAULT_DISABLED),
+        enable_override_bookmarks_ui(
+            switches::kEnableOverrideBookmarksUI,
             FeatureSwitch::DEFAULT_DISABLED) {}
 
   FeatureSwitch easy_off_store_install;
+  FeatureSwitch force_dev_mode_highlighting;
   FeatureSwitch global_commands;
-  FeatureSwitch script_badges;
-  FeatureSwitch script_bubble;
   FeatureSwitch prompt_for_external_extensions;
   FeatureSwitch error_console;
+  FeatureSwitch enable_override_bookmarks_ui;
 };
 
 base::LazyInstance<CommonSwitches> g_common_switches =
@@ -53,23 +53,23 @@ base::LazyInstance<CommonSwitches> g_common_switches =
 
 }  // namespace
 
+FeatureSwitch* FeatureSwitch::force_dev_mode_highlighting() {
+  return &g_common_switches.Get().force_dev_mode_highlighting;
+}
 FeatureSwitch* FeatureSwitch::easy_off_store_install() {
   return &g_common_switches.Get().easy_off_store_install;
 }
 FeatureSwitch* FeatureSwitch::global_commands() {
   return &g_common_switches.Get().global_commands;
 }
-FeatureSwitch* FeatureSwitch::script_badges() {
-  return &g_common_switches.Get().script_badges;
-}
-FeatureSwitch* FeatureSwitch::script_bubble() {
-  return &g_common_switches.Get().script_bubble;
-}
 FeatureSwitch* FeatureSwitch::prompt_for_external_extensions() {
   return &g_common_switches.Get().prompt_for_external_extensions;
 }
 FeatureSwitch* FeatureSwitch::error_console() {
   return &g_common_switches.Get().error_console;
+}
+FeatureSwitch* FeatureSwitch::enable_override_bookmarks_ui() {
+  return &g_common_switches.Get().enable_override_bookmarks_ui;
 }
 
 FeatureSwitch::ScopedOverride::ScopedOverride(FeatureSwitch* feature,

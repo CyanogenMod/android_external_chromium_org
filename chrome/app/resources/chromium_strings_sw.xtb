@@ -2,6 +2,7 @@
 <!DOCTYPE translationbundle>
 <translationbundle lang="sw">
 <translation id="6676384891291319759">Fika kwenye wavuti</translation>
+<translation id="8586442755830160949">Hakimiliki <ph name="YEAR"/> Wasanidi wa Chromium. Haki zote zimehifadhiwa.</translation>
 <translation id="6373523479360886564">Je, una hakika unataka kusanidua Chromium?</translation>
 <translation id="5065199687811594072">Je, unataka Chromium ihifadhi maelezo haya ya kadi ya mkopo ya kukamilisha fomu za wavuti?</translation>
 <translation id="6510925080656968729">Sanidua Chromium</translation>
@@ -28,7 +29,6 @@ Baadhi ya vipengele huenda visipatikane na mabadiliko katika mapendeleo hayatahi
 <translation id="3549345495227188780">Anza kutumia Chromium OS</translation>
 <translation id="4330297532943865716">Usakinishajii unaogongana wa Chromium au Fremu ya Chromium ulipatikana kwenye mfumo. Tafadhali usanidue na ujaribu tena.</translation>
 <translation id="6953661834318318668">Upauzana wa Chromium</translation>
-<translation id="2245147136185581459">Kigunduzi cha Chromium Captive Portal</translation>
 <translation id="4285930937574705105">Usanidi umeshindwa kwa sababu ya hitilafu isiyojulikana. Ikiwa Chromium inaendesha sasa, tafadhali ifunge na ujaribu tena.</translation>
 <translation id="1396446129537741364">Chromium inajaribu kuonyesha manenosiri.</translation>
 <translation id="3555616473548901994">Kusanidua kumekamilika.</translation>
@@ -62,11 +62,10 @@ Baadhi ya vipengele huenda visipatikane na mabadiliko katika mapendeleo hayatahi
 <translation id="7771626876550251690">Katika hali hii, anwani iliyoorodheshwa katika cheti hailingani na anwani ya tovuti ambayo kivinjari chako kilijaribu kwenda kwacho. Sababu moja inayowezekana kwa jambo hili ni kwamba mawasiliano yako yanakatizwa na mshambulizi anayewasilisha cheti cha  tovuti tofauti, kinachoweza kusababisha kutolingana. Sabau nyingine inayowezekana ni kuwa seva imesanidiwa kurejesha cheti kicho hicho kwenye tovuti mbalimbali, ikiwa ni pamoja na ile unayojaribu kutembelea, hata ingawa cheti hicho si halali kwa tovuti hizo zote. Chromium inaweza kusema kuwa kwa kweli ulifika &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, lakini haiwezi kuthibitisha kuwa hiyo ni tovuti sawa na &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; uliyonuia kufikia. Ukiendelea, Chromium haitakagua kutolingana kokote zaidi kwa jina.</translation>
 <translation id="4330585738697551178">Kijenzi hiki kinajulikana kwa kuwa na ukinzani na Chromium.</translation>
 <translation id="3190315855212034486">Lo! Chromium imevurugika. Unataka kuzindua upya sasa?</translation>
-<translation id="3590194807845837023">Fungua Wasifu na Uzindue tena</translation>
 <translation id="6714487516757221107">Hakuna usakinishaji wa Chromium au Fremu ya Chromium ulipatikana kusasishwa.</translation>
 <translation id="3197823471738295152">Kifaa chako kimesasishwa.</translation>
 <translation id="8551886023433311834">Inakaribia kusasishwa! Anzisha kifaa chako upya kifaa ili kukamilisha kusasisha.</translation>
-<translation id="8353224596138547809">Je, unataka Chromium ihifadhi nenosiri lako kwa tovuti hii?</translation>
+<translation id="8353224596138547809">Je, unataka Chromium ihifadhi nenosiri lako la tovuti hii?</translation>
 <translation id="7339898014177206373">Dirisha jipya</translation>
 <translation id="3733625138702910745">Nenda kwenye
         menyu ya Chromium &gt;
@@ -108,7 +107,6 @@ Baadhi ya vipengele huenda visipatikane na mabadiliko katika mapendeleo hayatahi
 <translation id="5358375970380395591">Unaingia katika akaunti inayodhibitiwa na kumpa msimamizi wa akaunti hiyo udhibiti wa wasifu wako kwenye Chromium. Data yako ya Chromium, kama vile programu zako, alamisho, historia, manenosiri, na mipangilio miingine itahusishwa na <ph name="USER_NAME"/> kabisa. Utaweza kufuta data hii kupitia Dashibodi ya Akaunti za Google, lakini hutaweza  kuunganisha data hii na akaunti nyingine. <ph name="LEARN_MORE"/></translation>
 <translation id="263863604136125912">Anzisha Chromium</translation>
 <translation id="9036189287518468038">Kizinduzi cha Programu ya Chromium</translation>
-<translation id="4886158514168859177">Kompyuta hii tayari ina toleo la hivi punde la Fremu ya Chromium. Ikiwa programu haifanyikazi, tafadhali sanidua Fremu ya Chromium na ujaribu tena.</translation>
 <translation id="911206726377975832">Futa historia yako ya kuvinjari pia?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> huhitaji usome na ukubali Sheria na Masharti yafuatayo kabla ya kutumia kifaa hiki. Masharti haya hayapanui, kurekebisha au kupunguza Masharti ya Chromium OS.</translation>
 <translation id="5603085937604338780">chromium</translation>
@@ -154,6 +152,7 @@ Baadhi ya vipengele huenda visipatikane na mabadiliko katika mapendeleo hayatahi
 <translation id="6717134281241384636">Wasifu wako hauwezi kutumiwa kwa sababu umetoka katika toleo jipya la Chromium.
 
 Baadhi ya vipengele huenda visipatikane. Tafadhali bainisha saraka tofauti ya wasifu au utumie toleo jipya la Chromium.</translation>
+<translation id="8907580949721785412">Chromium inajaribu kuonyesha manenosiri. Chapa nenosiri lako la Windows ili uruhusu hili.</translation>
 <translation id="9013087743919948559">Ongeza kwenye Chromium</translation>
 <translation id="6212496753309875659">Kompyuta hii tayari ina toleo la hivi punde la Chromium. Ikiwa programu haifanyikazi, tafadhali sanidua Chromium na ujaribu tena.</translation>
 <translation id="1298199220304005244">Pata msaada unapotumia Chromium OS</translation>
@@ -170,7 +169,6 @@ Baadhi ya vipengele huenda visipatikane. Tafadhali bainisha saraka tofauti ya wa
 <translation id="1902135785017821799"><ph name="FILE_NAME"/> hufanya mabadiliko ya mipangilio sawa na  baadhi ya programu hasidi, hivyo Chromium imeizuia.</translation>
 <translation id="3155163173539279776">Zindua upya Chromium</translation>
 <translation id="2966088006374919794">Chromium inahitaji kuzindua programu ya nje ili kushughulikia viungo vya <ph name="SCHEME"/>. Kiungo kilichoombwa ni <ph name="PROTOLINK"/>.</translation>
-<translation id="6287463253129672858">Haiwezi kusakinisha toleo lile lile la Fremu ya Chromium ambalo linaendesha kwa sasa. Tafadhali funga Fremu ya Chromium na ujaribu tena.</translation>
 <translation id="2558235863893655150">Je, unataka Chrome ihifadhi nenosiri lako?</translation>
 <translation id="1231416733874080281">Onyesha menyu ya Chromium</translation>
 <translation id="5772805321386874569">(inahitaji uanzishaji upya wa  <ph name="BEGIN_BUTTON"/>Chromium<ph name="END_BUTTON"/>)</translation>
@@ -195,7 +193,6 @@ Baadhi ya vipengele huenda visipatikane. Tafadhali bainisha saraka tofauti ya wa
 <translation id="805745970029938373">Unaweza kuona arifa zako zote kutoka kwa programu za Chromium, viendelezi, na tovuti hapa.</translation>
 <translation id="2119636228670142020">Kuhusu Chromium OS</translation>
 <translation id="1708666629004767631">Kuna toleo jipya, na salama linalopatikana la Chromium.</translation>
-<translation id="1539981464052805551">Hakimiliki 2013 Waandishi wa Chromium. Haki Zote zimehifadhiwa.</translation>
 <translation id="378917192836375108">Chromium hukuruhusu kubofya nambari ya simu kwenye wavuti na kuipiga kwa Skype.</translation>
 <translation id="8724049448828509830">Upakuaji unaendelea kwa sasa. Je, unataka kuondoka kwenye Chromium na kughairi upakuaji?</translation>
 <translation id="3360567213983886831">Chromium Binaries</translation>
@@ -209,7 +206,6 @@ Kuingia bila kujali kutaunganisha maelezo ya Chromium kama vile alamisho, histor
 <translation id="374481098568514319">Kompyuta hii tayari ina toleo jipya la hivi karibuni zaidi la vijenzi vya Chromium. Tafadhali tumia kisakinishi cha hivi karibuni zaidi.</translation>
 <translation id="6240281849816458190">Ulijaribu kufikia &lt;strong&gt; <ph name="DOMAIN"/> &lt;/ strong&gt;, lakini seva iliwasilisha cheti ambacho bado si halali. Hakuna maelezo ya kuashiria ikiwa cheti hicho kinaweza kuaminika. Chromium haiwezi kutoa hakikisho kwamba unawasiliana na &lt;strong&gt; <ph name="DOMAIN2"/> &lt;/ strong&gt; wala sio mshambulizi. Saa ya kompyuta yako ya kwa sasa imewekwa <ph name="CURRENT_TIME"/> . Je, hilo ni sahihi? Ikiwa sivyo, unapaswa kusahihisha mfumo wako wa saa na kisha uonyeshe upya ukurasa huu.</translation>
 <translation id="5862307444128926510">Karibu kwenye Chromium</translation>
-<translation id="1622565934590470080">Kompyuta hii tayari ina toleo jipya zaidi la Fremu ya Chromium. Ikiwa programu haifanyi kazi, tafadhali sanidua Chromium na Fremu ya Chromium na ujaribu tena.</translation>
 <translation id="7318036098707714271">Faili yako ya mapendeleo imeharibika au ni batili. 
 
 Chromium haiwezi kufufua mipangilio yako.</translation>

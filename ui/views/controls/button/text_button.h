@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -35,10 +35,6 @@ class VIEWS_EXPORT TextButtonBorder : public Border {
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
  private:
-  // Border:
-  virtual TextButtonBorder* AsTextButtonBorder() OVERRIDE;
-  virtual const TextButtonBorder* AsTextButtonBorder() const OVERRIDE;
-
   gfx::Insets insets_;
 
   DISALLOW_COPY_AND_ASSIGN(TextButtonBorder);
@@ -49,7 +45,7 @@ class VIEWS_EXPORT TextButtonBorder : public Border {
 // the button frame in the hot/pushed states.
 //
 // Note that this type of button is not focusable by default and will not be
-// part of the focus chain.  Call set_focusable(true) to make it part of the
+// part of the focus chain.  Call SetFocusable(true) to make it part of the
 // focus chain.
 class VIEWS_EXPORT TextButtonDefaultBorder : public TextButtonBorder {
  public:
@@ -112,8 +108,8 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   // Call SetText once per string in your set of possible values at button
   // creation time, so that it can contain the largest of them and avoid
   // resizing the button when the text changes.
-  virtual void SetText(const string16& text);
-  const string16& text() const { return text_; }
+  virtual void SetText(const base::string16& text);
+  const base::string16& text() const { return text_; }
 
   enum TextAlignment {
     ALIGN_LEFT,
@@ -143,9 +139,8 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   void set_min_width(int min_width) { min_width_ = min_width; }
   void set_min_height(int min_height) { min_height_ = min_height; }
   void set_max_width(int max_width) { max_width_ = max_width; }
-  void SetFont(const gfx::Font& font);
-  // Return the font used by this button.
-  gfx::Font font() const { return font_; }
+  const gfx::FontList& font_list() const { return font_list_; }
+  void SetFontList(const gfx::FontList& font_list);
 
   void SetEnabledColor(SkColor color);
   void SetDisabledColor(SkColor color);
@@ -185,14 +180,14 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
  protected:
-  TextButtonBase(ButtonListener* listener, const string16& text);
+  TextButtonBase(ButtonListener* listener, const base::string16& text);
 
   // Called when enabled or disabled state changes, or the colors for those
   // states change.
   virtual void UpdateColor();
 
   // Updates text_size_ and max_text_size_ from the current text/font. This is
-  // invoked when the font or text changes.
+  // invoked when the font list or text changes.
   void UpdateTextSize();
 
   // Calculate the size of the text size without setting any of the members.
@@ -239,7 +234,7 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   gfx::Rect GetContentBounds(int extra_width) const;
 
   // The text string that is displayed in the button.
-  string16 text_;
+  base::string16 text_;
 
   // The size of the text string.
   gfx::Size text_size_;
@@ -251,8 +246,8 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   // The alignment of the text string within the button.
   TextAlignment alignment_;
 
-  // The font used to paint the text.
-  gfx::Font font_;
+  // The font list used to paint the text.
+  gfx::FontList font_list_;
 
   // Flag indicating if a shadow should be drawn behind the text.
   bool has_text_shadow_;
@@ -310,7 +305,7 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
   // The button's class name.
   static const char kViewClassName[];
 
-  TextButton(ButtonListener* listener, const string16& text);
+  TextButton(ButtonListener* listener, const base::string16& text);
   virtual ~TextButton();
 
   void set_icon_text_spacing(int icon_text_spacing) {
@@ -339,6 +334,8 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
   }
 
   void set_ignore_minimum_size(bool ignore_minimum_size);
+
+  void set_full_justification(bool full_justification);
 
   // Overridden from View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -381,6 +378,10 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
   // True if the button should ignore the minimum size for the platform. Default
   // is true. Set to false to prevent narrower buttons.
   bool ignore_minimum_size_;
+
+  // True if the icon and the text are aligned along both the left and right
+  // margins of the button.
+  bool full_justification_;
 
   DISALLOW_COPY_AND_ASSIGN(TextButton);
 };

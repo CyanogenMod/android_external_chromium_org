@@ -17,6 +17,7 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
@@ -265,9 +266,11 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
 
   // Common g_custom_entries.
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"ver", UTF16ToWide(version).c_str()));
+      google_breakpad::CustomInfoEntry(L"ver",
+                                       base::UTF16ToWide(version).c_str()));
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"prod", UTF16ToWide(product).c_str()));
+      google_breakpad::CustomInfoEntry(L"prod",
+                                       base::UTF16ToWide(product).c_str()));
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"plat", L"Win32"));
   g_custom_entries->push_back(
@@ -285,7 +288,7 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
 
   if (!special_build.empty())
     g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-        L"special", UTF16ToWide(special_build).c_str()));
+        L"special", base::UTF16ToWide(special_build).c_str()));
 
   if (type == L"plugin" || type == L"ppapi") {
     std::wstring plugin_path =
@@ -665,7 +668,7 @@ void InitCrashReporter(const std::string& process_type_switch) {
   // Disable the message box for assertions.
   _CrtSetReportMode(_CRT_ASSERT, 0);
 
-  std::wstring process_type = ASCIIToWide(process_type_switch);
+  std::wstring process_type = base::ASCIIToWide(process_type_switch);
   if (process_type.empty())
     process_type = L"browser";
 
@@ -707,7 +710,7 @@ void InitCrashReporter(const std::string& process_type_switch) {
       InitDefaultCrashCallback(default_filter);
     return;
   }
-  std::wstring pipe_name = ASCIIToWide(pipe_name_ascii);
+  std::wstring pipe_name = base::ASCIIToWide(pipe_name_ascii);
 
 #ifdef _WIN64
   // The protocol for connecting to the out-of-process Breakpad crash
@@ -744,6 +747,8 @@ void InitCrashReporter(const std::string& process_type_switch) {
       // handlers.
       google_breakpad::ExceptionHandler::HANDLER_NONE,
       dump_type, pipe_name.c_str(), custom_info);
+
+  base::debug::SetDumpWithoutCrashingFunction(&DumpProcessWithoutCrash);
 
   if (g_breakpad->IsOutOfProcess()) {
     // Tells breakpad to handle breakpoint and single step exceptions.

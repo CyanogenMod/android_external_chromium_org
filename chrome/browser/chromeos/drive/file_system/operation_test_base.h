@@ -8,8 +8,8 @@
 #include <set>
 
 #include "base/files/scoped_temp_dir.h"
-#include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -23,12 +23,16 @@ class SequencedTaskRunner;
 
 namespace drive {
 
+class EventLogger;
 class FakeDriveService;
 class FakeFreeDiskSpaceGetter;
 class JobScheduler;
 
 namespace internal {
+class AboutResourceLoader;
+class ChangeListLoader;
 class FileCache;
+class LoaderController;
 class ResourceMetadata;
 class ResourceMetadataStorage;
 }  // namespace internal
@@ -49,19 +53,14 @@ class OperationTestBase : public testing::Test {
     // OperationObserver overrides.
     virtual void OnDirectoryChangedByOperation(
         const base::FilePath& path) OVERRIDE;
-    virtual void OnCacheFileUploadNeededByOperation(
-        const std::string& local_id) OVERRIDE;
     virtual void OnEntryUpdatedByOperation(
         const std::string& local_id) OVERRIDE;
+    virtual void OnDriveSyncError(DriveSyncErrorType type,
+                                  const std::string& local_id) OVERRIDE;
 
     // Gets the set of changed paths.
     const std::set<base::FilePath>& get_changed_paths() {
       return changed_paths_;
-    }
-
-    // Gets the set of upload needed local IDs.
-    const std::set<std::string>& upload_needed_local_ids() const {
-      return upload_needed_local_ids_;
     }
 
     // Gets the set of updated local IDs.
@@ -69,10 +68,15 @@ class OperationTestBase : public testing::Test {
       return updated_local_ids_;
     }
 
+    // Gets the list of drive sync errors.
+    const std::vector<DriveSyncErrorType>& drive_sync_errors() const {
+      return drive_sync_errors_;
+    }
+
    private:
     std::set<base::FilePath> changed_paths_;
-    std::set<std::string> upload_needed_local_ids_;
     std::set<std::string> updated_local_ids_;
+    std::vector<DriveSyncErrorType> drive_sync_errors_;
   };
 
   OperationTestBase();
@@ -106,6 +110,7 @@ class OperationTestBase : public testing::Test {
   FakeDriveService* fake_service() {
     return fake_drive_service_.get();
   }
+  EventLogger* logger() { return logger_.get(); }
   LoggingObserver* observer() { return &observer_; }
   JobScheduler* scheduler() { return scheduler_.get(); }
   base::SequencedTaskRunner* blocking_task_runner() {
@@ -116,6 +121,12 @@ class OperationTestBase : public testing::Test {
     return fake_free_disk_space_getter_.get();
   }
   internal::FileCache* cache() { return cache_.get(); }
+  internal::LoaderController* loader_controller() {
+    return loader_controller_.get();
+  }
+  internal::ChangeListLoader* change_list_loader() {
+    return change_list_loader_.get();
+  }
 
  private:
   content::TestBrowserThreadBundle thread_bundle_;
@@ -124,6 +135,7 @@ class OperationTestBase : public testing::Test {
   base::ScopedTempDir temp_dir_;
 
   LoggingObserver observer_;
+  scoped_ptr<EventLogger> logger_;
   scoped_ptr<FakeDriveService> fake_drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<internal::ResourceMetadataStorage,
@@ -132,6 +144,8 @@ class OperationTestBase : public testing::Test {
       metadata_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
   scoped_ptr<internal::FileCache, test_util::DestroyHelperForTests> cache_;
+  scoped_ptr<internal::AboutResourceLoader> about_resource_loader_;
+  scoped_ptr<internal::LoaderController> loader_controller_;
   scoped_ptr<internal::ChangeListLoader> change_list_loader_;
 };
 

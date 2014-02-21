@@ -43,7 +43,7 @@ namespace {
 const int kNotificationCountPrefDefault = -1;
 
 bool GetBooleanPref(const char* pref_name) {
-  Profile* profile = ProfileManager::GetPrimaryUserProfileOrOffTheRecord();
+  Profile* profile = ProfileManager::GetPrimaryUserProfile();
   PrefService* prefs = profile->GetPrefs();
   return prefs->GetBoolean(pref_name);
 }
@@ -54,7 +54,7 @@ int GetIntegerLocalPref(const char* pref_name) {
 }
 
 void SetBooleanPref(const char* pref_name, bool value) {
-  Profile* profile = ProfileManager::GetPrimaryUserProfileOrOffTheRecord();
+  Profile* profile = ProfileManager::GetPrimaryUserProfile();
   PrefService* prefs = profile->GetPrefs();
   prefs->SetBoolean(pref_name, value);
 }
@@ -125,7 +125,7 @@ void NotificationClicked(const std::string& service_path,
     ash::network_connect::ShowNetworkSettings(service_path);
 
   chrome::ScopedTabbedBrowserDisplayer displayer(
-      ProfileManager::GetPrimaryUserProfileOrOffTheRecord(),
+      ProfileManager::GetPrimaryUserProfile(),
       chrome::HOST_DESKTOP_TYPE_ASH);
   chrome::ShowSingletonTab(displayer.browser(), GURL(info_url));
 }
@@ -194,7 +194,7 @@ void DataPromoNotification::ShowOptionalMobileDataPromoNotification() {
     const std::string locale = g_browser_process->GetApplicationLocale();
     std::string deal_text =
         deal->GetLocalizedString(locale, "notification_text");
-    message = UTF8ToUTF16(deal_text + "\n\n") + message;
+    message = base::UTF8ToUTF16(deal_text + "\n\n") + message;
     info_url = deal->info_url();
     if (info_url.empty() && carrier)
       info_url = carrier->top_up_url();

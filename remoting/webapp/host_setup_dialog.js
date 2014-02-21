@@ -27,7 +27,7 @@ remoting.HostSetupFlow.State = {
   // Dialog states.
   ASK_PIN: 1,
 
-  // Used on Mac OS X to prompt the user to manually install a .dmg package.
+  // Prompts the user to install the host package.
   INSTALL_HOST: 2,
 
   // Processing states.
@@ -102,19 +102,6 @@ remoting.HostSetupDialog = function(hostController) {
   this.pinConfirm_ = document.getElementById('daemon-pin-confirm');
   this.pinErrorDiv_ = document.getElementById('daemon-pin-error-div');
   this.pinErrorMessage_ = document.getElementById('daemon-pin-error-message');
-  this.continueInstallButton_ = document.getElementById(
-      'host-config-install-continue');
-  this.cancelInstallButton_ = document.getElementById(
-      'host-config-install-dismiss');
-  this.retryInstallButton_ = document.getElementById(
-      'host-config-install-retry');
-
-  this.continueInstallButton_.addEventListener(
-      'click', this.onInstallDialogOk.bind(this), false);
-  this.cancelInstallButton_.addEventListener(
-      'click', this.hide.bind(this), false);
-  this.retryInstallButton_.addEventListener(
-      'click', this.onInstallDialogRetry.bind(this), false);
 
   /** @type {remoting.HostSetupFlow} */
   this.flow_ = new remoting.HostSetupFlow([remoting.HostSetupFlow.State.NONE]);
@@ -223,6 +210,7 @@ remoting.HostSetupDialog.prototype.showForStartWithToken_ =
   this.hostController_.getConsent(onGetConsent, onError);
 
   var flow = [
+      remoting.HostSetupFlow.State.INSTALL_HOST,
       remoting.HostSetupFlow.State.ASK_PIN,
       remoting.HostSetupFlow.State.STARTING_HOST,
       remoting.HostSetupFlow.State.HOST_STARTED];
@@ -231,8 +219,12 @@ remoting.HostSetupDialog.prototype.showForStartWithToken_ =
       state != remoting.HostController.State.NOT_INSTALLED &&
       state != remoting.HostController.State.INSTALLING;
 
-  if (navigator.platform.indexOf('Mac') != -1 && !installed) {
-    flow.unshift(remoting.HostSetupFlow.State.INSTALL_HOST);
+  // Skip the installation step when the host is already installed or when using
+  // NPAPI plugin on Windows (because on Windows the plugin takes care of
+  // installation).
+  if (installed || (navigator.platform == 'Win32' &&
+                    this.hostController_.usingNpapiPlugin())) {
+    flow.shift();
   }
 
   this.startNewFlow_(flow);
@@ -324,9 +316,7 @@ remoting.HostSetupDialog.prototype.updateState_ = function() {
   } else if (state == remoting.HostSetupFlow.State.ASK_PIN) {
     remoting.setMode(remoting.AppMode.HOST_SETUP_ASK_PIN);
   } else if (state == remoting.HostSetupFlow.State.INSTALL_HOST) {
-    remoting.setMode(remoting.AppMode.HOST_SETUP_INSTALL);
-    window.location =
-        'https://dl.google.com/chrome-remote-desktop/chromeremotedesktop.dmg';
+    this.installHost_();
   } else if (state == remoting.HostSetupFlow.State.STARTING_HOST) {
     showProcessingMessage(/*i18n-content*/'HOST_SETUP_STARTING');
     this.startHost_();
@@ -355,6 +345,44 @@ remoting.HostSetupDialog.prototype.updateState_ = function() {
     showErrorMessage(/*i18n-content*/'HOST_SETUP_STOP_FAILED');
   }
 };
+
+/**
+ * Shows the prompt that asks the user to install the host.
+ */
+remoting.HostSetupDialog.prototype.installHost_ = function() {
+  /** @type {remoting.HostSetupDialog} */
+  var that = this;
+  /** @type {remoting.HostSetupFlow} */
+  var flow = this.flow_;
+
+  var onDone = function() {
+    that.hostController_.getLocalHostState(onHostState);
+  };
+
+  /** @param {remoting.Error} error */
+  var onError = function(error) {
+    flow.switchToErrorState(error);
+  }
+
+  /** @param {remoting.HostController.State} state */
+  var onHostState = function(state) {
+    // Verify if the host has been installed. If not then try to prompt the user
+    // again.
+    var installed =
+        state != remoting.HostController.State.NOT_INSTALLED &&
+        state != remoting.HostController.State.INSTALLING;
+    if (installed) {
+      that.flow_.switchToNextStep();
+      that.updateState_();
+    } else {
+      hostInstallDialog.tryAgain();
+    }
+  }
+
+  /** @type {remoting.HostInstallDialog} */
+  var hostInstallDialog = new remoting.HostInstallDialog();
+  hostInstallDialog.show(onDone, onError);
+}
 
 /**
  * Registers and starts the host.
@@ -532,41 +560,6 @@ remoting.HostSetupDialog.validPin_ = function(pin) {
     }
   }
   return true;
-};
-
-/**
- * @return {void} Nothing.
- */
-remoting.HostSetupDialog.prototype.onInstallDialogOk = function() {
-  this.continueInstallButton_.disabled = true;
-  this.cancelInstallButton_.disabled = true;
-
-  /** @type {remoting.HostSetupDialog} */
-  var that = this;
-
-  /** @param {remoting.HostController.State} state */
-  var onHostState = function(state) {
-    that.continueInstallButton_.disabled = false;
-    that.cancelInstallButton_.disabled = false;
-    var installed =
-        state != remoting.HostController.State.NOT_INSTALLED &&
-        state != remoting.HostController.State.INSTALLING;
-    if (installed) {
-      that.flow_.switchToNextStep();
-      that.updateState_();
-    } else {
-      remoting.setMode(remoting.AppMode.HOST_SETUP_INSTALL_PENDING);
-    }
-  };
-
-  this.hostController_.getLocalHostState(onHostState);
-};
-
-/**
- * @return {void} Nothing.
- */
-remoting.HostSetupDialog.prototype.onInstallDialogRetry = function() {
-  remoting.setMode(remoting.AppMode.HOST_SETUP_INSTALL);
 };
 
 /** @type {remoting.HostSetupDialog} */

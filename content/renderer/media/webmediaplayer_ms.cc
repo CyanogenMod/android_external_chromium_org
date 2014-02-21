@@ -16,6 +16,7 @@
 #include "content/renderer/media/video_frame_provider.h"
 #include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/media/webmediaplayer_util.h"
+#include "content/renderer/render_frame_impl.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
@@ -104,7 +105,9 @@ void WebMediaPlayerMS::load(LoadType load_type,
       base::Bind(&WebMediaPlayerMS::OnSourceError, AsWeakPtr()),
       base::Bind(&WebMediaPlayerMS::OnFrameAvailable, AsWeakPtr()));
 
-  audio_renderer_ = media_stream_client_->GetAudioRenderer(url);
+  audio_renderer_ = media_stream_client_->GetAudioRenderer(
+    url,
+    RenderFrame::FromWebFrame(frame_)->GetRoutingID());
 
   if (video_frame_provider_.get() || audio_renderer_.get()) {
     GetClient()->setOpaque(true);
@@ -162,11 +165,6 @@ void WebMediaPlayerMS::pause() {
   paused_ = true;
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PAUSE));
-}
-
-bool WebMediaPlayerMS::supportsFullscreen() const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return true;
 }
 
 bool WebMediaPlayerMS::supportsSave() const {

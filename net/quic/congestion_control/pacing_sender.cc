@@ -12,7 +12,8 @@ PacingSender::PacingSender(SendAlgorithmInterface* sender,
       alarm_granularity_(alarm_granularity),
       next_packet_send_time_(QuicTime::Zero()),
       was_last_send_delayed_(false),
-      max_segment_size_(kDefaultMaxPacketSize) {
+      max_segment_size_(kDefaultMaxPacketSize),
+      updated_rtt_(false) {
 }
 
 PacingSender::~PacingSender() {}
@@ -36,9 +37,8 @@ void PacingSender::OnIncomingQuicCongestionFeedbackFrame(
 
 void PacingSender::OnPacketAcked(
     QuicPacketSequenceNumber acked_sequence_number,
-    QuicByteCount acked_bytes,
-    QuicTime::Delta rtt) {
-  sender_->OnPacketAcked(acked_sequence_number, acked_bytes, rtt);
+    QuicByteCount acked_bytes) {
+  sender_->OnPacketAcked(acked_sequence_number, acked_bytes);
 }
 
 void PacingSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
@@ -52,8 +52,8 @@ bool PacingSender::OnPacketSent(
     QuicByteCount bytes,
     TransmissionType transmission_type,
     HasRetransmittableData has_retransmittable_data) {
-  // Only pace data packets.
-  if (has_retransmittable_data == HAS_RETRANSMITTABLE_DATA) {
+  // Only pace data packets once we have an updated RTT.
+  if (has_retransmittable_data == HAS_RETRANSMITTABLE_DATA && updated_rtt_) {
     // The next packet should be sent as soon as the current packets has
     // been transferred.  We pace at twice the rate of the underlying
     // sender's bandwidth estimate to help ensure that pacing doesn't become
@@ -67,8 +67,8 @@ bool PacingSender::OnPacketSent(
                                transmission_type, has_retransmittable_data);
 }
 
-void PacingSender::OnRetransmissionTimeout() {
-  sender_->OnRetransmissionTimeout();
+void PacingSender::OnRetransmissionTimeout(bool packets_retransmitted) {
+  sender_->OnRetransmissionTimeout(packets_retransmitted);
 }
 
 void PacingSender::OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
@@ -84,6 +84,11 @@ QuicTime::Delta PacingSender::TimeUntilSend(
   QuicTime::Delta time_until_send =
       sender_->TimeUntilSend(now, transmission_type,
                              has_retransmittable_data, handshake);
+  if (!updated_rtt_) {
+    // Don't pace if we don't have an updated RTT estimate.
+    return time_until_send;
+  }
+
   if (!time_until_send.IsZero()) {
     DCHECK(time_until_send.IsInfinite());
     // The underlying sender prevents sending.
@@ -121,6 +126,11 @@ QuicTime::Delta PacingSender::TimeUntilSend(
 
 QuicBandwidth PacingSender::BandwidthEstimate() const {
   return sender_->BandwidthEstimate();
+}
+
+void PacingSender::UpdateRtt(QuicTime::Delta rtt_sample) {
+  updated_rtt_= true;
+  sender_->UpdateRtt(rtt_sample);
 }
 
 QuicTime::Delta PacingSender::SmoothedRtt() const {

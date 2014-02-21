@@ -33,7 +33,6 @@
 #include "chrome/browser/download/drag_download_item.h"
 #include "chrome/browser/extensions/api/downloads/downloads_api.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/fileicon_source.h"
@@ -46,14 +45,15 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/time_format.h"
 #include "ui/gfx/image/image.h"
 
+using base::UserMetricsAction;
 using content::BrowserContext;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -112,14 +112,14 @@ const char* GetDangerTypeString(content::DownloadDangerType danger_type) {
 // Returns a JSON dictionary containing some of the attributes of |download|.
 // The JSON dictionary will also have a field "id" set to |id|, and a field
 // "otr" set to |incognito|.
-DictionaryValue* CreateDownloadItemValue(
+base::DictionaryValue* CreateDownloadItemValue(
     content::DownloadItem* download_item,
     bool incognito) {
   // TODO(asanka): Move towards using download_model here for getting status and
   // progress. The difference currently only matters to Drive downloads and
   // those don't show up on the downloads page, but should.
   DownloadItemModel download_model(download_item);
-  DictionaryValue* file_value = new DictionaryValue();
+  base::DictionaryValue* file_value = new base::DictionaryValue();
 
   file_value->SetInteger(
       "started", static_cast<int>(download_item->GetStartTime().ToTimeT()));
@@ -468,9 +468,11 @@ void DownloadsDOMHandler::HandleClearAll(const base::ListValue* args) {
 void DownloadsDOMHandler::HandleOpenDownloadsFolder(
     const base::ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_OPEN_FOLDER);
-  if (main_notifier_.GetManager()) {
-    platform_util::OpenItem(DownloadPrefs::FromDownloadManager(
-        main_notifier_.GetManager())->DownloadPath());
+  content::DownloadManager* manager = main_notifier_.GetManager();
+  if (manager) {
+    platform_util::OpenItem(
+        Profile::FromBrowserContext(manager->GetBrowserContext()),
+        DownloadPrefs::FromDownloadManager(manager)->DownloadPath());
   }
 }
 

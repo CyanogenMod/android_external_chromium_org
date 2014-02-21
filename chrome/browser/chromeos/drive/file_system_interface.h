@@ -77,6 +77,13 @@ typedef base::Callback<void(FileError error,
                             const base::Closure& cancel_download_closure)>
     GetFileContentInitializedCallback;
 
+// Used to get list of entries under a directory.
+// If |error| is not FILE_ERROR_OK, |entries| is null.
+typedef base::Callback<void(FileError error,
+                            scoped_ptr<ResourceEntryVector> entries,
+                            bool has_more)>
+    ReadDirectoryCallback;
+
 // Used to get drive content search results.
 // If |error| is not FILE_ERROR_OK, |result_paths| is empty.
 typedef base::Callback<void(
@@ -428,8 +435,8 @@ class FileSystemInterface {
   virtual void GetCacheEntry(const base::FilePath& drive_file_path,
                              const GetCacheEntryCallback& callback) = 0;
 
-  // Reloads the resource metadata from the server.
-  virtual void Reload(const FileOperationCallback& callback) = 0;
+  // Resets local data.
+  virtual void Reset(const FileOperationCallback& callback) = 0;
 };
 
 }  // namespace drive

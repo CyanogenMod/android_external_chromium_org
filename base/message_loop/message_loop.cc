@@ -102,28 +102,6 @@ bool AlwaysNotifyPump(MessageLoop::Type type) {
 
 //------------------------------------------------------------------------------
 
-#if defined(OS_WIN)
-
-// Upon a SEH exception in this thread, it restores the original unhandled
-// exception filter.
-static int SEHFilter(LPTOP_LEVEL_EXCEPTION_FILTER old_filter) {
-  ::SetUnhandledExceptionFilter(old_filter);
-  return EXCEPTION_CONTINUE_SEARCH;
-}
-
-// Retrieves a pointer to the current unhandled exception filter. There
-// is no standalone getter method.
-static LPTOP_LEVEL_EXCEPTION_FILTER GetTopSEHFilter() {
-  LPTOP_LEVEL_EXCEPTION_FILTER top_filter = NULL;
-  top_filter = ::SetUnhandledExceptionFilter(0);
-  ::SetUnhandledExceptionFilter(top_filter);
-  return top_filter;
-}
-
-#endif  // defined(OS_WIN)
-
-//------------------------------------------------------------------------------
-
 MessageLoop::TaskObserver::TaskObserver() {
 }
 
@@ -137,7 +115,6 @@ MessageLoop::DestructionObserver::~DestructionObserver() {
 
 MessageLoop::MessageLoop(Type type)
     : type_(type),
-      exception_restoration_(false),
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
@@ -152,7 +129,6 @@ MessageLoop::MessageLoop(Type type)
 MessageLoop::MessageLoop(scoped_ptr<MessagePump> pump)
     : pump_(pump.Pass()),
       type_(TYPE_CUSTOM),
-      exception_restoration_(false),
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
@@ -286,13 +262,6 @@ void MessageLoop::PostTask(
   incoming_task_queue_->AddToIncomingQueue(from_here, task, TimeDelta(), true);
 }
 
-bool MessageLoop::TryPostTask(
-    const tracked_objects::Location& from_here,
-    const Closure& task) {
-  DCHECK(!task.is_null()) << from_here.ToString();
-  return incoming_task_queue_->TryAddToIncomingQueue(from_here, task);
-}
-
 void MessageLoop::PostDelayedTask(
     const tracked_objects::Location& from_here,
     const Closure& task,
@@ -399,11 +368,6 @@ bool MessageLoop::IsIdleForTesting() {
   return incoming_task_queue_->IsIdleForTesting();
 }
 
-void MessageLoop::LockWaitUnLockForTesting(WaitableEvent* caller_wait,
-                                           WaitableEvent* caller_signal) {
-  incoming_task_queue_->LockWaitUnLockForTesting(caller_wait, caller_signal);
-}
-
 //------------------------------------------------------------------------------
 
 void MessageLoop::Init() {
@@ -417,40 +381,12 @@ void MessageLoop::Init() {
       new ThreadTaskRunnerHandle(message_loop_proxy_));
 }
 
-// Runs the loop in two different SEH modes:
-// enable_SEH_restoration_ = false : any unhandled exception goes to the last
-// one that calls SetUnhandledExceptionFilter().
-// enable_SEH_restoration_ = true : any unhandled exception goes to the filter
-// that was existed before the loop was run.
 void MessageLoop::RunHandler() {
-#if defined(OS_WIN)
-  if (exception_restoration_) {
-    RunInternalInSEHFrame();
-    return;
-  }
-#endif
-
-  RunInternal();
-}
-
-#if defined(OS_WIN)
-__declspec(noinline) void MessageLoop::RunInternalInSEHFrame() {
-  LPTOP_LEVEL_EXCEPTION_FILTER current_filter = GetTopSEHFilter();
-  __try {
-    RunInternal();
-  } __except(SEHFilter(current_filter)) {
-  }
-  return;
-}
-#endif
-
-void MessageLoop::RunInternal() {
   DCHECK_EQ(this, current());
 
   StartHistogrammer();
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
+#if defined(USE_AURA)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {
     static_cast<MessagePumpForUI*>(pump_.get())->
         RunWithDispatcher(this, run_loop_->dispatcher_);
@@ -479,14 +415,14 @@ void MessageLoop::RunTask(const PendingTask& pending_task) {
   tracked_objects::TrackedTime start_time =
       tracked_objects::ThreadData::NowForStartOfRun(pending_task.birth_tally);
 
-  TRACE_EVENT_FLOW_END1("task", "MessageLoop::PostTask",
-      TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
+  TRACE_EVENT_FLOW_END1(TRACE_DISABLED_BY_DEFAULT("toplevel.flow"),
+      "MessageLoop::PostTask", TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
       "queue_duration",
       (start_time - pending_task.EffectiveTimePosted()).InMilliseconds());
   // When tracing memory for posted tasks it's more valuable to attribute the
   // memory allocations to the source function than generically to "RunTask".
   TRACE_EVENT_WITH_MEMORY_TAG2(
-      "task", "MessageLoop::RunTask",
+      "toplevel", "MessageLoop::RunTask",
       pending_task.posted_from.function_name(),  // Name for memory tracking.
       "src_file", pending_task.posted_from.file_name(),
       "src_func", pending_task.posted_from.function_name());
@@ -728,7 +664,8 @@ void MessageLoopForUI::Attach() {
 }
 #endif
 
-#if !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_ANDROID)
+#if !defined(OS_NACL) && (defined(TOOLKIT_GTK) || defined(USE_OZONE) || \
+                          defined(OS_WIN) || defined(USE_X11))
 void MessageLoopForUI::AddObserver(Observer* observer) {
   pump_ui()->AddObserver(observer);
 }
@@ -736,7 +673,6 @@ void MessageLoopForUI::AddObserver(Observer* observer) {
 void MessageLoopForUI::RemoveObserver(Observer* observer) {
   pump_ui()->RemoveObserver(observer);
 }
-
 #endif  //  !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_ANDROID)
 
 //------------------------------------------------------------------------------

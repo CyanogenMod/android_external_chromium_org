@@ -10,14 +10,12 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/mock_user_cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -25,9 +23,12 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/cloud_external_data_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/mock_device_management_service.h"
+#include "components/policy/core/common/cloud/mock_user_cloud_policy_store.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/policy/core/common/schema_registry.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_details.h"
@@ -94,6 +95,20 @@ class SigninManagerFake : public FakeSigninManager {
   }
 };
 
+UserCloudPolicyManager* BuildCloudPolicyManager(
+    content::BrowserContext* context) {
+  MockUserCloudPolicyStore *store = new MockUserCloudPolicyStore();
+  EXPECT_CALL(*store, Load()).Times(AnyNumber());
+
+  return new UserCloudPolicyManager(
+      scoped_ptr<UserCloudPolicyStore>(store),
+      base::FilePath(),
+      scoped_ptr<CloudExternalDataManager>(),
+      base::MessageLoopProxy::current(),
+      base::MessageLoopProxy::current(),
+      base::MessageLoopProxy::current());
+}
+
 class UserPolicySigninServiceTest : public testing::Test {
  public:
   UserPolicySigninServiceTest()
@@ -148,32 +163,34 @@ class UserPolicySigninServiceTest : public testing::Test {
     scoped_ptr<TestingPrefServiceSyncable> prefs(
         new TestingPrefServiceSyncable());
     chrome::RegisterUserProfilePrefs(prefs->registry());
+
+    // UserCloudPolicyManagerFactory isn't a real
+    // BrowserContextKeyedServiceFactory (it derives from
+    // BrowserContextKeyedBaseFactory and exposes its own APIs to get
+    // instances) so we have to inject our testing factory via a special
+    // API before creating the profile.
+    UserCloudPolicyManagerFactory::GetInstance()->RegisterTestingFactory(
+        BuildCloudPolicyManager);
     TestingProfile::Builder builder;
     builder.SetPrefService(scoped_ptr<PrefServiceSyncable>(prefs.Pass()));
     builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
                               SigninManagerFake::Build);
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenService::Build);
+                              FakeProfileOAuth2TokenServiceWrapper::Build);
 
     profile_ = builder.Build().Pass();
     url_factory_.set_remove_fetcher_on_delete(true);
 
     signin_manager_ = static_cast<SigninManagerFake*>(
         SigninManagerFactory::GetForProfile(profile_.get()));
-
-    mock_store_ = new MockUserCloudPolicyStore();
-    EXPECT_CALL(*mock_store_, Load()).Times(AnyNumber());
-    manager_.reset(new UserCloudPolicyManager(
-        scoped_ptr<UserCloudPolicyStore>(mock_store_),
-        base::FilePath(),
-        scoped_ptr<CloudExternalDataManager>(),
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current()));
+    // Tests are responsible for freeing the UserCloudPolicyManager instances
+    // they inject.
+    manager_.reset(UserCloudPolicyManagerFactory::GetForBrowserContext(
+        profile_.get()));
     manager_->Init(&schema_registry_);
-    UserCloudPolicyManagerFactory::GetInstance()->RegisterForTesting(
-        profile_.get(), manager_.get());
-
+    mock_store_ = static_cast<MockUserCloudPolicyStore*>(
+        manager_->core()->store());
+    DCHECK(mock_store_);
     AddProfile();
 
     Mock::VerifyAndClearExpectations(mock_store_);
@@ -181,6 +198,7 @@ class UserPolicySigninServiceTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     UserPolicySigninServiceFactory::SetDeviceManagementServiceForTesting(NULL);
+    UserCloudPolicyManagerFactory::GetInstance()->ClearTestingFactory();
     // Free the profile before we clear out the browser prefs.
     profile_.reset();
     TestingBrowserProcess* testing_browser_process =
@@ -295,6 +313,7 @@ class UserPolicySigninServiceTest : public testing::Test {
         kTestUser,
         dm_token_,
         client_id_,
+        profile_->GetRequestContext(),
         base::Bind(&UserPolicySigninServiceTest::OnPolicyRefresh,
                    base::Unretained(this)));
 
@@ -706,6 +725,7 @@ TEST_F(UserPolicySigninServiceTest, FetchPolicyFailed) {
       kTestUser,
       "mock_dm_token",
       "mock_client_id",
+      profile_->GetRequestContext(),
       base::Bind(&UserPolicySigninServiceTest::OnPolicyRefresh,
                  base::Unretained(this)));
   ASSERT_TRUE(fetch_request);

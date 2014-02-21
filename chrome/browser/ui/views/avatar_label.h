@@ -6,29 +6,29 @@
 #define CHROME_BROWSER_UI_VIEWS_AVATAR_LABEL_H_
 
 #include "base/compiler_specific.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 
 class BrowserView;
-
-namespace ui {
-class MouseEvent;
-class ThemeProvider;
-}
 
 // AvatarLabel
 //
 // A label used to display a string indicating that the current profile belongs
 // to a managed user.
-class AvatarLabel : public views::TextButton {
+class AvatarLabel : public views::LabelButton {
  public:
   explicit AvatarLabel(BrowserView* browser_view);
   virtual ~AvatarLabel();
 
-  // views::TextButton:
+  // views::LabelButton:
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
 
   // Update the style of the label according to the provided theme.
   void UpdateLabelStyle();
+
+  // Sets whether the label should be displayed on the right or on the left. A
+  // new button border is created which has the right insets for the positioning
+  // of the button.
+  void SetLabelOnRight(bool label_on_right);
 
  private:
   BrowserView* browser_view_;

@@ -43,7 +43,7 @@ LRESULT VerifyConfigWindowWin::OnInitDialog(HWND wparam, LPARAM lparam) {
   CenterWindow();
 
   CWindow email_text(GetDlgItem(IDC_EMAIL));
-  email_text.SetWindowText(UTF8ToUTF16(email_).c_str());
+  email_text.SetWindowText(base::UTF8ToUTF16(email_).c_str());
   return TRUE;
 }
 
@@ -108,13 +108,14 @@ bool VerifyConfigWindowWin::VerifyHostSecretHash() {
 
   // Get the PIN length.
   int pin_length = pin_edit.GetWindowTextLength();
-  scoped_ptr<char16[]> pin(new char16[pin_length + 1]);
+  scoped_ptr<base::char16[]> pin(new base::char16[pin_length + 1]);
 
   // Get the PIN making sure it is NULL terminated even if an error occurs.
   int result = pin_edit.GetWindowText(pin.get(), pin_length + 1);
   pin[std::min(result, pin_length)] = 0;
 
-  return VerifyHostPinHash(host_secret_hash_, host_id_, UTF16ToUTF8(pin.get()));
+  return VerifyHostPinHash(host_secret_hash_,
+                           host_id_, base::UTF16ToUTF8(pin.get()));
 }
 
 }  // namespace remoting

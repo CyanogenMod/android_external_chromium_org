@@ -11,9 +11,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
@@ -24,6 +22,10 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
 
@@ -207,7 +209,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<OmniboxAPI> >
 
 // static
 ProfileKeyedAPIFactory<OmniboxAPI>* OmniboxAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 // static
@@ -278,7 +280,7 @@ void OmniboxAPI::OnTemplateURLsLoaded() {
 
 template <>
 void ProfileKeyedAPIFactory<OmniboxAPI>::DeclareFactoryDependencies() {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(TemplateURLServiceFactory::GetInstance());
 }
 
@@ -317,7 +319,7 @@ ACMatchClassifications StyleTypesToACMatchClassifications(
     const omnibox::SuggestResult &suggestion) {
   ACMatchClassifications match_classifications;
   if (suggestion.description_styles) {
-    base::string16 description = UTF8ToUTF16(suggestion.description);
+    base::string16 description = base::UTF8ToUTF16(suggestion.description);
     std::vector<int> styles(description.length(), 0);
 
     for (std::vector<linked_ptr<omnibox::SuggestResult::DescriptionStylesType> >
@@ -377,10 +379,10 @@ void ApplyDefaultSuggestionForExtensionKeyword(
   if (!suggestion || suggestion->description.empty())
     return;  // fall back to the universal default
 
-  const base::string16 kPlaceholderText(ASCIIToUTF16("%s"));
-  const base::string16 kReplacementText(ASCIIToUTF16("<input>"));
+  const base::string16 kPlaceholderText(base::ASCIIToUTF16("%s"));
+  const base::string16 kReplacementText(base::ASCIIToUTF16("<input>"));
 
-  base::string16 description = UTF8ToUTF16(suggestion->description);
+  base::string16 description = base::UTF8ToUTF16(suggestion->description);
   ACMatchClassifications& description_styles = match->contents_class;
   description_styles = StyleTypesToACMatchClassifications(*suggestion);
 

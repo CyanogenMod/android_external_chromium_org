@@ -34,19 +34,16 @@ TEST(ExtensionActionTest, Visibility) {
   ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, ActionInfo());
 
   ASSERT_FALSE(action.GetIsVisible(1));
-  action.SetAppearance(ExtensionAction::kDefaultTabId, ExtensionAction::ACTIVE);
+  action.SetIsVisible(ExtensionAction::kDefaultTabId, true);
   ASSERT_TRUE(action.GetIsVisible(1));
   ASSERT_TRUE(action.GetIsVisible(100));
 
-  action.SetAppearance(ExtensionAction::kDefaultTabId,
-                       ExtensionAction::INVISIBLE);
+  action.SetIsVisible(ExtensionAction::kDefaultTabId, false);
   ASSERT_FALSE(action.GetIsVisible(1));
   ASSERT_FALSE(action.GetIsVisible(100));
-  action.SetAppearance(100, ExtensionAction::ACTIVE);
+  action.SetIsVisible(100, true);
   ASSERT_FALSE(action.GetIsVisible(1));
   ASSERT_TRUE(action.GetIsVisible(100));
-  EXPECT_FALSE(action.GetIconAnimation(100))
-      << "Page actions should not animate.";
 
   action.ClearAllValuesForTab(100);
   ASSERT_FALSE(action.GetIsVisible(1));
@@ -55,52 +52,6 @@ TEST(ExtensionActionTest, Visibility) {
   ExtensionAction browser_action(
       std::string(), ActionInfo::TYPE_BROWSER, ActionInfo());
   ASSERT_TRUE(browser_action.GetIsVisible(1));
-}
-
-TEST(ExtensionActionTest, ScriptBadgeAnimation) {
-  // Supports the icon animation.
-  base::MessageLoop message_loop;
-
-  ExtensionAction script_badge(
-      std::string(), ActionInfo::TYPE_SCRIPT_BADGE, ActionInfo());
-  EXPECT_FALSE(script_badge.GetIconAnimation(ExtensionAction::kDefaultTabId));
-  script_badge.SetAppearance(ExtensionAction::kDefaultTabId,
-                             ExtensionAction::ACTIVE);
-  EXPECT_FALSE(script_badge.GetIconAnimation(ExtensionAction::kDefaultTabId))
-      << "Showing the default tab should not animate script badges.";
-
-  script_badge.SetAppearance(ExtensionAction::kDefaultTabId,
-                             ExtensionAction::INVISIBLE);
-  EXPECT_FALSE(script_badge.GetIconAnimation(1))
-      << "Making a script badge invisible should not show its animation.";
-  script_badge.SetAppearance(1, ExtensionAction::ACTIVE);
-  EXPECT_TRUE(script_badge.GetIconAnimation(1))
-      << "Making a script badge visible should show its animation.";
-
-  script_badge.ClearAllValuesForTab(1);
-  EXPECT_FALSE(script_badge.GetIconAnimation(100));
-}
-
-TEST(ExtensionActionTest, GetAttention) {
-  // Supports the icon animation.
-  scoped_ptr<base::MessageLoop> message_loop(new base::MessageLoop);
-
-  ExtensionAction script_badge(
-      std::string(), ActionInfo::TYPE_SCRIPT_BADGE, ActionInfo());
-  EXPECT_FALSE(script_badge.GetIsVisible(1));
-  EXPECT_FALSE(script_badge.GetIconAnimation(1));
-  script_badge.SetAppearance(1, ExtensionAction::WANTS_ATTENTION);
-  EXPECT_TRUE(script_badge.GetIsVisible(1));
-  EXPECT_TRUE(script_badge.GetIconAnimation(1));
-
-  // Simulate waiting long enough for the animation to end.
-  message_loop.reset();  // Can't have 2 MessageLoops alive at once.
-  message_loop.reset(new base::MessageLoop);
-  EXPECT_FALSE(script_badge.GetIconAnimation(1));  // Sanity check.
-
-  script_badge.SetAppearance(1, ExtensionAction::ACTIVE);
-  EXPECT_FALSE(script_badge.GetIconAnimation(1))
-      << "The animation should not play again if the icon was already visible.";
 }
 
 TEST(ExtensionActionTest, Icon) {

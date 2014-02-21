@@ -13,10 +13,10 @@ import com.google.common.annotations.VisibleForTesting;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.library_loader.LoaderErrors;
+import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.content.app.ContentMain;
-import org.chromium.content.app.LibraryLoader;
-import org.chromium.content.common.ProcessInitException;
-import org.chromium.content.common.ResultCodes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +37,9 @@ import java.util.List;
 @JNINamespace("content")
 public class BrowserStartupController {
 
+    /**
+     * This provides the interface to the callbacks for successful or failed startup
+     */
     public interface StartupCallback {
         void onSuccess(boolean alreadyStarted);
         void onFailure();
@@ -196,7 +199,7 @@ public class BrowserStartupController {
         // Startup should now be complete
         assert mStartupDone;
         if (!mStartupSuccess) {
-            throw new ProcessInitException(ResultCodes.RESULT_CODE_NATIVE_STARTUP_FAILED);
+            throw new ProcessInitException(LoaderErrors.LOADER_ERROR_NATIVE_STARTUP_FAILED);
         }
     }
 

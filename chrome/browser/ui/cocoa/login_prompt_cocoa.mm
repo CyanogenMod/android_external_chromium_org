@@ -15,13 +15,13 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.h"
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
-#include "chrome/browser/ui/login/login_model.h"
 #include "chrome/browser/ui/login/login_prompt.h"
+#include "components/password_manager/core/browser/login_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request.h"
-#include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#include "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using autofill::PasswordForm;

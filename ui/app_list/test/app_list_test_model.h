@@ -7,18 +7,39 @@
 
 #include <string>
 
+#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 
 namespace app_list {
-
-class AppListItemModel;
 
 namespace test {
 
 // Extends AppListModel with helper functions for use in tests.
 class AppListTestModel : public AppListModel {
  public:
+  class AppListTestItem : public AppListItem {
+   public:
+    AppListTestItem(const std::string& id, AppListTestModel* model);
+    virtual ~AppListTestItem();
+    virtual void Activate(int event_flags) OVERRIDE;
+    virtual const char* GetItemType() const OVERRIDE;
+
+    void SetPosition(const syncer::StringOrdinal& new_position);
+
+   private:
+    AppListTestModel* model_;
+
+    DISALLOW_COPY_AND_ASSIGN(AppListTestItem);
+  };
+
+  static const char kItemType[];
+
   AppListTestModel();
+
+  // Raw pointer version convenience versions of AppListModel methods.
+  AppListItem* AddItem(AppListItem* item);
+  AppListItem* AddItemToFolder(AppListItem* item, const std::string& folder_id);
+  void MoveItemToFolder(AppListItem* item, const std::string& folder_id);
 
   // Generates a name based on |id|.
   std::string GetItemName(int id);
@@ -33,8 +54,8 @@ class AppListTestModel : public AppListModel {
   std::string GetModelContent();
 
   // Creates an item with |title| and |full_name|. Caller owns the result.
-  AppListItemModel* CreateItem(const std::string& title,
-                               const std::string& full_name);
+  AppListTestItem* CreateItem(const std::string& title,
+                              const std::string& full_name);
 
   // Creates and adds an item with |title| and |full_name| to the model.
   void CreateAndAddItem(const std::string& title, const std::string& full_name);
@@ -46,17 +67,13 @@ class AppListTestModel : public AppListModel {
   void HighlightItemAt(int index);
 
   int activate_count() { return activate_count_; }
-  AppListItemModel* last_activated() { return last_activated_; }
-
-  static const char kAppType[];
+  AppListItem* last_activated() { return last_activated_; }
 
  private:
-  class AppListTestItemModel;
-
-  void ItemActivated(AppListTestItemModel* item);
+  void ItemActivated(AppListTestItem* item);
 
   int activate_count_;
-  AppListItemModel* last_activated_;
+  AppListItem* last_activated_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListTestModel);
 };

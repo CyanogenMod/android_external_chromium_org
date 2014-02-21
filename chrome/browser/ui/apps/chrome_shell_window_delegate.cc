@@ -9,18 +9,21 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/common/render_messages.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 
 #if defined(USE_ASH)
-#include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_constants.h"
 #endif
 
 #if defined(ENABLE_PRINTING)
@@ -36,6 +39,63 @@ namespace {
 
 bool disable_external_open_for_testing_ = false;
 
+// Opens a URL with Chromium (not external browser) with the right profile.
+content::WebContents* OpenURLFromTabInternal(
+    content::BrowserContext* context,
+    content::WebContents* source,
+    const content::OpenURLParams& params) {
+  // Force all links to open in a new tab, even if they were trying to open a
+  // window.
+  chrome::NavigateParams new_tab_params(
+      static_cast<Browser*>(NULL), params.url, params.transition);
+  new_tab_params.disposition = params.disposition == NEW_BACKGROUND_TAB
+                                   ? params.disposition
+                                   : NEW_FOREGROUND_TAB;
+  new_tab_params.initiating_profile = Profile::FromBrowserContext(context);
+  chrome::Navigate(&new_tab_params);
+
+  return new_tab_params.target_contents;
+}
+
+// Helper class that opens a URL based on if this browser instance is the
+// default system browser. If it is the default, open the URL directly instead
+// of asking the system to open it.
+class OpenURLFromTabBasedOnBrowserDefault
+    : public ShellIntegration::DefaultWebClientObserver {
+ public:
+  OpenURLFromTabBasedOnBrowserDefault(content::WebContents* source,
+                                      const content::OpenURLParams& params)
+      : source_(source), params_(params) {}
+
+  // Opens a URL when called with the result of if this is the default system
+  // browser or not.
+  virtual void SetDefaultWebClientUIState(
+      ShellIntegration::DefaultWebClientUIState state) OVERRIDE {
+    Profile* profile =
+        Profile::FromBrowserContext(source_->GetBrowserContext());
+    DCHECK(profile);
+    if (!profile)
+      return;
+    switch (state) {
+      case ShellIntegration::STATE_PROCESSING:
+        break;
+      case ShellIntegration::STATE_IS_DEFAULT:
+        OpenURLFromTabInternal(profile, source_, params_);
+        break;
+      case ShellIntegration::STATE_NOT_DEFAULT:
+      case ShellIntegration::STATE_UNKNOWN:
+        platform_util::OpenExternal(profile, params_.url);
+        break;
+    }
+  }
+
+  virtual bool IsOwnedByWorker() OVERRIDE { return true; }
+
+ private:
+  content::WebContents* source_;
+  const content::OpenURLParams params_;
+};
+
 }  // namespace
 
 ShellWindowLinkDelegate::ShellWindowLinkDelegate() {}
@@ -47,8 +107,17 @@ ShellWindowLinkDelegate::~ShellWindowLinkDelegate() {}
 content::WebContents* ShellWindowLinkDelegate::OpenURLFromTab(
     content::WebContents* source,
     const content::OpenURLParams& params) {
-  platform_util::OpenExternal(params.url);
-  delete source;
+  if (source) {
+    scoped_refptr<ShellIntegration::DefaultWebClientWorker>
+        check_if_default_browser_worker =
+            new ShellIntegration::DefaultBrowserWorker(
+                new OpenURLFromTabBasedOnBrowserDefault(source, params));
+    // Object lifetime notes: The OpenURLFromTabBasedOnBrowserDefault is owned
+    // by check_if_default_browser_worker. StartCheckIsDefault() takes lifetime
+    // ownership of check_if_default_browser_worker and will clean up after
+    // the asynchronous tasks.
+    check_if_default_browser_worker->StartCheckIsDefault();
+  }
   return NULL;
 }
 
@@ -75,29 +144,20 @@ void ChromeShellWindowDelegate::InitWebContents(
 }
 
 apps::NativeAppWindow* ChromeShellWindowDelegate::CreateNativeAppWindow(
-    apps::ShellWindow* window,
-    const apps::ShellWindow::CreateParams& params) {
+    apps::AppWindow* window,
+    const apps::AppWindow::CreateParams& params) {
   return CreateNativeAppWindowImpl(window, params);
 }
 
 content::WebContents* ChromeShellWindowDelegate::OpenURLFromTab(
-    Profile* profile,
+    content::BrowserContext* context,
     content::WebContents* source,
     const content::OpenURLParams& params) {
-  // Force all links to open in a new tab, even if they were trying to open a
-  // window.
-  chrome::NavigateParams new_tab_params(
-      static_cast<Browser*>(NULL), params.url, params.transition);
-  new_tab_params.disposition = params.disposition == NEW_BACKGROUND_TAB ?
-      params.disposition : NEW_FOREGROUND_TAB;
-  new_tab_params.initiating_profile = profile;
-  chrome::Navigate(&new_tab_params);
-
-  return new_tab_params.target_contents;
+  return OpenURLFromTabInternal(context, source, params);
 }
 
 void ChromeShellWindowDelegate::AddNewContents(
-    Profile* profile,
+    content::BrowserContext* context,
     content::WebContents* new_contents,
     WindowOpenDisposition disposition,
     const gfx::Rect& initial_pos,
@@ -110,7 +170,7 @@ void ChromeShellWindowDelegate::AddNewContents(
     return;
   }
   chrome::ScopedTabbedBrowserDisplayer displayer(
-      profile, chrome::GetActiveDesktop());
+      Profile::FromBrowserContext(context), chrome::GetActiveDesktop());
   // Force all links to open in a new tab, even if they were trying to open a
   // new window.
   disposition =
@@ -142,7 +202,7 @@ void ChromeShellWindowDelegate::RequestMediaAccessPermission(
 
 int ChromeShellWindowDelegate::PreferredIconSize() {
 #if defined(USE_ASH)
-  return ash::kLauncherPreferredSize;
+  return ash::kShelfPreferredSize;
 #else
   return extension_misc::EXTENSION_ICON_SMALL;
 #endif

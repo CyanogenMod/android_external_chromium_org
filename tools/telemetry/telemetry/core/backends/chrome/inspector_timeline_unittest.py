@@ -2,9 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import unittest
-import sys
-
 from telemetry.core import util
 from telemetry.core.backends.chrome import inspector_timeline
 from telemetry.unittest import tab_test_case
@@ -20,9 +17,6 @@ class InspectorTimelineTabTest(tab_test_case.TabTestCase):
     util.WaitFor(_IsDone, 5)
 
   def testGotTimeline(self):
-    if sys.platform in ('win32', 'cygwin'):
-      raise unittest.SkipTest('Test flaky on windows. http://crbug.com/321529')
-
     # While the timeline is recording, call window.webkitRequestAnimationFrame.
     # This will create a FireAnimationEvent, which can be checked below. See:
     # https://developer.mozilla.org/en/docs/Web/API/window.requestAnimationFrame

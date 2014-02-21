@@ -107,13 +107,11 @@ class MEDIA_EXPORT AudioOutputController
   // OnCreated() call from the same audio manager thread.  |audio_manager| must
   // outlive AudioOutputController.
   // The |output_device_id| can be either empty (default device) or specify a
-  // specific hardware device for audio output.  The |input_device_id| is
-  // used only for unified audio when opening up input and output at the same
-  // time (controlled by |params.input_channel_count()|).
+  // specific hardware device for audio output.
   static scoped_refptr<AudioOutputController> Create(
       AudioManager* audio_manager, EventHandler* event_handler,
       const AudioParameters& params, const std::string& output_device_id,
-      const std::string& input_device_id, SyncReader* sync_reader);
+      SyncReader* sync_reader);
 
   // Methods to control playback of the stream.
 
@@ -193,7 +191,6 @@ class MEDIA_EXPORT AudioOutputController
   AudioOutputController(AudioManager* audio_manager, EventHandler* handler,
                         const AudioParameters& params,
                         const std::string& output_device_id,
-                        const std::string& input_device_id,
                         SyncReader* sync_reader);
 
   // The following methods are executed on the audio manager thread.
@@ -234,9 +231,6 @@ class MEDIA_EXPORT AudioOutputController
   // default output device.
   std::string output_device_id_;
 
-  // Used by the unified IO to open the correct input device.
-  const std::string input_device_id_;
-
   AudioOutputStream* stream_;
 
   // When non-NULL, audio is being diverted to this stream.
@@ -261,7 +255,7 @@ class MEDIA_EXPORT AudioOutputController
   SyncReader* const sync_reader_;
 
   // The message loop of audio manager thread that this object runs on.
-  const scoped_refptr<base::MessageLoopProxy> message_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner> message_loop_;
 
 #if defined(AUDIO_POWER_MONITORING)
   // Scans audio samples from OnMoreIOData() as input to compute power levels.

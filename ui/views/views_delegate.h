@@ -80,8 +80,8 @@ class VIEWS_EXPORT ViewsDelegate {
 
   // For accessibility, notify the delegate that a menu item was focused
   // so that alternate feedback (speech / magnified text) can be provided.
-  virtual void NotifyMenuItemFocused(const string16& menu_name,
-                                     const string16& menu_item_name,
+  virtual void NotifyMenuItemFocused(const base::string16& menu_name,
+                                     const base::string16& menu_item_name,
                                      int item_index,
                                      int item_count,
                                      bool has_submenu) = 0;
@@ -102,11 +102,6 @@ class VIEWS_EXPORT ViewsDelegate {
   virtual NonClientFrameView* CreateDefaultNonClientFrameView(
       Widget* widget) = 0;
 
-  // Returns whether the embedding app wants windows to be created with the
-  // views::Widget marked as transparent.  For example, an app may wish to
-  // apply transparent window frames in the NonClientFrameView.
-  virtual bool UseTransparentWindows() const = 0;
-
   // AddRef/ReleaseRef are invoked while a menu is visible. They are used to
   // ensure we don't attempt to exit while a menu is showing.
   virtual void AddRef() = 0;
@@ -123,6 +118,12 @@ class VIEWS_EXPORT ViewsDelegate {
 
   // Returns the default obscured text reveal duration.
   virtual base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() = 0;
+
+  // Returns true if the operating system's window manager will always provide a
+  // title bar with caption buttons (ignoring the setting to
+  // |remove_standard_frame| in InitParams). If |maximized|, this applies to
+  // maximized windows; otherwise to restored windows.
+  virtual bool WindowManagerProvidesTitleBar(bool maximized);
 
  private:
   scoped_ptr<ViewsTouchSelectionControllerFactory> views_tsc_factory_;

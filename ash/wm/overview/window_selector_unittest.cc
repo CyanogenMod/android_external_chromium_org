@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/launcher/launcher.h"
+#include "ash/drag_drop/drag_drop_controller.h"
 #include "ash/root_window_controller.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/test/launcher_test_api.h"
+#include "ash/test/shelf_test_api.h"
 #include "ash/test/shelf_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_shelf_delegate.h"
@@ -21,6 +22,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -33,6 +35,7 @@
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
+#include "ui/views/corewm/window_util.h"
 
 namespace ash {
 namespace internal {
@@ -96,6 +99,13 @@ aura::Window* GetCopyWindow(aura::Window* window) {
   return copy_window;
 }
 
+void CancelDrag(DragDropController* controller, bool* canceled) {
+  if (controller->IsDragDropInProgress()) {
+    *canceled = true;
+    controller->DragCancel();
+  }
+}
+
 }  // namespace
 
 class WindowSelectorTest : public test::AshTestBase {
@@ -108,7 +118,7 @@ class WindowSelectorTest : public test::AshTestBase {
     ASSERT_TRUE(test::TestShelfDelegate::instance());
 
     shelf_view_test_.reset(new test::ShelfViewTestAPI(
-        test::LauncherTestAPI(Launcher::ForPrimaryDisplay()).shelf_view()));
+        test::ShelfTestAPI(Shelf::ForPrimaryDisplay()).shelf_view()));
     shelf_view_test_->SetAnimationDuration(1);
   }
 
@@ -126,8 +136,8 @@ class WindowSelectorTest : public test::AshTestBase {
 
   aura::Window* CreatePanelWindow(const gfx::Rect& bounds) {
     aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
-        NULL, aura::client::WINDOW_TYPE_PANEL, 0, bounds);
-    test::TestShelfDelegate::instance()->AddLauncherItem(window);
+        NULL, ui::wm::WINDOW_TYPE_PANEL, 0, bounds);
+    test::TestShelfDelegate::instance()->AddShelfItem(window);
     shelf_view_test()->RunMessageLoopUntilAnimationsDone();
     return window;
   }
@@ -171,7 +181,7 @@ class WindowSelectorTest : public test::AshTestBase {
   }
 
   gfx::RectF GetTransformedBounds(aura::Window* window) {
-    gfx::RectF bounds(ash::ScreenAsh::ConvertRectToScreen(
+    gfx::RectF bounds(ScreenUtil::ConvertRectToScreen(
         window->parent(), window->layer()->bounds()));
     gfx::Transform transform(GetTransformRelativeTo(bounds.origin(),
         window->layer()->transform()));
@@ -180,7 +190,7 @@ class WindowSelectorTest : public test::AshTestBase {
   }
 
   gfx::RectF GetTransformedTargetBounds(aura::Window* window) {
-    gfx::RectF bounds(ash::ScreenAsh::ConvertRectToScreen(
+    gfx::RectF bounds(ScreenUtil::ConvertRectToScreen(
         window->parent(), window->layer()->GetTargetBounds()));
     gfx::Transform transform(GetTransformRelativeTo(bounds.origin(),
         window->layer()->GetTargetTransform()));
@@ -245,7 +255,7 @@ TEST_F(WindowSelectorTest, Basic) {
 
   // The cursor should be visible and locked as a pointer
   EXPECT_EQ(ui::kCursorPointer,
-            root_window->GetDispatcher()->last_cursor().native_type());
+            root_window->GetDispatcher()->host()->last_cursor().native_type());
   EXPECT_TRUE(aura::client::GetCursorClient(root_window)->IsCursorLocked());
   EXPECT_TRUE(aura::client::GetCursorClient(root_window)->IsCursorVisible());
 
@@ -692,7 +702,7 @@ TEST_F(WindowSelectorTest, ModalChild) {
   scoped_ptr<aura::Window> window1(CreateWindow(bounds));
   scoped_ptr<aura::Window> child1(CreateWindow(bounds));
   child1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  window1->AddTransientChild(child1.get());
+  views::corewm::AddTransientChild(window1.get(), child1.get());
   EXPECT_EQ(window1->parent(), child1->parent());
   ToggleOverview();
   EXPECT_TRUE(window1->IsVisible());
@@ -708,7 +718,7 @@ TEST_F(WindowSelectorTest, ClickModalWindowParent) {
   scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 180, 180)));
   scoped_ptr<aura::Window> child1(CreateWindow(gfx::Rect(200, 0, 180, 180)));
   child1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  window1->AddTransientChild(child1.get());
+  views::corewm::AddTransientChild(window1.get(), child1.get());
   EXPECT_FALSE(WindowsOverlapping(window1.get(), child1.get()));
   EXPECT_EQ(window1->parent(), child1->parent());
   ToggleOverview();
@@ -829,7 +839,7 @@ TEST_F(WindowSelectorTest, CycleMultipleDisplaysCopiesWindows) {
   unmoved2->SetName("unmoved2");
   moved1->SetName("moved1");
   moved1->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  moved1_trans_parent->AddTransientChild(moved1.get());
+  views::corewm::AddTransientChild(moved1_trans_parent.get(), moved1.get());
   moved1_trans_parent->SetName("moved1_trans_parent");
 
   EXPECT_EQ(root_windows[0], moved1->GetRootWindow());
@@ -944,6 +954,80 @@ TEST_F(WindowSelectorTest, BoundsChangeDuringCycleOnOtherDisplay) {
   EXPECT_EQ(overview_bounds.width(), new_overview_bounds.width());
   EXPECT_EQ(overview_bounds.height(), new_overview_bounds.height());
   StopCycling();
+}
+
+// Tests shutting down during overview.
+TEST_F(WindowSelectorTest, Shutdown) {
+  gfx::Rect bounds(0, 0, 400, 400);
+  // These windows will be deleted when the test exits and the Shell instance
+  // is shut down.
+  aura::Window* window1(CreateWindow(bounds));
+  aura::Window* window2(CreateWindow(bounds));
+  aura::Window* window3(CreatePanelWindow(bounds));
+  aura::Window* window4(CreatePanelWindow(bounds));
+
+  wm::ActivateWindow(window4);
+  wm::ActivateWindow(window3);
+  wm::ActivateWindow(window2);
+  wm::ActivateWindow(window1);
+
+  ToggleOverview();
+}
+
+// Tests removing a display during overview.
+TEST_F(WindowSelectorTest, RemoveDisplay) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("400x400,400x400");
+  gfx::Rect bounds1(0, 0, 100, 100);
+  gfx::Rect bounds2(450, 0, 100, 100);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds1));
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds2));
+  scoped_ptr<aura::Window> window3(CreatePanelWindow(bounds1));
+  scoped_ptr<aura::Window> window4(CreatePanelWindow(bounds2));
+
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  EXPECT_EQ(root_windows[0], window1->GetRootWindow());
+  EXPECT_EQ(root_windows[1], window2->GetRootWindow());
+  EXPECT_EQ(root_windows[0], window3->GetRootWindow());
+  EXPECT_EQ(root_windows[1], window4->GetRootWindow());
+
+  wm::ActivateWindow(window4.get());
+  wm::ActivateWindow(window3.get());
+  wm::ActivateWindow(window2.get());
+  wm::ActivateWindow(window1.get());
+
+  ToggleOverview();
+  EXPECT_TRUE(IsSelecting());
+  UpdateDisplay("400x400");
+  EXPECT_FALSE(IsSelecting());
+}
+
+// Tests starting overview during a drag and drop tracking operation.
+// TODO(flackr): Fix memory corruption crash when running locally (not failing
+// on bots). See http://crbug.com/342528.
+TEST_F(WindowSelectorTest, DISABLED_DragDropInProgress) {
+  bool drag_canceled_by_test = false;
+  gfx::Rect bounds(0, 0, 400, 400);
+  scoped_ptr<aura::Window> window(CreateWindow(bounds));
+  test::ShellTestApi shell_test_api(Shell::GetInstance());
+  ash::internal::DragDropController* drag_drop_controller =
+      shell_test_api.drag_drop_controller();
+  ui::OSExchangeData data;
+  base::MessageLoopForUI::current()->PostTask(FROM_HERE,
+      base::Bind(&WindowSelectorTest::ToggleOverview,
+                 base::Unretained(this)));
+  base::MessageLoopForUI::current()->PostTask(FROM_HERE,
+      base::Bind(&CancelDrag, drag_drop_controller, &drag_canceled_by_test));
+  data.SetString(base::UTF8ToUTF16("I am being dragged"));
+  drag_drop_controller->StartDragAndDrop(data, window->GetRootWindow(),
+      window.get(), gfx::Point(5, 5), ui::DragDropTypes::DRAG_MOVE,
+      ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE);
+  RunAllPendingInMessageLoop();
+  EXPECT_FALSE(drag_canceled_by_test);
+  ASSERT_TRUE(IsSelecting());
+  RunAllPendingInMessageLoop();
 }
 
 }  // namespace internal

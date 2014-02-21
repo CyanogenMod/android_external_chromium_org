@@ -4,11 +4,11 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/password_manager/password_store.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/passwords_helper.h"
 #include "chrome/browser/sync/test/integration/performance/sync_timing_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "components/password_manager/core/browser/password_store.h"
 
 using passwords_helper::AddLogin;
 using passwords_helper::CreateTestPasswordForm;
@@ -54,7 +54,7 @@ void PasswordsSyncPerfTest::UpdateLogins(int profile) {
   GetLogins(GetPasswordStore(profile), logins);
   for (std::vector<autofill::PasswordForm>::iterator it = logins.begin();
        it != logins.end(); ++it) {
-    (*it).password_value = ASCIIToUTF16(NextPassword());
+    (*it).password_value = base::ASCIIToUTF16(NextPassword());
     UpdateLogin(GetPasswordStore(profile), (*it));
   }
 }

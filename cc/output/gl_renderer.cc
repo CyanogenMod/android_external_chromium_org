@@ -40,7 +40,6 @@
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -55,7 +54,6 @@
 #include "ui/gfx/quad_f.h"
 #include "ui/gfx/rect_conversions.h"
 
-using blink::WebGraphicsContext3D;
 using gpu::gles2::GLES2Interface;
 
 namespace cc {
@@ -78,6 +76,41 @@ class SimpleSwapFence : public ResourceProvider::Fence {
  private:
   virtual ~SimpleSwapFence() {}
   bool has_passed_;
+};
+
+class OnDemandRasterTaskImpl : public internal::Task {
+ public:
+  OnDemandRasterTaskImpl(PicturePileImpl* picture_pile,
+                         SkBitmap* bitmap,
+                         gfx::Rect content_rect,
+                         float contents_scale)
+      : picture_pile_(picture_pile),
+        bitmap_(bitmap),
+        content_rect_(content_rect),
+        contents_scale_(contents_scale) {
+    DCHECK(picture_pile_);
+    DCHECK(bitmap_);
+  }
+
+  // Overridden from internal::Task:
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
+    SkBitmapDevice device(*bitmap_);
+    SkCanvas canvas(&device);
+    picture_pile_->RasterToBitmap(
+        &canvas, content_rect_, contents_scale_, NULL);
+  }
+
+ protected:
+  virtual ~OnDemandRasterTaskImpl() {}
+
+ private:
+  PicturePileImpl* picture_pile_;
+  SkBitmap* bitmap_;
+  const gfx::Rect content_rect_;
+  const float contents_scale_;
+
+  DISALLOW_COPY_AND_ASSIGN(OnDemandRasterTaskImpl);
 };
 
 bool NeedsIOSurfaceReadbackWorkaround() {
@@ -166,7 +199,6 @@ GLRenderer::GLRenderer(RendererClient* client,
     : DirectRenderer(client, settings, output_surface, resource_provider),
       offscreen_framebuffer_id_(0),
       shared_geometry_quad_(gfx::RectF(-0.5f, -0.5f, 1.0f, 1.0f)),
-      context_(output_surface->context_provider()->Context3d()),
       gl_(output_surface->context_provider()->ContextGL()),
       context_support_(output_surface->context_provider()->ContextSupport()),
       texture_mailbox_deleter_(texture_mailbox_deleter),
@@ -179,18 +211,18 @@ GLRenderer::GLRenderer(RendererClient* client,
       highp_threshold_min_(highp_threshold_min),
       highp_threshold_cache_(0),
       on_demand_tile_raster_resource_id_(0) {
-  DCHECK(context_);
+  DCHECK(gl_);
   DCHECK(context_support_);
 
   ContextProvider::Capabilities context_caps =
       output_surface_->context_provider()->ContextCapabilities();
 
   capabilities_.using_partial_swap =
-      settings_->partial_swap_enabled && context_caps.post_sub_buffer;
+      settings_->partial_swap_enabled && context_caps.gpu.post_sub_buffer;
 
-  DCHECK(!context_caps.iosurface || context_caps.texture_rectangle);
+  DCHECK(!context_caps.gpu.iosurface || context_caps.gpu.texture_rectangle);
 
-  capabilities_.using_egl_image = context_caps.egl_image_external;
+  capabilities_.using_egl_image = context_caps.gpu.egl_image_external;
 
   capabilities_.max_texture_size = resource_provider_->max_texture_size();
   capabilities_.best_texture_format = resource_provider_->best_texture_format();
@@ -200,14 +232,17 @@ GLRenderer::GLRenderer(RendererClient* client,
 
   // Check for texture fast paths. Currently we always use MO8 textures,
   // so we only need to avoid POT textures if we have an NPOT fast-path.
-  capabilities_.avoid_pow2_textures = context_caps.fast_npot_mo8_textures;
+  capabilities_.avoid_pow2_textures = context_caps.gpu.fast_npot_mo8_textures;
 
   capabilities_.using_offscreen_context3d = true;
 
   capabilities_.using_map_image =
-      settings_->use_map_image && context_caps.map_image;
+      settings_->use_map_image && context_caps.gpu.map_image;
 
-  capabilities_.using_discard_framebuffer = context_caps.discard_framebuffer;
+  capabilities_.using_discard_framebuffer =
+      context_caps.gpu.discard_framebuffer;
+
+  capabilities_.allow_rasterize_on_demand = true;
 
   InitializeSharedObjects();
 }
@@ -222,11 +257,9 @@ GLRenderer::~GLRenderer() {
   CleanupSharedObjects();
 }
 
-const RendererCapabilities& GLRenderer::Capabilities() const {
+const RendererCapabilitiesImpl& GLRenderer::Capabilities() const {
   return capabilities_;
 }
-
-WebGraphicsContext3D* GLRenderer::Context() { return context_; }
 
 void GLRenderer::DebugGLCall(GLES2Interface* gl,
                              const char* command,
@@ -350,6 +383,11 @@ void GLRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     case DrawQuad::STREAM_VIDEO_CONTENT:
       DrawStreamVideoQuad(frame, StreamVideoDrawQuad::MaterialCast(quad));
       break;
+    case DrawQuad::SURFACE_CONTENT:
+      // Surface content should be fully resolved to other quad types before
+      // reaching a direct renderer.
+      NOTREACHED();
+      break;
     case DrawQuad::TEXTURE_CONTENT:
       EnqueueTextureQuad(frame, TextureDrawQuad::MaterialCast(quad));
       break;
@@ -463,9 +501,6 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
   // texture.
   renderer->resource_provider()->Flush();
 
-  // Make sure skia uses the correct GL context.
-  offscreen_contexts->MakeGrContextCurrent();
-
   // Wrap the source texture in a Ganesh platform texture.
   GrBackendTextureDesc backend_texture_description;
   backend_texture_description.fWidth = source_texture_resource->size().width();
@@ -525,7 +560,7 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
 
   // Flush the GL context so rendering results from this context are
   // visible in the compositor's context.
-  offscreen_contexts->Context3d()->flush();
+  offscreen_contexts->ContextGL()->Flush();
 
   return device.accessBitmap(false);
 }
@@ -570,9 +605,6 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   // in the shared context.  Do this after locking/creating the compositor
   // texture.
   renderer->resource_provider()->Flush();
-
-  // Make sure skia uses the correct GL context.
-  offscreen_contexts->MakeGrContextCurrent();
 
   // Wrap the source texture in a Ganesh platform texture.
   GrBackendTextureDesc backend_texture_description;
@@ -650,7 +682,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
 
   // Flush the GL context so rendering results from this context are
   // visible in the compositor's context.
-  offscreen_contexts->Context3d()->flush();
+  offscreen_contexts->ContextGL()->Flush();
 
   return device.accessBitmap(false);
 }
@@ -1720,11 +1752,13 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                             quad->texture_format);
   }
 
-  SkBitmapDevice device(on_demand_tile_raster_bitmap_);
-  SkCanvas canvas(&device);
-
-  quad->picture_pile->RasterToBitmap(
-      &canvas, quad->content_rect, quad->contents_scale, NULL);
+  // Create and run on-demand raster task for tile.
+  scoped_refptr<internal::Task> on_demand_raster_task(
+      new OnDemandRasterTaskImpl(quad->picture_pile,
+                                 &on_demand_tile_raster_bitmap_,
+                                 quad->content_rect,
+                                 quad->contents_scale));
+  RunOnDemandRasterTask(on_demand_raster_task.get());
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;
@@ -2064,7 +2098,7 @@ void GLRenderer::DrawQuadGeometry(const DrawingFrame* frame,
 
 void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
                                           int texture_id,
-                                          gfx::Rect rect,
+                                          const gfx::Rect& rect,
                                           const gfx::Transform& draw_matrix,
                                           bool flip_vertically) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
@@ -2106,7 +2140,7 @@ void GLRenderer::Finish() {
 void GLRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   DCHECK(!is_backbuffer_discarded_);
 
-  TRACE_EVENT0("cc", "GLRenderer::SwapBuffers");
+  TRACE_EVENT0("cc,benchmark", "GLRenderer::SwapBuffers");
   // We're done! Time to swapbuffers!
 
   gfx::Size surface_size = output_surface_->SurfaceSize();
@@ -2174,7 +2208,7 @@ void GLRenderer::EnsureBackbuffer() {
   is_backbuffer_discarded_ = false;
 }
 
-void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
+void GLRenderer::GetFramebufferPixels(void* pixels, const gfx::Rect& rect) {
   if (!pixels || rect.IsEmpty())
     return;
 
@@ -2193,7 +2227,7 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
 }
 
 void GLRenderer::GetFramebufferPixelsAsync(
-    gfx::Rect rect,
+    const gfx::Rect& rect,
     scoped_ptr<CopyOutputRequest> request) {
   DCHECK(!request->IsEmpty());
   if (request->IsEmpty())
@@ -2212,13 +2246,8 @@ void GLRenderer::GetFramebufferPixelsAsync(
     gpu::Mailbox mailbox;
     if (own_mailbox) {
       GLC(gl_, gl_->GenMailboxCHROMIUM(mailbox.name));
-      if (mailbox.IsZero()) {
-        gl_->DeleteTextures(1, &texture_id);
-        request->SendEmptyResult();
-        return;
-      }
     } else {
-      mailbox = request->texture_mailbox().name();
+      mailbox = request->texture_mailbox().mailbox();
       DCHECK_EQ(static_cast<unsigned>(GL_TEXTURE_2D),
                 request->texture_mailbox().target());
       DCHECK(!mailbox.IsZero());
@@ -2291,7 +2320,7 @@ void GLRenderer::GetFramebufferPixelsAsync(
 
 void GLRenderer::DoGetFramebufferPixels(
     uint8* dest_pixels,
-    gfx::Rect window_rect,
+    const gfx::Rect& window_rect,
     const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback) {
   DCHECK_GE(window_rect.x(), 0);
   DCHECK_GE(window_rect.y(), 0);
@@ -2384,13 +2413,16 @@ void GLRenderer::DoGetFramebufferPixels(
   // Save the finished_callback so it can be cancelled.
   pending_async_read_pixels_.front()->finished_read_pixels_callback.Reset(
       finished_callback);
+  base::Closure cancelable_callback =
+      pending_async_read_pixels_.front()->
+          finished_read_pixels_callback.callback();
 
   // Save the buffer to verify the callbacks happen in the expected order.
   pending_async_read_pixels_.front()->buffer = buffer;
 
   if (is_async) {
     GLC(gl_, gl_->EndQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
-    context_support_->SignalQuery(query, finished_callback);
+    context_support_->SignalQuery(query, cancelable_callback);
   } else {
     resource_provider_->Finish();
     finished_callback.Run();
@@ -2404,7 +2436,7 @@ void GLRenderer::FinishedReadback(
     unsigned source_buffer,
     unsigned query,
     uint8* dest_pixels,
-    gfx::Size size) {
+    const gfx::Size& size) {
   DCHECK(!pending_async_read_pixels_.empty());
 
   if (query != 0) {
@@ -2471,7 +2503,7 @@ void GLRenderer::PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
 
 void GLRenderer::GetFramebufferTexture(unsigned texture_id,
                                        ResourceFormat texture_format,
-                                       gfx::Rect window_rect) {
+                                       const gfx::Rect& window_rect) {
   DCHECK(texture_id);
   DCHECK_GE(window_rect.x(), 0);
   DCHECK_GE(window_rect.y(), 0);
@@ -2493,7 +2525,7 @@ void GLRenderer::GetFramebufferTexture(unsigned texture_id,
 
 bool GLRenderer::UseScopedTexture(DrawingFrame* frame,
                                   const ScopedResource* texture,
-                                  gfx::Rect viewport_rect) {
+                                  const gfx::Rect& viewport_rect) {
   DCHECK(texture->id());
   frame->current_render_pass = NULL;
   frame->current_texture = texture;
@@ -2515,7 +2547,7 @@ void GLRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
 
 bool GLRenderer::BindFramebufferToTexture(DrawingFrame* frame,
                                           const ScopedResource* texture,
-                                          gfx::Rect target_rect) {
+                                          const gfx::Rect& target_rect) {
   DCHECK(texture->id());
 
   current_framebuffer_lock_.reset();
@@ -2539,7 +2571,7 @@ bool GLRenderer::BindFramebufferToTexture(DrawingFrame* frame,
   return true;
 }
 
-void GLRenderer::SetScissorTestRect(gfx::Rect scissor_rect) {
+void GLRenderer::SetScissorTestRect(const gfx::Rect& scissor_rect) {
   EnsureScissorTestEnabled();
 
   // Don't unnecessarily ask the context to change the scissor, because it
@@ -2558,7 +2590,7 @@ void GLRenderer::SetScissorTestRect(gfx::Rect scissor_rect) {
   scissor_rect_needs_reset_ = false;
 }
 
-void GLRenderer::SetDrawViewport(gfx::Rect window_space_viewport) {
+void GLRenderer::SetDrawViewport(const gfx::Rect& window_space_viewport) {
   viewport_ = window_space_viewport;
   GLC(gl_,
       gl_->Viewport(window_space_viewport.x(),

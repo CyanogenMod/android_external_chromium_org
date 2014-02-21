@@ -11,13 +11,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/client/visibility_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/layout_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/root_window_observer.h"
 #include "ui/aura/test/aura_test_base.h"
@@ -268,11 +268,11 @@ TEST_F(WindowTest, GetChildById) {
 // and not containing NULL or parents.
 TEST_F(WindowTest, Contains) {
   Window parent(NULL);
-  parent.Init(ui::LAYER_NOT_DRAWN);
+  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(ui::LAYER_NOT_DRAWN);
+  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child2(NULL);
-  child2.Init(ui::LAYER_NOT_DRAWN);
+  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
 
   parent.AddChild(&child1);
   child1.AddChild(&child2);
@@ -371,8 +371,8 @@ TEST_F(WindowTest, MoveCursorToWithTransformRootWindow) {
   transform.Translate(100.0, 100.0);
   transform.Rotate(90.0);
   transform.Scale(2.0, 5.0);
-  dispatcher()->SetTransform(transform);
-  dispatcher()->MoveCursorTo(gfx::Point(10, 10));
+  dispatcher()->host()->SetTransform(transform);
+  dispatcher()->host()->MoveCursorTo(gfx::Point(10, 10));
 #if !defined(OS_WIN)
   gfx::Point mouse_location;
   EXPECT_TRUE(dispatcher()->host()->QueryMouseLocation(&mouse_location));
@@ -452,7 +452,7 @@ TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
   transform.Translate(10.0, 20.0);
   transform.Rotate(10.0);
   transform.Scale(0.3f, 0.5f);
-  dispatcher()->SetTransform(root_transform);
+  dispatcher()->host()->SetTransform(root_transform);
   w1->SetTransform(transform);
   w11->SetTransform(transform);
   w111->SetTransform(transform);
@@ -473,7 +473,7 @@ TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
 TEST_F(WindowTest, HitTest) {
   Window w1(new ColorTestWindowDelegate(SK_ColorWHITE));
   w1.set_id(1);
-  w1.Init(ui::LAYER_TEXTURED);
+  w1.Init(aura::WINDOW_LAYER_TEXTURED);
   w1.SetBounds(gfx::Rect(10, 20, 50, 60));
   w1.Show();
   ParentWindow(&w1);
@@ -482,30 +482,13 @@ TEST_F(WindowTest, HitTest) {
   EXPECT_TRUE(w1.HitTest(gfx::Point(1, 1)));
   EXPECT_FALSE(w1.HitTest(gfx::Point(-1, -1)));
 
-  // We can expand the bounds slightly to track events outside our border.
-  w1.SetHitTestBoundsOverrideOuter(gfx::Insets(-1, -1, -1, -1),
-                                   gfx::Insets(-5, -5, -5, -5));
-  EXPECT_TRUE(w1.HitTest(gfx::Point(-1, -1)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(-2, -2)));
-
-  ui::TouchEvent pressed(
-      ui::ET_TOUCH_PRESSED, gfx::Point(50, 50), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&pressed);
-  EXPECT_TRUE(w1.HitTest(gfx::Point(-2, -2)));
-  EXPECT_TRUE(w1.HitTest(gfx::Point(-5, -5)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(-5, -6)));
-  ui::TouchEvent released(
-      ui::ET_TOUCH_RELEASED, gfx::Point(50, 50), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&released);
-  EXPECT_FALSE(w1.HitTest(gfx::Point(-2, -2)));
-
   // TODO(beng): clip Window to parent.
 }
 
 TEST_F(WindowTest, HitTestMask) {
   MaskedWindowDelegate d1(gfx::Rect(5, 6, 20, 30));
   Window w1(&d1);
-  w1.Init(ui::LAYER_NOT_DRAWN);
+  w1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w1.SetBounds(gfx::Rect(10, 20, 50, 60));
   w1.Show();
   ParentWindow(&w1);
@@ -659,7 +642,7 @@ TEST_F(WindowTest, WindowAddedToRootWindowShouldNotifyChildAndNotParent) {
   AddedToRootWindowObserver child_observer;
   scoped_ptr<Window> parent_window(CreateTestWindowWithId(1, root_window()));
   scoped_ptr<Window> child_window(new Window(NULL));
-  child_window->Init(ui::LAYER_TEXTURED);
+  child_window->Init(aura::WINDOW_LAYER_TEXTURED);
   child_window->Show();
 
   parent_window->AddObserver(&parent_observer);
@@ -708,11 +691,11 @@ TEST_F(WindowTest, OrphanedBeforeOnDestroyed) {
 // Make sure StackChildAtTop moves both the window and layer to the front.
 TEST_F(WindowTest, StackChildAtTop) {
   Window parent(NULL);
-  parent.Init(ui::LAYER_NOT_DRAWN);
+  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(ui::LAYER_NOT_DRAWN);
+  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child2(NULL);
-  child2.Init(ui::LAYER_NOT_DRAWN);
+  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
 
   parent.AddChild(&child1);
   parent.AddChild(&child2);
@@ -735,15 +718,15 @@ TEST_F(WindowTest, StackChildAtTop) {
 // Make sure StackChildBelow works.
 TEST_F(WindowTest, StackChildBelow) {
   Window parent(NULL);
-  parent.Init(ui::LAYER_NOT_DRAWN);
+  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(ui::LAYER_NOT_DRAWN);
+  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   child1.set_id(1);
   Window child2(NULL);
-  child2.Init(ui::LAYER_NOT_DRAWN);
+  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   child2.set_id(2);
   Window child3(NULL);
-  child3.Init(ui::LAYER_NOT_DRAWN);
+  child3.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   child3.set_id(3);
 
   parent.AddChild(&child1);
@@ -767,13 +750,13 @@ TEST_F(WindowTest, StackChildBelow) {
 // Various assertions for StackChildAbove.
 TEST_F(WindowTest, StackChildAbove) {
   Window parent(NULL);
-  parent.Init(ui::LAYER_NOT_DRAWN);
+  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(ui::LAYER_NOT_DRAWN);
+  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child2(NULL);
-  child2.Init(ui::LAYER_NOT_DRAWN);
+  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window child3(NULL);
-  child3.Init(ui::LAYER_NOT_DRAWN);
+  child3.Init(aura::WINDOW_LAYER_NOT_DRAWN);
 
   parent.AddChild(&child1);
   parent.AddChild(&child2);
@@ -847,7 +830,7 @@ TEST_F(WindowTest, CaptureTests) {
 
   ui::TouchEvent touchev(
       ui::ET_TOUCH_PRESSED, gfx::Point(50, 50), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&touchev);
+  DispatchEventUsingWindowDispatcher(&touchev);
   EXPECT_EQ(1, delegate.touch_event_count());
   delegate.ResetCounts();
 
@@ -863,7 +846,7 @@ TEST_F(WindowTest, CaptureTests) {
 
   ui::TouchEvent touchev2(
       ui::ET_TOUCH_PRESSED, gfx::Point(250, 250), 1, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&touchev2);
+  DispatchEventUsingWindowDispatcher(&touchev2);
   EXPECT_EQ(0, delegate.touch_event_count());
 
   // Removing the capture window from parent should reset the capture window
@@ -886,7 +869,7 @@ TEST_F(WindowTest, TouchCaptureCancelsOtherTouches) {
   // Press on w1.
   ui::TouchEvent press(
       ui::ET_TOUCH_PRESSED, gfx::Point(10, 10), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+  DispatchEventUsingWindowDispatcher(&press);
   // We will get both GESTURE_BEGIN and GESTURE_TAP_DOWN.
   EXPECT_EQ(2, delegate1.gesture_event_count());
   delegate1.ResetCounts();
@@ -900,7 +883,7 @@ TEST_F(WindowTest, TouchCaptureCancelsOtherTouches) {
 
   // Events now go to w2.
   ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(10, 20), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&move);
+  DispatchEventUsingWindowDispatcher(&move);
   EXPECT_EQ(0, delegate1.gesture_event_count());
   EXPECT_EQ(0, delegate1.touch_event_count());
   EXPECT_EQ(0, delegate2.gesture_event_count());
@@ -908,14 +891,14 @@ TEST_F(WindowTest, TouchCaptureCancelsOtherTouches) {
 
   ui::TouchEvent release(
       ui::ET_TOUCH_RELEASED, gfx::Point(10, 20), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&release);
+  DispatchEventUsingWindowDispatcher(&release);
   EXPECT_EQ(0, delegate1.gesture_event_count());
   EXPECT_EQ(0, delegate2.gesture_event_count());
 
   // A new press is captured by w2.
   ui::TouchEvent press2(
       ui::ET_TOUCH_PRESSED, gfx::Point(10, 10), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press2);
+  DispatchEventUsingWindowDispatcher(&press2);
   EXPECT_EQ(0, delegate1.gesture_event_count());
   // We will get both GESTURE_BEGIN and GESTURE_TAP_DOWN.
   EXPECT_EQ(2, delegate2.gesture_event_count());
@@ -937,7 +920,7 @@ TEST_F(WindowTest, TouchCaptureDoesntCancelCapturedTouches) {
 
   ui::TouchEvent press(
       ui::ET_TOUCH_PRESSED, gfx::Point(10, 10), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+  DispatchEventUsingWindowDispatcher(&press);
 
   // We will get both GESTURE_BEGIN and GESTURE_TAP_DOWN.
   EXPECT_EQ(2, delegate.gesture_event_count());
@@ -952,7 +935,7 @@ TEST_F(WindowTest, TouchCaptureDoesntCancelCapturedTouches) {
   // On move We will get TOUCH_MOVED, GESTURE_TAP_CANCEL,
   // GESTURE_SCROLL_START and GESTURE_SCROLL_UPDATE.
   ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(10, 20), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&move);
+  DispatchEventUsingWindowDispatcher(&move);
   EXPECT_EQ(1, delegate.touch_event_count());
   EXPECT_EQ(3, delegate.gesture_event_count());
   delegate.ResetCounts();
@@ -965,7 +948,7 @@ TEST_F(WindowTest, TouchCaptureDoesntCancelCapturedTouches) {
 
   // On move we still get TOUCH_MOVED and GESTURE_SCROLL_UPDATE.
   ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(10, 30), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&move2);
+  DispatchEventUsingWindowDispatcher(&move2);
   EXPECT_EQ(1, delegate.touch_event_count());
   EXPECT_EQ(1, delegate.gesture_event_count());
   delegate.ResetCounts();
@@ -973,7 +956,7 @@ TEST_F(WindowTest, TouchCaptureDoesntCancelCapturedTouches) {
   // And on release we get TOUCH_RELEASED, GESTURE_SCROLL_END, GESTURE_END
   ui::TouchEvent release(
       ui::ET_TOUCH_RELEASED, gfx::Point(10, 20), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&release);
+  DispatchEventUsingWindowDispatcher(&release);
   EXPECT_EQ(1, delegate.touch_event_count());
   EXPECT_EQ(2, delegate.gesture_event_count());
 }
@@ -986,7 +969,7 @@ TEST_F(WindowTest, TransferCaptureTouchEvents) {
   scoped_ptr<Window> w1(CreateTestWindowWithDelegate(
       &d1, 0, gfx::Rect(0, 0, 20, 20), root_window()));
   ui::TouchEvent p1(ui::ET_TOUCH_PRESSED, gfx::Point(10, 10), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&p1);
+  DispatchEventUsingWindowDispatcher(&p1);
   // We will get both GESTURE_BEGIN and GESTURE_TAP_DOWN.
   EXPECT_EQ(1, d1.touch_event_count());
   EXPECT_EQ(2, d1.gesture_event_count());
@@ -997,7 +980,7 @@ TEST_F(WindowTest, TransferCaptureTouchEvents) {
   scoped_ptr<Window> w2(CreateTestWindowWithDelegate(
       &d2, 0, gfx::Rect(40, 0, 40, 20), root_window()));
   ui::TouchEvent p2(ui::ET_TOUCH_PRESSED, gfx::Point(41, 10), 1, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&p2);
+  DispatchEventUsingWindowDispatcher(&p2);
   EXPECT_EQ(0, d1.touch_event_count());
   EXPECT_EQ(0, d1.gesture_event_count());
   // We will get both GESTURE_BEGIN and GESTURE_TAP_DOWN for new target window.
@@ -1033,7 +1016,7 @@ TEST_F(WindowTest, TransferCaptureTouchEvents) {
   // Move touch id originally associated with |w2|. Since capture was transfered
   // from 2 to 3 only |w3| should get the event.
   ui::TouchEvent m3(ui::ET_TOUCH_MOVED, gfx::Point(110, 105), 1, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&m3);
+  DispatchEventUsingWindowDispatcher(&m3);
   EXPECT_EQ(0, d1.touch_event_count());
   EXPECT_EQ(0, d1.gesture_event_count());
   EXPECT_EQ(0, d2.touch_event_count());
@@ -1056,7 +1039,7 @@ TEST_F(WindowTest, TransferCaptureTouchEvents) {
 
   // And when we move the touch again, |w3| still gets the events.
   ui::TouchEvent m4(ui::ET_TOUCH_MOVED, gfx::Point(120, 105), 1, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&m4);
+  DispatchEventUsingWindowDispatcher(&m4);
   EXPECT_EQ(0, d1.touch_event_count());
   EXPECT_EQ(0, d1.gesture_event_count());
   EXPECT_EQ(0, d2.touch_event_count());
@@ -1207,7 +1190,7 @@ TEST_F(WindowTest, MouseEnterExit) {
 }
 
 // Verifies that the WindowDelegate receives MouseExit from ET_MOUSE_EXITED.
-TEST_F(WindowTest, RootWindowHostExit) {
+TEST_F(WindowTest, WindowTreeHostExit) {
   MouseEnterExitWindowDelegate d1;
   scoped_ptr<Window> w1(
       CreateTestWindowWithDelegate(&d1, 1, gfx::Rect(10, 10, 50, 50),
@@ -1220,8 +1203,8 @@ TEST_F(WindowTest, RootWindowHostExit) {
   d1.ResetExpectations();
 
   ui::MouseEvent exit_event(
-      ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(), 0);
-  dispatcher()->AsRootWindowHostDelegate()->OnHostMouseEvent(&exit_event);
+      ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(), 0, 0);
+  DispatchEventUsingWindowDispatcher(&exit_event);
   EXPECT_FALSE(d1.entered());
   EXPECT_TRUE(d1.exited());
 }
@@ -1297,21 +1280,23 @@ TEST_F(WindowTest, MouseEnterExitWithDelete) {
   generator.MoveMouseToCenterOf(w1.get());
   EXPECT_TRUE(d1.entered());
   EXPECT_FALSE(d1.exited());
+  d1.ResetExpectations();
 
   MouseEnterExitWindowDelegate d2;
   {
     scoped_ptr<Window> w2(
         CreateTestWindowWithDelegate(&d2, 2, gfx::Rect(10, 10, 50, 50),
                                      root_window()));
-    // Enters / exits can be send asynchronously.
+    // Enters / exits can be sent asynchronously.
     RunAllPendingInMessageLoop();
-    EXPECT_TRUE(d1.entered());
+    EXPECT_FALSE(d1.entered());
     EXPECT_TRUE(d1.exited());
     EXPECT_TRUE(d2.entered());
     EXPECT_FALSE(d2.exited());
     d1.ResetExpectations();
+    d2.ResetExpectations();
   }
-  // Enters / exits can be send asynchronously.
+  // Enters / exits can be sent asynchronously.
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(d2.exited());
   EXPECT_TRUE(d1.entered());
@@ -1546,7 +1531,7 @@ TEST_F(WindowTest, Transform) {
   gfx::Transform transform;
   transform.Translate(size.height(), 0);
   transform.Rotate(90.0);
-  dispatcher()->SetTransform(transform);
+  dispatcher()->host()->SetTransform(transform);
 
   // The size should be the transformed size.
   gfx::Size transformed_size(size.height(), size.width());
@@ -1574,184 +1559,12 @@ TEST_F(WindowTest, TransformGesture) {
   gfx::Transform transform;
   transform.Translate(size.height(), 0.0);
   transform.Rotate(90.0);
-  dispatcher()->SetTransform(transform);
+  dispatcher()->host()->SetTransform(transform);
 
   ui::TouchEvent press(
       ui::ET_TOUCH_PRESSED, gfx::Point(size.height() - 10, 10), 0, getTime());
-  dispatcher()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+  DispatchEventUsingWindowDispatcher(&press);
   EXPECT_EQ(gfx::Point(10, 10).ToString(), delegate->position().ToString());
-}
-
-// Various assertions for transient children.
-TEST_F(WindowTest, TransientChildren) {
-  scoped_ptr<Window> parent(CreateTestWindowWithId(0, root_window()));
-  scoped_ptr<Window> w1(CreateTestWindowWithId(1, parent.get()));
-  scoped_ptr<Window> w3(CreateTestWindowWithId(3, parent.get()));
-  Window* w2 = CreateTestWindowWithId(2, parent.get());
-  w1->AddTransientChild(w2);  // w2 is now owned by w1.
-  // Stack w1 at the top (end), this should force w2 to be last (on top of w1).
-  parent->StackChildAtTop(w1.get());
-  ASSERT_EQ(3u, parent->children().size());
-  EXPECT_EQ(w2, parent->children().back());
-
-  // Destroy w1, which should also destroy w3 (since it's a transient child).
-  w1.reset();
-  w2 = NULL;
-  ASSERT_EQ(1u, parent->children().size());
-  EXPECT_EQ(w3.get(), parent->children()[0]);
-
-  w1.reset(CreateTestWindowWithId(4, parent.get()));
-  w2 = CreateTestWindowWithId(5, w3.get());
-  w1->AddTransientChild(w2);
-  parent->StackChildAtTop(w3.get());
-  // Stack w1 at the top (end), this shouldn't affect w2 since it has a
-  // different parent.
-  parent->StackChildAtTop(w1.get());
-  ASSERT_EQ(2u, parent->children().size());
-  EXPECT_EQ(w3.get(), parent->children()[0]);
-  EXPECT_EQ(w1.get(), parent->children()[1]);
-
-  // Hiding parent should hide transient children.
-  EXPECT_TRUE(w2->IsVisible());
-  w1->Hide();
-  EXPECT_FALSE(w2->IsVisible());
-}
-
-// Tests that transient children are stacked as a unit when using stack above.
-TEST_F(WindowTest, TransientChildrenGroupAbove) {
-  scoped_ptr<Window> parent(CreateTestWindowWithId(0, root_window()));
-  scoped_ptr<Window> w1(CreateTestWindowWithId(1, parent.get()));
-  Window* w11 = CreateTestWindowWithId(11, parent.get());
-  scoped_ptr<Window> w2(CreateTestWindowWithId(2, parent.get()));
-  Window* w21 = CreateTestWindowWithId(21, parent.get());
-  Window* w211 = CreateTestWindowWithId(211, parent.get());
-  Window* w212 = CreateTestWindowWithId(212, parent.get());
-  Window* w213 = CreateTestWindowWithId(213, parent.get());
-  Window* w22 = CreateTestWindowWithId(22, parent.get());
-  ASSERT_EQ(8u, parent->children().size());
-
-  w1->AddTransientChild(w11);  // w11 is now owned by w1.
-  w2->AddTransientChild(w21);  // w21 is now owned by w2.
-  w2->AddTransientChild(w22);  // w22 is now owned by w2.
-  w21->AddTransientChild(w211);  // w211 is now owned by w21.
-  w21->AddTransientChild(w212);  // w212 is now owned by w21.
-  w21->AddTransientChild(w213);  // w213 is now owned by w21.
-  EXPECT_EQ("1 11 2 21 211 212 213 22", ChildWindowIDsAsString(parent.get()));
-
-  // Stack w1 at the top (end), this should force w11 to be last (on top of w1).
-  parent->StackChildAtTop(w1.get());
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 21 211 212 213 22 1 11", ChildWindowIDsAsString(parent.get()));
-
-  // This tests that the order in children_ array rather than in
-  // transient_children_ array is used when reinserting transient children.
-  // If transient_children_ array was used '22' would be following '21'.
-  parent->StackChildAtTop(w2.get());
-  EXPECT_EQ(w22, parent->children().back());
-  EXPECT_EQ("1 11 2 21 211 212 213 22", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAbove(w11, w2.get());
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 21 211 212 213 22 1 11", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAbove(w21, w1.get());
-  EXPECT_EQ(w22, parent->children().back());
-  EXPECT_EQ("1 11 2 21 211 212 213 22", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAbove(w21, w22);
-  EXPECT_EQ(w213, parent->children().back());
-  EXPECT_EQ("1 11 2 22 21 211 212 213", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAbove(w11, w21);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 211 212 213 1 11", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAbove(w213, w21);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
-
-  // No change when stacking a transient parent above its transient child.
-  parent->StackChildAbove(w21, w211);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
-
-  // This tests that the order in children_ array rather than in
-  // transient_children_ array is used when reinserting transient children.
-  // If transient_children_ array was used '22' would be following '21'.
-  parent->StackChildAbove(w2.get(), w1.get());
-  EXPECT_EQ(w212, parent->children().back());
-  EXPECT_EQ("1 11 2 22 21 213 211 212", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAbove(w11, w213);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
-}
-
-// Tests that transient children are stacked as a unit when using stack below.
-TEST_F(WindowTest, TransientChildrenGroupBelow) {
-  scoped_ptr<Window> parent(CreateTestWindowWithId(0, root_window()));
-  scoped_ptr<Window> w1(CreateTestWindowWithId(1, parent.get()));
-  Window* w11 = CreateTestWindowWithId(11, parent.get());
-  scoped_ptr<Window> w2(CreateTestWindowWithId(2, parent.get()));
-  Window* w21 = CreateTestWindowWithId(21, parent.get());
-  Window* w211 = CreateTestWindowWithId(211, parent.get());
-  Window* w212 = CreateTestWindowWithId(212, parent.get());
-  Window* w213 = CreateTestWindowWithId(213, parent.get());
-  Window* w22 = CreateTestWindowWithId(22, parent.get());
-  ASSERT_EQ(8u, parent->children().size());
-
-  w1->AddTransientChild(w11);  // w11 is now owned by w1.
-  w2->AddTransientChild(w21);  // w21 is now owned by w2.
-  w2->AddTransientChild(w22);  // w22 is now owned by w2.
-  w21->AddTransientChild(w211);  // w211 is now owned by w21.
-  w21->AddTransientChild(w212);  // w212 is now owned by w21.
-  w21->AddTransientChild(w213);  // w213 is now owned by w21.
-  EXPECT_EQ("1 11 2 21 211 212 213 22", ChildWindowIDsAsString(parent.get()));
-
-  // Stack w2 at the bottom, this should force w11 to be last (on top of w1).
-  // This also tests that the order in children_ array rather than in
-  // transient_children_ array is used when reinserting transient children.
-  // If transient_children_ array was used '22' would be following '21'.
-  parent->StackChildAtBottom(w2.get());
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 21 211 212 213 22 1 11", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildAtBottom(w1.get());
-  EXPECT_EQ(w22, parent->children().back());
-  EXPECT_EQ("1 11 2 21 211 212 213 22", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w21, w1.get());
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 21 211 212 213 22 1 11", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w11, w2.get());
-  EXPECT_EQ(w22, parent->children().back());
-  EXPECT_EQ("1 11 2 21 211 212 213 22", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w22, w21);
-  EXPECT_EQ(w213, parent->children().back());
-  EXPECT_EQ("1 11 2 22 21 211 212 213", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w21, w11);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 211 212 213 1 11", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w213, w211);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
-
-  // No change when stacking a transient parent below its transient child.
-  parent->StackChildBelow(w21, w211);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w1.get(), w2.get());
-  EXPECT_EQ(w212, parent->children().back());
-  EXPECT_EQ("1 11 2 22 21 213 211 212", ChildWindowIDsAsString(parent.get()));
-
-  parent->StackChildBelow(w213, w11);
-  EXPECT_EQ(w11, parent->children().back());
-  EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
 }
 
 namespace {
@@ -2123,7 +1936,7 @@ TEST_F(WindowTest, RecreateLayer) {
   // Set properties to non default values.
   Window w(new ColorTestWindowDelegate(SK_ColorWHITE));
   w.set_id(1);
-  w.Init(ui::LAYER_SOLID_COLOR);
+  w.Init(aura::WINDOW_LAYER_SOLID_COLOR);
   w.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   ui::Layer* layer = w.layer();
@@ -2141,6 +1954,10 @@ TEST_F(WindowTest, RecreateLayer) {
   EXPECT_FALSE(layer->visible());
   EXPECT_EQ(1u, layer->children().size());
   EXPECT_TRUE(layer->GetMasksToBounds());
+  // On recreate it's expected the bounds of both the window and layer go to
+  // 0. See description of Window::RecreateLayer() for details.
+  EXPECT_EQ("0,0 0x0", w.bounds().ToString());
+  EXPECT_EQ("0,0 0x0", layer->bounds().ToString());
 }
 
 // Verify that RecreateLayer() stacks the old layer above the newly creatd
@@ -2190,66 +2007,6 @@ TEST_F(WindowTest, StackWindowAtBottomBelowWindowWhoseLayerHasNoDelegate) {
   EXPECT_EQ("3 1 2", ChildWindowIDsAsString(root_window()));
   EXPECT_EQ("3 1 2",
             ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-}
-
-TEST_F(WindowTest, StackWindowsWhoseLayersHaveNoDelegate) {
-  scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
-  window1->layer()->set_name("1");
-  scoped_ptr<Window> window2(CreateTestWindowWithId(2, root_window()));
-  window2->layer()->set_name("2");
-  scoped_ptr<Window> window3(CreateTestWindowWithId(3, root_window()));
-  window3->layer()->set_name("3");
-
-  // This brings |window1| (and its layer) to the front.
-  root_window()->StackChildAbove(window1.get(), window3.get());
-  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("2 3 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-
-  // Since |window1| does not have a delegate, |window2| should not move in
-  // front of it, nor should its layer.
-  window1->layer()->set_delegate(NULL);
-  root_window()->StackChildAbove(window2.get(), window1.get());
-  EXPECT_EQ("3 2 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("3 2 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-
-  // It should still be possible to stack |window3| immediately below |window1|.
-  root_window()->StackChildBelow(window3.get(), window1.get());
-  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("2 3 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-
-  // Since neither |window3| nor |window1| have a delegate, |window2| should
-  // not move in front of either.
-  window3->layer()->set_delegate(NULL);
-  root_window()->StackChildBelow(window2.get(), window1.get());
-  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("2 3 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-}
-
-TEST_F(WindowTest, StackTransientsWhoseLayersHaveNoDelegate) {
-  // Create a window with several transients, then a couple windows on top.
-  scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
-  scoped_ptr<Window> window11(CreateTransientChild(11, window1.get()));
-  scoped_ptr<Window> window12(CreateTransientChild(12, window1.get()));
-  scoped_ptr<Window> window13(CreateTransientChild(13, window1.get()));
-  scoped_ptr<Window> window2(CreateTestWindowWithId(2, root_window()));
-  scoped_ptr<Window> window3(CreateTestWindowWithId(3, root_window()));
-
-  EXPECT_EQ("1 11 12 13 2 3", ChildWindowIDsAsString(root_window()));
-
-  // Remove the delegates of a couple of transients, as if they are closing
-  // and animating out.
-  window11->layer()->set_delegate(NULL);
-  window13->layer()->set_delegate(NULL);
-
-  // Move window1 to the front.  All transients should move with it, and their
-  // order should be preserved.
-  root_window()->StackChildAtTop(window1.get());
-
-  EXPECT_EQ("2 3 1 11 12 13", ChildWindowIDsAsString(root_window()));
 }
 
 class TestVisibilityClient : public client::VisibilityClient {
@@ -2389,240 +2146,6 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
   EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
 }
 
-class StackingMadrigalLayoutManager : public LayoutManager {
- public:
-  explicit StackingMadrigalLayoutManager(Window* root_window)
-      : root_window_(root_window) {
-    root_window_->SetLayoutManager(this);
-  }
-  virtual ~StackingMadrigalLayoutManager() {
-  }
-
- private:
-  // Overridden from LayoutManager:
-  virtual void OnWindowResized() OVERRIDE {}
-  virtual void OnWindowAddedToLayout(Window* child) OVERRIDE {}
-  virtual void OnWillRemoveWindowFromLayout(Window* child) OVERRIDE {}
-  virtual void OnWindowRemovedFromLayout(Window* child) OVERRIDE {}
-  virtual void OnChildWindowVisibilityChanged(Window* child,
-                                              bool visible) OVERRIDE {
-    Window::Windows::const_iterator it = root_window_->children().begin();
-    Window* last_window = NULL;
-    for (; it != root_window_->children().end(); ++it) {
-      if (*it == child && last_window) {
-        if (!visible)
-          root_window_->StackChildAbove(last_window, *it);
-        else
-          root_window_->StackChildAbove(*it, last_window);
-        break;
-      }
-      last_window = *it;
-    }
-  }
-  virtual void SetChildBounds(Window* child,
-                              const gfx::Rect& requested_bounds) OVERRIDE {
-    SetChildBoundsDirect(child, requested_bounds);
-  }
-
-  Window* root_window_;
-
-  DISALLOW_COPY_AND_ASSIGN(StackingMadrigalLayoutManager);
-};
-
-class StackingMadrigalVisibilityClient : public client::VisibilityClient {
- public:
-  explicit StackingMadrigalVisibilityClient(Window* root_window)
-      : ignored_window_(NULL) {
-    client::SetVisibilityClient(root_window, this);
-  }
-  virtual ~StackingMadrigalVisibilityClient() {
-  }
-
-  void set_ignored_window(Window* ignored_window) {
-    ignored_window_ = ignored_window;
-  }
-
- private:
-  // Overridden from client::VisibilityClient:
-  virtual void UpdateLayerVisibility(Window* window, bool visible) OVERRIDE {
-    if (!visible) {
-      if (window == ignored_window_)
-        window->layer()->set_delegate(NULL);
-      else
-        window->layer()->SetVisible(visible);
-    } else {
-      window->layer()->SetVisible(visible);
-    }
-  }
-
-  Window* ignored_window_;
-
-  DISALLOW_COPY_AND_ASSIGN(StackingMadrigalVisibilityClient);
-};
-
-// This test attempts to reconstruct a circumstance that can happen when the
-// aura client attempts to manipulate the visibility and delegate of a layer
-// independent of window visibility.
-// A use case is where the client attempts to keep a window visible onscreen
-// even after code has called Hide() on the window. The use case for this would
-// be that window hides are animated (e.g. the window fades out). To prevent
-// spurious updating the client code may also clear window's layer's delegate,
-// so that the window cannot attempt to paint or update it further. The window
-// uses the presence of a NULL layer delegate as a signal in stacking to note
-// that the window is being manipulated by such a use case and its stacking
-// should not be adjusted.
-// One issue that can arise when a window opens two transient children, and the
-// first is hidden. Subsequent attempts to activate the transient parent can
-// result in the transient parent being stacked above the second transient
-// child. A fix is made to Window::StackAbove to prevent this, and this test
-// verifies this fix.
-TEST_F(WindowTest, StackingMadrigal) {
-  new StackingMadrigalLayoutManager(root_window());
-  StackingMadrigalVisibilityClient visibility_client(root_window());
-
-  scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
-  scoped_ptr<Window> window11(CreateTransientChild(11, window1.get()));
-
-  visibility_client.set_ignored_window(window11.get());
-
-  window11->Show();
-  window11->Hide();
-
-  // As a transient, window11 should still be stacked above window1, even when
-  // hidden.
-  EXPECT_TRUE(WindowIsAbove(window11.get(), window1.get()));
-  EXPECT_TRUE(LayerIsAbove(window11.get(), window1.get()));
-
-  // A new transient should still be above window1.  It will appear behind
-  // window11 because we don't stack windows on top of targets with NULL
-  // delegates.
-  scoped_ptr<Window> window12(CreateTransientChild(12, window1.get()));
-  window12->Show();
-
-  EXPECT_TRUE(WindowIsAbove(window12.get(), window1.get()));
-  EXPECT_TRUE(LayerIsAbove(window12.get(), window1.get()));
-
-  // In earlier versions of the StackChildAbove() method, attempting to stack
-  // window1 above window12 at this point would actually restack the layers
-  // resulting in window12's layer being below window1's layer (though the
-  // windows themselves would still be correctly stacked, so events would pass
-  // through.)
-  root_window()->StackChildAbove(window1.get(), window12.get());
-
-  // Both window12 and its layer should be stacked above window1.
-  EXPECT_TRUE(WindowIsAbove(window12.get(), window1.get()));
-  EXPECT_TRUE(LayerIsAbove(window12.get(), window1.get()));
-}
-
-// Test for an issue where attempting to stack a primary window on top of a
-// transient with a NULL layer delegate causes that primary window to be moved,
-// but the layer order not changed to match.  http://crbug.com/112562
-TEST_F(WindowTest, StackOverClosingTransient) {
-  scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
-  scoped_ptr<Window> transient1(CreateTransientChild(11, window1.get()));
-  scoped_ptr<Window> window2(CreateTestWindowWithId(2, root_window()));
-  scoped_ptr<Window> transient2(CreateTransientChild(21, window2.get()));
-
-  // Both windows and layers are stacked in creation order.
-  Window* root = root_window();
-  ASSERT_EQ(4u, root->children().size());
-  EXPECT_EQ(root->children()[0], window1.get());
-  EXPECT_EQ(root->children()[1], transient1.get());
-  EXPECT_EQ(root->children()[2], window2.get());
-  EXPECT_EQ(root->children()[3], transient2.get());
-  ASSERT_EQ(4u, root->layer()->children().size());
-  EXPECT_EQ(root->layer()->children()[0], window1->layer());
-  EXPECT_EQ(root->layer()->children()[1], transient1->layer());
-  EXPECT_EQ(root->layer()->children()[2], window2->layer());
-  EXPECT_EQ(root->layer()->children()[3], transient2->layer());
-  EXPECT_EQ("1 11 2 21", ChildWindowIDsAsString(root_window()));
-
-  // This brings window1 and its transient to the front.
-  root->StackChildAtTop(window1.get());
-  EXPECT_EQ("2 21 1 11", ChildWindowIDsAsString(root_window()));
-
-  EXPECT_EQ(root->children()[0], window2.get());
-  EXPECT_EQ(root->children()[1], transient2.get());
-  EXPECT_EQ(root->children()[2], window1.get());
-  EXPECT_EQ(root->children()[3], transient1.get());
-  EXPECT_EQ(root->layer()->children()[0], window2->layer());
-  EXPECT_EQ(root->layer()->children()[1], transient2->layer());
-  EXPECT_EQ(root->layer()->children()[2], window1->layer());
-  EXPECT_EQ(root->layer()->children()[3], transient1->layer());
-
-  // Pretend we're closing the top-most transient, then bring window2 to the
-  // front.  This mimics activating a browser window while the status bubble
-  // is fading out.  The transient should stay topmost.
-  transient1->layer()->set_delegate(NULL);
-  root->StackChildAtTop(window2.get());
-
-  EXPECT_EQ(root->children()[0], window1.get());
-  EXPECT_EQ(root->children()[1], window2.get());
-  EXPECT_EQ(root->children()[2], transient2.get());
-  EXPECT_EQ(root->children()[3], transient1.get());
-  EXPECT_EQ(root->layer()->children()[0], window1->layer());
-  EXPECT_EQ(root->layer()->children()[1], window2->layer());
-  EXPECT_EQ(root->layer()->children()[2], transient2->layer());
-  EXPECT_EQ(root->layer()->children()[3], transient1->layer());
-
-  // Close the transient.  Remaining windows are stable.
-  transient1.reset();
-
-  ASSERT_EQ(3u, root->children().size());
-  EXPECT_EQ(root->children()[0], window1.get());
-  EXPECT_EQ(root->children()[1], window2.get());
-  EXPECT_EQ(root->children()[2], transient2.get());
-  ASSERT_EQ(3u, root->layer()->children().size());
-  EXPECT_EQ(root->layer()->children()[0], window1->layer());
-  EXPECT_EQ(root->layer()->children()[1], window2->layer());
-  EXPECT_EQ(root->layer()->children()[2], transient2->layer());
-
-  // Open another window on top.
-  scoped_ptr<Window> window3(CreateTestWindowWithId(3, root_window()));
-
-  ASSERT_EQ(4u, root->children().size());
-  EXPECT_EQ(root->children()[0], window1.get());
-  EXPECT_EQ(root->children()[1], window2.get());
-  EXPECT_EQ(root->children()[2], transient2.get());
-  EXPECT_EQ(root->children()[3], window3.get());
-  ASSERT_EQ(4u, root->layer()->children().size());
-  EXPECT_EQ(root->layer()->children()[0], window1->layer());
-  EXPECT_EQ(root->layer()->children()[1], window2->layer());
-  EXPECT_EQ(root->layer()->children()[2], transient2->layer());
-  EXPECT_EQ(root->layer()->children()[3], window3->layer());
-
-  // Pretend we're closing the topmost non-transient window, then bring
-  // window2 to the top.  It should not move.
-  window3->layer()->set_delegate(NULL);
-  root->StackChildAtTop(window2.get());
-
-  ASSERT_EQ(4u, root->children().size());
-  EXPECT_EQ(root->children()[0], window1.get());
-  EXPECT_EQ(root->children()[1], window2.get());
-  EXPECT_EQ(root->children()[2], transient2.get());
-  EXPECT_EQ(root->children()[3], window3.get());
-  ASSERT_EQ(4u, root->layer()->children().size());
-  EXPECT_EQ(root->layer()->children()[0], window1->layer());
-  EXPECT_EQ(root->layer()->children()[1], window2->layer());
-  EXPECT_EQ(root->layer()->children()[2], transient2->layer());
-  EXPECT_EQ(root->layer()->children()[3], window3->layer());
-
-  // Bring window1 to the top.  It should move ahead of window2, but not
-  // ahead of window3 (with NULL delegate).
-  root->StackChildAtTop(window1.get());
-
-  ASSERT_EQ(4u, root->children().size());
-  EXPECT_EQ(root->children()[0], window2.get());
-  EXPECT_EQ(root->children()[1], transient2.get());
-  EXPECT_EQ(root->children()[2], window1.get());
-  EXPECT_EQ(root->children()[3], window3.get());
-  ASSERT_EQ(4u, root->layer()->children().size());
-  EXPECT_EQ(root->layer()->children()[0], window2->layer());
-  EXPECT_EQ(root->layer()->children()[1], transient2->layer());
-  EXPECT_EQ(root->layer()->children()[2], window1->layer());
-  EXPECT_EQ(root->layer()->children()[3], window3->layer());
-}
-
 class RootWindowAttachmentObserver : public WindowObserver {
  public:
   RootWindowAttachmentObserver() : added_count_(0), removed_count_(0) {}
@@ -2656,7 +2179,7 @@ TEST_F(WindowTest, RootWindowAttachment) {
 
   // Test a direct add/remove from the RootWindow.
   scoped_ptr<Window> w1(new Window(NULL));
-  w1->Init(ui::LAYER_NOT_DRAWN);
+  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w1->AddObserver(&observer);
 
   ParentWindow(w1.get());
@@ -2671,9 +2194,9 @@ TEST_F(WindowTest, RootWindowAttachment) {
 
   // Test an indirect add/remove from the RootWindow.
   w1.reset(new Window(NULL));
-  w1->Init(ui::LAYER_NOT_DRAWN);
+  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   Window* w11 = new Window(NULL);
-  w11->Init(ui::LAYER_NOT_DRAWN);
+  w11->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w11->AddObserver(&observer);
   w1->AddChild(w11);
   EXPECT_EQ(0, observer.added_count());
@@ -2692,13 +2215,13 @@ TEST_F(WindowTest, RootWindowAttachment) {
 
   // Test an indirect add/remove with nested observers.
   w1.reset(new Window(NULL));
-  w1->Init(ui::LAYER_NOT_DRAWN);
+  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w11 = new Window(NULL);
-  w11->Init(ui::LAYER_NOT_DRAWN);
+  w11->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w11->AddObserver(&observer);
   w1->AddChild(w11);
   Window* w111 = new Window(NULL);
-  w111->Init(ui::LAYER_NOT_DRAWN);
+  w111->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w111->AddObserver(&observer);
   w11->AddChild(w111);
 
@@ -2721,10 +2244,10 @@ TEST_F(WindowTest, OwnedByParentFalse) {
   // window will not be destroyed when its parent is.
 
   scoped_ptr<Window> w1(new Window(NULL));
-  w1->Init(ui::LAYER_NOT_DRAWN);
+  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   scoped_ptr<Window> w2(new Window(NULL));
   w2->set_owned_by_parent(false);
-  w2->Init(ui::LAYER_NOT_DRAWN);
+  w2->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   w1->AddChild(w2.get());
 
   w1.reset();
@@ -2764,13 +2287,13 @@ class OwningWindowDelegate : public TestWindowDelegate {
 // bubble.
 TEST_F(WindowTest, DeleteWindowFromOnWindowDestroyed) {
   scoped_ptr<Window> parent(new Window(NULL));
-  parent->Init(ui::LAYER_NOT_DRAWN);
+  parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   OwningWindowDelegate delegate;
   Window* c1 = new Window(&delegate);
-  c1->Init(ui::LAYER_NOT_DRAWN);
+  c1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->AddChild(c1);
   Window* c2 = new Window(NULL);
-  c2->Init(ui::LAYER_NOT_DRAWN);
+  c2->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->AddChild(c2);
   delegate.SetOwnedWindow(c2);
   parent.reset();
@@ -3143,59 +2666,15 @@ TEST_F(WindowTest, OnWindowHierarchyChange) {
 
 }
 
-namespace {
-
-// Used by NotifyDelegateAfterDeletingTransients. Adds a string to a vector when
-// OnWindowDestroyed() is invoked so that destruction order can be verified.
-class DestroyedTrackingDelegate : public TestWindowDelegate {
- public:
-  explicit DestroyedTrackingDelegate(const std::string& name,
-                                     std::vector<std::string>* results)
-      : name_(name),
-        results_(results) {}
-
-  virtual void OnWindowDestroyed() OVERRIDE {
-    results_->push_back(name_);
-  }
-
- private:
-  const std::string name_;
-  std::vector<std::string>* results_;
-
-  DISALLOW_COPY_AND_ASSIGN(DestroyedTrackingDelegate);
-};
-
-}  // namespace
-
-// Verifies the delegate is notified of destruction after transients are
-// destroyed.
-TEST_F(WindowTest, NotifyDelegateAfterDeletingTransients) {
-  std::vector<std::string> destruction_order;
-
-  DestroyedTrackingDelegate parent_delegate("parent", &destruction_order);
-  scoped_ptr<Window> parent(new Window(&parent_delegate));
-  parent->Init(ui::LAYER_NOT_DRAWN);
-
-  DestroyedTrackingDelegate transient_delegate("transient", &destruction_order);
-  Window* transient = new Window(&transient_delegate);  // Owned by |parent|.
-  transient->Init(ui::LAYER_NOT_DRAWN);
-  parent->AddTransientChild(transient);
-  parent.reset();
-
-  ASSERT_EQ(2u, destruction_order.size());
-  EXPECT_EQ("transient", destruction_order[0]);
-  EXPECT_EQ("parent", destruction_order[1]);
-}
-
 // Verifies SchedulePaint() on a layerless window results in damaging the right
 // thing.
 TEST_F(WindowTest, LayerlessWindowSchedulePaint) {
   Window root(NULL);
-  root.Init(ui::LAYER_NOT_DRAWN);
+  root.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   root.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   Window* layerless_window = new Window(NULL);  // Owned by |root|.
-  layerless_window->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  layerless_window->Init(WINDOW_LAYER_NONE);
   layerless_window->SetBounds(gfx::Rect(10, 11, 12, 13));
   root.AddChild(layerless_window);
 
@@ -3207,7 +2686,7 @@ TEST_F(WindowTest, LayerlessWindowSchedulePaint) {
             ToString());
 
   Window* layerless_window2 = new Window(NULL);  // Owned by |layerless_window|.
-  layerless_window2->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  layerless_window2->Init(WINDOW_LAYER_NONE);
   layerless_window2->SetBounds(gfx::Rect(1, 2, 3, 4));
   layerless_window->AddChild(layerless_window2);
 
@@ -3233,30 +2712,30 @@ TEST_F(WindowTest, NestedLayerlessWindowsBoundsOnAddRemove) {
   //
   // ll: layer less, eg no layer
   Window root(NULL);
-  root.InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  root.Init(WINDOW_LAYER_NOT_DRAWN);
   root.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   Window* w1ll = new Window(NULL);
-  w1ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w1ll->Init(WINDOW_LAYER_NONE);
   w1ll->SetBounds(gfx::Rect(1, 2, 100, 100));
 
   Window* w11ll = new Window(NULL);
-  w11ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w11ll->Init(WINDOW_LAYER_NONE);
   w11ll->SetBounds(gfx::Rect(3, 4, 100, 100));
   w1ll->AddChild(w11ll);
 
   Window* w111 = new Window(NULL);
-  w111->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w111->Init(WINDOW_LAYER_NOT_DRAWN);
   w111->SetBounds(gfx::Rect(5, 6, 100, 100));
   w11ll->AddChild(w111);
 
   Window* w12 = new Window(NULL);
-  w12->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w12->Init(WINDOW_LAYER_NOT_DRAWN);
   w12->SetBounds(gfx::Rect(7, 8, 100, 100));
   w1ll->AddChild(w12);
 
   Window* w121 = new Window(NULL);
-  w121->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w121->Init(WINDOW_LAYER_NOT_DRAWN);
   w121->SetBounds(gfx::Rect(9, 10, 100, 100));
   w12->AddChild(w121);
 
@@ -3313,30 +2792,30 @@ TEST_F(WindowTest, NestedLayerlessWindowsBoundsOnSetBounds) {
   //
   // ll: layer less, eg no layer
   Window root(NULL);
-  root.InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  root.Init(WINDOW_LAYER_NOT_DRAWN);
   root.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   Window* w1ll = new Window(NULL);
-  w1ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w1ll->Init(WINDOW_LAYER_NONE);
   w1ll->SetBounds(gfx::Rect(1, 2, 100, 100));
 
   Window* w11ll = new Window(NULL);
-  w11ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w11ll->Init(WINDOW_LAYER_NONE);
   w11ll->SetBounds(gfx::Rect(3, 4, 100, 100));
   w1ll->AddChild(w11ll);
 
   Window* w111 = new Window(NULL);
-  w111->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w111->Init(WINDOW_LAYER_NOT_DRAWN);
   w111->SetBounds(gfx::Rect(5, 6, 100, 100));
   w11ll->AddChild(w111);
 
   Window* w12 = new Window(NULL);
-  w12->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w12->Init(WINDOW_LAYER_NOT_DRAWN);
   w12->SetBounds(gfx::Rect(7, 8, 100, 100));
   w1ll->AddChild(w12);
 
   Window* w121 = new Window(NULL);
-  w121->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w121->Init(WINDOW_LAYER_NOT_DRAWN);
   w121->SetBounds(gfx::Rect(9, 10, 100, 100));
   w12->AddChild(w121);
 
@@ -3427,23 +2906,23 @@ TEST_F(WindowTest, PaintLayerless) {
   PaintWindowDelegate w111_delegate;
 
   Window root(NULL);
-  root.InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  root.Init(WINDOW_LAYER_NOT_DRAWN);
   root.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   Window* w1ll = new Window(&w1ll_delegate);
-  w1ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w1ll->Init(WINDOW_LAYER_NONE);
   w1ll->SetBounds(gfx::Rect(1, 2, 40, 50));
   w1ll->Show();
   root.AddChild(w1ll);
 
   Window* w11ll = new Window(&w11ll_delegate);
-  w11ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w11ll->Init(WINDOW_LAYER_NONE);
   w11ll->SetBounds(gfx::Rect(3, 4, 11, 12));
   w11ll->Show();
   w1ll->AddChild(w11ll);
 
   Window* w111 = new Window(&w111_delegate);
-  w111->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w111->Init(WINDOW_LAYER_NOT_DRAWN);
   w111->SetBounds(gfx::Rect(5, 6, 100, 100));
   w111->Show();
   w11ll->AddChild(w111);
@@ -3495,30 +2974,30 @@ TEST_F(WindowTest, ConvertPointToTargetLayerless) {
   //
   // ll: layer less, eg no layer
   Window root(NULL);
-  root.InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  root.Init(WINDOW_LAYER_NOT_DRAWN);
   root.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   Window* w1ll = new Window(NULL);
-  w1ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w1ll->Init(WINDOW_LAYER_NONE);
   w1ll->SetBounds(gfx::Rect(1, 2, 100, 100));
 
   Window* w11ll = new Window(NULL);
-  w11ll->InitWithWindowLayerType(WINDOW_LAYER_NONE);
+  w11ll->Init(WINDOW_LAYER_NONE);
   w11ll->SetBounds(gfx::Rect(3, 4, 100, 100));
   w1ll->AddChild(w11ll);
 
   Window* w111 = new Window(NULL);
-  w111->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w111->Init(WINDOW_LAYER_NOT_DRAWN);
   w111->SetBounds(gfx::Rect(5, 6, 100, 100));
   w11ll->AddChild(w111);
 
   Window* w12 = new Window(NULL);
-  w12->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w12->Init(WINDOW_LAYER_NOT_DRAWN);
   w12->SetBounds(gfx::Rect(7, 8, 100, 100));
   w1ll->AddChild(w12);
 
   Window* w121 = new Window(NULL);
-  w121->InitWithWindowLayerType(WINDOW_LAYER_NOT_DRAWN);
+  w121->Init(WINDOW_LAYER_NOT_DRAWN);
   w121->SetBounds(gfx::Rect(9, 10, 100, 100));
   w12->AddChild(w121);
 
@@ -3550,6 +3029,303 @@ TEST_F(WindowTest, ConvertPointToTargetLayerless) {
 
   // w11ll->w12
   EXPECT_EQ("-4,-4", ConvertPointToTargetString(w11ll, w12));
+}
+
+#if !defined(NDEBUG)
+// Verifies PrintWindowHierarchy() doesn't crash with a layerless window.
+TEST_F(WindowTest, PrintWindowHierarchyNotCrashLayerless) {
+  Window root(NULL);
+  root.Init(WINDOW_LAYER_NONE);
+  root.SetBounds(gfx::Rect(0, 0, 100, 100));
+  root.PrintWindowHierarchy(0);
+}
+#endif
+
+namespace {
+
+// See AddWindowsFromString() for details.
+aura::Window* CreateWindowFromDescription(const std::string& description,
+                                          WindowDelegate* delegate) {
+  WindowLayerType window_type = WINDOW_LAYER_NOT_DRAWN;
+  std::vector<std::string> tokens;
+  Tokenize(description, ":", &tokens);
+  DCHECK(!tokens.empty());
+  std::string name(tokens[0]);
+  tokens.erase(tokens.begin());
+  if (!tokens.empty()) {
+    if (tokens[0] == "ll") {
+      window_type = WINDOW_LAYER_NONE;
+      tokens.erase(tokens.begin());
+    }
+    DCHECK(tokens.empty()) << "unknown tokens for creating window "
+                           << description;
+  }
+  Window* window = new Window(delegate);
+  window->Init(window_type);
+  window->SetName(name);
+  // Window name is only propagated to layer in debug builds.
+  if (window->layer())
+    window->layer()->set_name(name);
+  return window;
+}
+
+// Creates and adds a tree of windows to |parent|. |description| consists
+// of the following pieces:
+//   X: Identifies a new window. Consists of a name and optionally ":ll" to
+//      specify  WINDOW_LAYER_NONE, eg "w1:ll".
+//   []: optionally used to specify the children of the window. Contains any
+//       number of window identifiers and their corresponding children.
+// For example: "[ a [ a1 a2:ll ] b c [ c1 ] ]" creates the tree:
+//   a
+//     a1
+//     a2 -> WINDOW_LAYER_NONE.
+//   b
+//   c
+//     c1
+// NOTE: you must have a space after every token.
+std::string::size_type AddWindowsFromString(aura::Window* parent,
+                                            const std::string& description,
+                                            std::string::size_type start_pos,
+                                            WindowDelegate* delegate) {
+  DCHECK(parent);
+  std::string::size_type end_pos = description.find(' ', start_pos);
+  while (end_pos != std::string::npos) {
+    const std::string::size_type part_length = end_pos - start_pos;
+    const std::string window_description =
+        description.substr(start_pos, part_length);
+    if (window_description == "[") {
+      start_pos = AddWindowsFromString(parent->children().back(),
+                                       description,
+                                       end_pos + 1,
+                                       delegate);
+      end_pos = description.find(' ', start_pos);
+      if (end_pos == std::string::npos && start_pos != end_pos)
+        end_pos = description.length();
+    } else if (window_description == "]") {
+      ++end_pos;
+      break;
+    } else {
+      Window* window =
+          CreateWindowFromDescription(window_description, delegate);
+      parent->AddChild(window);
+      start_pos = ++end_pos;
+      end_pos = description.find(' ', start_pos);
+    }
+  }
+  return end_pos;
+}
+
+// Used by BuildRootWindowTreeDescription().
+std::string BuildWindowTreeDescription(const aura::Window& window) {
+  std::string result;
+  result += window.name();
+  if (window.children().empty())
+    return result;
+
+  result += " [ ";
+  for (size_t i = 0; i < window.children().size(); ++i) {
+    if (i != 0)
+      result += " ";
+    result += BuildWindowTreeDescription(*(window.children()[i]));
+  }
+  result += " ]";
+  return result;
+}
+
+// Creates a string from |window|. See AddWindowsFromString() for details of the
+// returned string. This does *not* include the layer type in the description,
+// on the name.
+std::string BuildRootWindowTreeDescription(const aura::Window& window) {
+  std::string result;
+  for (size_t i = 0; i < window.children().size(); ++i) {
+    if (i != 0)
+      result += " ";
+    result += BuildWindowTreeDescription(*(window.children()[i]));
+  }
+  return result;
+}
+
+// Used by BuildRootWindowTreeDescription().
+std::string BuildLayerTreeDescription(const ui::Layer& layer) {
+  std::string result;
+  result += layer.name();
+  if (layer.children().empty())
+    return result;
+
+  result += " [ ";
+  for (size_t i = 0; i < layer.children().size(); ++i) {
+    if (i != 0)
+      result += " ";
+    result += BuildLayerTreeDescription(*(layer.children()[i]));
+  }
+  result += " ]";
+  return result;
+}
+
+// Builds a string for all the children of |layer|. The returned string is in
+// the same format as AddWindowsFromString() but only includes the name of the
+// layers.
+std::string BuildRootLayerTreeDescription(const ui::Layer& layer) {
+  std::string result;
+  for (size_t i = 0; i < layer.children().size(); ++i) {
+    if (i != 0)
+      result += " ";
+    result += BuildLayerTreeDescription(*(layer.children()[i]));
+  }
+  return result;
+}
+
+// Returns the first window whose name matches |name| in |parent|.
+aura::Window* FindWindowByName(aura::Window* parent,
+                               const std::string& name) {
+  if (parent->name() == name)
+    return parent;
+  for (size_t i = 0; i < parent->children().size(); ++i) {
+    aura::Window* child = FindWindowByName(parent->children()[i], name);
+    if (child)
+      return child;
+  }
+  return NULL;
+}
+
+}  // namespace
+
+// Direction to stack.
+enum StackType {
+  STACK_ABOVE,
+  STACK_BELOW,
+  STACK_AT_BOTTOM,
+  STACK_AT_TOP,
+};
+
+// Permutations of StackChildAt with various data.
+TEST_F(WindowTest, StackChildAtLayerless) {
+  struct TestData {
+    // Describes the window tree to create. See AddWindowsFromString() for
+    // details.
+    const std::string initial_description;
+
+    // Identifies the window to move.
+    const std::string source_window;
+
+    // Window to move |source_window| relative to. Not used for STACK_AT_BOTTOM
+    // or STACK_AT_TOP.
+    const std::string target_window;
+
+    StackType stack_type;
+
+    // Expected window and layer results.
+    const std::string expected_description;
+    const std::string expected_layer_description;
+  } data[] = {
+    // 1 at top.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ]",
+      "1",
+      "",
+      STACK_AT_TOP,
+      "2 [ 21 ] 1 [ 11 12 ]",
+      "21 11 12",
+    },
+
+    // 1 at bottom.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ]",
+      "1",
+      "",
+      STACK_AT_BOTTOM,
+      "1 [ 11 12 ] 2 [ 21 ]",
+      "11 12 21",
+    },
+
+    // 2 at bottom.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ]",
+      "2",
+      "",
+      STACK_AT_BOTTOM,
+      "2 [ 21 ] 1 [ 11 12 ]",
+      "21 11 12",
+    },
+
+    // 3 below 2.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ] 3:ll",
+      "3",
+      "2",
+      STACK_BELOW,
+      "1 [ 11 12 ] 3 2 [ 21 ]",
+      "11 12 21",
+    },
+
+    // 2 below 1.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ]",
+      "2",
+      "1",
+      STACK_BELOW,
+      "2 [ 21 ] 1 [ 11 12 ]",
+      "21 11 12",
+    },
+
+    // 1 above 3.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ] 3:ll",
+      "1",
+      "3",
+      STACK_ABOVE,
+      "2 [ 21 ] 3 1 [ 11 12 ]",
+      "21 11 12",
+    },
+
+    // 1 above 2.
+    {
+      "1:ll [ 11 12 ] 2:ll [ 21 ]",
+      "1",
+      "2",
+      STACK_ABOVE,
+      "2 [ 21 ] 1 [ 11 12 ]",
+      "21 11 12",
+    },
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
+    test::TestWindowDelegate delegate;
+    Window root(NULL);
+    root.Init(WINDOW_LAYER_NOT_DRAWN);
+    root.SetBounds(gfx::Rect(0, 0, 100, 100));
+    AddWindowsFromString(
+        &root,
+        data[i].initial_description,
+        static_cast<std::string::size_type>(0), &delegate);
+    aura::Window* source = FindWindowByName(&root, data[i].source_window);
+    ASSERT_TRUE(source != NULL) << "unable to find source window "
+                                << data[i].source_window << " at " << i;
+    aura::Window* target = FindWindowByName(&root, data[i].target_window);
+    switch (data[i].stack_type) {
+      case STACK_ABOVE:
+        ASSERT_TRUE(target != NULL) << "unable to find target window "
+                                    << data[i].target_window << " at " << i;
+        source->parent()->StackChildAbove(source, target);
+        break;
+      case STACK_BELOW:
+        ASSERT_TRUE(target != NULL) << "unable to find target window "
+                                    << data[i].target_window << " at " << i;
+        source->parent()->StackChildBelow(source, target);
+        break;
+      case STACK_AT_BOTTOM:
+        source->parent()->StackChildAtBottom(source);
+        break;
+      case STACK_AT_TOP:
+        source->parent()->StackChildAtTop(source);
+        break;
+    }
+    EXPECT_EQ(data[i].expected_layer_description,
+              BuildRootLayerTreeDescription(*root.layer()))
+        << "layer tree doesn't match at " << i;
+    EXPECT_EQ(data[i].expected_description,
+              BuildRootWindowTreeDescription(root))
+        << "window tree doesn't match at " << i;
+  }
 }
 
 }  // namespace test

@@ -12,7 +12,7 @@
 //
 //   const PPB_Foo* ppapi::thunk::GetPPB_Foo_Thunk();
 //
-#define IFACE(api_name, interface_name, InterfaceType) \
+#define IFACE(interface_name, InterfaceType) \
   struct InterfaceType; \
   namespace ppapi { namespace thunk { \
   PPAPI_THUNK_EXPORT const InterfaceType* Get##InterfaceType##_Thunk(); \
@@ -25,6 +25,7 @@
 #include "ppapi/thunk/interfaces_ppb_private_flash.h"
 #include "ppapi/thunk/interfaces_ppb_public_stable.h"
 #include "ppapi/thunk/interfaces_ppb_public_dev.h"
+#include "ppapi/thunk/interfaces_ppb_public_dev_channel.h"
 
 #undef UNPROXIED_IFACE
 #undef PROXIED_IFACE

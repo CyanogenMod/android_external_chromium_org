@@ -226,7 +226,7 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
       // window showing.
       return;
     }
-    popup_->Show();
+    popup_->ShowInactive();
   } else {
     // Animate the popup shrinking, but don't animate growing larger since that
     // would make the popup feel less responsive.
@@ -497,7 +497,7 @@ void OmniboxPopupContentsView::OpenSelectedLine(
   if (!HasMatchAt(index))
     return;
   omnibox_view_->OpenMatch(model_->result().match_at(index), disposition,
-                           GURL(), index);
+                           GURL(), base::string16(), index);
 }
 
 OmniboxResultView* OmniboxPopupContentsView::result_view_at(size_t i) {

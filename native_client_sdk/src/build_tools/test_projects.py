@@ -9,8 +9,9 @@ import subprocess
 import sys
 import time
 
-import buildbot_common
+import build_projects
 import build_version
+import buildbot_common
 import parse_dsc
 
 from build_paths import OUT_DIR, SRC_DIR, SDK_SRC_DIR, SCRIPT_DIR
@@ -59,6 +60,8 @@ DISABLED_TESTS = [
     # TODO(binji): Disable 3D examples on linux/win/mac. See
     # http://crbug.com/262379.
     {'name': 'graphics_3d', 'platform': ('win', 'linux', 'mac')},
+    # media_stream_video uses 3D and webcam which are not supported.
+    {'name': 'media_stream_video', 'platform': ('win', 'linux', 'mac')},
     # TODO(binji): These tests timeout on the trybots because the NEXEs take
     # more than 40 seconds to load (!). See http://crbug.com/280753
     {'name': 'nacl_io_test', 'platform': 'win', 'toolchain': 'glibc'},
@@ -279,6 +282,19 @@ def RunAllTestsInTree(tree, toolchains, configs, retry_on_failure_times):
   return success
 
 
+def BuildAllTestsInTree(tree, toolchains, configs):
+  for branch, desc in parse_dsc.GenerateProjects(tree):
+    desc_configs = desc.get('CONFIGS', ALL_CONFIGS)
+    valid_toolchains = set(toolchains) & set(desc['TOOLS'])
+    valid_configs = set(configs) & set(desc_configs)
+    for toolchain in sorted(valid_toolchains):
+      for config in sorted(valid_configs):
+        name = '%s/%s' % (branch, desc['NAME'])
+        build_projects.BuildProjectsBranch(pepperdir, name, deps=False,
+                                           clean=False, config=config,
+                                           args=['TOOLCHAIN=%s' % toolchain])
+
+
 def GetProjectTree(include):
   # Everything in src is a library, and cannot be run.
   exclude = {'DEST': 'src'}
@@ -302,17 +318,13 @@ def main(args):
   parser.add_option('-d', '--dest',
       help='Select which destinations (project types) are valid.',
       action='append')
-  parser.add_option('-p', '--project',
-      help='Select which projects are valid.',
-      action='append')
+  parser.add_option('-b', '--build',
+      help='Build each project before testing.', action='store_true')
   parser.add_option('--retry-times',
       help='Number of types to retry on failure (Default: %default)',
           type='int', default=1)
 
   options, args = parser.parse_args(args[1:])
-  if options.project:
-    parser.error('The -p/--project option is deprecated.\n'
-                 'Just use positional paramaters instead.')
 
   if not options.toolchain:
     options.toolchain = ['newlib', 'glibc', 'pnacl', 'host']
@@ -340,6 +352,9 @@ def main(args):
     options.config = ALL_CONFIGS
 
   project_tree = GetProjectTree(include)
+  if options.build:
+    BuildAllTestsInTree(project_tree, options.toolchain, options.config)
+
   return RunAllTestsInTree(project_tree, options.toolchain, options.config,
                            options.retry_times)
 

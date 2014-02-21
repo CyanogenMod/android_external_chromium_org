@@ -6,11 +6,11 @@
 
 #include <vector>
 
+#include "ash/audio/sounds.h"
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/solo_window_tracker.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
@@ -27,6 +27,7 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
+#include "chrome/browser/chromeos/charger_replace/charger_replacement_dialog.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/first_run/drive_first_run_controller.h"
 #include "chrome/browser/chromeos/first_run/first_run.h"
@@ -47,14 +48,15 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/ui/focus_ring_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -145,11 +147,17 @@ void DetermineAndSaveHardwareKeyboard(const std::string& locale,
   if (!layout.empty()) {
     PrefService* prefs = g_browser_process->local_state();
     prefs->SetString(prefs::kHardwareKeyboardLayout, layout);
+
     // This asks the file thread to save the prefs (i.e. doesn't block).
     // The latest values of Local State reside in memory so we can safely
     // get the value of kHardwareKeyboardLayout even if the data is not
     // yet saved to disk.
     prefs->CommitPendingWrite();
+
+    chromeos::input_method::InputMethodManager* manager =
+      chromeos::input_method::InputMethodManager::Get();
+    manager->GetInputMethodUtil()->UpdateHardwareLayoutCache();
+    manager->SetInputMethodLoginDefault();
   }
 }
 
@@ -180,13 +188,10 @@ void ShowLoginWizardFinish(
     const std::string& first_screen_name,
     const chromeos::StartupCustomizationDocument* startup_manifest,
     chromeos::LoginDisplayHost* display_host) {
-  scoped_ptr<DictionaryValue> params;
-  display_host->StartWizard(first_screen_name, params.Pass());
+  TRACE_EVENT0("chromeos", "ShowLoginWizard::ShowLoginWizardFinish");
 
-  chromeos::DBusThreadManager::Get()->
-      GetSessionManagerClient()->
-      EmitLoginPromptReady();
-  TRACE_EVENT0("chromeos", "ShowLoginWizard::EmitLoginPromptReady");
+  scoped_ptr<base::DictionaryValue> params;
+  display_host->StartWizard(first_screen_name, params.Pass());
 
   // Set initial timezone if specified by customization.
   const std::string timezone_name = startup_manifest->initial_timezone();
@@ -195,7 +200,7 @@ void ShowLoginWizardFinish(
   // user has changed to during OOBE.
   if (!timezone_name.empty()) {
     chromeos::system::TimezoneSettings::GetInstance()->SetTimezoneFromID(
-        UTF8ToUTF16(timezone_name));
+        base::UTF8ToUTF16(timezone_name));
   }
 }
 
@@ -226,6 +231,10 @@ void OnLanguageSwitchedCallback(
 
   ShowLoginWizardFinish(
       self->first_screen_name, self->startup_manifest, self->display_host);
+}
+
+void EnableSystemSoundsForAccessibility() {
+  chromeos::AccessibilityManager::Get()->EnableSystemSounds(true);
 }
 
 }  // namespace
@@ -291,15 +300,14 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
   bool is_registered = StartupUtils::IsDeviceRegistered();
   bool zero_delay_enabled = WizardController::IsZeroDelayEnabled();
-  bool disable_boot_animation = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableBootAnimation);
-  bool disable_oobe_animation = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kDisableOobeAnimation);
+  bool disable_boot_animation = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableBootAnimation);
+  bool disable_oobe_animation = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableOobeAnimation);
 
-  waiting_for_wallpaper_load_ =
-      !zero_delay_enabled &&
-      (is_registered || !disable_oobe_animation) &&
-      (!is_registered || !disable_boot_animation);
+  waiting_for_wallpaper_load_ = !zero_delay_enabled &&
+                                (is_registered || !disable_oobe_animation) &&
+                                (!is_registered || !disable_boot_animation);
 
   // For slower hardware we have boot animation disabled so
   // we'll be initializing WebUI hidden, waiting for user pods to load and then
@@ -311,8 +319,9 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
   // Check if WebUI init type is overriden.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshWebUIInit)) {
-    const std::string override_type = CommandLine::ForCurrentProcess()->
-        GetSwitchValueASCII(switches::kAshWebUIInit);
+    const std::string override_type =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kAshWebUIInit);
     if (override_type == kWebUIInitParallel)
       initialize_webui_hidden_ = true;
     else if (override_type == kWebUIInitPostpone)
@@ -329,17 +338,20 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
     initialize_webui_hidden_ = false;
 
   if (waiting_for_wallpaper_load_) {
-    registrar_.Add(this, chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
                    content::NotificationService::AllSources());
   }
 
   // When we wait for WebUI to be initialized we wait for one of
   // these notifications.
-  if ((waiting_for_user_pods_ || waiting_for_wallpaper_load_)
-      && initialize_webui_hidden_) {
-    registrar_.Add(this, chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
+  if ((waiting_for_user_pods_ || waiting_for_wallpaper_load_) &&
+      initialize_webui_hidden_) {
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
                    content::NotificationService::AllSources());
-    registrar_.Add(this, chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
                    content::NotificationService::AllSources());
   }
   LOG(WARNING) << "Login WebUI >> "
@@ -347,6 +359,11 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
                << " wait_for_wp_load_: " << waiting_for_wallpaper_load_
                << " wait_for_pods_: " << waiting_for_user_pods_
                << " init_webui_hidden_: " << initialize_webui_hidden_;
+
+  media::SoundsManager* manager = media::SoundsManager::Get();
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  manager->Initialize(chromeos::SOUND_STARTUP,
+                      bundle.GetRawDataResource(IDR_SOUND_STARTUP_WAV));
 }
 
 LoginDisplayHostImpl::~LoginDisplayHostImpl() {
@@ -360,24 +377,11 @@ LoginDisplayHostImpl::~LoginDisplayHostImpl() {
   chrome::EndKeepAlive();
 
   default_host_ = NULL;
-  // TODO(dzhioev): find better place for starting tutorial.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kOobeSkipPostLogin) &&
-      !command_line->HasSwitch(switches::kDisableFirstRunUI) &&
-      ((chromeos::UserManager::Get()->IsCurrentUserNew() &&
-        !command_line->HasSwitch(::switches::kTestType)) ||
-       command_line->HasSwitch(switches::kForceFirstRunUI))) {
-    LaunchFirstRunDialog();
-  }
-
-  // TODO(tengs): This should be refactored together with the first run UI.
-  // See crbug.com/314934.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableDriveOfflineFirstRun)) {
-    if (UserManager::Get()->IsCurrentUserNew()) {
-      // DriveOptInController will delete itself when finished.
-      (new DriveFirstRunController())->EnableOfflineMode();
-    }
+  // TODO(tengs): This should be refactored. See crbug.com/314934.
+  if (UserManager::Get()->IsCurrentUserNew()) {
+    // DriveOptInController will delete itself when finished.
+    (new DriveFirstRunController(
+        ProfileManager::GetActiveUserProfile()))->EnableOfflineMode();
   }
 }
 
@@ -482,7 +486,7 @@ void LoginDisplayHostImpl::GetAutoEnrollmentCheckResult(
 
 void LoginDisplayHostImpl::StartWizard(
     const std::string& first_screen_name,
-    scoped_ptr<DictionaryValue> screen_parameters) {
+    scoped_ptr<base::DictionaryValue> screen_parameters) {
   startup_sound_honors_spoken_feedback_ = false;
   TryToPlayStartupSound();
 
@@ -613,7 +617,9 @@ void LoginDisplayHostImpl::StartSignInScreen(
   MobileConfig::GetInstance();
 
   // Initiate device policy fetching.
-  g_browser_process->browser_policy_connector()->ScheduleServiceInitialization(
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  connector->ScheduleServiceInitialization(
       kPolicyServiceInitializationDelayMilliseconds);
 
   CHECK(webui_login_display_);
@@ -654,7 +660,16 @@ void LoginDisplayHostImpl::PrewarmAuthentication() {
                  pointer_factory_.GetWeakPtr()));
 }
 
-void LoginDisplayHostImpl::StartAppLaunch(const std::string& app_id) {
+void LoginDisplayHostImpl::StartDemoAppLaunch() {
+  LOG(WARNING) << "Login WebUI >> starting demo app.";
+  SetStatusAreaVisible(false);
+
+  demo_app_launcher_.reset(new DemoAppLauncher());
+  demo_app_launcher_->StartDemoAppLaunch();
+}
+
+void LoginDisplayHostImpl::StartAppLaunch(const std::string& app_id,
+                                          bool diagnostic_mode) {
   LOG(WARNING) << "Login WebUI >> start app launch.";
   SetStatusAreaVisible(false);
   finalize_animation_type_ = ANIMATION_FADE_OUT;
@@ -664,7 +679,7 @@ void LoginDisplayHostImpl::StartAppLaunch(const std::string& app_id) {
   login_view_->set_should_emit_login_prompt_visible(false);
 
   app_launch_controller_.reset(new AppLaunchController(
-      app_id, this, GetOobeUI()));
+      app_id, diagnostic_mode, this, GetOobeUI()));
 
   app_launch_controller_->StartAppLaunch();
 }
@@ -884,6 +899,12 @@ void LoginDisplayHostImpl::LoadURL(const GURL& url) {
   // Subscribe to crash events.
   content::WebContentsObserver::Observe(login_view_->GetWebContents());
   login_view_->LoadURL(url);
+
+  // LoadURL could be called after the spring charger dialog shows, and
+  // take away the focus from it. Set the focus back to the charger dialog
+  // if it is visible.
+  // See crbug.com/328538.
+  ChargerReplacementDialog::SetFocusOnChargerDialogIfVisible();
 }
 
 void LoginDisplayHostImpl::ShowWebUI() {
@@ -896,6 +917,13 @@ void LoginDisplayHostImpl::ShowWebUI() {
   login_view_->GetWebContents()->GetView()->Focus();
   login_view_->SetStatusAreaVisible(status_area_saved_visibility_);
   login_view_->OnPostponedShow();
+
+  // Login window could be shown after the spring charger dialog shows, and
+  // take away the focus from it. Set the focus back to the charger dialog
+  // if it is visible.
+  // See crbug.com/328538.
+  ChargerReplacementDialog::SetFocusOnChargerDialogIfVisible();
+
   // We should reset this flag to allow changing of status area visibility.
   initialize_webui_hidden_ = false;
 }
@@ -935,9 +963,8 @@ void LoginDisplayHostImpl::StartPostponedWebUI() {
 void LoginDisplayHostImpl::InitLoginWindowAndView() {
   if (login_window_)
     return;
-  ash::SoloWindowTracker::SetSoloHeaderEnabled(false);
 
-  if (system::keyboard_settings::ForceKeyboardDrivenUINavigation()) {
+  if (system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation()) {
     views::FocusManager::set_arrow_key_traversal_enabled(true);
 
     focus_ring_controller_.reset(new FocusRingController);
@@ -989,7 +1016,6 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
 void LoginDisplayHostImpl::ResetLoginWindowAndView() {
   if (!login_window_)
     return;
-  ash::SoloWindowTracker::SetSoloHeaderEnabled(true);
   login_window_->Close();
   login_window_ = NULL;
   login_view_ = NULL;
@@ -1017,18 +1043,21 @@ void LoginDisplayHostImpl::TryToPlayStartupSound() {
     return;
   }
 
-  // Don't play startup sound if login prompt is already visible for a
-  // long time.
+  startup_sound_played_ = true;
+
+  // Don't try play startup sound if login prompt is already visible
+  // for a long time or can't be played.
   if (base::TimeTicks::Now() - login_prompt_visible_time_ >
-      base::TimeDelta::FromMilliseconds(kStartupSoundMaxDelayMs)) {
+      base::TimeDelta::FromMilliseconds(kStartupSoundMaxDelayMs) ||
+      !ash::PlaySystemSound(SOUND_STARTUP,
+                            startup_sound_honors_spoken_feedback_)) {
+    EnableSystemSoundsForAccessibility();
     return;
   }
-
-  if (!startup_sound_honors_spoken_feedback_ ||
-      chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
-    startup_sound_played_ = true;
-    media::SoundsManager::Get()->Play(media::SoundsManager::SOUND_STARTUP);
-  }
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&EnableSystemSoundsForAccessibility),
+      media::SoundsManager::Get()->GetDuration(SOUND_STARTUP));
 }
 
 void LoginDisplayHostImpl::OnLoginPromptVisible() {
@@ -1055,15 +1084,15 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   // Set up keyboards. For example, when |locale| is "en-US", enable US qwerty
   // and US dvorak keyboard layouts.
   if (g_browser_process && g_browser_process->local_state()) {
-    manager->SetInputMethodDefault();
+    manager->SetInputMethodLoginDefault();
 
     PrefService* prefs = g_browser_process->local_state();
     // Apply owner preferences for tap-to-click and mouse buttons swap for
     // login screen.
-    system::mouse_settings::SetPrimaryButtonRight(
+    system::InputDeviceSettings::Get()->SetPrimaryButtonRight(
         prefs->GetBoolean(prefs::kOwnerPrimaryMouseButtonRight));
-    system::touchpad_settings::SetTapToClick(
-      prefs->GetBoolean(prefs::kOwnerTapToClickEnabled));
+    system::InputDeviceSettings::Get()->SetTapToClick(
+        prefs->GetBoolean(prefs::kOwnerTapToClickEnabled));
   }
 
   ui::SetNaturalScroll(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -1088,17 +1117,23 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   if (show_app_launch_splash_screen) {
     const std::string& auto_launch_app_id =
         chromeos::KioskAppManager::Get()->GetAutoLaunchApp();
-    display_host->StartAppLaunch(auto_launch_app_id);
+    display_host->StartAppLaunch(auto_launch_app_id,
+                                 false /* diagnostic_mode */);
     return;
   }
 
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   bool should_show_enrollment_screen =
       first_screen_name.empty() && oobe_complete &&
       chromeos::WizardController::ShouldAutoStartEnrollment() &&
-      !g_browser_process->browser_policy_connector()->IsEnterpriseManaged();
+      !connector->IsEnterpriseManaged();
   if (should_show_enrollment_screen) {
-    display_host->StartWizard(chromeos::WizardController::kEnrollmentScreenName,
-                              scoped_ptr<DictionaryValue>());
+    // Shows networks screen instead of enrollment screen to resume the
+    // interrupted auto start enrollment flow because enrollment screen does
+    // not handle flaky network. See http://crbug.com/332572
+    display_host->StartWizard(chromeos::WizardController::kNetworkScreenName,
+                              scoped_ptr<base::DictionaryValue>());
     return;
   }
 
@@ -1115,9 +1150,9 @@ void ShowLoginWizard(const std::string& first_screen_name) {
     if (!prefs->HasPrefPath(prefs::kApplicationLocale)) {
       std::string locale = chromeos::StartupUtils::GetInitialLocale();
       prefs->SetString(prefs::kApplicationLocale, locale);
-      manager->EnableLayouts(
+      manager->EnableLoginLayouts(
           locale,
-          manager->GetInputMethodUtil()->GetHardwareInputMethodId());
+          manager->GetInputMethodUtil()->GetHardwareInputMethodIds());
       base::ThreadRestrictions::ScopedAllowIO allow_io;
       const std::string loaded_locale =
           ResourceBundle::GetSharedInstance().ReloadLocaleResources(locale);
@@ -1139,15 +1174,19 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   const std::string current_locale =
       prefs->GetString(prefs::kApplicationLocale);
   VLOG(1) << "Current locale: " << current_locale;
-  std::string locale = startup_manifest->initial_locale();
+  std::string locale = startup_manifest->initial_locale_default();
+
+  std::string layout = startup_manifest->keyboard_layout();
+  VLOG(1) << "Initial locale: " << locale << "keyboard layout " << layout;
+
+  // Determine keyboard layout from OEM customization (if provided) or
+  // initial locale and save it in preferences.
+  DetermineAndSaveHardwareKeyboard(locale, layout);
 
   if (!current_locale.empty() || locale.empty()) {
     ShowLoginWizardFinish(first_screen_name, startup_manifest, display_host);
     return;
   }
-
-  std::string layout = startup_manifest->keyboard_layout();
-  VLOG(1) << "Initial locale: " << locale << "keyboard layout " << layout;
 
   // Save initial locale from VPD/customization manifest as current
   // Chrome locale. Otherwise it will be lost if Chrome restarts.
@@ -1155,14 +1194,6 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   // will enforce preference saving.
   prefs->SetString(prefs::kApplicationLocale, locale);
   chromeos::StartupUtils::SetInitialLocale(locale);
-
-  // Determine keyboard layout from OEM customization (if provided) or
-  // initial locale and save it in preferences.
-  DetermineAndSaveHardwareKeyboard(locale, layout);
-
-  // Then, enable the hardware keyboard.
-  manager->EnableLayouts(
-      locale, manager->GetInputMethodUtil()->GetHardwareInputMethodId());
 
   scoped_ptr<ShowLoginWizardSwitchLanguageCallbackData> data(
       new ShowLoginWizardSwitchLanguageCallbackData(
@@ -1172,8 +1203,9 @@ void ShowLoginWizard(const std::string& first_screen_name) {
       new locale_util::SwitchLanguageCallback(
           base::Bind(&OnLanguageSwitchedCallback, base::Passed(data.Pass()))));
 
-  // Do not load locale keyboards here.
-  locale_util::SwitchLanguage(locale, false, callback.Pass());
+  // Load locale keyboards here. Hardware layout would be automatically enabled.
+  locale_util::SwitchLanguage(
+      locale, true, true /* login_layouts_only */, callback.Pass());
 }
 
 }  // namespace chromeos

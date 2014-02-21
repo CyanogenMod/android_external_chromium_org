@@ -12,10 +12,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/rolling_time_delta_history.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/software_output_device.h"
 #include "cc/scheduler/frame_rate_controller.h"
-#include "cc/scheduler/rolling_time_delta_history.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
@@ -114,7 +114,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
 
-  virtual void Reshape(gfx::Size size, float scale_factor);
+  virtual void Reshape(const gfx::Size& size, float scale_factor);
   virtual gfx::Size SurfaceSize() const;
 
   virtual void BindFramebuffer();
@@ -159,8 +159,8 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
 
   // The FrameRateController is deprecated.
   // Platforms should move to native BeginImplFrames instead.
-  void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                base::TimeDelta interval);
+  void CommitVSyncParameters(base::TimeTicks timebase,
+                             base::TimeDelta interval);
   virtual void FrameRateControllerTick(bool throttled,
                                        const BeginFrameArgs& args) OVERRIDE;
   scoped_ptr<FrameRateController> frame_rate_controller_;
@@ -175,7 +175,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
 
   // Forwarded to OutputSurfaceClient but threaded through OutputSurface
   // first so OutputSurface has a chance to update the FrameRateController
-  void SetNeedsRedrawRect(gfx::Rect damage_rect);
+  void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
   void BeginImplFrame(const BeginFrameArgs& args);
   void DidSwapBuffers();
   void OnSwapBuffersComplete();
@@ -183,8 +183,8 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   void DidLoseOutputSurface();
   void SetExternalStencilTest(bool enabled);
   void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                  gfx::Rect viewport,
-                                  gfx::Rect clip,
+                                  const gfx::Rect& viewport,
+                                  const gfx::Rect& clip,
                                   bool valid_for_tile_management);
 
   // virtual for testing.

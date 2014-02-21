@@ -25,6 +25,7 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/files/file_path.h"
 #include "base/linux_util.h"
 #include "base/path_service.h"
@@ -701,7 +702,27 @@ bool CrashDoneInProcessNoUpload(
   info.pid = g_pid;
   info.crash_keys = g_crash_keys;
   HandleCrashDump(info);
-  return FinalizeCrashDoneAndroid();
+  bool finalize_result = FinalizeCrashDoneAndroid();
+  base::android::BuildInfo* android_build_info =
+      base::android::BuildInfo::GetInstance();
+  if (android_build_info->sdk_int() >= 18 &&
+      strcmp(android_build_info->build_type(), "eng") != 0 &&
+      strcmp(android_build_info->build_type(), "userdebug") != 0) {
+    // On JB MR2 and later, the system crash handler displays a dialog. For
+    // renderer crashes, this is a bad user experience and so this is disabled
+    // for user builds of Android.
+    // TODO(cjhopman): There should be some way to recover the crash stack from
+    // non-uploading user clients. See http://crbug.com/273706.
+    __android_log_write(ANDROID_LOG_WARN,
+                        kGoogleBreakpad,
+                        "Tombstones are disabled on JB MR2+ user builds.");
+    __android_log_write(ANDROID_LOG_WARN,
+                        kGoogleBreakpad,
+                        "### ### ### ### ### ### ### ### ### ### ### ### ###");
+    return true;
+  } else {
+    return finalize_result;
+  }
 }
 
 void EnableNonBrowserCrashDumping(const std::string& process_type,
@@ -1486,7 +1507,7 @@ void InitCrashReporter(const std::string& process_type) {
   SetProcessStartTime();
   g_pid = getpid();
 
-  GetBreakpadClient()->SetDumpWithoutCrashingFunction(&DumpProcess);
+  base::debug::SetDumpWithoutCrashingFunction(&DumpProcess);
 #if defined(ADDRESS_SANITIZER)
   // Register the callback for AddressSanitizer error reporting.
   __asan_set_error_report_callback(AsanLinuxBreakpadCallback);

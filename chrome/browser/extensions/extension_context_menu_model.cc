@@ -10,7 +10,6 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -21,6 +20,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
@@ -170,7 +170,7 @@ void ExtensionContextMenuModel::InitMenu(const Extension* extension) {
   // Ampersands need to be escaped to avoid being treated like
   // mnemonics in the menu.
   base::ReplaceChars(extension_name, "&", "&&", &extension_name);
-  AddItem(NAME, UTF8ToUTF16(extension_name));
+  AddItem(NAME, base::UTF8ToUTF16(extension_name));
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS_MENU_ITEM);
   AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));

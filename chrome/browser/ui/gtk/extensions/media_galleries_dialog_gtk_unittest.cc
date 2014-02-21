@@ -5,10 +5,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller_mock.h"
-#include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/ui/gtk/extensions/media_galleries_dialog_gtk.h"
-#include "chrome/common/extensions/extension_test_util.h"
+#include "components/storage_monitor/storage_info.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
@@ -24,7 +24,7 @@ MediaGalleryPrefInfo MakePrefInfoForTesting(MediaGalleryPrefId id) {
   gallery.pref_id = id;
   gallery.device_id = StorageInfo::MakeDeviceId(StorageInfo::FIXED_MASS_STORAGE,
                                                 base::Int64ToString(id));
-  gallery.display_name = ASCIIToUTF16("Display Name");
+  gallery.display_name = base::ASCIIToUTF16("Display Name");
   return gallery;
 }
 
@@ -35,7 +35,7 @@ class MediaGalleriesDialogTest : public testing::Test {
   MediaGalleriesDialogTest() {}
   virtual ~MediaGalleriesDialogTest() {}
   virtual void SetUp() OVERRIDE {
-    dummy_extension_ = extension_test_util::CreateExtensionWithID("dummy");
+    dummy_extension_ = extensions::test_util::CreateExtensionWithID("dummy");
   }
   virtual void TearDown() OVERRIDE {
     dummy_extension_ = NULL;

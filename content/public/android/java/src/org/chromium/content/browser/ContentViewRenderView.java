@@ -8,6 +8,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.view.Surface;
@@ -17,7 +18,7 @@ import android.widget.FrameLayout;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
-import org.chromium.content.common.TraceEvent;
+import org.chromium.base.TraceEvent;
 import org.chromium.ui.base.WindowAndroid;
 
 /***
@@ -61,11 +62,13 @@ public class ContentViewRenderView extends FrameLayout {
         assert mNativeContentViewRenderView != 0;
 
         mSurfaceView = createSurfaceView(getContext());
+        mSurfaceView.setZOrderMediaOverlay(true);
         mSurfaceCallback = new SurfaceHolder.Callback() {
             @Override
             public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
                 assert mNativeContentViewRenderView != 0;
-                nativeSurfaceSetSize(mNativeContentViewRenderView, width, height);
+                nativeSurfaceChanged(mNativeContentViewRenderView,
+                        format, width, height, holder.getSurface());
                 if (mCurrentContentView != null) {
                     mCurrentContentView.getContentViewCore().onPhysicalBackingSizeChanged(
                             width, height);
@@ -75,7 +78,11 @@ public class ContentViewRenderView extends FrameLayout {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
                 assert mNativeContentViewRenderView != 0;
-                nativeSurfaceCreated(mNativeContentViewRenderView, holder.getSurface());
+                nativeSurfaceCreated(mNativeContentViewRenderView);
+
+                mPendingSwapBuffers = 0;
+                mPendingRenders = 0;
+
                 onReadyToRender();
             }
 
@@ -205,8 +212,6 @@ public class ContentViewRenderView extends FrameLayout {
      * render.
      */
     protected void onReadyToRender() {
-        mPendingSwapBuffers = 0;
-        mPendingRenders = 0;
     }
 
     /**
@@ -235,6 +240,16 @@ public class ContentViewRenderView extends FrameLayout {
      */
     public boolean isInitialized() {
         return mSurfaceView.getHolder().getSurface() != null;
+    }
+
+    /**
+     * Enter or leave overlay video mode.
+     * @param enabled Whether overlay mode is enabled.
+     */
+    public void setOverlayVideoMode(boolean enabled) {
+        int format = enabled ? PixelFormat.TRANSLUCENT : PixelFormat.OPAQUE;
+        mSurfaceView.getHolder().setFormat(format);
+        nativeSetOverlayVideoMode(mNativeContentViewRenderView, enabled);
     }
 
     @CalledByNative
@@ -305,10 +320,12 @@ public class ContentViewRenderView extends FrameLayout {
     private native void nativeDestroy(long nativeContentViewRenderView);
     private native void nativeSetCurrentContentView(long nativeContentViewRenderView,
             long nativeContentView);
-    private native void nativeSurfaceCreated(long nativeContentViewRenderView, Surface surface);
+    private native void nativeSurfaceCreated(long nativeContentViewRenderView);
     private native void nativeSurfaceDestroyed(long nativeContentViewRenderView);
-    private native void nativeSurfaceSetSize(long nativeContentViewRenderView,
-            int width, int height);
+    private native void nativeSurfaceChanged(long nativeContentViewRenderView,
+            int format, int width, int height, Surface surface);
     private native boolean nativeComposite(long nativeContentViewRenderView);
     private native boolean nativeCompositeToBitmap(long nativeContentViewRenderView, Bitmap bitmap);
+    private native void nativeSetOverlayVideoMode(long nativeContentViewRenderView,
+            boolean enabled);
 }

@@ -280,36 +280,36 @@ class IncludeOrderTest(unittest.TestCase):
   def testUncheckableIncludes(self):
     mock_input_api = MockInputApi()
     contents = ['#include <windows.h>',
-                '#include "b.h"'
+                '#include "b.h"',
                 '#include "a.h"']
     mock_file = MockFile('', contents)
     warnings = PRESUBMIT._CheckIncludeOrderInFile(
         mock_input_api, mock_file, range(1, len(contents) + 1))
-    self.assertEqual(0, len(warnings))
+    self.assertEqual(1, len(warnings))
 
     contents = ['#include "gpu/command_buffer/gles_autogen.h"',
-                '#include "b.h"'
+                '#include "b.h"',
                 '#include "a.h"']
     mock_file = MockFile('', contents)
     warnings = PRESUBMIT._CheckIncludeOrderInFile(
         mock_input_api, mock_file, range(1, len(contents) + 1))
-    self.assertEqual(0, len(warnings))
+    self.assertEqual(1, len(warnings))
 
     contents = ['#include "gl_mock_autogen.h"',
-                '#include "b.h"'
+                '#include "b.h"',
                 '#include "a.h"']
     mock_file = MockFile('', contents)
     warnings = PRESUBMIT._CheckIncludeOrderInFile(
         mock_input_api, mock_file, range(1, len(contents) + 1))
-    self.assertEqual(0, len(warnings))
+    self.assertEqual(1, len(warnings))
 
     contents = ['#include "ipc/some_macros.h"',
-                '#include "b.h"'
+                '#include "b.h"',
                 '#include "a.h"']
     mock_file = MockFile('', contents)
     warnings = PRESUBMIT._CheckIncludeOrderInFile(
         mock_input_api, mock_file, range(1, len(contents) + 1))
-    self.assertEqual(0, len(warnings))
+    self.assertEqual(1, len(warnings))
 
 
 class VersionControlConflictsTest(unittest.TestCase):
@@ -394,7 +394,7 @@ class InvalidOSMacroNamesTest(unittest.TestCase):
 
 
 class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
-  def testDepsFilesToCheck(self):
+  def testFilesToCheckForIncomingDeps(self):
     changed_lines = [
       '"+breakpad",',
       '"+chrome/installer",',
@@ -404,6 +404,7 @@ class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
       '"+components/breakpad",',
       '"+components/nacl/common",',
       '"+content/public/browser/render_process_host.h",',
+      '"+jni/fooblat.h",',
       '"+grit",  # For generated headers',
       '"+grit/generated_resources.h",',
       '"+grit/",',
@@ -412,20 +413,20 @@ class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
       '"+tools/memory_watcher",',
       '"+third_party/lss/linux_syscall_support.h",',
     ]
-    files_to_check = PRESUBMIT._DepsFilesToCheck(re, changed_lines)
+    files_to_check = PRESUBMIT._FilesToCheckForIncomingDeps(re, changed_lines)
     expected = set([
       'breakpad/DEPS',
       'chrome/installer/DEPS',
-      'chrome/plugin/DEPS',
-      'chrome/utility/DEPS',
-      'chromeos/DEPS',
+      'chrome/plugin/chrome_content_plugin_client.h',
+      'chrome/utility/chrome_content_utility_client.h',
+      'chromeos/chromeos_paths.h',
       'components/breakpad/DEPS',
       'components/nacl/common/DEPS',
-      'content/public/browser/DEPS',
+      'content/public/browser/render_process_host.h',
       'policy/DEPS',
       'sandbox/DEPS',
       'tools/memory_watcher/DEPS',
-      'third_party/lss/DEPS',
+      'third_party/lss/linux_syscall_support.h',
     ])
     self.assertEqual(expected, files_to_check);
 

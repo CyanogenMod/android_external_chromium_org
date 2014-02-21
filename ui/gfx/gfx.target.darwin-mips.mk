@@ -41,7 +41,6 @@ LOCAL_SRC_FILES := \
 	ui/gfx/animation/slide_animation.cc \
 	ui/gfx/animation/tween.cc \
 	ui/gfx/blit.cc \
-	ui/gfx/box_f.cc \
 	ui/gfx/canvas.cc \
 	ui/gfx/canvas_android.cc \
 	ui/gfx/codec/jpeg_codec.cc \
@@ -53,6 +52,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/favicon_size.cc \
 	ui/gfx/font.cc \
 	ui/gfx/font_list.cc \
+	ui/gfx/font_list_impl.cc \
 	ui/gfx/font_render_params_android.cc \
 	ui/gfx/gfx_paths.cc \
 	ui/gfx/gpu_memory_buffer.cc \
@@ -64,28 +64,15 @@ LOCAL_SRC_FILES := \
 	ui/gfx/image/image_skia_operations.cc \
 	ui/gfx/image/image_skia_rep.cc \
 	ui/gfx/image/image_util.cc \
-	ui/gfx/insets.cc \
-	ui/gfx/insets_f.cc \
 	ui/gfx/interpolated_transform.cc \
-	ui/gfx/matrix3_f.cc \
+	ui/gfx/linux_font_delegate.cc \
 	ui/gfx/platform_font_android.cc \
-	ui/gfx/point.cc \
-	ui/gfx/point3_f.cc \
-	ui/gfx/point_conversions.cc \
-	ui/gfx/point_f.cc \
-	ui/gfx/quad_f.cc \
 	ui/gfx/range/range.cc \
-	ui/gfx/rect.cc \
-	ui/gfx/rect_conversions.cc \
-	ui/gfx/rect_f.cc \
 	ui/gfx/screen.cc \
 	ui/gfx/screen_android.cc \
 	ui/gfx/scrollbar_size.cc \
 	ui/gfx/sequential_id_generator.cc \
 	ui/gfx/shadow_value.cc \
-	ui/gfx/size.cc \
-	ui/gfx/size_conversions.cc \
-	ui/gfx/size_f.cc \
 	ui/gfx/skbitmap_operations.cc \
 	ui/gfx/skia_util.cc \
 	ui/gfx/switches.cc \
@@ -96,11 +83,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/transform.cc \
 	ui/gfx/transform_util.cc \
 	ui/gfx/ui_gfx_exports.cc \
-	ui/gfx/utf16_indexing.cc \
-	ui/gfx/vector2d.cc \
-	ui/gfx/vector2d_conversions.cc \
-	ui/gfx/vector2d_f.cc \
-	ui/gfx/vector3d_f.cc
+	ui/gfx/utf16_indexing.cc
 
 
 # Flags passed to both C and C++ files.
@@ -129,14 +112,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -147,27 +131,27 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DGFX_IMPLEMENTATION' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -217,7 +201,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -248,14 +231,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -266,27 +250,27 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DGFX_IMPLEMENTATION' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -337,7 +321,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

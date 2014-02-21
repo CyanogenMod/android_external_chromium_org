@@ -47,6 +47,8 @@ const size_t kQuicEntropyHashSize = 1;
 const size_t kQuicDeltaTimeLargestObservedSize = 2;
 // Size in bytes reserved for the number of missing packets in ack frames.
 const size_t kNumberOfMissingPacketsSize = 1;
+// Size in bytes reserved for the number of revived packets in ack frames.
+const size_t kNumberOfRevivedPacketsSize = 1;
 
 // This class receives callbacks from the framer when packets
 // are processed.
@@ -82,6 +84,11 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // before it has been processed.
   virtual void OnRevivedPacket() = 0;
 
+  // Called when the public header has been parsed, but has not been
+  // authenticated. If it returns false, framing for this packet will cease.
+  virtual bool OnUnauthenticatedPublicHeader(
+      const QuicPacketPublicHeader& header) = 0;
+
   // Called when the unauthenticated portion of the header has been parsed.
   // If OnUnauthenticatedHeader returns false, framing for this packet will
   // cease.
@@ -115,6 +122,14 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
 
   // Called when a GoAwayFrame has been parsed.
   virtual bool OnGoAwayFrame(const QuicGoAwayFrame& frame) = 0;
+
+  // Called when a WindowUpdateFrame has been parsed.
+  // TODO(rjshade): Make this abstract, and implement in subclasses.
+  virtual bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
+
+  // Called when a BlockedFrame has been parsed.
+  // TODO(rjshade): Make this abstract, and implement in subclasses.
+  virtual bool OnBlockedFrame(const QuicBlockedFrame& frame);
 
   // Called when FEC data has been parsed.
   virtual void OnFecData(const QuicFecData& fec) = 0;
@@ -166,16 +181,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   // Returns true if |version| is a supported protocol version.
   bool IsSupportedVersion(const QuicVersion version) const;
-
-  // Returns true if the version flag is set in the public flags.
-  static bool HasVersionFlag(const QuicEncryptedPacket& packet);
-
-  // Calculates the largest observed packet to advertise in the case an Ack
-  // Frame was truncated.  last_written in this case is the iterator for the
-  // last missing packet which fit in the outgoing ack.
-  static QuicPacketSequenceNumber CalculateLargestObserved(
-      const SequenceNumberSet& missing_packets,
-      SequenceNumberSet::const_iterator last_written);
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
   // else the framer will likely crash.  It is acceptable for the visitor
@@ -246,12 +251,16 @@ class NET_EXPORT_PRIVATE QuicFramer {
       QuicSequenceNumberLength sequence_number_length,
       QuicSequenceNumberLength largest_observed_length);
   // Size in bytes of all reset stream frame without the error details.
-  static size_t GetMinRstStreamFrameSize();
+  static size_t GetMinRstStreamFrameSize(QuicVersion quic_version);
   // Size in bytes of all connection close frame fields without the error
   // details and the missing packets from the enclosed ack frame.
   static size_t GetMinConnectionCloseFrameSize();
   // Size in bytes of all GoAway frame fields without the reason phrase.
   static size_t GetMinGoAwayFrameSize();
+  // Size in bytes of all WindowUpdate frame fields.
+  static size_t GetWindowUpdateFrameSize();
+  // Size in bytes of all Blocked frame fields.
+  static size_t GetBlockedFrameSize();
   // The maximum number of nacks which can be transmitted in a single ack packet
   // without exceeding kDefaultMaxPacketSize.
   static size_t GetMaxUnackedPackets(QuicPacketHeader header);
@@ -261,10 +270,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
   static size_t GetStreamOffsetSize(QuicStreamOffset offset);
   // Size in bytes required for a serialized version negotiation packet
   static size_t GetVersionNegotiationPacketSize(size_t number_versions);
-
-
-  static bool CanTruncate(
-      QuicVersion version, const QuicFrame& frame, size_t free_bytes);
 
   // Returns the number of bytes added to the packet for the specified frame,
   // and 0 if the frame doesn't fit.  Includes the header size for the first
@@ -350,16 +355,14 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   const std::string& detailed_error() { return detailed_error_; }
 
-  // Read the full 8 byte guid from a packet header.
-  // Return true on success, else false.
-  static bool ReadGuidFromPacket(const QuicEncryptedPacket& packet,
-                                 QuicGuid* guid);
-
-  static QuicSequenceNumberLength ReadSequenceNumberLength(uint8 flags);
-
   // The minimum sequence number length required to represent |sequence_number|.
   static QuicSequenceNumberLength GetMinSequenceNumberLength(
       QuicPacketSequenceNumber sequence_number);
+
+  void SetSupportedVersions(const QuicVersionVector& versions) {
+    supported_versions_ = versions;
+    quic_version_ = versions[0];
+  }
 
  private:
   friend class test::QuicFramerPeer;
@@ -407,6 +410,8 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessRstStreamFrame(QuicRstStreamFrame* frame);
   bool ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame);
   bool ProcessGoAwayFrame(QuicGoAwayFrame* frame);
+  bool ProcessWindowUpdateFrame(QuicWindowUpdateFrame* frame);
+  bool ProcessBlockedFrame(QuicBlockedFrame* frame);
 
   bool DecryptPayload(const QuicPacketHeader& header,
                       const QuicEncryptedPacket& packet);
@@ -436,27 +441,32 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   static AckFrameInfo GetAckFrameInfo(const QuicAckFrame& frame);
 
+  // The Append* methods attempt to write the provided header or frame using the
+  // |writer|, and return true if successful.
   bool AppendPacketHeader(const QuicPacketHeader& header,
                           QuicDataWriter* writer);
   bool AppendTypeByte(const QuicFrame& frame,
                       bool last_frame_in_packet,
                       QuicDataWriter* writer);
-  bool AppendStreamFramePayload(const QuicStreamFrame& frame,
-                                bool last_frame_in_packet,
-                                QuicDataWriter* builder);
-  bool AppendAckFramePayloadAndTypeByte(const QuicPacketHeader& header,
-                                        const QuicAckFrame& frame,
-                                        QuicDataWriter* builder);
-  bool AppendQuicCongestionFeedbackFramePayload(
+  bool AppendStreamFrame(const QuicStreamFrame& frame,
+                         bool last_frame_in_packet,
+                         QuicDataWriter* builder);
+  bool AppendAckFrameAndTypeByte(const QuicPacketHeader& header,
+                                 const QuicAckFrame& frame,
+                                 QuicDataWriter* builder);
+  bool AppendQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& frame,
       QuicDataWriter* builder);
-  bool AppendRstStreamFramePayload(const QuicRstStreamFrame& frame,
-                                   QuicDataWriter* builder);
-  bool AppendConnectionCloseFramePayload(
-      const QuicConnectionCloseFrame& frame,
-      QuicDataWriter* builder);
-  bool AppendGoAwayFramePayload(const QuicGoAwayFrame& frame,
-                                QuicDataWriter* writer);
+  bool AppendRstStreamFrame(const QuicRstStreamFrame& frame,
+                            QuicDataWriter* builder);
+  bool AppendConnectionCloseFrame(const QuicConnectionCloseFrame& frame,
+                                  QuicDataWriter* builder);
+  bool AppendGoAwayFrame(const QuicGoAwayFrame& frame, QuicDataWriter* writer);
+  bool AppendWindowUpdateFrame(const QuicWindowUpdateFrame& frame,
+                               QuicDataWriter* writer);
+  bool AppendBlockedFrame(const QuicBlockedFrame& frame,
+                          QuicDataWriter* writer);
+
   bool RaiseError(QuicErrorCode error);
 
   void set_error(QuicErrorCode error) {

@@ -38,7 +38,7 @@
 #endif
 
 #if defined(OS_POSIX)
-#include "chrome/common/dump_without_crashing.h"
+#include "base/debug/dump_without_crashing.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -118,13 +118,7 @@ void ChromeBreakpadClient::GetProductNameAndVersion(
     if (!version_info->is_official_build())
       version->append(base::ASCIIToUTF16("-devel"));
 
-    const CommandLine& command = *CommandLine::ForCurrentProcess();
-    if (command.HasSwitch(switches::kChromeFrame)) {
-      *product_name = base::ASCIIToUTF16("ChromeFrame");
-    } else {
-      *product_name = version_info->product_short_name();
-    }
-
+    *product_name = version_info->product_short_name();
     *special_build = version_info->special_build();
   } else {
     // No version info found. Make up the values.
@@ -267,7 +261,8 @@ bool ChromeBreakpadClient::ReportingIsEnforcedByPolicy(bool* breakpad_enabled) {
 // point, we read the corresponding registry key directly. The return status
 // indicates whether policy data was successfully read. If it is true,
 // |breakpad_enabled| contains the value set by policy.
-  string16 key_name = UTF8ToUTF16(policy::key::kMetricsReportingEnabled);
+  base::string16 key_name =
+      base::UTF8ToUTF16(policy::key::kMetricsReportingEnabled);
   DWORD value = 0;
   base::win::RegKey hklm_policy_key(HKEY_LOCAL_MACHINE,
                                     policy::kRegistryChromePolicyKey, KEY_READ);
@@ -325,12 +320,6 @@ bool ChromeBreakpadClient::GetCrashDumpLocation(base::FilePath* crash_dir) {
 
   return PathService::Get(chrome::DIR_CRASH_DUMPS, crash_dir);
 }
-
-#if defined(OS_POSIX)
-void ChromeBreakpadClient::SetDumpWithoutCrashingFunction(void (*function)()) {
-  logging::SetDumpWithoutCrashingFunction(function);
-}
-#endif
 
 size_t ChromeBreakpadClient::RegisterCrashKeys() {
   // Note: This is not called on Windows because Breakpad is initialized in the

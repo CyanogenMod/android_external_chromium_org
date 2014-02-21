@@ -14,7 +14,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_value_map.h"
-#include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -29,6 +28,7 @@
 #include "components/policy/core/browser/policy_error_map.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/policy_map.h"
+#include "crypto/sha2.h"
 #include "grit/component_strings.h"
 #include "policy/policy_constants.h"
 #include "url/gurl.h"
@@ -66,7 +66,7 @@ bool GetSubkeyString(const base::DictionaryValue& dict,
 }  // namespace
 
 ExternalDataPolicyHandler::ExternalDataPolicyHandler(const char* policy_name)
-    : TypeCheckingPolicyHandler(policy_name, Value::TYPE_DICTIONARY) {
+    : TypeCheckingPolicyHandler(policy_name, base::Value::TYPE_DICTIONARY) {
 }
 
 ExternalDataPolicyHandler::~ExternalDataPolicyHandler() {
@@ -82,7 +82,7 @@ bool ExternalDataPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
   if (!value)
     return true;
 
-  const DictionaryValue* dict = NULL;
+  const base::DictionaryValue* dict = NULL;
   value->GetAsDictionary(&dict);
   if (!dict) {
     NOTREACHED();
@@ -103,7 +103,7 @@ bool ExternalDataPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
 
   std::vector<uint8> hash;
   if (!base::HexStringToBytes(hash_string, &hash) ||
-      hash.size() != base::kSHA1Length) {
+      hash.size() != crypto::kSHA256Length) {
     errors->AddError(policy, kSubkeyHash, IDS_POLICY_VALUE_FORMAT_ERROR);
     return false;
   }
@@ -246,8 +246,7 @@ base::Value* NetworkConfigurationPolicyHandler::SanitizeNetworkConfig(
       kPlaceholder);
 
   base::JSONWriter::WriteWithOptions(toplevel_dict.get(),
-                                     base::JSONWriter::OPTIONS_DO_NOT_ESCAPE |
-                                         base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                                     base::JSONWriter::OPTIONS_PRETTY_PRINT,
                                      &json_string);
   return base::Value::CreateStringValue(json_string);
 }

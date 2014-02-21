@@ -11,12 +11,12 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -26,6 +26,10 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/feature_switch.h"
 #include "net/base/net_util.h"
 
@@ -62,7 +66,7 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
     profile_dir = profile_dir.AppendASCII(TestingProfile::kTestUserProfileDir);
     base::CreateDirectory(profile_dir);
 
-    preferences_file_ = profile_dir.AppendASCII("Preferences");
+    preferences_file_ = profile_dir.Append(chrome::kPreferencesFilename);
     user_scripts_dir_ = profile_dir.AppendASCII("User Scripts");
     extensions_dir_ = profile_dir.AppendASCII("Extensions");
 
@@ -71,7 +75,8 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
       PathService::Get(chrome::DIR_TEST_DATA, &src_dir);
       src_dir = src_dir.AppendASCII("extensions").AppendASCII("good");
 
-      base::CopyFile(src_dir.AppendASCII("Preferences"), preferences_file_);
+      base::CopyFile(src_dir.Append(chrome::kPreferencesFilename),
+                     preferences_file_);
       base::CopyDirectory(src_dir.AppendASCII("Extensions"),
                           profile_dir, true);  // recursive
     }
@@ -95,10 +100,12 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
 
     // Count the number of non-component extensions.
     int found_extensions = 0;
-    for (ExtensionSet::const_iterator it = service->extensions()->begin();
-         it != service->extensions()->end(); ++it)
+    for (extensions::ExtensionSet::const_iterator it =
+             service->extensions()->begin();
+         it != service->extensions()->end(); ++it) {
       if ((*it)->location() != extensions::Manifest::COMPONENT)
         found_extensions++;
+    }
 
     ASSERT_EQ(static_cast<uint32>(num_expected_extensions),
               static_cast<uint32>(found_extensions));
@@ -169,9 +176,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, Test) {
 }
 
 // Sometimes times out on Mac.  http://crbug.com/48151
-//
-// TODO(erg): linux_aura bringup: http://crbug.com/163931
-#if defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_MACOSX)
 #define MAYBE_NoFileAccess DISABLED_NoFileAccess
 #else
 #define MAYBE_NoFileAccess NoFileAccess
@@ -185,13 +190,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, MAYBE_NoFileAccess) {
   // doing so reloads them.
   std::vector<const extensions::Extension*> extension_list;
 
-  ExtensionService* service = extensions::ExtensionSystem::Get(
-      browser()->profile())->extension_service();
-  for (ExtensionSet::const_iterator it = service->extensions()->begin();
-       it != service->extensions()->end(); ++it) {
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(browser()->profile());
+  for (extensions::ExtensionSet::const_iterator it =
+           registry->enabled_extensions().begin();
+       it != registry->enabled_extensions().end(); ++it) {
     if ((*it)->location() == extensions::Manifest::COMPONENT)
       continue;
-    if (extension_util::AllowFileAccess(it->get(), service))
+    if (extensions::util::AllowFileAccess((*it)->id(), browser()->profile()))
       extension_list.push_back(it->get());
   }
 
@@ -199,7 +205,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, MAYBE_NoFileAccess) {
     content::WindowedNotificationObserver user_scripts_observer(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
         content::NotificationService::AllSources());
-    extension_util::SetAllowFileAccess(extension_list[i], service, false);
+    extensions::util::SetAllowFileAccess(
+        extension_list[i]->id(), browser()->profile(), false);
     user_scripts_observer.Wait();
   }
 

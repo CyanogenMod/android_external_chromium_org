@@ -203,7 +203,7 @@ bool DriSurfaceFactory::SchedulePageFlip(gfx::AcceleratedWidget w) {
   CHECK(state_ == INITIALIZED);
   // TODO(dnicoara) Change this CHECK once we're running with the threaded
   // compositor.
-  CHECK(base::MessageLoop::current()->type() == base::MessageLoop::TYPE_UI);
+  CHECK(base::MessageLoopForUI::IsCurrent());
 
   // TODO(dnicoara) Once we can handle multiple displays this needs to be
   // changed.
@@ -237,10 +237,10 @@ SkCanvas* DriSurfaceFactory::GetCanvasForWidget(
   return reinterpret_cast<DriSurface*>(w)->GetDrawableForWidget();
 }
 
-gfx::VSyncProvider* DriSurfaceFactory::GetVSyncProvider(
+scoped_ptr<gfx::VSyncProvider> DriSurfaceFactory::CreateVSyncProvider(
     gfx::AcceleratedWidget w) {
   CHECK(state_ == INITIALIZED);
-  return new DriVSyncProvider(controller_.get());
+  return scoped_ptr<VSyncProvider>(new DriVSyncProvider(controller_.get()));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

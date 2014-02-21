@@ -82,15 +82,14 @@ FindBarView::FindBarView(FindBarHost* host)
 
   find_text_ = new views::Textfield;
   find_text_->set_id(VIEW_ID_FIND_IN_PAGE_TEXT_FIELD);
-  find_text_->SetFont(rb.GetFont(ui::ResourceBundle::BaseFont));
   find_text_->set_default_width_in_chars(kDefaultCharWidth);
-  find_text_->SetController(this);
+  find_text_->set_controller(this);
   find_text_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_FIND));
-
+  // The find bar textfield has a background image instead of a border.
+  find_text_->SetBorder(views::Border::NullBorder());
   AddChildView(find_text_);
 
   match_count_text_ = new views::Label();
-  match_count_text_->SetFont(rb.GetFont(ui::ResourceBundle::BaseFont));
   AddChildView(match_count_text_);
 
   // Create a focus forwarder view which sends focus to find_text_.
@@ -99,7 +98,7 @@ FindBarView::FindBarView(FindBarHost* host)
 
   find_previous_button_ = new views::ImageButton(this);
   find_previous_button_->set_tag(FIND_PREVIOUS_TAG);
-  find_previous_button_->set_focusable(true);
+  find_previous_button_->SetFocusable(true);
   find_previous_button_->SetImage(views::CustomButton::STATE_NORMAL,
       rb.GetImageSkiaNamed(IDR_FINDINPAGE_PREV));
   find_previous_button_->SetImage(views::CustomButton::STATE_HOVERED,
@@ -116,7 +115,7 @@ FindBarView::FindBarView(FindBarHost* host)
 
   find_next_button_ = new views::ImageButton(this);
   find_next_button_->set_tag(FIND_NEXT_TAG);
-  find_next_button_->set_focusable(true);
+  find_next_button_->SetFocusable(true);
   find_next_button_->SetImage(views::CustomButton::STATE_NORMAL,
       rb.GetImageSkiaNamed(IDR_FINDINPAGE_NEXT));
   find_next_button_->SetImage(views::CustomButton::STATE_HOVERED,
@@ -133,7 +132,7 @@ FindBarView::FindBarView(FindBarHost* host)
 
   close_button_ = new views::ImageButton(this);
   close_button_->set_tag(CLOSE_TAG);
-  close_button_->set_focusable(true);
+  close_button_->SetFocusable(true);
   close_button_->SetImage(views::CustomButton::STATE_NORMAL,
                           rb.GetImageSkiaNamed(IDR_CLOSE_1));
   close_button_->SetImage(views::CustomButton::STATE_HOVERED,
@@ -150,8 +149,8 @@ FindBarView::FindBarView(FindBarHost* host)
   SetBackground(rb.GetImageSkiaNamed(IDR_FIND_DLG_LEFT_BACKGROUND),
                 rb.GetImageSkiaNamed(IDR_FIND_DLG_RIGHT_BACKGROUND));
 
-  SetBorder(IDR_FIND_DIALOG_LEFT, IDR_FIND_DIALOG_MIDDLE,
-            IDR_FIND_DIALOG_RIGHT);
+  SetBorderFromIds(
+      IDR_FIND_DIALOG_LEFT, IDR_FIND_DIALOG_MIDDLE, IDR_FIND_DIALOG_RIGHT);
 
   preferred_height_ = rb.GetImageSkiaNamed(IDR_FIND_DIALOG_MIDDLE)->height();
 
@@ -173,7 +172,7 @@ void FindBarView::SetFindTextAndSelectedRange(
   find_text_->SelectRange(selected_range);
 }
 
-string16 FindBarView::GetFindText() const {
+base::string16 FindBarView::GetFindText() const {
   return find_text_->text();
 }
 
@@ -181,11 +180,11 @@ gfx::Range FindBarView::GetSelectedRange() const {
   return find_text_->GetSelectedRange();
 }
 
-string16 FindBarView::GetFindSelectedText() const {
+base::string16 FindBarView::GetFindSelectedText() const {
   return find_text_->GetSelectedText();
 }
 
-string16 FindBarView::GetMatchCountText() const {
+base::string16 FindBarView::GetMatchCountText() const {
   return match_count_text_->text();
 }
 
@@ -224,7 +223,7 @@ void FindBarView::UpdateForResult(const FindNotificationDetails& result,
 }
 
 void FindBarView::ClearMatchCount() {
-  match_count_text_->SetText(string16());
+  match_count_text_->SetText(base::string16());
   UpdateMatchCountAppearance(false);
   Layout();
   SchedulePaint();
@@ -339,14 +338,6 @@ void FindBarView::Layout() {
       find_text_edge, find_previous_button_->y(),
       find_previous_button_->x() - find_text_edge,
       find_previous_button_->height());
-}
-
-void FindBarView::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
-  if (details.is_add && details.child == this) {
-    find_text_->SetHorizontalMargins(0, 2);  // Left and Right margins.
-    find_text_->RemoveBorder();  // We draw our own border (a background image).
-  }
 }
 
 gfx::Size FindBarView::GetPreferredSize() {
@@ -474,7 +465,7 @@ void FindBarView::Find(const base::string16& search_text) {
     Profile* profile =
         Profile::FromBrowserContext(web_contents->GetBrowserContext());
     FindBarState* find_bar_state = FindBarStateFactory::GetForProfile(profile);
-    find_bar_state->set_last_prepopulate_text(string16());
+    find_bar_state->set_last_prepopulate_text(base::string16());
   }
 }
 

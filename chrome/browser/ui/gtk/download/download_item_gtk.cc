@@ -15,6 +15,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_item_model.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/download/download_item_drag.h"
@@ -200,6 +201,8 @@ DownloadItemGtk::DownloadItemGtk(DownloadShelfGtk* parent_shelf,
   gtk_widget_show_all(hbox_.get());
 
   if (download_model_.IsDangerous()) {
+    RecordDangerousDownloadWarningShown(download()->GetDangerType());
+
     // Hide the download item components for now.
     gtk_widget_set_no_show_all(body_.get(), TRUE);
     gtk_widget_set_no_show_all(menu_button_, TRUE);
@@ -240,7 +243,8 @@ DownloadItemGtk::DownloadItemGtk(DownloadShelfGtk* parent_shelf,
     // Create the ok button, if this is the kind that can be bypassed.
     if (!download_model_.IsMalicious()) {
       GtkWidget* dangerous_accept = gtk_button_new_with_label(
-          UTF16ToUTF8(download_model_.GetWarningConfirmButtonText()).c_str());
+          base::UTF16ToUTF8(
+              download_model_.GetWarningConfirmButtonText()).c_str());
       g_signal_connect(dangerous_accept, "clicked",
                        G_CALLBACK(OnDangerousAcceptThunk), this);
       gtk_util::CenterWidgetInHBox(
@@ -366,7 +370,7 @@ void DownloadItemGtk::OnDownloadUpdated(DownloadItem* download_item) {
       NOTREACHED();
   }
 
-  status_text_ = UTF16ToUTF8(download_model_.GetStatusText());
+  status_text_ = base::UTF16ToUTF8(download_model_.GetStatusText());
   UpdateStatusLabel(status_text_);
 }
 
@@ -485,7 +489,8 @@ void DownloadItemGtk::UpdateTooltip() {
           ui::ResourceBundle::BaseFont);
   base::string16 tooltip_text =
       download_model_.GetTooltipText(font_list, kTooltipMaxWidth);
-  gtk_widget_set_tooltip_text(body_.get(), UTF16ToUTF8(tooltip_text).c_str());
+  gtk_widget_set_tooltip_text(body_.get(),
+                              base::UTF16ToUTF8(tooltip_text).c_str());
 }
 
 void DownloadItemGtk::UpdateNameLabel() {
@@ -517,7 +522,7 @@ void DownloadItemGtk::UpdateNameLabel() {
       name_label_,
       theme_service_->UsingNativeTheme() ? NULL : &color);
   gtk_label_set_text(GTK_LABEL(name_label_),
-                     UTF16ToUTF8(filename).c_str());
+                     base::UTF16ToUTF8(filename).c_str());
 }
 
 void DownloadItemGtk::UpdateStatusLabel(const std::string& status_text) {
@@ -596,7 +601,7 @@ void DownloadItemGtk::UpdateDangerWarning() {
     }
 
     gtk_label_set_text(GTK_LABEL(dangerous_label_),
-                       UTF16ToUTF8(dangerous_warning).c_str());
+                       base::UTF16ToUTF8(dangerous_warning).c_str());
 
     // Until we switch to vector graphics, force the font size.
     gtk_util::ForceFontSizePixels(dangerous_label_, kTextSize);

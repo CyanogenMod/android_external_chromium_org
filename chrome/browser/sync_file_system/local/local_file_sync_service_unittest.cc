@@ -31,6 +31,8 @@
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 
 using content::BrowserThread;
@@ -109,15 +111,18 @@ class LocalFileSyncServiceTest
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
     file_system_.reset(new CannedSyncableFileSystem(
         GURL(kOrigin),
+        in_memory_env_.get(),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
 
-    local_service_.reset(new LocalFileSyncService(&profile_));
+    local_service_ = LocalFileSyncService::CreateForTesting(
+        &profile_, in_memory_env_.get());
 
-    file_system_->SetUp();
+    file_system_->SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
 
     base::RunLoop run_loop;
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -128,7 +133,7 @@ class LocalFileSyncServiceTest
 
     local_service_->AddChangeObserver(this);
 
-    EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->OpenFileSystem());
+    EXPECT_EQ(base::File::FILE_OK, file_system_->OpenFileSystem());
 
     file_system_->backend()->sync_context()->
         set_mock_notify_changes_duration_in_sec(0);
@@ -192,9 +197,9 @@ class LocalFileSyncServiceTest
   content::TestBrowserThreadBundle thread_bundle_;
 
   ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;
-  TestingProfile profile_;
-
   base::ScopedTempDir temp_dir_;
+  scoped_ptr<leveldb::Env> in_memory_env_;
+  TestingProfile profile_;
 
   scoped_ptr<CannedSyncableFileSystem> file_system_;
   scoped_ptr<LocalFileSyncService> local_service_;
@@ -230,7 +235,7 @@ TEST_F(LocalFileSyncServiceTest, RemoteSyncStepsSimple) {
             ApplyRemoteChange(change, local_path, kFile));
 
   // Verify the file is synced.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_->VerifyFile(kFile, kTestFileData));
 
   // Run PrepareForProcessRemoteChange for kDir.
@@ -245,7 +250,7 @@ TEST_F(LocalFileSyncServiceTest, RemoteSyncStepsSimple) {
             ApplyRemoteChange(change, base::FilePath(), kDir));
 
   // Verify the directory.
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_->DirectoryExists(kDir));
 
   // Run PrepareForProcessRemoteChange and ApplyRemoteChange for
@@ -260,7 +265,7 @@ TEST_F(LocalFileSyncServiceTest, RemoteSyncStepsSimple) {
   EXPECT_EQ(SYNC_STATUS_OK, ApplyRemoteChange(change, base::FilePath(), kDir));
 
   // Now the directory must have deleted.
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND,
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND,
             file_system_->DirectoryExists(kDir));
 }
 
@@ -270,11 +275,11 @@ TEST_F(LocalFileSyncServiceTest, LocalChangeObserver) {
   const char kTestFileData[] = "0123456789";
   const int kTestFileDataSize = static_cast<int>(arraysize(kTestFileData) - 1);
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile));
 
   EXPECT_EQ(1, num_changes_);
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateDirectory(kDir));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateDirectory(kDir));
   EXPECT_EQ(kTestFileDataSize,
             file_system_->WriteString(kFile, kTestFileData));
 
@@ -294,9 +299,10 @@ TEST_F(LocalFileSyncServiceTest, MAYBE_LocalChangeObserverMultipleContexts) {
   const char kOrigin2[] = "http://foo";
   CannedSyncableFileSystem file_system2(
       GURL(kOrigin2),
+      in_memory_env_.get(),
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
-  file_system2.SetUp();
+  file_system2.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
 
   base::RunLoop run_loop;
   SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -305,7 +311,7 @@ TEST_F(LocalFileSyncServiceTest, MAYBE_LocalChangeObserverMultipleContexts) {
       AssignAndQuitCallback(&run_loop, &status));
   run_loop.Run();
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system2.OpenFileSystem());
+  EXPECT_EQ(base::File::FILE_OK, file_system2.OpenFileSystem());
   file_system2.backend()->sync_context()->
       set_mock_notify_changes_duration_in_sec(0);
 
@@ -314,10 +320,10 @@ TEST_F(LocalFileSyncServiceTest, MAYBE_LocalChangeObserverMultipleContexts) {
   const FileSystemURL kFile3(file_system2.URL("file3"));
   const FileSystemURL kFile4(file_system2.URL("file4"));
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile1));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile2));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system2.CreateFile(kFile3));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system2.CreateFile(kFile4));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile1));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile2));
+  EXPECT_EQ(base::File::FILE_OK, file_system2.CreateFile(kFile3));
+  EXPECT_EQ(base::File::FILE_OK, file_system2.CreateFile(kFile4));
 
   EXPECT_EQ(4, num_changes_);
 
@@ -340,14 +346,14 @@ TEST_F(LocalFileSyncServiceTest, ProcessLocalChange_CreateFile) {
   file_system_->AddSyncStatusObserver(&status_observer);
 
   // Creates and writes into a file.
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile));
   EXPECT_EQ(kTestFileDataSize,
             file_system_->WriteString(kFile, std::string(kTestFileData)));
 
   // Retrieve the expected file info.
-  base::PlatformFileInfo info;
+  base::File::Info info;
   base::FilePath platform_path;
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_->GetMetadataAndPlatformPath(
                 kFile, &info, &platform_path));
 
@@ -393,8 +399,8 @@ TEST_F(LocalFileSyncServiceTest, ProcessLocalChange_CreateAndRemoveFile) {
   file_system_->AddSyncStatusObserver(&status_observer);
 
   // Creates and then deletes a file.
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->Remove(kFile, false));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kFile));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->Remove(kFile, false));
 
   // The local_change_processor's ApplyLocalChange should be called once
   // with DELETE change for TYPE_FILE.
@@ -429,8 +435,8 @@ TEST_F(LocalFileSyncServiceTest, ProcessLocalChange_CreateAndRemoveDirectory) {
   file_system_->AddSyncStatusObserver(&status_observer);
 
   // Creates and then deletes a directory.
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateDirectory(kDir));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->Remove(kDir, false));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateDirectory(kDir));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->Remove(kDir, false));
 
   // The local_change_processor's ApplyLocalChange should never be called.
   StrictMock<MockLocalChangeProcessor> local_change_processor;
@@ -462,12 +468,12 @@ TEST_F(LocalFileSyncServiceTest, ProcessLocalChange_MultipleChanges) {
 
   // Creates a file, delete the file and creates a directory with the same
   // name.
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kPath));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->Remove(kPath, false));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateDirectory(kPath));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kPath));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->Remove(kPath, false));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateDirectory(kPath));
 
   // Creates one more file.
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kOther));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kOther));
 
   // The local_change_processor's ApplyLocalChange will be called
   // twice for FILE_TYPE and FILE_DIRECTORY.
@@ -510,9 +516,9 @@ TEST_F(LocalFileSyncServiceTest, ProcessLocalChange_GetLocalMetadata) {
   base::RunLoop run_loop;
 
   // Creates a file.
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kURL));
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->TruncateFile(kURL, kSize));
-  EXPECT_EQ(base::PLATFORM_FILE_OK,
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kURL));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->TruncateFile(kURL, kSize));
+  EXPECT_EQ(base::File::FILE_OK,
             file_system_->TouchFile(kURL, base::Time(), kTime));
 
   SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -533,7 +539,7 @@ TEST_F(LocalFileSyncServiceTest, RecordFakeChange) {
   const FileSystemURL kURL(file_system_->URL("foo"));
 
   // Create a file and reset the changes (as preparation).
-  EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kURL));
+  EXPECT_EQ(base::File::FILE_OK, file_system_->CreateFile(kURL));
   file_system_->ClearChangeForURLInTracker(kURL);
 
   EXPECT_EQ(0, GetNumChangesInTracker());

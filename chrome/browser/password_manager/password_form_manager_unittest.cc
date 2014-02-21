@@ -10,41 +10,73 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/password_manager/password_manager_delegate.h"
-#include "chrome/browser/password_manager/password_store.h"
-#include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/password_manager/test_password_store.h"
+#include "chrome/browser/password_manager/password_manager_client.h"
+#include "chrome/browser/password_manager/password_manager_driver.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/test_password_store.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using autofill::PasswordForm;
-
+using base::ASCIIToUTF16;
+using ::testing::_;
 using ::testing::Eq;
+using ::testing::Mock;
+
+namespace autofill {
+class AutofillManager;
+}
 
 namespace {
 
-class TestPasswordManagerDelegate : public PasswordManagerDelegate {
+class MockPasswordManagerDriver : public PasswordManagerDriver {
  public:
-  explicit TestPasswordManagerDelegate(Profile* profile) : profile_(profile) {}
+  MockPasswordManagerDriver() {}
+  virtual ~MockPasswordManagerDriver() {}
 
-  virtual void FillPasswordForm(
-      const autofill::PasswordFormFillData& form_data) OVERRIDE {}
-  virtual void AddSavePasswordInfoBarIfPermitted(
-      PasswordFormManager* form_to_save) OVERRIDE {}
-  virtual Profile* GetProfile() OVERRIDE { return profile_; }
-  virtual bool DidLastPageLoadEncounterSSLErrors() OVERRIDE { return false; }
+  MOCK_METHOD1(FillPasswordForm,
+               void(const autofill::PasswordFormFillData& form_data));
+  MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
+  MOCK_METHOD0(IsOffTheRecord, bool());
+  MOCK_METHOD0(GetPasswordGenerationManager, PasswordGenerationManager*());
+  MOCK_METHOD0(GetPasswordManager, PasswordManager*());
+  MOCK_METHOD0(GetAutofillManager, autofill::AutofillManager*());
+  MOCK_METHOD1(AllowPasswordGenerationForForm,
+               void(autofill::PasswordForm* form));
+};
+
+class TestPasswordManagerClient : public PasswordManagerClient {
+ public:
+  explicit TestPasswordManagerClient(Profile* profile,
+                                     PasswordStore* password_store)
+      : profile_(profile),
+        password_store_(password_store) {}
+
+  virtual void PromptUserToSavePassword(PasswordFormManager* form_to_save)
+      OVERRIDE {}
+  virtual PrefService* GetPrefs() OVERRIDE { return profile_->GetPrefs(); }
+  virtual PasswordStore* GetPasswordStore() OVERRIDE { return password_store_;}
+  virtual PasswordManagerDriver* GetDriver() OVERRIDE { return &driver_; }
+  virtual void AuthenticateAutofillAndFillForm(
+      scoped_ptr<autofill::PasswordFormFillData> fill_data) OVERRIDE {
+    driver_.FillPasswordForm(*fill_data.get());
+  }
+
+  MockPasswordManagerDriver* GetMockDriver() { return &driver_; }
 
  private:
   Profile* profile_;
+  PasswordStore* password_store_;
+  MockPasswordManagerDriver driver_;
 };
 
 class TestPasswordManager : public PasswordManager {
  public:
-  explicit TestPasswordManager(PasswordManagerDelegate* delegate)
-      : PasswordManager(NULL, delegate) {}
+  explicit TestPasswordManager(PasswordManagerClient* client)
+      : PasswordManager(client) {}
 
   virtual void Autofill(
       const autofill::PasswordForm& form_for_autofill,
@@ -65,31 +97,11 @@ class TestPasswordManager : public PasswordManager {
 
 }  // namespace
 
-class TestPasswordFormManager : public PasswordFormManager {
- public:
-  TestPasswordFormManager(Profile* profile,
-                          PasswordManager* manager,
-                          const autofill::PasswordForm& observed_form,
-                          bool ssl_valid)
-    : PasswordFormManager(profile, manager, NULL, observed_form, ssl_valid),
-      num_sent_messages_(0) {}
-
-  virtual void SendNotBlacklistedToRenderer() OVERRIDE {
-    ++num_sent_messages_;
-  }
-
-  size_t num_sent_messages() {
-    return num_sent_messages_;
-  }
-
- private:
-  size_t num_sent_messages_;
-};
-
 class PasswordFormManagerTest : public testing::Test {
  public:
   PasswordFormManagerTest() {
   }
+
   virtual void SetUp() {
     observed_form_.origin = GURL("http://accounts.google.com/a/LoginAuth");
     observed_form_.action = GURL("http://accounts.google.com/a/Login");
@@ -169,8 +181,12 @@ class PasswordFormManagerTest : public testing::Test {
 };
 
 TEST_F(PasswordFormManagerTest, TestNewLogin) {
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   PasswordFormManager* manager = new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false);
+      NULL, client.get(), driver.get(), *observed_form(), false);
+
   SimulateMatchingPhase(manager, false);
   // User submits credentials for the observed form.
   PasswordForm credentials = *observed_form();
@@ -223,15 +239,18 @@ TEST_F(PasswordFormManagerTest, TestNewLogin) {
             GetPendingCredentials(manager)->password_value);
   EXPECT_EQ(new_user,
             GetPendingCredentials(manager)->username_value);
-  // Done.
   delete manager;
 }
 
 TEST_F(PasswordFormManagerTest, TestUpdatePassword) {
   // Create a PasswordFormManager with observed_form, as if we just
   // saw this form and need to find matching logins.
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   PasswordFormManager* manager = new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false);
+      NULL, client.get(), driver.get(), *observed_form(), false);
+
   SimulateMatchingPhase(manager, true);
 
   // User submits credentials for the observed form using a username previously
@@ -268,8 +287,12 @@ TEST_F(PasswordFormManagerTest, TestUpdatePassword) {
 }
 
 TEST_F(PasswordFormManagerTest, TestIgnoreResult) {
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   PasswordFormManager* manager = new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false);
+      NULL, client.get(), driver.get(), *observed_form(), false);
+
   // Make sure we don't match a PasswordForm if it was originally saved on
   // an SSL-valid page and we are now on a page with invalid certificate.
   saved_match()->ssl_valid = true;
@@ -286,8 +309,11 @@ TEST_F(PasswordFormManagerTest, TestIgnoreResult) {
 }
 
 TEST_F(PasswordFormManagerTest, TestEmptyAction) {
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false));
+      NULL, client.get(), driver.get(), *observed_form(), false));
 
   saved_match()->action = GURL();
   SimulateMatchingPhase(manager.get(), true);
@@ -306,8 +332,11 @@ TEST_F(PasswordFormManagerTest, TestEmptyAction) {
 }
 
 TEST_F(PasswordFormManagerTest, TestUpdateAction) {
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false));
+      NULL, client.get(), driver.get(), *observed_form(), false));
 
   SimulateMatchingPhase(manager.get(), true);
   // User logs in with the autofilled username / password from saved_match.
@@ -327,8 +356,11 @@ TEST_F(PasswordFormManagerTest, TestUpdateAction) {
 }
 
 TEST_F(PasswordFormManagerTest, TestDynamicAction) {
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false));
+      NULL, client.get(), driver.get(), *observed_form(), false));
 
   SimulateMatchingPhase(manager.get(), false);
   PasswordForm login(*observed_form());
@@ -349,19 +381,20 @@ TEST_F(PasswordFormManagerTest, TestDynamicAction) {
 TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
   // Need a MessageLoop for callbacks.
   base::MessageLoop message_loop;
-  PasswordStoreFactory::GetInstance()->SetTestingFactory(
-      profile(), &TestPasswordStore::Create);
-  scoped_refptr<TestPasswordStore> password_store =
-      static_cast<TestPasswordStore*>(
-          PasswordStoreFactory::GetForProfile(profile(),
-                                              Profile::IMPLICIT_ACCESS).get());
-  TestPasswordManagerDelegate delegate(profile());
-  TestPasswordManager password_manager(&delegate);
-  scoped_ptr<TestPasswordFormManager> manager(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  scoped_refptr<TestPasswordStore> password_store = new TestPasswordStore;
+  CHECK(password_store->Init());
+
+  TestPasswordManagerClient client(profile(), password_store.get());
+  TestPasswordManager password_manager(&client);
+  scoped_ptr<PasswordFormManager> manager(
+      new PasswordFormManager(&password_manager,
+                              &client,
+                              client.GetDriver(),
+                              *observed_form(),
+                              false));
 
   password_store->AddLogin(*saved_match());
-  manager->FetchMatchingLoginsFromPasswordStore();
+  manager->FetchMatchingLoginsFromPasswordStore(PasswordStore::ALLOW_PROMPT);
   content::RunAllPendingInMessageLoop();
 
   // The saved match has the right username already.
@@ -390,11 +423,14 @@ TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
       other_possible_usernames.size());
 
   // This time use an alternate username
-  manager.reset(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  manager.reset(new PasswordFormManager(&password_manager,
+                                        &client,
+                                        client.GetDriver(),
+                                        *observed_form(),
+                                        false));
   password_store->Clear();
   password_store->AddLogin(*saved_match());
-  manager->FetchMatchingLoginsFromPasswordStore();
+  manager->FetchMatchingLoginsFromPasswordStore(PasswordStore::ALLOW_PROMPT);
   content::RunAllPendingInMessageLoop();
 
   base::string16 new_username = saved_match()->other_possible_usernames[0];
@@ -418,6 +454,7 @@ TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
       0U,
       passwords[saved_match()->signon_realm][0].
       other_possible_usernames.size());
+  password_store->Shutdown();
 }
 
 TEST_F(PasswordFormManagerTest, TestValidForms) {
@@ -428,27 +465,27 @@ TEST_F(PasswordFormManagerTest, TestValidForms) {
   credentials.password_value = saved_match()->password_value;
 
   // Form with both username_element and password_element.
-  PasswordFormManager manager1(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager1(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager1, false);
   EXPECT_TRUE(manager1.HasValidPasswordForm());
 
   // Form without a username_element but with a password_element.
   credentials.username_element.clear();
-  PasswordFormManager manager2(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager2(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager2, false);
   EXPECT_FALSE(manager2.HasValidPasswordForm());
 
   // Form without a password_element but with a username_element.
   credentials.username_element = saved_match()->username_element;
   credentials.password_element.clear();
-  PasswordFormManager manager3(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager3(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager3, false);
   EXPECT_FALSE(manager3.HasValidPasswordForm());
 
   // Form with neither a password_element nor a username_element.
   credentials.username_element.clear();
   credentials.password_element.clear();
-  PasswordFormManager manager4(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager4(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager4, false);
   EXPECT_FALSE(manager4.HasValidPasswordForm());
 }
@@ -461,73 +498,97 @@ TEST_F(PasswordFormManagerTest, TestValidFormsBasic) {
   credentials.password_value = saved_match()->password_value;
 
   // Form with both username_element and password_element.
-  PasswordFormManager manager1(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager1(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager1, false);
   EXPECT_TRUE(manager1.HasValidPasswordForm());
 
   // Form without a username_element but with a password_element.
   credentials.username_element.clear();
-  PasswordFormManager manager2(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager2(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager2, false);
   EXPECT_TRUE(manager2.HasValidPasswordForm());
 
   // Form without a password_element but with a username_element.
   credentials.username_element = saved_match()->username_element;
   credentials.password_element.clear();
-  PasswordFormManager manager3(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager3(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager3, false);
   EXPECT_TRUE(manager3.HasValidPasswordForm());
 
   // Form with neither a password_element nor a username_element.
   credentials.username_element.clear();
   credentials.password_element.clear();
-  PasswordFormManager manager4(profile(), NULL, NULL, credentials, false);
+  PasswordFormManager manager4(NULL, NULL, NULL, credentials, false);
   SimulateMatchingPhase(&manager4, false);
   EXPECT_TRUE(manager4.HasValidPasswordForm());
 }
 
 TEST_F(PasswordFormManagerTest, TestSendNotBlacklistedMessage) {
+  base::MessageLoop message_loop;
+
   // A dumb password manager.
-  TestPasswordManagerDelegate delegate(profile());
-  TestPasswordManager password_manager(&delegate);
+  TestPasswordManagerClient client(profile(), NULL);
+  TestPasswordManager password_manager(&client);
+  scoped_ptr<PasswordFormManager> manager(
+      new PasswordFormManager(&password_manager,
+                              &client,
+                              client.GetDriver(),
+                              *observed_form(),
+                              false));
 
   // First time sign up attempt; No login result is found from password store;
   // We should send the not blacklisted message.
-  scoped_ptr<TestPasswordFormManager> manager(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(1);
   SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
   std::vector<PasswordForm*> result;
   SimulateResponseFromPasswordStore(manager.get(), result);
-  EXPECT_EQ(1u, manager->num_sent_messages());
+  Mock::VerifyAndClearExpectations(client.GetMockDriver());
 
   // Sign up attempt to previously visited sites; Login result is found from
   // password store, and is not blacklisted; We should send the not blacklisted
   // message.
-  manager.reset(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  manager.reset(new PasswordFormManager(&password_manager,
+                                        &client,
+                                        client.GetDriver(),
+                                        *observed_form(),
+                                        false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(1);
   SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
   // We need add heap allocated objects to result.
   result.push_back(CreateSavedMatch(false));
   SimulateResponseFromPasswordStore(manager.get(), result);
-  EXPECT_EQ(1u, manager->num_sent_messages());
+  Mock::VerifyAndClearExpectations(client.GetMockDriver());
 
   // Sign up attempt to previously visited sites; Login result is found from
   // password store, but is blacklisted; We should not send the not blacklisted
   // message.
-  manager.reset(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  manager.reset(new PasswordFormManager(&password_manager,
+                                        &client,
+                                        client.GetDriver(),
+                                        *observed_form(),
+                                        false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(0);
   SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
   result.clear();
   result.push_back(CreateSavedMatch(true));
   SimulateResponseFromPasswordStore(manager.get(), result);
-  EXPECT_EQ(0u, manager->num_sent_messages());
+  Mock::VerifyAndClearExpectations(client.GetMockDriver());
 }
 
 TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
-  TestPasswordManagerDelegate delegate(profile());
-  TestPasswordManager password_manager(&delegate);
-  scoped_ptr<TestPasswordFormManager> manager(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  base::MessageLoop message_loop;
+
+  TestPasswordManagerClient client(profile(), NULL);
+  TestPasswordManager password_manager(&client);
+  scoped_ptr<PasswordFormManager> manager(
+      new PasswordFormManager(&password_manager,
+                              &client,
+                              client.GetDriver(),
+                              *observed_form(),
+                              false));
 
   // Simulate having two matches for this origin, one of which was from a form
   // with different HTML tags for elements. Because of scoring differences,
@@ -545,8 +606,11 @@ TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
 
   // Same thing, except this time the credentials that don't match quite as
   // well are generated. They should now be sent to Autofill().
-  manager.reset(new TestPasswordFormManager(
-      profile(), &password_manager, *observed_form(), false));
+  manager.reset(new PasswordFormManager(&password_manager,
+                                        &client,
+                                        client.GetDriver(),
+                                        *observed_form(),
+                                        false));
   results.push_back(CreateSavedMatch(false));
   results.push_back(CreateSavedMatch(false));
   results[1]->username_value = ASCIIToUTF16("other@gmail.com");
@@ -559,8 +623,11 @@ TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
 }
 
 TEST_F(PasswordFormManagerTest, TestSanitizePossibleUsernames) {
+  scoped_ptr<TestPasswordManagerClient> client(
+      new TestPasswordManagerClient(profile(), NULL));
+  scoped_ptr<MockPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
-      profile(), NULL, NULL, *observed_form(), false));
+      NULL, client.get(), driver.get(), *observed_form(), false));
   PasswordForm credentials(*observed_form());
   credentials.other_possible_usernames.push_back(ASCIIToUTF16("543-43-1234"));
   credentials.other_possible_usernames.push_back(
@@ -572,7 +639,7 @@ TEST_F(PasswordFormManagerTest, TestSanitizePossibleUsernames) {
   SanitizePossibleUsernames(manager.get(), &credentials);
 
   // Possible credit card number and SSN are stripped.
-  std::vector<string16> expected;
+  std::vector<base::string16> expected;
   expected.push_back(ASCIIToUTF16("other username"));
   EXPECT_THAT(credentials.other_possible_usernames, Eq(expected));
 

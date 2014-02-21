@@ -12,10 +12,10 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_switches.h"
@@ -68,8 +68,8 @@ static int GetThreadCount(const VideoDecoderConfig& config) {
 }
 
 VpxVideoDecoder::VpxVideoDecoder(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop)
-    : message_loop_(message_loop),
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner)
+    : task_runner_(task_runner),
       weak_factory_(this),
       state_(kUninitialized),
       vpx_codec_(NULL),
@@ -83,7 +83,7 @@ VpxVideoDecoder::~VpxVideoDecoder() {
 
 void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                  const PipelineStatusCB& status_cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(config.IsValidConfig());
   DCHECK(!config.is_encrypted());
   DCHECK(decode_cb_.is_null());
@@ -166,7 +166,7 @@ void VpxVideoDecoder::CloseDecoder() {
 
 void VpxVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
                              const DecodeCB& decode_cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!decode_cb.is_null());
   CHECK_NE(state_, kUninitialized);
   CHECK(decode_cb_.is_null()) << "Overlapping decodes are not supported.";
@@ -188,7 +188,7 @@ void VpxVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
 }
 
 void VpxVideoDecoder::Reset(const base::Closure& closure) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(reset_cb_.is_null());
   reset_cb_ = BindToCurrentLoop(closure);
 
@@ -200,14 +200,14 @@ void VpxVideoDecoder::Reset(const base::Closure& closure) {
 }
 
 void VpxVideoDecoder::Stop(const base::Closure& closure) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::ScopedClosureRunner runner(BindToCurrentLoop(closure));
 
   if (state_ == kUninitialized)
     return;
 
   if (!decode_cb_.is_null()) {
-    base::ResetAndReturn(&decode_cb_).Run(kOk, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kAborted, NULL);
     // Reset is pending only when decode is pending.
     if (!reset_cb_.is_null())
       base::ResetAndReturn(&reset_cb_).Run();
@@ -221,7 +221,7 @@ bool VpxVideoDecoder::HasAlpha() const {
 }
 
 void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK_NE(state_, kError);

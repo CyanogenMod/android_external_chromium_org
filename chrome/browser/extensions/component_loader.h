@@ -15,6 +15,10 @@
 class ExtensionServiceInterface;
 class PrefService;
 
+namespace content {
+class BrowserContext;
+}
+
 namespace extensions {
 
 // For registering, loading, and unloading component extensions.
@@ -22,7 +26,8 @@ class ComponentLoader {
  public:
   ComponentLoader(ExtensionServiceInterface* extension_service,
                   PrefService* prefs,
-                  PrefService* local_state);
+                  PrefService* local_state,
+                  content::BrowserContext* browser_context);
   virtual ~ComponentLoader();
 
   size_t registered_extensions_count() const {
@@ -77,9 +82,13 @@ class ComponentLoader {
   // platforms this |skip_session_components| is expected to be unset.
   void AddDefaultComponentExtensions(bool skip_session_components);
 
+  // Similar to above but adds the default component extensions for kiosk mode.
+  void AddDefaultComponentExtensionsForKioskMode(bool skip_session_components);
+
   // Parse the given JSON manifest. Returns NULL if it cannot be parsed, or if
   // if the result is not a DictionaryValue.
-  DictionaryValue* ParseManifest(const std::string& manifest_contents) const;
+  base::DictionaryValue* ParseManifest(
+      const std::string& manifest_contents) const;
 
   // Clear the list of registered extensions.
   void ClearAllRegistered();
@@ -87,14 +96,19 @@ class ComponentLoader {
   // Reloads a registered component extension.
   void Reload(const std::string& extension_id);
 
+#if defined(OS_CHROMEOS)
+  std::string AddChromeVoxExtension();
+  std::string AddChromeOsSpeechSynthesisExtension();
+#endif
+
  private:
   // Information about a registered component extension.
   struct ComponentExtensionInfo {
-    ComponentExtensionInfo(const DictionaryValue* manifest,
+    ComponentExtensionInfo(const base::DictionaryValue* manifest,
                            const base::FilePath& root_directory);
 
     // The parsed contents of the extensions's manifest file.
-    const DictionaryValue* manifest;
+    const base::DictionaryValue* manifest;
 
     // Directory where the extension is stored.
     base::FilePath root_directory;
@@ -103,7 +117,7 @@ class ComponentLoader {
     std::string extension_id;
   };
 
-  std::string Add(const DictionaryValue* parsed_manifest,
+  std::string Add(const base::DictionaryValue* parsed_manifest,
                   const base::FilePath& root_directory);
 
   // Loads a registered component extension.
@@ -113,6 +127,7 @@ class ComponentLoader {
       bool skip_session_components);
   void AddFileManagerExtension();
   void AddHangoutServicesExtension();
+  void AddHotwordHelperExtension();
   void AddImageLoaderExtension();
   void AddBookmarksExtensions();
   void AddNetworkSpeechSynthesisExtension();
@@ -127,8 +142,12 @@ class ComponentLoader {
   // Unloads |component| from the memory.
   void UnloadComponent(ComponentExtensionInfo* component);
 
+  // Enable HTML5 FileSystem for given component extension in Guest mode.
+  void EnableFileSystemInGuestMode(const std::string& id);
+
   PrefService* profile_prefs_;
   PrefService* local_state_;
+  content::BrowserContext* browser_context_;
 
   ExtensionServiceInterface* extension_service_;
 

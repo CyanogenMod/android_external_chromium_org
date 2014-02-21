@@ -165,7 +165,7 @@ class MEDIA_EXPORT AudioInputController
   // OnCreated() call from that same thread. |user_input_monitor| is used for
   // typing detection and can be NULL.
   static scoped_refptr<AudioInputController> CreateForStream(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop,
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       EventHandler* event_handler,
       AudioInputStream* stream,
       // External synchronous writer for audio controller.
@@ -198,7 +198,6 @@ class MEDIA_EXPORT AudioInputController
   // device-specific implementation.
   virtual void OnData(AudioInputStream* stream, const uint8* src, uint32 size,
                       uint32 hardware_delay_bytes, double volume) OVERRIDE;
-  virtual void OnClose(AudioInputStream* stream) OVERRIDE;
   virtual void OnError(AudioInputStream* stream) OVERRIDE;
 
   bool LowLatencyMode() const { return sync_writer_ != NULL; }
@@ -242,11 +241,11 @@ class MEDIA_EXPORT AudioInputController
   void SetDataIsActive(bool enabled);
   bool GetDataIsActive();
 
-  // Gives access to the message loop of the creating thread.
-  scoped_refptr<base::MessageLoopProxy> creator_loop_;
+  // Gives access to the task runner of the creating thread.
+  scoped_refptr<base::SingleThreadTaskRunner> creator_task_runner_;
 
-  // The message loop of audio-manager thread that this object runs on.
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  // The task runner of audio-manager thread that this object runs on.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Contains the AudioInputController::EventHandler which receives state
   // notifications from this class.
@@ -256,8 +255,8 @@ class MEDIA_EXPORT AudioInputController
   AudioInputStream* stream_;
 
   // |no_data_timer_| is used to call OnError() when we stop receiving
-  // OnData() calls without an OnClose() call. This can occur
-  // when an audio input device is unplugged whilst recording on Windows.
+  // OnData() calls. This can occur when an audio input device is unplugged
+  // whilst recording on Windows.
   // See http://crbug.com/79936 for details.
   // This member is only touched by the audio thread.
   scoped_ptr<base::Timer> no_data_timer_;

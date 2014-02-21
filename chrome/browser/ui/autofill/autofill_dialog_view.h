@@ -19,7 +19,6 @@ class Size;
 namespace autofill {
 
 class AutofillDialogViewDelegate;
-class TestableAutofillDialogView;
 
 // An interface for the dialog that appears when a site initiates an Autofill
 // action via the imperative autocomplete API.
@@ -71,7 +70,7 @@ class AutofillDialogView {
   // Fills the given section with Autofill data that was triggered by a user
   // interaction with |originating_input|.
   virtual void FillSection(DialogSection section,
-                           const DetailInput& originating_input) = 0;
+                           ServerFieldType originating_type) = 0;
 
   // Fills |output| with data the user manually input.
   virtual void GetUserInput(DialogSection section, FieldValueMap* output) = 0;
@@ -81,8 +80,8 @@ class AutofillDialogView {
   // relevant.
   virtual base::string16 GetCvc() = 0;
 
-  // Whether or not |point| is within |input|'s bounds.
-  virtual bool HitTestInput(const DetailInput& input,
+  // Whether or not |point| is within the bounds of an input of |type|.
+  virtual bool HitTestInput(ServerFieldType type,
                             const gfx::Point& screen_point) = 0;
 
   // Returns true if new or edited autofill details should be saved.
@@ -98,13 +97,12 @@ class AutofillDialogView {
   // Called when the active suggestions data model changed.
   virtual void ModelChanged() = 0;
 
-  // Returns an object that can be used to test that the view is behaving as
-  // expected.
-  virtual TestableAutofillDialogView* GetTestableView() = 0;
-
   // Called by AutofillDialogSignInDelegate when the sign-in page experiences a
   // resize. |pref_size| is the new preferred size of the sign-in page.
   virtual void OnSignInResize(const gfx::Size& pref_size) = 0;
+
+  // Tells the view to validate its manual input in |section|.
+  virtual void ValidateSection(DialogSection section) = 0;
 
   // Factory function to create the dialog (implemented once per view
   // implementation). |controller| will own the created dialog.

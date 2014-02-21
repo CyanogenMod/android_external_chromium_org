@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_member.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 namespace base {
@@ -21,13 +22,15 @@ class Extension;
 namespace options {
 
 // Font settings overlay page UI handler.
-class FontSettingsHandler : public OptionsPageUIHandler {
+class FontSettingsHandler : public OptionsPageUIHandler,
+                            public content::NotificationObserver {
  public:
   FontSettingsHandler();
   virtual ~FontSettingsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings) OVERRIDE;
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
   virtual void InitializeHandler() OVERRIDE;
   virtual void InitializePage() OVERRIDE;
 
@@ -35,12 +38,12 @@ class FontSettingsHandler : public OptionsPageUIHandler {
   virtual void RegisterMessages() OVERRIDE;
 
  private:
-  // OptionsPageUIHandler implementation.
+  // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  void HandleFetchFontsData(const ListValue* args);
+  void HandleFetchFontsData(const base::ListValue* args);
 
   void FontsListHasLoaded(scoped_ptr<base::ListValue> list);
 

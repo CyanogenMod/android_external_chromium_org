@@ -36,7 +36,7 @@ class ClientContext;
 class ClientUserInterface;
 class FrameConsumerProxy;
 class FrameProducer;
-class RectangleUpdateDecoder;
+class VideoRenderer;
 class SignalStrategy;
 
 class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
@@ -47,7 +47,7 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
                    ClientContext* client_context,
                    protocol::ConnectionToHost* connection,
                    ClientUserInterface* user_interface,
-                   scoped_refptr<FrameConsumerProxy> frame_consumer,
+                   VideoRenderer* video_renderer,
                    scoped_ptr<AudioPlayer> audio_player);
 
   virtual ~ChromotingClient();
@@ -56,11 +56,6 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
   // must outlive the client.
   void Start(SignalStrategy* signal_strategy,
              scoped_ptr<protocol::TransportFactory> transport_factory);
-
-  FrameProducer* GetFrameProducer();
-
-  // Return the stats recorded by this client.
-  ChromotingStats* GetStats();
 
   // ClientStub implementation.
   virtual void SetCapabilities(
@@ -83,6 +78,8 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
       protocol::ConnectionToHost::State state,
       protocol::ErrorCode error) OVERRIDE;
   virtual void OnConnectionReady(bool ready) OVERRIDE;
+  virtual void OnRouteChanged(const std::string& channel_name,
+                              const protocol::TransportRoute& route) OVERRIDE;
 
  private:
   // Called when the connection is authenticated.
@@ -96,7 +93,7 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   protocol::ConnectionToHost* connection_;
   ClientUserInterface* user_interface_;
-  scoped_refptr<RectangleUpdateDecoder> rectangle_decoder_;
+  VideoRenderer* video_renderer_;
 
   scoped_ptr<AudioDecodeScheduler> audio_decode_scheduler_;
 

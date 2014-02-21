@@ -4,7 +4,8 @@
 
 #include "ash/touch/touch_uma.h"
 
-#include "ash/shell_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
+#include "ash/shell.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/env.h"
@@ -57,12 +58,18 @@ enum UMAEventType {
   UMA_ET_GESTURE_LONG_TAP,
   UMA_ET_GESTURE_SHOW_PRESS,
   UMA_ET_GESTURE_TAP_CANCEL,
+  UMA_ET_GESTURE_WIN8_EDGE_SWIPE,
   // NOTE: Add new event types only immediately above this line. Make sure to
-  // update the enum list in tools/metrics/histogram/histograms.xml accordingly.
+  // update the UIEventType enum in tools/metrics/histograms/histograms.xml
+  // accordingly.
   UMA_ET_COUNT
 };
 
 struct WindowTouchDetails {
+  WindowTouchDetails()
+      : max_distance_from_start_squared_(0) {
+  }
+
   // Move and start times of the touch points. The key is the touch-id.
   std::map<int, base::TimeDelta> last_move_time_;
   std::map<int, base::TimeDelta> last_start_time_;
@@ -70,6 +77,10 @@ struct WindowTouchDetails {
   // The first and last positions of the touch points.
   std::map<int, gfx::Point> start_touch_position_;
   std::map<int, gfx::Point> last_touch_position_;
+
+  // The maximum distance the first touch point travelled from its starting
+  // location in pixels.
+  float max_distance_from_start_squared_;
 
   // Last time-stamp of the last touch-end event.
   base::TimeDelta last_release_time_;
@@ -159,6 +170,8 @@ UMAEventType UMAEventTypeFromEvent(const ui::Event& event) {
         return UMA_ET_GESTURE_MULTIFINGER_SWIPE_3;
       return UMA_ET_GESTURE_MULTIFINGER_SWIPE;
     }
+    case ui::ET_GESTURE_WIN8_EDGE_SWIPE:
+      return UMA_ET_GESTURE_WIN8_EDGE_SWIPE;
     case ui::ET_GESTURE_TAP_CANCEL:
       return UMA_ET_GESTURE_TAP_CANCEL;
     case ui::ET_GESTURE_SHOW_PRESS:
@@ -218,7 +231,7 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
       static_cast<int>(std::max(event.radius_x(), event.radius_y())),
       1, 500, 100);
 
-  UpdateBurstData(event);
+  UpdateTouchState(event);
 
   WindowTouchDetails* details = target->GetProperty(kWindowTouchDetails);
   if (!details) {
@@ -270,12 +283,13 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
       0, kBucketCountForLocation, kBucketCountForLocation + 1);
 
   if (event.type() == ui::ET_TOUCH_PRESSED) {
-    Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
         UMA_TOUCHSCREEN_TAP_DOWN);
 
     details->last_start_time_[event.touch_id()] = event.time_stamp();
     details->start_touch_position_[event.touch_id()] = event.root_location();
     details->last_touch_position_[event.touch_id()] = event.location();
+    details->max_distance_from_start_squared_ = 0;
 
     if (details->last_release_time_.ToInternalValue()) {
       // Measuring the interval between a touch-release and the next
@@ -296,10 +310,16 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
         details->last_start_time_.size(),
         1, kMaxTouchPoints, kMaxTouchPoints + 1);
   } else if (event.type() == ui::ET_TOUCH_RELEASED) {
+    if (is_single_finger_gesture_) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Ash.TouchMaxDistance",
+          static_cast<int>(
+              sqrt(details->max_distance_from_start_squared_)), 0, 1500, 50);
+    }
+
     if (details->last_start_time_.count(event.touch_id())) {
       base::TimeDelta duration = event.time_stamp() -
                                  details->last_start_time_[event.touch_id()];
-      UMA_HISTOGRAM_TIMES("Ash.TouchDuration", duration);
+      UMA_HISTOGRAM_TIMES("Ash.TouchDuration2", duration);
 
       // Look for touches that were [almost] stationary for a long time.
       const double kLongStationaryTouchDuration = 10;
@@ -340,20 +360,27 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
 
     details->last_move_time_[event.touch_id()] = event.time_stamp();
     details->last_touch_position_[event.touch_id()] = event.location();
+
+    float cur_dist = (details->start_touch_position_[event.touch_id()] -
+                      event.root_location()).LengthSquared();
+    if (cur_dist > details->max_distance_from_start_squared_)
+      details->max_distance_from_start_squared_ = cur_dist;
   }
 }
 
 TouchUMA::TouchUMA()
-    : touch_in_progress_(false),
+    : is_single_finger_gesture_(false),
+      touch_in_progress_(false),
       burst_length_(0) {
 }
 
 TouchUMA::~TouchUMA() {
 }
 
-void TouchUMA::UpdateBurstData(const ui::TouchEvent& event) {
+void TouchUMA::UpdateTouchState(const ui::TouchEvent& event) {
   if (event.type() == ui::ET_TOUCH_PRESSED) {
     if (!touch_in_progress_) {
+      is_single_finger_gesture_ = true;
       base::TimeDelta difference = event.time_stamp() - last_touch_down_time_;
       if (difference > base::TimeDelta::FromMilliseconds(250)) {
         if (burst_length_) {
@@ -364,6 +391,8 @@ void TouchUMA::UpdateBurstData(const ui::TouchEvent& event) {
       } else {
         ++burst_length_;
       }
+    } else {
+      is_single_finger_gesture_ = false;
     }
     touch_in_progress_ = true;
     last_touch_down_time_ = event.time_stamp();

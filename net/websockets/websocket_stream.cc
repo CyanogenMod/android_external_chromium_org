@@ -70,7 +70,25 @@ class StreamRequestImpl : public WebSocketStreamRequest {
   }
 
   void ReportFailure() {
-    connect_delegate_->OnFailure(kWebSocketErrorAbnormalClosure);
+    std::string failure_message;
+    if (create_helper_->stream()) {
+      failure_message = create_helper_->stream()->GetFailureMessage();
+    } else {
+      switch (url_request_.status().status()) {
+        case URLRequestStatus::SUCCESS:
+        case URLRequestStatus::IO_PENDING:
+          break;
+        case URLRequestStatus::CANCELED:
+          failure_message = "WebSocket opening handshake was canceled";
+          break;
+        case URLRequestStatus::FAILED:
+          failure_message =
+              std::string("Error in connection establishment: ") +
+              ErrorToString(url_request_.status().error());
+          break;
+      }
+    }
+    connect_delegate_->OnFailure(failure_message);
   }
 
  private:
@@ -149,6 +167,7 @@ scoped_ptr<WebSocketStreamRequest> CreateAndConnectStreamWithCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
       create_helper.release());
   request->url_request()->SetLoadFlags(LOAD_DISABLE_CACHE |
+                                       LOAD_BYPASS_CACHE |
                                        LOAD_DO_NOT_PROMPT_FOR_LOGIN);
   request->url_request()->Start();
   return request.PassAs<WebSocketStreamRequest>();
@@ -171,7 +190,8 @@ scoped_ptr<WebSocketStreamRequest> WebSocketStream::CreateAndConnectStream(
     const BoundNetLog& net_log,
     scoped_ptr<ConnectDelegate> connect_delegate) {
   scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper(
-      new WebSocketHandshakeStreamCreateHelper(requested_subprotocols));
+      new WebSocketHandshakeStreamCreateHelper(connect_delegate.get(),
+                                               requested_subprotocols));
   return CreateAndConnectStreamWithCreateHelper(socket_url,
                                                 create_helper.Pass(),
                                                 origin,

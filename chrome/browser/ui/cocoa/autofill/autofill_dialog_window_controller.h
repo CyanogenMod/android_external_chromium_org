@@ -38,7 +38,7 @@ class AutofillDialogCocoa;
 - (void)updateSection:(autofill::DialogSection)section;
 - (void)updateForErrors;
 - (void)fillSection:(autofill::DialogSection)section
-           forInput:(const autofill::DetailInput&)input;
+           forType:(const autofill::ServerFieldType)type;
 - (void)getInputs:(autofill::FieldValueMap*)outputs
        forSection:(autofill::DialogSection)section;
 - (NSString*)getCvc;
@@ -48,6 +48,7 @@ class AutofillDialogCocoa;
 - (void)modelChanged;
 - (void)updateErrorBubble;
 - (void)onSignInResize:(NSSize)size;
+- (void)validateSection:(autofill::DialogSection)section;
 
 @end
 
@@ -66,6 +67,9 @@ class AutofillDialogCocoa;
   base::scoped_nsobject<AutofillLoadingShieldController>
       loadingShieldController_;
   base::scoped_nsobject<NSTextView> fieldEditor_;
+
+  // Signals the main container has recently become visible.
+  BOOL mainContainerBecameVisible_;
 }
 
 // Designated initializer. The WebContents cannot be NULL.
@@ -85,18 +89,5 @@ class AutofillDialogCocoa;
 
 @end
 
-
-// Mirrors the TestableAutofillDialogView API on the C++ side.
-@interface AutofillDialogWindowController (TestableAutofillDialogView)
-
-- (void)setTextContents:(NSString*)text
-               forInput:(const autofill::DetailInput&)input;
-- (void)setTextContents:(NSString*)text
- ofSuggestionForSection:(autofill::DialogSection)section;
-- (void)activateFieldForInput:(const autofill::DetailInput&)input;
-- (content::WebContents*)getSignInWebContents;
-- (BOOL)isShowingOverlay;
-
-@end
 
 #endif  // CHROME_BROWSER_UI_COCOA_AUTOFILL_AUTOFILL_DIALOG_WINDOW_CONTROLLER_H_

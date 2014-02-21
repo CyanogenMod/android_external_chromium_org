@@ -17,7 +17,7 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace importer {
 
@@ -62,13 +62,13 @@ void ImportLockDialogView::Layout() {
   description_label_->SetBoundsRect(bounds);
 }
 
-string16 ImportLockDialogView::GetDialogButtonLabel(
+base::string16 ImportLockDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   return l10n_util::GetStringUTF16((button == ui::DIALOG_BUTTON_OK) ?
       IDS_IMPORTER_LOCK_OK : IDS_IMPORTER_LOCK_CANCEL);
 }
 
-string16 ImportLockDialogView::GetWindowTitle() const {
+base::string16 ImportLockDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_IMPORTER_LOCK_TITLE);
 }
 

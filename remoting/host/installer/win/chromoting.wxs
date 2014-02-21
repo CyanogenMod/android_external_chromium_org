@@ -18,6 +18,12 @@
     <?define Manufacturer = "The Chromium Authors" ?>
   <?endif?>
 
+  <?if $(var.OfficialBuild) != 0 ?>
+    <?define ChromotingKeyPath = "Google\Chrome Remote Desktop" ?>
+  <?else?>
+    <?define ChromotingKeyPath = "Chromoting" ?>
+  <?endif?>
+
   <?define FirewallName = "$(var.ChromotingHost)" ?>
 
   <?define OmahaAppid = "{b210701e-ffc4-49e3-932b-370728c72662}" ?>
@@ -179,6 +185,46 @@
               DiskId="1"
               KeyPath="yes"
               Name="remoting_desktop.exe"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remoting_native_messaging_host" Guid="*">
+        <File Id="remoting_native_messaging_host.exe"
+              DiskId="1"
+              KeyPath="yes"
+              Name="remoting_native_messaging_host.exe"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remote_assistance_host" Guid="*">
+        <File Id="remote_assistance_host.exe"
+              DiskId="1"
+              KeyPath="yes"
+              Name="remote_assistance_host.exe"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="native_messaging_host_manifest" Guid="*">
+        <File Id="com.google.chrome.remote_desktop.json"
+              DiskId="1"
+              KeyPath="yes"
+              Name="com.google.chrome.remote_desktop.json"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remote_assistance_host_manifest" Guid="*">
+        <File Id="com.google.chrome.remote_assistance.json"
+              DiskId="1"
+              KeyPath="yes"
+              Name="com.google.chrome.remote_assistance.json"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="icudtl" Guid="*">
+        <File Id="icudtl.dat"
+              DiskId="1"
+              KeyPath="yes"
+              Name="icudtl.dat"
               Vital="yes"/>
       </Component>
 
@@ -465,6 +511,60 @@
 
       </Component>
 
+      <!-- Creates the pairing registry store and protect it with an ACL. -->
+      <Component Id="remoting_pairing_registry" Guid="960bc7eb-a816-428b-90e8-ad13336955d5">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\$(var.ChromotingKeyPath)\paired-clients"
+                     Action="create">
+          <RegistryKey Key="clients" Action="create"/>
+          <RegistryKey Key="secrets" Action="create">
+            <!-- Gives full access to SYSTEM only. -->
+            <!-- Cannot use the builtin PermissionEx element because it maps
+                 to the MsiLockPermissionsEx table which is not supported on
+                 Windows Installer version 4.5 or lower. Also Cannot use
+                 PermissionEx in WixUtilExtension because it automatically
+                 inherits all the ACLs from the parent. -->
+            <Permission User="SYSTEM"
+                        GenericAll="yes"
+                        ChangePermission="yes"
+                        TakeOwnership="yes"/>
+            <Permission User="Administrators"
+                        Domain="[LOCAL_MACHINE_NAME]"
+                        GenericAll="yes"
+                        ChangePermission="yes"
+                        TakeOwnership="yes"/>
+          </RegistryKey>
+        </RegistryKey>
+        <CreateFolder/>
+      </Component>
+
+      <Component Id="native_messaging_host_registry" Guid="*">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\Google\chrome\NativeMessagingHosts"
+                     Action="create">
+          <RegistryKey Key="com.google.chrome.remote_desktop" Action="create">
+            <RegistryValue
+                Type="string"
+                Value="[binaries]com.google.chrome.remote_desktop.json"/>
+          </RegistryKey>
+        </RegistryKey>
+        <CreateFolder/>
+      </Component>
+
+      <Component Id="remote_assistance_host_registry" Guid="*">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\Google\chrome\NativeMessagingHosts"
+                     Action="create">
+          <RegistryKey Key="com.google.chrome.remote_assistance"
+                       Action="create">
+            <RegistryValue
+                Type="string"
+                Value="[binaries]com.google.chrome.remote_assistance.json"/>
+          </RegistryKey>
+        </RegistryKey>
+        <CreateFolder/>
+      </Component>
+
       <!-- Register with Sawbuck. See http://code.google.com/p/sawbuck/. -->
       <Component Id="sawbuck_provider" Guid="*">
         <RegistryKey Root="HKLM"
@@ -564,10 +664,18 @@
       <?if $(var.OfficialBuild) != 0 ?>
         <ComponentRef Id="omaha_registration"/>
       <?endif?>
+      <ComponentRef Id="icudtl"/>
+      <ComponentRef Id="native_messaging_host_manifest"/>
+      <ComponentRef Id="native_messaging_host_registry"/>
+      <ComponentRef Id="remote_assistance_host"/>
+      <ComponentRef Id="remote_assistance_host_manifest"/>
+      <ComponentRef Id="remote_assistance_host_registry"/>
+      <ComponentRef Id="remoting_native_messaging_host"/>
       <ComponentRef Id="remoting_core"/>
       <ComponentRef Id="remoting_desktop"/>
       <ComponentRef Id="remoting_host"/>
       <ComponentRef Id="remoting_lib"/>
+      <ComponentRef Id="remoting_pairing_registry"/>
       <ComponentRef Id="sas"/>
       <ComponentRef Id="sawbuck_provider"/>
     </Feature>

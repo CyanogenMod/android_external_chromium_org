@@ -24,15 +24,15 @@ class Layer;
 
 class CC_EXPORT LayerTreeHostCommon {
  public:
-  static gfx::Rect CalculateVisibleRect(gfx::Rect target_surface_rect,
-                                        gfx::Rect layer_bound_rect,
+  static gfx::Rect CalculateVisibleRect(const gfx::Rect& target_surface_rect,
+                                        const gfx::Rect& layer_bound_rect,
                                         const gfx::Transform& transform);
 
   template <typename LayerType, typename RenderSurfaceLayerListType>
   struct CalcDrawPropsInputs {
    public:
     CalcDrawPropsInputs(LayerType* root_layer,
-                        gfx::Size device_viewport_size,
+                        const gfx::Size& device_viewport_size,
                         const gfx::Transform& device_transform,
                         float device_scale_factor,
                         float page_scale_factor,
@@ -72,12 +72,12 @@ class CC_EXPORT LayerTreeHostCommon {
       : public CalcDrawPropsInputs<LayerType, RenderSurfaceLayerListType> {
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         const gfx::Transform& device_transform,
         RenderSurfaceLayerListType* render_surface_layer_list);
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         RenderSurfaceLayerListType* render_surface_layer_list);
 
    private:
@@ -97,15 +97,16 @@ class CC_EXPORT LayerTreeHostCommon {
 
   // Performs hit testing for a given render_surface_layer_list.
   static LayerImpl* FindLayerThatIsHitByPoint(
-      gfx::PointF screen_space_point,
+      const gfx::PointF& screen_space_point,
       const LayerImplList& render_surface_layer_list);
 
   static LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
-      gfx::PointF screen_space_point,
+      const gfx::PointF& screen_space_point,
       const LayerImplList& render_surface_layer_list);
 
-  static bool LayerHasTouchEventHandlersAt(gfx::PointF screen_space_point,
-                                           LayerImpl* layer_impl);
+  static bool LayerHasTouchEventHandlersAt(
+      const gfx::PointF& screen_space_point,
+      LayerImpl* layer_impl);
 
   template <typename LayerType>
   static bool RenderSurfaceContributesToTarget(LayerType*,
@@ -211,7 +212,7 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
                                                    RenderSurfaceLayerListType>::
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         const gfx::Transform& device_transform,
         RenderSurfaceLayerListType* render_surface_layer_list)
     : CalcDrawPropsInputs<LayerType, RenderSurfaceLayerListType>(
@@ -235,7 +236,7 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
                                                    RenderSurfaceLayerListType>::
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         RenderSurfaceLayerListType* render_surface_layer_list)
     : CalcDrawPropsInputs<LayerType, RenderSurfaceLayerListType>(
           root_layer,

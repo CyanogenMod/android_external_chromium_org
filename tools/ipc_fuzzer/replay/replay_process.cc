@@ -18,8 +18,7 @@
 namespace ipc_fuzzer {
 
 ReplayProcess::ReplayProcess()
-    : main_loop_(base::MessageLoop::TYPE_DEFAULT),
-      io_thread_("Chrome_ChildIOThread"),
+    : io_thread_("Chrome_ChildIOThread"),
       shutdown_event_(true, false),
       message_index_(0) {
 }
@@ -80,7 +79,8 @@ void ReplayProcess::SendNextMessage() {
   messages_[message_index_++] = NULL;
 
   if (!channel_->Send(message)) {
-    LOG(ERROR) << "ChannelProxy::Send() failed";
+    LOG(ERROR) << "ChannelProxy::Send() failed after "
+               << message_index_ << " messages";
     base::MessageLoop::current()->Quit();
   }
 }
@@ -99,7 +99,8 @@ bool ReplayProcess::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void ReplayProcess::OnChannelError() {
-  LOG(ERROR) << "Channel error, quitting";
+  LOG(ERROR) << "Channel error, quitting after "
+             << message_index_ << " messages";
   base::MessageLoop::current()->Quit();
 }
 

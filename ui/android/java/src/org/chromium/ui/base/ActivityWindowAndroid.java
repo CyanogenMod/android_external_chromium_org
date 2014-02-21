@@ -5,9 +5,11 @@
 package org.chromium.ui.base;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender.SendIntentException;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.util.Log;
@@ -28,7 +30,7 @@ public class ActivityWindowAndroid extends WindowAndroid {
     private static final int REQUEST_CODE_RANGE_SIZE = 100;
     private static final String TAG = "ActivityWindowAndroid";
 
-    private Activity mActivity;
+    private final Activity mActivity;
     private int mNextRequestCode = 0;
 
     public ActivityWindowAndroid(Activity activity) {
@@ -37,20 +39,37 @@ public class ActivityWindowAndroid extends WindowAndroid {
     }
 
     @Override
-    public boolean showIntent(Intent intent, IntentCallback callback, int errorId) {
-        int requestCode = REQUEST_CODE_PREFIX + mNextRequestCode;
-        mNextRequestCode = (mNextRequestCode + 1) % REQUEST_CODE_RANGE_SIZE;
+    public int showCancelableIntent(PendingIntent intent, IntentCallback callback, int errorId) {
+        int requestCode = generateNextRequestCode();
+
+        try {
+            mActivity.startIntentSenderForResult(
+                    intent.getIntentSender(), requestCode, new Intent(), 0, 0, 0);
+        } catch (SendIntentException e) {
+            return START_INTENT_FAILURE;
+        }
+
+        storeCallbackData(requestCode, callback, errorId);
+        return requestCode;
+    }
+
+    @Override
+    public int showCancelableIntent(Intent intent, IntentCallback callback, int errorId) {
+        int requestCode = generateNextRequestCode();
 
         try {
             mActivity.startActivityForResult(intent, requestCode);
         } catch (ActivityNotFoundException e) {
-            return false;
+            return START_INTENT_FAILURE;
         }
 
-        mOutstandingIntents.put(requestCode, callback);
-        mIntentErrors.put(requestCode, mApplicationContext.getString(errorId));
+        storeCallbackData(requestCode, callback, errorId);
+        return requestCode;
+    }
 
-        return true;
+    @Override
+    public void cancelIntent(int requestCode) {
+        mActivity.finishActivity(requestCode);
     }
 
     @Override
@@ -109,5 +128,16 @@ public class ActivityWindowAndroid extends WindowAndroid {
             Log.e(TAG, "Out of memory while grabbing window snapshot.", e);
             return null;
         }
+    }
+
+    private int generateNextRequestCode() {
+        int requestCode = REQUEST_CODE_PREFIX + mNextRequestCode;
+        mNextRequestCode = (mNextRequestCode + 1) % REQUEST_CODE_RANGE_SIZE;
+        return requestCode;
+    }
+
+    private void storeCallbackData(int requestCode, IntentCallback callback, int errorId) {
+        mOutstandingIntents.put(requestCode, callback);
+        mIntentErrors.put(requestCode, mApplicationContext.getString(errorId));
     }
 }

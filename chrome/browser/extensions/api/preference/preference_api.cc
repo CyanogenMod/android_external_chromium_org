@@ -17,15 +17,18 @@
 #include "chrome/browser/extensions/api/preference/preference_api_constants.h"
 #include "chrome/browser/extensions/api/preference/preference_helpers.h"
 #include "chrome/browser/extensions/api/proxy/proxy_api.h"
-#include "chrome/browser/extensions/extension_pref_value_map.h"
-#include "chrome/browser/extensions/extension_pref_value_map_factory.h"
-#include "chrome/browser/extensions/extension_prefs_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/translate/core/common/translate_pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_prefs_factory.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/permissions/api_permission.h"
@@ -110,31 +113,33 @@ PrefMappingEntry kPrefMapping[] = {
 
 class IdentityPrefTransformer : public PrefTransformerInterface {
  public:
-  virtual Value* ExtensionToBrowserPref(const Value* extension_pref,
-                                        std::string* error,
-                                        bool* bad_message) OVERRIDE {
+  virtual base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
+                                              std::string* error,
+                                              bool* bad_message) OVERRIDE {
     return extension_pref->DeepCopy();
   }
 
-  virtual Value* BrowserToExtensionPref(const Value* browser_pref) OVERRIDE {
+  virtual base::Value* BrowserToExtensionPref(
+      const base::Value* browser_pref) OVERRIDE {
     return browser_pref->DeepCopy();
   }
 };
 
 class InvertBooleanTransformer : public PrefTransformerInterface {
  public:
-  virtual Value* ExtensionToBrowserPref(const Value* extension_pref,
-                                        std::string* error,
-                                        bool* bad_message) OVERRIDE {
+  virtual base::Value* ExtensionToBrowserPref(const base::Value* extension_pref,
+                                              std::string* error,
+                                              bool* bad_message) OVERRIDE {
     return InvertBooleanValue(extension_pref);
   }
 
-  virtual Value* BrowserToExtensionPref(const Value* browser_pref) OVERRIDE {
+  virtual base::Value* BrowserToExtensionPref(
+      const base::Value* browser_pref) OVERRIDE {
     return InvertBooleanValue(browser_pref);
   }
 
  private:
-  static Value* InvertBooleanValue(const Value* value) {
+  static base::Value* InvertBooleanValue(const base::Value* value) {
     bool bool_value = false;
     bool result = value->GetAsBoolean(&bool_value);
     DCHECK(result);
@@ -265,14 +270,14 @@ void PreferenceEventRouter::OnPrefChanged(PrefService* pref_service,
   DCHECK(rv);
 
   base::ListValue args;
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   args.Append(dict);
   const PrefService::Preference* pref =
       pref_service->FindPreference(browser_pref.c_str());
   CHECK(pref);
   PrefTransformerInterface* transformer =
       PrefMapping::GetInstance()->FindTransformerForBrowserPref(browser_pref);
-  Value* transformed_value =
+  base::Value* transformed_value =
       transformer->BrowserToExtensionPref(pref->GetValue());
   if (!transformed_value) {
     LOG(ERROR) << ErrorUtils::FormatErrorMessage(kConversionErrorMessage,
@@ -317,7 +322,7 @@ void PreferenceAPIBase::SetExtensionControlledPref(
     ExtensionPrefs::ScopedDictionaryUpdate update(extension_prefs(),
                                                   extension_id,
                                                   scope_string);
-    DictionaryValue* preference = update.Get();
+    base::DictionaryValue* preference = update.Get();
     if (!preference)
       preference = update.Create();
     preference->SetWithoutPathExpansion(pref_key, value->DeepCopy());
@@ -339,7 +344,7 @@ void PreferenceAPIBase::RemoveExtensionControlledPref(
     ExtensionPrefs::ScopedDictionaryUpdate update(extension_prefs(),
                                                   extension_id,
                                                   scope_string);
-    DictionaryValue* preference = update.Get();
+    base::DictionaryValue* preference = update.Get();
     if (preference)
       preference->RemoveWithoutPathExpansion(pref_key, NULL);
   }
@@ -399,7 +404,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<PreferenceAPI>* PreferenceAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 // static
@@ -423,13 +428,13 @@ void PreferenceAPI::LoadExtensionControlledPrefs(
     return;
   std::string key = extension_id + "." + scope_string;
 
-  const DictionaryValue* source_dict = prefs->pref_service()->
-      GetDictionary(prefs::kExtensionsPref);
-  const DictionaryValue* preferences = NULL;
+  const base::DictionaryValue* source_dict = prefs->pref_service()->
+      GetDictionary(pref_names::kExtensions);
+  const base::DictionaryValue* preferences = NULL;
   if (!source_dict->GetDictionary(key, &preferences))
     return;
 
-  for (DictionaryValue::Iterator iter(*preferences);
+  for (base::DictionaryValue::Iterator iter(*preferences);
        !iter.IsAtEnd(); iter.Advance()) {
     value_map->SetExtensionPref(
         extension_id, iter.key(), scope, iter.value().DeepCopy());
@@ -525,9 +530,9 @@ ExtensionPrefValueMap* PreferenceAPI::extension_pref_value_map() {
 
 template <>
 void ProfileKeyedAPIFactory<PreferenceAPI>::DeclareFactoryDependencies() {
-  DependsOn(ExtensionSystemFactory::GetInstance());
   DependsOn(ExtensionPrefsFactory::GetInstance());
   DependsOn(ExtensionPrefValueMapFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 PreferenceFunction::~PreferenceFunction() { }
@@ -552,7 +557,7 @@ GetPreferenceFunction::~GetPreferenceFunction() { }
 bool GetPreferenceFunction::RunImpl() {
   std::string pref_key;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &pref_key));
-  DictionaryValue* details = NULL;
+  base::DictionaryValue* details = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &details));
 
   bool incognito = false;
@@ -576,7 +581,7 @@ bool GetPreferenceFunction::RunImpl() {
       prefs->FindPreference(browser_pref.c_str());
   CHECK(pref);
 
-  scoped_ptr<DictionaryValue> result(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue);
 
   // Retrieve level of control.
   std::string level_of_control = helpers::GetLevelOfControl(
@@ -586,7 +591,7 @@ bool GetPreferenceFunction::RunImpl() {
   // Retrieve pref value.
   PrefTransformerInterface* transformer =
       PrefMapping::GetInstance()->FindTransformerForBrowserPref(browser_pref);
-  Value* transformed_value =
+  base::Value* transformed_value =
       transformer->BrowserToExtensionPref(pref->GetValue());
   if (!transformed_value) {
     LOG(ERROR) <<
@@ -612,10 +617,10 @@ SetPreferenceFunction::~SetPreferenceFunction() { }
 bool SetPreferenceFunction::RunImpl() {
   std::string pref_key;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &pref_key));
-  DictionaryValue* details = NULL;
+  base::DictionaryValue* details = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &details));
 
-  Value* value = NULL;
+  base::Value* value = NULL;
   EXTENSION_FUNCTION_VALIDATE(details->Get(keys::kValue, &value));
 
   ExtensionPrefsScope scope = kExtensionPrefsScopeRegular;
@@ -667,7 +672,7 @@ bool SetPreferenceFunction::RunImpl() {
       PrefMapping::GetInstance()->FindTransformerForBrowserPref(browser_pref);
   std::string error;
   bool bad_message = false;
-  scoped_ptr<Value> browser_pref_value(
+  scoped_ptr<base::Value> browser_pref_value(
       transformer->ExtensionToBrowserPref(value, &error, &bad_message));
   if (!browser_pref_value) {
     error_ = error;
@@ -677,7 +682,7 @@ bool SetPreferenceFunction::RunImpl() {
 
   // Validate also that the stored value can be converted back by the
   // transformer.
-  scoped_ptr<Value> extensionPrefValue(
+  scoped_ptr<base::Value> extensionPrefValue(
       transformer->BrowserToExtensionPref(browser_pref_value.get()));
   if (!extensionPrefValue) {
     error_ =  ErrorUtils::FormatErrorMessage(kConversionErrorMessage,
@@ -696,7 +701,7 @@ ClearPreferenceFunction::~ClearPreferenceFunction() { }
 bool ClearPreferenceFunction::RunImpl() {
   std::string pref_key;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &pref_key));
-  DictionaryValue* details = NULL;
+  base::DictionaryValue* details = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &details));
 
   ExtensionPrefsScope scope = kExtensionPrefsScopeRegular;

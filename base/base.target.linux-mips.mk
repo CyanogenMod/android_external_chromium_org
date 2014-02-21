@@ -29,7 +29,6 @@ LOCAL_SRC_FILES := \
 	base/async_socket_io_handler_posix.cc \
 	base/event_recorder_stubs.cc \
 	base/linux_util.cc \
-	base/md5.cc \
 	base/message_loop/message_pump_android.cc \
 	base/message_loop/message_pump_libevent.cc \
 	base/metrics/field_trial.cc \
@@ -55,11 +54,13 @@ LOCAL_SRC_FILES := \
 	base/android/jni_helper.cc \
 	base/android/jni_registrar.cc \
 	base/android/jni_string.cc \
+	base/android/library_loader/library_loader_hooks.cc \
 	base/android/memory_pressure_listener_android.cc \
 	base/android/java_handler_thread.cc \
 	base/android/path_service_android.cc \
 	base/android/path_utils.cc \
 	base/android/sys_utils.cc \
+	base/android/trace_event_binding.cc \
 	base/at_exit.cc \
 	base/barrier_closure.cc \
 	base/base_paths.cc \
@@ -75,6 +76,7 @@ LOCAL_SRC_FILES := \
 	base/debug/crash_logging.cc \
 	base/debug/debugger.cc \
 	base/debug/debugger_posix.cc \
+	base/debug/dump_without_crashing.cc \
 	base/debug/proc_maps_linux.cc \
 	base/debug/profiler.cc \
 	base/debug/stack_trace.cc \
@@ -82,6 +84,7 @@ LOCAL_SRC_FILES := \
 	base/debug/trace_event_android.cc \
 	base/debug/trace_event_impl.cc \
 	base/debug/trace_event_impl_constants.cc \
+	base/debug/trace_event_synthetic_delay.cc \
 	base/debug/trace_event_system_stats_monitor.cc \
 	base/debug/trace_event_memory.cc \
 	base/deferred_sequenced_task_runner.cc \
@@ -116,9 +119,14 @@ LOCAL_SRC_FILES := \
 	base/lazy_instance.cc \
 	base/location.cc \
 	base/logging.cc \
+	base/md5.cc \
 	base/memory/aligned_memory.cc \
+	base/memory/discardable_memory.cc \
 	base/memory/discardable_memory_allocator_android.cc \
 	base/memory/discardable_memory_android.cc \
+	base/memory/discardable_memory_emulated.cc \
+	base/memory/discardable_memory_malloc.cc \
+	base/memory/discardable_memory_provider.cc \
 	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
 	base/memory/ref_counted_memory.cc \
@@ -144,6 +152,7 @@ LOCAL_SRC_FILES := \
 	base/metrics/statistics_recorder.cc \
 	base/metrics/stats_counters.cc \
 	base/metrics/stats_table.cc \
+	base/metrics/user_metrics.cc \
 	base/native_library_posix.cc \
 	base/os_compat_android.cc \
 	base/path_service.cc \
@@ -208,6 +217,7 @@ LOCAL_SRC_FILES := \
 	base/sys_info_android.cc \
 	base/sys_info_linux.cc \
 	base/sys_info_posix.cc \
+	base/task/cancelable_task_tracker.cc \
 	base/task_runner.cc \
 	base/thread_task_runner_handle.cc \
 	base/threading/non_thread_safe_impl.cc \
@@ -221,6 +231,7 @@ LOCAL_SRC_FILES := \
 	base/threading/thread_collision_warner.cc \
 	base/threading/thread_id_name_manager.cc \
 	base/threading/thread_local_posix.cc \
+	base/threading/thread_local_storage.cc \
 	base/threading/thread_local_storage_posix.cc \
 	base/threading/thread_restrictions.cc \
 	base/threading/watchdog.cc \
@@ -269,14 +280,15 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -287,7 +299,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -324,7 +335,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -355,14 +365,15 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -373,7 +384,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -411,7 +421,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

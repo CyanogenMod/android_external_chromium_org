@@ -6,23 +6,32 @@
 
 #include "base/logging.h"
 #include "media/cast/rtcp/rtcp_utility.h"
+#include "media/cast/transport/cast_transport_defines.h"
 
 namespace {
 
 media::cast::CastLoggingEvent TranslateToLogEventFromWireFormat(uint8 event) {
   switch (event) {
     case 1:
-      return media::cast::kAckSent;
+      return media::cast::kAudioAckSent;
     case 2:
       return media::cast::kAudioPlayoutDelay;
     case 3:
       return media::cast::kAudioFrameDecoded;
     case 4:
-      return media::cast::kVideoFrameDecoded;
+      return media::cast::kAudioPacketReceived;
     case 5:
-      return media::cast::kVideoRenderDelay;
+      return media::cast::kVideoAckSent;
     case 6:
-      return media::cast::kPacketReceived;
+      return media::cast::kVideoFrameDecoded;
+    case 7:
+      return media::cast::kVideoRenderDelay;
+    case 8:
+      return media::cast::kVideoPacketReceived;
+    case 9:
+      return media::cast::kDuplicateAudioPacketReceived;
+    case 10:
+      return media::cast::kDuplicateVideoPacketReceived;
     default:
       // If the sender adds new log messages we will end up here until we add
       // the new messages in the receiver.
@@ -32,23 +41,23 @@ media::cast::CastLoggingEvent TranslateToLogEventFromWireFormat(uint8 event) {
   }
 }
 
-media::cast::RtcpSenderFrameStatus TranslateToFrameStatusFromWireFormat(
-    uint8 status) {
+media::cast::transport::RtcpSenderFrameStatus
+TranslateToFrameStatusFromWireFormat(uint8 status) {
   switch (status) {
     case 0:
-      return media::cast::kRtcpSenderFrameStatusUnknown;
+      return media::cast::transport::kRtcpSenderFrameStatusUnknown;
     case 1:
-      return media::cast::kRtcpSenderFrameStatusDroppedByEncoder;
+      return media::cast::transport::kRtcpSenderFrameStatusDroppedByEncoder;
     case 2:
-      return media::cast::kRtcpSenderFrameStatusDroppedByFlowControl;
+      return media::cast::transport::kRtcpSenderFrameStatusDroppedByFlowControl;
     case 3:
-      return media::cast::kRtcpSenderFrameStatusSentToNetwork;
+      return media::cast::transport::kRtcpSenderFrameStatusSentToNetwork;
     default:
       // If the sender adds new log messages we will end up here until we add
       // the new messages in the receiver.
       NOTREACHED();
       VLOG(1) << "Unexpected status received: " << static_cast<int>(status);
-      return media::cast::kRtcpSenderFrameStatusUnknown;
+      return media::cast::transport::kRtcpSenderFrameStatusUnknown;
   }
 }
 
@@ -71,9 +80,7 @@ RtcpReceiver::RtcpReceiver(scoped_refptr<CastEnvironment> cast_environment,
 
 RtcpReceiver::~RtcpReceiver() {}
 
-void RtcpReceiver::SetRemoteSSRC(uint32 ssrc) {
-  remote_ssrc_ = ssrc;
-}
+void RtcpReceiver::SetRemoteSSRC(uint32 ssrc) { remote_ssrc_ = ssrc; }
 
 void RtcpReceiver::IncomingRtcpPacket(RtcpParser* rtcp_parser) {
   RtcpFieldTypes field_type = rtcp_parser->Begin();
@@ -154,13 +161,12 @@ void RtcpReceiver::HandleSenderReport(RtcpParser* rtcp_parser) {
   VLOG(1) << "Cast RTCP received SR from SSRC " << remote_ssrc;
 
   if (remote_ssrc_ == remote_ssrc) {
-    RtcpSenderInfo remote_sender_info;
+    transport::RtcpSenderInfo remote_sender_info;
     remote_sender_info.ntp_seconds =
         rtcp_field.sender_report.ntp_most_significant;
     remote_sender_info.ntp_fraction =
         rtcp_field.sender_report.ntp_least_significant;
-    remote_sender_info.rtp_timestamp =
-        rtcp_field.sender_report.rtp_timestamp;
+    remote_sender_info.rtp_timestamp = rtcp_field.sender_report.rtp_timestamp;
     remote_sender_info.send_packet_count =
         rtcp_field.sender_report.sender_packet_count;
     remote_sender_info.send_octet_count =
@@ -212,12 +218,12 @@ void RtcpReceiver::HandleReportBlock(const RtcpField* rtcp_field,
     return;
   }
   VLOG(1) << "Cast RTCP received RB from SSRC " << remote_ssrc;
-  cast_environment_->Logging()->InsertGenericEvent(kPacketLoss,
-                                                   rb.fraction_lost);
-  cast_environment_->Logging()->InsertGenericEvent(kJitterMs,
-                                                   rb.jitter);
+  base::TimeTicks now = cast_environment_->Clock()->NowTicks();
+  cast_environment_->Logging()->InsertGenericEvent(
+      now, kPacketLoss, rb.fraction_lost);
+  cast_environment_->Logging()->InsertGenericEvent(now, kJitterMs, rb.jitter);
 
-  RtcpReportBlock report_block;
+  transport::RtcpReportBlock report_block;
   report_block.remote_ssrc = remote_ssrc;
   report_block.media_ssrc = rb.ssrc;
   report_block.fraction_lost = rb.fraction_lost;
@@ -229,9 +235,8 @@ void RtcpReceiver::HandleReportBlock(const RtcpField* rtcp_field,
   report_block.delay_since_last_sr = rb.delay_last_sender_report;
 
   if (rtt_feedback_) {
-    rtt_feedback_->OnReceivedDelaySinceLastReport(rb.ssrc,
-                                                  rb.last_sender_report,
-                                                  rb.delay_last_sender_report);
+    rtt_feedback_->OnReceivedDelaySinceLastReport(
+        rb.ssrc, rb.last_sender_report, rb.delay_last_sender_report);
   }
 }
 
@@ -450,8 +455,8 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverLog(
 
     field_type = rtcp_parser->Iterate();
     while (field_type == kRtcpApplicationSpecificCastReceiverLogEventCode) {
-      HandleApplicationSpecificCastReceiverEventLog(rtcp_parser,
-          &frame_log.event_log_messages_);
+      HandleApplicationSpecificCastReceiverEventLog(
+          rtcp_parser, &frame_log.event_log_messages_);
       field_type = rtcp_parser->Iterate();
     }
     receiver_log.push_back(frame_log);
@@ -468,16 +473,16 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverEventLog(
   const RtcpField& rtcp_field = rtcp_parser->Field();
 
   RtcpReceiverEventLogMessage event_log;
-  event_log.type = TranslateToLogEventFromWireFormat(
-      rtcp_field.cast_receiver_log.event);
-  event_log.event_timestamp = base::TimeTicks() +
+  event_log.type =
+      TranslateToLogEventFromWireFormat(rtcp_field.cast_receiver_log.event);
+  event_log.event_timestamp =
+      base::TimeTicks() +
       base::TimeDelta::FromMilliseconds(
           rtcp_field.cast_receiver_log.event_timestamp_base +
           rtcp_field.cast_receiver_log.event_timestamp_delta);
   event_log.delay_delta = base::TimeDelta::FromMilliseconds(
       rtcp_field.cast_receiver_log.delay_delta_or_packet_id);
-  event_log.packet_id =
-      rtcp_field.cast_receiver_log.delay_delta_or_packet_id;
+  event_log.packet_id = rtcp_field.cast_receiver_log.delay_delta_or_packet_id;
   event_log_messages->push_back(event_log);
 }
 
@@ -494,12 +499,12 @@ void RtcpReceiver::HandleApplicationSpecificCastSenderLog(
     } while (field_type == kRtcpApplicationSpecificCastSenderLogCode);
     return;
   }
-  RtcpSenderLogMessage sender_log;
+  transport::RtcpSenderLogMessage sender_log;
 
   RtcpFieldTypes field_type = rtcp_parser->Iterate();
   while (field_type == kRtcpApplicationSpecificCastSenderLogCode) {
     const RtcpField& rtcp_field = rtcp_parser->Field();
-    RtcpSenderFrameLogMessage frame_log;
+    transport::RtcpSenderFrameLogMessage frame_log;
     frame_log.frame_status =
         TranslateToFrameStatusFromWireFormat(rtcp_field.cast_sender_log.status);
     frame_log.rtp_timestamp = rtcp_field.cast_sender_log.rtp_timestamp;
@@ -576,7 +581,8 @@ void RtcpReceiver::HandleFIR(RtcpParser* rtcp_parser) {
 
 void RtcpReceiver::HandleFIRItem(const RtcpField* rtcp_field) {
   // Is it our sender that is requested to generate a new keyframe.
-  if (ssrc_ != rtcp_field->fir_item.ssrc) return;
+  if (ssrc_ != rtcp_field->fir_item.ssrc)
+    return;
 
   VLOG(1) << "Cast RTCP received FIR on our SSRC " << ssrc_;
 }

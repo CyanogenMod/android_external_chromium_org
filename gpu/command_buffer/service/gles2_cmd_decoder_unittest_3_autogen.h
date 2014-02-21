@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,10 +24,6 @@
 // TODO(gman): GetMultipleIntegervCHROMIUM
 
 // TODO(gman): GetProgramInfoCHROMIUM
-
-// TODO(gman): CreateStreamTextureCHROMIUM
-
-// TODO(gman): DestroyStreamTextureCHROMIUM
 
 // TODO(gman): GetTranslatedShaderSourceANGLE
 // TODO(gman): PostSubBufferCHROMIUM
@@ -66,5 +62,7 @@
 
 // TODO(gman): DrawBuffersEXT
 // TODO(gman): DrawBuffersEXTImmediate
+// TODO(gman): DiscardBackbufferCHROMIUM
+
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 

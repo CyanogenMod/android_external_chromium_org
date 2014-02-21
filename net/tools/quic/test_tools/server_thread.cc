@@ -15,7 +15,6 @@ ServerThread::ServerThread(IPEndPoint address,
                            const QuicVersionVector& supported_versions,
                            bool strike_register_no_startup_period)
     : SimpleThread("server_thread"),
-      listening_(true, false),
       confirmed_(true, false),
       pause_(true, false),
       paused_(true, false),
@@ -23,23 +22,34 @@ ServerThread::ServerThread(IPEndPoint address,
       quit_(true, false),
       server_(config, supported_versions),
       address_(address),
-      port_(0) {
+      port_(0),
+      initialized_(false) {
   if (strike_register_no_startup_period) {
     server_.SetStrikeRegisterNoStartupPeriod();
   }
 }
 
-ServerThread::~ServerThread() {
-}
+ServerThread::~ServerThread() {}
 
-void ServerThread::Run() {
+void ServerThread::Initialize() {
+  if (initialized_) {
+    return;
+  }
+
   server_.Listen(address_);
 
   port_lock_.Acquire();
   port_ = server_.port();
   port_lock_.Release();
 
-  listening_.Signal();
+  initialized_ = true;
+}
+
+void ServerThread::Run() {
+  if (!initialized_) {
+    Initialize();
+  }
+
   while (!quit_.IsSignaled()) {
     if (pause_.IsSignaled() && !resume_.IsSignaled()) {
       paused_.Signal();
@@ -56,11 +66,7 @@ int ServerThread::GetPort() {
   port_lock_.Acquire();
   int rc = port_;
   port_lock_.Release();
-    return rc;
-}
-
-void ServerThread::WaitForServerStartup() {
-  listening_.Wait();
+  return rc;
 }
 
 void ServerThread::WaitForCryptoHandshakeConfirmed() {

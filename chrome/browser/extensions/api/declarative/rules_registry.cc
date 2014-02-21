@@ -16,15 +16,15 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/declarative/rules_cache_delegate.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 
 namespace {
@@ -73,26 +73,22 @@ namespace extensions {
 
 // RulesRegistry
 
-RulesRegistry::RulesRegistry(
-    Profile* profile,
-    const std::string& event_name,
-    content::BrowserThread::ID owner_thread,
-    RulesCacheDelegate* cache_delegate,
-    const WebViewKey& webview_key)
+RulesRegistry::RulesRegistry(Profile* profile,
+                             const std::string& event_name,
+                             content::BrowserThread::ID owner_thread,
+                             RulesCacheDelegate* cache_delegate,
+                             const WebViewKey& webview_key)
     : profile_(profile),
       owner_thread_(owner_thread),
       event_name_(event_name),
       webview_key_(webview_key),
+      ready_(/*signaled=*/!cache_delegate),  // Immediately ready if no cache
+                                             // delegate to wait for.
       weak_ptr_factory_(profile ? this : NULL),
       last_generated_rule_identifier_id_(0) {
   if (cache_delegate) {
     cache_delegate_ = cache_delegate->GetWeakPtr();
     cache_delegate->Init(this);
-  } else {
-    content::BrowserThread::PostTask(
-        owner_thread,
-        FROM_HERE,
-        base::Bind(&RulesRegistry::MarkReady, this, base::Time::Now()));
   }
 }
 
@@ -165,6 +161,13 @@ std::string RulesRegistry::RemoveRules(
 }
 
 std::string RulesRegistry::RemoveAllRules(const std::string& extension_id) {
+  std::string result = RulesRegistry::RemoveAllRulesNoStoreUpdate(extension_id);
+  MaybeProcessChangedRules(extension_id);  // Now update the prefs and store.
+  return result;
+}
+
+std::string RulesRegistry::RemoveAllRulesNoStoreUpdate(
+    const std::string& extension_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(owner_thread()));
 
   std::string error = RemoveAllRulesImpl(extension_id);
@@ -180,7 +183,6 @@ std::string RulesRegistry::RemoveAllRules(const std::string& extension_id) {
       rules_.erase(key);
   }
 
-  MaybeProcessChangedRules(extension_id);
   RemoveAllUsedRuleIdentifiers(extension_id);
   return kSuccess;
 }
@@ -220,7 +222,7 @@ void RulesRegistry::OnExtensionUnloaded(const std::string& extension_id) {
 
 void RulesRegistry::OnExtensionUninstalled(const std::string& extension_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(owner_thread()));
-  std::string error = RemoveAllRules(extension_id);
+  std::string error = RemoveAllRulesNoStoreUpdate(extension_id);
   if (!error.empty())
     LOG(ERROR) << error;
 }

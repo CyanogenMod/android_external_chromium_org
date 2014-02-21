@@ -1275,6 +1275,7 @@ static int ValidateError(){
 /* Setup the cursor for reading the information from cell iCell. */
 static int leafCursorCellDecode(RecoverLeafCursor *pCursor){
   const unsigned char *pPageHeader;  /* Header of current page. */
+  const unsigned char *pPageEnd;     /* Byte after end of current page. */
   const unsigned char *pCellOffsets; /* Pointer to page's cell offsets. */
   unsigned iCellOffset;              /* Offset of current cell (iCell). */
   const unsigned char *pCell;        /* Pointer to data at iCellOffset. */
@@ -1297,6 +1298,10 @@ static int leafCursorCellDecode(RecoverLeafCursor *pCursor){
   /* Find the offset to the row. */
   pPageHeader = PageHeader(pCursor->pPage);
   pCellOffsets = pPageHeader + knPageLeafHeaderBytes;
+  pPageEnd = PageData(pCursor->pPage, pCursor->nPageSize);
+  if( pCellOffsets + pCursor->iCell*2 + 2 > pPageEnd ){
+    return ValidateError();
+  }
   iCellOffset = decodeUnsigned16(pCellOffsets + pCursor->iCell*2);
   if( iCellOffset>=pCursor->nPageSize ){
     return ValidateError();
@@ -1338,7 +1343,7 @@ static int leafCursorCellDecode(RecoverLeafCursor *pCursor){
 
   /* Check that no other cell starts within this cell. */
   iEndOffset = pCursor->iRecordOffset + pCursor->nLocalRecordBytes;
-  for( i=0; i<pCursor->nCells; ++i ){
+  for( i=0; i<pCursor->nCells && pCellOffsets + i*2 + 2 <= pPageEnd; ++i ){
     const unsigned iOtherOffset = decodeUnsigned16(pCellOffsets + i*2);
     if( iOtherOffset>iCellOffset && iOtherOffset<iEndOffset ){
       return ValidateError();
@@ -1627,6 +1632,12 @@ static int recoverOpen(sqlite3_vtab *pVTab, sqlite3_vtab_cursor **ppCursor){
   pCursor->pLeafCursor = pLeafCursor;
   pCursor->iEncoding = iEncoding;
 
+  /* If no leaf pages were found, empty result set. */
+  /* TODO(shess): leafCursorNextValidCell() would return SQLITE_ROW or
+   * SQLITE_DONE to indicate whether there is further data to consider.
+   */
+  pCursor->bEOF = (pLeafCursor->pPage==NULL);
+
   *ppCursor = (sqlite3_vtab_cursor*)pCursor;
   return SQLITE_OK;
 }
@@ -1715,8 +1726,14 @@ static int recoverFilter(
 
   FNENTRY();
 
-  /* Load the first cell, and iterate forward if it's not valid. */
-  /* TODO(shess): What happens if no cells at all are valid? */
+  /* There were no valid leaf pages in the table. */
+  if( pCursor->bEOF ){
+    return SQLITE_OK;
+  }
+
+  /* Load the first cell, and iterate forward if it's not valid.  If no cells at
+   * all are valid, recoverNext() sets bEOF and returns appropriately.
+   */
   rc = leafCursorCellDecode(pCursor->pLeafCursor);
   if( rc!=SQLITE_OK || recoverValidateLeafCell(pRecover, pCursor)!=SQLITE_OK ){
     return recoverNext(pVtabCursor);

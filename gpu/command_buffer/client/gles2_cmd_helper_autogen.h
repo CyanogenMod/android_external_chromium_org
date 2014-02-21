@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1754,23 +1754,6 @@
     }
   }
 
-  void CreateStreamTextureCHROMIUM(
-      GLuint client_id, uint32 result_shm_id, uint32 result_shm_offset) {
-    gles2::cmds::CreateStreamTextureCHROMIUM* c =
-        GetCmdSpace<gles2::cmds::CreateStreamTextureCHROMIUM>();
-    if (c) {
-      c->Init(client_id, result_shm_id, result_shm_offset);
-    }
-  }
-
-  void DestroyStreamTextureCHROMIUM(GLuint texture) {
-    gles2::cmds::DestroyStreamTextureCHROMIUM* c =
-        GetCmdSpace<gles2::cmds::DestroyStreamTextureCHROMIUM>();
-    if (c) {
-      c->Init(texture);
-    }
-  }
-
   void GetTranslatedShaderSourceANGLE(GLuint shader, uint32 bucket_id) {
     gles2::cmds::GetTranslatedShaderSourceANGLE* c =
         GetCmdSpace<gles2::cmds::GetTranslatedShaderSourceANGLE>();
@@ -2011,6 +1994,14 @@
             size);
     if (c) {
       c->Init(count, bufs);
+    }
+  }
+
+  void DiscardBackbufferCHROMIUM() {
+    gles2::cmds::DiscardBackbufferCHROMIUM* c =
+        GetCmdSpace<gles2::cmds::DiscardBackbufferCHROMIUM>();
+    if (c) {
+      c->Init();
     }
   }
 

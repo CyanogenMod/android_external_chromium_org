@@ -30,6 +30,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "components/policy/core/common/policy_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
@@ -66,7 +67,6 @@ std::string DeriveCommandLine(const GURL& start_url,
 
   static const char* kForwardSwitches[] = {
       ::switches::kAllowWebUICompositing,
-      ::switches::kDeviceManagementUrl,
       ::switches::kDisableAccelerated2dCanvas,
       ::switches::kDisableAcceleratedOverflowScroll,
       ::switches::kDisableAcceleratedPlugins,
@@ -81,6 +81,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kDisableGpuCompositing,
       ::switches::kDisablePrefixedEncryptedMedia,
       ::switches::kDisablePanelFitting,
+      ::switches::kDisableRepaintAfterLayout,
       ::switches::kDisableSeccompFilterSandbox,
       ::switches::kDisableSetuidSandbox,
       ::switches::kDisableThreadedCompositing,
@@ -100,6 +101,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kEnableGestureTapHighlight,
       ::switches::kDisableGestureTapHighlight,
       ::switches::kDisableGpuSandbox,
+      ::switches::kEnableDeferredFilters,
       ::switches::kEnableLogging,
       ::switches::kEnablePinch,
       ::switches::kEnableRepaintAfterLayout,
@@ -115,8 +117,8 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kGpuSandboxAllowSysVShm,
       ::switches::kMultiProfiles,
       ::switches::kNoSandbox,
+      ::switches::kNumRasterThreads,
       ::switches::kPpapiFlashArgs,
-      ::switches::kPpapiFlashInProcess,
       ::switches::kPpapiFlashPath,
       ::switches::kPpapiFlashVersion,
       ::switches::kPpapiInProcess,
@@ -138,6 +140,7 @@ std::string DeriveCommandLine(const GURL& start_url,
 #if defined(USE_CRAS)
       ::switches::kUseCras,
 #endif
+      ::switches::kUseDiscardableMemory,
       ::switches::kUseGL,
       ::switches::kUserDataDir,
       ::switches::kV,
@@ -167,19 +170,19 @@ std::string DeriveCommandLine(const GURL& start_url,
       cc::switches::kCompositeToMailbox,
       cc::switches::kDisableCompositedAntialiasing,
       cc::switches::kDisableCompositorTouchHitTesting,
+      cc::switches::kDisableGPURasterization,
       cc::switches::kDisableImplSidePainting,
       cc::switches::kDisableMapImage,
       cc::switches::kDisableThreadedAnimation,
+      cc::switches::kEnableGpuBenchmarking,
       cc::switches::kEnableGPURasterization,
       cc::switches::kEnableImplSidePainting,
       cc::switches::kEnableMapImage,
-      cc::switches::kEnablePartialSwap,
       cc::switches::kEnablePerTilePainting,
       cc::switches::kEnablePinchVirtualViewport,
       cc::switches::kEnableTopControlsPositionCalculation,
       cc::switches::kMaxTilesForInterestArea,
       cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
-      cc::switches::kNumRasterThreads,
       cc::switches::kShowCompositedLayerBorders,
       cc::switches::kShowFPSCounter,
       cc::switches::kShowLayerAnimationBounds,
@@ -196,12 +199,14 @@ std::string DeriveCommandLine(const GURL& start_url,
       chromeos::switches::kDbusStub,
       chromeos::switches::kDisableLoginAnimations,
       chromeos::switches::kDisableOobeAnimation,
+      chromeos::switches::kGpuSandboxFailuresNonfatal,
       chromeos::switches::kHasChromeOSDiamondKey,
       chromeos::switches::kHasChromeOSKeyboard,
       chromeos::switches::kLoginProfile,
       chromeos::switches::kNaturalScrollDefault,
       ::switches::kEnableBrowserTextSubpixelPositioning,
       ::switches::kEnableWebkitTextSubpixelPositioning,
+      policy::switches::kDeviceManagementUrl,
       views::corewm::switches::kNoDropShadows,
       views::corewm::switches::kWindowAnimationsDisabled,
   };
@@ -230,15 +235,6 @@ std::string DeriveCommandLine(const GURL& start_url,
         ::switches::kRegisterPepperPlugins,
         base_command_line.GetSwitchValueNative(
             ::switches::kRegisterPepperPlugins).c_str());
-  }
-
-  // TODO(zelidrag): Remove this hack that get us around compositing bug from
-  // http://crbug.com/179256 once that bug is resolved.
-  if (command_line->HasSwitch(::switches::kForceAppMode)) {
-    std::string switch_to_remove("--");
-    switch_to_remove.append(cc::switches::kEnablePartialSwap);
-    cmd_line_str = cmd_line_str.replace(cmd_line_str.find(switch_to_remove),
-                                        switch_to_remove.length(), "");
   }
 
   return cmd_line_str;

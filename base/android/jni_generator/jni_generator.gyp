@@ -33,6 +33,7 @@
       ],
       'variables': {
         'jni_gen_package': 'example',
+        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../../../build/jni_generator.gypi' ],
     },
@@ -55,9 +56,6 @@
         'jni_generator_py_tests',
         'jni_sample_header',
         'jni_sample_java',
-      ],
-      'include_dirs': [
-        '<(SHARED_INTERMEDIATE_DIR)/example',
       ],
       'sources': [
         'sample_for_tests.cc',

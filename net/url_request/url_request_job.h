@@ -13,7 +13,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_observer.h"
-#include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
@@ -27,6 +26,7 @@ namespace net {
 class AuthChallengeInfo;
 class AuthCredentials;
 class CookieOptions;
+class Filter;
 class HttpRequestHeaders;
 class HttpResponseInfo;
 class IOBuffer;
@@ -107,6 +107,9 @@ class NET_EXPORT URLRequestJob
 
   virtual bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
+  // Get the number of bytes received from network.
+  virtual int64 GetTotalReceivedBytes() const;
+
   // Called to fetch the current load state for the job.
   virtual LoadState GetLoadState() const;
 
@@ -179,6 +182,9 @@ class NET_EXPORT URLRequestJob
   // Continue processing the request ignoring the last error.
   virtual void ContinueDespiteLastError();
 
+  // Continue with the network request.
+  virtual void ResumeNetworkStart();
+
   void FollowDeferredRedirect();
 
   // Returns true if the Job is done producing response data and has called
@@ -232,6 +238,9 @@ class NET_EXPORT URLRequestJob
   // Delegates to URLRequest::Delegate.
   bool CanEnablePrivacyMode() const;
 
+  // Notifies the job that the network is about to be used.
+  void NotifyBeforeNetworkStart(bool* defer);
+
   // Notifies the job that headers have been received.
   void NotifyHeadersComplete();
 
@@ -257,7 +266,7 @@ class NET_EXPORT URLRequestJob
   void NotifyCanceled();
 
   // Notifies the job the request should be restarted.
-  // Should only be called if the job has not started a resposne.
+  // Should only be called if the job has not started a response.
   void NotifyRestartRequired();
 
   // See corresponding functions in url_request.h.
@@ -297,7 +306,7 @@ class NET_EXPORT URLRequestJob
   // be destroyed so that statistics can be gathered while the derived class is
   // still present to assist in calculations.  This is used by URLRequestHttpJob
   // to get SDCH to emit stats.
-  void DestroyFilters() { filter_.reset(); }
+  void DestroyFilters();
 
   // Provides derived classes with access to the request's network delegate.
   NetworkDelegate* network_delegate() { return network_delegate_; }
@@ -355,9 +364,6 @@ class NET_EXPORT URLRequestJob
   // Subclasses may implement this method to record packet arrival times.
   // The default implementation does nothing.
   virtual void UpdatePacketReadTimes();
-
-  // Custom handler for derived classes when the request is detached.
-  virtual void OnDetachRequest() {}
 
   // Indicates that the job is done producing data, either it has completed
   // all the data or an error has been encountered. Set exclusively by

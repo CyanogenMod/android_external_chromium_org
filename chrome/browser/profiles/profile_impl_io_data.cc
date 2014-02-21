@@ -24,6 +24,7 @@
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/connect_interceptor.h"
+#include "chrome/browser/net/cookie_store_util.h"
 #include "chrome/browser/net/http_server_properties_manager.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/sqlite_server_bound_cert_store.h"
@@ -123,13 +124,13 @@ void ProfileImplIOData::Handle::Init(
       const base::FilePath& profile_path,
       const base::FilePath& infinite_cache_path,
       chrome_browser_net::Predictor* predictor,
-      bool restore_old_session_cookies,
+      content::CookieStoreConfig::SessionCookieMode session_cookie_mode,
       quota::SpecialStoragePolicy* special_storage_policy) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!io_data_->lazy_params_);
   DCHECK(predictor);
 
-  LazyParams* lazy_params = new LazyParams;
+  LazyParams* lazy_params = new LazyParams();
 
   lazy_params->cookie_path = cookie_path;
   lazy_params->server_bound_cert_path = server_bound_cert_path;
@@ -139,7 +140,7 @@ void ProfileImplIOData::Handle::Init(
   lazy_params->media_cache_max_size = media_cache_max_size;
   lazy_params->extensions_cookie_path = extensions_cookie_path;
   lazy_params->infinite_cache_path = infinite_cache_path;
-  lazy_params->restore_old_session_cookies = restore_old_session_cookies;
+  lazy_params->session_cookie_mode = session_cookie_mode;
   lazy_params->special_storage_policy = special_storage_policy;
 
   io_data_->lazy_params_.reset(lazy_params);
@@ -324,7 +325,8 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
 ProfileImplIOData::LazyParams::LazyParams()
     : cache_max_size(0),
       media_cache_max_size(0),
-      restore_old_session_cookies(false) {}
+      session_cookie_mode(
+          content::CookieStoreConfig::EPHEMERAL_SESSION_COOKIES) {}
 
 ProfileImplIOData::LazyParams::~LazyParams() {}
 
@@ -332,7 +334,9 @@ ProfileImplIOData::ProfileImplIOData()
     : ProfileIOData(false),
       http_server_properties_manager_(NULL),
       app_cache_max_size_(0),
-      app_media_cache_max_size_(0) {}
+      app_media_cache_max_size_(0) {
+}
+
 ProfileImplIOData::~ProfileImplIOData() {
   DestroyResourceContext();
 
@@ -347,10 +351,6 @@ void ProfileImplIOData::InitializeInternal(
 
   IOThread* const io_thread = profile_params->io_thread;
   IOThread::Globals* const io_thread_globals = io_thread->globals();
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  bool record_mode = command_line.HasSwitch(switches::kRecordMode) &&
-                     chrome::kRecordModeEnabled;
-  bool playback_mode = command_line.HasSwitch(switches::kPlaybackMode);
 
   network_delegate()->set_predictor(predictor_.get());
 
@@ -386,26 +386,33 @@ void ProfileImplIOData::InitializeInternal(
 
   scoped_refptr<net::CookieStore> cookie_store = NULL;
   net::ServerBoundCertService* server_bound_cert_service = NULL;
-  if (record_mode || playback_mode) {
+  if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {
     // Don't use existing cookies and use an in-memory store.
-    cookie_store = new net::CookieMonster(
-        NULL, profile_params->cookie_monster_delegate.get());
+    using content::CookieStoreConfig;
+    cookie_store = content::CreateCookieStore(CookieStoreConfig(
+        base::FilePath(),
+        CookieStoreConfig::EPHEMERAL_SESSION_COOKIES,
+        NULL,
+        profile_params->cookie_monster_delegate.get()));
     // Don't use existing server-bound certs and use an in-memory store.
     server_bound_cert_service = new net::ServerBoundCertService(
         new net::DefaultServerBoundCertStore(NULL),
         base::WorkerPool::GetTaskRunner(true));
   }
 
+
   // setup cookie store
   if (!cookie_store.get()) {
     DCHECK(!lazy_params_->cookie_path.empty());
 
-    cookie_store = content::CreatePersistentCookieStore(
+    content::CookieStoreConfig cookie_config(
         lazy_params_->cookie_path,
-        lazy_params_->restore_old_session_cookies,
+        lazy_params_->session_cookie_mode,
         lazy_params_->special_storage_policy.get(),
         profile_params->cookie_monster_delegate.get());
-    cookie_store->GetCookieMonster()->SetPersistSessionCookies(true);
+    cookie_config.crypto_delegate =
+      chrome_browser_net::GetCookieCryptoDelegate();
+    cookie_store = content::CreateCookieStore(cookie_config);
   }
 
   main_context->set_cookie_store(cookie_store.get());
@@ -447,9 +454,10 @@ void ProfileImplIOData::InitializeInternal(
       main_cache->GetSession());
 #endif
 
-  if (record_mode || playback_mode) {
+  if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {
     main_cache->set_mode(
-        record_mode ? net::HttpCache::RECORD : net::HttpCache::PLAYBACK);
+        chrome_browser_net::IsCookieRecordMode() ?
+        net::HttpCache::RECORD : net::HttpCache::PLAYBACK);
   }
 
   main_http_factory_.reset(main_cache);
@@ -497,14 +505,16 @@ void ProfileImplIOData::
   extensions_context->set_throttler_manager(
       io_thread_globals->throttler_manager.get());
 
+  content::CookieStoreConfig cookie_config(
+      lazy_params_->extensions_cookie_path,
+      lazy_params_->session_cookie_mode,
+      NULL, NULL);
+  cookie_config.crypto_delegate =
+      chrome_browser_net::GetCookieCryptoDelegate();
   net::CookieStore* extensions_cookie_store =
-      content::CreatePersistentCookieStore(
-          lazy_params_->extensions_cookie_path,
-          lazy_params_->restore_old_session_cookies,
-          NULL,
-          NULL);
+      content::CreateCookieStore(cookie_config);
   // Enable cookies for devtools and extension URLs.
-  const char* schemes[] = {chrome::kChromeDevToolsScheme,
+  const char* schemes[] = {content::kChromeDevToolsScheme,
                            extensions::kExtensionScheme};
   extensions_cookie_store->GetCookieMonster()->SetCookieableSchemes(schemes, 2);
   extensions_context->set_cookie_store(extensions_cookie_store);
@@ -533,18 +543,13 @@ ProfileImplIOData::InitializeAppRequestContext(
         protocol_handler_interceptor,
     content::ProtocolHandlerMap* protocol_handlers) const {
   // Copy most state from the main context.
-  AppRequestContext* context = new AppRequestContext(load_time_stats());
+  AppRequestContext* context = new AppRequestContext();
   context->CopyFrom(main_context);
 
   base::FilePath cookie_path = partition_descriptor.path.Append(
       chrome::kCookieFilename);
   base::FilePath cache_path =
       partition_descriptor.path.Append(chrome::kCacheDirname);
-
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  bool record_mode = command_line.HasSwitch(switches::kRecordMode) &&
-                     chrome::kRecordModeEnabled;
-  bool playback_mode = command_line.HasSwitch(switches::kPlaybackMode);
 
   // Use a separate HTTP disk cache for isolated apps.
   net::HttpCache::BackendFactory* app_backend = NULL;
@@ -566,15 +571,16 @@ ProfileImplIOData::InitializeAppRequestContext(
 
   scoped_refptr<net::CookieStore> cookie_store = NULL;
   if (partition_descriptor.in_memory) {
-    cookie_store = new net::CookieMonster(NULL, NULL);
-  } else if (record_mode || playback_mode) {
+    cookie_store = content::CreateCookieStore(content::CookieStoreConfig());
+  } else if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {
     // Don't use existing cookies and use an in-memory store.
     // TODO(creis): We should have a cookie delegate for notifying the cookie
     // extensions API, but we need to update it to understand isolated apps
     // first.
-    cookie_store = new net::CookieMonster(NULL, NULL);
+    cookie_store = content::CreateCookieStore(content::CookieStoreConfig());
     app_http_cache->set_mode(
-        record_mode ? net::HttpCache::RECORD : net::HttpCache::PLAYBACK);
+        chrome_browser_net::IsCookieRecordMode() ?
+        net::HttpCache::RECORD : net::HttpCache::PLAYBACK);
   }
 
   // Use an app-specific cookie store.
@@ -584,11 +590,13 @@ ProfileImplIOData::InitializeAppRequestContext(
     // TODO(creis): We should have a cookie delegate for notifying the cookie
     // extensions API, but we need to update it to understand isolated apps
     // first.
-    cookie_store = content::CreatePersistentCookieStore(
+    content::CookieStoreConfig cookie_config(
         cookie_path,
-        false,
-        NULL,
-        NULL);
+        content::CookieStoreConfig::EPHEMERAL_SESSION_COOKIES,
+        NULL, NULL);
+    cookie_config.crypto_delegate =
+      chrome_browser_net::GetCookieCryptoDelegate();
+    cookie_store = content::CreateCookieStore(cookie_config);
   }
 
   // Transfer ownership of the cookies and cache to AppRequestContext.
@@ -614,7 +622,7 @@ ProfileImplIOData::InitializeMediaRequestContext(
     ChromeURLRequestContext* original_context,
     const StoragePartitionDescriptor& partition_descriptor) const {
   // Copy most state from the original context.
-  MediaRequestContext* context = new MediaRequestContext(load_time_stats());
+  MediaRequestContext* context = new MediaRequestContext();
   context->CopyFrom(original_context);
 
   // For in-memory context, return immediately after creating the new
@@ -692,11 +700,6 @@ ProfileImplIOData::AcquireIsolatedMediaRequestContext(
       InitializeMediaRequestContext(app_context, partition_descriptor);
   DCHECK(media_request_context);
   return media_request_context;
-}
-
-chrome_browser_net::LoadTimeStats* ProfileImplIOData::GetLoadTimeStats(
-    IOThread::Globals* io_thread_globals) const {
-  return io_thread_globals->load_time_stats.get();
 }
 
 void ProfileImplIOData::ClearNetworkingHistorySinceOnIOThread(

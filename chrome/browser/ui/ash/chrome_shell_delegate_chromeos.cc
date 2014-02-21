@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
+#include "ash/accelerators/magnifier_key_scroller.h"
+#include "ash/accelerators/spoken_feedback_toggler.h"
 #include "ash/accessibility_delegate.h"
 #include "ash/media_delegate.h"
 #include "ash/wm/mru_window_tracker.h"
@@ -11,10 +13,12 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/background/ash_user_wallpaper_delegate.h"
+#include "chrome/browser/chromeos/display/display_configuration_observer.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
 #include "chrome/browser/chromeos/extensions/media_player_api.h"
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
@@ -40,15 +44,24 @@
 
 namespace {
 
-// This function is used for restoring focus after the user session is started.
-// It's needed because some windows can be opened in background while login UI
-// is still active because we currently restore browser windows before login UI
-// is deleted.
-void RestoreFocus() {
+void InitAfterSessionStart() {
+  // Restor focus after the user session is started.  It's needed
+  // because some windows can be opened in background while login UI
+  // is still active because we currently restore browser windows
+  // before login UI is deleted.
+  ash::Shell* shell = ash::Shell::GetInstance();
   ash::MruWindowTracker::WindowList mru_list =
-      ash::Shell::GetInstance()->mru_window_tracker()->BuildMruWindowList();
+      shell->mru_window_tracker()->BuildMruWindowList();
   if (!mru_list.empty())
     mru_list.front()->Focus();
+
+  // Enable magnifier scroll keys as there may be no mouse cursor in
+  // kiosk mode.
+  ash::MagnifierKeyScroller::SetEnabled(chrome::IsRunningInForcedAppMode());
+
+  // Enable long press action to toggle spoken feedback with hotrod
+  // remote which can't handle shortcut.
+  ash::SpokenFeedbackToggler::SetEnabled(chrome::IsRunningInForcedAppMode());
 }
 
 class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
@@ -118,14 +131,21 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
     return chromeos::AccessibilityManager::Get()->IsAutoclickEnabled();
   }
 
-  virtual bool ShouldAlwaysShowAccessibilityMenu() const OVERRIDE {
-    Profile* profile = ProfileManager::GetDefaultProfile();
-    if (!profile)
-      return false;
+  virtual void SetVirtualKeyboardEnabled(bool enabled) OVERRIDE {
+    DCHECK(chromeos::AccessibilityManager::Get());
+    return chromeos::AccessibilityManager::Get()->
+        EnableVirtualKeyboard(enabled);
+  }
 
-    PrefService* user_pref_service = profile->GetPrefs();
-    return user_pref_service && user_pref_service->GetBoolean(
-        prefs::kShouldAlwaysShowAccessibilityMenu);
+  virtual bool IsVirtualKeyboardEnabled() const OVERRIDE {
+    DCHECK(chromeos::AccessibilityManager::Get());
+    return chromeos::AccessibilityManager::Get()->IsVirtualKeyboardEnabled();
+  }
+
+  virtual bool ShouldShowAccessibilityMenu() const OVERRIDE {
+    DCHECK(chromeos::AccessibilityManager::Get());
+    return chromeos::AccessibilityManager::Get()->
+        ShouldShowAccessibilityMenu();
   }
 
   virtual void SilenceSpokenFeedback() const OVERRIDE {
@@ -147,7 +167,7 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
 
   virtual void TriggerAccessibilityAlert(
       ash::AccessibilityAlert alert) OVERRIDE {
-    Profile* profile = ProfileManager::GetDefaultProfile();
+    Profile* profile = ProfileManager::GetActiveUserProfile();
     if (profile) {
       switch (alert) {
         case ash::A11Y_ALERT_WINDOW_NEEDED: {
@@ -167,6 +187,10 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
     return ash::A11Y_ALERT_NONE;
   }
 
+  virtual base::TimeDelta PlayShutdownSound() const OVERRIDE {
+    return chromeos::AccessibilityManager::Get()->PlayShutdownSound();
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(AccessibilityDelegateImpl);
 };
@@ -178,19 +202,19 @@ class MediaDelegateImpl : public ash::MediaDelegate {
 
   virtual void HandleMediaNextTrack() OVERRIDE {
     extensions::MediaPlayerAPI::Get(
-        ProfileManager::GetDefaultProfileOrOffTheRecord())->
+        ProfileManager::GetActiveUserProfile())->
             media_player_event_router()->NotifyNextTrack();
   }
 
   virtual void HandleMediaPlayPause() OVERRIDE {
     extensions::MediaPlayerAPI::Get(
-        ProfileManager::GetDefaultProfileOrOffTheRecord())->
+        ProfileManager::GetActiveUserProfile())->
             media_player_event_router()->NotifyTogglePlayState();
   }
 
   virtual void HandleMediaPrevTrack() OVERRIDE {
     extensions::MediaPlayerAPI::Get(
-        ProfileManager::GetDefaultProfileOrOffTheRecord())->
+        ProfileManager::GetActiveUserProfile())->
             media_player_event_router()->NotifyPrevTrack();
   }
 
@@ -207,10 +231,14 @@ bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
 
 void ChromeShellDelegate::PreInit() {
   chromeos::LoadDisplayPreferences(IsFirstRunAfterBoot());
+  // Set the observer now so that we can save the initial state
+  // in Shell::Init.
+  display_configuration_observer_.reset(
+      new chromeos::DisplayConfigurationObserver());
 }
 
 void ChromeShellDelegate::Shutdown() {
-  content::RecordAction(content::UserMetricsAction("Shutdown"));
+  content::RecordAction(base::UserMetricsAction("Shutdown"));
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
       RequestShutdown();
 }
@@ -253,8 +281,13 @@ void ChromeShellDelegate::Observe(int type,
       ash::Shell::GetInstance()->OnLoginUserProfilePrepared();
       break;
     case chrome::NOTIFICATION_SESSION_STARTED:
-      RestoreFocus();
-      ash::Shell::GetInstance()->ShowLauncher();
+      InitAfterSessionStart();
+      ash::Shell::GetInstance()->ShowShelf();
+      break;
+    case chrome::NOTIFICATION_APP_TERMINATING:
+      // Let classes unregister themselves as observers of the
+      // ash::Shell singleton before the shell is destroyed.
+      display_configuration_observer_.reset();
       break;
     default:
       NOTREACHED() << "Unexpected notification " << type;
@@ -267,5 +300,8 @@ void ChromeShellDelegate::PlatformInit() {
                  content::NotificationService::AllSources());
   registrar_.Add(this,
                  chrome::NOTIFICATION_SESSION_STARTED,
+                 content::NotificationService::AllSources());
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
 }

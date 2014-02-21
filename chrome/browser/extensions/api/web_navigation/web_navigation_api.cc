@@ -10,7 +10,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api_constants.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api_helpers.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/retargeting_details.h"
@@ -27,6 +26,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/view_type_utils.h"
 #include "net/base/net_errors.h"
 
@@ -254,9 +254,6 @@ WebNavigationTabObserver::WebNavigationTabObserver(
       pending_render_view_host_(NULL) {
   g_tab_observer.Get().insert(TabObserverMap::value_type(web_contents, this));
   registrar_.Add(this,
-                 content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
-                 content::Source<content::WebContents>(web_contents));
-  registrar_.Add(this,
                  content::NOTIFICATION_RENDER_VIEW_HOST_WILL_CLOSE_RENDER_VIEW,
                  content::NotificationService::AllSources());
 }
@@ -288,36 +285,6 @@ void WebNavigationTabObserver::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT: {
-      content::ResourceRedirectDetails* resource_redirect_details =
-          content::Details<content::ResourceRedirectDetails>(details).ptr();
-      ResourceType::Type resource_type =
-          resource_redirect_details->resource_type;
-      if (resource_type == ResourceType::MAIN_FRAME ||
-          resource_type == ResourceType::SUB_FRAME) {
-        content::RenderViewHost* render_view_host = NULL;
-        if (render_view_host_ &&
-            resource_redirect_details->origin_child_id ==
-                render_view_host_->GetProcess()->GetID() &&
-            resource_redirect_details->origin_route_id ==
-                render_view_host_->GetRoutingID()) {
-          render_view_host = render_view_host_;
-        } else if (pending_render_view_host_ &&
-                   resource_redirect_details->origin_child_id ==
-                       pending_render_view_host_->GetProcess()->GetID() &&
-                   resource_redirect_details->origin_route_id ==
-                       pending_render_view_host_->GetRoutingID()) {
-          render_view_host = pending_render_view_host_;
-        }
-        if (!render_view_host)
-          return;
-        FrameNavigationState::FrameID frame_id(
-            resource_redirect_details->frame_id, render_view_host);
-        navigation_state_.SetIsServerRedirected(frame_id);
-      }
-      break;
-    }
-
     case content::NOTIFICATION_RENDER_VIEW_HOST_WILL_CLOSE_RENDER_VIEW: {
       // The RenderView is technically not yet deleted, but the RenderViewHost
       // already starts to filter out some IPCs. In order to not get confused,
@@ -617,6 +584,17 @@ void WebNavigationTabObserver::DidFailLoad(
   navigation_state_.SetErrorOccurredInFrame(frame_id);
 }
 
+void WebNavigationTabObserver::DidGetRedirectForResourceRequest(
+    content::RenderViewHost* render_view_host,
+    const content::ResourceRedirectDetails& details) {
+  if (details.resource_type != ResourceType::MAIN_FRAME &&
+      details.resource_type != ResourceType::SUB_FRAME) {
+    return;
+  }
+  FrameNavigationState::FrameID frame_id(details.frame_id, render_view_host);
+  navigation_state_.SetIsServerRedirected(frame_id);
+}
+
 void WebNavigationTabObserver::DidOpenRequestedURL(
     content::WebContents* new_contents,
     const GURL& url,
@@ -719,7 +697,7 @@ bool WebNavigationGetFrameFunction::RunImpl() {
   int frame_id = params->details.frame_id;
   int process_id = params->details.process_id;
 
-  SetResult(Value::CreateNullValue());
+  SetResult(base::Value::CreateNullValue());
 
   content::WebContents* web_contents;
   if (!ExtensionTabUtil::GetTabById(tab_id,
@@ -774,7 +752,7 @@ bool WebNavigationGetAllFramesFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
   int tab_id = params->details.tab_id;
 
-  SetResult(Value::CreateNullValue());
+  SetResult(base::Value::CreateNullValue());
 
   content::WebContents* web_contents;
   if (!ExtensionTabUtil::GetTabById(tab_id,
@@ -855,7 +833,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 // static
 ProfileKeyedAPIFactory<WebNavigationAPI>*
 WebNavigationAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void WebNavigationAPI::OnListenerAdded(const EventListenerInfo& details) {

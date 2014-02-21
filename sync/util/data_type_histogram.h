@@ -72,6 +72,9 @@
       case ::syncer::APPS: \
         PER_DATA_TYPE_MACRO("Apps"); \
         break; \
+      case ::syncer::APP_LIST: \
+        PER_DATA_TYPE_MACRO("AppList"); \
+        break; \
       case ::syncer::APP_SETTINGS: \
         PER_DATA_TYPE_MACRO("AppSettings"); \
         break; \
@@ -86,6 +89,9 @@
         break; \
       case ::syncer::SYNCED_NOTIFICATIONS: \
         PER_DATA_TYPE_MACRO("SyncedNotifications"); \
+        break; \
+      case ::syncer::SYNCED_NOTIFICATION_APP_INFO: \
+        PER_DATA_TYPE_MACRO("SyncedNotificationAppInfo"); \
         break; \
       case ::syncer::DEVICE_INFO: \
         PER_DATA_TYPE_MACRO("DeviceInfo"); \
@@ -110,6 +116,9 @@
         break; \
       case ::syncer::MANAGED_USERS: \
         PER_DATA_TYPE_MACRO("ManagedUser"); \
+        break; \
+      case ::syncer::MANAGED_USER_SHARED_SETTINGS: \
+        PER_DATA_TYPE_MACRO("ManagedUserSharedSetting"); \
         break; \
       case ::syncer::ARTICLES: \
         PER_DATA_TYPE_MACRO("Article"); \

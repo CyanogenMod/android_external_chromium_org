@@ -38,6 +38,9 @@ struct InstallSignature {
   // The date that the signature should expire, in YYYY-MM-DD format.
   std::string expire_date;
 
+  // The time this signature was obtained from the server.
+  base::Time timestamp;
+
   InstallSignature();
   ~InstallSignature();
 
@@ -80,6 +83,14 @@ class InstallSigner {
   // complete.
   class FetcherDelegate;
 
+  // A helper function that calls |callback_| with an indication that an error
+  // happened (currently done by passing an empty pointer).
+  void ReportErrorViaCallback();
+
+  // Called when |url_fetcher_| has returned a result to parse the response,
+  // and then call HandleSignatureResult with structured data.
+  void ParseFetchResponse();
+
   // Handles the result from a backend fetch.
   void HandleSignatureResult(const std::string& signature,
                              const std::string& expire_date,
@@ -100,6 +111,9 @@ class InstallSigner {
   net::URLRequestContextGetter* context_getter_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
   scoped_ptr<FetcherDelegate> delegate_;
+
+  // The time the request to the server was started.
+  base::Time request_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(InstallSigner);
 };

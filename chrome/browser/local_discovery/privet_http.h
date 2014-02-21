@@ -28,27 +28,41 @@ namespace local_discovery {
 
 class PrivetHTTPClient;
 
-// Represents a request to /privet/info. Will store a cached response and token
-// in the PrivetHTTPClient that created.
-class PrivetInfoOperation {
+// Represents a simple request that returns pure JSON.
+class PrivetJSONOperation {
  public:
-  class Delegate {
-   public:
-    virtual ~Delegate() {}
+  // If value is null, the operation failed.
+  typedef base::Callback<void(
+      const base::DictionaryValue* /*value*/)> ResultCallback;
 
-    // In case of non-HTTP errors, |http_code| will be -1.
-
-    // TODO(noamsml): Remove http_code from this delegate; it's unnecessary in
-    // practice
-    virtual void OnPrivetInfoDone(
-        PrivetInfoOperation* operation,
-        int http_code,
-        const base::DictionaryValue* json_value) = 0;
-  };
-
-  virtual ~PrivetInfoOperation() {}
+  virtual ~PrivetJSONOperation() {}
 
   virtual void Start() = 0;
+
+  virtual PrivetHTTPClient* GetHTTPClient() = 0;
+};
+
+class PrivetDataReadOperation {
+ public:
+  enum ResponseType {
+    RESPONSE_TYPE_ERROR,
+    RESPONSE_TYPE_STRING,
+    RESPONSE_TYPE_FILE
+  };
+
+  // If value is null, the operation failed.
+  typedef base::Callback<void(
+      ResponseType /*response_type*/,
+      const std::string& /*response_str*/,
+      const base::FilePath& /*response_file_path*/)> ResultCallback;
+
+  virtual ~PrivetDataReadOperation() {}
+
+  virtual void Start() = 0;
+
+  virtual void SetDataRange(int range_start, int range_end) = 0;
+
+  virtual void SaveDataToFile() = 0;
 
   virtual PrivetHTTPClient* GetHTTPClient() = 0;
 };
@@ -88,7 +102,7 @@ class PrivetRegisterOperation {
                                        const std::string& action,
                                        FailureReason reason,
                                        int printer_http_code,
-                                       const DictionaryValue* json) = 0;
+                                       const base::DictionaryValue* json) = 0;
 
     // Called when the registration is done.
     virtual void OnPrivetRegisterDone(PrivetRegisterOperation* operation,
@@ -101,25 +115,6 @@ class PrivetRegisterOperation {
   // Owner SHOULD call explicitly before destroying operation.
   virtual void Cancel() = 0;
   virtual void CompleteRegistration() = 0;
-
-  virtual PrivetHTTPClient* GetHTTPClient() = 0;
-};
-
-class PrivetCapabilitiesOperation {
- public:
-  class Delegate {
-   public:
-    virtual ~Delegate() {}
-
-    // |capabilities| will be NULL in case of an error.
-    virtual void OnPrivetCapabilities(
-        PrivetCapabilitiesOperation* capabilities_operation,
-        int http_error,
-        const base::DictionaryValue* capabilities) = 0;
-  };
-
-  virtual ~PrivetCapabilitiesOperation() {}
-  virtual void Start() = 0;
 
   virtual PrivetHTTPClient* GetHTTPClient() = 0;
 };
@@ -153,8 +148,7 @@ class PrivetLocalPrintOperation {
   // to Google Cloud Print.
   virtual void SetOffline(bool offline) = 0;
   // Document page size.
-  virtual void SetConversionSettings(
-      const printing::PdfRenderSettings& conversion_settings) = 0;
+  virtual void SetPageSize(const gfx::Size& page_size) = 0;
 
   // For testing, inject an alternative PWG raster converter.
   virtual void SetPWGRasterConverterForTesting(
@@ -172,12 +166,18 @@ class PrivetHTTPClient {
   virtual scoped_ptr<PrivetRegisterOperation> CreateRegisterOperation(
       const std::string& user,
       PrivetRegisterOperation::Delegate* delegate) = 0;
-  virtual scoped_ptr<PrivetInfoOperation> CreateInfoOperation(
-      PrivetInfoOperation::Delegate* delegate) = 0;
-  virtual scoped_ptr<PrivetCapabilitiesOperation> CreateCapabilitiesOperation(
-      PrivetCapabilitiesOperation::Delegate* delegate) = 0;
+  virtual scoped_ptr<PrivetJSONOperation> CreateInfoOperation(
+      const PrivetJSONOperation::ResultCallback& callback) = 0;
+  virtual scoped_ptr<PrivetJSONOperation> CreateCapabilitiesOperation(
+      const PrivetJSONOperation::ResultCallback& callback) = 0;
   virtual scoped_ptr<PrivetLocalPrintOperation> CreateLocalPrintOperation(
       PrivetLocalPrintOperation::Delegate* delegate) = 0;
+  virtual scoped_ptr<PrivetJSONOperation> CreateStorageListOperation(
+      const std::string& path,
+      const PrivetJSONOperation::ResultCallback& callback) = 0;
+  virtual scoped_ptr<PrivetDataReadOperation> CreateStorageReadOperation(
+      const std::string& path,
+      const PrivetDataReadOperation::ResultCallback& callback) = 0;
 
   // A name for the HTTP client, e.g. the device name for the privet device.
   virtual const std::string& GetName() = 0;

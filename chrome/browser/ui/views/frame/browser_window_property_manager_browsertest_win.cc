@@ -100,9 +100,10 @@ class BrowserTestWithProfileShortcutManager : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(BrowserTestWithProfileShortcutManager);
 };
 
+// Test is flaky on Win7 bots. See crbug.com/332628.
 // Check that the window properties on Windows are properly set.
 IN_PROC_BROWSER_TEST_F(BrowserTestWithProfileShortcutManager,
-                       WindowProperties) {
+                       DISABLED_WindowProperties) {
 #if defined(USE_ASH)
   // Disable this test in Metro+Ash where Windows window properties aren't used.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -138,7 +139,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTestWithProfileShortcutManager,
 
   // The default profile's name should be part of the relaunch name.
   ValidateBrowserWindowProperties(
-      browser(), UTF8ToUTF16(browser()->profile()->GetProfileName()));
+      browser(), base::UTF8ToUTF16(browser()->profile()->GetProfileName()));
 
   // The second profile's name should be part of the relaunch name.
   Browser* profile2_browser =

@@ -188,6 +188,11 @@ bool PowerStatus::IsUsbChargerConnected() const {
       power_manager::PowerSupplyProperties_ExternalPower_USB;
 }
 
+bool PowerStatus::IsOriginalSpringChargerConnected() const {
+  return proto_.external_power() == power_manager::
+      PowerSupplyProperties_ExternalPower_ORIGINAL_SPRING_CHARGER;
+}
+
 gfx::ImageSkia PowerStatus::GetBatteryImage(IconSet icon_set) const {
   gfx::Image all;
   if (IsUsbChargerConnected()) {
@@ -252,7 +257,7 @@ base::string16 PowerStatus::GetAccessibleNameString() const {
     int hour = 0, min = 0;
     PowerStatus::SplitTimeIntoHoursAndMinutes(time, &hour, &min);
     base::string16 minute = min < 10 ?
-        ASCIIToUTF16("0") + base::IntToString16(min) :
+        base::ASCIIToUTF16("0") + base::IntToString16(min) :
         base::IntToString16(min);
     battery_time_accessible =
         l10n_util::GetStringFUTF16(
@@ -263,7 +268,7 @@ base::string16 PowerStatus::GetAccessibleNameString() const {
   }
   return battery_time_accessible.empty() ?
       battery_percentage_accessible :
-      battery_percentage_accessible + ASCIIToUTF16(". ") +
+      battery_percentage_accessible + base::ASCIIToUTF16(". ") +
       battery_time_accessible;
 }
 

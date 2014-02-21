@@ -101,7 +101,8 @@ class OmniboxViewGtk : public OmniboxView,
   virtual void SetGrayTextAutocompletion(
       const base::string16& suggestion) OVERRIDE;
   virtual base::string16 GetGrayTextAutocompletion() const OVERRIDE;
-  virtual int TextWidth() const OVERRIDE;
+  virtual int GetTextWidth() const OVERRIDE;
+  virtual int GetWidth() const OVERRIDE;
   virtual bool IsImeComposing() const OVERRIDE;
 
   // Overridden from content::NotificationObserver:
@@ -109,8 +110,6 @@ class OmniboxViewGtk : public OmniboxView,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Sets the colors of the text view according to the theme.
-  void SetBaseColor();
   // Sets the colors of the gray text suggestion view according to the theme.
   void UpdateGrayTextViewColors();
 
@@ -178,6 +177,8 @@ class OmniboxViewGtk : public OmniboxView,
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandlePasteClipboard);
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, gboolean, HandleExposeEvent,
                        GdkEventExpose*);
+  CHROMEGTK_CALLBACK_1(OmniboxViewGtk, gboolean, HandleExposeEventAfter,
+                       GdkEventExpose*);
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandleWidgetDirectionChanged,
                        GtkTextDirection);
   CHROMEGTK_CALLBACK_2(OmniboxViewGtk, void, HandleDeleteFromCursor,
@@ -218,6 +219,9 @@ class OmniboxViewGtk : public OmniboxView,
 
   // Common implementation for performing a drop on the edit view.
   bool OnPerformDropImpl(const base::string16& text);
+
+  // Sets the colors and font of the text view according to the theme.
+  void OnBrowserThemeChanged();
 
   // Returns the font used in |text_view_|.
   gfx::Font GetFont();
@@ -454,6 +458,10 @@ class OmniboxViewGtk : public OmniboxView,
   GtkWidget* going_to_focus_;
 
   ui::GtkSignalRegistrar signals_;
+
+  // The baseline shift to be made to center the text.  Positive values move
+  // the text upward.
+  double font_baseline_shift_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxViewGtk);
 };

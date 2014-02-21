@@ -55,30 +55,21 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   virtual ~WorkspaceWindowResizer();
 
   static WorkspaceWindowResizer* Create(
-      aura::Window* window,
-      const gfx::Point& location_in_parent,
-      int window_component,
-      aura::client::WindowMoveSource source,
+      wm::WindowState* window_state,
       const std::vector<aura::Window*>& attached_windows);
 
   // WindowResizer:
   virtual void Drag(const gfx::Point& location_in_parent,
                     int event_flags) OVERRIDE;
-  virtual void CompleteDrag(int event_flags) OVERRIDE;
+  virtual void CompleteDrag() OVERRIDE;
   virtual void RevertDrag() OVERRIDE;
-  virtual aura::Window* GetTarget() OVERRIDE;
-  virtual const gfx::Point& GetInitialLocation() const OVERRIDE;
 
  private:
-  WorkspaceWindowResizer(const Details& details,
+  WorkspaceWindowResizer(wm::WindowState* window_state,
                          const std::vector<aura::Window*>& attached_windows);
 
  private:
   friend class WorkspaceWindowResizerTest;
-
-  // Returns the final bounds to place the window at. This differs from
-  // the current when snapping.
-  gfx::Rect GetFinalBounds(const gfx::Rect& bounds) const;
 
   // Lays out the attached windows. |bounds| is the bounds of the main window.
   void LayoutAttachedWindows(gfx::Rect* bounds);
@@ -159,15 +150,15 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // snapping should be used.
   SnapType GetSnapType(const gfx::Point& location) const;
 
-  // Docks the dragged window if |should_dock| and the window can be docked.
-  // Undocks the window if |should_dock| is false.
+  // Returns true if |bounds_in_parent| are valid bounds for snapped show type
+  // |snapped_type|.
+  bool AreBoundsValidSnappedBounds(wm::WindowShowType snapped_type,
+                                   const gfx::Rect& bounds_in_parent) const;
+
+  // Docks or undocks the dragged window.
   void SetDraggedWindowDocked(bool should_dock);
 
-  aura::Window* window() const { return details_.window; }
-
-  wm::WindowState* window_state() { return details_.window_state; }
-
-  const Details details_;
+  wm::WindowState* window_state() { return window_state_; }
 
   const std::vector<aura::Window*> attached_windows_;
 

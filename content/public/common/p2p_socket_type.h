@@ -10,6 +10,13 @@
 
 namespace content {
 
+enum P2PSocketOption {
+  P2P_SOCKET_OPT_RCVBUF,  // Receive buffer size.
+  P2P_SOCKET_OPT_SNDBUF,  // Send buffer size.
+  P2P_SOCKET_OPT_DSCP,    // DSCP code.
+  P2P_SOCKET_OPT_MAX
+};
+
 // Type of P2P Socket.
 enum P2PSocketType {
   P2P_SOCKET_UDP,
@@ -21,6 +28,7 @@ enum P2PSocketType {
   P2P_SOCKET_STUN_SSLTCP_CLIENT,
   P2P_SOCKET_TLS_CLIENT,
   P2P_SOCKET_STUN_TLS_CLIENT,
+  P2P_SOCKET_TYPE_LAST = P2P_SOCKET_STUN_TLS_CLIENT
 };
 
 }  // namespace content

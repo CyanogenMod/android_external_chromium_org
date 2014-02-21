@@ -78,8 +78,9 @@ class MockResourceBundleDelegate : public ui::ResourceBundle::Delegate {
     *value = GetRawDataResourceMock(resource_id, scale_factor);
     return true;
   }
-  MOCK_METHOD1(GetLocalizedStringMock, string16(int message_id));
-  virtual bool GetLocalizedString(int message_id, string16* value) OVERRIDE {
+  MOCK_METHOD1(GetLocalizedStringMock, base::string16(int message_id));
+  virtual bool GetLocalizedString(int message_id,
+                                  base::string16* value) OVERRIDE {
     *value = GetLocalizedStringMock(message_id);
     return true;
   }
@@ -297,14 +298,14 @@ TEST_F(ResourceBundleTest, DelegateGetLocalizedString) {
   MockResourceBundleDelegate delegate;
   ResourceBundle* resource_bundle = CreateResourceBundle(&delegate);
 
-  string16 data = ASCIIToUTF16("My test data");
+  base::string16 data = base::ASCIIToUTF16("My test data");
   int resource_id = 5;
 
   EXPECT_CALL(delegate, GetLocalizedStringMock(resource_id))
       .Times(1)
       .WillOnce(Return(data));
 
-  string16 result = resource_bundle->GetLocalizedString(resource_id);
+  base::string16 result = resource_bundle->GetLocalizedString(resource_id);
   EXPECT_EQ(data, result);
 }
 
@@ -561,7 +562,13 @@ TEST_F(ResourceBundleImageTest, GetImageNamedFallback1xRounding) {
 }
 #endif
 
-TEST_F(ResourceBundleImageTest, FallbackToNone) {
+#if defined(OS_IOS)
+// Fails on devices that have non-100P scaling. See crbug.com/298406
+#define MAYBE_FallbackToNone DISABLED_FallbackToNone
+#else
+#define MAYBE_FallbackToNone FallbackToNone
+#endif
+TEST_F(ResourceBundleImageTest, MAYBE_FallbackToNone) {
   base::FilePath data_default_path = dir_path().AppendASCII("sample.pak");
 
   // Create the pak files.

@@ -34,7 +34,6 @@
 #include "ppapi/c/ppb_var.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
-#include "ppapi/c/private/ppb_uma_private.h"
 #include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/text_input_controller.h"
@@ -45,7 +44,6 @@
 #include "ppapi/native_client/src/trusted/plugin/nacl_subprocess.h"
 #include "ppapi/native_client/src/trusted/plugin/nexe_arch.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
-#include "ppapi/native_client/src/trusted/plugin/scriptable_plugin.h"
 #include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
 #include "ppapi/native_client/src/trusted/plugin/utility.h"
 
@@ -104,63 +102,95 @@ const PPB_NaCl_Private* GetNaClInterface() {
       module->GetBrowserInterface(PPB_NACL_PRIVATE_INTERFACE));
 }
 
-const PPB_UMA_Private* GetUMAInterface() {
-  pp::Module *module = pp::Module::Get();
-  CHECK(module);
-  return static_cast<const PPB_UMA_Private*>(
-      module->GetBrowserInterface(PPB_UMA_PRIVATE_INTERFACE));
+}  // namespace
+
+bool Plugin::EarlyInit(int argc, const char* argn[], const char* argv[]) {
+  PLUGIN_PRINTF(("Plugin::EarlyInit (instance=%p)\n",
+                 static_cast<void*>(this)));
+
+#ifdef NACL_OSX
+  // TODO(kochi): For crbug.com/102808, this is a stopgap solution for Lion
+  // until we expose IME API to .nexe. This disables any IME interference
+  // against key inputs, so you cannot use off-the-spot IME input for NaCl apps.
+  // This makes discrepancy among platforms and therefore we should remove
+  // this hack when IME API is made available.
+  // The default for non-Mac platforms is still off-the-spot IME mode.
+  pp::TextInputController(this).SetTextInputType(PP_TEXTINPUT_TYPE_NONE);
+#endif
+
+  for (int i = 0; i < argc; ++i) {
+    std::string name(argn[i]);
+    std::string value(argv[i]);
+    args_[name] = value;
+  }
+
+  // Set up the factory used to produce DescWrappers.
+  wrapper_factory_ = new nacl::DescWrapperFactory();
+  if (NULL == wrapper_factory_) {
+    return false;
+  }
+  PLUGIN_PRINTF(("Plugin::Init (wrapper_factory=%p)\n",
+                 static_cast<void*>(wrapper_factory_)));
+
+  PLUGIN_PRINTF(("Plugin::Init (return 1)\n"));
+  // Return success.
+  return true;
 }
 
-void HistogramTimeSmall(const std::string& name, int64_t ms) {
+void Plugin::ShutDownSubprocesses() {
+  PLUGIN_PRINTF(("Plugin::ShutDownSubprocesses (this=%p)\n",
+                 static_cast<void*>(this)));
+  PLUGIN_PRINTF(("Plugin::ShutDownSubprocesses (%s)\n",
+                 main_subprocess_.detailed_description().c_str()));
+
+  // Shut down service runtime. This must be done before all other calls so
+  // they don't block forever when waiting for the upcall thread to exit.
+  main_subprocess_.Shutdown();
+
+  PLUGIN_PRINTF(("Plugin::ShutDownSubprocess (this=%p, return)\n",
+                 static_cast<void*>(this)));
+}
+
+void Plugin::HistogramTimeSmall(const std::string& name,
+                                int64_t ms) {
   if (ms < 0) return;
-
-  const PPB_UMA_Private* ptr = GetUMAInterface();
-  if (ptr == NULL) return;
-
-  ptr->HistogramCustomTimes(pp::Var(name).pp_var(),
-                            ms,
-                            kTimeSmallMin, kTimeSmallMax,
-                            kTimeSmallBuckets);
+  uma_interface_.HistogramCustomTimes(name,
+                                      ms,
+                                      kTimeSmallMin, kTimeSmallMax,
+                                      kTimeSmallBuckets);
 }
 
-void HistogramTimeMedium(const std::string& name, int64_t ms) {
+void Plugin::HistogramTimeMedium(const std::string& name,
+                                 int64_t ms) {
   if (ms < 0) return;
-
-  const PPB_UMA_Private* ptr = GetUMAInterface();
-  if (ptr == NULL) return;
-
-  ptr->HistogramCustomTimes(pp::Var(name).pp_var(),
-                            ms,
-                            kTimeMediumMin, kTimeMediumMax,
-                            kTimeMediumBuckets);
+  uma_interface_.HistogramCustomTimes(name,
+                                      ms,
+                                      kTimeMediumMin, kTimeMediumMax,
+                                      kTimeMediumBuckets);
 }
 
-void HistogramTimeLarge(const std::string& name, int64_t ms) {
+void Plugin::HistogramTimeLarge(const std::string& name,
+                                int64_t ms) {
   if (ms < 0) return;
-
-  const PPB_UMA_Private* ptr = GetUMAInterface();
-  if (ptr == NULL) return;
-
-  ptr->HistogramCustomTimes(pp::Var(name).pp_var(),
-                            ms,
-                            kTimeLargeMin, kTimeLargeMax,
-                            kTimeLargeBuckets);
+  uma_interface_.HistogramCustomTimes(name,
+                                      ms,
+                                      kTimeLargeMin, kTimeLargeMax,
+                                      kTimeLargeBuckets);
 }
 
-void HistogramSizeKB(const std::string& name, int32_t sample) {
+void Plugin::HistogramSizeKB(const std::string& name,
+                             int32_t sample) {
   if (sample < 0) return;
-
-  const PPB_UMA_Private* ptr = GetUMAInterface();
-  if (ptr == NULL) return;
-
-  ptr->HistogramCustomCounts(pp::Var(name).pp_var(),
-                             sample,
-                             kSizeKBMin, kSizeKBMax,
-                             kSizeKBBuckets);
+  uma_interface_.HistogramCustomCounts(name,
+                                       sample,
+                                       kSizeKBMin, kSizeKBMax,
+                                       kSizeKBBuckets);
 }
 
-void HistogramEnumerate(const std::string& name, int sample, int maximum,
-                        int out_of_range_replacement) {
+void Plugin::HistogramEnumerate(const std::string& name,
+                                int sample,
+                                int maximum,
+                                int out_of_range_replacement) {
   if (sample < 0 || sample >= maximum) {
     if (out_of_range_replacement < 0)
       // No replacement for bad input, abort.
@@ -169,12 +199,10 @@ void HistogramEnumerate(const std::string& name, int sample, int maximum,
       // Use a specific value to signal a bad input.
       sample = out_of_range_replacement;
   }
-  const PPB_UMA_Private* ptr = GetUMAInterface();
-  if (ptr == NULL) return;
-  ptr->HistogramEnumeration(pp::Var(name).pp_var(), sample, maximum);
+  uma_interface_.HistogramEnumeration(name, sample, maximum);
 }
 
-void HistogramEnumerateOsArch(const std::string& sandbox_isa) {
+void Plugin::HistogramEnumerateOsArch(const std::string& sandbox_isa) {
   enum NaClOSArch {
     kNaClLinux32 = 0,
     kNaClLinux64,
@@ -205,22 +233,21 @@ void HistogramEnumerateOsArch(const std::string& sandbox_isa) {
   HistogramEnumerate("NaCl.Client.OSArch", os_arch, kNaClOSArchMax, -1);
 }
 
-void HistogramEnumerateLoadStatus(PluginErrorCode error_code,
-                                  bool is_installed) {
+void Plugin::HistogramEnumerateLoadStatus(PluginErrorCode error_code,
+                                          bool is_installed) {
   HistogramEnumerate("NaCl.LoadStatus.Plugin", error_code, ERROR_MAX,
                      ERROR_UNKNOWN);
 
   // Gather data to see if being installed changes load outcomes.
   const char* name = is_installed ? "NaCl.LoadStatus.Plugin.InstalledApp" :
       "NaCl.LoadStatus.Plugin.NotInstalledApp";
-  HistogramEnumerate(name, error_code, ERROR_MAX,
-                     ERROR_UNKNOWN);
+  HistogramEnumerate(name, error_code, ERROR_MAX, ERROR_UNKNOWN);
 }
 
-void HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code,
-                                        bool is_installed) {
-  HistogramEnumerate("NaCl.LoadStatus.SelLdr", error_code, NACL_ERROR_CODE_MAX,
-                     LOAD_STATUS_UNKNOWN);
+void Plugin::HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code,
+                                                bool is_installed) {
+  HistogramEnumerate("NaCl.LoadStatus.SelLdr", error_code,
+                     NACL_ERROR_CODE_MAX, LOAD_STATUS_UNKNOWN);
 
   // Gather data to see if being installed changes load outcomes.
   const char* name = is_installed ? "NaCl.LoadStatus.SelLdr.InstalledApp" :
@@ -229,11 +256,12 @@ void HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code,
                      LOAD_STATUS_UNKNOWN);
 }
 
-void HistogramEnumerateManifestIsDataURI(bool is_data_uri) {
+void Plugin::HistogramEnumerateManifestIsDataURI(bool is_data_uri) {
   HistogramEnumerate("NaCl.Manifest.IsDataURI", is_data_uri, 2, -1);
 }
 
-void HistogramHTTPStatusCode(const std::string& name, int status) {
+void Plugin::HistogramHTTPStatusCode(const std::string& name,
+                                     int status) {
   // Log the status codes in rough buckets - 1XX, 2XX, etc.
   int sample = status / 100;
   // HTTP status codes only go up to 5XX, using "6" to indicate an internal
@@ -244,164 +272,125 @@ void HistogramHTTPStatusCode(const std::string& name, int status) {
   HistogramEnumerate(name, sample, 7, 6);
 }
 
-}  // namespace
-
-bool Plugin::EarlyInit(int argc, const char* argn[], const char* argv[]) {
-  PLUGIN_PRINTF(("Plugin::EarlyInit (instance=%p)\n",
-                 static_cast<void*>(this)));
-
-#ifdef NACL_OSX
-  // TODO(kochi): For crbug.com/102808, this is a stopgap solution for Lion
-  // until we expose IME API to .nexe. This disables any IME interference
-  // against key inputs, so you cannot use off-the-spot IME input for NaCl apps.
-  // This makes discrepancy among platforms and therefore we should remove
-  // this hack when IME API is made available.
-  // The default for non-Mac platforms is still off-the-spot IME mode.
-  pp::TextInputController(this).SetTextInputType(PP_TEXTINPUT_TYPE_NONE);
-#endif
-
-  // Remember the embed/object argn/argv pairs.
-  argn_ = new char*[argc];
-  argv_ = new char*[argc];
-  argc_ = 0;
-  for (int i = 0; i < argc; ++i) {
-    if (NULL != argn_ && NULL != argv_) {
-      argn_[argc_] = strdup(argn[i]);
-      argv_[argc_] = strdup(argv[i]);
-      if (NULL == argn_[argc_] || NULL == argv_[argc_]) {
-        // Give up on passing arguments.
-        free(argn_[argc_]);
-        free(argv_[argc_]);
-        continue;
-      }
-      ++argc_;
-    }
-  }
-  // TODO(sehr): this leaks strings if there is a subsequent failure.
-
-  // Set up the factory used to produce DescWrappers.
-  wrapper_factory_ = new nacl::DescWrapperFactory();
-  if (NULL == wrapper_factory_) {
-    return false;
-  }
-  PLUGIN_PRINTF(("Plugin::Init (wrapper_factory=%p)\n",
-                 static_cast<void*>(wrapper_factory_)));
-
-  PLUGIN_PRINTF(("Plugin::Init (return 1)\n"));
-  // Return success.
-  return true;
-}
-
-void Plugin::ShutDownSubprocesses() {
-  PLUGIN_PRINTF(("Plugin::ShutDownSubprocesses (this=%p)\n",
-                 static_cast<void*>(this)));
-  PLUGIN_PRINTF(("Plugin::ShutDownSubprocesses (%s)\n",
-                 main_subprocess_.detailed_description().c_str()));
-
-  // Shut down service runtime. This must be done before all other calls so
-  // they don't block forever when waiting for the upcall thread to exit.
-  main_subprocess_.Shutdown();
-
-  PLUGIN_PRINTF(("Plugin::ShutDownSubprocess (this=%p, return)\n",
-                 static_cast<void*>(this)));
-}
-
-void Plugin::StartSelLdrOnMainThread(int32_t pp_error,
-                                     ServiceRuntime* service_runtime,
-                                     const SelLdrStartParams& params,
-                                     bool* success) {
-  if (pp_error != PP_OK) {
-    PLUGIN_PRINTF(("Plugin::StartSelLdrOnMainThread: non-PP_OK arg "
-                   "-- SHOULD NOT HAPPEN\n"));
-    *success = false;
-    return;
-  }
-  *success = service_runtime->StartSelLdr(params);
-  // Signal outside of StartSelLdr here, so that the write to *success
-  // is done before signaling.
-  service_runtime->SignalStartSelLdrDone();
-}
-
-bool Plugin::LoadNaClModuleCommon(nacl::DescWrapper* wrapper,
-                                  NaClSubprocess* subprocess,
-                                  const Manifest* manifest,
-                                  bool should_report_uma,
-                                  const SelLdrStartParams& params,
-                                  const pp::CompletionCallback& init_done_cb,
-                                  const pp::CompletionCallback& crash_cb) {
-  ServiceRuntime* new_service_runtime =
-      new ServiceRuntime(this, manifest, should_report_uma, init_done_cb,
-                         crash_cb);
-  subprocess->set_service_runtime(new_service_runtime);
-  PLUGIN_PRINTF(("Plugin::LoadNaClModuleCommon (service_runtime=%p)\n",
-                 static_cast<void*>(new_service_runtime)));
-  if (NULL == new_service_runtime) {
-    params.error_info->SetReport(
-        ERROR_SEL_LDR_INIT,
-        "sel_ldr init failure " + subprocess->description());
-    return false;
-  }
+bool Plugin::LoadNaClModuleFromBackgroundThread(
+    nacl::DescWrapper* wrapper,
+    NaClSubprocess* subprocess,
+    const Manifest* manifest,
+    const SelLdrStartParams& params) {
+  CHECK(!pp::Module::Get()->core()->IsMainThread());
+  ServiceRuntime* service_runtime =
+      new ServiceRuntime(this, manifest, false,
+                         pp::BlockUntilComplete(), pp::BlockUntilComplete());
+  subprocess->set_service_runtime(service_runtime);
+  PLUGIN_PRINTF(("Plugin::LoadNaClModuleFromBackgroundThread "
+                 "(service_runtime=%p)\n",
+                 static_cast<void*>(service_runtime)));
 
   // Now start the SelLdr instance.  This must be created on the main thread.
-  pp::Core* core = pp::Module::Get()->core();
   bool service_runtime_started;
-  if (core->IsMainThread()) {
-    StartSelLdrOnMainThread(PP_OK, new_service_runtime, params,
-                            &service_runtime_started);
-  } else {
-    pp::CompletionCallback callback =
-        callback_factory_.NewCallback(&Plugin::StartSelLdrOnMainThread,
-                                      new_service_runtime, params,
-                                      &service_runtime_started);
-    core->CallOnMainThread(0, callback, 0);
-    new_service_runtime->WaitForSelLdrStart();
-  }
-  PLUGIN_PRINTF(("Plugin::LoadNaClModuleCommon (service_runtime_started=%d)\n",
+  pp::CompletionCallback sel_ldr_callback =
+      callback_factory_.NewCallback(&Plugin::SignalStartSelLdrDone,
+                                    &service_runtime_started,
+                                    service_runtime);
+  pp::CompletionCallback callback =
+      callback_factory_.NewCallback(&Plugin::StartSelLdrOnMainThread,
+                                    service_runtime, params,
+                                    sel_ldr_callback);
+  pp::Module::Get()->core()->CallOnMainThread(0, callback, 0);
+  service_runtime->WaitForSelLdrStart();
+  PLUGIN_PRINTF(("Plugin::LoadNaClModuleFromBackgroundThread "
+                 "(service_runtime_started=%d)\n",
                  service_runtime_started));
   if (!service_runtime_started) {
     return false;
   }
 
   // Now actually load the nexe, which can happen on a background thread.
-  bool nexe_loaded = new_service_runtime->LoadNexeAndStart(wrapper,
-                                                           params.error_info,
-                                                           crash_cb);
-  PLUGIN_PRINTF(("Plugin::LoadNaClModuleCommon (nexe_loaded=%d)\n",
+  bool nexe_loaded = service_runtime->LoadNexeAndStart(
+      wrapper, pp::BlockUntilComplete());
+  PLUGIN_PRINTF(("Plugin::LoadNaClModuleFromBackgroundThread "
+                 "(nexe_loaded=%d)\n",
                  nexe_loaded));
-  if (!nexe_loaded) {
-    return false;
-  }
-  return true;
+  return nexe_loaded;
 }
 
-bool Plugin::LoadNaClModule(nacl::DescWrapper* wrapper,
-                            ErrorInfo* error_info,
+void Plugin::StartSelLdrOnMainThread(int32_t pp_error,
+                                     ServiceRuntime* service_runtime,
+                                     const SelLdrStartParams& params,
+                                     pp::CompletionCallback callback) {
+  if (pp_error != PP_OK) {
+    PLUGIN_PRINTF(("Plugin::StartSelLdrOnMainThread: non-PP_OK arg "
+                   "-- SHOULD NOT HAPPEN\n"));
+    pp::Module::Get()->core()->CallOnMainThread(0, callback, pp_error);
+    return;
+  }
+  service_runtime->StartSelLdr(params, callback);
+}
+
+void Plugin::SignalStartSelLdrDone(int32_t pp_error,
+                                   bool* started,
+                                   ServiceRuntime* service_runtime) {
+  *started = (pp_error == PP_OK);
+  service_runtime->SignalStartSelLdrDone();
+}
+
+void Plugin::LoadNaClModule(nacl::DescWrapper* wrapper,
                             bool enable_dyncode_syscalls,
                             bool enable_exception_handling,
                             bool enable_crash_throttling,
                             const pp::CompletionCallback& init_done_cb,
                             const pp::CompletionCallback& crash_cb) {
+  nacl::scoped_ptr<nacl::DescWrapper> scoped_wrapper(wrapper);
+  CHECK(pp::Module::Get()->core()->IsMainThread());
   // Before forking a new sel_ldr process, ensure that we do not leak
   // the ServiceRuntime object for an existing subprocess, and that any
   // associated listener threads do not go unjoined because if they
   // outlive the Plugin object, they will not be memory safe.
   ShutDownSubprocesses();
   SelLdrStartParams params(manifest_base_url(),
-                           error_info,
                            true /* uses_irt */,
                            true /* uses_ppapi */,
                            enable_dev_interfaces_,
                            enable_dyncode_syscalls,
                            enable_exception_handling,
                            enable_crash_throttling);
-  if (!LoadNaClModuleCommon(wrapper, &main_subprocess_, manifest_.get(),
-                            true /* should_report_uma */,
-                            params, init_done_cb, crash_cb)) {
-    return false;
+  ErrorInfo error_info;
+  ServiceRuntime* service_runtime =
+      new ServiceRuntime(this, manifest_.get(), true, init_done_cb, crash_cb);
+  main_subprocess_.set_service_runtime(service_runtime);
+  PLUGIN_PRINTF(("Plugin::LoadNaClModule (service_runtime=%p)\n",
+                 static_cast<void*>(service_runtime)));
+  if (NULL == service_runtime) {
+    error_info.SetReport(
+        ERROR_SEL_LDR_INIT,
+        "sel_ldr init failure " + main_subprocess_.description());
+    ReportLoadError(error_info);
+    return;
   }
-  PLUGIN_PRINTF(("Plugin::LoadNaClModule (%s)\n",
-                 main_subprocess_.detailed_description().c_str()));
-  return true;
+
+  pp::CompletionCallback callback = callback_factory_.NewCallback(
+      &Plugin::LoadNexeAndStart, scoped_wrapper.release(), service_runtime,
+      crash_cb);
+  StartSelLdrOnMainThread(
+      static_cast<int32_t>(PP_OK), service_runtime, params, callback);
+}
+
+void Plugin::LoadNexeAndStart(int32_t pp_error,
+                              nacl::DescWrapper* wrapper,
+                              ServiceRuntime* service_runtime,
+                              const pp::CompletionCallback& crash_cb) {
+  nacl::scoped_ptr<nacl::DescWrapper> scoped_wrapper(wrapper);
+  if (pp_error != PP_OK)
+    return;
+
+  // Now actually load the nexe, which can happen on a background thread.
+  bool nexe_loaded = service_runtime->LoadNexeAndStart(wrapper, crash_cb);
+  PLUGIN_PRINTF(("Plugin::LoadNaClModule (nexe_loaded=%d)\n",
+                 nexe_loaded));
+  if (nexe_loaded) {
+    PLUGIN_PRINTF(("Plugin::LoadNaClModule (%s)\n",
+                   main_subprocess_.detailed_description().c_str()));
+  }
 }
 
 bool Plugin::LoadNaClModuleContinuationIntern(ErrorInfo* error_info) {
@@ -460,18 +449,14 @@ NaClSubprocess* Plugin::LoadHelperNaClModule(nacl::DescWrapper* wrapper,
   // TODO(jvoung): See if we still need the uses_ppapi variable, now that
   // LaunchSelLdr always happens on the main thread.
   SelLdrStartParams params(manifest_base_url(),
-                           error_info,
                            false /* uses_irt */,
                            false /* uses_ppapi */,
                            enable_dev_interfaces_,
                            false /* enable_dyncode_syscalls */,
                            false /* enable_exception_handling */,
                            true /* enable_crash_throttling */);
-  if (!LoadNaClModuleCommon(wrapper, nacl_subprocess.get(), manifest,
-                            false /* should_report_uma */,
-                            params,
-                            pp::BlockUntilComplete(),
-                            pp::BlockUntilComplete())) {
+  if (!LoadNaClModuleFromBackgroundThread(wrapper, nacl_subprocess.get(),
+                                          manifest, params)) {
     return NULL;
   }
   // We need not wait for the init_done callback.  We can block
@@ -499,43 +484,12 @@ NaClSubprocess* Plugin::LoadHelperNaClModule(nacl::DescWrapper* wrapper,
   return nacl_subprocess.release();
 }
 
-char* Plugin::LookupArgument(const char* key) {
-  char** keys = argn_;
-  for (int ii = 0, len = argc_; ii < len; ++ii) {
-    if (!strcmp(keys[ii], key)) {
-      return argv_[ii];
-    }
-  }
-  return NULL;
+std::string Plugin::LookupArgument(const std::string& key) const {
+  std::map<std::string, std::string>::const_iterator it = args_.find(key);
+  if (it != args_.end())
+    return it->second;
+  return std::string();
 }
-
-class ProgressEvent {
- public:
-  ProgressEvent(PP_NaClEventType event_type,
-                const nacl::string& url,
-                Plugin::LengthComputable length_computable,
-                uint64_t loaded_bytes,
-                uint64_t total_bytes) :
-    event_type_(event_type),
-    url_(url),
-    length_computable_(length_computable),
-    loaded_bytes_(loaded_bytes),
-    total_bytes_(total_bytes) { }
-  PP_NaClEventType event_type() const { return event_type_; }
-  const char* url() const { return url_.c_str(); }
-  Plugin::LengthComputable length_computable() const {
-    return length_computable_;
-  }
-  uint64_t loaded_bytes() const { return loaded_bytes_; }
-  uint64_t total_bytes() const { return total_bytes_; }
-
- private:
-  PP_NaClEventType event_type_;
-  nacl::string url_;
-  Plugin::LengthComputable length_computable_;
-  uint64_t loaded_bytes_;
-  uint64_t total_bytes_;
-};
 
 const char* const Plugin::kNaClMIMEType = "application/x-nacl";
 const char* const Plugin::kPnaclMIMEType = "application/x-pnacl";
@@ -566,14 +520,6 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
   PLUGIN_PRINTF(("Plugin::Init (argc=%" NACL_PRIu32 ")\n", argc));
   HistogramEnumerateOsArch(GetSandboxISA());
   init_time_ = NaClGetTimeOfDayMicroseconds();
-
-  ScriptablePlugin* scriptable_plugin = ScriptablePlugin::NewPlugin(this);
-  if (scriptable_plugin == NULL)
-    return false;
-
-  set_scriptable_plugin(scriptable_plugin);
-  PLUGIN_PRINTF(("Plugin::Init (scriptable_handle=%p)\n",
-                 static_cast<void*>(scriptable_plugin_)));
   url_util_ = pp::URLUtil_Dev::Get();
   if (url_util_ == NULL)
     return false;
@@ -585,17 +531,13 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
   if (status) {
     // Look for the developer attribute; if it's present, enable 'dev'
     // interfaces.
-    const char* dev_settings = LookupArgument(kDevAttribute);
-    enable_dev_interfaces_ = (dev_settings != NULL);
+    enable_dev_interfaces_ = args_.find(kDevAttribute) != args_.end();
 
-    const char* type_attr = LookupArgument(kTypeAttribute);
-    if (type_attr != NULL) {
-      mime_type_ = nacl::string(type_attr);
-      std::transform(mime_type_.begin(), mime_type_.end(), mime_type_.begin(),
-                     tolower);
-    }
+    mime_type_ = LookupArgument(kTypeAttribute);
+    std::transform(mime_type_.begin(), mime_type_.end(), mime_type_.begin(),
+                   tolower);
 
-    const char* manifest_url = LookupArgument(kSrcManifestAttribute);
+    std::string manifest_url;
     if (NexeIsContentHandler()) {
       // For content handlers 'src' will be the URL for the content
       // and 'nacl' will be the URL for the manifest.
@@ -603,6 +545,8 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
       // For content handlers the NEXE runs in the security context of the
       // content it is rendering and the NEXE itself appears to be a
       // cross-origin resource stored in a Chrome extension.
+    } else {
+      manifest_url = LookupArgument(kSrcManifestAttribute);
     }
     // Use the document URL as the base for resolving relative URLs to find the
     // manifest.  This takes into account the setting of <base> tags that
@@ -614,12 +558,12 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
       return false;
     }
     set_plugin_base_url(base_var.AsString());
-    if (manifest_url == NULL) {
+    if (manifest_url.empty()) {
       // TODO(sehr,polina): this should be a hard error when scripting
       // the src property is no longer allowed.
       PLUGIN_PRINTF(("Plugin::Init:"
                      " WARNING: no 'src' property, so no manifest loaded.\n"));
-      if (NULL != LookupArgument(kNaClManifestAttribute)) {
+      if (args_.find(kNaClManifestAttribute) != args_.end()) {
         PLUGIN_PRINTF(("Plugin::Init:"
                        " WARNING: 'nacl' property is incorrect. Use 'src'.\n"));
       }
@@ -627,7 +571,7 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
       // Issue a GET for the manifest_url.  The manifest file will be parsed to
       // determine the nexe URL.
       // Sets src property to full manifest URL.
-      RequestNaClManifest(manifest_url);
+      RequestNaClManifest(manifest_url.c_str());
     }
   }
 
@@ -636,11 +580,7 @@ bool Plugin::Init(uint32_t argc, const char* argn[], const char* argv[]) {
 }
 
 Plugin::Plugin(PP_Instance pp_instance)
-    : pp::InstancePrivate(pp_instance),
-      scriptable_plugin_(NULL),
-      argc_(-1),
-      argn_(NULL),
-      argv_(NULL),
+    : pp::Instance(pp_instance),
       main_subprocess_("main subprocess", NULL, NULL),
       nexe_error_reported_(false),
       wrapper_factory_(NULL),
@@ -651,7 +591,8 @@ Plugin::Plugin(PP_Instance pp_instance)
       nexe_size_(0),
       time_of_last_progress_event_(0),
       exit_status_(-1),
-      nacl_interface_(NULL) {
+      nacl_interface_(NULL),
+      uma_interface_(this) {
   PLUGIN_PRINTF(("Plugin::Plugin (this=%p, pp_instance=%"
                  NACL_PRId32 ")\n", static_cast<void*>(this), pp_instance));
   callback_factory_.Initialize(this);
@@ -669,9 +610,8 @@ Plugin::Plugin(PP_Instance pp_instance)
 Plugin::~Plugin() {
   int64_t shutdown_start = NaClGetTimeOfDayMicroseconds();
 
-  PLUGIN_PRINTF(("Plugin::~Plugin (this=%p, scriptable_plugin=%p)\n",
-                 static_cast<void*>(this),
-                 static_cast<void*>(scriptable_plugin())));
+  PLUGIN_PRINTF(("Plugin::~Plugin (this=%p)\n",
+                 static_cast<void*>(this)));
   // Destroy the coordinator while the rest of the data is still there
   pnacl_coordinator_.reset(NULL);
 
@@ -681,10 +621,13 @@ Plugin::~Plugin() {
         (shutdown_start - ready_time_) / NACL_MICROS_PER_MILLI);
   }
 
+  for (std::map<nacl::string, NaClFileInfoAutoCloser*>::iterator it =
+           url_file_info_map_.begin();
+       it != url_file_info_map_.end();
+       ++it) {
+    delete it->second;
+  }
   url_downloaders_.erase(url_downloaders_.begin(), url_downloaders_.end());
-
-  ScriptablePlugin* scriptable_plugin_ = scriptable_plugin();
-  ScriptablePlugin::Unref(&scriptable_plugin_);
 
   // ShutDownSubprocesses shuts down the main subprocess, which shuts
   // down the main ServiceRuntime object, which kills the subprocess.
@@ -713,8 +656,6 @@ Plugin::~Plugin() {
   ShutDownSubprocesses();
 
   delete wrapper_factory_;
-  delete[] argv_;
-  delete[] argn_;
 
   HistogramTimeSmall(
       "NaCl.Perf.ShutdownTime.Total",
@@ -731,18 +672,6 @@ bool Plugin::HandleDocumentLoad(const pp::URLLoader& url_loader) {
   // We don't know if the plugin will handle the document load, but return
   // true in order to give it a chance to respond once the proxy is started.
   return true;
-}
-
-pp::Var Plugin::GetInstanceObject() {
-  PLUGIN_PRINTF(("Plugin::GetInstanceObject (this=%p)\n",
-                 static_cast<void*>(this)));
-  // The browser will unref when it discards the var for this object.
-  ScriptablePlugin* handle =
-      static_cast<ScriptablePlugin*>(scriptable_plugin()->AddRef());
-  pp::Var* handle_var = handle->var();
-  PLUGIN_PRINTF(("Plugin::GetInstanceObject (handle=%p, handle_var=%p)\n",
-                 static_cast<void*>(handle), static_cast<void*>(handle_var)));
-  return *handle_var;  // make a copy
 }
 
 void Plugin::HistogramStartupTimeSmall(const std::string& name, float dt) {
@@ -764,16 +693,17 @@ void Plugin::HistogramStartupTimeMedium(const std::string& name, float dt) {
 void Plugin::NexeFileDidOpen(int32_t pp_error) {
   PLUGIN_PRINTF(("Plugin::NexeFileDidOpen (pp_error=%" NACL_PRId32 ")\n",
                  pp_error));
-  struct NaClFileInfo info = nexe_downloader_.GetFileInfo();
+  NaClFileInfo tmp_info(nexe_downloader_.GetFileInfo());
+  NaClFileInfoAutoCloser info(&tmp_info);
   PLUGIN_PRINTF(("Plugin::NexeFileDidOpen (file_desc=%" NACL_PRId32 ")\n",
-                 info.desc));
+                 info.get_desc()));
   HistogramHTTPStatusCode(
       is_installed_ ?
           "NaCl.HttpStatusCodeClass.Nexe.InstalledApp" :
           "NaCl.HttpStatusCodeClass.Nexe.NotInstalledApp",
       nexe_downloader_.status_code());
   ErrorInfo error_info;
-  if (pp_error != PP_OK || info.desc == NACL_NO_FILE_DESC) {
+  if (pp_error != PP_OK || info.get_desc() == NACL_NO_FILE_DESC) {
     if (pp_error == PP_ERROR_ABORTED) {
       ReportLoadAbort();
     } else if (pp_error == PP_ERROR_NOACCESS) {
@@ -786,7 +716,7 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
     }
     return;
   }
-  int32_t file_desc_ok_to_close = DUP(info.desc);
+  int32_t file_desc_ok_to_close = DUP(info.get_desc());
   if (file_desc_ok_to_close == NACL_NO_FILE_DESC) {
     error_info.SetReport(ERROR_NEXE_FH_DUP,
                          "could not duplicate loaded file handle.");
@@ -820,17 +750,13 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
   nacl::scoped_ptr<nacl::DescWrapper>
       wrapper(wrapper_factory()->MakeFileDesc(file_desc_ok_to_close, O_RDONLY));
   NaClLog(4, "NexeFileDidOpen: invoking LoadNaClModule\n");
-  bool was_successful = LoadNaClModule(
-      wrapper.get(), &error_info,
+  LoadNaClModule(
+      wrapper.release(),
       true, /* enable_dyncode_syscalls */
       true, /* enable_exception_handling */
       false, /* enable_crash_throttling */
       callback_factory_.NewCallback(&Plugin::NexeFileDidOpenContinuation),
       callback_factory_.NewCallback(&Plugin::NexeDidCrash));
-
-  if (!was_successful) {
-    ReportLoadError(error_info);
-  }
 }
 
 void Plugin::NexeFileDidOpenContinuation(int32_t pp_error) {
@@ -941,18 +867,13 @@ void Plugin::BitcodeDidTranslate(int32_t pp_error) {
   // Inform JavaScript that we successfully translated the bitcode to a nexe.
   nacl::scoped_ptr<nacl::DescWrapper>
       wrapper(pnacl_coordinator_.get()->ReleaseTranslatedFD());
-  ErrorInfo error_info;
-  bool was_successful = LoadNaClModule(
-      wrapper.get(), &error_info,
+  LoadNaClModule(
+      wrapper.release(),
       false, /* enable_dyncode_syscalls */
       false, /* enable_exception_handling */
       true, /* enable_crash_throttling */
       callback_factory_.NewCallback(&Plugin::BitcodeDidTranslateContinuation),
       callback_factory_.NewCallback(&Plugin::NexeDidCrash));
-
-  if (!was_successful) {
-    ReportLoadError(error_info);
-  }
 }
 
 void Plugin::BitcodeDidTranslateContinuation(int32_t pp_error) {
@@ -1001,7 +922,6 @@ void Plugin::NaClManifestBufferReady(int32_t pp_error) {
   PLUGIN_PRINTF(("Plugin::NaClManifestBufferReady (pp_error=%"
                  NACL_PRId32 ")\n", pp_error));
   ErrorInfo error_info;
-  set_manifest_url(nexe_downloader_.url());
   if (pp_error != PP_OK) {
     if (pp_error == PP_ERROR_ABORTED) {
       ReportLoadAbort();
@@ -1045,13 +965,11 @@ void Plugin::NaClManifestFileDidOpen(int32_t pp_error) {
           "NaCl.HttpStatusCodeClass.Manifest.NotInstalledApp",
       nexe_downloader_.status_code());
   ErrorInfo error_info;
-  // The manifest file was successfully opened.  Set the src property on the
-  // plugin now, so that the full url is available to error handlers.
-  set_manifest_url(nexe_downloader_.url());
-  struct NaClFileInfo info = nexe_downloader_.GetFileInfo();
+  NaClFileInfo tmp_info(nexe_downloader_.GetFileInfo());
+  NaClFileInfoAutoCloser info(&tmp_info);
   PLUGIN_PRINTF(("Plugin::NaClManifestFileDidOpen (file_desc=%"
-                 NACL_PRId32 ")\n", info.desc));
-  if (pp_error != PP_OK || info.desc == NACL_NO_FILE_DESC) {
+                 NACL_PRId32 ")\n", info.get_desc()));
+  if (pp_error != PP_OK || info.get_desc() == NACL_NO_FILE_DESC) {
     if (pp_error == PP_ERROR_ABORTED) {
       ReportLoadAbort();
     } else if (pp_error == PP_ERROR_NOACCESS) {
@@ -1067,7 +985,7 @@ void Plugin::NaClManifestFileDidOpen(int32_t pp_error) {
   }
   // SlurpFile closes the file descriptor after reading (or on error).
   // Duplicate our file descriptor since it will be handled by the browser.
-  int dup_file_desc = DUP(info.desc);
+  int dup_file_desc = DUP(info.get_desc());
   nacl::string json_buffer;
   file_utils::StatusCode status = file_utils::SlurpFile(
       dup_file_desc, json_buffer, kNaClManifestMaxFileBytes);
@@ -1175,7 +1093,6 @@ void Plugin::RequestNaClManifest(const nacl::string& url) {
   is_installed_ = GetUrlScheme(nmf_resolved_url.AsString()) ==
       SCHEME_CHROME_EXTENSION;
   set_manifest_base_url(nmf_resolved_url.AsString());
-  set_manifest_url(url);
   // Inform JavaScript that a load is starting.
   set_nacl_ready_state(OPENED);
   EnqueueProgressEvent(PP_NACL_EVENT_LOADSTART);
@@ -1231,25 +1148,33 @@ void Plugin::UrlDidOpenForStreamAsFile(int32_t pp_error,
                  static_cast<void*>(url_downloader)));
   url_downloaders_.erase(url_downloader);
   nacl::scoped_ptr<FileDownloader> scoped_url_downloader(url_downloader);
-  struct NaClFileInfo info = scoped_url_downloader->GetFileInfo();
+  NaClFileInfo tmp_info(scoped_url_downloader->GetFileInfo());
+  NaClFileInfoAutoCloser *info = new NaClFileInfoAutoCloser(&tmp_info);
 
   if (pp_error != PP_OK) {
     PP_RunCompletionCallback(&callback, pp_error);
-  } else if (info.desc > NACL_NO_FILE_DESC) {
+    delete info;
+  } else if (info->get_desc() > NACL_NO_FILE_DESC) {
+    std::map<nacl::string, NaClFileInfoAutoCloser*>::iterator it =
+        url_file_info_map_.find(url_downloader->url_to_open());
+    if (it != url_file_info_map_.end()) {
+      delete it->second;
+    }
     url_file_info_map_[url_downloader->url_to_open()] = info;
     PP_RunCompletionCallback(&callback, PP_OK);
   } else {
     PP_RunCompletionCallback(&callback, PP_ERROR_FAILED);
+    delete info;
   }
 }
 
 struct NaClFileInfo Plugin::GetFileInfo(const nacl::string& url) {
   struct NaClFileInfo info;
   memset(&info, 0, sizeof(info));
-  std::map<nacl::string, struct NaClFileInfo>::iterator it =
+  std::map<nacl::string, NaClFileInfoAutoCloser*>::iterator it =
       url_file_info_map_.find(url);
   if (it != url_file_info_map_.end()) {
-    info = it->second;
+    info = it->second->get();
     info.desc = DUP(info.desc);
   } else {
     info.desc = -1;
@@ -1309,7 +1234,6 @@ void Plugin::ReportLoadSuccess(LengthComputable length_computable,
 }
 
 
-// TODO(ncbray): report UMA stats
 void Plugin::ReportLoadError(const ErrorInfo& error_info) {
   PLUGIN_PRINTF(("Plugin::ReportLoadError (error='%s')\n",
                  error_info.message().c_str()));
@@ -1411,6 +1335,11 @@ const FileDownloader* Plugin::FindFileDownloader(
   return file_downloader;
 }
 
+void Plugin::ReportSelLdrLoadStatus(int status) {
+  HistogramEnumerateSelLdrLoadStatus(static_cast<NaClErrorCode>(status),
+                                     is_installed_);
+}
+
 void Plugin::EnqueueProgressEvent(PP_NaClEventType event_type) {
   EnqueueProgressEvent(event_type,
                        NACL_NO_URL,
@@ -1433,53 +1362,13 @@ void Plugin::EnqueueProgressEvent(PP_NaClEventType event_type,
                  loaded_bytes,
                  total_bytes));
 
-  progress_events_.push(new ProgressEvent(event_type,
-                                          url,
-                                          length_computable,
-                                          loaded_bytes,
-                                          total_bytes));
-  // Note that using callback_factory_ in this way is not thread safe.
-  // If/when EnqueueProgressEvent is callable from another thread, this
-  // will need to change.
-  pp::CompletionCallback callback =
-      callback_factory_.NewCallback(&Plugin::DispatchProgressEvent);
-  pp::Core* core = pp::Module::Get()->core();
-  core->CallOnMainThread(0, callback, 0);
-}
-
-void Plugin::ReportSelLdrLoadStatus(int status) {
-  HistogramEnumerateSelLdrLoadStatus(static_cast<NaClErrorCode>(status),
-                                     is_installed_);
-}
-
-void Plugin::DispatchProgressEvent(int32_t result) {
-  PLUGIN_PRINTF(("Plugin::DispatchProgressEvent (result=%"
-                 NACL_PRId32 ")\n", result));
-  if (result < 0) {
-    return;
-  }
-  if (progress_events_.empty()) {
-    PLUGIN_PRINTF(("Plugin::DispatchProgressEvent: no pending events\n"));
-    return;
-  }
-  nacl::scoped_ptr<ProgressEvent> event(progress_events_.front());
-  progress_events_.pop();
-  PLUGIN_PRINTF(("Plugin::DispatchProgressEvent ("
-                 "event_type='%d', url='%s', length_computable=%d, "
-                 "loaded=%" NACL_PRIu64 ", total=%" NACL_PRIu64 ")\n",
-                 static_cast<int>(event->event_type()),
-                 event->url(),
-                 static_cast<int>(event->length_computable()),
-                 event->loaded_bytes(),
-                 event->total_bytes()));
-
   nacl_interface_->DispatchEvent(
       pp_instance(),
-      event->event_type(),
-      pp::Var(event->url()).pp_var(),
-      event->length_computable() == LENGTH_IS_COMPUTABLE ? PP_TRUE : PP_FALSE,
-      event->loaded_bytes(),
-      event->total_bytes());
+      event_type,
+      url.c_str(),
+      length_computable == LENGTH_IS_COMPUTABLE ? PP_TRUE : PP_FALSE,
+      loaded_bytes,
+      total_bytes);
 }
 
 bool Plugin::OpenURLFast(const nacl::string& url,

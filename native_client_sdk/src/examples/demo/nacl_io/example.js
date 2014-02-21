@@ -135,6 +135,16 @@ function fseekResult(filehandle, filepos) {
       '.');
 }
 
+function fflush(e) {
+  var filehandle = document.getElementById('fflushHandle').value;
+  nacl_module.postMessage(makeCall('fflush', filehandle));
+}
+
+function fflushResult(filehandle, filepos) {
+  var filename = filehandle_map[filehandle];
+  common.logMessage('flushed ' + filename + '.');
+}
+
 function stat(e) {
   var filename = document.getElementById('statFilename').value;
   nacl_module.postMessage(makeCall('stat', filename));
@@ -218,6 +228,24 @@ function getcwd(e) {
 
 function getcwdResult(dirname) {
   common.logMessage('getcwd: ' + dirname + '.');
+}
+
+function getaddrinfo(e) {
+  var name = document.getElementById('getaddrinfoName').value;
+  var family = document.getElementById('getaddrinfoFamily').value;
+  nacl_module.postMessage(makeCall('getaddrinfo', name, family));
+}
+
+function getaddrinfoResult(name, addr_type) {
+  common.logMessage('getaddrinfo returned successfully');
+  common.logMessage('ai_cannonname = ' + name + '.');
+  var count = 1;
+  for (var i = 1; i < arguments.length; i+=2) {
+    var msg = 'Address number ' + count + ' = ' + arguments[i] +
+              ' (' + arguments[i+1] + ')';
+    common.logMessage(msg);
+    count += 1;
+  }
 }
 
 function gethostbyname(e) {

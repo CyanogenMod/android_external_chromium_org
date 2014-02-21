@@ -14,7 +14,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/local_discovery/cloud_print_account_manager.h"
 #include "chrome/browser/local_discovery/privet_confirm_api_flow.h"
 #include "chrome/browser/local_discovery/privet_constants.h"
 #include "chrome/browser/local_discovery/privet_device_lister_impl.h"
@@ -56,11 +55,7 @@ namespace local_discovery {
 namespace {
 const char kPrivetAutomatedClaimURLFormat[] = "%s/confirm?token=%s";
 
-const int kInitialRequeryTimeSeconds = 1;
-const int kMaxRequeryTimeSeconds = 2; // Time for last requery
-
 int g_num_visible = 0;
-
 }  // namespace
 
 LocalDiscoveryUIHandler::LocalDiscoveryUIHandler() : is_visible_(false) {
@@ -143,7 +138,7 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
   }
 
   privet_lister_->Start();
-  SendQuery(kInitialRequeryTimeSeconds);
+  privet_lister_->DiscoverNewDevices(false);
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
   StartCloudPrintConnector();
@@ -192,11 +187,14 @@ void LocalDiscoveryUIHandler::HandleRequestPrinterList(
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
 
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+
   cloud_print_printer_list_.reset(new CloudPrintPrinterList(
       profile->GetRequestContext(),
       GetCloudPrintBaseUrl(),
       token_service,
-      token_service->GetPrimaryAccountId(),
+      signin_manager->GetAuthenticatedAccountId(),
       this));
   cloud_print_printer_list_->Start();
 }
@@ -278,10 +276,17 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterClaimToken(
     return;
   }
 
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  if (!signin_manager) {
+    SendRegisterError();
+    return;
+  }
+
   confirm_api_call_flow_.reset(new PrivetConfirmApiCallFlow(
       profile->GetRequestContext(),
       token_service,
-      token_service->GetPrimaryAccountId(),
+      signin_manager->GetAuthenticatedAccountId(),
       automated_claim_url,
       base::Bind(&LocalDiscoveryUIHandler::OnConfirmDone,
                  base::Unretained(this))));
@@ -293,7 +298,7 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterError(
     const std::string& action,
     PrivetRegisterOperation::FailureReason reason,
     int printer_http_code,
-    const DictionaryValue* json) {
+    const base::DictionaryValue* json) {
   std::string error;
 
   if (reason == PrivetRegisterOperation::FAILURE_JSON_ERROR &&
@@ -383,7 +388,7 @@ void LocalDiscoveryUIHandler::DeviceRemoved(const std::string& name) {
 
 void LocalDiscoveryUIHandler::DeviceCacheFlushed() {
   web_ui()->CallJavascriptFunction("local_discovery.onDeviceCacheFlushed");
-  SendQuery(kInitialRequeryTimeSeconds);
+  privet_lister_->DiscoverNewDevices(false);
 }
 
 void LocalDiscoveryUIHandler::OnCloudPrintPrinterListReady() {
@@ -506,24 +511,6 @@ void LocalDiscoveryUIHandler::CheckUserLoggedIn() {
                                    logged_in_value);
 }
 
-void LocalDiscoveryUIHandler::ScheduleQuery(int timeout_seconds) {
-  if (timeout_seconds <= kMaxRequeryTimeSeconds) {
-    requery_callback_.Reset(base::Bind(&LocalDiscoveryUIHandler::SendQuery,
-                                       base::Unretained(this),
-                                       timeout_seconds * 2));
-
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        requery_callback_.callback(),
-        base::TimeDelta::FromSeconds(timeout_seconds));
-  }
-}
-
-void LocalDiscoveryUIHandler::SendQuery(int next_timeout_seconds) {
-  privet_lister_->DiscoverNewDevices(false);
-  ScheduleQuery(next_timeout_seconds);
-}
-
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
 void LocalDiscoveryUIHandler::StartCloudPrintConnector() {
   Profile* profile = Profile::FromWebUI(web_ui());
@@ -556,9 +543,10 @@ void LocalDiscoveryUIHandler::OnCloudPrintPrefsChanged() {
     SetupCloudPrintConnectorSection();
 }
 
-void LocalDiscoveryUIHandler::ShowCloudPrintSetupDialog(const ListValue* args) {
+void LocalDiscoveryUIHandler::ShowCloudPrintSetupDialog(
+    const base::ListValue* args) {
   content::RecordAction(
-      content::UserMetricsAction("Options_EnableCloudPrintProxy"));
+      base::UserMetricsAction("Options_EnableCloudPrintProxy"));
   // Open the connector enable page in the current tab.
   Profile* profile = Profile::FromWebUI(web_ui());
   content::OpenURLParams params(
@@ -569,9 +557,9 @@ void LocalDiscoveryUIHandler::ShowCloudPrintSetupDialog(const ListValue* args) {
 }
 
 void LocalDiscoveryUIHandler::HandleDisableCloudPrintConnector(
-    const ListValue* args) {
+    const base::ListValue* args) {
   content::RecordAction(
-      content::UserMetricsAction("Options_DisableCloudPrintProxy"));
+      base::UserMetricsAction("Options_DisableCloudPrintProxy"));
   CloudPrintProxyServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()))->
       DisableForUser();
 }
@@ -606,9 +594,9 @@ void LocalDiscoveryUIHandler::SetupCloudPrintConnectorSection() {
     label_str = l10n_util::GetStringFUTF16(
         IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_LABEL,
         l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT),
-        UTF8ToUTF16(email));
+        base::UTF8ToUTF16(email));
   }
-  StringValue label(label_str);
+  base::StringValue label(label_str);
 
   web_ui()->CallJavascriptFunction(
       "local_discovery.setupCloudPrintConnectorSection", disabled, label,

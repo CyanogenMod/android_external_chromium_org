@@ -8,7 +8,7 @@
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
@@ -75,11 +75,11 @@ void ChangeFilePathPref(int index,
 
 void ChangeListPref(int index,
                     const char* pref_name,
-                    const ListValue& new_value) {
+                    const base::ListValue& new_value) {
   {
     ListPrefUpdate update(GetPrefs(index), pref_name);
-    ListValue* list = update.Get();
-    for (ListValue::const_iterator it = new_value.begin();
+    base::ListValue* list = update.Get();
+    for (base::ListValue::const_iterator it = new_value.begin();
          it != new_value.end();
          ++it) {
       list->Append((*it)->DeepCopy());
@@ -88,8 +88,8 @@ void ChangeListPref(int index,
 
   if (test()->use_verifier()) {
     ListPrefUpdate update_verifier(GetVerifierPrefs(), pref_name);
-    ListValue* list_verifier = update_verifier.Get();
-    for (ListValue::const_iterator it = new_value.begin();
+    base::ListValue* list_verifier = update_verifier.Get();
+    for (base::ListValue::const_iterator it = new_value.begin();
          it != new_value.end();
          ++it) {
       list_verifier->Append((*it)->DeepCopy());
@@ -200,7 +200,7 @@ bool FilePathPrefMatches(const char* pref_name) {
 }
 
 bool ListPrefMatches(const char* pref_name) {
-  const ListValue* reference_value;
+  const base::ListValue* reference_value;
   if (test()->use_verifier()) {
     reference_value = GetVerifierPrefs()->GetList(pref_name);
   } else {

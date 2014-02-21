@@ -11,6 +11,7 @@
 #include <X11/Xutil.h>
 #undef FocusIn
 #undef FocusOut
+#undef RootWindow
 #include <map>
 
 #include "ash/shell.h"
@@ -19,13 +20,16 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chromeos/ime/candidate_window.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
+#include "chromeos/ime/composition_text.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/ibus_keymap.h"
-#include "chromeos/ime/ibus_text.h"
 #include "chromeos/ime/input_method_manager.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#include "ui/base/ime/candidate_window.h"
 #include "ui/events/event.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/keyboard/keyboard_controller.h"
 
@@ -33,27 +37,18 @@ namespace chromeos {
 const char* kErrorNotActive = "IME is not active";
 const char* kErrorWrongContext = "Context is not active";
 const char* kCandidateNotFound = "Candidate not found";
-const char* kEngineBusPrefix = "org.freedesktop.IBus.";
 
 namespace {
 
-// Notifies InputContextHandler that the preedit is changed.
-void UpdatePreedit(const IBusText& ibus_text,
-                   uint32 cursor_pos,
-                   bool is_visible) {
+// Notifies InputContextHandler that the composition is changed.
+void UpdateComposition(const CompositionText& composition_text,
+                       uint32 cursor_pos,
+                       bool is_visible) {
   IBusInputContextHandlerInterface* input_context =
-      IBusBridge::Get()->GetInputContextHandler();
+      IMEBridge::Get()->GetInputContextHandler();
   if (input_context)
-    input_context->UpdatePreeditText(ibus_text, cursor_pos, is_visible);
-}
-
-// Notifies CandidateWindowHandler that the auxilary text is changed.
-// Auxilary text is usually footer text.
-void UpdateAuxiliaryText(const std::string& text, bool is_visible) {
-  IBusPanelCandidateWindowHandlerInterface* candidate_window =
-      IBusBridge::Get()->GetCandidateWindowHandler();
-  if (candidate_window)
-    candidate_window->UpdateAuxiliaryText(text, is_visible);
+    input_context->UpdateCompositionText(
+        composition_text, cursor_pos, is_visible);
 }
 
 }  // namespace
@@ -63,22 +58,15 @@ InputMethodEngine::InputMethodEngine()
       active_(false),
       context_id_(0),
       next_context_id_(1),
-      aux_text_visible_(false),
       observer_(NULL),
-      preedit_text_(new IBusText()),
-      preedit_cursor_(0),
-      candidate_window_(new input_method::CandidateWindow()),
-      window_visible_(false) {}
+      composition_text_(new CompositionText()),
+      composition_cursor_(0),
+      candidate_window_(new ui::CandidateWindow()),
+      window_visible_(false),
+      sent_key_event_(NULL) {}
 
 InputMethodEngine::~InputMethodEngine() {
-  input_method::InputMethodManager::Get()->RemoveInputMethodExtension(ibus_id_);
-
-  // Do not unset engine before removing input method extension, above
-  // function may call reset function of engine object.
-  //
-  // TODO(komatsu): Move this logic to InputMethodManager.
-  if (IBusBridge::Get()->GetEngineHandler() == this)
-    IBusBridge::Get()->SetEngineHandler(NULL);
+  input_method::InputMethodManager::Get()->RemoveInputMethodExtension(imm_id_);
 }
 
 void InputMethodEngine::Initialize(
@@ -92,32 +80,48 @@ void InputMethodEngine::Initialize(
     const GURL& input_view) {
   DCHECK(observer) << "Observer must not be null.";
 
+  // TODO(komatsu): It is probably better to set observer out of Initialize.
   observer_ = observer;
   engine_id_ = engine_id;
+  extension_id_ = extension_id;
 
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
-  ComponentExtensionIMEManager* comp_ext_ime_manager
-      = manager->GetComponentExtensionIMEManager();
+  ComponentExtensionIMEManager* comp_ext_ime_manager =
+      manager->GetComponentExtensionIMEManager();
 
   if (comp_ext_ime_manager->IsInitialized() &&
       comp_ext_ime_manager->IsWhitelistedExtension(extension_id)) {
-    ibus_id_ = comp_ext_ime_manager->GetId(extension_id, engine_id);
+    imm_id_ = comp_ext_ime_manager->GetId(extension_id, engine_id);
   } else {
-    ibus_id_ = extension_ime_util::GetInputMethodID(extension_id, engine_id);
+    imm_id_ = extension_ime_util::GetInputMethodID(extension_id, engine_id);
   }
 
   input_view_url_ = input_view;
+  descriptor_ = input_method::InputMethodDescriptor(
+      imm_id_,
+      engine_name,
+      std::string(), // TODO(uekawa): Set short name.
+      layouts,
+      languages,
+      false,  // is_login_keyboard
+      options_page,
+      input_view);
 
-  manager->AddInputMethodExtension(ibus_id_, engine_name, layouts, languages,
-                                   options_page, input_view, this);
-  IBusBridge::Get()->InitEngineHandler(ibus_id_, this);
+  // TODO(komatsu): It is probably better to call AddInputMethodExtension
+  // out of Initialize.
+  manager->AddInputMethodExtension(imm_id_, this);
+}
+
+const input_method::InputMethodDescriptor& InputMethodEngine::GetDescriptor()
+    const {
+  return descriptor_;
 }
 
 void InputMethodEngine::StartIme() {
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
-  if (manager && ibus_id_ == manager->GetCurrentInputMethod().id())
+  if (manager && imm_id_ == manager->GetCurrentInputMethod().id())
     Enable();
 }
 
@@ -138,24 +142,24 @@ bool InputMethodEngine::SetComposition(
     return false;
   }
 
-  preedit_cursor_ = cursor;
-  preedit_text_.reset(new IBusText());
-  preedit_text_->set_text(text);
+  composition_cursor_ = cursor;
+  composition_text_.reset(new CompositionText());
+  composition_text_->set_text(base::UTF8ToUTF16(text));
 
-  preedit_text_->set_selection_start(selection_start);
-  preedit_text_->set_selection_end(selection_end);
+  composition_text_->set_selection_start(selection_start);
+  composition_text_->set_selection_end(selection_end);
 
   // TODO: Add support for displaying selected text in the composition string.
   for (std::vector<SegmentInfo>::const_iterator segment = segments.begin();
        segment != segments.end(); ++segment) {
-    IBusText::UnderlineAttribute underline;
+    CompositionText::UnderlineAttribute underline;
 
     switch (segment->style) {
       case SEGMENT_STYLE_UNDERLINE:
-        underline.type = IBusText::IBUS_TEXT_UNDERLINE_SINGLE;
+        underline.type = CompositionText::COMPOSITION_TEXT_UNDERLINE_SINGLE;
         break;
       case SEGMENT_STYLE_DOUBLE_UNDERLINE:
-        underline.type = IBusText::IBUS_TEXT_UNDERLINE_DOUBLE;
+        underline.type = CompositionText::COMPOSITION_TEXT_UNDERLINE_DOUBLE;
         break;
       default:
         continue;
@@ -163,11 +167,11 @@ bool InputMethodEngine::SetComposition(
 
     underline.start_index = segment->start;
     underline.end_index = segment->end;
-    preedit_text_->mutable_underline_attributes()->push_back(underline);
+    composition_text_->mutable_underline_attributes()->push_back(underline);
   }
 
   // TODO(nona): Makes focus out mode configuable, if necessary.
-  UpdatePreedit(*preedit_text_, preedit_cursor_, true);
+  UpdateComposition(*composition_text_, composition_cursor_, true);
   return true;
 }
 
@@ -182,9 +186,9 @@ bool InputMethodEngine::ClearComposition(int context_id,
     return false;
   }
 
-  preedit_cursor_ = 0;
-  preedit_text_.reset(new IBusText());
-  UpdatePreedit(*preedit_text_, preedit_cursor_, false);
+  composition_cursor_ = 0;
+  composition_text_.reset(new CompositionText());
+  UpdateComposition(*composition_text_, composition_cursor_, false);
   return true;
 }
 
@@ -200,7 +204,52 @@ bool InputMethodEngine::CommitText(int context_id, const char* text,
     return false;
   }
 
-  IBusBridge::Get()->GetInputContextHandler()->CommitText(text);
+  IMEBridge::Get()->GetInputContextHandler()->CommitText(text);
+  return true;
+}
+
+bool InputMethodEngine::SendKeyEvents(
+    int context_id,
+    const std::vector<KeyboardEvent>& events) {
+  if (!active_) {
+    return false;
+  }
+  if (context_id != context_id_ || context_id_ == -1) {
+    return false;
+  }
+
+  aura::WindowEventDispatcher* dispatcher =
+      ash::Shell::GetPrimaryRootWindow()->GetDispatcher();
+
+  for (size_t i = 0; i < events.size(); ++i) {
+    const KeyboardEvent& event = events[i];
+    const ui::EventType type =
+        (event.type == "keyup") ? ui::ET_KEY_RELEASED : ui::ET_KEY_PRESSED;
+
+    // KeyboardCodeFromXKyeSym assumes US keyboard layout.
+    ui::KeycodeConverter* conv = ui::KeycodeConverter::GetInstance();
+    DCHECK(conv);
+
+     // DOM code (KeyA) -> XKB -> XKeySym (XK_A) -> KeyboardCode (VKEY_A)
+    const uint16 native_keycode =
+        conv->CodeToNativeKeycode(event.code.c_str());
+    const uint xkeysym = ui::DefaultXKeysymFromHardwareKeycode(native_keycode);
+    const ui::KeyboardCode key_code = ui::KeyboardCodeFromXKeysym(xkeysym);
+
+    const std::string code = event.code;
+    int flags = ui::EF_NONE;
+    flags |= event.alt_key   ? ui::EF_ALT_DOWN       : ui::EF_NONE;
+    flags |= event.ctrl_key  ? ui::EF_CONTROL_DOWN   : ui::EF_NONE;
+    flags |= event.shift_key ? ui::EF_SHIFT_DOWN     : ui::EF_NONE;
+    flags |= event.caps_lock ? ui::EF_CAPS_LOCK_DOWN : ui::EF_NONE;
+
+    ui::KeyEvent ui_event(type, key_code, code, flags, false /* is_char */);
+    base::AutoReset<const ui::KeyEvent*> reset_sent_key(&sent_key_event_,
+                                                        &ui_event);
+    ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&ui_event);
+    if (details.dispatcher_destroyed)
+      break;
+  }
   return true;
 }
 
@@ -213,7 +262,7 @@ void InputMethodEngine::SetCandidateWindowProperty(
     const CandidateWindowProperty& property) {
   // Type conversion from InputMethodEngineInterface::CandidateWindowProperty to
   // CandidateWindow::CandidateWindowProperty defined in chromeos/ime/.
-  input_method::CandidateWindow::CandidateWindowProperty dest_property;
+  ui::CandidateWindow::CandidateWindowProperty dest_property;
   dest_property.page_size = property.page_size;
   dest_property.is_cursor_visible = property.is_cursor_visible;
   dest_property.is_vertical = property.is_vertical;
@@ -221,12 +270,15 @@ void InputMethodEngine::SetCandidateWindowProperty(
       property.show_window_at_composition;
   dest_property.cursor_position =
       candidate_window_->GetProperty().cursor_position;
+  dest_property.auxiliary_text = property.auxiliary_text;
+  dest_property.is_auxiliary_text_visible = property.is_auxiliary_text_visible;
+
   candidate_window_->SetProperty(dest_property);
   candidate_window_property_ = property;
 
   if (active_) {
     IBusPanelCandidateWindowHandlerInterface* cw_handler =
-        IBusBridge::Get()->GetCandidateWindowHandler();
+        IMEBridge::Get()->GetCandidateWindowHandler();
     if (cw_handler)
       cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   }
@@ -241,26 +293,10 @@ bool InputMethodEngine::SetCandidateWindowVisible(bool visible,
 
   window_visible_ = visible;
   IBusPanelCandidateWindowHandlerInterface* cw_handler =
-    IBusBridge::Get()->GetCandidateWindowHandler();
+    IMEBridge::Get()->GetCandidateWindowHandler();
   if (cw_handler)
     cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   return true;
-}
-
-void InputMethodEngine::SetCandidateWindowAuxText(const char* text) {
-  aux_text_.assign(text);
-  if (active_) {
-    // Should not show auxiliary text if the whole window visibility is false.
-    UpdateAuxiliaryText(aux_text_, window_visible_ && aux_text_visible_);
-  }
-}
-
-void InputMethodEngine::SetCandidateWindowAuxTextVisible(bool visible) {
-  aux_text_visible_ = visible;
-  if (active_) {
-    // Should not show auxiliary text if the whole window visibility is false.
-    UpdateAuxiliaryText(aux_text_, window_visible_ && aux_text_visible_);
-  }
 }
 
 bool InputMethodEngine::SetCandidates(
@@ -282,12 +318,12 @@ bool InputMethodEngine::SetCandidates(
   candidate_window_->mutable_candidates()->clear();
   for (std::vector<Candidate>::const_iterator ix = candidates.begin();
        ix != candidates.end(); ++ix) {
-    input_method::CandidateWindow::Entry entry;
-    entry.value = ix->value;
-    entry.label = ix->label;
-    entry.annotation = ix->annotation;
-    entry.description_title = ix->usage.title;
-    entry.description_body = ix->usage.body;
+    ui::CandidateWindow::Entry entry;
+    entry.value = base::UTF8ToUTF16(ix->value);
+    entry.label = base::UTF8ToUTF16(ix->label);
+    entry.annotation = base::UTF8ToUTF16(ix->annotation);
+    entry.description_title = base::UTF8ToUTF16(ix->usage.title);
+    entry.description_body = base::UTF8ToUTF16(ix->usage.body);
 
     // Store a mapping from the user defined ID to the candidate index.
     candidate_indexes_[ix->id] = candidate_ids_.size();
@@ -297,7 +333,7 @@ bool InputMethodEngine::SetCandidates(
   }
   if (active_) {
     IBusPanelCandidateWindowHandlerInterface* cw_handler =
-      IBusBridge::Get()->GetCandidateWindowHandler();
+      IMEBridge::Get()->GetCandidateWindowHandler();
     if (cw_handler)
       cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   }
@@ -324,7 +360,7 @@ bool InputMethodEngine::SetCursorPosition(int context_id, int candidate_id,
 
   candidate_window_->set_cursor_position(position->second);
   IBusPanelCandidateWindowHandlerInterface* cw_handler =
-    IBusBridge::Get()->GetCandidateWindowHandler();
+    IMEBridge::Get()->GetCandidateWindowHandler();
   if (cw_handler)
     cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   return true;
@@ -386,15 +422,24 @@ bool InputMethodEngine::DeleteSurroundingText(int context_id,
   // TODO(nona): Return false if there is ongoing composition.
 
   IBusInputContextHandlerInterface* input_context =
-      IBusBridge::Get()->GetInputContextHandler();
+      IMEBridge::Get()->GetInputContextHandler();
   if (input_context)
     input_context->DeleteSurroundingText(offset, number_of_chars);
 
   return true;
 }
 
+void InputMethodEngine::HideInputView() {
+  keyboard::KeyboardController* keyboard_controller =
+    ash::Shell::GetInstance()->keyboard_controller();
+  if (keyboard_controller) {
+    keyboard_controller->HideKeyboard(
+        keyboard::KeyboardController::HIDE_REASON_MANUAL);
+  }
+}
+
 void InputMethodEngine::FocusIn(
-    const IBusEngineHandlerInterface::InputContext& input_context) {
+    const IMEEngineHandlerInterface::InputContext& input_context) {
   focused_ = true;
   if (!active_)
     return;
@@ -439,8 +484,8 @@ void InputMethodEngine::FocusOut() {
 void InputMethodEngine::Enable() {
   active_ = true;
   observer_->OnActivate(engine_id_);
-  IBusEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
-                                                   ui::TEXT_INPUT_MODE_DEFAULT);
+  IMEEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
+                                                  ui::TEXT_INPUT_MODE_DEFAULT);
   FocusIn(context);
 
   keyboard::KeyboardController* keyboard_controller =
@@ -517,6 +562,14 @@ void InputMethodEngine::ProcessKeyEvent(
 
   KeyboardEvent ext_event;
   GetExtensionKeyboardEventFromKeyEvent(key_event, &ext_event);
+
+  // If the given key event is equal to the key event sent by
+  // SendKeyEvents, this engine ID is propagated to the extension IME.
+  // Note, this check relies on that ui::KeyEvent is propagated as
+  // reference without copying.
+  if (&key_event == sent_key_event_)
+    ext_event.extension_id = extension_id_;
+
   observer_->OnKeyEvent(
       engine_id_,
       ext_event,

@@ -4,9 +4,9 @@
 
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 
+#include "apps/app_window.h"
+#include "apps/app_window_registry.h"
 #include "apps/saved_files_service.h"
-#include "apps/shell_window.h"
-#include "apps/shell_window_registry.h"
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -20,7 +20,6 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/apps/directory_access_confirmation_dialog.h"
@@ -33,6 +32,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
@@ -49,9 +49,13 @@
 #include "base/mac/foundation_util.h"
 #endif
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#endif
+
 using apps::SavedFileEntry;
 using apps::SavedFilesService;
-using apps::ShellWindow;
+using apps::AppWindow;
 using fileapi::IsolatedContext;
 
 const char kInvalidCallingPage[] = "Invalid calling page. This function can't "
@@ -191,7 +195,7 @@ bool GetFileTypesFromAcceptOption(
       std::string extension = *iter;
       StringToLowerASCII(&extension);
 #if defined(OS_WIN)
-      extension_set.insert(UTF8ToWide(*iter));
+      extension_set.insert(base::UTF8ToWide(*iter));
 #else
       extension_set.insert(*iter);
 #endif
@@ -203,7 +207,7 @@ bool GetFileTypesFromAcceptOption(
     return false;
 
   if (accept_option.description.get())
-    *description = UTF8ToUTF16(*accept_option.description.get());
+    *description = base::UTF8ToUTF16(*accept_option.description.get());
   else if (description_id)
     *description = l10n_util::GetStringUTF16(description_id);
 
@@ -542,17 +546,17 @@ void FileSystemChooseEntryFunction::ShowPicker(
   // platform-app only.
   content::WebContents* web_contents = NULL;
   if (extension_->is_platform_app()) {
-    apps::ShellWindowRegistry* registry =
-        apps::ShellWindowRegistry::Get(GetProfile());
+    apps::AppWindowRegistry* registry =
+        apps::AppWindowRegistry::Get(GetProfile());
     DCHECK(registry);
-    ShellWindow* shell_window = registry->GetShellWindowForRenderViewHost(
-        render_view_host());
-    if (!shell_window) {
+    AppWindow* app_window =
+        registry->GetAppWindowForRenderViewHost(render_view_host());
+    if (!app_window) {
       error_ = kInvalidCallingPage;
       SendResponse(false);
       return;
     }
-    web_contents = shell_window->web_contents();
+    web_contents = app_window->web_contents();
   } else {
     web_contents = GetAssociatedWebContents();
   }
@@ -663,17 +667,17 @@ void FileSystemChooseEntryFunction::FilesSelected(
   if (is_directory_) {
     // Get the WebContents for the app window to be the parent window of the
     // confirmation dialog if necessary.
-    apps::ShellWindowRegistry* registry =
-        apps::ShellWindowRegistry::Get(GetProfile());
+    apps::AppWindowRegistry* registry =
+        apps::AppWindowRegistry::Get(GetProfile());
     DCHECK(registry);
-    ShellWindow* shell_window = registry->GetShellWindowForRenderViewHost(
-        render_view_host());
-    if (!shell_window) {
+    AppWindow* app_window =
+        registry->GetAppWindowForRenderViewHost(render_view_host());
+    if (!app_window) {
       error_ = kInvalidCallingPage;
       SendResponse(false);
       return;
     }
-    content::WebContents* web_contents = shell_window->web_contents();
+    content::WebContents* web_contents = app_window->web_contents();
 
     content::BrowserThread::PostTask(
         content::BrowserThread::FILE,
@@ -698,7 +702,13 @@ void FileSystemChooseEntryFunction::ConfirmDirectoryAccessOnFileThread(
     const std::vector<base::FilePath>& paths,
     content::WebContents* web_contents) {
   DCHECK_EQ(paths.size(), 1u);
+#if defined(OS_CHROMEOS)
+  const base::FilePath path =
+      drive::util::IsUnderDriveMountPoint(paths[0]) ? paths[0] :
+          base::MakeAbsoluteFilePath(paths[0]);
+#else
   const base::FilePath path = base::MakeAbsoluteFilePath(paths[0]);
+#endif
   if (path.empty()) {
     content::BrowserThread::PostTask(
         content::BrowserThread::UI,
@@ -731,7 +741,7 @@ void FileSystemChooseEntryFunction::ConfirmDirectoryAccessOnFileThread(
           base::Bind(
               CreateDirectoryAccessConfirmationDialog,
               app_file_handler_util::HasFileSystemWritePermission(extension_),
-              UTF8ToUTF16(extension_->name()),
+              base::UTF8ToUTF16(extension_->name()),
               web_contents,
               base::Bind(
                   &FileSystemChooseEntryFunction::OnDirectoryAccessConfirmed,

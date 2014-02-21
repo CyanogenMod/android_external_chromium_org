@@ -15,19 +15,13 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/password_manager/password_form_data.h"
-#include "chrome/browser/password_manager/password_store_change.h"
-#include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/password_manager/password_store_x.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_profile.h"
+#include "components/password_manager/core/browser/password_form_data.h"
+#include "components/password_manager/core/browser/password_store_change.h"
+#include "components/password_manager/core/browser/password_store_consumer.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -47,36 +41,14 @@ namespace {
 
 class MockPasswordStoreConsumer : public PasswordStoreConsumer {
  public:
-  MOCK_METHOD2(OnPasswordStoreRequestDone,
-               void(CancelableRequestProvider::Handle,
-                    const std::vector<PasswordForm*>&));
   MOCK_METHOD1(OnGetPasswordStoreResults,
                void(const std::vector<PasswordForm*>&));
 };
 
-// This class will add and remove a mock notification observer from
-// the DB thread.
-class DBThreadObserverHelper {
+class MockPasswordStoreObserver : public PasswordStore::Observer {
  public:
-  DBThreadObserverHelper() {}
-
-  ~DBThreadObserverHelper() {
-    registrar_.RemoveAll();
-  }
-
-  void Init(PasswordStore* password_store) {
-    registrar_.Add(&observer_,
-                   chrome::NOTIFICATION_LOGINS_CHANGED,
-                   content::Source<PasswordStore>(password_store));
-  }
-
-  content::MockNotificationObserver& observer() {
-    return observer_;
-  }
-
- private:
-  content::NotificationRegistrar registrar_;
-  content::MockNotificationObserver observer_;
+  MOCK_METHOD1(OnLoginsChanged,
+               void(const PasswordStoreChangeList& changes));
 };
 
 class FailingBackend : public PasswordStoreX::NativeBackend {
@@ -253,8 +225,6 @@ class PasswordStoreXTest : public testing::TestWithParam<BackendType> {
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    profile_.reset(new TestingProfile());
-
     login_db_.reset(new LoginDatabase());
     ASSERT_TRUE(login_db_->Init(temp_dir_.path().Append("login_test")));
   }
@@ -277,7 +247,6 @@ class PasswordStoreXTest : public testing::TestWithParam<BackendType> {
   content::TestBrowserThreadBundle thread_bundle_;
 
   scoped_ptr<LoginDatabase> login_db_;
-  scoped_ptr<TestingProfile> profile_;
   base::ScopedTempDir temp_dir_;
 };
 
@@ -287,8 +256,9 @@ ACTION(STLDeleteElements0) {
 
 TEST_P(PasswordStoreXTest, Notifications) {
   scoped_refptr<PasswordStoreX> store(
-      new PasswordStoreX(login_db_.release(),
-                         profile_.get(),
+      new PasswordStoreX(base::MessageLoopProxy::current(),
+                         base::MessageLoopProxy::current(),
+                         login_db_.release(),
                          GetBackend()));
   store->Init();
 
@@ -305,19 +275,16 @@ TEST_P(PasswordStoreXTest, Notifications) {
     true, false, 1 };
   scoped_ptr<PasswordForm> form(CreatePasswordFormFromData(form_data));
 
-  DBThreadObserverHelper helper;
-  helper.Init(store.get());
+  MockPasswordStoreObserver observer;
+  store->AddObserver(&observer);
 
   const PasswordStoreChange expected_add_changes[] = {
     PasswordStoreChange(PasswordStoreChange::ADD, *form),
   };
 
   EXPECT_CALL(
-      helper.observer(),
-      Observe(int(chrome::NOTIFICATION_LOGINS_CHANGED),
-              content::Source<PasswordStore>(store.get()),
-              Property(&content::Details<const PasswordStoreChangeList>::ptr,
-                       Pointee(ElementsAreArray(expected_add_changes)))));
+      observer,
+      OnLoginsChanged(ElementsAreArray(expected_add_changes)));
 
   // Adding a login should trigger a notification.
   store->AddLogin(*form);
@@ -327,18 +294,15 @@ TEST_P(PasswordStoreXTest, Notifications) {
   base::RunLoop().RunUntilIdle();
 
   // Change the password.
-  form->password_value = WideToUTF16(L"a different password");
+  form->password_value = base::ASCIIToUTF16("a different password");
 
   const PasswordStoreChange expected_update_changes[] = {
     PasswordStoreChange(PasswordStoreChange::UPDATE, *form),
   };
 
   EXPECT_CALL(
-      helper.observer(),
-      Observe(int(chrome::NOTIFICATION_LOGINS_CHANGED),
-              content::Source<PasswordStore>(store.get()),
-              Property(&content::Details<const PasswordStoreChangeList>::ptr,
-                       Pointee(ElementsAreArray(expected_update_changes)))));
+      observer,
+      OnLoginsChanged(ElementsAreArray(expected_update_changes)));
 
   // Updating the login with the new password should trigger a notification.
   store->UpdateLogin(*form);
@@ -351,11 +315,8 @@ TEST_P(PasswordStoreXTest, Notifications) {
   };
 
   EXPECT_CALL(
-      helper.observer(),
-      Observe(int(chrome::NOTIFICATION_LOGINS_CHANGED),
-              content::Source<PasswordStore>(store.get()),
-              Property(&content::Details<const PasswordStoreChangeList>::ptr,
-                       Pointee(ElementsAreArray(expected_delete_changes)))));
+      observer,
+      OnLoginsChanged(ElementsAreArray(expected_delete_changes)));
 
   // Deleting the login should trigger a notification.
   store->RemoveLogin(*form);
@@ -363,8 +324,9 @@ TEST_P(PasswordStoreXTest, Notifications) {
   // Wait for PasswordStore to execute.
   base::RunLoop().RunUntilIdle();
 
-  // Public in PasswordStore, protected in PasswordStoreX.
-  static_cast<PasswordStore*>(store.get())->ShutdownOnUIThread();
+  store->RemoveObserver(&observer);
+
+  store->Shutdown();
 }
 
 TEST_P(PasswordStoreXTest, NativeMigration) {
@@ -377,7 +339,7 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
   // Get the initial size of the login DB file, before we populate it.
   // This will be used later to make sure it gets back to this size.
   const base::FilePath login_db_file = temp_dir_.path().Append("login_test");
-  base::PlatformFileInfo db_file_start_info;
+  base::File::Info db_file_start_info;
   ASSERT_TRUE(base::GetFileInfo(login_db_file, &db_file_start_info));
 
   LoginDatabase* login_db = login_db_.get();
@@ -393,14 +355,15 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
   }
 
   // Get the new size of the login DB file. We expect it to be larger.
-  base::PlatformFileInfo db_file_full_info;
+  base::File::Info db_file_full_info;
   ASSERT_TRUE(base::GetFileInfo(login_db_file, &db_file_full_info));
   EXPECT_GT(db_file_full_info.size, db_file_start_info.size);
 
   // Initializing the PasswordStore shouldn't trigger a native migration (yet).
   scoped_refptr<PasswordStoreX> store(
-      new PasswordStoreX(login_db_.release(),
-                         profile_.get(),
+      new PasswordStoreX(base::MessageLoopProxy::current(),
+                         base::MessageLoopProxy::current(),
+                         login_db_.release(),
                          GetBackend()));
   store->Init();
 
@@ -408,18 +371,17 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
 
   // The autofillable forms should have been migrated to the native backend.
   EXPECT_CALL(consumer,
-      OnPasswordStoreRequestDone(_,
+      OnGetPasswordStoreResults(
           ContainsAllPasswordForms(expected_autofillable)))
-      .WillOnce(WithArg<1>(STLDeleteElements0()));
+      .WillOnce(WithArg<0>(STLDeleteElements0()));
 
   store->GetAutofillableLogins(&consumer);
   base::RunLoop().RunUntilIdle();
 
   // The blacklisted forms should have been migrated to the native backend.
   EXPECT_CALL(consumer,
-      OnPasswordStoreRequestDone(_,
-          ContainsAllPasswordForms(expected_blacklisted)))
-      .WillOnce(WithArg<1>(STLDeleteElements0()));
+      OnGetPasswordStoreResults(ContainsAllPasswordForms(expected_blacklisted)))
+      .WillOnce(WithArg<0>(STLDeleteElements0()));
 
   store->GetBlacklistLogins(&consumer);
   base::RunLoop().RunUntilIdle();
@@ -467,7 +429,7 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
     // recreated. We approximate checking for this by checking that the file
     // size is equal to the size before we populated it, even though it was
     // larger after populating it.
-    base::PlatformFileInfo db_file_end_info;
+    base::File::Info db_file_end_info;
     ASSERT_TRUE(base::GetFileInfo(login_db_file, &db_file_end_info));
     EXPECT_EQ(db_file_start_info.size, db_file_end_info.size);
   }
@@ -475,8 +437,7 @@ TEST_P(PasswordStoreXTest, NativeMigration) {
   STLDeleteElements(&expected_autofillable);
   STLDeleteElements(&expected_blacklisted);
 
-  // Public in PasswordStore, protected in PasswordStoreX.
-  static_cast<PasswordStore*>(store.get())->ShutdownOnUIThread();
+  store->Shutdown();
 }
 
 INSTANTIATE_TEST_CASE_P(NoBackend,

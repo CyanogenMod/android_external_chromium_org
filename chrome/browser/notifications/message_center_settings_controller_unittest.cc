@@ -5,7 +5,6 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/metrics/field_trial.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/notifications/message_center_settings_controller.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -14,7 +13,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "components/variations/entropy_provider.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/message_center/notifier_settings.h"
@@ -75,11 +73,6 @@ class MessageCenterSettingsControllerChromeOSTest
 
     // Enabling multi profile requires several flags to be set.
     CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
-    field_trial_list_.reset(new base::FieldTrialList(
-        new metrics::SHA1EntropyProvider("42")));
-    base::FieldTrialList::CreateTrialsFromString(
-        "ChromeOSUseMultiProfiles/Enable/",
-        base::FieldTrialList::ACTIVATE_TRIALS);
 
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
     user_manager_enabler_.reset(
@@ -110,7 +103,6 @@ class MessageCenterSettingsControllerChromeOSTest
   }
 
   scoped_ptr<chromeos::ScopedUserManagerEnabler> user_manager_enabler_;
-  scoped_ptr<base::FieldTrialList> field_trial_list_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageCenterSettingsControllerChromeOSTest);
 };
@@ -124,24 +116,26 @@ TEST_F(MessageCenterSettingsControllerTest, NotifierGroups) {
 
   EXPECT_EQ(controller()->GetNotifierGroupCount(), 2u);
 
-  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name, UTF8ToUTF16("Profile-1"));
+  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name,
+            base::UTF8ToUTF16("Profile-1"));
   EXPECT_EQ(controller()->GetNotifierGroupAt(0).index, 0u);
 
-  EXPECT_EQ(controller()->GetNotifierGroupAt(1).name, UTF8ToUTF16("Profile-2"));
+  EXPECT_EQ(controller()->GetNotifierGroupAt(1).name,
+            base::UTF8ToUTF16("Profile-2"));
   EXPECT_EQ(controller()->GetNotifierGroupAt(1).index, 1u);
 
   EXPECT_EQ(controller()->GetActiveNotifierGroup().name,
-            UTF8ToUTF16("Profile-1"));
+            base::UTF8ToUTF16("Profile-1"));
   EXPECT_EQ(controller()->GetActiveNotifierGroup().index, 0u);
 
   controller()->SwitchToNotifierGroup(1);
   EXPECT_EQ(controller()->GetActiveNotifierGroup().name,
-            UTF8ToUTF16("Profile-2"));
+            base::UTF8ToUTF16("Profile-2"));
   EXPECT_EQ(controller()->GetActiveNotifierGroup().index, 1u);
 
   controller()->SwitchToNotifierGroup(0);
   EXPECT_EQ(controller()->GetActiveNotifierGroup().name,
-            UTF8ToUTF16("Profile-1"));
+            base::UTF8ToUTF16("Profile-1"));
 }
 #else
 TEST_F(MessageCenterSettingsControllerChromeOSTest, NotifierGroups) {
@@ -151,21 +145,23 @@ TEST_F(MessageCenterSettingsControllerChromeOSTest, NotifierGroups) {
 
   EXPECT_EQ(controller()->GetNotifierGroupCount(), 1u);
 
-  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name, UTF8ToUTF16("Profile-1"));
+  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name,
+            base::UTF8ToUTF16("Profile-1"));
   EXPECT_EQ(controller()->GetNotifierGroupAt(0).index, 0u);
 
   SwitchActiveUser("Profile-2");
   EXPECT_EQ(controller()->GetNotifierGroupCount(), 1u);
-  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name, UTF8ToUTF16("Profile-2"));
+  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name,
+            base::UTF8ToUTF16("Profile-2"));
   EXPECT_EQ(controller()->GetNotifierGroupAt(0).index, 1u);
 
   SwitchActiveUser("Profile-1");
   EXPECT_EQ(controller()->GetNotifierGroupCount(), 1u);
-  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name, UTF8ToUTF16("Profile-1"));
+  EXPECT_EQ(controller()->GetNotifierGroupAt(0).name,
+            base::UTF8ToUTF16("Profile-1"));
   EXPECT_EQ(controller()->GetNotifierGroupAt(0).index, 0u);
 }
 #endif
 
 // TODO(mukai): write a test case to reproduce the actual guest session scenario
-// in ChromeOS -- no profiles in the profile_info_cache but GetDefaultProfile
-// returns a new one.
+// in ChromeOS -- no profiles in the profile_info_cache.

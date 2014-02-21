@@ -4,6 +4,8 @@
 
 #include "ui/snapshot/snapshot.h"
 
+#include "base/bind.h"
+#include "base/test/test_simple_task_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_helper.h"
@@ -12,6 +14,7 @@
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/gfx_paths.h"
 #include "ui/gfx/image/image.h"
@@ -22,7 +25,10 @@
 
 namespace ui {
 namespace {
-const SkColor kPaintColor = SK_ColorRED;
+
+SkColor GetExpectedColorForPoint(int x, int y) {
+  return SkColorSetRGB(std::min(x, 255), std::min(y, 255), 0);
+}
 
 // Paint simple rectangle on the specified aura window.
 class TestPaintingWindowDelegate : public aura::test::TestWindowDelegate {
@@ -35,7 +41,10 @@ class TestPaintingWindowDelegate : public aura::test::TestWindowDelegate {
   }
 
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
-    canvas->FillRect(gfx::Rect(window_size_), kPaintColor);
+    for (int y = 0; y < window_size_.height(); ++y) {
+      for (int x = 0; x < window_size_.width(); ++x)
+        canvas->FillRect(gfx::Rect(x, y, 1, 1), GetExpectedColorForPoint(x, y));
+    }
   }
 
  private:
@@ -44,16 +53,25 @@ class TestPaintingWindowDelegate : public aura::test::TestWindowDelegate {
   DISALLOW_COPY_AND_ASSIGN(TestPaintingWindowDelegate);
 };
 
-size_t GetFailedPixelsCount(const gfx::Image& image) {
+size_t GetFailedPixelsCountWithScaleFactor(const gfx::Image& image,
+                                           int scale_factor) {
   const SkBitmap* bitmap = image.ToSkBitmap();
   uint32* bitmap_data = reinterpret_cast<uint32*>(
       bitmap->pixelRef()->pixels());
   size_t result = 0;
-  for (int i = 0; i < bitmap->width() * bitmap->height(); ++i) {
-    if (static_cast<SkColor>(bitmap_data[i]) != kPaintColor)
-      ++result;
+  for (int y = 0; y < bitmap->height(); y += scale_factor) {
+    for (int x = 0; x < bitmap->width(); x += scale_factor) {
+      if (static_cast<SkColor>(bitmap_data[x + y * bitmap->width()]) !=
+          GetExpectedColorForPoint(x / scale_factor, y / scale_factor)) {
+        ++result;
+      }
+    }
   }
   return result;
+}
+
+size_t GetFailedPixelsCount(const gfx::Image& image) {
+  return GetFailedPixelsCountWithScaleFactor(image, 1);
 }
 
 }  // namespace
@@ -67,7 +85,9 @@ class SnapshotAuraTest : public testing::Test {
     testing::Test::SetUp();
     helper_.reset(
         new aura::test::AuraTestHelper(base::MessageLoopForUI::current()));
-    helper_->SetUp();
+    // Snapshot test tests real drawing and readback, so needs a real context.
+    bool allow_test_contexts = false;
+    helper_->SetUp(allow_test_contexts);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -85,8 +105,8 @@ class SnapshotAuraTest : public testing::Test {
   aura::TestScreen* test_screen() { return helper_->test_screen(); }
 
   void WaitForDraw() {
-    dispatcher()->compositor()->ScheduleDraw();
-    ui::DrawWaiterForTest::Wait(dispatcher()->compositor());
+    dispatcher()->host()->compositor()->ScheduleDraw();
+    ui::DrawWaiterForTest::Wait(dispatcher()->host()->compositor());
   }
 
   void SetupTestWindow(const gfx::Rect& window_bounds) {
@@ -96,14 +116,57 @@ class SnapshotAuraTest : public testing::Test {
   }
 
   gfx::Image GrabSnapshotForTestWindow() {
-    std::vector<unsigned char> png_representation;
-    gfx::Rect local_bounds(test_window_->bounds().size());
-    ui::GrabWindowSnapshot(test_window(), &png_representation, local_bounds);
-    return gfx::Image::CreateFrom1xPNGBytes(
-      &(png_representation[0]), png_representation.size());
+    gfx::Rect source_rect(test_window_->bounds().size());
+
+    scoped_refptr<base::TestSimpleTaskRunner> task_runner(
+        new base::TestSimpleTaskRunner());
+    scoped_refptr<SnapshotHolder> holder(new SnapshotHolder);
+    ui::GrabWindowSnapshotAsync(
+        test_window(),
+        source_rect,
+        task_runner,
+        base::Bind(&SnapshotHolder::SnapshotCallback, holder));
+
+    // Wait for copy response.
+    WaitForDraw();
+    // Run internal snapshot callback to scale/rotate response image.
+    task_runner->RunUntilIdle();
+    // Run SnapshotHolder callback.
+    helper_->RunAllPendingInMessageLoop();
+
+    if (holder->completed())
+      return holder->image();
+
+    // Callback never called.
+    NOTREACHED();
+    return gfx::Image();
   }
 
  private:
+  class SnapshotHolder : public base::RefCountedThreadSafe<SnapshotHolder> {
+   public:
+    SnapshotHolder() : completed_(false) {}
+
+    void SnapshotCallback(scoped_refptr<base::RefCountedBytes> png_data) {
+      DCHECK(!completed_);
+      image_ = gfx::Image::CreateFrom1xPNGBytes(&(png_data->data()[0]),
+                                                png_data->size());
+      completed_ = true;
+    }
+    bool completed() const {
+      return completed_;
+    };
+    const gfx::Image& image() const { return image_; }
+
+   private:
+    friend class base::RefCountedThreadSafe<SnapshotHolder>;
+
+    virtual ~SnapshotHolder() {}
+
+    gfx::Image image_;
+    bool completed_;
+  };
+
   scoped_ptr<aura::test::AuraTestHelper> helper_;
   scoped_ptr<aura::Window> test_window_;
   scoped_ptr<TestPaintingWindowDelegate> delegate_;
@@ -128,8 +191,7 @@ TEST_F(SnapshotAuraTest, PartialBounds) {
   WaitForDraw();
 
   gfx::Image snapshot = GrabSnapshotForTestWindow();
-  EXPECT_EQ(test_bounds.size().ToString(),
-            snapshot.Size().ToString());
+  EXPECT_EQ(test_bounds.size().ToString(), snapshot.Size().ToString());
   EXPECT_EQ(0u, GetFailedPixelsCount(snapshot));
 }
 
@@ -141,8 +203,7 @@ TEST_F(SnapshotAuraTest, Rotated) {
   WaitForDraw();
 
   gfx::Image snapshot = GrabSnapshotForTestWindow();
-  EXPECT_EQ(test_bounds.size().ToString(),
-            snapshot.Size().ToString());
+  EXPECT_EQ(test_bounds.size().ToString(), snapshot.Size().ToString());
   EXPECT_EQ(0u, GetFailedPixelsCount(snapshot));
 }
 
@@ -156,7 +217,6 @@ TEST_F(SnapshotAuraTest, UIScale) {
 
   // Snapshot always captures the physical pixels.
   gfx::SizeF snapshot_size(test_bounds.size());
-  snapshot_size.Scale(1.0f / kUIScale);
 
   gfx::Image snapshot = GrabSnapshotForTestWindow();
   EXPECT_EQ(gfx::ToRoundedSize(snapshot_size).ToString(),
@@ -178,7 +238,7 @@ TEST_F(SnapshotAuraTest, DeviceScaleFactor) {
   gfx::Image snapshot = GrabSnapshotForTestWindow();
   EXPECT_EQ(gfx::ToRoundedSize(snapshot_size).ToString(),
             snapshot.Size().ToString());
-  EXPECT_EQ(0u, GetFailedPixelsCount(snapshot));
+  EXPECT_EQ(0u, GetFailedPixelsCountWithScaleFactor(snapshot, 2));
 }
 
 TEST_F(SnapshotAuraTest, RotateAndUIScale) {
@@ -192,7 +252,6 @@ TEST_F(SnapshotAuraTest, RotateAndUIScale) {
 
   // Snapshot always captures the physical pixels.
   gfx::SizeF snapshot_size(test_bounds.size());
-  snapshot_size.Scale(1.0f / kUIScale);
 
   gfx::Image snapshot = GrabSnapshotForTestWindow();
   EXPECT_EQ(gfx::ToRoundedSize(snapshot_size).ToString(),
@@ -212,12 +271,12 @@ TEST_F(SnapshotAuraTest, RotateAndUIScaleAndScaleFactor) {
 
   // Snapshot always captures the physical pixels.
   gfx::SizeF snapshot_size(test_bounds.size());
-  snapshot_size.Scale(2.0f / kUIScale);
+  snapshot_size.Scale(2.0f);
 
   gfx::Image snapshot = GrabSnapshotForTestWindow();
   EXPECT_EQ(gfx::ToRoundedSize(snapshot_size).ToString(),
             snapshot.Size().ToString());
-  EXPECT_EQ(0u, GetFailedPixelsCount(snapshot));
+  EXPECT_EQ(0u, GetFailedPixelsCountWithScaleFactor(snapshot, 2));
 }
 
 }  // namespace ui

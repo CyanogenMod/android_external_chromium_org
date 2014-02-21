@@ -50,7 +50,7 @@ DoInitializeOptions::DoInitializeOptions(
     base::MessageLoop* sync_loop,
     SyncBackendRegistrar* registrar,
     const syncer::ModelSafeRoutingInfo& routing_info,
-    const std::vector<syncer::ModelSafeWorker*>& workers,
+    const std::vector<scoped_refptr<syncer::ModelSafeWorker> >& workers,
     const scoped_refptr<syncer::ExtensionsActivity>& extensions_activity,
     const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
     const GURL& service_url,
@@ -261,15 +261,6 @@ void SyncBackendHostCore::OnBootstrapTokenUpdated(
              type);
 }
 
-void SyncBackendHostCore::OnStopSyncingPermanently() {
-  if (!sync_loop_)
-    return;
-  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  host_.Call(
-      FROM_HERE,
-      &SyncBackendHostImpl::HandleStopSyncingPermanentlyOnFrontendLoop);
-}
-
 void SyncBackendHostCore::OnEncryptedTypesChanged(
     syncer::ModelTypeSet encrypted_types,
     bool encrypt_everything) {
@@ -315,6 +306,14 @@ void SyncBackendHostCore::OnActionableError(
       FROM_HERE,
       &SyncBackendHostImpl::HandleActionableErrorEventOnFrontendLoop,
       sync_error);
+}
+
+void SyncBackendHostCore::OnMigrationRequested(syncer::ModelTypeSet types) {
+  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
+  host_.Call(
+      FROM_HERE,
+      &SyncBackendHostImpl::HandleMigrationRequestedOnFrontendLoop,
+      types);
 }
 
 void SyncBackendHostCore::DoOnInvalidatorStateChange(

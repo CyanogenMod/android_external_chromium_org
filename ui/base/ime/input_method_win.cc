@@ -25,14 +25,13 @@ InputMethodWin::InputMethodWin(internal::InputMethodDelegate* delegate,
                                HWND toplevel_window_handle)
     : active_(false),
       toplevel_window_handle_(toplevel_window_handle),
-      direction_(base::i18n::UNKNOWN_DIRECTION),
       pending_requested_direction_(base::i18n::UNKNOWN_DIRECTION),
       accept_carriage_return_(false) {
   SetDelegate(delegate);
 }
 
 void InputMethodWin::Init(bool focused) {
-  // Gets the initial input locale and text direction information.
+  // Gets the initial input locale.
   OnInputLocaleChanged();
 
   InputMethodBase::Init(focused);
@@ -79,16 +78,11 @@ bool InputMethodWin::DispatchKeyEvent(const ui::KeyEvent& event) {
 void InputMethodWin::OnInputLocaleChanged() {
   active_ = imm32_manager_.SetInputLanguage();
   locale_ = imm32_manager_.GetInputLanguageName();
-  direction_ = imm32_manager_.GetTextDirection();
   OnInputMethodChanged();
 }
 
 std::string InputMethodWin::GetInputLocale() {
   return locale_;
-}
-
-base::i18n::TextDirection InputMethodWin::GetInputTextDirection() {
-  return direction_;
 }
 
 bool InputMethodWin::IsActive() {
@@ -140,8 +134,8 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
   // We need to send character events to the focused text input client event if
   // its text input type is ui::TEXT_INPUT_TYPE_NONE.
   if (GetTextInputClient()) {
-    const char16 kCarriageReturn = L'\r';
-    const char16 ch = static_cast<char16>(wparam);
+    const base::char16 kCarriageReturn = L'\r';
+    const base::char16 ch = static_cast<base::char16>(wparam);
     // A mask to determine the previous key state from |lparam|. The value is 1
     // if the key is down before the message is sent, or it is 0 if the key is
     // up.
@@ -160,14 +154,6 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
   if (message == WM_SYSCHAR && wparam == VK_SPACE)
     gfx::ShowSystemMenu(window_handle);
 
-  return 0;
-}
-
-LRESULT InputMethodWin::OnDeadChar(UINT message,
-                                   WPARAM wparam,
-                                   LPARAM lparam,
-                                   BOOL* handled) {
-  *handled = TRUE;
   return 0;
 }
 
@@ -210,7 +196,7 @@ LRESULT InputMethodWin::OnDocumentFeed(RECONVERTSTRING* reconv) {
   if (reconv->dwSize < need_size)
     return 0;
 
-  string16 text;
+  base::string16 text;
   if (!GetTextInputClient()->GetTextFromRange(text_range, &text))
     return 0;
   DCHECK_EQ(text_range.length(), text.length());
@@ -266,7 +252,7 @@ LRESULT InputMethodWin::OnReconvertString(RECONVERTSTRING* reconv) {
 
   // TODO(penghuang): Return some extra context to help improve IME's
   // reconversion accuracy.
-  string16 text;
+  base::string16 text;
   if (!GetTextInputClient()->GetTextFromRange(selection_range, &text))
     return 0;
   DCHECK_EQ(selection_range.length(), text.length());
@@ -325,38 +311,22 @@ HWND InputMethodWin::GetAttachedWindowHandle(
   // represents the valid top-level window handle because each top-level window
   // is responsible for lifecycle management of corresponding InputMethod
   // instance.
-#if defined(USE_AURA)
   return toplevel_window_handle_;
-#else
-  // On Non-Aura environment, TextInputClient::GetAttachedWindow() returns
-  // window handle to which each input method is bound.
-  if (!text_input_client)
-    return NULL;
-  return text_input_client->GetAttachedWindow();
-#endif
 }
 
 bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
   if (!client)
     return false;
   HWND attached_window_handle = GetAttachedWindowHandle(client);
-#if defined(USE_AURA)
   // When Aura is enabled, |attached_window_handle| should always be a top-level
   // window. So we can safely assume that |attached_window_handle| is ready for
   // receiving keyboard input as long as it is an active window. This works well
   // even when the |attached_window_handle| becomes active but has not received
   // WM_FOCUS yet.
   return attached_window_handle && GetActiveWindow() == attached_window_handle;
-#else
-  return attached_window_handle && GetFocus() == attached_window_handle;
-#endif
 }
 
 bool InputMethodWin::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
-  // TODO(ananta)
-  // Support IMEs and RTL layout in Windows 8 metro Ash. The code below won't
-  // work with IMEs.
-  // Bug: https://code.google.com/p/chromium/issues/detail?id=164964
   if (event.is_char()) {
     if (GetTextInputClient()) {
       GetTextInputClient()->InsertChar(event.key_code(),

@@ -109,8 +109,8 @@ TEST_F(ExtensionIconManagerTest, LoadRemoveLoad) {
       "extensions/image_loading_tracker/app.json");
 
   JSONFileValueSerializer serializer(manifest_path);
-  scoped_ptr<DictionaryValue> manifest(
-      static_cast<DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+  scoped_ptr<base::DictionaryValue> manifest(
+      static_cast<base::DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
   ASSERT_TRUE(manifest.get() != NULL);
 
   std::string error;
@@ -139,7 +139,7 @@ TEST_F(ExtensionIconManagerTest, LoadRemoveLoad) {
   EXPECT_TRUE(gfx::BitmapsAreEqual(first_icon, second_icon));
 }
 
-#if defined(FILE_MANAGER_EXTENSION)
+#if defined(OS_CHROMEOS)
 // Tests loading an icon for a component extension.
 TEST_F(ExtensionIconManagerTest, LoadComponentExtensionResource) {
   scoped_ptr<Profile> profile(new TestingProfile());
@@ -151,8 +151,8 @@ TEST_F(ExtensionIconManagerTest, LoadComponentExtensionResource) {
       "extensions/file_manager/app.json");
 
   JSONFileValueSerializer serializer(manifest_path);
-  scoped_ptr<DictionaryValue> manifest(
-      static_cast<DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+  scoped_ptr<base::DictionaryValue> manifest(
+      static_cast<base::DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
   ASSERT_TRUE(manifest.get() != NULL);
 
   std::string error;

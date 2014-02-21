@@ -55,7 +55,7 @@ class ConflictingDllsTest : public DiagnosticsTest {
     EnumerateModulesModel* model = EnumerateModulesModel::GetInstance();
     model->set_limited_mode(true);
     model->ScanNow();
-    scoped_ptr<ListValue> list(model->GetModuleList());
+    scoped_ptr<base::ListValue> list(model->GetModuleList());
     if (!model->confirmed_bad_modules_detected() &&
         !model->suspected_bad_modules_detected()) {
       RecordSuccess("No conflicting modules found");
@@ -63,7 +63,7 @@ class ConflictingDllsTest : public DiagnosticsTest {
     }
 
     std::string failures = "Possibly conflicting modules:";
-    DictionaryValue* dictionary;
+    base::DictionaryValue* dictionary;
     for (size_t i = 0; i < list->GetSize(); ++i) {
       if (!list->GetDictionary(i, &dictionary))
         RecordFailure(DIAG_RECON_DICTIONARY_LOOKUP_FAILED,
@@ -212,7 +212,8 @@ class JSONTest : public DiagnosticsTest {
     JSONStringValueSerializer json(json_data);
     int error_code = base::JSONReader::JSON_NO_ERROR;
     std::string error_message;
-    scoped_ptr<Value> json_root(json.Deserialize(&error_code, &error_message));
+    scoped_ptr<base::Value> json_root(
+        json.Deserialize(&error_code, &error_message));
     if (base::JSONReader::JSON_NO_ERROR != error_code) {
       if (error_message.empty()) {
         error_message = "Parse error " + base::IntToString(error_code);
@@ -304,7 +305,8 @@ class PathTest : public DiagnosticsTest {
     if (!base::PathExists(dir_or_file)) {
       RecordFailure(
           DIAG_RECON_PATH_NOT_FOUND,
-          "Path not found: " + UTF16ToUTF8(dir_or_file.LossyDisplayName()));
+          "Path not found: " +
+              base::UTF16ToUTF8(dir_or_file.LossyDisplayName()));
       return true;
     }
 
@@ -317,7 +319,7 @@ class PathTest : public DiagnosticsTest {
     if (!dir_or_file_size && !path_info_.is_optional) {
       RecordFailure(DIAG_RECON_CANNOT_OBTAIN_SIZE,
                     "Cannot obtain size for: " +
-                        UTF16ToUTF8(dir_or_file.LossyDisplayName()));
+                        base::UTF16ToUTF8(dir_or_file.LossyDisplayName()));
       return true;
     }
     std::string printable_size = base::Int64ToString(dir_or_file_size);
@@ -326,7 +328,7 @@ class PathTest : public DiagnosticsTest {
       if (dir_or_file_size > path_info_.max_size) {
         RecordFailure(DIAG_RECON_FILE_TOO_LARGE,
                       "Path contents too large (" + printable_size + ") for: " +
-                          UTF16ToUTF8(dir_or_file.LossyDisplayName()));
+                          base::UTF16ToUTF8(dir_or_file.LossyDisplayName()));
         return true;
       }
     }
@@ -337,7 +339,7 @@ class PathTest : public DiagnosticsTest {
     if (!base::PathIsWritable(dir_or_file)) {
       RecordFailure(DIAG_RECON_NOT_WRITABLE,
                     "Path is not writable: " +
-                        UTF16ToUTF8(dir_or_file.LossyDisplayName()));
+                        base::UTF16ToUTF8(dir_or_file.LossyDisplayName()));
       return true;
     }
     RecordSuccess("Path exists and is writable: " + printable_size);

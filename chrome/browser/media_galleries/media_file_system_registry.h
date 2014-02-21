@@ -18,11 +18,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
-#include "chrome/browser/storage_monitor/removable_storage_observer.h"
+#include "components/storage_monitor/removable_storage_observer.h"
 
 class ExtensionGalleriesHost;
 class MediaFileSystemContext;
 class MediaGalleriesPreferences;
+class MediaScanManager;
 class Profile;
 
 namespace content {
@@ -84,6 +85,8 @@ class MediaFileSystemRegistry
   // before use.
   MediaGalleriesPreferences* GetPreferences(Profile* profile);
 
+  MediaScanManager* media_scan_manager();
+
   // RemovableStorageObserver implementation.
   virtual void OnRemovableStorageDetached(const StorageInfo& info) OVERRIDE;
 
@@ -113,6 +116,8 @@ class MediaFileSystemRegistry
   ExtensionGalleriesHostMap extension_hosts_map_;
 
   scoped_ptr<MediaFileSystemContext> file_system_context_;
+
+  scoped_ptr<MediaScanManager> media_scan_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaFileSystemRegistry);
 };

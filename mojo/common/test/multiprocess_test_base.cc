@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
-// TODO(vtl): Remove build_config.h include when fully implemented on Windows.
 #include "build/build_config.h"
+#include "mojo/system/embedder/platform_channel_pair.h"
 
 namespace mojo {
 namespace test {
@@ -27,43 +27,43 @@ void MultiprocessTestBase::SetUp() {
 
   MultiProcessTest::SetUp();
 
-// TODO(vtl): Not implemented on Windows yet.
-#if defined(OS_POSIX)
-  platform_server_channel =
-      system::PlatformServerChannel::Create("TestChannel");
-#endif
+  platform_channel_pair_.reset(new embedder::PlatformChannelPair());
+  server_platform_handle = platform_channel_pair_->PassServerHandle();
 }
 
 void MultiprocessTestBase::TearDown() {
   CHECK_EQ(test_child_handle_, base::kNullProcessHandle);
 
-  platform_server_channel.reset();
+  server_platform_handle.reset();
+  platform_channel_pair_.reset();
 
   MultiProcessTest::TearDown();
 }
 
 void MultiprocessTestBase::StartChild(const std::string& test_child_name) {
-  CHECK(platform_server_channel.get());
+  CHECK(platform_channel_pair_.get());
   CHECK(!test_child_name.empty());
   CHECK_EQ(test_child_handle_, base::kNullProcessHandle);
 
   std::string test_child_main = test_child_name + "TestChildMain";
 
-#if defined(OS_POSIX)
   CommandLine unused(CommandLine::NO_PROGRAM);
-  base::FileHandleMappingVector fds_to_map;
-  platform_server_channel->GetDataNeededToPassClientChannelToChildProcess(
-      &unused, &fds_to_map);
-  test_child_handle_ = SpawnChild(test_child_main, fds_to_map, false);
+  embedder::HandlePassingInformation handle_passing_info;
+  platform_channel_pair_->PrepareToPassClientHandleToChildProcess(
+      &unused, &handle_passing_info);
+
+  base::LaunchOptions options;
+#if defined(OS_POSIX)
+  options.fds_to_remap = &handle_passing_info;
 #elif defined(OS_WIN)
-  test_child_handle_  = SpawnChild(test_child_main, false);
+  options.start_hidden = true;
+  options.handles_to_inherit = &handle_passing_info;
 #else
 #error "Not supported yet."
 #endif
-// TODO(vtl): Not implemented on Windows yet.
-#if defined(OS_POSIX)
-  platform_server_channel->ChildProcessLaunched();
-#endif
+
+  test_child_handle_ = SpawnChildWithOptions(test_child_main, options, false);
+  platform_channel_pair_->ChildProcessLaunched();
 
   CHECK_NE(test_child_handle_, base::kNullProcessHandle);
 }
@@ -82,34 +82,27 @@ int MultiprocessTestBase::WaitForChildShutdown() {
 
 CommandLine MultiprocessTestBase::MakeCmdLine(const std::string& procname,
                                               bool debug_on_start) {
-  CHECK(platform_server_channel.get());
+  CHECK(platform_channel_pair_.get());
 
   CommandLine command_line =
       base::MultiProcessTest::MakeCmdLine(procname, debug_on_start);
-// TODO(vtl): Not implemented on Windows yet.
-#if defined(OS_POSIX)
-  base::FileHandleMappingVector unused;
-  platform_server_channel->GetDataNeededToPassClientChannelToChildProcess(
-      &command_line, &unused);
-#endif
+  embedder::HandlePassingInformation unused;
+  platform_channel_pair_->PrepareToPassClientHandleToChildProcess(&command_line,
+                                                                  &unused);
+
   return command_line;
 }
 
 // static
 void MultiprocessTestBase::ChildSetup() {
   CHECK(CommandLine::InitializedForCurrentProcess());
-// TODO(vtl): Not implemented on Windows yet.
-#if defined(OS_POSIX)
-  platform_client_channel =
-      system::PlatformClientChannel::CreateFromParentProcess(
+  client_platform_handle =
+      embedder::PlatformChannelPair::PassClientHandleFromParentProcess(
           *CommandLine::ForCurrentProcess());
-  CHECK(platform_client_channel.get());
-#endif
 }
 
 // static
-scoped_ptr<system::PlatformClientChannel>
-    MultiprocessTestBase::platform_client_channel;
+embedder::ScopedPlatformHandle MultiprocessTestBase::client_platform_handle;
 
 }  // namespace test
 }  // namespace mojo

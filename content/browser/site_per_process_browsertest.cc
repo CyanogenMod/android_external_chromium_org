@@ -6,12 +6,15 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/resource_dispatcher_host_delegate.h"
+#include "content/public/browser/resource_throttle.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
@@ -20,10 +23,13 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_content_browser_client.h"
+#include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "net/base/escape.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/url_request/url_request.h"
+#include "net/url_request/url_request_status.h"
 
 namespace content {
 
@@ -31,8 +37,19 @@ class SitePerProcessWebContentsObserver: public WebContentsObserver {
  public:
   explicit SitePerProcessWebContentsObserver(WebContents* web_contents)
       : WebContentsObserver(web_contents),
-        navigation_succeeded_(true) {}
+        navigation_succeeded_(false) {}
   virtual ~SitePerProcessWebContentsObserver() {}
+
+  virtual void DidStartProvisionalLoadForFrame(
+      int64 frame_id,
+      int64 parent_frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc,
+      RenderViewHost* render_view_host) OVERRIDE {
+    navigation_succeeded_ = false;
+  }
 
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
@@ -148,18 +165,200 @@ void RedirectNotificationObserver::Observe(
   running_ = false;
 }
 
+// Tracks a single request for a specified URL, and allows waiting until the
+// request is destroyed, and then inspecting whether it completed successfully.
+class TrackingResourceDispatcherHostDelegate
+    : public ShellResourceDispatcherHostDelegate {
+ public:
+  TrackingResourceDispatcherHostDelegate() : throttle_created_(false) {
+  }
+
+  virtual void RequestBeginning(
+      net::URLRequest* request,
+      ResourceContext* resource_context,
+      appcache::AppCacheService* appcache_service,
+      ResourceType::Type resource_type,
+      int child_id,
+      int route_id,
+      ScopedVector<ResourceThrottle>* throttles) OVERRIDE {
+    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    ShellResourceDispatcherHostDelegate::RequestBeginning(
+        request, resource_context, appcache_service, resource_type, child_id,
+        route_id, throttles);
+    // Expect only a single request for the tracked url.
+    ASSERT_FALSE(throttle_created_);
+    // If this is a request for the tracked URL, add a throttle to track it.
+    if (request->url() == tracked_url_)
+      throttles->push_back(new TrackingThrottle(request, this));
+  }
+
+  // Starts tracking a URL.  The request for previously tracked URL, if any,
+  // must have been made and deleted before calling this function.
+  void SetTrackedURL(const GURL& tracked_url) {
+    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    // Should not currently be tracking any URL.
+    ASSERT_FALSE(run_loop_);
+
+    // Create a RunLoop that will be stopped once the request for the tracked
+    // URL has been destroyed, to allow tracking the URL while also waiting for
+    // other events.
+    run_loop_.reset(new base::RunLoop());
+
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(
+            &TrackingResourceDispatcherHostDelegate::SetTrackedURLOnIOThread,
+            base::Unretained(this),
+            tracked_url));
+  }
+
+  // Waits until the tracked URL has been requests, and the request for it has
+  // been destroyed.
+  bool WaitForTrackedURLAndGetCompleted() {
+    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    run_loop_->Run();
+    run_loop_.reset();
+    return tracked_request_completed_;
+  }
+
+ private:
+  // ResourceThrottle attached to request for the tracked URL.  On destruction,
+  // passes the final URLRequestStatus back to the delegate.
+  class TrackingThrottle : public ResourceThrottle {
+   public:
+    TrackingThrottle(net::URLRequest* request,
+                     TrackingResourceDispatcherHostDelegate* tracker)
+        : request_(request), tracker_(tracker) {
+    }
+
+    virtual ~TrackingThrottle() {
+      // If the request is deleted without being cancelled, its status will
+      // indicate it succeeded, so have to check if the request is still pending
+      // as well.
+      tracker_->OnTrackedRequestDestroyed(
+          !request_->is_pending() && request_->status().is_success());
+    }
+
+    // ResourceThrottle implementation:
+    virtual const char* GetNameForLogging() const OVERRIDE {
+      return "TrackingThrottle";
+    }
+
+   private:
+    net::URLRequest* request_;
+    TrackingResourceDispatcherHostDelegate* tracker_;
+
+    DISALLOW_COPY_AND_ASSIGN(TrackingThrottle);
+  };
+
+  void SetTrackedURLOnIOThread(const GURL& tracked_url) {
+    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    throttle_created_ = false;
+    tracked_url_ = tracked_url;
+  }
+
+  void OnTrackedRequestDestroyed(bool completed) {
+    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    tracked_request_completed_ = completed;
+    tracked_url_ = GURL();
+
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE, run_loop_->QuitClosure());
+  }
+
+  // These live on the IO thread.
+  GURL tracked_url_;
+  bool throttle_created_;
+
+  // This is created and destroyed on the UI thread, but stopped on the IO
+  // thread.
+  scoped_ptr<base::RunLoop> run_loop_;
+
+  // Set on the IO thread while |run_loop_| is non-NULL, read on the UI thread
+  // after deleting run_loop_.
+  bool tracked_request_completed_;
+
+  DISALLOW_COPY_AND_ASSIGN(TrackingResourceDispatcherHostDelegate);
+};
+
+// WebContentsDelegate that fails to open a URL when there's a request that
+// needs to be transferred between renderers.
+class NoTransferRequestDelegate : public WebContentsDelegate {
+ public:
+  NoTransferRequestDelegate() {}
+
+  virtual WebContents* OpenURLFromTab(WebContents* source,
+                                      const OpenURLParams& params) OVERRIDE {
+    bool is_transfer =
+        (params.transferred_global_request_id != GlobalRequestID());
+    if (is_transfer)
+      return NULL;
+    NavigationController::LoadURLParams load_url_params(params.url);
+    load_url_params.referrer = params.referrer;
+    load_url_params.frame_tree_node_id = params.frame_tree_node_id;
+    load_url_params.transition_type = params.transition;
+    load_url_params.extra_headers = params.extra_headers;
+    load_url_params.should_replace_current_entry =
+        params.should_replace_current_entry;
+    load_url_params.is_renderer_initiated = true;
+    source->GetController().LoadURLWithParams(load_url_params);
+    return source;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NoTransferRequestDelegate);
+};
+
 class SitePerProcessBrowserTest : public ContentBrowserTest {
+ public:
+  SitePerProcessBrowserTest() : old_delegate_(NULL) {
+  }
+
+  // ContentBrowserTest implementation:
+  virtual void SetUpOnMainThread() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(
+            &SitePerProcessBrowserTest::InjectResourceDisptcherHostDelegate,
+            base::Unretained(this)));
+  }
+
+  virtual void TearDownOnMainThread() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(
+            &SitePerProcessBrowserTest::RestoreResourceDisptcherHostDelegate,
+            base::Unretained(this)));
+  }
+
  protected:
+  // Start at a data URL so each extra navigation creates a navigation entry.
+  // (The first navigation will silently be classified as AUTO_SUBFRAME.)
+  // TODO(creis): This won't be necessary when we can wait for LOAD_STOP.
+  void StartFrameAtDataURL() {
+    std::string data_url_script =
+      "var iframes = document.getElementById('test');iframes.src="
+      "'data:text/html,dataurl';";
+    ASSERT_TRUE(ExecuteScript(shell()->web_contents(), data_url_script));
+  }
+
   bool NavigateIframeToURL(Shell* window,
                            const GURL& url,
                            std::string iframe_id) {
+    // TODO(creis): This should wait for LOAD_STOP, but cross-site subframe
+    // navigations generate extra DidStartLoading and DidStopLoading messages.
+    // Until we replace swappedout:// with frame proxies, we need to listen for
+    // something else.  For now, we trigger NEW_SUBFRAME navigations and listen
+    // for commit.
     std::string script = base::StringPrintf(
-        "var iframes = document.getElementById('%s');iframes.src='%s';",
+        "setTimeout(\""
+        "var iframes = document.getElementById('%s');iframes.src='%s';"
+        "\",0)",
         iframe_id.c_str(), url.spec().c_str());
     WindowedNotificationObserver load_observer(
-        NOTIFICATION_LOAD_STOP,
+        NOTIFICATION_NAV_ENTRY_COMMITTED,
         Source<NavigationController>(
-            &shell()->web_contents()->GetController()));
+            &window->web_contents()->GetController()));
     bool result = ExecuteScript(window->web_contents(), script);
     load_observer.Wait();
     return result;
@@ -167,7 +366,8 @@ class SitePerProcessBrowserTest : public ContentBrowserTest {
 
   void NavigateToURLContentInitiated(Shell* window,
                                      const GURL& url,
-                                     bool should_replace_current_entry) {
+                                     bool should_replace_current_entry,
+                                     bool should_wait_for_navigation) {
     std::string script;
     if (should_replace_current_entry)
       script = base::StringPrintf("location.replace('%s')", url.spec().c_str());
@@ -176,47 +376,147 @@ class SitePerProcessBrowserTest : public ContentBrowserTest {
     TestNavigationObserver load_observer(shell()->web_contents(), 1);
     bool result = ExecuteScript(window->web_contents(), script);
     EXPECT_TRUE(result);
-    load_observer.Wait();
+    if (should_wait_for_navigation)
+      load_observer.Wait();
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kSitePerProcess);
+
+    // TODO(creis): Remove this when GTK is no longer a supported platform.
+    command_line->AppendSwitch(switches::kForceCompositingMode);
   }
+
+  void InjectResourceDisptcherHostDelegate() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    old_delegate_ = ResourceDispatcherHostImpl::Get()->delegate();
+    ResourceDispatcherHostImpl::Get()->SetDelegate(&tracking_delegate_);
+  }
+
+  void RestoreResourceDisptcherHostDelegate() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    ResourceDispatcherHostImpl::Get()->SetDelegate(old_delegate_);
+    old_delegate_ = NULL;
+  }
+
+  TrackingResourceDispatcherHostDelegate& tracking_delegate() {
+    return tracking_delegate_;
+  }
+
+ private:
+  TrackingResourceDispatcherHostDelegate tracking_delegate_;
+  ResourceDispatcherHostDelegate* old_delegate_;
 };
 
-// TODO(nasko): Disable this test until out-of-process iframes is ready and the
-// security checks are back in place.
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, DISABLED_CrossSiteIframe) {
+// Ensure that we can complete a cross-process subframe navigation.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, CrossSiteIframe) {
+  host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(test_server()->Start());
-  net::SpawnedTestServer https_server(
-      net::SpawnedTestServer::TYPE_HTTPS,
-      net::SpawnedTestServer::kLocalhost,
-      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
-  ASSERT_TRUE(https_server.Start());
   GURL main_url(test_server()->GetURL("files/site_per_process_main.html"));
-
   NavigateToURL(shell(), main_url);
 
+  StartFrameAtDataURL();
+
   SitePerProcessWebContentsObserver observer(shell()->web_contents());
+
+  // Load same-site page into iframe.
+  GURL http_url(test_server()->GetURL("files/title1.html"));
+  EXPECT_TRUE(NavigateIframeToURL(shell(), http_url, "test"));
+  EXPECT_EQ(http_url, observer.navigation_url());
+  EXPECT_TRUE(observer.navigation_succeeded());
+
+  // These must stay in scope with replace_host.
+  GURL::Replacements replace_host;
+  std::string foo_com("foo.com");
+
+  // Load cross-site page into iframe.
+  GURL cross_site_url(test_server()->GetURL("files/title2.html"));
+  replace_host.SetHostStr(foo_com);
+  cross_site_url = cross_site_url.ReplaceComponents(replace_host);
+  EXPECT_TRUE(NavigateIframeToURL(shell(), cross_site_url, "test"));
+  EXPECT_EQ(cross_site_url, observer.navigation_url());
+  EXPECT_TRUE(observer.navigation_succeeded());
+
+  // Ensure that we have created a new process for the subframe.
+  FrameTreeNode* root =
+      static_cast<WebContentsImpl*>(shell()->web_contents())->
+          GetFrameTree()->root();
+  ASSERT_EQ(1U, root->child_count());
+  FrameTreeNode* child = root->child_at(0);
+  EXPECT_NE(shell()->web_contents()->GetRenderViewHost(),
+            child->current_frame_host()->render_view_host());
+  EXPECT_NE(shell()->web_contents()->GetSiteInstance(),
+            child->current_frame_host()->render_view_host()->GetSiteInstance());
+  EXPECT_NE(shell()->web_contents()->GetRenderProcessHost(),
+            child->current_frame_host()->GetProcess());
+}
+
+// Crash a subframe and ensures its children are cleared from the FrameTree.
+// See http://crbug.com/338508.
+// TODO(creis): Enable this on Android when we can kill the process there.
+#if defined(OS_ANDROID)
+#define MAYBE_CrashSubframe DISABLED_CrashSubframe
+#else
+#define MAYBE_CrashSubframe CrashSubframe
+#endif
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, MAYBE_CrashSubframe) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(test_server()->Start());
+  GURL main_url(test_server()->GetURL("files/site_per_process_main.html"));
+  NavigateToURL(shell(), main_url);
+
+  StartFrameAtDataURL();
+
+  // These must stay in scope with replace_host.
+  GURL::Replacements replace_host;
+  std::string foo_com("foo.com");
+
+  // Load cross-site page into iframe.
+  GURL cross_site_url(test_server()->GetURL("files/title2.html"));
+  replace_host.SetHostStr(foo_com);
+  cross_site_url = cross_site_url.ReplaceComponents(replace_host);
+  EXPECT_TRUE(NavigateIframeToURL(shell(), cross_site_url, "test"));
+
+  // Check the subframe process.
+  FrameTreeNode* root =
+      static_cast<WebContentsImpl*>(shell()->web_contents())->
+          GetFrameTree()->root();
+  ASSERT_EQ(1U, root->child_count());
+  FrameTreeNode* child = root->child_at(0);
+  EXPECT_NE(FrameTreeNode::kInvalidFrameId, root->frame_id());
+  EXPECT_NE(FrameTreeNode::kInvalidFrameId, root->child_at(0)->frame_id());
+
+  // Crash the subframe process.
+  RenderProcessHost* root_process = root->current_frame_host()->GetProcess();
+  RenderProcessHost* child_process = child->current_frame_host()->GetProcess();
   {
-    // Load same-site page into Iframe.
-    GURL http_url(test_server()->GetURL("files/title1.html"));
-    EXPECT_TRUE(NavigateIframeToURL(shell(), http_url, "test"));
-    EXPECT_EQ(observer.navigation_url(), http_url);
-    EXPECT_TRUE(observer.navigation_succeeded());
+    RenderProcessHostWatcher crash_observer(
+        child_process,
+        RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+    base::KillProcess(child_process->GetHandle(), 0, false);
+    crash_observer.Wait();
   }
 
+  // Ensure that the child frame still exists but has been cleared.
+  EXPECT_EQ(1U, root->child_count());
+  EXPECT_EQ(FrameTreeNode::kInvalidFrameId, root->child_at(0)->frame_id());
+
+  // Now crash the top-level page to clear the child frame.
   {
-    // Load cross-site page into Iframe.
-    GURL https_url(https_server.GetURL("files/title1.html"));
-    EXPECT_TRUE(NavigateIframeToURL(shell(), https_url, "test"));
-    EXPECT_EQ(observer.navigation_url(), https_url);
-    EXPECT_FALSE(observer.navigation_succeeded());
+    RenderProcessHostWatcher crash_observer(
+        root_process,
+        RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+    base::KillProcess(root_process->GetHandle(), 0, false);
+    crash_observer.Wait();
   }
+  EXPECT_EQ(0U, root->child_count());
+  EXPECT_EQ(FrameTreeNode::kInvalidFrameId, root->frame_id());
 }
 
 // TODO(nasko): Disable this test until out-of-process iframes is ready and the
 // security checks are back in place.
+// TODO(creis): Replace SpawnedTestServer with host_resolver to get test to run
+// on Android (http://crbug.com/187570).
 IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
                        DISABLED_CrossSiteIframeRedirectOnce) {
   ASSERT_TRUE(test_server()->Start());
@@ -341,6 +641,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
 // TODO(nasko): Disable this test until out-of-process iframes is ready and the
 // security checks are back in place.
+// TODO(creis): Replace SpawnedTestServer with host_resolver to get test to run
+// on Android (http://crbug.com/187570).
 IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
                        DISABLED_CrossSiteIframeRedirectTwice) {
   ASSERT_TRUE(test_server()->Start());
@@ -421,154 +723,10 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   }
 }
 
-// Ensures FrameTree correctly reflects page structure during navigations.
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
-                       FrameTreeShape) {
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL base_url = test_server()->GetURL("files/site_isolation/");
-  GURL::Replacements replace_host;
-  std::string host_str("A.com");  // Must stay in scope with replace_host.
-  replace_host.SetHostStr(host_str);
-  base_url = base_url.ReplaceComponents(replace_host);
-
-  // Load doc without iframes. Verify FrameTree just has root.
-  // Frame tree:
-  //   Site-A Root
-  NavigateToURL(shell(), base_url.Resolve("blank.html"));
-  FrameTreeNode* root =
-      static_cast<WebContentsImpl*>(shell()->web_contents())->
-      GetFrameTree()->root();
-  EXPECT_EQ(0U, root->child_count());
-
-  // Add 2 same-site frames. Verify 3 nodes in tree with proper names.
-  // Frame tree:
-  //   Site-A Root -- Site-A frame1
-  //              \-- Site-A frame2
-  WindowedNotificationObserver observer1(
-      content::NOTIFICATION_LOAD_STOP,
-      content::Source<NavigationController>(
-          &shell()->web_contents()->GetController()));
-  NavigateToURL(shell(), base_url.Resolve("frames-X-X.html"));
-  observer1.Wait();
-  ASSERT_EQ(2U, root->child_count());
-  EXPECT_EQ(0U, root->child_at(0)->child_count());
-  EXPECT_EQ(0U, root->child_at(1)->child_count());
-}
-
-// TODO(ajwong): Talk with nasko and merge this functionality with
-// FrameTreeShape.
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
-                       FrameTreeShape2) {
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
-
-  NavigateToURL(shell(),
-                test_server()->GetURL("files/frame_tree/top.html"));
-
-  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      wc->GetRenderViewHost());
-  FrameTreeNode* root = wc->GetFrameTree()->root();
-
-  // Check that the root node is properly created with the frame id of the
-  // initial navigation.
-  ASSERT_EQ(3UL, root->child_count());
-  EXPECT_EQ(std::string(), root->frame_name());
-  EXPECT_EQ(rvh->main_frame_id(), root->frame_id());
-
-  ASSERT_EQ(2UL, root->child_at(0)->child_count());
-  EXPECT_STREQ("1-1-name", root->child_at(0)->frame_name().c_str());
-
-  // Verify the deepest node exists and has the right name.
-  ASSERT_EQ(2UL, root->child_at(2)->child_count());
-  EXPECT_EQ(1UL, root->child_at(2)->child_at(1)->child_count());
-  EXPECT_EQ(0UL, root->child_at(2)->child_at(1)->child_at(0)->child_count());
-  EXPECT_STREQ("3-1-id",
-      root->child_at(2)->child_at(1)->child_at(0)->frame_name().c_str());
-
-  // Navigate to about:blank, which should leave only the root node of the frame
-  // tree in the browser process.
-  NavigateToURL(shell(), test_server()->GetURL("files/title1.html"));
-
-  root = wc->GetFrameTree()->root();
-  EXPECT_EQ(0UL, root->child_count());
-  EXPECT_EQ(std::string(), root->frame_name());
-  EXPECT_EQ(rvh->main_frame_id(), root->frame_id());
-}
-
-// Test that we can navigate away if the previous renderer doesn't clean up its
-// child frames.
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, FrameTreeAfterCrash) {
-  ASSERT_TRUE(test_server()->Start());
-  NavigateToURL(shell(),
-                test_server()->GetURL("files/frame_tree/top.html"));
-
-  // Crash the renderer so that it doesn't send any FrameDetached messages.
-  WindowedNotificationObserver crash_observer(
-      NOTIFICATION_RENDERER_PROCESS_CLOSED,
-      NotificationService::AllSources());
-  NavigateToURL(shell(), GURL(kChromeUICrashURL));
-  crash_observer.Wait();
-
-  // The frame tree should be cleared, and the frame ID should be reset.
-  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      wc->GetRenderViewHost());
-  FrameTreeNode* root = wc->GetFrameTree()->root();
-  EXPECT_EQ(0UL, root->child_count());
-  EXPECT_EQ(FrameTreeNode::kInvalidFrameId, root->frame_id());
-  EXPECT_EQ(rvh->main_frame_id(), root->frame_id());
-
-  // Navigate to a new URL.
-  NavigateToURL(shell(), test_server()->GetURL("files/title1.html"));
-
-  // The frame ID should now be set.
-  EXPECT_EQ(0UL, root->child_count());
-  EXPECT_NE(FrameTreeNode::kInvalidFrameId, root->frame_id());
-  EXPECT_EQ(rvh->main_frame_id(), root->frame_id());
-}
-
-// Test that we can navigate away if the previous renderer doesn't clean up its
-// child frames.
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, NavigateWithLeftoverFrames) {
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL base_url = test_server()->GetURL("files/site_isolation/");
-  GURL::Replacements replace_host;
-  std::string host_str("A.com");  // Must stay in scope with replace_host.
-  replace_host.SetHostStr(host_str);
-  base_url = base_url.ReplaceComponents(replace_host);
-
-  NavigateToURL(shell(),
-                test_server()->GetURL("files/frame_tree/top.html"));
-
-  // Hang the renderer so that it doesn't send any FrameDetached messages.
-  // (This navigation will never complete, so don't wait for it.)
-  shell()->LoadURL(GURL(kChromeUIHangURL));
-
-  // Check that the frame tree still has children.
-  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
-  FrameTreeNode* root = wc->GetFrameTree()->root();
-  ASSERT_EQ(3UL, root->child_count());
-
-  // Navigate to a new URL.  We use LoadURL because NavigateToURL will try to
-  // wait for the previous navigation to stop.
-  TestNavigationObserver tab_observer(wc, 1);
-  shell()->LoadURL(base_url.Resolve("blank.html"));
-  tab_observer.Wait();
-
-  // The frame tree should now be cleared, and the frame ID should be valid.
-  EXPECT_EQ(0UL, root->child_count());
-  EXPECT_NE(FrameTreeNode::kInvalidFrameId, root->frame_id());
-}
-
 // Tests that the |should_replace_current_entry| flag persists correctly across
 // request transfers that began with a cross-process navigation.
 IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
-                       ReplaceEntryCrossProcessThenTranfers) {
+                       ReplaceEntryCrossProcessThenTransfer) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
   host_resolver()->AddRule("*", "127.0.0.1");
@@ -595,13 +753,18 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
   replace_host.SetHostStr(a_com);
   url2 = url2.ReplaceComponents(replace_host);
-  NavigateToURLContentInitiated(shell(), url2, true);
+  // Used to make sure the request for url2 succeeds, and there was only one of
+  // them.
+  tracking_delegate().SetTrackedURL(url2);
+  NavigateToURLContentInitiated(shell(), url2, true, true);
 
   // There should be one history entry. url2 should have replaced url1.
   EXPECT_TRUE(controller.GetPendingEntry() == NULL);
   EXPECT_EQ(1, controller.GetEntryCount());
   EXPECT_EQ(0, controller.GetCurrentEntryIndex());
   EXPECT_EQ(url2, controller.GetEntryAtIndex(0)->GetURL());
+  // Make sure the request succeeded.
+  EXPECT_TRUE(tracking_delegate().WaitForTrackedURLAndGetCompleted());
 
   // Now navigate as before to a page on B.com, but normally (without
   // replacement). This will still perform a double process-swap as above, via
@@ -609,7 +772,10 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   GURL url3 = test_server()->GetURL("files/site_isolation/blank.html?3");
   replace_host.SetHostStr(b_com);
   url3 = url3.ReplaceComponents(replace_host);
-  NavigateToURLContentInitiated(shell(), url3, false);
+  // Used to make sure the request for url3 succeeds, and there was only one of
+  // them.
+  tracking_delegate().SetTrackedURL(url3);
+  NavigateToURLContentInitiated(shell(), url3, false, true);
 
   // There should be two history entries. url2 should have replaced url1. url2
   // should not have replaced url3.
@@ -618,6 +784,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   EXPECT_EQ(1, controller.GetCurrentEntryIndex());
   EXPECT_EQ(url2, controller.GetEntryAtIndex(0)->GetURL());
   EXPECT_EQ(url3, controller.GetEntryAtIndex(1)->GetURL());
+
+  // Make sure the request succeeded.
+  EXPECT_TRUE(tracking_delegate().WaitForTrackedURLAndGetCompleted());
 }
 
 // Tests that the |should_replace_current_entry| flag persists correctly across
@@ -643,7 +812,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   // Navigate in-process with entry replacement. It will then be transferred
   // into a new one due to the call above.
   GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
-  NavigateToURLContentInitiated(shell(), url2, true);
+  NavigateToURLContentInitiated(shell(), url2, true, true);
 
   // There should be one history entry. url2 should have replaced url1.
   EXPECT_TRUE(controller.GetPendingEntry() == NULL);
@@ -653,7 +822,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
   // Now navigate as before, but without replacement.
   GURL url3 = test_server()->GetURL("files/site_isolation/blank.html?3");
-  NavigateToURLContentInitiated(shell(), url3, false);
+  NavigateToURLContentInitiated(shell(), url3, false, true);
 
   // There should be two history entries. url2 should have replaced url1. url2
   // should not have replaced url3.
@@ -694,7 +863,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
       "server-redirect?" + net::EscapeQueryParamValue(url2b.spec(), false));
   replace_host.SetHostStr(a_com);
   url2a = url2a.ReplaceComponents(replace_host);
-  NavigateToURLContentInitiated(shell(), url2a, true);
+  NavigateToURLContentInitiated(shell(), url2a, true, true);
 
   // There should be one history entry. url2b should have replaced url1.
   EXPECT_TRUE(controller.GetPendingEntry() == NULL);
@@ -710,7 +879,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
       "server-redirect?" + net::EscapeQueryParamValue(url3b.spec(), false));
   replace_host.SetHostStr(a_com);
   url3a = url3a.ReplaceComponents(replace_host);
-  NavigateToURLContentInitiated(shell(), url3a, false);
+  NavigateToURLContentInitiated(shell(), url3a, false, true);
 
   // There should be two history entries. url2b should have replaced url1. url2b
   // should not have replaced url3b.
@@ -719,6 +888,56 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   EXPECT_EQ(1, controller.GetCurrentEntryIndex());
   EXPECT_EQ(url2b, controller.GetEntryAtIndex(0)->GetURL());
   EXPECT_EQ(url3b, controller.GetEntryAtIndex(1)->GetURL());
+}
+
+// Tests that the request is destroyed when a cross process navigation is
+// cancelled.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, NoLeakOnCrossSiteCancel) {
+  const NavigationController& controller =
+      shell()->web_contents()->GetController();
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(test_server()->Start());
+
+  // These must all stay in scope with replace_host.
+  GURL::Replacements replace_host;
+  std::string a_com("A.com");
+  std::string b_com("B.com");
+
+  // Navigate to a starting URL, so there is a history entry to replace.
+  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
+  NavigateToURL(shell(), url1);
+
+  // Force all future navigations to transfer.
+  ShellContentBrowserClient::SetSwapProcessesForRedirect(true);
+
+  NoTransferRequestDelegate no_transfer_request_delegate;
+  WebContentsDelegate* old_delegate = shell()->web_contents()->GetDelegate();
+  shell()->web_contents()->SetDelegate(&no_transfer_request_delegate);
+
+  // Navigate to a page on A.com with entry replacement. This navigation is
+  // cross-site, so the renderer will send it to the browser via OpenURL to give
+  // to a new process. It will then be transferred into yet another process due
+  // to the call above.
+  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
+  replace_host.SetHostStr(a_com);
+  url2 = url2.ReplaceComponents(replace_host);
+  // Used to make sure the second request is cancelled, and there is only one
+  // request for url2.
+  tracking_delegate().SetTrackedURL(url2);
+
+  // Don't wait for the navigation to complete, since that never happens in
+  // this case.
+  NavigateToURLContentInitiated(shell(), url2, false, false);
+
+  // There should be one history entry, with url1.
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(0, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(url1, controller.GetEntryAtIndex(0)->GetURL());
+
+  // Make sure the request for url2 did not complete.
+  EXPECT_FALSE(tracking_delegate().WaitForTrackedURLAndGetCompleted());
+
+  shell()->web_contents()->SetDelegate(old_delegate);
 }
 
 }  // namespace content

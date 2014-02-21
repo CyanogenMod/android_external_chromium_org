@@ -61,7 +61,9 @@ void HunspellEngine::InitializeHunspell() {
 
   bdict_file_.reset(new base::MemoryMappedFile);
 
-  if (bdict_file_->Initialize(file_)) {
+  // TODO(rvargas): This object should not keep file_ after passing it to
+  // bdict_file_.
+  if (bdict_file_->Initialize(base::File(file_))) {
     TimeTicks debug_start_time = base::Histogram::DebugNow();
 
     hunspell_.reset(
@@ -80,7 +82,7 @@ bool HunspellEngine::CheckSpelling(const base::string16& word_to_check,
   // offer suggestions on them, either, there's no point in flagging them to
   // the user.
   bool word_correct = true;
-  std::string word_to_check_utf8(UTF16ToUTF8(word_to_check));
+  std::string word_to_check_utf8(base::UTF16ToUTF8(word_to_check));
 
   // Limit the size of checked words.
   if (word_to_check_utf8.length() <= kMaxCheckedLen) {
@@ -98,7 +100,7 @@ bool HunspellEngine::CheckSpelling(const base::string16& word_to_check,
 void HunspellEngine::FillSuggestionList(
     const base::string16& wrong_word,
     std::vector<base::string16>* optional_suggestions) {
-  std::string wrong_word_utf8(UTF16ToUTF8(wrong_word));
+  std::string wrong_word_utf8(base::UTF16ToUTF8(wrong_word));
   if (wrong_word_utf8.length() > kMaxSuggestLen)
     return;
 
@@ -115,7 +117,7 @@ void HunspellEngine::FillSuggestionList(
   // Populate the vector of WideStrings.
   for (int i = 0; i < number_of_suggestions; ++i) {
     if (i < chrome::spellcheck_common::kMaxSuggestions)
-      optional_suggestions->push_back(UTF8ToUTF16(suggestions[i]));
+      optional_suggestions->push_back(base::UTF8ToUTF16(suggestions[i]));
     free(suggestions[i]);
   }
   if (suggestions != NULL)

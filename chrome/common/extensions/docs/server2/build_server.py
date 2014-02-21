@@ -58,6 +58,8 @@ def main():
 
 
   CopyThirdParty(os.path.join(THIRD_PARTY_DIR, 'handlebar'), 'handlebar')
+  CopyThirdParty(os.path.join(THIRD_PARTY_DIR, 'markdown'), 'markdown',
+                 make_init=False)
   CopyThirdParty(os.path.join(SRC_DIR, 'ppapi', 'generators'),
                  'json_schema_compiler')
   CopyThirdParty(os.path.join(THIRD_PARTY_DIR, 'ply'),
@@ -72,6 +74,9 @@ def main():
                  os.path.join('json_schema_compiler', 'simplejson'),
                  make_init=False)
   MakeInit(LOCAL_THIRD_PARTY_DIR)
+
+  CopyThirdParty(os.path.join(THIRD_PARTY_DIR, 'google_appengine_cloudstorage',
+                 'cloudstorage'), 'cloudstorage')
 
   # To be able to use the Handlebar class we need this import in __init__.py.
   with open(os.path.join(LOCAL_THIRD_PARTY_DIR,

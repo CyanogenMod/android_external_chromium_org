@@ -6,7 +6,6 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
 #include "chrome/browser/thumbnails/thumbnail_service.h"
 #include "chrome/browser/thumbnails/thumbnail_service_factory.h"
 #include "chrome/browser/thumbnails/thumbnailing_algorithm.h"
@@ -66,9 +65,12 @@ void ProcessCapturedBitmap(scoped_refptr<ThumbnailingContext> context,
                            scoped_refptr<ThumbnailingAlgorithm> algorithm,
                            bool succeeded,
                            const SkBitmap& bitmap) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (!succeeded)
     return;
+
+  // On success, we must be on the UI thread (on failure because of shutdown we
+  // are not on the UI thread).
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   algorithm->ProcessBitmap(context, base::Bind(&UpdateThumbnail), bitmap);
 }
@@ -161,9 +163,6 @@ void ThumbnailTabHelper::Observe(int type,
 
 void ThumbnailTabHelper::RenderViewDeleted(
     content::RenderViewHost* render_view_host) {
-  g_browser_process->GetRenderWidgetSnapshotTaker()->CancelSnapshot(
-      render_view_host);
-
   bool registered = registrar_.IsRegistered(
       this,
       content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,

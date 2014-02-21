@@ -2,35 +2,50 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Shim extension to provide permission request API (and possibly other future
-// experimental APIs) for <webview> tag.
+// This module implements experimental API for <webview>.
 // See web_view.js for details.
 //
-// We want to control the permission API feature in <webview> separately from
-// the <webview> feature itself. <webview> is available in stable channel, but
-// permission API would only be available for channels CHANNEL_DEV and
-// CHANNEL_CANARY.
+// <webview> Experimental API is only available on canary and dev channels of
+// Chrome.
 
 var CreateEvent = require('webView').CreateEvent;
 var MessagingNatives = requireNative('messaging_natives');
 var WebViewInternal = require('webView').WebViewInternal;
 var WebView = require('webView').WebView;
 
+// WEB_VIEW_EXPERIMENTAL_EVENTS is a map of experimental <webview> DOM event
+//     names to their associated extension event descriptor objects.
+// An event listener will be attached to the extension event |evt| specified in
+//     the descriptor.
+// |fields| specifies the public-facing fields in the DOM event that are
+//     accessible to <webview> developers.
+// |customHandler| allows a handler function to be called each time an extension
+//     event is caught by its event listener. The DOM event should be dispatched
+//     within this handler function. With no handler function, the DOM event
+//     will be dispatched by default each time the extension event is caught.
+// |cancelable| (default: false) specifies whether the event's default
+//     behavior can be canceled. If the default action associated with the event
+//     is prevented, then its dispatch function will return false in its event
+//     handler. The event must have a custom handler for this to be meaningful.
 var WEB_VIEW_EXPERIMENTAL_EVENTS = {
   'dialog': {
     cancelable: true,
     customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handleDialogEvent_(event, webViewEvent);
+      webViewInternal.handleDialogEvent(event, webViewEvent);
     },
     evt: CreateEvent('webview.onDialog'),
     fields: ['defaultPromptText', 'messageText', 'messageType', 'url']
+  },
+  'zoomchange': {
+    evt: CreateEvent('webview.onZoomChange'),
+    fields: ['oldZoomFactor', 'newZoomFactor']
   }
 };
 
 /**
  * @private
  */
-WebViewInternal.prototype.maybeAttachWebRequestEventToObject_ =
+WebViewInternal.prototype.maybeAttachWebRequestEventToObject =
     function(obj, eventName, webRequestEvent) {
   Object.defineProperty(
       obj,
@@ -45,7 +60,17 @@ WebViewInternal.prototype.maybeAttachWebRequestEventToObject_ =
 /**
  * @private
  */
-WebViewInternal.prototype.handleDialogEvent_ =
+WebViewInternal.prototype.setZoom = function(zoomFactor) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.setZoom(this.instanceId, zoomFactor);
+};
+
+/**
+ * @private
+ */
+WebViewInternal.prototype.handleDialogEvent =
     function(event, webViewEvent) {
   var showWarningMessage = function(dialogType) {
     var VOWELS = ['a', 'e', 'i', 'o', 'u'];
@@ -57,8 +82,8 @@ WebViewInternal.prototype.handleDialogEvent_ =
   };
 
   var self = this;
-  var browserPluginNode = this.browserPluginNode_;
-  var webviewNode = this.webviewNode_;
+  var browserPluginNode = this.browserPluginNode;
+  var webviewNode = this.webviewNode;
 
   var requestId = event.requestId;
   var actionTaken = false;
@@ -77,11 +102,11 @@ WebViewInternal.prototype.handleDialogEvent_ =
     ok: function(user_input) {
       validateCall();
       user_input = user_input || '';
-      WebView.setPermission(self.instanceId_, requestId, 'allow', user_input);
+      WebView.setPermission(self.instanceId, requestId, 'allow', user_input);
     },
     cancel: function() {
       validateCall();
-      WebView.setPermission(self.instanceId_, requestId, 'deny');
+      WebView.setPermission(self.instanceId, requestId, 'deny');
     }
   };
   webViewEvent.dialog = dialog;
@@ -100,7 +125,7 @@ WebViewInternal.prototype.handleDialogEvent_ =
         return;
       }
       WebView.setPermission(
-          self.instanceId_, requestId, 'default', '', function(allowed) {
+          self.instanceId, requestId, 'default', '', function(allowed) {
         if (allowed) {
           return;
         }
@@ -111,7 +136,7 @@ WebViewInternal.prototype.handleDialogEvent_ =
     actionTaken = true;
     // The default action is equivalent to canceling the dialog.
     WebView.setPermission(
-        self.instanceId_, requestId, 'default', '', function(allowed) {
+        self.instanceId, requestId, 'default', '', function(allowed) {
       if (allowed) {
         return;
       }
@@ -120,70 +145,65 @@ WebViewInternal.prototype.handleDialogEvent_ =
   }
 };
 
-/** @private */
-WebViewInternal.prototype.maybeGetExperimentalEvents_ = function() {
+WebViewInternal.prototype.maybeGetExperimentalEvents = function() {
   return WEB_VIEW_EXPERIMENTAL_EVENTS;
 };
 
-WebViewInternal.prototype.maybeGetExperimentalPermissions_ = function() {
+/** @private */
+WebViewInternal.prototype.maybeGetExperimentalPermissions = function() {
   return [];
 };
 
 /** @private */
-WebViewInternal.prototype.clearData_ = function(var_args) {
-  if (!this.instanceId_) {
+WebViewInternal.prototype.maybeSetCurrentZoomFactor =
+    function(zoomFactor) {
+  this.currentZoomFactor = zoomFactor;
+};
+
+/** @private */
+WebViewInternal.prototype.clearData = function(var_args) {
+  if (!this.instanceId) {
     return;
   }
-  var args = $Array.concat([this.instanceId_], $Array.slice(arguments));
+  var args = $Array.concat([this.instanceId], $Array.slice(arguments));
   $Function.apply(WebView.clearData, null, args);
 };
 
 /** @private */
-WebViewInternal.prototype.getUserAgent_ = function() {
-  return this.userAgentOverride_ || navigator.userAgent;
-};
-
-/** @private */
-WebViewInternal.prototype.isUserAgentOverridden_ = function() {
-  return !!this.userAgentOverride_ &&
-      this.userAgentOverride_ != navigator.userAgent;
-};
-
-/** @private */
-WebViewInternal.prototype.setUserAgentOverride_ = function(userAgentOverride) {
-  this.userAgentOverride_ = userAgentOverride;
-  if (!this.instanceId_) {
-    // If we are not attached yet, then we will pick up the user agent on
-    // attachment.
+WebViewInternal.prototype.setZoom = function(zoomFactor, callback) {
+  if (!this.instanceId) {
     return;
   }
-  WebView.overrideUserAgent(this.instanceId_, userAgentOverride);
+  WebView.setZoom(this.instanceId, zoomFactor, callback);
+};
+
+WebViewInternal.prototype.getZoom = function(callback) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.getZoom(this.instanceId, callback);
 };
 
 /** @private */
-WebViewInternal.prototype.captureVisibleRegion_ = function(spec, callback) {
-  WebView.captureVisibleRegion(this.instanceId_, spec, callback);
+WebViewInternal.prototype.captureVisibleRegion = function(spec, callback) {
+  WebView.captureVisibleRegion(this.instanceId, spec, callback);
 };
 
-WebViewInternal.maybeRegisterExperimentalAPIs = function(proto, secret) {
+WebViewInternal.maybeRegisterExperimentalAPIs = function(proto) {
   proto.clearData = function(var_args) {
-    var internal = this.internal_(secret);
-    $Function.apply(internal.clearData_, internal, arguments);
+    var internal = privates(this).internal;
+    $Function.apply(internal.clearData, internal, arguments);
   };
 
-  proto.getUserAgent = function() {
-    return this.internal_(secret).getUserAgent_();
+  proto.setZoom = function(zoomFactor, callback) {
+    privates(this).internal.setZoom(zoomFactor, callback);
   };
 
-  proto.isUserAgentOverridden = function() {
-    return this.internal_(secret).isUserAgentOverridden_();
-  };
-
-  proto.setUserAgentOverride = function(userAgentOverride) {
-    this.internal_(secret).setUserAgentOverride_(userAgentOverride);
+  proto.getZoom = function(callback) {
+    return privates(this).internal.getZoom(callback);
   };
 
   proto.captureVisibleRegion = function(spec, callback) {
-    this.internal_(secret).captureVisibleRegion_(spec, callback);
+    privates(this).internal.captureVisibleRegion(spec, callback);
   };
 };

@@ -6,7 +6,6 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
@@ -15,8 +14,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/host_message_context.h"
@@ -41,10 +42,10 @@ PepperIsolatedFileSystemMessageFilter*
 PepperIsolatedFileSystemMessageFilter::Create(
     PP_Instance instance, content::BrowserPpapiHost* host) {
   int render_process_id;
-  int unused_render_view_id;
-  if (!host->GetRenderViewIDsForInstance(instance,
-                                         &render_process_id,
-                                         &unused_render_view_id)) {
+  int unused_render_frame_id;
+  if (!host->GetRenderFrameIDsForInstance(instance,
+                                          &render_process_id,
+                                          &unused_render_frame_id)) {
     return NULL;
   }
   return new PepperIsolatedFileSystemMessageFilter(
@@ -141,7 +142,7 @@ int32_t PepperIsolatedFileSystemMessageFilter::OnOpenFileSystem(
 int32_t PepperIsolatedFileSystemMessageFilter::OpenCrxFileSystem(
     ppapi::host::HostMessageContext* context) {
   Profile* profile = GetProfile();
-  const ExtensionSet* extension_set = NULL;
+  const extensions::ExtensionSet* extension_set = NULL;
   if (profile) {
     extension_set = extensions::ExtensionSystem::Get(profile)->
         extension_service()->extensions();

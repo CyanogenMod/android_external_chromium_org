@@ -7,10 +7,12 @@
       <span class="link"><span class="link-color"></span></span>
     </div>
     <div class="language-options-header">
-      <div i18n-content="addLanguageInstructions"></div>
+      <span i18n-content="addLanguageInstructions"></span>
 <if expr="pp_ifdef('chromeos')">
-      <div i18n-content="inputMethodInstructions"></div>
+      <span i18n-content="inputMethodInstructions"></span>
 </if>
+      <a target="_blank" i18n-content="learnMore"
+          i18n-values="href:languagesLearnMoreURL"></a>
     </div>
     <div class="language-options">
       <div id="language-options-languages">
@@ -30,6 +32,7 @@
           <button id="language-options-ui-language-button"
               i18n-content="displayInThisLanguage">
           </button>
+          <span class="controlled-setting-indicator"></span>
           <span id="language-options-ui-language-message" hidden></span>
         </div>
 </if>

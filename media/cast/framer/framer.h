@@ -16,7 +16,7 @@
 #include "media/cast/framer/frame_buffer.h"
 #include "media/cast/framer/frame_id_map.h"
 #include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtp_common/rtp_defines.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
@@ -33,21 +33,21 @@ class Framer {
   ~Framer();
 
   // Return true when receiving the last packet in a frame, creating a
-  // complete frame.
+  // complete frame. If a duplicate packet for an already complete frame is
+  // received, the function returns false but sets |duplicate| to true.
   bool InsertPacket(const uint8* payload_data,
                     size_t payload_size,
-                    const RtpCastHeader& rtp_header);
+                    const RtpCastHeader& rtp_header,
+                    bool* duplicate);
 
   // Extracts a complete encoded frame - will only return a complete continuous
   // frame.
   // Returns false if the frame does not exist or if the frame is not complete
   // within the given time frame.
-  bool GetEncodedVideoFrame(EncodedVideoFrame* video_frame,
-                            uint32* rtp_timestamp,
+  bool GetEncodedVideoFrame(transport::EncodedVideoFrame* video_frame,
                             bool* next_frame);
 
-  bool GetEncodedAudioFrame(EncodedAudioFrame* audio_frame,
-                            uint32* rtp_timestamp,
+  bool GetEncodedAudioFrame(transport::EncodedAudioFrame* audio_frame,
                             bool* next_frame);
 
   void ReleaseFrame(uint32 frame_id);

@@ -80,7 +80,8 @@ remoting.HostList = function(table, noHosts, errorMsg, errorButton,
    * @type {remoting.HostController.State}
    * @private
    */
-  this.localHostState_ = remoting.HostController.State.NOT_IMPLEMENTED;
+  this.localHostState_ = remoting.HostController.State.UNKNOWN;
+
   /**
    * @type {number}
    * @private
@@ -211,6 +212,12 @@ remoting.HostList.prototype.parseHostListResponse_ = function(onDone, xhr) {
               return 1;
             } else if (b.status < a.status) {
               return -1;
+            } else if (a.hostName.toLocaleLowerCase() <
+                       b.hostName.toLocaleLowerCase()) {
+              return -1;
+            } else if (a.hostName.toLocaleLowerCase() >
+                       b.hostName.toLocaleLowerCase()) {
+              return 1;
             }
             return 0;
           };
@@ -298,7 +305,8 @@ remoting.HostList.prototype.display = function() {
   var enabled = (state == remoting.HostController.State.STARTING) ||
       (state == remoting.HostController.State.STARTED);
   var canChangeLocalHostState =
-      (state != remoting.HostController.State.NOT_IMPLEMENTED) &&
+      (state != remoting.HostController.State.NOT_IMPLEMENTED &&
+       state != remoting.HostController.State.UNKNOWN) &&
       (enabled || this.lastError_ == '');
 
   remoting.updateModalUi(enabled ? 'enabled' : 'disabled', 'data-daemon-state');

@@ -91,6 +91,12 @@ class CONTENT_EXPORT InterstitialPageImpl
   RenderViewHost* GetRenderViewHost() const;
 #endif
 
+  // TODO(nasko): This should move to InterstitialPageNavigatorImpl, but in
+  // the meantime make it public, so it can be called directly.
+  void DidNavigate(
+      RenderViewHost* render_view_host,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
+
  protected:
   // NotificationObserver method:
   virtual void Observe(int type,
@@ -103,6 +109,7 @@ class CONTENT_EXPORT InterstitialPageImpl
       const LoadCommittedDetails& load_details) OVERRIDE;
 
   // RenderFrameHostDelegate implementation:
+  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
 
   // RenderViewHostDelegate implementation:
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
@@ -110,9 +117,6 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual void RenderViewTerminated(RenderViewHost* render_view_host,
                                     base::TerminationStatus status,
                                     int error_code) OVERRIDE;
-  virtual void DidNavigate(
-      RenderViewHost* render_view_host,
-      const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
   virtual void UpdateTitle(RenderViewHost* render_view_host,
                            int32 page_id,
                            const base::string16& title,
@@ -153,7 +157,7 @@ class CONTENT_EXPORT InterstitialPageImpl
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) OVERRIDE;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
 
@@ -180,8 +184,8 @@ class CONTENT_EXPORT InterstitialPageImpl
   // - any command sent by the RenderViewHost will be ignored.
   void Disable();
 
-  // Shutdown the RVH.  We will be deleted by the time this method returns.
-  void Shutdown(RenderViewHostImpl* render_view_host);
+  // Delete ourselves, causing Shutdown on the RVH to be called.
+  void Shutdown();
 
   void OnNavigatingAwayOrTabClosing();
 
@@ -229,6 +233,8 @@ class CONTENT_EXPORT InterstitialPageImpl
   // The RenderViewHost displaying the interstitial contents.  This is valid
   // until Hide is called, at which point it will be set to NULL, signifying
   // that shutdown has started.
+  // TODO(creis): This is now owned by the FrameTree.  We should route things
+  // through the tree's root RenderFrameHost instead.
   RenderViewHostImpl* render_view_host_;
 
   // The frame tree structure of the current page.

@@ -175,8 +175,9 @@ TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuEmpty) {
 TEST_F(HistoryMenuBridgeTest, AddItemToMenu) {
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"history foo"] autorelease];
 
-  const base::string16 short_url = ASCIIToUTF16("http://foo/");
-  const base::string16 long_url = ASCIIToUTF16("http://super-duper-long-url--."
+  const base::string16 short_url = base::ASCIIToUTF16("http://foo/");
+  const base::string16 long_url = base::ASCIIToUTF16(
+      "http://super-duper-long-url--."
       "that.cannot.possibly.fit.even-in-80-columns"
       "or.be.reasonably-displayed-in-a-menu"
       "without.looking-ridiculous.com/"); // 140 chars total
@@ -329,7 +330,7 @@ TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabsAndWindows) {
 TEST_F(HistoryMenuBridgeTest, GetFaviconForHistoryItem) {
   // Create a fake item.
   HistoryMenuBridge::HistoryItem item;
-  item.title = ASCIIToUTF16("Title");
+  item.title = base::ASCIIToUTF16("Title");
   item.url = GURL("http://google.com");
 
   // Request the icon.
@@ -337,7 +338,7 @@ TEST_F(HistoryMenuBridgeTest, GetFaviconForHistoryItem) {
 
   // Make sure the item was modified properly.
   EXPECT_TRUE(item.icon_requested);
-  EXPECT_NE(CancelableTaskTracker::kBadTaskId, item.icon_task_id);
+  EXPECT_NE(base::CancelableTaskTracker::kBadTaskId, item.icon_task_id);
 }
 
 TEST_F(HistoryMenuBridgeTest, GotFaviconData) {

@@ -10,13 +10,10 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
-
-#if defined(USE_AURA)
-#include "ui/views/corewm/shadow_types.h"
-#endif
 
 namespace views {
 
@@ -37,6 +34,10 @@ Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
     params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
     params.remove_standard_frame = true;
   }
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Dialogs on Linux always have custom frames.
+  params.remove_standard_frame = true;
+#endif
   params.context = context;
   params.parent = parent;
   params.top_level = true;
@@ -154,38 +155,19 @@ NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
 
 // static
 NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
-  return CreateDialogFrameView(widget, false);
-}
-
-// static
-NonClientFrameView* DialogDelegate::CreateDialogFrameView(
-    Widget* widget,
-    bool force_opaque_border) {
   BubbleFrameView* frame = new BubbleFrameView(gfx::Insets());
   const SkColor color = widget->GetNativeTheme()->GetSystemColor(
       ui::NativeTheme::kColorId_DialogBackground);
-  if (force_opaque_border) {
-    frame->SetBubbleBorder(new BubbleBorder(
-        BubbleBorder::NONE,
-        BubbleBorder::NO_SHADOW_OPAQUE_BORDER,
-        color));
-  } else {
-    frame->SetBubbleBorder(new BubbleBorder(BubbleBorder::FLOAT,
-                                            BubbleBorder::SMALL_SHADOW,
-                                            color));
-  }
+  frame->SetBubbleBorder(scoped_ptr<BubbleBorder>(new BubbleBorder(
+      BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, color)));
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
   if (delegate) {
     View* titlebar_view = delegate->CreateTitlebarExtraView();
     if (titlebar_view)
       frame->SetTitlebarExtraView(titlebar_view);
   }
-  if (force_opaque_border)
-    widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
-#if defined(USE_AURA)
   // TODO(msw): Add a matching shadow type and remove the bubble frame border?
   corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
-#endif
   return frame;
 }
 

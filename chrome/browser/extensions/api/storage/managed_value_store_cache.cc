@@ -13,9 +13,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/storage/policy_value_store.h"
 #include "chrome/browser/extensions/api/storage/settings_storage_factory.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/policy/schema_registry_service.h"
@@ -24,7 +22,6 @@
 #include "chrome/browser/value_store/value_store_change.h"
 #include "chrome/common/extensions/api/storage.h"
 #include "chrome/common/extensions/api/storage/storage_schema_manifest_handler.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/schema.h"
 #include "components/policy/core/common/schema_map.h"
@@ -34,12 +31,14 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/one_shot_event.h"
-#include "extensions/common/permissions/api_permission.h"
 
 using content::BrowserThread;
 
@@ -195,12 +194,8 @@ void ManagedValueStoreCache::ExtensionTracker::LoadSchemas(
     std::string schema_file;
     if (!(*it)->manifest()->GetString(
             manifest_keys::kStorageManagedSchema, &schema_file)) {
-      // TODO(joaodasilva): Remove this. http://crbug.com/240704
-      if ((*it)->HasAPIPermission(APIPermission::kStorage)) {
-        (*components)[(*it)->id()] = policy::Schema();
-      } else {
-        NOTREACHED();
-      }
+      // TODO(joaodasilva): Remove this. http://crbug.com/325349
+      (*components)[(*it)->id()] = policy::Schema();
       continue;
     }
     // The extension should have been validated, so assume the schema exists

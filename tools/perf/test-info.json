@@ -67,6 +67,9 @@
   "dromaeo.jslibtraverseprototype":{
     "description":"Traversing a DOM structure using the Prototype JavaScript Library."
   },
+  "fast_path.key_mobile_sites":{
+    "description":"Measures CPU usage on rendering critical threads. Both clock and CPU time is measured."
+  },
    "html5gaming": {
     "description": "Impact HTML5 Gaming benchmark.\n\nTests one very specific use case: smooth running games rendered with the <canvas> element. The score for the HTML5-Benchmark takes the total time the browser spent rendering frames (formula is 1000000/(sqrt(totalTime) + lagTime * 0.1)). The benchmark automatically runs at a reasonable screen size. Final score is a indicator for the browser's ability to smoothly run HTML5 games.",
     "code": ["chrome/src/tools/perf/benchmark/html5gaming.py"]
@@ -129,9 +132,6 @@
   "page_cycler.dhtml":{
     "description":"Benchmarks for various DHTML operations like simple animations."
   },
-  "page_cycler.indexeddb":{
-    "description":"Benchmark for a basic insert operation in Indexed DB."
-  },
   "page_cycler.intl_ar_fa_he":{
     "description":"Page load time benchmark for a variety of pages in Arabic, Farsi and Hebrew. Runs against pages recorded in April, 2013."
   },
@@ -162,6 +162,9 @@
   "page_cycler.top_10_mobile":{
     "description":"Page load time benchmark for the top 10 mobile web pages. Runs against pages recorded in November, 2013."
   },
+  "page_cycler.key_mobile_sites":{
+    "description":"Page load time benchmark for key mobile sites."
+  },
   "page_cycler.tough_layout_cases":{
     "description":"Page loading benchmark for the slowest layouts observed in the Alexa top 1 million sites in July 2013."
   },
@@ -177,6 +180,9 @@
       "chrome/src/tools/perf/benchmark/peacekeeper.py"
     ]
   },
+  "scheduler.tough_scheduling_cases":{
+    "description":"This test measures rendering statistics while interacting with pages that have challenging scheduling properties. Mainly affected by changes to the compositor scheduler or the graphics pipeline."
+  },
   "scirra":{
     "description":"The Scirra WebGL performance test measures the number of 2D triangles represented onscreen when the animation reaches the 30 FPS threshold. [Scirra demos](https://www.scirra.com/)",
     "code":[
@@ -191,6 +197,9 @@
   },
   "smoothness.top_25":{
     "description":"Measures frame rate and a variety of other statistics while scrolling down the top 25 web pages. [Documentation](http://www.chromium.org/developers/design-documents/rendering-benchmarks)."
+  },
+  "smoothness.tough_canvas_cases":{
+    "description":"Measures frame rate and a variety of other statistics on a selection of pages making use of the 2D Canvas API."
   },
   "spaceport":{
     "description":"Performance on [spaceport.io's perfmarks benchmark](http://spaceport.io/community/perfmarks). This test performs 3 animations (rotate, translate, scale) using a variety of methods (css, webgl, canvas, etc) and reports the number of objects that can be simultaneously animated while still achieving 30FPS."

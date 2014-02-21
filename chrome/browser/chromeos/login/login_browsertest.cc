@@ -10,8 +10,8 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
@@ -23,6 +23,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -47,6 +48,8 @@ class LoginGuestTest : public InProcessBrowserTest {
     command_line->AppendSwitch(chromeos::switches::kGuestSession);
     command_line->AppendSwitch(::switches::kIncognito);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
+    command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
+                                    chromeos::UserManager::kGuestUserName);
   }
 };
 
@@ -147,7 +150,6 @@ IN_PROC_BROWSER_TEST_F(LoginUserTest, CursorShown) {
 // After a guest login, we should get the OTR default profile.
 IN_PROC_BROWSER_TEST_F(LoginGuestTest, GuestIsOTR) {
   Profile* profile = browser()->profile();
-  EXPECT_EQ("Default", profile->GetPath().BaseName().value());
   EXPECT_TRUE(profile->IsOffTheRecord());
   // Ensure there's extension service for this profile.
   EXPECT_TRUE(extensions::ExtensionSystem::Get(profile)->extension_service());

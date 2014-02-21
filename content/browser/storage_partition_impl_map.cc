@@ -381,10 +381,10 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
           new BlobProtocolHandler(blob_storage_context,
                                   stream_context,
                                   partition->GetFileSystemContext()));
-  protocol_handlers[chrome::kFileSystemScheme] =
+  protocol_handlers[kFileSystemScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           CreateFileSystemProtocolHandler(partition->GetFileSystemContext()));
-  protocol_handlers[chrome::kChromeUIScheme] =
+  protocol_handlers[kChromeUIScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           URLDataManagerBackend::CreateProtocolHandler(
               browser_context_->GetResourceContext(),
@@ -406,7 +406,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
                 partition->GetAppCacheService(),
                 blob_storage_context));
   }
-  protocol_handlers[chrome::kChromeDevToolsScheme] =
+  protocol_handlers[kChromeDevToolsScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           CreateDevToolsProtocolHandler(browser_context_->GetResourceContext(),
                                         browser_context_->IsOffTheRecord()));
@@ -465,7 +465,7 @@ void StoragePartitionImplMap::AsyncObliterate(
           StoragePartition::REMOVE_DATA_MASK_ALL &
             (~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE),
           StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
-          NULL,
+          GURL(),
           StoragePartition::OriginMatcherFunction(),
           base::Time(), base::Time::Max(),
           base::Bind(&base::DoNothing));

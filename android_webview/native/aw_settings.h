@@ -28,6 +28,7 @@ class AwSettings : public content::WebContentsObserver {
   // Called from Java. Methods with "Locked" suffix require that the settings
   // access lock is held during their execution.
   void Destroy(JNIEnv* env, jobject obj);
+  void PopulateWebPreferencesLocked(JNIEnv* env, jobject obj, jlong web_prefs);
   void ResetScrollAndScaleState(JNIEnv* env, jobject obj);
   void UpdateEverythingLocked(JNIEnv* env, jobject obj);
   void UpdateInitialPageScaleLocked(JNIEnv* env, jobject obj);
@@ -49,6 +50,8 @@ class AwSettings : public content::WebContentsObserver {
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
+
+  bool accelerated_2d_canvas_disabled_by_switch_;
 
   JavaObjectWeakGlobalRef aw_settings_;
 };

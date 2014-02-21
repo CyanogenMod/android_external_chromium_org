@@ -105,26 +105,27 @@ const std::vector<SharedModuleInfo::ImportInfo>& SharedModuleInfo::GetImports(
   return GetSharedModuleInfo(extension).imports_;
 }
 
-bool SharedModuleInfo::Parse(const Extension* extension, string16* error) {
+bool SharedModuleInfo::Parse(const Extension* extension,
+                             base::string16* error) {
   bool has_import = extension->manifest()->HasKey(keys::kImport);
   bool has_export = extension->manifest()->HasKey(keys::kExport);
   if (!has_import && !has_export)
     return true;
 
   if (has_import && has_export) {
-    *error = ASCIIToUTF16(errors::kInvalidImportAndExport);
+    *error = base::ASCIIToUTF16(errors::kInvalidImportAndExport);
     return false;
   }
 
   if (has_export) {
     const base::DictionaryValue* export_value = NULL;
     if (!extension->manifest()->GetDictionary(keys::kExport, &export_value)) {
-      *error = ASCIIToUTF16(errors::kInvalidExport);
+      *error = base::ASCIIToUTF16(errors::kInvalidExport);
       return false;
     }
     const base::ListValue* resources_list = NULL;
     if (!export_value->GetList(keys::kResources, &resources_list)) {
-      *error = ASCIIToUTF16(errors::kInvalidExportResources);
+      *error = base::ASCIIToUTF16(errors::kInvalidExportResources);
       return false;
     }
     for (size_t i = 0; i < resources_list->GetSize(); ++i) {
@@ -148,13 +149,13 @@ bool SharedModuleInfo::Parse(const Extension* extension, string16* error) {
   if (has_import) {
     const base::ListValue* import_list = NULL;
     if (!extension->manifest()->GetList(keys::kImport, &import_list)) {
-      *error = ASCIIToUTF16(errors::kInvalidImport);
+      *error = base::ASCIIToUTF16(errors::kInvalidImport);
       return false;
     }
     for (size_t i = 0; i < import_list->GetSize(); ++i) {
       const base::DictionaryValue* import_entry = NULL;
       if (!import_list->GetDictionary(i, &import_entry)) {
-        *error = ASCIIToUTF16(errors::kInvalidImport);
+        *error = base::ASCIIToUTF16(errors::kInvalidImport);
         return false;
       }
       std::string extension_id;
@@ -193,7 +194,7 @@ SharedModuleHandler::SharedModuleHandler() {
 SharedModuleHandler::~SharedModuleHandler() {
 }
 
-bool SharedModuleHandler::Parse(Extension* extension, string16* error) {
+bool SharedModuleHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<SharedModuleInfo> info(new SharedModuleInfo);
   if (!info->Parse(extension, error))
     return false;

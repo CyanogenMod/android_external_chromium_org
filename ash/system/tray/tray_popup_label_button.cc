@@ -16,8 +16,8 @@ namespace internal {
 TrayPopupLabelButton::TrayPopupLabelButton(views::ButtonListener* listener,
                                            const base::string16& text)
     : views::LabelButton(listener, text) {
-  set_border(new TrayPopupLabelButtonBorder);
-  set_focusable(true);
+  SetBorder(scoped_ptr<views::Border>(new TrayPopupLabelButtonBorder));
+  SetFocusable(true);
   set_request_focus_on_press(false);
   set_animate_on_state_change(false);
   SetHorizontalAlignment(gfx::ALIGN_CENTER);

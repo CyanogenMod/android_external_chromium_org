@@ -17,14 +17,14 @@ URLPrefix::URLPrefix(const base::string16& prefix, size_t num_components)
 const URLPrefixes& URLPrefix::GetURLPrefixes() {
   CR_DEFINE_STATIC_LOCAL(URLPrefixes, prefixes, ());
   if (prefixes.empty()) {
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("https://www."), 2));
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("http://www."), 2));
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("ftp://ftp."), 2));
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("ftp://www."), 2));
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("https://"), 1));
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("http://"), 1));
-    prefixes.push_back(URLPrefix(ASCIIToUTF16("ftp://"), 1));
-    prefixes.push_back(URLPrefix(string16(), 0));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("https://www."), 2));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("http://www."), 2));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("ftp://ftp."), 2));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("ftp://www."), 2));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("https://"), 1));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("http://"), 1));
+    prefixes.push_back(URLPrefix(base::ASCIIToUTF16("ftp://"), 1));
+    prefixes.push_back(URLPrefix(base::string16(), 0));
   }
   return prefixes;
 }

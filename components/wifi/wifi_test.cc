@@ -66,11 +66,15 @@ WiFiTest::Result WiFiTest::Main(int argc, const char* argv[]) {
   if (!ParseCommandLine(argc, argv)) {
     VLOG(0) <<  "Usage: " << argv[0] <<
                 " [--list]"
+                " [--get_key]"
                 " [--get_properties]"
+                " [--create]"
                 " [--connect]"
                 " [--disconnect]"
                 " [--network_guid=<network_guid>]"
                 " [--frequency=0|2400|5000]"
+                " [--security=none|WEP-PSK|WPA-PSK|WPA2-PSK]"
+                " [--password=<wifi_password>]"
                 " [<network_guid>]\n";
     return RESULT_WRONG_USAGE;
   }
@@ -88,6 +92,10 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
       parsed_command_line.GetSwitchValueASCII("network_guid");
   std::string frequency =
       parsed_command_line.GetSwitchValueASCII("frequency");
+  std::string password =
+      parsed_command_line.GetSwitchValueASCII("password");
+  std::string security =
+      parsed_command_line.GetSwitchValueASCII("security");
 
   if (parsed_command_line.GetArgs().size() == 1) {
 #if defined(OS_WIN)
@@ -102,7 +110,7 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
     MessageBoxA(NULL, __FUNCTION__, "Debug Me!", MB_OK);
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
   scoped_ptr<WiFiService> wifi_service(WiFiService::Create());
 #else
   scoped_ptr<WiFiService> wifi_service(WiFiService::CreateForTest());
@@ -111,7 +119,7 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
   wifi_service->Initialize(NULL);
 
   if (parsed_command_line.HasSwitch("list")) {
-    ListValue network_list;
+    base::ListValue network_list;
     wifi_service->GetVisibleNetworks(std::string(), &network_list);
     VLOG(0) << network_list;
     return true;
@@ -119,7 +127,7 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
 
   if (parsed_command_line.HasSwitch("get_properties")) {
     if (network_guid.length() > 0) {
-      DictionaryValue properties;
+      base::DictionaryValue properties;
       std::string error;
       wifi_service->GetProperties(network_guid, &properties, &error);
       VLOG(0) << error << ":\n" << properties;
@@ -127,26 +135,45 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
     }
   }
 
-  // Optional properties (frequency, password) to use for connect.
-  scoped_ptr<DictionaryValue> connect_properties(new DictionaryValue());
+  // Optional properties (frequency, password) to use for connect or create.
+  scoped_ptr<base::DictionaryValue> properties(new base::DictionaryValue());
 
-  if (parsed_command_line.HasSwitch("frequency")) {
+  if (!frequency.empty()) {
     int value = 0;
-    if (!network_guid.empty() &&
-        !frequency.empty() &&
-        base::StringToInt(frequency, &value)) {
-      connect_properties->SetInteger("WiFi.Frequency", value);
+    if (base::StringToInt(frequency, &value)) {
+      properties->SetInteger("WiFi.Frequency", value);
       // fall through to connect.
     }
   }
 
-  if (parsed_command_line.HasSwitch("connect")) {
-    if (network_guid.length() > 0) {
+  if (!password.empty())
+    properties->SetString("WiFi.Passphrase", password);
+
+  if (!security.empty())
+    properties->SetString("WiFi.Security", security);
+
+  if (parsed_command_line.HasSwitch("create")) {
+    if (!network_guid.empty()) {
       std::string error;
-      if (!connect_properties->empty()) {
-        VLOG(0) << "Using connect properties: " << *connect_properties;
+      std::string new_network_guid;
+      properties->SetString("WiFi.SSID", network_guid);
+      VLOG(0) << "Creating Network: " << *properties;
+      wifi_service->CreateNetwork(false,
+                                  properties.Pass(),
+                                  &new_network_guid,
+                                  &error);
+      VLOG(0) << error << ":\n" << new_network_guid;
+      return true;
+    }
+  }
+
+  if (parsed_command_line.HasSwitch("connect")) {
+    if (!network_guid.empty()) {
+      std::string error;
+      if (!properties->empty()) {
+        VLOG(0) << "Using connect properties: " << *properties;
         wifi_service->SetProperties(network_guid,
-                                    connect_properties.Pass(),
+                                    properties.Pass(),
                                     &error);
       }
       wifi_service->StartConnect(network_guid, &error);
@@ -160,6 +187,18 @@ bool WiFiTest::ParseCommandLine(int argc, const char* argv[]) {
       std::string error;
       wifi_service->StartDisconnect(network_guid, &error);
       VLOG(0) << error;
+      return true;
+    }
+  }
+
+  if (parsed_command_line.HasSwitch("get_key")) {
+    if (network_guid.length() > 0) {
+      std::string error;
+      std::string key_data;
+      wifi_service->GetKeyFromSystem(network_guid,
+                                     &key_data,
+                                     &error);
+      VLOG(0) << key_data << error;
       return true;
     }
   }

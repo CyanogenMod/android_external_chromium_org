@@ -4,6 +4,7 @@
 
 #include "net/quic/quic_packet_creator.h"
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_ack_notifier.h"
@@ -17,11 +18,42 @@ using std::min;
 using std::pair;
 using std::vector;
 
-// If true, then QUIC handshake packets will be padded to the maximium packet
-// size.
-bool FLAGS_pad_quic_handshake_packets = true;
-
 namespace net {
+
+// A QuicRandom wrapper that gets a bucket of entropy and distributes it
+// bit-by-bit. Replenishes the bucket as needed. Not thread-safe. Expose this
+// class if single bit randomness is needed elsewhere.
+class QuicRandomBoolSource {
+ public:
+  // random: Source of entropy. Not owned.
+  explicit QuicRandomBoolSource(QuicRandom* random)
+      : random_(random),
+        bit_bucket_(0),
+        bit_mask_(0) {}
+
+  ~QuicRandomBoolSource() {}
+
+  // Returns the next random bit from the bucket.
+  bool RandBool() {
+    if (bit_mask_ == 0) {
+      bit_bucket_ = random_->RandUint64();
+      bit_mask_ = 1;
+    }
+    bool result = ((bit_bucket_ & bit_mask_) != 0);
+    bit_mask_ <<= 1;
+    return result;
+  }
+
+ private:
+  // Source of entropy.
+  QuicRandom* random_;
+  // Stored random bits.
+  uint64 bit_bucket_;
+  // The next available bit has "1" in the mask. Zero means empty bucket.
+  uint64 bit_mask_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicRandomBoolSource);
+};
 
 QuicPacketCreator::QuicPacketCreator(QuicGuid guid,
                                      QuicFramer* framer,
@@ -29,7 +61,7 @@ QuicPacketCreator::QuicPacketCreator(QuicGuid guid,
                                      bool is_server)
     : guid_(guid),
       framer_(framer),
-      random_generator_(random_generator),
+      random_bool_source_(new QuicRandomBoolSource(random_generator)),
       sequence_number_(0),
       fec_group_number_(0),
       is_server_(is_server),
@@ -57,7 +89,9 @@ bool QuicPacketCreator::ShouldSendFec(bool force_close) const {
 }
 
 void QuicPacketCreator::MaybeStartFEC() {
-  if (options_.max_packets_per_fec_group > 0 && fec_group_.get() == NULL) {
+  // Don't send FEC until QUIC_VERSION_15.
+  if (framer_->version() > QUIC_VERSION_14 &&
+      options_.max_packets_per_fec_group > 0 && fec_group_.get() == NULL) {
     DCHECK(queued_frames_.empty());
     // Set the fec group number to the sequence number of the next packet.
     fec_group_number_ = sequence_number() + 1;
@@ -283,11 +317,9 @@ SerializedPacket QuicPacketCreator::SerializePacket() {
     LOG(DFATAL) << "Attempt to serialize empty packet";
   }
   QuicPacketHeader header;
-  FillPacketHeader(fec_group_number_, false, false, &header);
+  FillPacketHeader(fec_group_number_, false, &header);
 
-  if (FLAGS_pad_quic_handshake_packets) {
-    MaybeAddPadding();
-  }
+  MaybeAddPadding();
 
   size_t max_plaintext_size =
       framer_->GetMaxPlaintextSize(options_.max_packet_length);
@@ -321,8 +353,7 @@ SerializedPacket QuicPacketCreator::SerializeFec() {
   DCHECK_LT(0u, fec_group_->NumReceivedPackets());
   DCHECK_EQ(0u, queued_frames_.size());
   QuicPacketHeader header;
-  FillPacketHeader(fec_group_number_, true,
-                   fec_group_->entropy_parity(), &header);
+  FillPacketHeader(fec_group_number_, true, &header);
   QuicFecData fec_data;
   fec_data.fec_group = fec_group_->min_protected_packet();
   fec_data.redundancy = fec_group_->payload_parity();
@@ -362,7 +393,6 @@ QuicEncryptedPacket* QuicPacketCreator::SerializeVersionNegotiationPacket(
 
 void QuicPacketCreator::FillPacketHeader(QuicFecGroupNumber fec_group,
                                          bool fec_flag,
-                                         bool fec_entropy_flag,
                                          QuicPacketHeader* header) {
   header->public_header.guid = guid_;
   header->public_header.reset_flag = false;
@@ -370,21 +400,7 @@ void QuicPacketCreator::FillPacketHeader(QuicFecGroupNumber fec_group,
   header->fec_flag = fec_flag;
   header->packet_sequence_number = ++sequence_number_;
   header->public_header.sequence_number_length = sequence_number_length_;
-
-  bool entropy_flag;
-  if (header->packet_sequence_number == 1) {
-    DCHECK(!fec_flag);
-    // TODO(satyamshekhar): No entropy in the first message.
-    // For crypto tests to pass. Fix this by using deterministic QuicRandom.
-    entropy_flag = 0;
-  } else if (fec_flag) {
-    // FEC packets don't have an entropy of their own. Entropy flag for FEC
-    // packets is the XOR of entropy of previous packets.
-    entropy_flag = fec_entropy_flag;
-  } else {
-    entropy_flag = random_generator_->RandBool();
-  }
-  header->entropy_flag = entropy_flag;
+  header->entropy_flag = random_bool_source_->RandBool();
   header->is_in_fec_group = fec_group == 0 ? NOT_IN_FEC_GROUP : IN_FEC_GROUP;
   header->fec_group = fec_group;
 }
@@ -396,6 +412,7 @@ bool QuicPacketCreator::ShouldRetransmit(const QuicFrame& frame) {
 
 bool QuicPacketCreator::AddFrame(const QuicFrame& frame,
                                  bool save_retransmittable_frames) {
+  DVLOG(1) << "Adding frame: " << frame;
   size_t frame_len = framer_->GetSerializedFrameLength(
       frame, BytesFree(), queued_frames_.empty(), true,
       options()->send_sequence_number_length);

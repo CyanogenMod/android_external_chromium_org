@@ -5,7 +5,7 @@
 #include "media/cast/framer/frame_id_map.h"
 
 #include "base/logging.h"
-#include "media/cast/rtp_common/rtp_defines.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
@@ -18,28 +18,27 @@ FrameInfo::FrameInfo(uint32 frame_id,
       frame_id_(frame_id),
       referenced_frame_id_(referenced_frame_id),
       max_received_packet_id_(0) {
-  if (max_packet_id > 0) {
-    // Create the set with all packets missing.
-    for (uint16 i = 0; i <= max_packet_id; i++) {
-      missing_packets_.insert(i);
-    }
+  // Create the set with all packets missing.
+  for (uint16 i = 0; i <= max_packet_id; i++) {
+    missing_packets_.insert(i);
   }
 }
 
 FrameInfo::~FrameInfo() {}
 
-bool FrameInfo::InsertPacket(uint16 packet_id) {
+PacketType FrameInfo::InsertPacket(uint16 packet_id) {
+  if (missing_packets_.find(packet_id) == missing_packets_.end()) {
+    return kDuplicatePacket;
+  }
   // Update the last received packet id.
   if (IsNewerPacketId(packet_id, max_received_packet_id_)) {
     max_received_packet_id_ = packet_id;
   }
   missing_packets_.erase(packet_id);
-  return missing_packets_.empty();
+  return missing_packets_.empty() ? kNewPacketCompletingFrame : kNewPacket;
 }
 
-bool FrameInfo::Complete() const {
-  return missing_packets_.empty();
-}
+bool FrameInfo::Complete() const { return missing_packets_.empty(); }
 
 void FrameInfo::GetMissingPackets(bool newest_frame,
                                   PacketIdSet* missing_packets) const {
@@ -53,16 +52,14 @@ void FrameInfo::GetMissingPackets(bool newest_frame,
   }
 }
 
-
 FrameIdMap::FrameIdMap()
     : waiting_for_key_(true),
       last_released_frame_(kStartFrameId),
-      newest_frame_id_(kStartFrameId) {
-}
+      newest_frame_id_(kStartFrameId) {}
 
 FrameIdMap::~FrameIdMap() {}
 
-bool FrameIdMap::InsertPacket(const RtpCastHeader& rtp_header, bool* complete) {
+PacketType FrameIdMap::InsertPacket(const RtpCastHeader& rtp_header) {
   uint32 frame_id = rtp_header.frame_id;
   uint32 reference_frame_id;
   if (rtp_header.is_reference) {
@@ -81,7 +78,7 @@ bool FrameIdMap::InsertPacket(const RtpCastHeader& rtp_header, bool* complete) {
           << " max packet:" << static_cast<int>(rtp_header.max_packet_id);
 
   if (IsOlderFrameId(frame_id, last_released_frame_) && !waiting_for_key_) {
-    return false;
+    return kTooOldPacket;
   }
 
   // Update the last received frame id.
@@ -91,6 +88,7 @@ bool FrameIdMap::InsertPacket(const RtpCastHeader& rtp_header, bool* complete) {
 
   // Does this packet belong to a new frame?
   FrameMap::iterator it = frame_map_.find(frame_id);
+  PacketType packet_type;
   if (it == frame_map_.end()) {
     // New frame.
     linked_ptr<FrameInfo> frame_info(new FrameInfo(frame_id,
@@ -100,12 +98,12 @@ bool FrameIdMap::InsertPacket(const RtpCastHeader& rtp_header, bool* complete) {
     std::pair<FrameMap::iterator, bool> retval =
         frame_map_.insert(std::make_pair(frame_id, frame_info));
 
-    *complete = retval.first->second->InsertPacket(rtp_header.packet_id);
+    packet_type = retval.first->second->InsertPacket(rtp_header.packet_id);
   } else {
     // Insert packet to existing frame.
-    *complete = it->second->InsertPacket(rtp_header.packet_id);
+    packet_type = it->second->InsertPacket(rtp_header.packet_id);
   }
-  return true;
+  return packet_type;
 }
 
 void FrameIdMap::RemoveOldFrames(uint32 frame_id) {
@@ -129,9 +127,7 @@ void FrameIdMap::Clear() {
   newest_frame_id_ = kStartFrameId;
 }
 
-uint32 FrameIdMap::NewestFrameId() const {
-  return newest_frame_id_;
-}
+uint32 FrameIdMap::NewestFrameId() const { return newest_frame_id_; }
 
 bool FrameIdMap::NextContinuousFrame(uint32* frame_id) const {
   FrameMap::const_iterator it;
@@ -154,8 +150,10 @@ uint32 FrameIdMap::LastContinuousFrame() const {
   do {
     next_expected_frame++;
     it = frame_map_.find(next_expected_frame);
-    if (it == frame_map_.end()) break;
-    if (!it->second->Complete()) break;
+    if (it == frame_map_.end())
+      break;
+    if (!it->second->Complete())
+      break;
 
     // We found the next continuous frame.
     last_continuous_frame_id = it->first;
@@ -165,7 +163,8 @@ uint32 FrameIdMap::LastContinuousFrame() const {
 
 bool FrameIdMap::NextAudioFrameAllowingMissingFrames(uint32* frame_id) const {
   // First check if we have continuous frames.
-  if (NextContinuousFrame(frame_id)) return true;
+  if (NextContinuousFrame(frame_id))
+    return true;
 
   // Find the oldest frame.
   FrameMap::const_iterator it_best_match = frame_map_.end();
@@ -178,7 +177,8 @@ bool FrameIdMap::NextAudioFrameAllowingMissingFrames(uint32* frame_id) const {
       break;
     }
   }
-  if (it_best_match == frame_map_.end()) return false;  // No complete frame.
+  if (it_best_match == frame_map_.end())
+    return false;  // No complete frame.
 
   ++it;
   for (; it != frame_map_.end(); ++it) {
@@ -200,15 +200,14 @@ bool FrameIdMap::NextVideoFrameAllowingSkippingFrames(uint32* frame_id) const {
       it_best_match = it;
     }
   }
-  if (it_best_match == frame_map_.end()) return false;
+  if (it_best_match == frame_map_.end())
+    return false;
 
   *frame_id = it_best_match->first;
   return true;
 }
 
-bool FrameIdMap::Empty() const {
-  return frame_map_.empty();
-}
+bool FrameIdMap::Empty() const { return frame_map_.empty(); }
 
 int FrameIdMap::NumberOfCompleteFrames() const {
   int count = 0;
@@ -229,20 +228,24 @@ void FrameIdMap::GetMissingPackets(uint32 frame_id,
                                    bool last_frame,
                                    PacketIdSet* missing_packets) const {
   FrameMap::const_iterator it = frame_map_.find(frame_id);
-  if (it == frame_map_.end()) return;
+  if (it == frame_map_.end())
+    return;
 
   it->second->GetMissingPackets(last_frame, missing_packets);
 }
 
 bool FrameIdMap::ContinuousFrame(FrameInfo* frame) const {
   DCHECK(frame);
-  if (waiting_for_key_ && !frame->is_key_frame()) return false;
+  if (waiting_for_key_ && !frame->is_key_frame())
+    return false;
   return static_cast<uint32>(last_released_frame_ + 1) == frame->frame_id();
 }
 
 bool FrameIdMap::DecodableVideoFrame(FrameInfo* frame) const {
-  if (frame->is_key_frame()) return true;
-  if (waiting_for_key_ && !frame->is_key_frame()) return false;
+  if (frame->is_key_frame())
+    return true;
+  if (waiting_for_key_ && !frame->is_key_frame())
+    return false;
 
   // Current frame is not necessarily referencing the last frame.
   // Do we have the reference frame?

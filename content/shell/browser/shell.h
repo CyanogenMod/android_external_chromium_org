@@ -41,7 +41,7 @@ class GURL;
 namespace content {
 
 #if defined(USE_AURA)
-class ShellAuraPlatformData;
+class ShellPlatformDataAura;
 #endif
 
 class BrowserContext;
@@ -68,9 +68,10 @@ class Shell : public WebContentsDelegate,
   void UpdateNavigationControls();
   void Close();
   void ShowDevTools();
+  void ShowDevToolsForElementAt(int x, int y);
+  void ShowDevToolsForTest(const std::string& settings);
   void CloseDevTools();
-#if (defined(OS_WIN) && !defined(USE_AURA)) || \
-    defined(TOOLKIT_GTK) || defined(OS_MACOSX)
+#if defined(TOOLKIT_GTK) || defined(OS_MACOSX)
   // Resizes the main window to the given dimensions.
   void SizeTo(const gfx::Size& content_size);
 #endif
@@ -149,6 +150,9 @@ class Shell : public WebContentsDelegate,
   virtual void ActivateContents(WebContents* contents) OVERRIDE;
   virtual void DeactivateContents(WebContents* contents) OVERRIDE;
   virtual void WorkerCrashed(WebContents* source) OVERRIDE;
+  virtual bool HandleContextMenu(const content::ContextMenuParams& params)
+      OVERRIDE;
+  virtual void WebContentsFocused(WebContents* contents) OVERRIDE;
 
  private:
   enum UIControl {
@@ -192,11 +196,16 @@ class Shell : public WebContentsDelegate,
   void PlatformSetIsLoading(bool loading);
   // Set the title of shell window
   void PlatformSetTitle(const base::string16& title);
+  // User right-clicked on the web view
+  bool PlatformHandleContextMenu(const content::ContextMenuParams& params);
 #if defined(OS_ANDROID)
   void PlatformToggleFullscreenModeForTab(WebContents* web_contents,
                                           bool enter_fullscreen);
   bool PlatformIsFullscreenForTabOrPending(
       const WebContents* web_contents) const;
+#endif
+#if defined(TOOLKIT_VIEWS)
+  void PlatformWebContentsFocused(WebContents* contents);
 #endif
 
   gfx::NativeView GetContentView();
@@ -204,13 +213,10 @@ class Shell : public WebContentsDelegate,
   // WebContentsObserver
   virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
 
+  void InnerShowDevTools(const std::string& settings);
   void OnDevToolsWebContentsDestroyed();
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-  static ATOM RegisterWindowClass();
-  static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-  static LRESULT CALLBACK EditWndProc(HWND, UINT, WPARAM, LPARAM);
-#elif defined(TOOLKIT_GTK)
+#if defined(TOOLKIT_GTK)
   CHROMEGTK_CALLBACK_0(Shell, void, OnBackButtonClicked);
   CHROMEGTK_CALLBACK_0(Shell, void, OnForwardButtonClicked);
   CHROMEGTK_CALLBACK_0(Shell, void, OnReloadButtonClicked);
@@ -242,10 +248,7 @@ class Shell : public WebContentsDelegate,
 
   gfx::Size content_size_;
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-  WNDPROC default_edit_wnd_proc_;
-  static HINSTANCE instance_handle_;
-#elif defined(TOOLKIT_GTK)
+#if defined(TOOLKIT_GTK)
   GtkWidget* vbox_;
 
   GtkToolItem* back_button_;
@@ -267,10 +270,9 @@ class Shell : public WebContentsDelegate,
   static views::ViewsDelegate* views_delegate_;
 
   views::Widget* window_widget_;
-#else // defined(TOOLKIT_VIEWS)
-  static ShellAuraPlatformData* platform_;
 #endif // defined(TOOLKIT_VIEWS)
-#endif
+  static ShellPlatformDataAura* platform_;
+#endif  // defined(USE_AURA)
 
   bool headless_;
 

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 """Generates test runner factory and tests for GTests."""
+# pylint: disable=W0212
 
 import fnmatch
 import glob
@@ -14,20 +15,20 @@ import sys
 from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
-from pylib import ports
-
-import test_package_apk
-import test_package_exe
-import test_runner
+from pylib.gtest import test_package_apk
+from pylib.gtest import test_package_exe
+from pylib.gtest import test_runner
 
 sys.path.insert(0,
                 os.path.join(constants.DIR_SOURCE_ROOT, 'build', 'util', 'lib',
                              'common'))
-import unittest_util
+import unittest_util # pylint: disable=F0401
 
 
 _ISOLATE_FILE_PATHS = {
     'base_unittests': 'base/base_unittests.isolate',
+    'blink_heap_unittests':
+      'third_party/WebKit/Source/heap/BlinkHeapUnitTests.isolate',
     'breakpad_unittests': 'breakpad/breakpad_unittests.isolate',
     'cc_perftests': 'cc/cc_perftests.isolate',
     'components_unittests': 'components/components_unittests.isolate',
@@ -48,7 +49,6 @@ _WEBRTC_ISOLATE_FILE_PATHS = {
       'modules/audio_coding/neteq4/audio_decoder_unittests.isolate',
     'common_audio_unittests': 'common_audio/common_audio_unittests.isolate',
     'common_video_unittests': 'common_video/common_video_unittests.isolate',
-    'metrics_unittests': 'test/metrics_unittests.isolate',
     'modules_tests': 'modules/modules_tests.isolate',
     'modules_unittests': 'modules/modules_unittests.isolate',
     'neteq_unittests': 'modules/audio_coding/neteq/neteq_unittests.isolate',
@@ -62,8 +62,8 @@ _WEBRTC_ISOLATE_FILE_PATHS = {
 }
 
 # Append the WebRTC tests with the full path from Chromium's src/ root.
-for test, isolate_path in _WEBRTC_ISOLATE_FILE_PATHS.items():
-  _ISOLATE_FILE_PATHS[test] = 'third_party/webrtc/%s' % isolate_path
+for webrtc_test, isolate_path in _WEBRTC_ISOLATE_FILE_PATHS.items():
+  _ISOLATE_FILE_PATHS[webrtc_test] = 'third_party/webrtc/%s' % isolate_path
 
 # Used for filtering large data deps at a finer grain than what's allowed in
 # isolate files since pushing deps to devices is expensive.
@@ -109,14 +109,22 @@ def _GenerateDepsDirUsingIsolate(suite_name):
   isolated_abs_path = os.path.join(
       constants.GetOutDirectory(), '%s.isolated' % suite_name)
   assert os.path.exists(isolate_abs_path)
+  # This needs to be kept in sync with the cmd line options for isolate.py
+  # in src/build/isolate.gypi.
   isolate_cmd = [
       'python', _ISOLATE_SCRIPT,
       'remap',
       '--isolate', isolate_abs_path,
       '--isolated', isolated_abs_path,
-      '-V', 'PRODUCT_DIR=%s' % constants.GetOutDirectory(),
-      '-V', 'OS=android',
       '--outdir', constants.ISOLATE_DEPS_DIR,
+
+      '--path-variable', 'PRODUCT_DIR', constants.GetOutDirectory(),
+
+      '--config-variable', 'OS', 'android',
+      '--config-variable', 'chromeos', '0',
+      '--config-variable', 'component', 'static_library',
+      '--config-variable', 'icu_use_data_file_flag', '0',
+      '--config-variable', 'use_openssl', '0',
   ]
   assert not cmd_helper.RunCmd(isolate_cmd)
 
@@ -291,7 +299,7 @@ def Setup(test_options, devices):
   _GenerateDepsDirUsingIsolate(test_options.suite_name)
 
   # Constructs a new TestRunner with the current options.
-  def TestRunnerFactory(device, shard_index):
+  def TestRunnerFactory(device, _shard_index):
     return test_runner.TestRunner(
         test_options,
         device,

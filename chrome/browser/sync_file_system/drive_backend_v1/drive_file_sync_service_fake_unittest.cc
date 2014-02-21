@@ -14,10 +14,10 @@
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_metadata_store.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/mock_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_direction.h"
@@ -190,7 +190,8 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
         fake_drive_service_, base::MessageLoopProxy::current().get());
 
     fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_, drive_uploader));
+        fake_drive_service_, drive_uploader,
+        APIUtil::GetSyncRootDirectoryName()));
 
     api_util_ = APIUtil::CreateForTesting(
         fake_drive_helper_->base_dir_path().AppendASCII("tmp"),

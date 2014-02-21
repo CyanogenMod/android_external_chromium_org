@@ -241,13 +241,14 @@ ScreenCaptureNotificationUIViews::CreateNonClientFrameView(
       gfx::Insets(kPadding, kPaddingLeft, kPadding, kPadding));
   SkColor color = widget->GetNativeTheme()->GetSystemColor(
       ui::NativeTheme::kColorId_DialogBackground);
-  views::BubbleBorder* border = new views::BubbleBorder(
-      views::BubbleBorder::NONE, views::BubbleBorder::SMALL_SHADOW, color);
-  frame->SetBubbleBorder(border);
+  frame->SetBubbleBorder(scoped_ptr<views::BubbleBorder>(
+      new views::BubbleBorder(views::BubbleBorder::NONE,
+                              views::BubbleBorder::SMALL_SHADOW,
+                              color)));
   return frame;
 }
 
-string16 ScreenCaptureNotificationUIViews::GetWindowTitle() const {
+base::string16 ScreenCaptureNotificationUIViews::GetWindowTitle() const {
   return text_;
 }
 

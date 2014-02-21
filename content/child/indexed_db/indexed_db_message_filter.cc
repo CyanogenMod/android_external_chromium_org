@@ -8,15 +8,15 @@
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/worker_thread_task_runner.h"
+#include "content/common/indexed_db/indexed_db_constants.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 
 namespace content {
 
 IndexedDBMessageFilter::IndexedDBMessageFilter(
     ThreadSafeSender* thread_safe_sender)
-    : main_thread_loop_proxy_(base::MessageLoopProxy::current()),
-      thread_safe_sender_(thread_safe_sender) {
-}
+    : main_thread_loop_(base::MessageLoopProxy::current()),
+      thread_safe_sender_(thread_safe_sender) {}
 
 IndexedDBMessageFilter::~IndexedDBMessageFilter() {}
 
@@ -28,7 +28,7 @@ base::TaskRunner* IndexedDBMessageFilter::OverrideTaskRunnerForMessage(
   const bool success = PickleIterator(msg).ReadInt(&ipc_thread_id);
   DCHECK(success);
   if (!ipc_thread_id)
-    return main_thread_loop_proxy_.get();
+    return main_thread_loop_.get();
   return new WorkerThreadTaskRunner(ipc_thread_id);
 }
 
@@ -55,6 +55,8 @@ void IndexedDBMessageFilter::OnStaleSuccessIDBDatabase(
     int32 ipc_database_callbacks_id,
     int32 ipc_database_id,
     const IndexedDBDatabaseMetadata& idb_metadata) {
+  if (ipc_database_id == kNoDatabase)
+    return;
   thread_safe_sender_->Send(
       new IndexedDBHostMsg_DatabaseClose(ipc_database_id));
 }

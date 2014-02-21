@@ -5,23 +5,20 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
-<html class="scrollable">
+<html class="scrollable full-height">
   <head>
     <meta charset="utf-8">
     <link rel="icon" type="image/png" href="chromoting16.webp">
     <link rel="stylesheet" href="open_sans.css">
     <link rel="stylesheet" href="connection_stats.css">
-    <link rel="stylesheet" href="connection_history.css">
     <link rel="stylesheet" href="main.css">
     <link rel="stylesheet" href="menu_button.css">
     <link rel="stylesheet" href="toolbar.css">
     <script src="butter_bar.js"></script>
     <script src="client_plugin.js"></script>
-    <script src="client_plugin_async.js"></script>
     <script src="client_screen.js"></script>
     <script src="client_session.js"></script>
     <script src="clipboard.js"></script>
-    <script src="connection_history.js"></script>
     <script src="connection_stats.js"></script>
     <script src="error.js"></script>
     <script src="event_handlers.js"></script>
@@ -29,6 +26,9 @@ found in the LICENSE file.
     <script src="host.js"></script>
     <script src="host_controller.js"></script>
     <script src="host_dispatcher.js"></script>
+    <script src="host_install_dialog.js"></script>
+    <script src="host_it2me_dispatcher.js"></script>
+    <script src="host_it2me_native_messaging.js"></script>
     <script src="host_list.js"></script>
     <script src="host_native_messaging.js"></script>
     <script src="host_screen.js"></script>
@@ -39,6 +39,7 @@ found in the LICENSE file.
     <script src="identity.js"></script>
     <script src="l10n.js"></script>
     <script src="log_to_server.js"></script>
+    <script src="media_source_renderer.js"></script>
     <script src="menu_button.js"></script>
     <script src="oauth2.js"></script>
     <script src="oauth2_api.js"></script>
@@ -51,13 +52,14 @@ found in the LICENSE file.
     <script src="third_party_host_permissions.js"></script>
     <script src="third_party_token_fetcher.js"></script>
     <script src="toolbar.js"></script>
+    <script src="typecheck.js"></script>
     <script src="ui_mode.js"></script>
     <script src="xhr.js"></script>
     <script src="wcs_sandbox_container.js"></script>
     <title i18n-content="PRODUCT_NAME"></title>
   </head>
 
-  <body>
+  <body class="full-height">
 
     <!-- loading-mode is initially visible, but becomes hidden as soon as an
          AppMode is selected by remoting.init. All other divs are initially
@@ -71,38 +73,38 @@ found in the LICENSE file.
 
     <iframe id="wcs-sandbox" src="wcs_sandbox.html" hidden></iframe>
 
-    <header data-ui-mode="home" hidden>
-      <div>
-        <img src="chromoting48.webp">
-        <h1 class="icon-label" i18n-content="PRODUCT_NAME"></h1>
-      </div>
-      <div class="box-spacer"></div>
-      <div id="top-secondary">
-        <span id="current-email"></span>
-        <span data-ui-mode="home" class="apps-v1-only">
-          <a id="sign-out" href="#" i18n-content="SIGN_OUT_BUTTON"></a>
-          <!-- TODO(jamiewalch): Add this back in when we support it.
-          <a id="connection-history"
-             i18n-content="CONNECTION_HISTORY_BUTTON"></a> |
-          -->
-        </span> |
-        <a href="https://www.google.com/support/chrome/bin/answer.py?answer=1649523"
-           target="_blank" i18n-content="HELP"></a>
-      </div>
-    </header>
+    <div class="inset" data-ui-mode="home" hidden>
 
-    <div data-ui-mode="home">
-      <div id="butter-bar" hidden>
-        <p>
-          <span id="butter-bar-message"></span>
-          <a id="butter-bar-dismiss" href="#">
-            <img src="icon_cross.webp" class="close-icon">
-          </a>
-        </p>
-      </div>
-    </div>
+      <header>
+        <div>
+          <img src="chromoting48.webp">
+          <h1 class="icon-label" i18n-content="PRODUCT_NAME"></h1>
+        </div>
+        <div class="box-spacer"></div>
+        <div id="top-secondary">
+          <span id="current-email"></span>
+          <span data-ui-mode="home" class="apps-v1-only">
+            <a id="sign-out" href="#" i18n-content="SIGN_OUT_BUTTON"></a>
+            <!-- TODO(jamiewalch): Add this back in when we support it.
+                 <a id="connection-history"
+                    i18n-content="CONNECTION_HISTORY_BUTTON"></a> |
+                 -->
+          </span> |
+          <a href="https://www.google.com/support/chrome/bin/answer.py?answer=1649523"
+             target="_blank" i18n-content="HELP"></a>
+        </div>
+      </header>
 
-    <div data-ui-mode="home" hidden>
+      <div data-ui-mode="home">
+        <div id="butter-bar" hidden>
+          <p>
+            <span id="butter-bar-message"></span>
+            <a id="butter-bar-dismiss" href="#">
+              <img src="icon_cross.webp" class="close-icon">
+            </a>
+          </p>
+        </div>
+      </div>
 
       <section>
         <h2 i18n-content="MODE_IT2ME"></h2>
@@ -201,7 +203,7 @@ found in the LICENSE file.
                  class="section-row clickable no-non-local-hosts"
                  data-daemon-state="enabled">
               <div class="host-list-main-icon">
-                <span id="this-host-warning"></span>
+                <span id="this-host-warning" hidden></span>
                 <img id="this-host-icon"
                      src="icon_host.webp">
               </div>
@@ -210,15 +212,14 @@ found in the LICENSE file.
                     class="host-list-edit"
                     tabIndex="0"
                     i18n-title="TOOLTIP_RENAME">
-                <img id="this-host-rename"
-                     class="host-list-rename-icon"
+                <img class="host-list-rename-icon"
                      src="icon_pencil.webp">
               </span>
               <button type="button"
                       id="stop-daemon"
                       i18n-content="HOME_DAEMON_STOP_BUTTON">
               </button>
-            </div> <!-- enabled -->
+            </div> <!-- this-host-connect -->
             <div data-daemon-state="enabled">
               <div>
                 <span i18n-content="HOME_DAEMON_ACTIVE_MESSAGE"></span>
@@ -231,23 +232,24 @@ found in the LICENSE file.
                 <a href="#"
                    id="open-paired-client-manager-dialog"
                    i18n-content="HOME_DAEMON_MANAGE_PAIRINGS"></a>
+              </div>
+            </div> <!-- enabled -->
+            <div id="host-list-empty" hidden>
+              <div id="host-list-empty-hosting-supported"
+                   class="host-list-empty-instructions"
+                   i18n-content="HOST_LIST_EMPTY_HOSTING_SUPPORTED"
+                   i18n-value-name-1="HOME_DAEMON_START_BUTTON">
+              </div>
+              <div id="host-list-empty-hosting-unsupported"
+                   class="host-list-empty-instructions"
+                   i18n-content="HOST_LIST_EMPTY_HOSTING_UNSUPPORTED"
+                   i18n-value-name-1="HOME_DAEMON_START_BUTTON">
+              </div>
             </div>
           </div> <!-- daemon-control -->
-          <div id="host-list-empty" hidden>
-            <div id="host-list-empty-hosting-supported"
-                 class="host-list-empty-instructions"
-                 i18n-content="HOST_LIST_EMPTY_HOSTING_SUPPORTED"
-                 i18n-value-name-1="HOME_DAEMON_START_BUTTON">
-            </div>
-            <div id="host-list-empty-hosting-unsupported"
-                 class="host-list-empty-instructions"
-                 i18n-content="HOST_LIST_EMPTY_HOSTING_UNSUPPORTED"
-                 i18n-value-name-1="HOME_DAEMON_START_BUTTON">
-            </div>
-          </div>
         </div> <!-- me2me-content -->
       </section> <!-- host-list-div -->
-    </div> <!-- home -->
+    </div> <!-- inset -->
 
     <div id="auth-dialog" hidden>
       <div class="dialog-screen"></div>
@@ -275,7 +277,7 @@ found in the LICENSE file.
          hidden></div>
 
     <div class="dialog-container"
-         data-ui-mode="home.host home.client home.history home.confirm-host-delete home.host-setup home.token-refresh-failed home.manage-pairings"
+         data-ui-mode="home.host home.client home.history home.confirm-host-delete home.host-install home.host-setup home.token-refresh-failed home.manage-pairings"
          hidden>
 
       <div class="box-spacer"></div>
@@ -376,27 +378,33 @@ found in the LICENSE file.
                     i18n-content="OK"></button>
           </div>
         </div>
-        <div data-ui-mode="home.host-setup.install" hidden>
+      </div> <!-- host-setup-dialog -->
+
+      <div id="host-install-dialog"
+           class="kd-modaldialog"
+           data-ui-mode="home.host-install">
+        <div data-ui-mode="home.host-install.prompt" hidden>
           <div class="message" i18n-content="HOST_SETUP_INSTALL"></div>
           <div class="button-row">
-            <button id="host-config-install-continue"
+            <button id="host-install-continue"
                     autofocus="autofocus"
                     i18n-content="OK"></button>
-            <button id="host-config-install-dismiss"
+            <button id="host-install-dismiss"
                     i18n-content="CANCEL"></button>
           </div>
         </div>
-        <div data-ui-mode="home.host-setup.install-pending" hidden>
+        <div data-ui-mode="home.host-install.pending" hidden>
           <div class="message"
-                    i18n-content="HOST_SETUP_INSTALL_PENDING"></div>
+               i18n-content="HOST_SETUP_INSTALL_PENDING"></div>
           <div class="button-row">
-            <button id="host-config-install-retry"
+            <button id="host-install-retry"
                     autofocus="autofocus"
                     i18n-content="OK"></button>
           </div>
         </div>
-      </div> <!-- host-setup-dialog -->
+      </div> <!-- host-install-dialog -->
 
+      <!-- It2Me Sharing -->
       <div id="host-dialog"
            class="kd-modaldialog"
            data-ui-mode="home.host">
@@ -723,6 +731,7 @@ found in the LICENSE file.
                 hidden></span>
           <button id="delete-all-paired-clients"
                   i18n-content="DELETE_ALL_PAIRED_CLIENTS">
+          </button>
           <button id="close-paired-client-manager-dialog"
                   i18n-content="CLOSE">
           </button>
@@ -733,14 +742,17 @@ found in the LICENSE file.
 
     </div> <!-- dialog-container -->
 
-    <div id="session-mode" data-ui-mode="in-session home.client" hidden>
+    <div id="session-mode"
+         data-ui-mode="in-session home.client"
+         class="full-height"
+         hidden>
       <div id="session-toolbar"
            data-ui-mode="in-session"
            class="toolbar-container"
            hidden>
         <div class="toolbar-border">
           <div id="session-status-message"
-                i18n-content="LABEL_CONNECTED"></div>
+               i18n-content="LABEL_CONNECTED"></div>
           <div id="connected-to"></div>
           <div id="new-connection" class="icon-black apps-v2-only">
             <img src="plus.webp" i18n-title="NEW_CONNECTION">
@@ -780,6 +792,14 @@ found in the LICENSE file.
           <div class="arrow-down"></div>
         </div>
       </div> <!-- session-toolbar -->
+      <div class="vertically-centered">
+        <div class="horizontally-centered">
+          <div id="video-container">
+            <video id="mediasource-video-output"></video>
+            <div id="client-plugin-container"></div>
+          </div>
+        </div>
+      </div>
     </div> <!-- session-mode -->
 
     <div id="statistics" dir="ltr" class="selectable" hidden>

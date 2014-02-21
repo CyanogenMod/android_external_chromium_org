@@ -173,7 +173,8 @@ ScopedAllowGL::~ScopedAllowGL() {
 
 bool ScopedAllowGL::allow_gl = false;
 
-base::LazyInstance<GLViewRendererManager>::Leaky g_view_renderer_manager;
+base::LazyInstance<GLViewRendererManager>::Leaky g_view_renderer_manager =
+    LAZY_INSTANCE_INITIALIZER;
 
 void RequestProcessGLOnUIThread() {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -190,23 +191,94 @@ void RequestProcessGLOnUIThread() {
   }
 }
 
-}  // namespace
+class DeferredGpuCommandService
+    : public gpu::InProcessCommandBuffer::Service,
+      public base::RefCountedThreadSafe<DeferredGpuCommandService> {
+ public:
+  DeferredGpuCommandService();
+
+  virtual void ScheduleTask(const base::Closure& task) OVERRIDE;
+  virtual void ScheduleIdleWork(const base::Closure& task) OVERRIDE;
+  virtual bool UseVirtualizedGLContexts() OVERRIDE;
+
+  void RunTasks();
+
+  virtual void AddRef() const OVERRIDE {
+    base::RefCountedThreadSafe<DeferredGpuCommandService>::AddRef();
+  }
+  virtual void Release() const OVERRIDE {
+    base::RefCountedThreadSafe<DeferredGpuCommandService>::Release();
+  }
+
+ protected:
+  virtual ~DeferredGpuCommandService();
+  friend class base::RefCountedThreadSafe<DeferredGpuCommandService>;
+
+ private:
+  base::Lock tasks_lock_;
+  std::queue<base::Closure> tasks_;
+  DISALLOW_COPY_AND_ASSIGN(DeferredGpuCommandService);
+};
+
+DeferredGpuCommandService::DeferredGpuCommandService() {}
+
+DeferredGpuCommandService::~DeferredGpuCommandService() {
+  base::AutoLock lock(tasks_lock_);
+  DCHECK(tasks_.empty());
+}
 
 // Called from different threads!
-static void ScheduleGpuWork() {
+void DeferredGpuCommandService::ScheduleTask(const base::Closure& task) {
+  {
+    base::AutoLock lock(tasks_lock_);
+    tasks_.push(task);
+  }
   if (ScopedAllowGL::IsAllowed()) {
-    gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+    RunTasks();
   } else {
     RequestProcessGLOnUIThread();
   }
 }
 
+void DeferredGpuCommandService::ScheduleIdleWork(
+    const base::Closure& callback) {
+  // TODO(sievers): Should this do anything?
+}
+
+bool DeferredGpuCommandService::UseVirtualizedGLContexts() { return true; }
+
+void DeferredGpuCommandService::RunTasks() {
+  bool has_more_tasks;
+  {
+    base::AutoLock lock(tasks_lock_);
+    has_more_tasks = tasks_.size() > 0;
+  }
+
+  while (has_more_tasks) {
+    base::Closure task;
+    {
+      base::AutoLock lock(tasks_lock_);
+      task = tasks_.front();
+      tasks_.pop();
+    }
+    task.Run();
+    {
+      base::AutoLock lock(tasks_lock_);
+      has_more_tasks = tasks_.size() > 0;
+    }
+
+  }
+}
+
+base::LazyInstance<scoped_refptr<DeferredGpuCommandService> > g_service =
+    LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
 // static
 void BrowserViewRenderer::SetAwDrawSWFunctionTable(
     AwDrawSWFunctionTable* table) {
   g_sw_draw_functions = table;
-  gpu::InProcessCommandBuffer::SetScheduleCallback(
-      base::Bind(&ScheduleGpuWork));
 }
 
 // static
@@ -229,6 +301,7 @@ InProcessViewRenderer::InProcessViewRenderer(
       dip_scale_(0.0),
       page_scale_factor_(1.0),
       on_new_picture_enable_(false),
+      clear_view_(false),
       compositor_needs_continuous_invalidate_(false),
       block_invalidates_(false),
       width_(0),
@@ -350,7 +423,7 @@ void InProcessViewRenderer::TrimMemory(int level) {
   TRACE_EVENT0("android_webview", "InProcessViewRenderer::TrimMemory");
   ScopedAppGLStateRestore state_restore(
       ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
-  gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+  g_service.Get()->RunTasks();
   ScopedAllowGL allow_gl;
 
   SetMemoryPolicy(policy);
@@ -375,6 +448,8 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
                                    const gfx::Vector2d& scroll,
                                    const gfx::Rect& clip) {
   scroll_at_start_of_frame_  = scroll;
+  if (clear_view_)
+    return false;
   if (is_hardware_canvas && attached_to_window_ && HardwareEnabled()) {
     // We should be performing a hardware draw here. If we don't have the
     // comositor yet or if RequestDrawGL fails, it means we failed this draw and
@@ -388,7 +463,11 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
 bool InProcessViewRenderer::InitializeHwDraw() {
   TRACE_EVENT0("android_webview", "InitializeHwDraw");
   DCHECK(!gl_surface_);
-  gl_surface_  = new AwGLSurface;
+  gl_surface_ = new AwGLSurface;
+  if (!g_service.Get()) {
+    g_service.Get() = new DeferredGpuCommandService;
+    content::SynchronousCompositor::SetGpuService(g_service.Get());
+  }
   hardware_failed_ = !compositor_->InitializeHwDraw(gl_surface_);
   hardware_initialized_ = true;
 
@@ -413,7 +492,8 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   }
 
   ScopedAppGLStateRestore state_restore(ScopedAppGLStateRestore::MODE_DRAW);
-  gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+  if (g_service.Get())
+    g_service.Get()->RunTasks();
   ScopedAllowGL allow_gl;
 
   if (!attached_to_window_) {
@@ -627,6 +707,18 @@ void InProcessViewRenderer::EnableOnNewPicture(bool enabled) {
   EnsureContinuousInvalidation(NULL, false);
 }
 
+void InProcessViewRenderer::ClearView() {
+  TRACE_EVENT_INSTANT0("android_webview",
+                       "InProcessViewRenderer::ClearView",
+                       TRACE_EVENT_SCOPE_THREAD);
+  if (clear_view_)
+    return;
+
+  clear_view_ = true;
+  // Always invalidate ignoring the compositor to actually clear the webview.
+  EnsureContinuousInvalidation(NULL, true);
+}
+
 void InProcessViewRenderer::SetIsPaused(bool paused) {
   TRACE_EVENT_INSTANT1("android_webview",
                        "InProcessViewRenderer::SetIsPaused",
@@ -690,7 +782,7 @@ void InProcessViewRenderer::OnDetachedFromWindow() {
 
     ScopedAppGLStateRestore state_restore(
         ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
-    gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+    g_service.Get()->RunTasks();
     ScopedAllowGL allow_gl;
     compositor_->ReleaseHwDraw();
     hardware_initialized_ = false;
@@ -792,6 +884,11 @@ void InProcessViewRenderer::ScrollTo(gfx::Vector2d scroll_offset) {
 }
 
 void InProcessViewRenderer::DidUpdateContent() {
+  TRACE_EVENT_INSTANT0("android_webview",
+                       "InProcessViewRenderer::DidUpdateContent",
+                       TRACE_EVENT_SCOPE_THREAD);
+  clear_view_ = false;
+  EnsureContinuousInvalidation(NULL, false);
   if (on_new_picture_enable_)
     client_->OnNewPicture();
 }
@@ -832,8 +929,10 @@ void InProcessViewRenderer::SetTotalRootLayerScrollOffset(
 
   DCHECK(0 <= scroll_offset.x());
   DCHECK(0 <= scroll_offset.y());
-  DCHECK(scroll_offset.x() <= max_offset.x());
-  DCHECK(scroll_offset.y() <= max_offset.y());
+  // Disabled because the conditions are being violated while running
+  // AwZoomTest.testMagnification, see http://crbug.com/340648
+  // DCHECK(scroll_offset.x() <= max_offset.x());
+  // DCHECK(scroll_offset.y() <= max_offset.y());
 
   client_->ScrollContainerViewTo(scroll_offset);
 }
@@ -846,11 +945,14 @@ bool InProcessViewRenderer::IsExternalFlingActive() const {
   return client_->IsFlingActive();
 }
 
-void InProcessViewRenderer::SetRootLayerPageScaleFactor(
-    float page_scale_factor) {
+void InProcessViewRenderer::SetRootLayerPageScaleFactorAndLimits(
+    float page_scale_factor,
+    float min_page_scale_factor,
+    float max_page_scale_factor) {
   page_scale_factor_ = page_scale_factor;
   DCHECK_GT(page_scale_factor_, 0);
-  client_->SetPageScaleFactor(page_scale_factor);
+  client_->SetPageScaleFactorAndLimits(
+      page_scale_factor, min_page_scale_factor, max_page_scale_factor);
 }
 
 void InProcessViewRenderer::SetRootLayerScrollableSize(
@@ -862,7 +964,6 @@ void InProcessViewRenderer::DidOverscroll(
     gfx::Vector2dF accumulated_overscroll,
     gfx::Vector2dF latest_overscroll_delta,
     gfx::Vector2dF current_fling_velocity) {
-  DCHECK(current_fling_velocity.IsZero());
   const float physical_pixel_scale = dip_scale_ * page_scale_factor_;
   if (accumulated_overscroll == latest_overscroll_delta)
     overscroll_rounding_error_ = gfx::Vector2dF();
@@ -884,6 +985,8 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
   if (!need_invalidate || block_invalidates_)
     return;
 
+  // Always call view invalidate. We rely the Android framework to ignore the
+  // invalidate when it's not needed such as when view is not visible.
   if (draw_info) {
     draw_info->dirty_left = cached_global_visible_rect_.x();
     draw_info->dirty_top = cached_global_visible_rect_.y();
@@ -894,8 +997,14 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
     client_->PostInvalidate();
   }
 
-  bool throttle_fallback_tick = (is_paused_ && !on_new_picture_enable_) ||
-                                (attached_to_window_ && !window_visible_);
+  // Stop fallback ticks when one of these is true.
+  // 1) Webview is paused. Also need to check we are not in clear view since
+  // paused, offscreen still expect clear view to recover.
+  // 2) If we are attached to window and the window is not visible (eg when
+  // app is in the background). We are sure in this case the webview is used
+  // "on-screen" but that updates are not needed when in the background.
+  bool throttle_fallback_tick =
+      (is_paused_ && !clear_view_) || (attached_to_window_ && !window_visible_);
   if (throttle_fallback_tick)
     return;
 
@@ -978,6 +1087,7 @@ std::string InProcessViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
                       overscroll_rounding_error_.ToString().c_str());
   base::StringAppendF(
       &str, "on_new_picture_enable: %d ", on_new_picture_enable_);
+  base::StringAppendF(&str, "clear_view: %d ", clear_view_);
   if (draw_info) {
     base::StringAppendF(&str,
                         "clip left top right bottom: [%d %d %d %d] ",

@@ -8,10 +8,12 @@
 
 #include <algorithm>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "net/quic/quic_write_blocked_list.h"
 
 using base::StringPiece;
 using std::string;
@@ -158,6 +160,8 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_INVALID_RST_STREAM_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_CONNECTION_CLOSE_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_GOAWAY_DATA);
+    RETURN_STRING_LITERAL(QUIC_INVALID_WINDOW_UPDATE_DATA);
+    RETURN_STRING_LITERAL(QUIC_INVALID_BLOCKED_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_ACK_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_CONGESTION_FEEDBACK_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_VERSION_NEGOTIATION_PACKET);
@@ -195,6 +199,8 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_PACKET_WRITE_ERROR);
     RETURN_STRING_LITERAL(QUIC_PACKET_READ_ERROR);
     RETURN_STRING_LITERAL(QUIC_INVALID_STREAM_FRAME);
+    RETURN_STRING_LITERAL(QUIC_INVALID_HEADERS_STREAM_DATA);
+    RETURN_STRING_LITERAL(QUIC_FLOW_CONTROL_ERROR);
     RETURN_STRING_LITERAL(QUIC_PROOF_INVALID);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_DUPLICATE_TAG);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT);
@@ -279,6 +285,16 @@ string QuicUtils::StringToHexASCIIDump(StringPiece in_buffer) {
     s += '\n';
   }
   return s;
+}
+
+// static
+QuicPriority QuicUtils::LowestPriority() {
+  return QuicWriteBlockedList::kLowestPriority;
+}
+
+// static
+QuicPriority QuicUtils::HighestPriority() {
+  return QuicWriteBlockedList::kHighestPriority;
 }
 
 }  // namespace net

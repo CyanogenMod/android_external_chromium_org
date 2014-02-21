@@ -12,15 +12,16 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/features/feature.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -55,9 +56,8 @@ bool NotificationBitmapToGfxImage(
     return false;
 
   // Ensure a sane set of dimensions.
-  const int max_width = message_center::kNotificationPreferredImageSize;
-  const int max_height =
-      message_center::kNotificationPreferredImageRatio * max_width;
+  const int max_width = message_center::kNotificationPreferredImageWidth;
+  const int max_height = message_center::kNotificationPreferredImageHeight;
   const int BYTES_PER_PIXEL = 4;
 
   const int width = notification_bitmap->width;
@@ -249,8 +249,8 @@ bool NotificationsApiFunction::CreateNotification(
   // Extract required fields: type, title, message, and icon.
   message_center::NotificationType type =
       MapApiTemplateTypeToType(options->type);
-  const base::string16 title(UTF8ToUTF16(*options->title));
-  const base::string16 message(UTF8ToUTF16(*options->message));
+  const base::string16 title(base::UTF8ToUTF16(*options->title));
+  const base::string16 message(base::UTF8ToUTF16(*options->message));
   gfx::Image icon;
 
   // TODO(dewittj): Return error if this fails.
@@ -272,20 +272,17 @@ bool NotificationsApiFunction::CreateNotification(
 
       for (size_t i = 0; i < number_of_buttons; i++) {
         message_center::ButtonInfo info(
-            UTF8ToUTF16((*options->buttons)[i]->title));
+            base::UTF8ToUTF16((*options->buttons)[i]->title));
         NotificationBitmapToGfxImage((*options->buttons)[i]->icon_bitmap.get(),
                                      &info.icon);
         optional_fields.buttons.push_back(info);
       }
     }
 
-    if (options->expanded_message.get()) {
-      optional_fields.expanded_message =
-          UTF8ToUTF16(*options->expanded_message);
+    if (options->context_message) {
+      optional_fields.context_message =
+          base::UTF8ToUTF16(*options->context_message);
     }
-
-    if (options->context_message)
-      optional_fields.context_message = UTF8ToUTF16(*options->context_message);
 
     bool has_image = NotificationBitmapToGfxImage(options->image_bitmap.get(),
                                                   &optional_fields.image);
@@ -316,8 +313,9 @@ bool NotificationsApiFunction::CreateNotification(
       using api::notifications::NotificationItem;
       std::vector<linked_ptr<NotificationItem> >::iterator i;
       for (i = options->items->begin(); i != options->items->end(); ++i) {
-        message_center::NotificationItem item(UTF8ToUTF16(i->get()->title),
-                                              UTF8ToUTF16(i->get()->message));
+        message_center::NotificationItem item(
+            base::UTF8ToUTF16(i->get()->title),
+            base::UTF8ToUTF16(i->get()->message));
         optional_fields.items.push_back(item);
       }
     }
@@ -338,8 +336,8 @@ bool NotificationsApiFunction::CreateNotification(
                             message_center::NotifierId(
                                 message_center::NotifierId::APPLICATION,
                                 extension_->id()),
-                            UTF8ToUTF16(extension_->name()),
-                            UTF8ToUTF16(api_delegate->id()),
+                            base::UTF8ToUTF16(extension_->name()),
+                            base::UTF8ToUTF16(api_delegate->id()),
                             optional_fields,
                             api_delegate);
 
@@ -355,9 +353,9 @@ bool NotificationsApiFunction::UpdateNotification(
   if (options->type != api::notifications::TEMPLATE_TYPE_NONE)
     notification->set_type(MapApiTemplateTypeToType(options->type));
   if (options->title)
-    notification->set_title(UTF8ToUTF16(*options->title));
+    notification->set_title(base::UTF8ToUTF16(*options->title));
   if (options->message)
-    notification->set_message(UTF8ToUTF16(*options->message));
+    notification->set_message(base::UTF8ToUTF16(*options->message));
 
   // TODO(dewittj): Return error if this fails.
   if (options->icon_bitmap) {
@@ -381,7 +379,7 @@ bool NotificationsApiFunction::UpdateNotification(
       std::vector<message_center::ButtonInfo> buttons;
       for (size_t i = 0; i < number_of_buttons; i++) {
         message_center::ButtonInfo button(
-            UTF8ToUTF16((*options->buttons)[i]->title));
+            base::UTF8ToUTF16((*options->buttons)[i]->title));
         NotificationBitmapToGfxImage((*options->buttons)[i]->icon_bitmap.get(),
                                      &button.icon);
         buttons.push_back(button);
@@ -389,12 +387,9 @@ bool NotificationsApiFunction::UpdateNotification(
       notification->set_buttons(buttons);
     }
 
-    if (options->context_message)
-      notification->set_context_message(UTF8ToUTF16(*options->context_message));
-
-    if (options->expanded_message) {
-      notification->set_expanded_message(
-          UTF8ToUTF16(*options->expanded_message));
+    if (options->context_message) {
+      notification->set_context_message(
+          base::UTF8ToUTF16(*options->context_message));
     }
 
     gfx::Image image;
@@ -429,8 +424,9 @@ bool NotificationsApiFunction::UpdateNotification(
       using api::notifications::NotificationItem;
       std::vector<linked_ptr<NotificationItem> >::iterator i;
       for (i = options->items->begin(); i != options->items->end(); ++i) {
-        message_center::NotificationItem item(UTF8ToUTF16(i->get()->title),
-                                              UTF8ToUTF16(i->get()->message));
+        message_center::NotificationItem item(
+            base::UTF8ToUTF16(i->get()->title),
+            base::UTF8ToUTF16(i->get()->message));
         items.push_back(item);
       }
       notification->set_items(items);

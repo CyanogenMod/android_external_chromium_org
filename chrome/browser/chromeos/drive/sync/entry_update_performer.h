@@ -13,6 +13,7 @@
 #include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
+class ScopedClosureRunner;
 class SequencedTaskRunner;
 }  // namespace base
 
@@ -24,6 +25,7 @@ namespace drive {
 
 class JobScheduler;
 class ResourceEntry;
+struct ClientContext;
 
 namespace file_system {
 class OperationObserver;
@@ -32,6 +34,8 @@ class OperationObserver;
 namespace internal {
 
 class EntryRevertPerformer;
+class FileCache;
+class LoaderController;
 class RemovePerformer;
 class ResourceMetadata;
 
@@ -41,7 +45,9 @@ class EntryUpdatePerformer {
   EntryUpdatePerformer(base::SequencedTaskRunner* blocking_task_runner,
                        file_system::OperationObserver* observer,
                        JobScheduler* scheduler,
-                       ResourceMetadata* metadata);
+                       ResourceMetadata* metadata,
+                       FileCache* cache,
+                       LoaderController* loader_controller);
   ~EntryUpdatePerformer();
 
   // Requests the server to update the metadata of the entry specified by
@@ -49,25 +55,38 @@ class EntryUpdatePerformer {
   // Invokes |callback| when finished with the result of the operation.
   // |callback| must not be null.
   void UpdateEntry(const std::string& local_id,
+                   const ClientContext& context,
                    const FileOperationCallback& callback);
+
+  struct LocalState;
 
  private:
   // Part of UpdateEntry(). Called after local metadata look up.
-  void UpdateEntryAfterPrepare(const FileOperationCallback& callback,
-                               scoped_ptr<ResourceEntry> entry,
-                               scoped_ptr<ResourceEntry> parent_entry,
+  void UpdateEntryAfterPrepare(const ClientContext& context,
+                               const FileOperationCallback& callback,
+                               scoped_ptr<LocalState> local_state,
                                FileError error);
 
   // Part of UpdateEntry(). Called after UpdateResource is completed.
   void UpdateEntryAfterUpdateResource(
+      const ClientContext& context,
       const FileOperationCallback& callback,
       const std::string& local_id,
+      scoped_ptr<base::ScopedClosureRunner> loader_lock,
       google_apis::GDataErrorCode status,
       scoped_ptr<google_apis::ResourceEntry> resource_entry);
 
+  // Part of UpdateEntry(). Called after FinishUpdate is completed.
+  void UpdateEntryAfterFinish(const FileOperationCallback& callback,
+                              const base::FilePath* changed_directory,
+                              FileError error);
+
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  file_system::OperationObserver* observer_;
   JobScheduler* scheduler_;
   ResourceMetadata* metadata_;
+  FileCache* cache_;
+  LoaderController* loader_controller_;
   scoped_ptr<RemovePerformer> remove_performer_;
   scoped_ptr<EntryRevertPerformer> entry_revert_performer_;
 

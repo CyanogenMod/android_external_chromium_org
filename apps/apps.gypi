@@ -39,8 +39,14 @@
         'app_restore_service.h',
         'app_restore_service_factory.cc',
         'app_restore_service_factory.h',
+        'app_window.cc',
+        'app_window.h',
         'app_window_contents.cc',
         'app_window_contents.h',
+        'app_window_geometry_cache.cc',
+        'app_window_geometry_cache.h',
+        'app_window_registry.cc',
+        'app_window_registry.h',
         'apps_client.cc',
         'apps_client.h',
         'launcher.cc',
@@ -54,17 +60,11 @@
         'saved_files_service.h',
         'saved_files_service_factory.cc',
         'saved_files_service_factory.h',
-        'shell_window.cc',
-        'shell_window.h',
-        'shell_window_geometry_cache.cc',
-        'shell_window_geometry_cache.h',
-        'shell_window_registry.cc',
-        'shell_window_registry.h',
         'switches.cc',
         'switches.h',
         'ui/native_app_window.h',
-        'ui/views/shell_window_frame_view.cc',
-        'ui/views/shell_window_frame_view.h',
+        'ui/views/app_window_frame_view.cc',
+        'ui/views/app_window_frame_view.h',
       ],
       'conditions': [
         ['chromeos==1',
@@ -97,7 +97,7 @@
     },
   ],  # targets
   'conditions': [
-    ['chromeos==1', {
+    ['chromeos==1 or (OS=="linux" and use_aura==1) or (OS=="win" and use_aura==1)', {
       'targets': [
         {
           'target_name': 'app_shell',
@@ -109,6 +109,8 @@
           'dependencies': [
             'apps',
             'chrome_resources.gyp:packed_resources',
+            # For resources.pak for features JSON files.
+            'chrome_resources.gyp:packed_extra_resources',
             'test_support_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_prefs_test_support',
@@ -122,23 +124,43 @@
             '..',
           ],
           'sources': [
-            'shell/app_shell_app_sorting.cc',
-            'shell/app_shell_app_sorting.h',
-            'shell/app_shell_browser_context.cc',
-            'shell_app_shell_browser_context.h',
-            'shell/app_shell_browser_main_parts.cc',
-            'shell/app_shell_browser_main_parts.h',
-            'shell/app_shell_content_browser_client.cc',
-            'shell/app_shell_content_browser_client.h',
-            'shell/app_shell_content_client.cc',
-            'shell/app_shell_content_client.h',
-            'shell/app_shell_extensions_browser_client.cc',
-            'shell/app_shell_extensions_browser_client.h',
-            'shell/app_shell_main_delegate.cc',
-            'shell/app_shell_main_delegate.h',
-            'shell/app_shell_main.cc',
-            'shell/web_view_window.cc',
-            'shell/web_view_window.cc',
+            'shell/app/shell_main_delegate.cc',
+            'shell/app/shell_main_delegate.h',
+            'shell/app/shell_main.cc',
+            'shell/browser/shell_app_sorting.cc',
+            'shell/browser/shell_app_sorting.h',
+            'shell/browser/shell_browser_context.cc',
+            'shell/browser/shell_browser_context.h',
+            'shell/browser/shell_browser_main_parts.cc',
+            'shell/browser/shell_browser_main_parts.h',
+            'shell/browser/shell_content_browser_client.cc',
+            'shell/browser/shell_content_browser_client.h',
+            'shell/browser/shell_extension_system.cc',
+            'shell/browser/shell_extension_system.h',
+            'shell/browser/shell_extension_system_factory.cc',
+            'shell/browser/shell_extension_system_factory.h',
+            'shell/browser/shell_extensions_browser_client.cc',
+            'shell/browser/shell_extensions_browser_client.h',
+            'shell/browser/web_view_window.cc',
+            'shell/browser/web_view_window.cc',
+            'shell/common/shell_content_client.cc',
+            'shell/common/shell_content_client.h',
+            'shell/common/shell_extensions_client.cc',
+            'shell/common/shell_extensions_client.h',
+            'shell/renderer/shell_content_renderer_client.cc',
+            'shell/renderer/shell_content_renderer_client.h',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'msvs_settings': {
+                'VCLinkerTool': {
+                  'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+                },
+              },
+              'dependencies': [
+                '../sandbox/sandbox.gyp:sandbox',
+              ],
+            }],
           ],
         },
       ],  # targets

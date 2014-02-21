@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "content/public/browser/browser_thread.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/quota/open_file_handle.h"
 #include "webkit/browser/fileapi/quota/quota_reservation.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -49,13 +50,27 @@ QuotaReservation::~QuotaReservation() {
 }
 
 int64_t QuotaReservation::OpenFile(int32_t id,
-                                   const base::FilePath& file_path) {
+                                   const fileapi::FileSystemURL& url) {
+  base::FilePath platform_file_path;
+  if (file_system_context_) {
+    base::File::Error error =
+        file_system_context_->operation_runner()->SyncGetPlatformPath(
+            url, &platform_file_path);
+    if (error != base::File::FILE_OK) {
+      NOTREACHED();
+      return 0;
+    }
+  } else {
+    // For test.
+    platform_file_path = url.path();
+  }
+
   scoped_ptr<fileapi::OpenFileHandle> file_handle =
-      quota_reservation_->GetOpenFileHandle(file_path);
+      quota_reservation_->GetOpenFileHandle(platform_file_path);
   std::pair<FileMap::iterator, bool> insert_result =
       files_.insert(std::make_pair(id, file_handle.get()));
   if (insert_result.second) {
-    int64_t max_written_offset = file_handle->base_file_size();
+    int64_t max_written_offset = file_handle->GetMaxWrittenOffset();
     ignore_result(file_handle.release());
     return max_written_offset;
   }
@@ -64,10 +79,12 @@ int64_t QuotaReservation::OpenFile(int32_t id,
 }
 
 void QuotaReservation::CloseFile(int32_t id,
-                                 int64_t max_written_offset) {
+                                 const ppapi::FileGrowth& file_growth) {
   FileMap::iterator it = files_.find(id);
   if (it != files_.end()) {
-    it->second->UpdateMaxWrittenOffset(max_written_offset);
+    it->second->UpdateMaxWrittenOffset(file_growth.max_written_offset);
+    it->second->AddAppendModeWriteAmount(file_growth.append_mode_write_amount);
+    delete it->second;
     files_.erase(it);
   } else {
     NOTREACHED();
@@ -76,14 +93,18 @@ void QuotaReservation::CloseFile(int32_t id,
 
 void QuotaReservation::ReserveQuota(
     int64_t amount,
-    const OffsetMap& max_written_offsets,
+    const ppapi::FileGrowthMap& file_growths,
     const ReserveQuotaCallback& callback) {
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it) {
-    OffsetMap::const_iterator offset_it = max_written_offsets.find(it->first);
-    if (offset_it != max_written_offsets.end())
-      it->second->UpdateMaxWrittenOffset(offset_it->second);
-    else
+  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++it) {
+    ppapi::FileGrowthMap::const_iterator growth_it =
+        file_growths.find(it->first);
+    if (growth_it != file_growths.end()) {
+      it->second->UpdateMaxWrittenOffset(growth_it->second.max_written_offset);
+      it->second->AddAppendModeWriteAmount(
+          growth_it->second.append_mode_write_amount);
+    } else {
       NOTREACHED();
+    }
   }
 
   quota_reservation_->RefreshReservation(
@@ -93,14 +114,16 @@ void QuotaReservation::ReserveQuota(
                  callback));
 }
 
+void QuotaReservation::OnClientCrash() {
+  quota_reservation_->OnClientCrash();
+}
+
 void QuotaReservation::GotReservedQuota(
     const ReserveQuotaCallback& callback,
-    base::PlatformFileError error) {
-  OffsetMap max_written_offsets;
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it) {
-    max_written_offsets.insert(
-        std::make_pair(it->first, it->second->base_file_size()));
-  }
+    base::File::Error error) {
+  ppapi::FileSizeMap file_sizes;
+  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it)
+    file_sizes[it->first] = it->second->GetMaxWrittenOffset();
 
   if (file_system_context_) {
     BrowserThread::PostTask(
@@ -108,20 +131,22 @@ void QuotaReservation::GotReservedQuota(
         FROM_HERE,
         base::Bind(callback,
                    quota_reservation_->remaining_quota(),
-                   max_written_offsets));
+                   file_sizes));
   } else {
     // Unit testing code path.
-    callback.Run(quota_reservation_->remaining_quota(), max_written_offsets);
+    callback.Run(quota_reservation_->remaining_quota(), file_sizes);
   }
 }
 
 void QuotaReservation::DeleteOnCorrectThread() const {
-  if (file_system_context_) {
+  if (file_system_context_ &&
+      !file_system_context_->
+          default_file_task_runner()->RunsTasksOnCurrentThread()) {
     file_system_context_->default_file_task_runner()->DeleteSoon(
         FROM_HERE,
         this);
   } else {
-    // Unit testing code path.
+    // We're on the right thread to delete, or unit test.
     delete this;
   }
 }

@@ -26,17 +26,11 @@
 #include "chrome/test/ui/ui_test.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/python_utils.h"
 #include "testing/perf/perf_test.h"
-
-// Temporarily disabled on Linux.
-// http://crbug.com/281268.
-#if defined(OS_LINUX)
-#define MAYBE_WebrtcVideoQualityBrowserTest DISABLED_WebrtcVideoQualityBrowserTest
-#else
-#define MAYBE_WebrtcVideoQualityBrowserTest WebrtcVideoQualityBrowserTest
-#endif
+#include "ui/gl/gl_switches.h"
 
 static const base::FilePath::CharType kFrameAnalyzerExecutable[] =
 #if defined(OS_WIN)
@@ -100,9 +94,9 @@ static const char kPyWebSocketPortNumber[] = "12221";
 // frame_analyzer. Both tools can be found under third_party/webrtc/tools. The
 // test also runs a stand alone Python implementation of a WebSocket server
 // (pywebsocket) and a barcode_decoder script.
-class MAYBE_WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
+class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
  public:
-  MAYBE_WebrtcVideoQualityBrowserTest()
+  WebRtcVideoQualityBrowserTest()
       : pywebsocket_server_(0),
         environment_(base::Environment::Create()) {}
 
@@ -117,6 +111,12 @@ class MAYBE_WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
     EXPECT_FALSE(
         command_line->HasSwitch(switches::kUseFakeDeviceForMediaStream))
         << "You cannot run this test with fake devices.";
+
+#if defined(OS_MACOSX)
+    // TODO(mcasas): Remove this switch when ManyCam virtual video capture
+    // device starts supporting AVFoundation, see http://crbug.com/327618.
+    command_line->AppendSwitch(switches::kDisableAVFoundation);
+#endif
 
     // The video playback will not work without a GPU, so force its use here.
     command_line->AppendSwitch(switches::kUseGpuInTests);
@@ -323,7 +323,7 @@ class MAYBE_WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
   scoped_ptr<base::Environment> environment_;
 };
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcVideoQualityBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcVideoQualityBrowserTest,
                        MANUAL_TestVGAVideoQuality) {
   ASSERT_GE(TestTimeouts::action_max_timeout().InSeconds(), 150) <<
       "This is a long-running test; you must specify "
@@ -334,18 +334,12 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebrtcVideoQualityBrowserTest,
   ASSERT_TRUE(StartPyWebSocketServer());
   ASSERT_TRUE(peerconnection_server_.Start());
 
-  ui_test_utils::NavigateToURL(
-      browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   content::WebContents* left_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  GetUserMediaAndAccept(left_tab);
-
-  chrome::AddTabAt(browser(), GURL(), -1, true);
+      OpenPageAndGetUserMediaInNewTab(
+          embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   content::WebContents* right_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  ui_test_utils::NavigateToURL(
-      browser(), embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage));
-  GetUserMediaAndAccept(right_tab);
+      OpenPageAndGetUserMediaInNewTab(
+          embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage));
 
   ConnectToPeerConnectionServer("peer 1", left_tab);
   ConnectToPeerConnectionServer("peer 2", right_tab);

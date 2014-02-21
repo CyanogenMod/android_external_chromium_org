@@ -15,7 +15,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/menu_manager_factory.h"
 #include "chrome/browser/extensions/state_store.h"
@@ -28,6 +27,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "ui/gfx/favicon_size.h"
@@ -90,10 +90,10 @@ scoped_ptr<base::Value> MenuItemsToValue(const MenuItem::List& items) {
   scoped_ptr<base::ListValue> list(new base::ListValue());
   for (size_t i = 0; i < items.size(); ++i)
     list->Append(items[i]->ToValue().release());
-  return scoped_ptr<Value>(list.release());
+  return scoped_ptr<base::Value>(list.release());
 }
 
-bool GetStringList(const DictionaryValue& dict,
+bool GetStringList(const base::DictionaryValue& dict,
                    const std::string& key,
                    std::vector<std::string>* out) {
   if (!dict.HasKey(key))
@@ -167,12 +167,12 @@ std::set<MenuItem::Id> MenuItem::RemoveAllDescendants() {
   return result;
 }
 
-string16 MenuItem::TitleWithReplacement(
-    const base::string16& selection, size_t max_length) const {
-  base::string16 result = UTF8ToUTF16(title_);
+base::string16 MenuItem::TitleWithReplacement(const base::string16& selection,
+                                              size_t max_length) const {
+  base::string16 result = base::UTF8ToUTF16(title_);
   // TODO(asargent) - Change this to properly handle %% escaping so you can
   // put "%s" in titles that won't get substituted.
-  ReplaceSubstringsAfterOffset(&result, 0, ASCIIToUTF16("%s"), selection);
+  ReplaceSubstringsAfterOffset(&result, 0, base::ASCIIToUTF16("%s"), selection);
 
   if (result.length() > max_length)
     result = gfx::TruncateString(result, max_length);
@@ -191,8 +191,8 @@ void MenuItem::AddChild(MenuItem* item) {
   children_.push_back(item);
 }
 
-scoped_ptr<DictionaryValue> MenuItem::ToValue() const {
-  scoped_ptr<DictionaryValue> value(new DictionaryValue);
+scoped_ptr<base::DictionaryValue> MenuItem::ToValue() const {
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue);
   // Should only be called for extensions with event pages, which only have
   // string IDs for items.
   DCHECK_EQ(0, id_.uid);
@@ -217,7 +217,7 @@ scoped_ptr<DictionaryValue> MenuItem::ToValue() const {
 
 // static
 MenuItem* MenuItem::Populate(const std::string& extension_id,
-                             const DictionaryValue& value,
+                             const base::DictionaryValue& value,
                              std::string* error) {
   bool incognito = false;
   if (!value.GetBoolean(kIncognitoKey, &incognito))
@@ -242,7 +242,7 @@ MenuItem* MenuItem::Populate(const std::string& extension_id,
   if (!value.GetBoolean(kEnabledKey, &enabled))
     return NULL;
   ContextList contexts;
-  const Value* contexts_value = NULL;
+  const base::Value* contexts_value = NULL;
   if (!value.Get(kContextsKey, &contexts_value))
     return NULL;
   if (!contexts.Populate(*contexts_value))
@@ -588,7 +588,7 @@ void MenuManager::RadioItemSelected(MenuItem* item) {
   }
 }
 
-static void AddURLProperty(DictionaryValue* dictionary,
+static void AddURLProperty(base::DictionaryValue* dictionary,
                            const std::string& key, const GURL& url) {
   if (!url.is_empty())
     dictionary->SetString(key, url.possibly_invalid_spec());
@@ -618,7 +618,7 @@ void MenuManager::ExecuteCommand(Profile* profile,
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
 
-  DictionaryValue* properties = new DictionaryValue();
+  base::DictionaryValue* properties = new base::DictionaryValue();
   SetIdKeyValue(properties, "menuItemId", item->id());
   if (item->parent_id())
     SetIdKeyValue(properties, "parentMenuItemId", *item->parent_id());
@@ -655,7 +655,7 @@ void MenuManager::ExecuteCommand(Profile* profile,
     if (web_contents) {
       args->Append(ExtensionTabUtil::CreateTabValue(web_contents));
     } else {
-      args->Append(new DictionaryValue());
+      args->Append(new base::DictionaryValue());
     }
   }
 

@@ -141,6 +141,53 @@ remoting.init = function() {
 };
 
 /**
+ * Returns whether or not IT2Me is supported via the host NPAPI plugin.
+ *
+ * @return {boolean}
+ */
+function isIT2MeSupported_() {
+  // Currently, IT2Me on Chromebooks is not supported.
+  return !remoting.runningOnChromeOS();
+}
+
+/**
+ * Create an instance of the NPAPI plugin.
+ * @param {Element} container The element to add the plugin to.
+ * @return {remoting.HostPlugin} The new plugin instance or null if it failed to
+ *     load.
+ */
+remoting.createNpapiPlugin = function(container) {
+  var plugin = document.createElement('embed');
+  plugin.type = remoting.settings.PLUGIN_MIMETYPE;
+  // Hiding the plugin means it doesn't load, so make it size zero instead.
+  plugin.width = 0;
+  plugin.height = 0;
+  container.appendChild(plugin);
+
+  // Verify if the plugin was loaded successfully.
+  if (!plugin.hasOwnProperty('REQUESTED_ACCESS_CODE')) {
+    container.removeChild(plugin);
+    return null;
+  }
+
+  return /** @type {remoting.HostPlugin} */ (plugin);
+};
+
+/**
+ * Returns true if the current platform is fully supported. It's only used when
+ * we detect that host native messaging components are not installed. In that
+ * case the result of this function determines if the webapp should show the
+ * controls that allow to install and enable Me2Me host.
+ *
+ * @return {boolean}
+ */
+remoting.isMe2MeInstallable = function() {
+  /** @type {string} */
+  var platform = navigator.platform;
+  return platform == 'Win32' || platform == 'MacIntel';
+}
+
+/**
  * Display the user's email address and allow access to the rest of the app,
  * including parsing URL parameters.
  *
@@ -152,21 +199,6 @@ remoting.onEmail = function(email) {
   document.getElementById('get-started-it2me').disabled = false;
   document.getElementById('get-started-me2me').disabled = false;
 };
-
-/**
- * Returns whether or not IT2Me is supported via the host NPAPI plugin.
- *
- * @return {boolean}
- */
-function isIT2MeSupported_() {
-  var container = document.getElementById('host-plugin-container');
-  /** @type {remoting.HostPlugin} */
-  var plugin = remoting.HostSession.createPlugin();
-  container.appendChild(plugin);
-  var result = plugin.hasOwnProperty('REQUESTED_ACCESS_CODE');
-  container.removeChild(plugin);
-  return result;
-}
 
 /**
  * initHomeScreenUi is called if the app is not starting up in session mode,
@@ -200,17 +232,21 @@ remoting.initHomeScreenUi = function() {
  */
 remoting.updateLocalHostState = function() {
   /**
-   * @param {string?} hostId Host id.
+   * @param {remoting.HostController.State} state Host state.
    */
-  var onHostId = function(hostId) {
-    remoting.hostController.getLocalHostState(onHostState.bind(null, hostId));
+  var onHostState = function(state) {
+    if (state == remoting.HostController.State.STARTED) {
+      remoting.hostController.getLocalHostId(onHostId.bind(null, state));
+    } else {
+      onHostId(state, null);
+    }
   };
 
   /**
-   * @param {string?} hostId Host id.
    * @param {remoting.HostController.State} state Host state.
+   * @param {string?} hostId Host id.
    */
-  var onHostState = function(hostId, state) {
+  var onHostId = function(state, hostId) {
     remoting.hostList.setLocalHostStateAndId(state, hostId);
     remoting.hostList.display();
   };
@@ -240,7 +276,7 @@ remoting.updateLocalHostState = function() {
 
   remoting.hostController.hasFeature(
       remoting.HostController.Feature.PAIRING_REGISTRY, onHasFeatureResponse);
-  remoting.hostController.getLocalHostId(onHostId);
+  remoting.hostController.getLocalHostState(onHostState);
 };
 
 /**

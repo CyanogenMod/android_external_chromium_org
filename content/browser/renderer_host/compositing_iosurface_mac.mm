@@ -21,7 +21,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/common/content_constants_internal.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "media/base/video_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -157,18 +156,6 @@ bool MapBufferToVideoFrame(
 
 }  // namespace
 
-CVReturn DisplayLinkCallback(CVDisplayLinkRef display_link,
-                             const CVTimeStamp* now,
-                             const CVTimeStamp* output_time,
-                             CVOptionFlags flags_in,
-                             CVOptionFlags* flags_out,
-                             void* context) {
-  CompositingIOSurfaceMac* surface =
-      static_cast<CompositingIOSurfaceMac*>(context);
-  surface->DisplayLinkTick(display_link, output_time);
-  return kCVReturnSuccess;
-}
-
 CompositingIOSurfaceMac::CopyContext::CopyContext(
     const scoped_refptr<CompositingIOSurfaceContext>& context)
   : transformer(new CompositingIOSurfaceTransformer(
@@ -264,88 +251,32 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
                      base::Unretained(this),
                      false),
           true),
-      display_link_(0),
-      display_link_stop_timer_(FROM_HERE, base::TimeDelta::FromSeconds(1),
-                               this, &CompositingIOSurfaceMac::StopDisplayLink),
-      vsync_interval_numerator_(0),
-      vsync_interval_denominator_(0),
       gl_error_(GL_NO_ERROR) {
   CHECK(offscreen_context_);
 }
 
-void CompositingIOSurfaceMac::SetupCVDisplayLink() {
-  if (display_link_) {
-    LOG(ERROR) << "DisplayLink already setup";
-    return;
-  }
-
-  CVDisplayLinkRef display_link;
-  CVReturn ret = CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
-  if (ret != kCVReturnSuccess) {
-    LOG(WARNING) << "CVDisplayLinkCreateWithActiveCGDisplays failed: " << ret;
-    return;
-  }
-
-  display_link_ = display_link;
-
-  ret = CVDisplayLinkSetOutputCallback(display_link_,
-                                       &DisplayLinkCallback, this);
-  DCHECK(ret == kCVReturnSuccess)
-      << "CVDisplayLinkSetOutputCallback failed: " << ret;
-
-  StartOrContinueDisplayLink();
-
-  CVTimeStamp cv_time;
-  ret = CVDisplayLinkGetCurrentTime(display_link_, &cv_time);
-  DCHECK(ret == kCVReturnSuccess)
-      << "CVDisplayLinkGetCurrentTime failed: " << ret;
-
-  {
-    base::AutoLock lock(lock_);
-    CalculateVsyncParametersLockHeld(&cv_time);
-  }
-
-  // Stop display link for now, it will be started when needed during Draw.
-  StopDisplayLink();
-}
-
-void CompositingIOSurfaceMac::GetVSyncParameters(base::TimeTicks* timebase,
-                                                 uint32* interval_numerator,
-                                                 uint32* interval_denominator) {
-  base::AutoLock lock(lock_);
-  *timebase = vsync_timebase_;
-  *interval_numerator = vsync_interval_numerator_;
-  *interval_denominator = vsync_interval_denominator_;
-}
-
 CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
   FailAllCopies();
-  CVDisplayLinkRelease(display_link_);
-  CGLSetCurrentContext(offscreen_context_->cgl_context());
-  DestroyAllCopyContextsWithinContext();
-  UnrefIOSurfaceWithContextCurrent();
-  CGLSetCurrentContext(0);
+  {
+    gfx::ScopedCGLSetCurrentContext scoped_set_current_context(
+        offscreen_context_->cgl_context());
+    DestroyAllCopyContextsWithinContext();
+    UnrefIOSurfaceWithContextCurrent();
+  }
   offscreen_context_ = NULL;
 }
 
-bool CompositingIOSurfaceMac::SetIOSurface(
+bool CompositingIOSurfaceMac::SetIOSurfaceWithContextCurrent(
+    scoped_refptr<CompositingIOSurfaceContext> current_context,
     uint64 io_surface_handle,
     const gfx::Size& size,
-    float scale_factor,
-    const ui::LatencyInfo& latency_info) {
+    float scale_factor) {
   pixel_io_surface_size_ = size;
   scale_factor_ = scale_factor;
   dip_io_surface_size_ = gfx::ToFlooredSize(
       gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor_));
-
-  CGLError cgl_error = CGLSetCurrentContext(offscreen_context_->cgl_context());
-  if (cgl_error != kCGLNoError) {
-    LOG(ERROR) << "CGLSetCurrentContext error in SetIOSurface: " << cgl_error;
-    return false;
-  }
-  bool result = MapIOSurfaceToTexture(io_surface_handle);
-  CGLSetCurrentContext(0);
-  latency_info_.MergeWith(latency_info);
+  bool result = MapIOSurfaceToTextureWithContextCurrent(
+      current_context, io_surface_handle);
   return result;
 }
 
@@ -362,12 +293,8 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
     scoped_refptr<CompositingIOSurfaceContext> drawing_context,
     const gfx::Rect& window_rect,
     float window_scale_factor,
-    RenderWidgetHostViewFrameSubscriber* frame_subscriber,
     bool flush_drawable) {
   DCHECK_EQ(CGLGetCurrentContext(), drawing_context->cgl_context());
-
-  if (display_link_ == NULL)
-    SetupCVDisplayLink();
 
   bool has_io_surface = HasIOSurface();
   TRACE_EVENT1("browser", "CompositingIOSurfaceMac::DrawIOSurface",
@@ -449,40 +376,38 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
     initialized_workaround = true;
   }
 
-  const bool workaround_needed =
-      drawing_context->IsVendorIntel() && !base::mac::IsOSMountainLionOrLater();
+  bool workaround_needed = false;
+  // http://crbug.com/123409 : work around bugs in graphics driver on
+  // MacBook Air with Intel HD graphics, and possibly on other models,
+  // by forcing the graphics pipeline to be completely drained at this
+  // point. This workaround is not necessary on Mountain Lion.
+  // TODO(ccameron): determine if this is still needed with CoreAnimation.
+  workaround_needed |= base::mac::IsOSLionOrEarlier() &&
+                       drawing_context->IsVendorIntel();
+
+  // http://crbug.com/318877 : work around a bug where the window does
+  // not finish rendering its contents before displaying them on Mavericks
+  // on Retina MacBook Pro when using the Intel HD graphics GPU. Note that
+  // this is not necessary when flushing the drawable because we are in
+  // one of the two following situations:
+  // - we are drawing and underlay, and we will call glFinish() when drawing
+  //   the overlay.
+  // - we are using CoreAnimation, where this bug does not manifest.
+  workaround_needed |= base::mac::IsOSMavericksOrLater() &&
+                       flush_drawable &&
+                       drawing_context->IsVendorIntel();
+
   const bool use_glfinish_workaround =
       (workaround_needed || force_on_workaround) && !force_off_workaround;
-
   if (use_glfinish_workaround) {
     TRACE_EVENT0("gpu", "glFinish");
-    // http://crbug.com/123409 : work around bugs in graphics driver on
-    // MacBook Air with Intel HD graphics, and possibly on other models,
-    // by forcing the graphics pipeline to be completely drained at this
-    // point.
-    // This workaround is not necessary on Mountain Lion.
     glFinish();
-  }
-
-  base::Closure copy_done_callback;
-  if (frame_subscriber) {
-    const base::Time present_time = base::Time::Now();
-    scoped_refptr<media::VideoFrame> frame;
-    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-    if (frame_subscriber->ShouldCaptureFrame(present_time, &frame, &callback)) {
-      copy_done_callback = CopyToVideoFrameWithinContext(
-          gfx::Rect(pixel_io_surface_size_), true, frame,
-          base::Bind(callback, present_time));
-    }
   }
 
   bool result = true;
   if (flush_drawable) {
-    CGLError cgl_error =  CGLFlushDrawable(drawing_context->cgl_context());
-    if (cgl_error != kCGLNoError) {
-      LOG(ERROR) << "CGLFlushDrawable error in DrawIOSurface: " << cgl_error;
-      result = false;
-    }
+    TRACE_EVENT0("gpu", "flushBuffer");
+    [drawing_context->nsgl_context() flushBuffer];
   }
 
   // Check if any of the drawing calls result in an error.
@@ -492,15 +417,8 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
     result = false;
   }
 
-  latency_info_.AddLatencyNumber(
-      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
-  RenderWidgetHostImpl::CompositorFrameDrawn(latency_info_);
-  latency_info_.Clear();
-
   // Try to finish previous copy requests after flush to get better pipelining.
   CheckIfAllCopiesAreFinished(false);
-
-  StartOrContinueDisplayLink();
 
   return result;
 }
@@ -524,12 +442,15 @@ void CompositingIOSurfaceMac::CopyTo(
   DCHECK_EQ(output->rowBytesAsPixels(), dst_pixel_size.width())
       << "Stride is required to be equal to width for GPU readback.";
 
-  CGLSetCurrentContext(offscreen_context_->cgl_context());
-  const base::Closure copy_done_callback = CopyToSelectedOutputWithinContext(
-      src_pixel_subrect, gfx::Rect(dst_pixel_size), false,
-      output.get(), NULL,
-      base::Bind(&ReverseArgumentOrder, callback, base::Passed(&output)));
-  CGLSetCurrentContext(0);
+  base::Closure copy_done_callback;
+  {
+    gfx::ScopedCGLSetCurrentContext scoped_set_current_context(
+        offscreen_context_->cgl_context());
+    copy_done_callback = CopyToSelectedOutputWithinContext(
+        src_pixel_subrect, gfx::Rect(dst_pixel_size), false,
+        output.get(), NULL,
+        base::Bind(&ReverseArgumentOrder, callback, base::Passed(&output)));
+  }
   if (!copy_done_callback.is_null())
     copy_done_callback.Run();
 }
@@ -538,10 +459,13 @@ void CompositingIOSurfaceMac::CopyToVideoFrame(
     const gfx::Rect& src_pixel_subrect,
     const scoped_refptr<media::VideoFrame>& target,
     const base::Callback<void(bool)>& callback) {
-  CGLSetCurrentContext(offscreen_context_->cgl_context());
-  const base::Closure copy_done_callback = CopyToVideoFrameWithinContext(
-      src_pixel_subrect, false, target, callback);
-  CGLSetCurrentContext(0);
+  base::Closure copy_done_callback;
+  {
+    gfx::ScopedCGLSetCurrentContext scoped_set_current_context(
+        offscreen_context_->cgl_context());
+    copy_done_callback = CopyToVideoFrameWithinContext(
+        src_pixel_subrect, false, target, callback);
+  }
   if (!copy_done_callback.is_null())
     copy_done_callback.Run();
 }
@@ -568,7 +492,8 @@ base::Closure CompositingIOSurfaceMac::CopyToVideoFrameWithinContext(
       NULL, target, callback);
 }
 
-bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
+bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
+    const scoped_refptr<CompositingIOSurfaceContext>& current_context,
     uint64 io_surface_handle) {
   if (io_surface_.get() && io_surface_handle == io_surface_handle_)
     return true;
@@ -600,7 +525,7 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
   CHECK_AND_SAVE_GL_ERROR();
   GLuint plane = 0;
   CGLError cgl_error = io_surface_support_->CGLTexImageIOSurface2D(
-      offscreen_context_->cgl_context(),
+      current_context->cgl_context(),
       GL_TEXTURE_RECTANGLE_ARB,
       GL_RGBA,
       rounded_size.width(),
@@ -625,12 +550,14 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
 }
 
 void CompositingIOSurfaceMac::UnrefIOSurface() {
-  CGLSetCurrentContext(offscreen_context_->cgl_context());
+  gfx::ScopedCGLSetCurrentContext scoped_set_current_context(
+      offscreen_context_->cgl_context());
   UnrefIOSurfaceWithContextCurrent();
-  CGLSetCurrentContext(0);
 }
 
 void CompositingIOSurfaceMac::DrawQuad(const SurfaceQuad& quad) {
+  TRACE_EVENT0("gpu", "CompositingIOSurfaceMac::DrawQuad");
+
   glEnableClientState(GL_VERTEX_ARRAY); CHECK_AND_SAVE_GL_ERROR();
   glEnableClientState(GL_TEXTURE_COORD_ARRAY); CHECK_AND_SAVE_GL_ERROR();
 
@@ -654,43 +581,6 @@ void CompositingIOSurfaceMac::UnrefIOSurfaceWithContextCurrent() {
   // again, OSX may have reused the same ID for a new tab and we don't want to
   // blit random tab contents.
   io_surface_handle_ = 0;
-}
-
-void CompositingIOSurfaceMac::DisplayLinkTick(CVDisplayLinkRef display_link,
-                                              const CVTimeStamp* time) {
-  TRACE_EVENT0("gpu", "CompositingIOSurfaceMac::DisplayLinkTick");
-  base::AutoLock lock(lock_);
-  CalculateVsyncParametersLockHeld(time);
-}
-
-void CompositingIOSurfaceMac::CalculateVsyncParametersLockHeld(
-    const CVTimeStamp* time) {
-  lock_.AssertAcquired();
-  vsync_interval_numerator_ = static_cast<uint32>(time->videoRefreshPeriod);
-  vsync_interval_denominator_ = time->videoTimeScale;
-  // Verify that videoRefreshPeriod is 32 bits.
-  DCHECK((time->videoRefreshPeriod & ~0xffffFFFFull) == 0ull);
-
-  vsync_timebase_ =
-      base::TimeTicks::FromInternalValue(time->hostTime / 1000);
-}
-
-void CompositingIOSurfaceMac::StartOrContinueDisplayLink() {
-  if (display_link_ == NULL)
-    return;
-
-  if (!CVDisplayLinkIsRunning(display_link_)) {
-    CVDisplayLinkStart(display_link_);
-  }
-  display_link_stop_timer_.Reset();
-}
-
-void CompositingIOSurfaceMac::StopDisplayLink() {
-  if (display_link_ == NULL)
-    return;
-
-  if (CVDisplayLinkIsRunning(display_link_))
-    CVDisplayLinkStop(display_link_);
 }
 
 bool CompositingIOSurfaceMac::IsAsynchronousReadbackSupported() {
@@ -865,11 +755,12 @@ void CompositingIOSurfaceMac::CheckIfAllCopiesAreFinished(
     return;
 
   std::vector<base::Closure> done_callbacks;
-  CGLContextObj previous_context = CGLGetCurrentContext();
-  CGLSetCurrentContext(offscreen_context_->cgl_context());
-  CheckIfAllCopiesAreFinishedWithinContext(
-      block_until_finished, &done_callbacks);
-  CGLSetCurrentContext(previous_context);
+  {
+    gfx::ScopedCGLSetCurrentContext scoped_set_current_context(
+        offscreen_context_->cgl_context());
+    CheckIfAllCopiesAreFinishedWithinContext(
+        block_until_finished, &done_callbacks);
+  }
   for (size_t i = 0; i < done_callbacks.size(); ++i)
     done_callbacks[i].Run();
 }

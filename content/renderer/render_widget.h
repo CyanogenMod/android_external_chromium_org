@@ -12,10 +12,10 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
-#include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input/synthetic_gesture_params.h"
@@ -33,6 +33,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
@@ -55,7 +56,6 @@ class WebInputEvent;
 class WebKeyboardEvent;
 class WebMouseEvent;
 class WebTouchEvent;
-struct WebRenderingStatsImpl;
 }
 
 namespace cc { class OutputSurface; }
@@ -67,11 +67,11 @@ class Range;
 namespace content {
 class ExternalPopupMenu;
 class PepperPluginInstanceImpl;
+class RenderFrameImpl;
 class RenderWidgetCompositor;
 class RenderWidgetTest;
 class ResizingModeSelector;
 struct ContextMenuParams;
-struct GpuRenderingStats;
 struct WebPluginGeometry;
 
 // RenderWidget provides a communication bridge between a WebWidget and
@@ -112,6 +112,10 @@ class CONTENT_EXPORT RenderWidget
   bool has_focus() const { return has_focus_; }
   bool is_fullscreen() const { return is_fullscreen_; }
   bool is_hidden() const { return is_hidden_; }
+
+  // Functions to track out-of-process frames for special notifications.
+  void RegisterSwappedOutChildFrame(RenderFrameImpl* frame);
+  void UnregisterSwappedOutChildFrame(RenderFrameImpl* frame);
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -160,18 +164,6 @@ class CONTENT_EXPORT RenderWidget
   // Called when a plugin window has been destroyed, to make sure the currently
   // pending moves don't try to reference it.
   void CleanupWindowInPluginMoves(gfx::PluginWindowHandle window);
-
-  // Fills in a WebRenderingStatsImpl struct containing information about
-  // rendering, e.g. count of frames rendered, time spent painting.
-  void GetRenderingStats(blink::WebRenderingStatsImpl&) const;
-
-  // Fills in a GpuRenderingStats struct containing information about
-  // GPU rendering, e.g. count of texture uploads performed, time spent
-  // uploading.
-  // This call is relatively expensive as it blocks on the GPU process
-  bool GetGpuRenderingStats(GpuRenderingStats*) const;
-
-  void GetBrowserRenderingStats(BrowserRenderingStats* stats);
 
   RenderWidgetCompositor* compositor() const;
 
@@ -242,6 +234,7 @@ class CONTENT_EXPORT RenderWidget
   // the new value will be sent to the browser process.
   void UpdateSelectionBounds();
 
+  void OnShowHostContextMenu(ContextMenuParams* params);
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   // Checks if the composition range or composition character bounds have been
@@ -249,6 +242,15 @@ class CONTENT_EXPORT RenderWidget
   // process.
   void UpdateCompositionInfo(bool should_update_range);
 #endif
+
+  // Temporary for debugging purposes...
+  bool closing() const { return closing_; }
+
+  ui::MenuSourceType context_menu_source_type() {
+    return context_menu_source_type_; }
+  gfx::Point touch_editing_context_menu_location() {
+    return touch_editing_context_menu_location_;
+  }
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -327,7 +329,6 @@ class CONTENT_EXPORT RenderWidget
       float root_layer_scale);
   void SetExternalPopupOriginAdjustmentsForEmulation(
       ExternalPopupMenu* popup, ScreenMetricsEmulator* emulator);
-  virtual void OnShowHostContextMenu(ContextMenuParams* params);
 
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(const blink::WebInputEvent* event,
@@ -359,10 +360,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void OnImeConfirmComposition(const base::string16& text,
                                        const gfx::Range& replacement_range,
                                        bool keep_selection);
-  void OnPaintAtSize(const TransportDIB::Handle& dib_id,
-                     int tag,
-                     const gfx::Size& page_size,
-                     const gfx::Size& desired_size);
   void OnRepaint(gfx::Size size_to_paint);
   void OnSyntheticGestureCompleted();
   void OnSetTextDirection(blink::WebTextDirection direction);
@@ -385,7 +382,6 @@ class CONTENT_EXPORT RenderWidget
   bool ShouldHandleImeEvent();
 
   void OnSnapshot(const gfx::Rect& src_subrect);
-  void OnSetBrowserRenderingStats(const BrowserRenderingStats& stats);
 
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
@@ -448,7 +444,7 @@ class CONTENT_EXPORT RenderWidget
   void set_next_paint_is_restore_ack();
   void set_next_paint_is_repaint_ack();
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(USE_AURA)
   // |show_ime_if_needed| should be true iff the update may cause the ime to be
   // displayed, e.g. after a tap on an input field on mobile.
   // |send_ime_ack| should be true iff the browser side is required to
@@ -509,12 +505,6 @@ class CONTENT_EXPORT RenderWidget
   // Returns true if no further handling is needed. In that case, the event
   // won't be sent to WebKit or trigger DidHandleMouseEvent().
   virtual bool WillHandleMouseEvent(const blink::WebMouseEvent& event);
-
-  // Called by OnHandleInputEvent() to notify subclasses that a key event is
-  // about to be handled.
-  // Returns true if no further handling is needed. In that case, the event
-  // won't be sent to WebKit or trigger DidHandleKeyEvent().
-  virtual bool WillHandleKeyEvent(const blink::WebKeyboardEvent& event);
 
   // Called by OnHandleInputEvent() to notify subclasses that a gesture event is
   // about to be handled.
@@ -763,13 +753,9 @@ class CONTENT_EXPORT RenderWidget
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;
 
-  // The last set of rendering stats received from the browser. This is only
-  // received when using the --enable-gpu-benchmarking flag.
-  BrowserRenderingStats browser_rendering_stats_;
-
   // The latency information for any current non-accelerated-compositing
   // frame.
-  ui::LatencyInfo latency_info_;
+  std::vector<ui::LatencyInfo> latency_info_;
 
   uint32 next_output_surface_id_;
 
@@ -789,6 +775,13 @@ class CONTENT_EXPORT RenderWidget
   float popup_origin_scale_for_emulation_;
 
   scoped_ptr<ResizingModeSelector> resizing_mode_selector_;
+
+  // A list of swapped out RenderFrames that need to be notified
+  // of compositing-related events (e.g. DidCommitCompositorFrame).
+  ObserverList<RenderFrameImpl> swapped_out_frames_;
+
+  ui::MenuSourceType context_menu_source_type_;
+  gfx::Point touch_editing_context_menu_location_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
 };

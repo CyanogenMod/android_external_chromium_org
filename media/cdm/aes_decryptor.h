@@ -5,6 +5,7 @@
 #ifndef MEDIA_CRYPTO_AES_DECRYPTOR_H_
 #define MEDIA_CRYPTO_AES_DECRYPTOR_H_
 
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -35,9 +36,11 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
 
   // MediaKeys implementation.
   virtual bool CreateSession(uint32 session_id,
-                             const std::string& type,
+                             const std::string& content_type,
                              const uint8* init_data,
                              int init_data_length) OVERRIDE;
+  virtual void LoadSession(uint32 session_id,
+                           const std::string& web_session_id) OVERRIDE;
   virtual void UpdateSession(uint32 session_id,
                              const uint8* response,
                              int response_length) OVERRIDE;
@@ -124,12 +127,19 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   KeyIdToSessionKeysMap key_map_;  // Protected by |key_map_lock_|.
   mutable base::Lock key_map_lock_;  // Protects the |key_map_|.
 
+  // Keeps track of current valid session IDs.
+  std::set<uint32> valid_sessions_;
+
   // Make web session ID unique per renderer by making it static. Web session
   // IDs seen by the app will be "1", "2", etc.
   static uint32 next_web_session_id_;
 
   NewKeyCB new_audio_key_cb_;
   NewKeyCB new_video_key_cb_;
+
+  // Protect |new_audio_key_cb_| and |new_video_key_cb_| as they are set on the
+  // main thread but called on the media thread.
+  mutable base::Lock new_key_cb_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(AesDecryptor);
 };

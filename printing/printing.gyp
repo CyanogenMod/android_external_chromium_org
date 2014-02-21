@@ -18,7 +18,7 @@
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../ui/gfx/gfx.gyp:gfx',
-        '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../url/url.gyp:url_lib',
       ],
       'defines': [
@@ -77,7 +77,7 @@
         'print_settings_initializer_win.h',
         'printed_document.cc',
         'printed_document.h',
-        'printed_document_gtk.cc',
+        'printed_document_linux.cc',
         'printed_document_mac.cc',
         'printed_document_win.cc',
         'printed_page.cc',
@@ -103,13 +103,7 @@
         }], 
         ['toolkit_uses_gtk == 0',{
             'sources/': [['exclude', '_cairo\\.cc$']]
-        }],
-        ['OS!="mac"', {'sources/': [['exclude', '_mac\\.(cc|mm?)$']]}],
-        ['OS!="win"', {'sources/': [['exclude', '_win\\.cc$']]
-          }, {  # else: OS=="win"
-            'sources/': [['exclude', '_posix\\.cc$']]
-        }],
-        ['toolkit_uses_gtk == 1', {
+          }, {  # else: toolkit_uses_gtk == 1
           'dependencies': [
             # For FT_Init_FreeType and friends.
             '../build/linux/system.gyp:freetype2',
@@ -157,7 +151,7 @@
             'print_destination_none.cc',
           ],
         }],
-        ['chromeos==1 or (use_aura==1 and OS!="win")',{
+        ['chromeos==1',{
           'sources': [
             'printing_context_no_system_dialog.cc',
             'printing_context_no_system_dialog.h',
@@ -221,10 +215,10 @@
             'backend/print_backend_chromeos.cc',
           ],
         }],
-        ['toolkit_uses_gtk==1 and chromeos==0', {
+        ['OS=="linux" and chromeos==0', {
           'sources': [
-            'printing_context_gtk.cc',
-            'printing_context_gtk.h',
+            'printing_context_linux.cc',
+            'printing_context_linux.h',
           ],
         }],
         ['OS=="android"', {
@@ -232,11 +226,8 @@
             'printing_context_android.cc',
             'printing_context_android.h',
           ],
-	  'dependencies': [
-	    'printing_jni_headers',
-	  ],
-          'include_dirs': [
-            '<(SHARED_INTERMEDIATE_DIR)/printing',
+          'dependencies': [
+            'printing_jni_headers',
           ],
         }],
       ],
@@ -250,6 +241,7 @@
         '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
         '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/ui.gyp:ui',
       ],
       'sources': [

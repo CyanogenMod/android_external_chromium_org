@@ -6,7 +6,6 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -17,6 +16,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
@@ -243,9 +243,8 @@ IN_PROC_BROWSER_TEST_F(ProcessManagementTest, MAYBE_ExtensionProcessBalancing) {
   // We've loaded 5 extensions with background pages, 1 extension without
   // background page, and one isolated app. We expect only 2 unique processes
   // hosting those extensions.
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
+  extensions::ProcessMap* process_map = extensions::ProcessMap::Get(profile);
 
-  EXPECT_GE((size_t) 6, service->process_map()->size());
+  EXPECT_GE((size_t) 6, process_map->size());
   EXPECT_EQ((size_t) 2, process_ids.size());
 }

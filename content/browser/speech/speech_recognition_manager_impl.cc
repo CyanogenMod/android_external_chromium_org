@@ -147,7 +147,8 @@ int SpeechRecognitionManagerImpl::CreateSession(
   session->recognizer = new SpeechRecognizerImpl(
       this,
       session_id,
-      !config.continuous,
+      config.continuous,
+      config.interim_results,
       google_remote_engine);
 #else
   session->recognizer = new SpeechRecognizerImplAndroid(this, session_id);
@@ -197,7 +198,7 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
         context.render_process_id,
         context.render_view_id,
         context.request_id,
-        StreamOptions(MEDIA_DEVICE_AUDIO_CAPTURE, MEDIA_NO_SERVICE),
+        StreamOptions(true, false),
         GURL(context.context_name),
         base::Bind(
             &SpeechRecognitionManagerImpl::MediaRequestPermissionCallback,

@@ -7,6 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/shelf/background_animator.h"
+#include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shelf/shelf_types.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
@@ -16,7 +17,7 @@ class Window;
 }
 
 namespace ash {
-class Launcher;
+class Shelf;
 
 namespace internal {
 class FocusCycler;
@@ -26,7 +27,8 @@ class WorkspaceController;
 }
 
 class ASH_EXPORT ShelfWidget : public views::Widget,
-                               public views::WidgetObserver {
+                               public views::WidgetObserver,
+                               public ShelfLayoutManagerObserver {
  public:
   ShelfWidget(
       aura::Window* shelf_container,
@@ -54,22 +56,22 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
   internal::ShelfLayoutManager* shelf_layout_manager() {
     return shelf_layout_manager_;
   }
-  Launcher* launcher() const { return launcher_.get(); }
+  Shelf* shelf() const { return shelf_.get(); }
   internal::StatusAreaWidget* status_area_widget() const {
     return status_area_widget_;
   }
 
-  void CreateLauncher();
+  void CreateShelf();
 
-  // Set visibility of the launcher component of the shelf.
-  void SetLauncherVisibility(bool visible);
-  bool IsLauncherVisible() const;
+  // Set visibility of the shelf.
+  void SetShelfVisibility(bool visible);
+  bool IsShelfVisible() const;
 
-  // Sets the focus cycler.  Also adds the launcher to the cycle.
+  // Sets the focus cycler.  Also adds the shelf to the cycle.
   void SetFocusCycler(internal::FocusCycler* focus_cycler);
   internal::FocusCycler* GetFocusCycler();
 
-  // Called by the activation delegate, before the launcher is activated
+  // Called by the activation delegate, before the shelf is activated
   // when no other windows are visible.
   void WillActivateAsFallback() { activating_as_fallback_ = true; }
 
@@ -96,11 +98,14 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
   // Disable dimming animations for running tests.
   void DisableDimmingAnimationsForTest();
 
+  // ShelfLayoutManagerObserver overrides:
+  virtual void WillDeleteShelf() OVERRIDE;
+
  private:
   class DelegateView;
 
   internal::ShelfLayoutManager* shelf_layout_manager_;
-  scoped_ptr<Launcher> launcher_;
+  scoped_ptr<Shelf> shelf_;
   internal::StatusAreaWidget* status_area_widget_;
 
   // delegate_view_ is attached to window_container_ and is cleaned up

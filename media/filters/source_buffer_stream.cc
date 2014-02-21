@@ -21,11 +21,21 @@ namespace media {
 // Returns true if |prev_is_keyframe| and |current_is_keyframe| indicate a
 // same timestamp situation that is allowed. False is returned otherwise.
 static bool AllowSameTimestamp(
-    bool prev_is_keyframe, bool current_is_keyframe, bool is_video) {
-  if (is_video)
+    bool prev_is_keyframe, bool current_is_keyframe,
+    SourceBufferStream::Type type) {
+  if (type == SourceBufferStream::kVideo)
     return !prev_is_keyframe && !current_is_keyframe;
 
   return prev_is_keyframe || !current_is_keyframe;
+}
+
+// Returns the config ID of |buffer| if |buffer| has no fade out preroll or
+// |index| is out of range.  Otherwise returns the config ID for the fade out
+// preroll buffer at position |index|.
+static int GetConfigId(StreamParserBuffer* buffer, size_t index) {
+  return index < buffer->GetFadeOutPreroll().size()
+             ? buffer->GetFadeOutPreroll()[index]->GetConfigId()
+             : buffer->GetConfigId();
 }
 
 // Helper class representing a range of buffered data. All buffers in a
@@ -44,7 +54,7 @@ class SourceBufferRange {
   // empty and the front of |new_buffers| must be a keyframe.
   // |media_segment_start_time| refers to the starting timestamp for the media
   // segment to which these buffers belong.
-  SourceBufferRange(bool is_video,
+  SourceBufferRange(SourceBufferStream::Type type,
                     const BufferQueue& new_buffers,
                     base::TimeDelta media_segment_start_time,
                     const InterbufferDistanceCB& interbuffer_distance_cb);
@@ -94,7 +104,9 @@ class SourceBufferRange {
   // were removed.
   // |deleted_buffers| contains the buffers that were deleted from this range,
   // starting at the buffer that had been at |next_buffer_index_|.
-  void TruncateAt(base::TimeDelta timestamp,
+  // Returns true if everything in the range was deleted. Otherwise
+  // returns false.
+  bool TruncateAt(base::TimeDelta timestamp,
                   BufferQueue* deleted_buffers, bool is_exclusive);
   // Deletes all buffers in range.
   void DeleteAll(BufferQueue* deleted_buffers);
@@ -213,7 +225,9 @@ class SourceBufferRange {
 
   // Helper method to delete buffers in |buffers_| starting at
   // |starting_point|, an iterator in |buffers_|.
-  void TruncateAt(const BufferQueue::iterator& starting_point,
+  // Returns true if everything in the range was removed. Returns
+  // false if the range still contains buffers.
+  bool TruncateAt(const BufferQueue::iterator& starting_point,
                   BufferQueue* deleted_buffers);
 
   // Frees the buffers in |buffers_| from [|start_point|,|ending_point|) and
@@ -228,8 +242,8 @@ class SourceBufferRange {
   // Returns the approximate duration of a buffer in this range.
   base::TimeDelta GetApproximateDuration() const;
 
-  // True if this object stores video data.
-  bool is_video_;
+  // Type of this stream.
+  const SourceBufferStream::Type type_;
 
   // An ordered list of buffers in this range.
   BufferQueue buffers_;
@@ -308,19 +322,10 @@ static base::TimeDelta kSeekToStartFudgeRoom() {
   return base::TimeDelta::FromMilliseconds(1000);
 }
 // The maximum amount of data in bytes the stream will keep in memory.
-#if defined(GOOGLE_TV)
-// In Google TV, set the size of the buffer to 1 min because of
-// the limited memory of the embedded system.
-// 2MB: approximately 1 minutes of 256Kbps content.
-// 30MB: approximately 1 minutes of 4Mbps content.
-static int kDefaultAudioMemoryLimit = 2 * 1024 * 1024;
-static int kDefaultVideoMemoryLimit = 30 * 1024 * 1024;
-#else
 // 12MB: approximately 5 minutes of 320Kbps content.
 // 150MB: approximately 5 minutes of 4Mbps content.
 static int kDefaultAudioMemoryLimit = 12 * 1024 * 1024;
 static int kDefaultVideoMemoryLimit = 150 * 1024 * 1024;
-#endif
 
 namespace media {
 
@@ -341,7 +346,8 @@ SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
       last_output_buffer_timestamp_(kNoTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kDefaultAudioMemoryLimit),
-      config_change_pending_(false) {
+      config_change_pending_(false),
+      fade_out_preroll_index_(0) {
   DCHECK(audio_config.IsValidConfig());
   audio_configs_.push_back(audio_config);
 }
@@ -363,7 +369,8 @@ SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
       last_output_buffer_timestamp_(kNoTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kDefaultVideoMemoryLimit),
-      config_change_pending_(false) {
+      config_change_pending_(false),
+      fade_out_preroll_index_(0) {
   DCHECK(video_config.IsValidConfig());
   video_configs_.push_back(video_config);
 }
@@ -386,7 +393,8 @@ SourceBufferStream::SourceBufferStream(const TextTrackConfig& text_config,
       last_output_buffer_timestamp_(kNoTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kDefaultAudioMemoryLimit),
-      config_change_pending_(false) {
+      config_change_pending_(false),
+      fade_out_preroll_index_(0) {
 }
 
 SourceBufferStream::~SourceBufferStream() {
@@ -501,7 +509,7 @@ bool SourceBufferStream::Append(
 
     range_for_next_append_ =
         AddToRanges(new SourceBufferRange(
-            is_video(), *buffers_for_new_range, new_range_start_time,
+            GetType(), *buffers_for_new_range, new_range_start_time,
             base::Bind(&SourceBufferStream::GetMaxInterbufferDistance,
                        base::Unretained(this))));
     last_appended_buffer_timestamp_ =
@@ -609,15 +617,10 @@ void SourceBufferStream::RemoveInternal(
         SetSelectedRange(new_range);
     }
 
-    // If the current range now is completely covered by the removal
-    // range then we want to delete it.
-    bool delete_range = start < range->GetStartTimestamp() ||
-        (!is_exclusive && start == range->GetStartTimestamp());
-
     // Truncate the current range so that it only contains data before
     // the removal range.
     BufferQueue saved_buffers;
-    range->TruncateAt(start, &saved_buffers, is_exclusive);
+    bool delete_range = range->TruncateAt(start, &saved_buffers, is_exclusive);
 
     // Check to see if the current playback position was removed and
     // update the selected range appropriately.
@@ -670,6 +673,8 @@ void SourceBufferStream::ResetSeekState() {
   track_buffer_.clear();
   config_change_pending_ = false;
   last_output_buffer_timestamp_ = kNoTimestamp();
+  fade_out_preroll_index_ = 0;
+  fade_in_buffer_ = NULL;
 }
 
 bool SourceBufferStream::ShouldSeekToStartOfBuffered(
@@ -701,7 +706,7 @@ bool SourceBufferStream::IsMonotonicallyIncreasing(
 
       if (current_timestamp == prev_timestamp &&
           !AllowSameTimestamp(prev_is_keyframe, current_is_keyframe,
-                              is_video())) {
+                              GetType())) {
         MEDIA_LOG(log_cb_) << "Unexpected combination of buffers with the"
                            << " same timestamp detected at "
                            << current_timestamp.InSecondsF();
@@ -720,7 +725,7 @@ bool SourceBufferStream::IsNextTimestampValid(
   return (last_appended_buffer_timestamp_ != next_timestamp) ||
       new_media_segment_ ||
       AllowSameTimestamp(last_appended_buffer_is_keyframe_, next_is_keyframe,
-                         is_video());
+                         GetType());
 }
 
 
@@ -883,7 +888,7 @@ int SourceBufferStream::FreeBuffers(int total_bytes_to_free,
       DCHECK(!new_range_for_append);
       // Create a new range containing these buffers.
       new_range_for_append = new SourceBufferRange(
-          is_video(), buffers, kNoTimestamp(),
+          GetType(), buffers, kNoTimestamp(),
           base::Bind(&SourceBufferStream::GetMaxInterbufferDistance,
                      base::Unretained(this)));
       range_for_next_append_ = ranges_.end();
@@ -964,7 +969,7 @@ void SourceBufferStream::PrepareRangesForNextAppend(
   // from deleting the last buffer in the previous append if both buffers
   // have the same timestamp.
   bool is_exclusive = (prev_timestamp == next_timestamp) &&
-      AllowSameTimestamp(prev_is_keyframe, next_is_keyframe, is_video());
+      AllowSameTimestamp(prev_is_keyframe, next_is_keyframe, GetType());
 
   // Delete the buffers that |new_buffers| overlaps.
   base::TimeDelta start = new_buffers.front()->GetDecodeTimestamp();
@@ -1074,10 +1079,15 @@ void SourceBufferStream::OnSetDuration(base::TimeDelta duration) {
 
   // Need to partially truncate this range.
   if ((*itr)->GetStartTimestamp() < duration) {
-    (*itr)->TruncateAt(duration, NULL, false);
+    bool delete_range = (*itr)->TruncateAt(duration, NULL, false);
     if ((*itr == selected_range_) && !selected_range_->HasNextBufferPosition())
       SetSelectedRange(NULL);
-    ++itr;
+
+    if (delete_range) {
+      DeleteAndRemoveRange(&itr);
+    } else {
+      ++itr;
+    }
   }
 
   // Delete all ranges that begin after |duration|.
@@ -1092,17 +1102,75 @@ void SourceBufferStream::OnSetDuration(base::TimeDelta duration) {
 
 SourceBufferStream::Status SourceBufferStream::GetNextBuffer(
     scoped_refptr<StreamParserBuffer>* out_buffer) {
+  if (!fade_in_buffer_) {
+    const SourceBufferStream::Status status = GetNextBufferInternal(out_buffer);
+
+    // Just return if GetNextBufferInternal() failed or there's no fade out
+    // preroll, there's nothing else to do.
+    if (status != SourceBufferStream::kSuccess ||
+        (*out_buffer)->GetFadeOutPreroll().empty()) {
+      return status;
+    }
+
+    // Setup fade in buffer and fall through into splice frame buffer handling.
+    fade_out_preroll_index_ = 0;
+    fade_in_buffer_.swap(*out_buffer);
+  }
+
+  DCHECK(fade_in_buffer_);
+  const std::vector<scoped_refptr<StreamParserBuffer> >& fade_out_preroll =
+      fade_in_buffer_->GetFadeOutPreroll();
+
+  // Are there any fade out buffers left to hand out?
+  if (fade_out_preroll_index_ < fade_out_preroll.size()) {
+    // Account for config changes which occur between fade out buffers.
+    if (current_config_index_ !=
+        fade_out_preroll[fade_out_preroll_index_]->GetConfigId()) {
+      config_change_pending_ = true;
+      DVLOG(1) << "Config change (fade out preroll config ID does not match).";
+      return SourceBufferStream::kConfigChange;
+    }
+
+    *out_buffer = fade_out_preroll[fade_out_preroll_index_++];
+    return SourceBufferStream::kSuccess;
+  }
+
+  // Did we hand out the last fade out buffer on the last call?
+  if (fade_out_preroll_index_ == fade_out_preroll.size()) {
+    fade_out_preroll_index_++;
+    config_change_pending_ = true;
+    DVLOG(1) << "Config change (forced for fade in of splice frame).";
+    return SourceBufferStream::kConfigChange;
+  }
+
+  // All fade out buffers have been handed out and a config change completed, so
+  // hand out the final buffer for fade in.  Because a config change is always
+  // issued prior to handing out this buffer, any changes in config id have been
+  // inherently handled.
+  DCHECK_GT(fade_out_preroll_index_, fade_out_preroll.size());
+  out_buffer->swap(fade_in_buffer_);
+  fade_in_buffer_ = NULL;
+  fade_out_preroll_index_ = 0;
+  return SourceBufferStream::kSuccess;
+}
+
+SourceBufferStream::Status SourceBufferStream::GetNextBufferInternal(
+    scoped_refptr<StreamParserBuffer>* out_buffer) {
   CHECK(!config_change_pending_);
 
   if (!track_buffer_.empty()) {
     DCHECK(!selected_range_);
-    if (track_buffer_.front()->GetConfigId() != current_config_index_) {
+    scoped_refptr<StreamParserBuffer>& next_buffer = track_buffer_.front();
+
+    // If the next buffer is an audio splice frame, the next effective config id
+    // comes from the first fade out preroll buffer.
+    if (GetConfigId(next_buffer, 0) != current_config_index_) {
       config_change_pending_ = true;
       DVLOG(1) << "Config change (track buffer config ID does not match).";
       return kConfigChange;
     }
 
-    *out_buffer = track_buffer_.front();
+    *out_buffer = next_buffer;
     track_buffer_.pop_front();
     last_output_buffer_timestamp_ = (*out_buffer)->GetDecodeTimestamp();
 
@@ -1202,6 +1270,13 @@ Ranges<base::TimeDelta> SourceBufferStream::GetBufferedTime() const {
     ranges.Add((*itr)->GetStartTimestamp(), (*itr)->GetBufferedEndTimestamp());
   }
   return ranges;
+}
+
+base::TimeDelta SourceBufferStream::GetBufferedDuration() const {
+  if (ranges_.empty())
+    return base::TimeDelta();
+
+  return ranges_.back()->GetBufferedEndTimestamp();
 }
 
 void SourceBufferStream::MarkEndOfStream() {
@@ -1331,8 +1406,14 @@ bool SourceBufferStream::UpdateVideoConfig(const VideoDecoderConfig& config) {
 void SourceBufferStream::CompleteConfigChange() {
   config_change_pending_ = false;
 
+  if (fade_in_buffer_) {
+    current_config_index_ =
+        GetConfigId(fade_in_buffer_, fade_out_preroll_index_);
+    return;
+  }
+
   if (!track_buffer_.empty()) {
-    current_config_index_ = track_buffer_.front()->GetConfigId();
+    current_config_index_ = GetConfigId(track_buffer_.front(), 0);
     return;
   }
 
@@ -1462,13 +1543,25 @@ base::TimeDelta SourceBufferStream::FindKeyframeAfterTimestamp(
 }
 
 std::string SourceBufferStream::GetStreamTypeName() const {
-  if (!video_configs_.empty()) {
-    DCHECK(audio_configs_.empty());
-    return "VIDEO";
+  switch (GetType()) {
+    case kAudio:
+      return "AUDIO";
+    case kVideo:
+      return "VIDEO";
+    case kText:
+      return "TEXT";
   }
+  NOTREACHED();
+  return "";
+}
 
-  DCHECK(!audio_configs_.empty());
-  return "AUDIO";
+SourceBufferStream::Type SourceBufferStream::GetType() const {
+  if (!audio_configs_.empty())
+    return kAudio;
+  if (!video_configs_.empty())
+    return kVideo;
+  DCHECK_NE(text_track_config_.kind(), kTextNone);
+  return kText;
 }
 
 void SourceBufferStream::DeleteAndRemoveRange(RangeList::iterator* itr) {
@@ -1490,10 +1583,10 @@ void SourceBufferStream::DeleteAndRemoveRange(RangeList::iterator* itr) {
 }
 
 SourceBufferRange::SourceBufferRange(
-    bool is_video, const BufferQueue& new_buffers,
+    SourceBufferStream::Type type, const BufferQueue& new_buffers,
     base::TimeDelta media_segment_start_time,
     const InterbufferDistanceCB& interbuffer_distance_cb)
-    : is_video_(is_video),
+    : type_(type),
       keyframe_map_index_base_(0),
       next_buffer_index_(-1),
       media_segment_start_time_(media_segment_start_time),
@@ -1585,7 +1678,7 @@ SourceBufferRange* SourceBufferRange::SplitRange(
   // Create a new range with |removed_buffers|.
   SourceBufferRange* split_range =
       new SourceBufferRange(
-          is_video_, removed_buffers, kNoTimestamp(), interbuffer_distance_cb_);
+          type_, removed_buffers, kNoTimestamp(), interbuffer_distance_cb_);
 
   // If the next buffer position is now in |split_range|, update the state of
   // this range and |split_range| accordingly.
@@ -1602,7 +1695,7 @@ SourceBufferRange::BufferQueue::iterator SourceBufferRange::GetBufferItrAt(
   // Need to make a dummy buffer with timestamp |timestamp| in order to search
   // the |buffers_| container.
   scoped_refptr<StreamParserBuffer> dummy_buffer =
-      StreamParserBuffer::CopyFrom(NULL, 0, false);
+      StreamParserBuffer::CopyFrom(NULL, 0, false, DemuxerStream::UNKNOWN, 0);
   dummy_buffer->SetDecodeTimestamp(timestamp);
 
   if (skip_given_timestamp) {
@@ -1638,13 +1731,13 @@ void SourceBufferRange::DeleteAll(BufferQueue* removed_buffers) {
   TruncateAt(buffers_.begin(), removed_buffers);
 }
 
-void SourceBufferRange::TruncateAt(
+bool SourceBufferRange::TruncateAt(
     base::TimeDelta timestamp, BufferQueue* removed_buffers,
     bool is_exclusive) {
   // Find the place in |buffers_| where we will begin deleting data.
   BufferQueue::iterator starting_point =
       GetBufferItrAt(timestamp, is_exclusive);
-  TruncateAt(starting_point, removed_buffers);
+  return TruncateAt(starting_point, removed_buffers);
 }
 
 int SourceBufferRange::DeleteGOPFromFront(BufferQueue* deleted_buffers) {
@@ -1800,13 +1893,13 @@ void SourceBufferRange::FreeBufferRange(
   buffers_.erase(starting_point, ending_point);
 }
 
-void SourceBufferRange::TruncateAt(
+bool SourceBufferRange::TruncateAt(
     const BufferQueue::iterator& starting_point, BufferQueue* removed_buffers) {
   DCHECK(!removed_buffers || removed_buffers->empty());
 
   // Return if we're not deleting anything.
   if (starting_point == buffers_.end())
-    return;
+    return false;
 
   // Reset the next buffer index if we will be deleting the buffer that's next
   // in sequence.
@@ -1832,6 +1925,7 @@ void SourceBufferRange::TruncateAt(
 
   // Remove everything from |starting_point| onward.
   FreeBufferRange(starting_point, buffers_.end());
+  return buffers_.empty();
 }
 
 bool SourceBufferRange::GetNextBuffer(
@@ -1839,7 +1933,7 @@ bool SourceBufferRange::GetNextBuffer(
   if (!HasNextBuffer())
     return false;
 
-  *out_buffer = buffers_.at(next_buffer_index_);
+  *out_buffer = buffers_[next_buffer_index_];
   next_buffer_index_++;
   return true;
 }
@@ -1851,7 +1945,9 @@ bool SourceBufferRange::HasNextBuffer() const {
 
 int SourceBufferRange::GetNextConfigId() const {
   DCHECK(HasNextBuffer());
-  return buffers_.at(next_buffer_index_)->GetConfigId();
+  // If the next buffer is an audio splice frame, the next effective config id
+  // comes from the first fade out preroll buffer.
+  return GetConfigId(buffers_[next_buffer_index_], 0);
 }
 
 base::TimeDelta SourceBufferRange::GetNextTimestamp() const {
@@ -1862,7 +1958,7 @@ base::TimeDelta SourceBufferRange::GetNextTimestamp() const {
     return kNoTimestamp();
   }
 
-  return buffers_.at(next_buffer_index_)->GetDecodeTimestamp();
+  return buffers_[next_buffer_index_]->GetDecodeTimestamp();
 }
 
 bool SourceBufferRange::HasNextBufferPosition() const {
@@ -1968,9 +2064,14 @@ base::TimeDelta SourceBufferRange::KeyframeBeforeTimestamp(
 bool SourceBufferRange::IsNextInSequence(
     base::TimeDelta timestamp, bool is_keyframe) const {
   base::TimeDelta end = buffers_.back()->GetDecodeTimestamp();
-  return (end < timestamp && timestamp <= end + GetFudgeRoom()) ||
-      (timestamp == end && AllowSameTimestamp(
-          buffers_.back()->IsKeyframe(), is_keyframe, is_video_));
+  if (end < timestamp &&
+      (type_ == SourceBufferStream::kText ||
+          timestamp <= end + GetFudgeRoom())) {
+    return true;
+  }
+
+  return timestamp == end && AllowSameTimestamp(
+      buffers_.back()->IsKeyframe(), is_keyframe, type_);
 }
 
 base::TimeDelta SourceBufferRange::GetFudgeRoom() const {

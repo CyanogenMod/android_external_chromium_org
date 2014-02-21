@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/format_macros.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -15,7 +16,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
+#include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "extensions/common/extension.h"
 #include "google_apis/drive/drive_api_parser.h"
@@ -87,6 +88,8 @@ RemoteToLocalSyncer::~RemoteToLocalSyncer() {
 
 void RemoteToLocalSyncer::Run(const SyncStatusCallback& callback) {
   if (!drive_service() || !metadata_database() || !remote_change_processor()) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local] Context not ready.");
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
     return;
@@ -101,10 +104,15 @@ void RemoteToLocalSyncer::Run(const SyncStatusCallback& callback) {
   dirty_tracker_ = make_scoped_ptr(new FileTracker);
   if (metadata_database()->GetNormalPriorityDirtyTracker(
           dirty_tracker_.get())) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local] Start: tracker_id=%" PRId64,
+              dirty_tracker_->tracker_id());
     ResolveRemoteChange(wrapped_callback);
     return;
   }
 
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Remote -> Local] Nothing to do.");
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, SYNC_STATUS_NO_CHANGE_TO_SYNC));
@@ -122,6 +130,8 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
                  << remote_metadata_->file_id();
       NOTREACHED();
     }
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local]: Missing remote file case.");
     HandleMissingRemoteMetadata(callback);
     return;
   }
@@ -133,6 +143,8 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
   if (!dirty_tracker_->active() ||
       HasDisabledAppRoot(metadata_database(), *dirty_tracker_)) {
     // Handle inactive tracker in SyncCompleted.
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local]: Inactive tracker case.");
     callback.Run(SYNC_STATUS_OK);
     return;
   }
@@ -156,9 +168,13 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
     if (remote_details.missing() ||
         synced_details.title() != remote_details.title() ||
         remote_details.parent_folder_ids_size()) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Remote -> Local]: Sync-root deletion.");
       HandleSyncRootDeletion(callback);
       return;
     }
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local]: Trivial sync-root change.");
     callback.Run(SYNC_STATUS_OK);
     return;
   }
@@ -168,6 +184,8 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
 
   if (remote_details.missing()) {
     if (!synced_details.missing()) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Remote -> Local]: Remote file deletion.");
       HandleDeletion(callback);
       return;
     }
@@ -206,6 +224,8 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
 
   if (synced_details.title() != remote_details.title()) {
     // Handle rename as deletion + addition.
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local]: Detected file rename.");
     Prepare(base::Bind(&RemoteToLocalSyncer::DidPrepareForDeletion,
                        weak_ptr_factory_.GetWeakPtr(), callback));
     return;
@@ -224,6 +244,8 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
 
   if (!HasFolderAsParent(remote_details, parent_tracker.file_id())) {
     // Handle reorganize as deletion + addition.
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Remote -> Local]: Detected file reorganize.");
     Prepare(base::Bind(&RemoteToLocalSyncer::DidPrepareForDeletion,
                        weak_ptr_factory_.GetWeakPtr(), callback));
     return;
@@ -231,15 +253,31 @@ void RemoteToLocalSyncer::ResolveRemoteChange(
 
   if (synced_details.file_kind() == FILE_KIND_FILE) {
     if (synced_details.md5() != remote_details.md5()) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Remote -> Local]: Detected file content update.");
       HandleContentUpdate(callback);
       return;
     }
   } else {
     DCHECK_EQ(FILE_KIND_FOLDER, synced_details.file_kind());
-    HandleFolderUpdate(callback);
+    if (synced_details.missing()) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Remote -> Local]: Detected folder update.");
+      HandleFolderUpdate(callback);
+      return;
+    }
+    if (dirty_tracker_->needs_folder_listing()) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Remote -> Local]: Needs listing folder.");
+      ListFolderContent(callback);
+      return;
+    }
+    callback.Run(SYNC_STATUS_OK);
     return;
   }
 
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Remote -> Local]: Trivial file change.");
   callback.Run(SYNC_STATUS_OK);
 }
 
@@ -251,15 +289,32 @@ void RemoteToLocalSyncer::HandleMissingRemoteMetadata(
       dirty_tracker_->file_id(),
       base::Bind(&RemoteToLocalSyncer::DidGetRemoteMetadata,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback,
-                 metadata_database()->GetLargestKnownChangeID()));
+                 callback));
 }
 
 void RemoteToLocalSyncer::DidGetRemoteMetadata(
     const SyncStatusCallback& callback,
-    int64 change_id,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceEntry> entry) {
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK &&
+      error != google_apis::HTTP_NOT_FOUND) {
+    callback.Run(status);
+    return;
+  }
+
+  if (error == google_apis::HTTP_NOT_FOUND) {
+    metadata_database()->UpdateByDeletedRemoteFile(
+        dirty_tracker_->file_id(), callback);
+    return;
+  }
+
+  if (!entry) {
+    NOTREACHED();
+    callback.Run(SYNC_STATUS_FAILED);
+    return;
+  }
+
   metadata_database()->UpdateByFileResource(
       *drive::util::ConvertResourceEntryToFileResource(*entry),
       base::Bind(&RemoteToLocalSyncer::DidUpdateDatabaseForRemoteMetadata,
@@ -489,8 +544,15 @@ void RemoteToLocalSyncer::DidListFolderContent(
     scoped_ptr<FileIDList> children,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceList> resource_list) {
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
+    return;
+  }
+
+  if (!resource_list) {
+    NOTREACHED();
+    callback.Run(SYNC_STATUS_FAILED);
     return;
   }
 
@@ -518,6 +580,12 @@ void RemoteToLocalSyncer::DidListFolderContent(
 
 void RemoteToLocalSyncer::SyncCompleted(const SyncStatusCallback& callback,
                                         SyncStatusCode status) {
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Remote -> Local]: Finished: action=%s, tracker=%" PRId64
+            " status=%s",
+            SyncActionToString(sync_action_), dirty_tracker_->tracker_id(),
+            SyncStatusCodeToString(status));
+
   if (sync_root_deletion_) {
     callback.Run(SYNC_STATUS_OK);
     return;
@@ -541,9 +609,10 @@ void RemoteToLocalSyncer::SyncCompleted(const SyncStatusCallback& callback,
   if (!dirty_tracker_->active() ||
       HasDisabledAppRoot(metadata_database(), *dirty_tracker_)) {
     // Operations for an inactive tracker don't update file content.
-    if (dirty_tracker_->has_synced_details()) {
+    if (dirty_tracker_->has_synced_details())
       updated_details.set_md5(dirty_tracker_->synced_details().md5());
-    } else {
+    if (!dirty_tracker_->active()) {
+      // Keep missing true, as the change hasn't been synced to local.
       updated_details.clear_md5();
       updated_details.set_missing(true);
     }
@@ -626,8 +695,9 @@ void RemoteToLocalSyncer::DidDownloadFile(const SyncStatusCallback& callback,
                                           webkit_blob::ScopedFile file,
                                           google_apis::GDataErrorCode error,
                                           const base::FilePath&) {
-  if (error != google_apis::HTTP_SUCCESS) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    callback.Run(status);
     return;
   }
 

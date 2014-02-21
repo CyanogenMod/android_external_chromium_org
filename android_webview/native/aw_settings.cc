@@ -8,12 +8,14 @@
 #include "android_webview/native/aw_contents.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/command_line.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_switches.h"
 #include "jni/AwSettings_jni.h"
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/common/webpreferences.h"
@@ -45,6 +47,9 @@ class AwSettingsUserData : public base::SupportsUserData::Data {
 AwSettings::AwSettings(JNIEnv* env, jobject obj, jlong web_contents)
     : WebContentsObserver(
           reinterpret_cast<content::WebContents*>(web_contents)),
+      accelerated_2d_canvas_disabled_by_switch_(
+          CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kDisableAccelerated2dCanvas)),
       aw_settings_(env, obj) {
   reinterpret_cast<content::WebContents*>(web_contents)->
       SetUserData(kAwSettingsUserDataKey, new AwSettingsUserData(this));
@@ -177,19 +182,26 @@ void AwSettings::WebContentsDestroyed(content::WebContents* web_contents) {
 // static
 void AwSettings::PopulateFixedPreferences(WebPreferences* web_prefs) {
   web_prefs->shrinks_standalone_images_to_fit = false;
+  web_prefs->should_clear_document_background = false;
 }
 
 void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
-
-  AwRenderViewHostExt* render_view_host_ext = GetAwRenderViewHostExt();
-  if (!render_view_host_ext) return;
-
   ScopedJavaLocalRef<jobject> scoped_obj = aw_settings_.get(env);
   jobject obj = scoped_obj.obj();
   if (!obj) return;
+  // Grab the lock and call PopulateWebPreferencesLocked.
+  Java_AwSettings_populateWebPreferences(
+      env, obj, reinterpret_cast<jlong>(web_prefs));
+}
 
+void AwSettings::PopulateWebPreferencesLocked(
+    JNIEnv* env, jobject obj, jlong web_prefs_ptr) {
+  AwRenderViewHostExt* render_view_host_ext = GetAwRenderViewHostExt();
+  if (!render_view_host_ext) return;
+
+  WebPreferences* web_prefs = reinterpret_cast<WebPreferences*>(web_prefs_ptr);
   PopulateFixedPreferences(web_prefs);
 
   web_prefs->text_autosizing_enabled =
@@ -281,8 +293,11 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
       Java_AwSettings_getDatabaseEnabledLocked(env, obj);
 
   web_prefs->wide_viewport_quirk = true;
-  web_prefs->double_tap_to_zoom_enabled = web_prefs->use_wide_viewport =
+  web_prefs->use_wide_viewport =
       Java_AwSettings_getUseWideViewportLocked(env, obj);
+
+  web_prefs->double_tap_to_zoom_enabled =
+      Java_AwSettings_supportsDoubleTapZoomLocked(env, obj);
 
   web_prefs->initialize_at_minimum_page_scale =
       Java_AwSettings_getLoadWithOverviewModeLocked(env, obj);
@@ -311,6 +326,11 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
       Java_AwSettings_getPasswordEchoEnabledLocked(env, obj);
   web_prefs->spatial_navigation_enabled =
       Java_AwSettings_getSpatialNavigationLocked(env, obj);
+
+  web_prefs->accelerated_2d_canvas_enabled =
+      !accelerated_2d_canvas_disabled_by_switch_ &&
+      Java_AwSettings_getEnableSupportedHardwareAcceleratedFeaturesLocked(
+          env, obj);
 }
 
 static jlong Init(JNIEnv* env,

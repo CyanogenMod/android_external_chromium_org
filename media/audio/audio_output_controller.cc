@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/task_runner_util.h"
 #include "base/threading/platform_thread.h"
@@ -14,7 +13,6 @@
 #include "build/build_config.h"
 #include "media/base/scoped_histogram_timer.h"
 
-using base::Time;
 using base::TimeDelta;
 
 namespace media {
@@ -38,20 +36,18 @@ AudioOutputController::AudioOutputController(
     EventHandler* handler,
     const AudioParameters& params,
     const std::string& output_device_id,
-    const std::string& input_device_id,
     SyncReader* sync_reader)
     : audio_manager_(audio_manager),
       params_(params),
       handler_(handler),
       output_device_id_(output_device_id),
-      input_device_id_(input_device_id),
       stream_(NULL),
       diverting_to_stream_(NULL),
       volume_(1.0),
       state_(kEmpty),
       num_allowed_io_(0),
       sync_reader_(sync_reader),
-      message_loop_(audio_manager->GetMessageLoop()),
+      message_loop_(audio_manager->GetTaskRunner()),
 #if defined(AUDIO_POWER_MONITORING)
       power_monitor_(
           params.sample_rate(),
@@ -74,7 +70,6 @@ scoped_refptr<AudioOutputController> AudioOutputController::Create(
     EventHandler* event_handler,
     const AudioParameters& params,
     const std::string& output_device_id,
-    const std::string& input_device_id,
     SyncReader* sync_reader) {
   DCHECK(audio_manager);
   DCHECK(sync_reader);
@@ -83,8 +78,7 @@ scoped_refptr<AudioOutputController> AudioOutputController::Create(
     return NULL;
 
   scoped_refptr<AudioOutputController> controller(new AudioOutputController(
-      audio_manager, event_handler, params, output_device_id, input_device_id,
-      sync_reader));
+      audio_manager, event_handler, params, output_device_id, sync_reader));
   controller->message_loop_->PostTask(FROM_HERE, base::Bind(
       &AudioOutputController::DoCreate, controller, false));
   return controller;
@@ -143,8 +137,7 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
 
   stream_ = diverting_to_stream_ ?
       diverting_to_stream_ :
-      audio_manager_->MakeAudioOutputStreamProxy(params_, output_device_id_,
-                                                 input_device_id_);
+      audio_manager_->MakeAudioOutputStreamProxy(params_, output_device_id_);
   if (!stream_) {
     state_ = kError;
     handler_->OnError();

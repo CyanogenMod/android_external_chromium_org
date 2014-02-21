@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <string>
 
+#include "base/bind.h"
+#include "base/location.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task_runner.h"
@@ -25,8 +27,10 @@
 #include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
+#include "chromeos/tpm_token_loader.h"
 #include "components/onc/onc_constants.h"
 #include "dbus/object_path.h"
+#include "net/cert/scoped_nss_types.h"
 #include "net/cert/x509_certificate.h"
 
 namespace chromeos {
@@ -81,7 +85,7 @@ struct CertAndIssuer {
 
 bool CompareCertExpiration(const CertAndIssuer& a,
                            const CertAndIssuer& b) {
-  return (a.cert->valid_expiry() < b.cert->valid_expiry());
+  return (a.cert->valid_expiry() > b.cert->valid_expiry());
 }
 
 // Describes a network that is configured with the certificate pattern
@@ -144,15 +148,15 @@ void FindCertificateMatches(const net::CertificateList& certs,
         !HasPrivateKey(cert)) {
       continue;
     }
-    net::X509Certificate::OSCertHandle issuer_handle =
-        CERT_FindCertIssuer(cert.os_cert_handle(), PR_Now(), certUsageAnyCA);
+    net::ScopedCERTCertificate issuer_handle(
+        CERT_FindCertIssuer(cert.os_cert_handle(), PR_Now(), certUsageAnyCA));
     if (!issuer_handle) {
       LOG(ERROR) << "Couldn't find an issuer.";
       continue;
     }
     scoped_refptr<net::X509Certificate> issuer =
         net::X509Certificate::CreateFromHandle(
-            issuer_handle,
+            issuer_handle.get(),
             net::X509Certificate::OSCertHandles() /* no intermediate certs */);
     if (!issuer) {
       LOG(ERROR) << "Couldn't create issuer cert.";
@@ -434,8 +438,8 @@ void ClientCertResolver::ConfigureCertificates(NetworkCertMatches* matches) {
     base::DictionaryValue shill_properties;
     client_cert::SetShillProperties(
         it->cert_config_type,
-        base::IntToString(cert_loader->tpm_token_slot_id()),
-        cert_loader->tpm_user_pin(),
+        base::IntToString(cert_loader->TPMTokenSlotID()),
+        TPMTokenLoader::Get()->tpm_user_pin(),
         &it->pkcs11_id,
         &shill_properties);
     DBusThreadManager::Get()->GetShillServiceClient()->

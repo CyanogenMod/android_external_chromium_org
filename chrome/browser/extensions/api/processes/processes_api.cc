@@ -18,7 +18,6 @@
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_function_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/task_manager/resource_provider.h"
@@ -34,6 +33,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 
 namespace extensions {
@@ -509,7 +509,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<ProcessesAPI>* ProcessesAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 // static
@@ -678,7 +678,7 @@ GetProcessInfoFunction::~GetProcessInfoFunction() {
 
 bool GetProcessInfoFunction::RunImpl() {
 #if defined(ENABLE_TASK_MANAGER)
-  Value* processes = NULL;
+  base::Value* processes = NULL;
 
   EXTENSION_FUNCTION_VALIDATE(args_->Get(0, &processes));
   EXTENSION_FUNCTION_VALIDATE(args_->GetBoolean(1, &memory_));

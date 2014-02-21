@@ -28,6 +28,7 @@ class SequenceChecker;
 
 namespace gfx {
 class GLContext;
+class GLShareGroup;
 class GLSurface;
 class Size;
 }
@@ -58,21 +59,10 @@ class TransferBufferManagerInterface;
 class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
                                           public GpuControl {
  public:
-  InProcessCommandBuffer();
+  class Service;
+  explicit InProcessCommandBuffer(const scoped_refptr<Service>& service);
   virtual ~InProcessCommandBuffer();
 
-  // Used to override the GPU thread with explicit scheduling.
-  // (By default an internal GPU thread will be spawned to handle all GL work
-  // and the two functions are unused.)
-  // The callback will be called from different client threads. After the
-  // callback is issued, the client is expected to eventually call
-  // ProcessGpuWorkOnCurrentThread(). The latter cannot be called from different
-  // threads.
-  // The callback needs to be set before any context is created.
-  static void SetScheduleCallback(const base::Closure& callback);
-  static void ProcessGpuWorkOnCurrentThread();
-
-  static void EnableVirtualizedContext();
   static void SetGpuMemoryBufferFactory(GpuMemoryBufferFactory* factory);
 
   // If |surface| is not NULL, use it directly; in this case, the command
@@ -80,13 +70,12 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   // a new GLSurface.
   bool Initialize(scoped_refptr<gfx::GLSurface> surface,
                   bool is_offscreen,
-                  bool share_resources,
                   gfx::AcceleratedWidget window,
                   const gfx::Size& size,
                   const std::vector<int32>& attribs,
                   gfx::GpuPreference gpu_preference,
                   const base::Closure& context_lost_callback,
-                  unsigned int share_group_id);
+                  InProcessCommandBuffer* share_group);
   void Destroy();
 
   // CommandBuffer implementation:
@@ -115,8 +104,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
       unsigned internalformat,
       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
-  virtual bool GenerateMailboxNames(unsigned num,
-                                    std::vector<gpu::Mailbox>* names) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
   virtual void SignalSyncPoint(uint32 sync_point,
                                const base::Closure& callback) OVERRIDE;
@@ -126,18 +113,25 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
       OVERRIDE;
   virtual void Echo(const base::Closure& callback) OVERRIDE;
+  virtual uint32 CreateStreamTexture(uint32 texture_id) OVERRIDE;
 
   // The serializer interface to the GPU service (i.e. thread).
-  class SchedulerClient {
+  class Service {
    public:
-     virtual ~SchedulerClient() {}
+    Service();
+    virtual ~Service();
 
-     // Queues a task to run as soon as possible.
-     virtual void QueueTask(const base::Closure& task) = 0;
+    virtual void AddRef() const = 0;
+    virtual void Release() const = 0;
 
-     // Schedules |callback| to run at an appropriate time for performing idle
-     // work.
-     virtual void ScheduleIdleWork(const base::Closure& task) = 0;
+    // Queues a task to run as soon as possible.
+    virtual void ScheduleTask(const base::Closure& task) = 0;
+
+    // Schedules |callback| to run at an appropriate time for performing idle
+    // work.
+    virtual void ScheduleIdleWork(const base::Closure& task) = 0;
+
+    virtual bool UseVirtualizedGLContexts() = 0;
   };
 
 #if defined(OS_ANDROID)
@@ -153,29 +147,32 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
     const std::vector<int32>& attribs;
     gfx::GpuPreference gpu_preference;
     gpu::Capabilities* capabilities;  // Ouptut.
+    InProcessCommandBuffer* context_group;
 
     InitializeOnGpuThreadParams(bool is_offscreen,
                                 gfx::AcceleratedWidget window,
                                 const gfx::Size& size,
                                 const std::vector<int32>& attribs,
                                 gfx::GpuPreference gpu_preference,
-                                gpu::Capabilities* capabilities)
+                                gpu::Capabilities* capabilities,
+                                InProcessCommandBuffer* share_group)
         : is_offscreen(is_offscreen),
           window(window),
           size(size),
           attribs(attribs),
           gpu_preference(gpu_preference),
-          capabilities(capabilities) {}
+          capabilities(capabilities),
+          context_group(share_group) {}
   };
 
   bool InitializeOnGpuThread(const InitializeOnGpuThreadParams& params);
   bool DestroyOnGpuThread();
   void FlushOnGpuThread(int32 put_offset);
+  uint32 CreateStreamTextureOnGpuThread(uint32 client_texture_id);
   bool MakeCurrent();
-  bool IsContextLost();
   base::Closure WrapCallback(const base::Closure& callback);
   State GetStateFast();
-  void QueueTask(const base::Closure& task) { queue_->QueueTask(task); }
+  void QueueTask(const base::Closure& task) { service_->ScheduleTask(task); }
   void CheckSequencedThread();
 
   // Callbacks:
@@ -185,17 +182,17 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void PumpCommands();
   void ScheduleMoreIdleWork();
 
+  static scoped_refptr<Service> GetDefaultService();
+
   // Members accessed on the gpu thread (possibly with the exception of
   // creation):
   bool context_lost_;
-  bool share_resources_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<GpuScheduler> gpu_scheduler_;
   scoped_ptr<gles2::GLES2Decoder> decoder_;
   scoped_refptr<gfx::GLContext> context_;
   scoped_refptr<gfx::GLSurface> surface_;
   base::Closure context_lost_callback_;
-  unsigned int share_group_id_;
 
   // Members accessed on the client thread:
   State last_state_;
@@ -206,13 +203,14 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   scoped_ptr<CommandBuffer> command_buffer_;
   base::Lock command_buffer_lock_;
   base::WaitableEvent flush_event_;
-  scoped_ptr<SchedulerClient> queue_;
+  scoped_refptr<Service> service_;
   State state_after_last_flush_;
   base::Lock state_after_last_flush_lock_;
   scoped_ptr<GpuControl> gpu_control_;
+  scoped_refptr<gfx::GLShareGroup> gl_share_group_;
 
 #if defined(OS_ANDROID)
-  scoped_refptr<StreamTextureManagerInProcess> stream_texture_manager_;
+  scoped_ptr<StreamTextureManagerInProcess> stream_texture_manager_;
 #endif
 
   // Only used with explicit scheduling and the gpu thread is the same as

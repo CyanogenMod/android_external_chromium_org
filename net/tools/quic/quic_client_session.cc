@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "net/quic/crypto/crypto_protocol.h"
-#include "net/tools/quic/quic_reliable_client_stream.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 
 using std::string;
@@ -19,29 +18,29 @@ QuicClientSession::QuicClientSession(
     const QuicConfig& config,
     QuicConnection* connection,
     QuicCryptoClientConfig* crypto_config)
-    : QuicSession(connection, config, false),
+    : QuicSession(connection, config),
       crypto_stream_(server_hostname, this, crypto_config) {
 }
 
 QuicClientSession::~QuicClientSession() {
 }
 
-QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
+QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
   if (!crypto_stream_.encryption_established()) {
-    DLOG(INFO) << "Encryption not active so no outgoing stream created.";
+    DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return NULL;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
-               << "Already " << GetNumOpenStreams() << " open.";
+    DVLOG(1) << "Failed to create a new outgoing stream. "
+             << "Already " << GetNumOpenStreams() << " open.";
     return NULL;
   }
   if (goaway_received()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
-               << "Already received goaway.";
+    DVLOG(1) << "Failed to create a new outgoing stream. "
+             << "Already received goaway.";
     return NULL;
   }
-  QuicReliableClientStream* stream
+  QuicSpdyClientStream* stream
       = new QuicSpdyClientStream(GetNextStreamId(), this);
   ActivateStream(stream);
   return stream;
@@ -59,7 +58,7 @@ int QuicClientSession::GetNumSentClientHellos() const {
   return crypto_stream_.num_sent_client_hellos();
 }
 
-ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
+QuicDataStream* QuicClientSession::CreateIncomingDataStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
   return NULL;

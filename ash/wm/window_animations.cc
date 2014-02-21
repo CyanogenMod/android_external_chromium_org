@@ -9,8 +9,8 @@
 #include <algorithm>
 #include <vector>
 
-#include "ash/launcher/launcher.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -77,7 +77,7 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
   gfx::Rect bounds = window->bounds();
   gfx::Rect target_bounds = GetMinimizeAnimationTargetBoundsInScreen(window);
   target_bounds =
-      ScreenAsh::ConvertRectFromScreen(window->parent(), target_bounds);
+      ScreenUtil::ConvertRectFromScreen(window->parent(), target_bounds);
 
   float scale_x = static_cast<float>(target_bounds.width()) / bounds.width();
   float scale_y = static_cast<float>(target_bounds.height()) / bounds.height();
@@ -122,7 +122,7 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
   // to save bandwidth and reduce jank.
   if (!show) {
     window->layer()->GetAnimator()->SchedulePauseForProperties(
-        (duration * 3) / 4, ui::LayerAnimationElement::OPACITY, -1);
+        (duration * 3) / 4, ui::LayerAnimationElement::OPACITY);
   }
 
   // Fade in and out quickly when the window is small to reduce jank.
@@ -285,10 +285,6 @@ class CrossFadeObserver : public ui::CompositorObserver,
   }
   virtual void OnCompositingLockStateChanged(
       ui::Compositor* compositor) OVERRIDE {
-  }
-  virtual void OnUpdateVSyncParameters(ui::Compositor* compositor,
-                                       base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE {
   }
 
   // aura::WindowObserver overrides:
@@ -501,11 +497,11 @@ void SetTransformForScaleAnimation(ui::Layer* layer,
 }
 
 gfx::Rect GetMinimizeAnimationTargetBoundsInScreen(aura::Window* window) {
-  Launcher* launcher = Launcher::ForWindow(window);
+  Shelf* shelf = Shelf::ForWindow(window);
   // Shelf is created lazily and can be NULL.
-  if (!launcher)
+  if (!shelf)
     return gfx::Rect();
-  gfx::Rect item_rect = launcher->GetScreenBoundsOfItemIconForWindow(window);
+  gfx::Rect item_rect = shelf->GetScreenBoundsOfItemIconForWindow(window);
 
   // The launcher item is visible and has an icon.
   if (!item_rect.IsEmpty())
@@ -519,10 +515,9 @@ gfx::Rect GetMinimizeAnimationTargetBoundsInScreen(aura::Window* window) {
   // bar.
   if (item_rect.width() != 0 || item_rect.height() != 0) {
     internal::ShelfLayoutManager* layout_manager =
-        internal::ShelfLayoutManager::ForLauncher(window);
+        internal::ShelfLayoutManager::ForShelf(window);
     if (layout_manager->visibility_state() == SHELF_AUTO_HIDE) {
-      gfx::Rect shelf_bounds =
-          launcher->shelf_widget()->GetWindowBoundsInScreen();
+      gfx::Rect shelf_bounds = shelf->shelf_widget()->GetWindowBoundsInScreen();
       switch (layout_manager->GetAlignment()) {
         case SHELF_ALIGNMENT_BOTTOM:
           item_rect.set_y(shelf_bounds.y());
@@ -541,7 +536,7 @@ gfx::Rect GetMinimizeAnimationTargetBoundsInScreen(aura::Window* window) {
     }
   }
 
-  // Assume the launcher is overflowed, zoom off to the bottom right of the
+  // Assume the shelf is overflowed, zoom off to the bottom right of the
   // work area.
   gfx::Rect work_area =
       Shell::GetScreen()->GetDisplayNearestWindow(window).work_area();

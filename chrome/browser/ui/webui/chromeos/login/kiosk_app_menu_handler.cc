@@ -6,12 +6,13 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -22,9 +23,23 @@
 
 namespace chromeos {
 
+namespace {
+
+// JS functions that define new and old kiosk UI API.
+const char kKioskSetAppsNewAPI[] = "login.AccountPickerScreen.setApps";
+const char kKioskSetAppsOldAPI[] = "login.AppsMenuButton.setApps";
+const char kKioskShowErrorNewAPI[] = "login.AccountPickerScreen.showAppError";
+const char kKioskShowErrorOldAPI[] = "login.AppsMenuButton.showError";
+
+// Default app icon size.
+const char kDefaultAppIconSizeString[] = "96px";
+const int kMaxAppIconSize = 160;
+
+}  // namespace
+
 KioskAppMenuHandler::KioskAppMenuHandler()
-    : initialized_(false),
-      weak_ptr_factory_(this) {
+    : weak_ptr_factory_(this),
+      is_webui_initialized_(false) {
   KioskAppManager::Get()->AddObserver(this);
 }
 
@@ -37,6 +52,15 @@ void KioskAppMenuHandler::GetLocalizedStrings(
   localized_strings->SetString(
       "showApps",
       l10n_util::GetStringUTF16(IDS_KIOSK_APPS_BUTTON));
+  localized_strings->SetString(
+      "confirmKioskAppDiagnosticModeFormat",
+      l10n_util::GetStringUTF16(IDS_LOGIN_CONFIRM_KIOSK_DIAGNOSTIC_FORMAT));
+  localized_strings->SetString(
+      "confirmKioskAppDiagnosticModeYes",
+      l10n_util::GetStringUTF16(IDS_CONFIRM_MESSAGEBOX_YES_BUTTON_LABEL));
+  localized_strings->SetString(
+      "confirmKioskAppDiagnosticModeNo",
+      l10n_util::GetStringUTF16(IDS_CONFIRM_MESSAGEBOX_NO_BUTTON_LABEL));
 }
 
 void KioskAppMenuHandler::RegisterMessages() {
@@ -52,7 +76,7 @@ void KioskAppMenuHandler::RegisterMessages() {
 }
 
 void KioskAppMenuHandler::SendKioskApps() {
-  if (!initialized_)
+  if (!is_webui_initialized_)
     return;
 
   KioskAppManager::Apps apps;
@@ -63,39 +87,43 @@ void KioskAppMenuHandler::SendKioskApps() {
     const KioskAppManager::App& app_data = apps[i];
 
     scoped_ptr<base::DictionaryValue> app_info(new base::DictionaryValue);
+    app_info->SetBoolean("isApp", true);
     app_info->SetString("id", app_data.app_id);
     app_info->SetString("label", app_data.name);
 
     // TODO(xiyuan): Replace data url with a URLDataSource.
     std::string icon_url("chrome://theme/IDR_APP_DEFAULT_ICON");
-    if (!app_data.icon.isNull())
+
+    if (!app_data.icon.isNull()) {
       icon_url = webui::GetBitmapDataUrl(*app_data.icon.bitmap());
+      int width = app_data.icon.width();
+      int height = app_data.icon.height();
+
+      // If app icon size is larger than default 160x160 then don't provide
+      // size at all since it's already limited on the css side.
+      if (width <= kMaxAppIconSize && height <= kMaxAppIconSize) {
+        app_info->SetString("iconWidth", base::IntToString(width) + "px");
+        app_info->SetString("iconHeight", base::IntToString(height) + "px");
+      }
+    } else {
+      app_info->SetString("iconWidth", kDefaultAppIconSizeString);
+      app_info->SetString("iconHeight", kDefaultAppIconSizeString);
+    }
     app_info->SetString("iconUrl", icon_url);
 
     apps_list.Append(app_info.release());
   }
 
-  web_ui()->CallJavascriptFunction("login.AppsMenuButton.setApps",
-                                   apps_list);
+  bool new_kiosk_ui = !CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kDisableNewKioskUI);
+  web_ui()->CallJavascriptFunction(new_kiosk_ui ?
+      kKioskSetAppsNewAPI : kKioskSetAppsOldAPI,
+      apps_list);
 }
 
 void KioskAppMenuHandler::HandleInitializeKioskApps(
     const base::ListValue* args) {
-  if (g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
-    initialized_ = true;
-    SendKioskApps();
-    return;
-  }
-
-  KioskAppManager::Get()->GetConsumerKioskModeStatus(
-      base::Bind(&KioskAppMenuHandler::OnGetConsumerKioskModeStatus,
-                 weak_ptr_factory_.GetWeakPtr()));
-}
-
-void KioskAppMenuHandler::OnGetConsumerKioskModeStatus(
-    KioskAppManager::ConsumerKioskModeStatus status) {
-  initialized_ =
-      status == KioskAppManager::CONSUMER_KIOSK_MODE_ENABLED;
+  is_webui_initialized_ = true;
   SendKioskApps();
 }
 
@@ -115,8 +143,11 @@ void KioskAppMenuHandler::HandleCheckKioskAppLaunchError(
   KioskAppLaunchError::Clear();
 
   const std::string error_message = KioskAppLaunchError::GetErrorMessage(error);
-  web_ui()->CallJavascriptFunction("login.AppsMenuButton.showError",
-                                   base::StringValue(error_message));
+  bool new_kiosk_ui = !CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kDisableNewKioskUI);
+  web_ui()->CallJavascriptFunction(new_kiosk_ui ?
+      kKioskShowErrorNewAPI : kKioskShowErrorOldAPI,
+      base::StringValue(error_message));
 }
 
 void KioskAppMenuHandler::OnKioskAppsSettingsChanged() {

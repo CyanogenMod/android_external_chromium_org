@@ -13,6 +13,7 @@ TestCursorClient::TestCursorClient(aura::Window* root_window)
     : visible_(true),
       mouse_events_enabled_(true),
       cursor_lock_count_(0),
+      calls_to_set_cursor_(0),
       root_window_(root_window) {
   client::SetCursorClient(root_window, this);
 }
@@ -22,6 +23,11 @@ TestCursorClient::~TestCursorClient() {
 }
 
 void TestCursorClient::SetCursor(gfx::NativeCursor cursor) {
+  calls_to_set_cursor_++;
+}
+
+gfx::NativeCursor TestCursorClient::GetCursor() const {
+  return ui::kCursorNull;
 }
 
 void TestCursorClient::ShowCursor() {
@@ -39,7 +45,15 @@ void TestCursorClient::HideCursor() {
 void TestCursorClient::SetCursorSet(ui::CursorSetType cursor_set) {
 }
 
+ui::CursorSetType TestCursorClient::GetCursorSet() const {
+  return ui::CURSOR_SET_NORMAL;
+}
+
 void TestCursorClient::SetScale(float scale) {
+}
+
+float TestCursorClient::GetScale() const {
+  return 1.f;
 }
 
 bool TestCursorClient::IsCursorVisible() const {

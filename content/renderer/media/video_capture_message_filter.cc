@@ -61,6 +61,10 @@ bool VideoCaptureMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(VideoCaptureMsg_StateChanged, OnDeviceStateChanged)
     IPC_MESSAGE_HANDLER(VideoCaptureMsg_NewBuffer, OnBufferCreated)
     IPC_MESSAGE_HANDLER(VideoCaptureMsg_FreeBuffer, OnBufferDestroyed)
+    IPC_MESSAGE_HANDLER(VideoCaptureMsg_DeviceSupportedFormatsEnumerated,
+                        OnDeviceSupportedFormatsEnumerated)
+    IPC_MESSAGE_HANDLER(VideoCaptureMsg_DeviceFormatsInUseReceived,
+                        OnDeviceFormatsInUseReceived)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -117,7 +121,7 @@ void VideoCaptureMessageFilter::OnBufferCreated(
 void VideoCaptureMessageFilter::OnBufferReceived(
     int device_id,
     int buffer_id,
-    base::Time timestamp,
+    base::TimeTicks timestamp,
     const media::VideoCaptureFormat& format) {
   Delegate* delegate = find_delegate(device_id);
   if (!delegate) {
@@ -156,6 +160,28 @@ void VideoCaptureMessageFilter::OnDeviceStateChanged(
     return;
   }
   delegate->OnStateChanged(state);
+}
+
+void VideoCaptureMessageFilter::OnDeviceSupportedFormatsEnumerated(
+    int device_id,
+    const media::VideoCaptureFormats& supported_formats) {
+  Delegate* delegate = find_delegate(device_id);
+  if (!delegate) {
+    DLOG(WARNING) << "OnDeviceFormatsEnumerated: unknown device";
+    return;
+  }
+  delegate->OnDeviceSupportedFormatsEnumerated(supported_formats);
+}
+
+void VideoCaptureMessageFilter::OnDeviceFormatsInUseReceived(
+    int device_id,
+    const media::VideoCaptureFormats& formats_in_use) {
+  Delegate* delegate = find_delegate(device_id);
+  if (!delegate) {
+    DLOG(WARNING) << "OnDeviceFormatInUse: unknown device";
+    return;
+  }
+  delegate->OnDeviceFormatsInUseReceived(formats_in_use);
 }
 
 }  // namespace content

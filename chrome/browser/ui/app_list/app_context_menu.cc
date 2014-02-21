@@ -32,8 +32,10 @@ enum CommandId {
   LAUNCH_NEW = 100,
   TOGGLE_PIN,
   CREATE_SHORTCUTS,
+  SHOW_APP_INFO,
   OPTIONS,
   UNINSTALL,
+  REMOVE_FROM_FOLDER,
   DETAILS,
   MENU_NEW_WINDOW,
   MENU_NEW_INCOGNITO_WINDOW,
@@ -55,18 +57,18 @@ bool MenuItemHasLauncherContext(const extensions::MenuItem* item) {
 AppContextMenu::AppContextMenu(AppContextMenuDelegate* delegate,
                                Profile* profile,
                                const std::string& app_id,
-                               AppListControllerDelegate* controller,
-                               bool is_platform_app,
-                               bool is_search_result)
+                               AppListControllerDelegate* controller)
     : delegate_(delegate),
       profile_(profile),
       app_id_(app_id),
       controller_(controller),
-      is_platform_app_(is_platform_app),
-      is_search_result_(is_search_result) {
+      is_platform_app_(false),
+      is_search_result_(false),
+      is_in_folder_(false) {
 }
 
-AppContextMenu::~AppContextMenu() {}
+AppContextMenu::~AppContextMenu() {
+}
 
 ui::MenuModel* AppContextMenu::GetMenuModel() {
   if (!controller_->IsExtensionInstalled(profile_, app_id_))
@@ -113,6 +115,11 @@ ui::MenuModel* AppContextMenu::GetMenuModel() {
                                        IDS_NEW_TAB_APP_CREATE_SHORTCUT);
     }
 
+    if (controller_->CanDoShowAppInfoFlow()) {
+      menu_model_->AddItemWithStringId(SHOW_APP_INFO,
+                                       IDS_APP_CONTEXT_MENU_SHOW_INFO);
+    }
+
     if (!is_platform_app_) {
       menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
       // Streamlined hosted apps can only toggle between USE_LAUNCH_TYPE_WINDOW
@@ -156,6 +163,12 @@ ui::MenuModel* AppContextMenu::GetMenuModel() {
                          : IDS_EXTENSIONS_UNINSTALL);
   }
 
+  if (is_in_folder_) {
+    menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_->AddItemWithStringId(
+        REMOVE_FROM_FOLDER, IDS_APP_LIST_CONTEXT_MENU_REMOVE_FROM_FOLDER);
+  }
+
   return menu_model_.get();
 }
 
@@ -163,7 +176,7 @@ bool AppContextMenu::IsItemForCommandIdDynamic(int command_id) const {
   return command_id == TOGGLE_PIN || command_id == LAUNCH_NEW;
 }
 
-string16 AppContextMenu::GetLabelForCommandId(int command_id) const {
+base::string16 AppContextMenu::GetLabelForCommandId(int command_id) const {
   if (command_id == TOGGLE_PIN) {
     return controller_->IsAppPinned(app_id_) ?
         l10n_util::GetStringUTF16(IDS_APP_LIST_CONTEXT_MENU_UNPIN) :
@@ -239,6 +252,8 @@ void AppContextMenu::ExecuteCommand(int command_id, int event_flags) {
       controller_->PinApp(app_id_);
   } else if (command_id == CREATE_SHORTCUTS) {
     controller_->DoCreateShortcutsFlow(profile_, app_id_);
+  } else if (command_id == SHOW_APP_INFO) {
+    controller_->DoShowAppInfoFlow(profile_, app_id_);
   } else if (command_id >= USE_LAUNCH_TYPE_COMMAND_START &&
              command_id < USE_LAUNCH_TYPE_COMMAND_END) {
     extensions::LaunchType launch_type = static_cast<extensions::LaunchType>(
@@ -257,6 +272,8 @@ void AppContextMenu::ExecuteCommand(int command_id, int event_flags) {
     controller_->ShowOptionsPage(profile_, app_id_);
   } else if (command_id == UNINSTALL) {
     controller_->UninstallApp(profile_, app_id_);
+  } else if (command_id == REMOVE_FROM_FOLDER) {
+    controller_->RemoveAppFromFolder(profile_, app_id_);
   } else if (command_id == DETAILS) {
     controller_->ShowAppInWebStore(profile_, app_id_, is_search_result_);
   } else if (command_id >= IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST &&

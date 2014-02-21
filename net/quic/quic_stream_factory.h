@@ -33,6 +33,7 @@ class QuicClientSession;
 class QuicConnectionHelper;
 class QuicCryptoClientStreamFactory;
 class QuicRandom;
+class QuicServerInfoFactory;
 class QuicStreamFactory;
 
 namespace test {
@@ -50,6 +51,7 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
   // For http, |is_https| is false and |cert_verifier| can be null.
   int Request(const HostPortProxyPair& host_port_proxy_pair,
               bool is_https,
+              base::StringPiece method,
               CertVerifier* cert_verifier,
               const BoundNetLog& net_log,
               const CompletionCallback& callback);
@@ -86,10 +88,13 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       HostResolver* host_resolver,
       ClientSocketFactory* client_socket_factory,
       base::WeakPtr<HttpServerProperties> http_server_properties,
+      QuicServerInfoFactory* quic_server_info_factory,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicRandom* random_generator,
       QuicClock* clock,
-      size_t max_packet_length);
+      size_t max_packet_length,
+      const QuicVersionVector& supported_versions,
+      bool enable_port_selection);
   virtual ~QuicStreamFactory();
 
   // Creates a new QuicHttpStream to |host_port_proxy_pair| which will be
@@ -101,6 +106,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // asynchronously.
   int Create(const HostPortProxyPair& host_port_proxy_pair,
              bool is_https,
+             base::StringPiece method,
              CertVerifier* cert_verifier,
              const BoundNetLog& net_log,
              QuicStreamRequest* request);
@@ -149,6 +155,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
 
   QuicConnectionHelper* helper() { return helper_.get(); }
 
+  bool enable_port_selection() const { return enable_port_selection_; }
+
  private:
   class Job;
   friend class test::QuicStreamFactoryPeer;
@@ -157,6 +165,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   typedef std::set<HostPortProxyPair> AliasSet;
   typedef std::map<QuicClientSession*, AliasSet> SessionAliasMap;
   typedef std::set<QuicClientSession*> SessionSet;
+  typedef std::map<IPEndPoint, SessionSet> IPAliasMap;
   typedef std::map<HostPortProxyPair, QuicCryptoClientConfig*> CryptoConfigMap;
   typedef std::map<HostPortPair, HostPortProxyPair> CanonicalHostMap;
   typedef std::map<HostPortProxyPair, Job*> JobMap;
@@ -164,15 +173,17 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   typedef std::set<QuicStreamRequest*> RequestSet;
   typedef std::map<Job*, RequestSet> JobRequestsMap;
 
+  bool OnResolution(const HostPortProxyPair& host_port_proxy_pair,
+                    const AddressList& address_list);
   void OnJobComplete(Job* job, int rv);
   bool HasActiveSession(const HostPortProxyPair& host_port_proxy_pair);
   bool HasActiveJob(const HostPortProxyPair& host_port_proxy_pair);
-  QuicClientSession* CreateSession(
-      const HostPortProxyPair& host_port_proxy_pair,
-      bool is_https,
-      CertVerifier* cert_verifier,
-      const AddressList& address_list,
-      const BoundNetLog& net_log);
+  int CreateSession(const HostPortProxyPair& host_port_proxy_pair,
+                    bool is_https,
+                    CertVerifier* cert_verifier,
+                    const AddressList& address_list,
+                    const BoundNetLog& net_log,
+                    QuicClientSession** session);
   void ActivateSession(const HostPortProxyPair& host_port_proxy_pair,
                        QuicClientSession* session);
 
@@ -191,6 +202,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   HostResolver* host_resolver_;
   ClientSocketFactory* client_socket_factory_;
   base::WeakPtr<HttpServerProperties> http_server_properties_;
+  QuicServerInfoFactory* quic_server_info_factory_;
   QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory_;
   QuicRandom* random_generator_;
   scoped_ptr<QuicClock> clock_;
@@ -204,7 +216,10 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Contains non-owning pointers to currently active session
   // (not going away session, once they're implemented).
   SessionMap active_sessions_;
+  // Map from session to set of aliases that this session is known by.
   SessionAliasMap session_aliases_;
+  // Map from IP address to sessions which are connected to this address.
+  IPAliasMap ip_aliases_;
 
   // Contains owning pointers to QuicCryptoClientConfig. QuicCryptoClientConfig
   // contains configuration and cached state about servers.
@@ -219,14 +234,29 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   CanonicalHostMap canonical_hostname_to_origin_map_;
 
   // Contains list of suffixes (for exmaple ".c.youtube.com",
-  // ".googlevideo.com") of cannoncial hostnames.
-  std::vector<std::string> cannoncial_suffixes_;
+  // ".googlevideo.com") of canoncial hostnames.
+  std::vector<std::string> canoncial_suffixes_;
 
   QuicConfig config_;
 
   JobMap active_jobs_;
   JobRequestsMap job_requests_map_;
   RequestMap active_requests_;
+
+  QuicVersionVector supported_versions_;
+
+  // Determine if we should consistently select a client UDP port. If false,
+  // then we will just let the OS select a random client port for each new
+  // connection.
+  bool enable_port_selection_;
+
+  // Each profile will (probably) have a unique port_seed_ value.  This value is
+  // used to help seed a pseudo-random number generator (PortSuggester) so that
+  // we consistently (within this profile) suggest the same ephemeral port when
+  // we re-connect to any given server/port.  The differences between profiles
+  // (probablistically) prevent two profiles from colliding in their ephemeral
+  // port requests.
+  uint64 port_seed_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
 

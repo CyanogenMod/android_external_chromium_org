@@ -32,18 +32,21 @@ namespace internal {
 // discardable_memory.h for DiscardableMemory's threading guarantees.
 class BASE_EXPORT_PRIVATE DiscardableMemoryAllocator {
  public:
-  // Exposed for testing.
-  enum {
-    kMinAshmemRegionSize = 32 * 1024 * 1024,
-  };
-
   // Note that |name| is only used for debugging/measurement purposes.
-  explicit DiscardableMemoryAllocator(const std::string& name);
+  // |ashmem_region_size| is the size that will be used to create the underlying
+  // ashmem regions and is expected to be greater or equal than 32 MBytes.
+  DiscardableMemoryAllocator(const std::string& name,
+                             size_t ashmem_region_size);
+
   ~DiscardableMemoryAllocator();
 
   // Note that the allocator must outlive the returned DiscardableMemory
   // instance.
   scoped_ptr<DiscardableMemory> Allocate(size_t size);
+
+  // Returns the size of the last ashmem region which was created. This is used
+  // for testing only.
+  size_t last_ashmem_region_size() const;
 
  private:
   class AshmemRegion;
@@ -51,9 +54,11 @@ class BASE_EXPORT_PRIVATE DiscardableMemoryAllocator {
 
   void DeleteAshmemRegion_Locked(AshmemRegion* region);
 
-  base::ThreadChecker thread_checker_;
+  ThreadChecker thread_checker_;
   const std::string name_;
-  base::Lock lock_;
+  const size_t ashmem_region_size_;
+  mutable Lock lock_;
+  size_t last_ashmem_region_size_;
   ScopedVector<AshmemRegion> ashmem_regions_;
 
   DISALLOW_COPY_AND_ASSIGN(DiscardableMemoryAllocator);

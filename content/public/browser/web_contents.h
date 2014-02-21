@@ -18,6 +18,7 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/stop_find_action.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
@@ -30,6 +31,10 @@
 
 namespace base {
 class TimeTicks;
+}
+
+namespace blink {
+struct WebFindOptions;
 }
 
 namespace gfx {
@@ -127,6 +132,8 @@ class WebContents : public PageNavigator,
   CONTENT_EXPORT static WebContents* FromRenderViewHost(
       const RenderViewHost* rvh);
 
+  CONTENT_EXPORT static WebContents* FromRenderFrameHost(RenderFrameHost* rfh);
+
   virtual ~WebContents() {}
 
   // Intrinsic tab state -------------------------------------------------------
@@ -166,6 +173,14 @@ class WebContents : public PageNavigator,
 
   // Returns the main frame for the currently active view.
   virtual RenderFrameHost* GetMainFrame() = 0;
+
+  // Calls |on_frame| for each frame in the currently active view.
+  virtual void ForEachFrame(
+      const base::Callback<void(RenderFrameHost*)>& on_frame) = 0;
+
+  // Sends the given IPC to all frames in the currently active view. This is a
+  // convenience method instead of calling ForEach.
+  virtual void SendToAllFrames(IPC::Message* message) = 0;
 
   // Gets the current RenderViewHost for this tab.
   virtual RenderViewHost* GetRenderViewHost() const = 0;
@@ -220,7 +235,7 @@ class WebContents : public PageNavigator,
   virtual void SetUserAgentOverride(const std::string& override) = 0;
   virtual const std::string& GetUserAgentOverride() const = 0;
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
 #endif
@@ -277,8 +292,11 @@ class WebContents : public PageNavigator,
 
   // Indicates whether the WebContents is being captured (e.g., for screenshots
   // or mirroring).  Increment calls must be balanced with an equivalent number
-  // of decrement calls.
-  virtual void IncrementCapturerCount() = 0;
+  // of decrement calls.  |capture_size| specifies the capturer's video
+  // resolution, but can be empty to mean "unspecified."  The first screen
+  // capturer that provides a non-empty |capture_size| will override the value
+  // returned by GetPreferredSize() until all captures have ended.
+  virtual void IncrementCapturerCount(const gfx::Size& capture_size) = 0;
   virtual void DecrementCapturerCount() = 0;
   virtual int GetCapturerCount() const = 0;
 
@@ -296,8 +314,9 @@ class WebContents : public PageNavigator,
   // change. See InvalidateType enum.
   virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
 
-  // Get the last time that the WebContents was made visible with WasShown()
-  virtual base::TimeTicks GetLastSelectedTime() const = 0;
+  // Get the last time that the WebContents was made active (either when it was
+  // created or shown with WasShown()).
+  virtual base::TimeTicks GetLastActiveTime() const = 0;
 
   // Invoked when the WebContents becomes shown/hidden.
   virtual void WasShown() = 0;
@@ -465,6 +484,25 @@ class WebContents : public PageNavigator,
                             bool is_favicon,
                             uint32_t max_bitmap_size,
                             const ImageDownloadCallback& callback) = 0;
+
+  // Returns true if the WebContents is responsible for displaying a subframe
+  // in a different process from its parent page.
+  // TODO: this doesn't really belong here. With site isolation, this should be
+  // removed since we can then embed iframes in different processes.
+  virtual bool IsSubframe() const = 0;
+
+  // Sets the zoom level for the current page and all BrowserPluginGuests
+  // within the page.
+  virtual void SetZoomLevel(double level) = 0;
+
+  // Finds text on a page.
+  virtual void Find(int request_id,
+                    const base::string16& search_text,
+                    const blink::WebFindOptions& options) = 0;
+
+  // Notifies the renderer that the user has closed the FindInPage window
+  // (and what action to take regarding the selection).
+  virtual void StopFinding(StopFindAction action) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

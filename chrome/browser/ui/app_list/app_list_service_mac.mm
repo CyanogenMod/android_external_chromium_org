@@ -12,12 +12,12 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
+#include "base/mac/mac_util.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate_impl.h"
 #include "chrome/browser/ui/app_list/app_list_positioner.h"
@@ -30,11 +30,13 @@
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_mac.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/mac/app_mode_common.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/chrome_unscaled_resources.h"
 #include "grit/google_chrome_strings.h"
 #include "net/base/url_util.h"
@@ -67,6 +69,11 @@ class ImageSkia;
 - (void)animateWindow:(NSWindow*)window
          targetOrigin:(NSPoint)targetOrigin
               closing:(BOOL)closing;
+
+// Called on the UI thread once the animation has completed to reset the
+// animation state, close the window (if it is a close animation), and possibly
+// terminate Chrome.
+- (void)cleanupOnUIThread;
 
 @end
 
@@ -340,7 +347,7 @@ void AppListServiceMac::Init(Profile* initial_profile) {
   static bool init_called_with_profile = false;
   if (initial_profile && !init_called_with_profile) {
     init_called_with_profile = true;
-    HandleCommandLineFlags(initial_profile);
+    PerformStartupChecks(initial_profile);
     PrefService* local_state = g_browser_process->local_state();
     if (!IsAppLauncherEnabled()) {
       local_state->SetInteger(prefs::kAppLauncherShortcutVersion, 0);
@@ -360,6 +367,15 @@ void AppListServiceMac::Init(Profile* initial_profile) {
   init_called = true;
   apps::AppShimHandler::RegisterHandler(app_mode::kAppListModeId,
                                         AppListServiceMac::GetInstance());
+
+  // Handle the case where Chrome was not running and was started with the app
+  // launcher shim. The profile has not yet been loaded. To improve response
+  // times, start animating an empty window which will be populated via
+  // OnShimLaunch(). Note that if --silent-launch is not also passed, the window
+  // will instead populate via StartupBrowserCreator::Launch(). Shim-initiated
+  // launches will always have --silent-launch.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kShowAppList))
+    ShowWindowNearDock();
 }
 
 Profile* AppListServiceMac::GetCurrentAppListProfile() {
@@ -372,13 +388,8 @@ void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
 
   profile_ = requested_profile;
 
-  if (window_controller_) {
-    // Clear the search box.
-    [[window_controller_ appListViewController] searchBoxModel]
-        ->SetText(base::string16());
-  } else {
+  if (!window_controller_)
     window_controller_.reset([[AppListWindowController alloc] init]);
-  }
 
   scoped_ptr<app_list::AppListViewDelegate> delegate(
       new AppListViewDelegate(profile_, GetControllerDelegate()));
@@ -431,8 +442,9 @@ bool AppListServiceMac::IsAppListVisible() const {
       ![animation_controller_ isClosing];
 }
 
-void AppListServiceMac::EnableAppList(Profile* initial_profile) {
-  AppListServiceImpl::EnableAppList(initial_profile);
+void AppListServiceMac::EnableAppList(Profile* initial_profile,
+                                      AppListEnableSource enable_source) {
+  AppListServiceImpl::EnableAppList(initial_profile, enable_source);
   AppController* controller = [NSApp delegate];
   [controller initAppShimMenuController];
 }
@@ -453,10 +465,14 @@ AppListControllerDelegate* AppListServiceMac::GetControllerDelegate() {
 void AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
                                      apps::AppShimLaunchType launch_type,
                                      const std::vector<base::FilePath>& files) {
-  if (IsAppListVisible())
+  if (profile_ && IsAppListVisible()) {
     DismissAppList();
-  else
+  } else {
+    // Start by showing a possibly empty window to handle the case where Chrome
+    // is running, but hasn't yet loaded the app launcher profile.
+    ShowWindowNearDock();
     Show();
+  }
 
   // Always close the shim process immediately.
   host->OnAppLaunchComplete(apps::APP_SHIM_LAUNCH_DUPLICATE_HOST);
@@ -477,6 +493,12 @@ void AppListServiceMac::ShowWindowNearDock() {
   if (IsAppListVisible())
     return;
 
+  if (!window_controller_) {
+    // Note that this will start showing an unpopulated window, the caller needs
+    // to ensure it will be populated later.
+    window_controller_.reset([[AppListWindowController alloc] init]);
+  }
+
   NSWindow* window = GetAppListWindow();
   DCHECK(window);
   NSPoint target_origin;
@@ -493,6 +515,10 @@ void AppListServiceMac::ShowWindowNearDock() {
   [window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
   RecordAppListLaunch();
+}
+
+void AppListServiceMac::WindowAnimationDidEnd() {
+  [animation_controller_ cleanupOnUIThread];
 }
 
 // static
@@ -545,15 +571,34 @@ void AppListService::InitAll(Profile* initial_profile) {
     [animation_ setAnimationCurve:NSAnimationEaseOut];
     window_.reset();
   }
+  // Threaded animations are buggy on Snow Leopard. See http://crbug.com/335550.
+  // Note that in the non-threaded case, the animation won't start unless the
+  // UI runloop has spun up, so on <= Lion the animation will only animate if
+  // Chrome is already running.
+  if (base::mac::IsOSMountainLionOrLater())
+    [animation_ setAnimationBlockingMode:NSAnimationNonblockingThreaded];
+  else
+    [animation_ setAnimationBlockingMode:NSAnimationNonblocking];
+
   [animation_ startAnimation];
 }
 
-- (void)animationDidEnd:(NSAnimation*)animation {
+- (void)cleanupOnUIThread {
+  bool closing = [self isClosing];
   [window_ close];
   window_.reset();
   animation_.reset();
 
-  apps::AppShimHandler::MaybeTerminate();
+  if (closing)
+    apps::AppShimHandler::MaybeTerminate();
+}
+
+- (void)animationDidEnd:(NSAnimation*)animation {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&AppListServiceMac::WindowAnimationDidEnd,
+                 base::Unretained(AppListServiceMac::GetInstance())));
 }
 
 @end

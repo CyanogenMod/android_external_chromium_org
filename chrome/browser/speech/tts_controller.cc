@@ -9,12 +9,12 @@
 
 #include "base/float_util.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "chrome/browser/speech/tts_platform.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 
 namespace {
@@ -74,12 +74,11 @@ Utterance::Utterance(Profile* profile)
     : profile_(profile),
       id_(next_utterance_id_++),
       src_id_(-1),
-      event_delegate_(NULL),
       gender_(TTS_GENDER_NONE),
       can_enqueue_(false),
       char_index_(0),
       finished_(false) {
-  options_.reset(new DictionaryValue());
+  options_.reset(new base::DictionaryValue());
 }
 
 Utterance::~Utterance() {
@@ -97,14 +96,14 @@ void Utterance::OnTtsEvent(TtsEventType event_type,
   if (event_delegate_)
     event_delegate_->OnTtsEvent(this, event_type, char_index, error_message);
   if (finished_)
-    event_delegate_ = NULL;
+    event_delegate_.reset();
 }
 
 void Utterance::Finish() {
   finished_ = true;
 }
 
-void Utterance::set_options(const Value* options) {
+void Utterance::set_options(const base::Value* options) {
   options_.reset(options->DeepCopy());
 }
 
@@ -165,6 +164,8 @@ void TtsController::SpeakNow(Utterance* utterance) {
     voice = voices[index];
   else
     voice.native = true;
+
+  GetPlatformImpl()->WillSpeakUtteranceWithVoice(utterance, voice);
 
   if (!voice.native) {
 #if !defined(OS_ANDROID)

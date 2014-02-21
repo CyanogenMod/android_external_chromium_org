@@ -2,7 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import posixpath
+import traceback
+
 from future import Gettable, Future
+from path_util import (
+    AssertIsDirectory, AssertIsValid, IsDirectory, IsValid, SplitParent,
+    ToDirectory)
 
 
 class _BaseFileSystemException(Exception):
@@ -11,7 +17,8 @@ class _BaseFileSystemException(Exception):
 
   @classmethod
   def RaiseInFuture(cls, message):
-    def boom(): raise cls(message)
+    stack = traceback.format_stack()
+    def boom(): raise cls('%s. Creation stack:\n%s' % (message, ''.join(stack)))
     return Future(delegate=Gettable(boom))
 
 
@@ -34,6 +41,9 @@ class StatInfo(object):
   '''The result of calling Stat on a FileSystem.
   '''
   def __init__(self, version, child_versions=None):
+    if child_versions:
+      assert all(IsValid(path) for path in child_versions.iterkeys()), \
+             child_versions
     self.version = version
     self.child_versions = child_versions
 
@@ -74,8 +84,31 @@ class FileSystem(object):
     '''Reads a single file from the FileSystem. Returns a Future with the same
     rules as Read().
     '''
+    AssertIsValid(path)
     read_single = self.Read([path])
     return Future(delegate=Gettable(lambda: read_single.Get()[path]))
+
+  def Exists(self, path):
+    '''Returns a Future to the existence of |path|; True if |path| exists,
+    False if not. This method will not throw a FileNotFoundError unlike
+    the Read* methods, however it may still throw a FileSystemError.
+
+    There are several ways to implement this method via the interface but this
+    method exists to do so in a canonical and most efficient way for caching.
+    '''
+    AssertIsValid(path)
+    if path == '':
+      # There is always a root directory.
+      return Future(value=True)
+
+    parent, base = SplitParent(path)
+    list_future = self.ReadSingle(ToDirectory(parent))
+    def resolve():
+      try:
+        return base in list_future.Get()
+      except FileNotFoundError:
+        return False
+    return Future(delegate=Gettable(resolve))
 
   def Refresh(self):
     '''Asynchronously refreshes the content of the FileSystem, returning a
@@ -105,21 +138,26 @@ class FileSystem(object):
 
   def Walk(self, root):
     '''Recursively walk the directories in a file system, starting with root.
-    Emulates os.walk from the standard os module.
 
-    If the root cannot be found, raises a FileNotFoundError.
+    Behaviour is very similar to os.walk from the standard os module, yielding
+    (base, dirs, files) recursively, where |base| is the base path of |files|,
+    |dirs| relative to |root|, and |files| and |dirs| the list of files/dirs in
+    |base| respectively.
+
+    Note that directories will always end with a '/', files never will.
+
+    If |root| cannot be found, raises a FileNotFoundError.
     For any other failure, raises a FileSystemError.
     '''
-    basepath = root.rstrip('/') + '/'
+    AssertIsDirectory(root)
+    basepath = root
 
     def walk(root):
-      if not root.endswith('/'):
-        root += '/'
-
+      AssertIsDirectory(root)
       dirs, files = [], []
 
       for f in self.ReadSingle(root).Get():
-        if f.endswith('/'):
+        if IsDirectory(f):
           dirs.append(f)
         else:
           files.append(f)

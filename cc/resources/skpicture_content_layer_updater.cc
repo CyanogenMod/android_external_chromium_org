@@ -22,8 +22,8 @@ SkPictureContentLayerUpdater::SkPictureContentLayerUpdater(
 SkPictureContentLayerUpdater::~SkPictureContentLayerUpdater() {}
 
 void SkPictureContentLayerUpdater::PrepareToUpdate(
-    gfx::Rect content_rect,
-    gfx::Size,
+    const gfx::Rect& content_rect,
+    const gfx::Size&,
     float contents_width_scale,
     float contents_height_scale,
     gfx::Rect* resulting_opaque_rect) {

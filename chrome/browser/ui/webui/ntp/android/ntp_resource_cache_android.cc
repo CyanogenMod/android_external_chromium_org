@@ -81,7 +81,7 @@ void NTPResourceCache::CreateNewTabHTML() {
   // (in GetLocalizedValues) and should have more legible names.
   // Show the profile name in the title and most visited labels if the current
   // profile is not the default.
-  DictionaryValue localized_strings;
+  base::DictionaryValue localized_strings;
   localized_strings.SetBoolean("hasattribution", false);
   localized_strings.SetString("title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
@@ -136,20 +136,8 @@ void NTPResourceCache::CreateNewTabHTML() {
       ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET ?
           "tablet" : "phone");
 
-  bool bookmark_shortcuts_allowed = false;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableAddToHomescreen)) {
-    bookmark_shortcuts_allowed = true;
-  } else if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableAddToHomescreen)) {
-    bookmark_shortcuts_allowed = false;
-  }
-  localized_strings.SetString(
-      "shortcut_item_enabled",
-      bookmark_shortcuts_allowed ? "true" : "false");
-
   const char* new_tab_link = kLearnMoreIncognitoUrl;
-  base::string16 learnMoreLink = ASCIIToUTF16(
+  base::string16 learnMoreLink = base::ASCIIToUTF16(
       google_util::AppendGoogleLocaleParam(GURL(new_tab_link)).spec());
   localized_strings.SetString("content",
       l10n_util::GetStringFUTF16(

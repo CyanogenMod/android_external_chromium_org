@@ -14,6 +14,7 @@
 #include "cc/base/math_util.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/draw_quad.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
@@ -81,9 +82,9 @@ void DirectRenderer::QuadRectTransform(gfx::Transform* quad_rect_transform,
 }
 
 void DirectRenderer::InitializeViewport(DrawingFrame* frame,
-                                        gfx::Rect draw_rect,
-                                        gfx::Rect viewport_rect,
-                                        gfx::Size surface_size) {
+                                        const gfx::Rect& draw_rect,
+                                        const gfx::Rect& viewport_rect,
+                                        const gfx::Size& surface_size) {
   bool flip_y = FlippedFramebuffer();
 
   DCHECK_GE(viewport_rect.x(), 0);
@@ -139,7 +140,7 @@ DirectRenderer::~DirectRenderer() {}
 bool DirectRenderer::CanReadPixels() const { return true; }
 
 void DirectRenderer::SetEnlargePassTextureAmountForTesting(
-    gfx::Vector2d amount) {
+    const gfx::Vector2d& amount) {
   enlarge_pass_texture_amount_ = amount;
 }
 
@@ -195,8 +196,8 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
 void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                ContextProvider* offscreen_context_provider,
                                float device_scale_factor,
-                               gfx::Rect device_viewport_rect,
-                               gfx::Rect device_clip_rect,
+                               const gfx::Rect& device_viewport_rect,
+                               const gfx::Rect& device_clip_rect,
                                bool allow_partial_swap,
                                bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawFrame");
@@ -252,7 +253,8 @@ gfx::RectF DirectRenderer::ComputeScissorRectForRenderPass(
     const DrawingFrame* frame) {
   gfx::RectF render_pass_scissor = frame->current_render_pass->output_rect;
 
-  if (frame->root_damage_rect == frame->root_render_pass->output_rect)
+  if (frame->root_damage_rect == frame->root_render_pass->output_rect ||
+      !frame->current_render_pass->copy_requests.empty())
     return render_pass_scissor;
 
   gfx::Transform inverse_transform(gfx::Transform::kSkipInitialization);
@@ -317,8 +319,9 @@ void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
   SetScissorTestRectInDrawSpace(frame, quad_scissor_rect);
 }
 
-void DirectRenderer::SetScissorTestRectInDrawSpace(const DrawingFrame* frame,
-                                                   gfx::RectF draw_space_rect) {
+void DirectRenderer::SetScissorTestRectInDrawSpace(
+    const DrawingFrame* frame,
+    const gfx::RectF& draw_space_rect) {
   gfx::Rect window_space_rect = MoveFromDrawToWindowSpace(draw_space_rect);
   if (NeedDeviceClip(frame))
     window_space_rect.Intersect(DeviceClipRectInWindowSpace(frame));
@@ -413,6 +416,35 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
   DCHECK(texture->id());
 
   return BindFramebufferToTexture(frame, texture, render_pass->output_rect);
+}
+
+void DirectRenderer::RunOnDemandRasterTask(
+    internal::Task* on_demand_raster_task) {
+  internal::TaskGraphRunner* task_graph_runner =
+      RasterWorkerPool::GetTaskGraphRunner();
+  DCHECK(task_graph_runner);
+
+  // Make sure we have a unique task namespace token.
+  if (!on_demand_task_namespace_.IsValid())
+    on_demand_task_namespace_ = task_graph_runner->GetNamespaceToken();
+
+  // Construct a task graph that contains this single raster task.
+  internal::TaskGraph graph;
+  graph.nodes.push_back(
+      internal::TaskGraph::Node(on_demand_raster_task,
+                                RasterWorkerPool::kOnDemandRasterTaskPriority,
+                                0u));
+
+  // Schedule task and wait for task graph runner to finish running it.
+  task_graph_runner->SetTaskGraph(on_demand_task_namespace_, &graph);
+  task_graph_runner->WaitForTasksToFinishRunning(on_demand_task_namespace_);
+
+  // Collect task now that it has finished running.
+  internal::Task::Vector completed_tasks;
+  task_graph_runner->CollectCompletedTasks(on_demand_task_namespace_,
+                                           &completed_tasks);
+  DCHECK_EQ(1u, completed_tasks.size());
+  DCHECK_EQ(completed_tasks[0], on_demand_raster_task);
 }
 
 bool DirectRenderer::HasAllocatedResourcesForTesting(RenderPass::Id id)

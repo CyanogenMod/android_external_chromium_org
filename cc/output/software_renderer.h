@@ -34,10 +34,11 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
       ResourceProvider* resource_provider);
 
   virtual ~SoftwareRenderer();
-  virtual const RendererCapabilities& Capabilities() const OVERRIDE;
+  virtual const RendererCapabilitiesImpl& Capabilities() const OVERRIDE;
   virtual void Finish() OVERRIDE;
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
-  virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
+  virtual void GetFramebufferPixels(void* pixels,
+                                    const gfx::Rect& rect) OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(
       size_t bytes_visible,
@@ -53,9 +54,9 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   virtual bool BindFramebufferToTexture(
       DrawingFrame* frame,
       const ScopedResource* texture,
-      gfx::Rect target_rect) OVERRIDE;
-  virtual void SetDrawViewport(gfx::Rect window_space_viewport) OVERRIDE;
-  virtual void SetScissorTestRect(gfx::Rect scissor_rect) OVERRIDE;
+      const gfx::Rect& target_rect) OVERRIDE;
+  virtual void SetDrawViewport(const gfx::Rect& window_space_viewport) OVERRIDE;
+  virtual void SetScissorTestRect(const gfx::Rect& scissor_rect) OVERRIDE;
   virtual void DiscardPixels(bool has_external_stencil_test,
                              bool draw_rect_covers_full_surface) OVERRIDE;
   virtual void ClearFramebuffer(DrawingFrame* frame,
@@ -77,7 +78,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
 
  private:
   void ClearCanvas(SkColor color);
-  void SetClipRect(gfx::Rect rect);
+  void SetClipRect(const gfx::Rect& rect);
   bool IsSoftwareResource(ResourceProvider::ResourceId resource_id) const;
 
   void DrawCheckerboardQuad(const DrawingFrame* frame,
@@ -97,7 +98,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   void DrawUnsupportedQuad(const DrawingFrame* frame,
                            const DrawQuad* quad);
 
-  RendererCapabilities capabilities_;
+  RendererCapabilitiesImpl capabilities_;
   bool visible_;
   bool is_scissor_enabled_;
   bool is_backbuffer_discarded_;

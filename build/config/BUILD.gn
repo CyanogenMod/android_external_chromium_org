@@ -2,10 +2,26 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-config("my_msvs") {
+import("//build/config/ui.gni")
+
+declare_args() {
+  # When set, turns off the (normally-on) iterator debugging and related stuff
+  # that is normall turned on for Debug builds. These are generally useful for
+  # catching bugs but in some cases may cause conflicts or excessive slowness.
+  disable_iterator_debugging = false
+}
+
+# TODO(brettw) Most of these should be removed. Instead of global feature
+# flags, we should have more modular flags that apply only to a target and its
+# dependents. For example, depending on the "x11" meta-target should define
+# USE_X11 for all dependents so that everything that could use X11 gets the
+# define, but anything that doesn't depend on X11 doesn't see it.
+#
+# For now we define these globally to match the current GYP build.
+config("feature_flags") {
+  # TODO(brettw) most of these need to be parameterized.
   defines = [
       "CHROMIUM_BUILD",
-      "TOOLKIT_VIEWS=1",
       "USE_LIBJPEG_TURBO=1",
       "ENABLE_ONE_CLICK_SIGNIN",
       "ENABLE_REMOTING=1",
@@ -31,11 +47,28 @@ config("my_msvs") {
       "ENABLE_SETTINGS_APP=1",
       "ENABLE_MANAGED_USERS=1",
   ]
+
+  if (toolkit_views) {
+    defines += [ "TOOLKIT_VIEWS=1" ]
+  }
+  if (use_ash) {
+    defines += [ "USE_ASH=1" ]
+  }
+  if (use_aura) {
+    defines += [ "USE_AURA=1" ]
+  }
+  if (use_glib) {
+    defines += [ "USE_GLIB=1" ]
+  }
+  if (use_ozone) {
+    defines += [ "USE_OZONE=1" ]
+  }
+  if (use_x11) {
+    defines += [ "USE_X11=1" ]
+  }
 }
 
-config("feature_flags") {
-  #defines = 
-}
+# Debug/release ----------------------------------------------------------------
 
 config("debug") {
   defines = [
@@ -43,8 +76,92 @@ config("debug") {
     "DYNAMIC_ANNOTATIONS_ENABLED=1",
     "WTF_USE_DYNAMIC_ANNOTATIONS=1",
   ]
+
+  if (is_win) {
+    if (disable_iterator_debugging) {
+      # Iterator debugging is enabled by the compiler on debug builds, and we
+      # have to tell it to turn it off.
+      defines += [ "_HAS_ITERATOR_DEBUGGING=0" ]
+    }
+  } else if (is_linux && !is_android && cpu_arch == "x64" &&
+             !disable_iterator_debugging) {
+    # Enable libstdc++ debugging facilities to help catch problems early, see
+    # http://crbug.com/65151 .
+    # TODO(phajdan.jr): Should we enable this for all of POSIX?
+    defines += [ "_GLIBCXX_DEBUG=1" ]
+  }
 }
 
 config("release") {
+}
 
+# Default libraries ------------------------------------------------------------
+
+# This config defines the default libraries applied to all targets.
+config("default_libs") {
+  if (is_win) {
+    # TODO(brettw) this list of defaults should probably be smaller, and
+    # instead the targets that use the less common ones (e.g. wininet or
+    # winspool) should include those explicitly.
+    libs = [
+      "advapi32.lib",
+      "comdlg32.lib",
+      "dbghelp.lib",
+      "delayimp.lib",
+      "dnsapi.lib",
+      "gdi32.lib",
+      "kernel32.lib",
+      "msimg32.lib",
+      "odbc32.lib",
+      "odbccp32.lib",
+      "ole32.lib",
+      "oleaut32.lib",
+      "psapi.lib",
+      "shell32.lib",
+      "shlwapi.lib",
+      "user32.lib",
+      "usp10.lib",
+      "uuid.lib",
+      "version.lib",
+      "wininet.lib",
+      "winmm.lib",
+      "winspool.lib",
+      "ws2_32.lib",
+    ]
+  } else if (is_android) {
+    # Android uses -nostdlib so we need to add even libc here.
+    libs = [
+      # TODO(brettw) write a version of this, hopefully we can express this
+      # without forking out to GCC just to get the library name. The android
+      # toolchain directory should probably be extracted into a .gni file that
+      # this file and the android toolchain .gn file can share.
+      #   # Manually link the libgcc.a that the cross compiler uses.
+      #   '<!(<(android_toolchain)/*-gcc -print-libgcc-file-name)',
+      "c",
+      "dl",
+      "m"
+    ]
+  } else if (is_mac) {
+    libs = [
+      "AppKit.framework",
+      "ApplicationServices.framework",
+      "Carbon.framework",
+      "CoreFoundation.framework",
+      "Foundation.framework",
+      "IOKit.framework",
+      "Security.framework",
+    ]
+  } else if (is_ios) {
+    libs = [
+      "CoreFoundation.framework",
+      "CoreGraphics.framework",
+      "CoreText.framework",
+      "Foundation.framework",
+      "UIKit.framework",
+    ]
+  } else if (is_linux) {
+    libs = [
+      "dl",
+    ]
+  }
 }

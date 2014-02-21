@@ -12,7 +12,6 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/page_zoom.h"
-#include "content/public/common/stop_find_action.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class GURL;
@@ -36,7 +35,6 @@ struct SelectedFileInfo;
 }
 
 namespace blink {
-struct WebFindOptions;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
 }
@@ -44,11 +42,10 @@ struct WebPluginAction;
 namespace content {
 
 class ChildProcessSecurityPolicy;
-class RenderProcessHost;
+class RenderFrameHost;
 class RenderViewHostDelegate;
 class SessionStorageNamespace;
 class SiteInstance;
-struct CustomContextMenuContext;
 struct DropData;
 
 // A RenderViewHost is responsible for creating and talking to a RenderView
@@ -72,14 +69,10 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // because RenderWidgetHost is a virtual base class.
   static RenderViewHost* From(RenderWidgetHost* rwh);
 
-  // Checks that the given renderer can request |url|, if not it sets it to
-  // about:blank.
-  // |empty_allowed| must be set to false for navigations for security reasons.
-  static void FilterURL(const RenderProcessHost* process,
-                        bool empty_allowed,
-                        GURL* url);
-
   virtual ~RenderViewHost() {}
+
+  // Returns the main frame for this render view.
+  virtual RenderFrameHost* GetMainFrame() = 0;
 
   // Tell the render view to enable a set of javascript bindings. The argument
   // should be a combination of values from BindingsPolicy.
@@ -159,10 +152,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Instructs the RenderView to send back updates to the preferred size.
   virtual void EnablePreferredSizeMode() = 0;
 
-  // Executes custom context menu action that was provided from WebKit.
-  virtual void ExecuteCustomContextMenuCommand(
-      int action, const CustomContextMenuContext& context) = 0;
-
   // Tells the renderer to perform the given action on the media player
   // located at the given point.
   virtual void ExecuteMediaPlayerActionAtLocation(
@@ -188,14 +177,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Asks the renderer to exit fullscreen
   virtual void ExitFullscreen() = 0;
-
-  // Finds text on a page.
-  virtual void Find(int request_id, const base::string16& search_text,
-                    const blink::WebFindOptions& options) = 0;
-
-  // Notifies the renderer that the user has closed the FindInPage window
-  // (and what action to take regarding the selection).
-  virtual void StopFinding(StopFindAction action) = 0;
 
   // Causes the renderer to invoke the onbeforeunload event handler.  The
   // result will be returned via ViewMsg_ShouldClose. See also ClosePage and
@@ -230,14 +211,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // because it is overridden by TestRenderViewHost.
   virtual bool IsRenderViewLive() const = 0;
 
-  // Returns true if the RenderView is responsible for displaying a subframe
-  // in a different process from its parent page.
-  virtual bool IsSubframe() const = 0;
-
-  // Let the renderer know that the menu has been closed.
-  virtual void NotifyContextMenuClosed(
-      const CustomContextMenuContext& context) = 0;
-
   // Notification that a move or resize renderer's containing window has
   // started.
   virtual void NotifyMoveOrResizeStarted() = 0;
@@ -245,16 +218,10 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Reloads the current focused frame.
   virtual void ReloadFrame() = 0;
 
-  // Sets the alternate error page URL (link doctor) for the renderer process.
-  virtual void SetAltErrorPageURL(const GURL& url) = 0;
-
   // Sets a property with the given name and value on the Web UI binding object.
   // Must call AllowWebUIBindings() on this renderer first.
   virtual void SetWebUIProperty(const std::string& name,
                                 const std::string& value) = 0;
-
-  // Set the zoom level for the current main frame
-  virtual void SetZoomLevel(double level) = 0;
 
   // Changes the zoom level for the current main frame.
   virtual void Zoom(PageZoom zoom) = 0;

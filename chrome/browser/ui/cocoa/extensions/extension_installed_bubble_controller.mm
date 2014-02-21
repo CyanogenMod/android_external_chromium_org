@@ -44,7 +44,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #import "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -440,9 +440,8 @@ class ExtensionLoadedNotificationObserver
     // First calculate the height of the sign-in promo.
     NSFont* font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
 
-    NSString* link(l10n_util::GetNSStringFWithFixup(
-        IDS_EXTENSION_INSTALLED_SIGNIN_PROMO_LINK,
-        l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
+    NSString* link(l10n_util::GetNSStringWithFixup(
+        IDS_EXTENSION_INSTALLED_SIGNIN_PROMO_LINK));
     NSString* message(l10n_util::GetNSStringWithFixup(
         IDS_EXTENSION_INSTALLED_SIGNIN_PROMO));
 
@@ -466,7 +465,7 @@ class ExtensionLoadedNotificationObserver
   }
 
   // First part of extension installed message, the heading.
-  base::string16 extension_name = UTF8ToUTF16(extension_->name().c_str());
+  base::string16 extension_name = base::UTF8ToUTF16(extension_->name().c_str());
   base::i18n::AdjustStringForLocaleDirection(&extension_name);
   [heading_ setStringValue:l10n_util::GetNSStringF(
       IDS_EXTENSION_INSTALLED_HEADING, extension_name)];
@@ -493,7 +492,7 @@ class ExtensionLoadedNotificationObserver
   if (type_ == extension_installed_bubble::kOmniboxKeyword) {
     [howToUse_ setStringValue:l10n_util::GetNSStringF(
         IDS_EXTENSION_INSTALLED_OMNIBOX_KEYWORD_INFO,
-        UTF8ToUTF16(extensions::OmniboxInfo::GetKeyword(extension_)))];
+        base::UTF8ToUTF16(extensions::OmniboxInfo::GetKeyword(extension_)))];
     [howToUse_ setHidden:NO];
     [[howToUse_ cell]
         setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];

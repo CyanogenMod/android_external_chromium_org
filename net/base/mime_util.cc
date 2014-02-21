@@ -281,6 +281,12 @@ static const char* const common_media_types[] = {
   // Wav.
   "audio/wav",
   "audio/x-wav",
+
+#if defined(OS_ANDROID)
+  // HLS. Supported by Android ICS and above.
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+#endif
 };
 
 // List of proprietary types only supported by Google Chrome.
@@ -518,7 +524,9 @@ bool MimeUtil::IsSupportedMediaMimeType(const std::string& mime_type) const {
 bool MimeUtil::IsSupportedNonImageMimeType(const std::string& mime_type) const {
   return non_image_map_.find(mime_type) != non_image_map_.end() ||
       (mime_type.compare(0, 5, "text/") == 0 &&
-       !IsUnsupportedTextMimeType(mime_type));
+       !IsUnsupportedTextMimeType(mime_type)) ||
+      (mime_type.compare(0, 12, "application/") == 0 &&
+       MatchesMimeType("application/*+json", mime_type));
 }
 
 bool MimeUtil::IsUnsupportedTextMimeType(const std::string& mime_type) const {
@@ -874,7 +882,8 @@ void GetExtensionsFromHardCodedMappings(
                                    &this_extensions);
       for (size_t j = 0; j < this_extensions.size(); ++j) {
 #if defined(OS_WIN)
-        base::FilePath::StringType extension(UTF8ToWide(this_extensions[j]));
+        base::FilePath::StringType extension(
+            base::UTF8ToWide(this_extensions[j]));
 #else
         base::FilePath::StringType extension(this_extensions[j]);
 #endif

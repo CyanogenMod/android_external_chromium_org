@@ -110,6 +110,7 @@ const char kHTermAppId[] = "pnhechapfaindjhompbnflcldabbghjo";
 const char kHTermDevAppId[] = "okddffdblfhhnmhodogpojmfkjmhinfp";
 const char kIdentityApiUiAppId[] = "ahjaciijnoiaklcomgnblndopackapon";
 const char kCroshBuiltinAppId[] = "nkoccljplnhpfnfiajclkommnmllphnl";
+const char kHotwordExtensionId[] = "bepbmhgboaologfdajaanbcjmnhjmhfn";
 const char kPdfExtensionId[] = "mhjfbmdgcfjbbpaeojofohoefgiehjai";
 const char kQuickOfficeComponentExtensionId[] =
     "bpmcpldpdmajfigpchkicefoigmkfalc";
@@ -121,13 +122,11 @@ const char kStreamsPrivateTestExtensionId[] =
 const char kWebStoreAppId[] = "ahfgeienlihckogmohjhadlkjgocpleb";
 const char kYoutubeAppId[] = "blpcfgokakmgnkcojhhkbfbldkacnbeo";
 const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
-const char kTipsAndTricksAppId[] = "hkhhlkdconhgemhegnplaldnmnmkaemd";
 
 const char kAppLaunchHistogram[] = "Extensions.AppLaunch";
 const char kPlatformAppLaunchHistogram[] = "Apps.AppLaunch";
 #if defined(OS_CHROMEOS)
-const char kChromeVoxExtensionPath[] =
-    "/usr/share/chromeos-assets/accessibility/extensions/access_chromevox";
+const char kChromeVoxExtensionPath[] = "chromeos/chromevox";
 // The extension id for the built-in component extension.
 const char kChromeVoxExtensionId[] =
     "mndnfokpggljbaajbnioimlmbfngpief";
@@ -179,13 +178,5 @@ const int kExtensionActionIconSizes[] = {
 
 const size_t kNumExtensionActionIconSizes =
     arraysize(kExtensionActionIconSizes);
-
-const int kScriptBadgeIconSizes[] = {
-  EXTENSION_ICON_BITTY,  // 16
-  2 * EXTENSION_ICON_BITTY  // 32
-};
-
-const size_t kNumScriptBadgeIconSizes =
-    arraysize(kScriptBadgeIconSizes);
 
 }  // namespace extension_misc

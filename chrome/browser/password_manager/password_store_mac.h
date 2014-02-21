@@ -10,12 +10,8 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/password_manager/login_database.h"
-#include "chrome/browser/password_manager/password_store.h"
-
-namespace content {
-class NotificationService;
-}
+#include "components/password_manager/core/browser/login_database.h"
+#include "components/password_manager/core/browser/password_store.h"
 
 namespace crypto {
 class AppleKeychain;
@@ -30,29 +26,34 @@ class PasswordStoreMac : public PasswordStore {
  public:
   // Takes ownership of |keychain| and |login_db|, both of which must be
   // non-NULL.
-  PasswordStoreMac(crypto::AppleKeychain* keychain, LoginDatabase* login_db);
+  PasswordStoreMac(
+      scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+      crypto::AppleKeychain* keychain,
+      LoginDatabase* login_db);
 
-  // Initializes |thread_| and |notification_service_|.
+  // Initializes |thread_|.
   virtual bool Init() OVERRIDE;
-
-  virtual void ShutdownOnUIThread() OVERRIDE;
 
  protected:
   virtual ~PasswordStoreMac();
 
-  virtual bool ScheduleTask(const base::Closure& task) OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetBackgroundTaskRunner() OVERRIDE;
 
  private:
   virtual void ReportMetricsImpl() OVERRIDE;
-  virtual void AddLoginImpl(const autofill::PasswordForm& form) OVERRIDE;
-  virtual void UpdateLoginImpl(
+  virtual PasswordStoreChangeList AddLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginImpl(
+  virtual PasswordStoreChangeList UpdateLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginsCreatedBetweenImpl(
+  virtual PasswordStoreChangeList RemoveLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
       const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
       const autofill::PasswordForm& form,
+      AuthorizationPromptPolicy prompt_policy,
       const ConsumerCallbackRunner& callback_runner) OVERRIDE;
   virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
@@ -84,19 +85,11 @@ class PasswordStoreMac : public PasswordStore {
   void RemoveKeychainForms(
       const std::vector<autofill::PasswordForm*>& forms);
 
-  // Allows the creation of |notification_service_| to be scheduled on the right
-  // thread.
-  void CreateNotificationService();
-
   scoped_ptr<crypto::AppleKeychain> keychain_;
   scoped_ptr<LoginDatabase> login_metadata_db_;
 
   // Thread that the synchronous methods are run on.
   scoped_ptr<base::Thread> thread_;
-
-  // Since we aren't running on a well-known thread but still want to send out
-  // notifications, we need to run our own service.
-  scoped_ptr<content::NotificationService> notification_service_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreMac);
 };

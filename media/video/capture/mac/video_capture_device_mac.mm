@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/time/time.h"
 #import "media/video/capture/mac/avfoundation_glue.h"
 #import "media/video/capture/mac/platform_video_capturing_mac.h"
@@ -83,8 +84,14 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
 
 // static
 void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
-    VideoCaptureCapabilities* formats) {
-  NOTIMPLEMENTED();
+    VideoCaptureFormats* formats) {
+  if (AVFoundationGlue::IsAVFoundationSupported()) {
+    DVLOG(1) << "Enumerating video capture capabilities, AVFoundation";
+    [VideoCaptureDeviceAVFoundation getDevice:device
+                             supportedFormats:formats];
+  } else {
+    NOTIMPLEMENTED();
+  }
 }
 
 const std::string VideoCaptureDevice::Name::GetModel() const {
@@ -117,7 +124,7 @@ VideoCaptureDeviceMac::VideoCaptureDeviceMac(const Name& device_name)
     : device_name_(device_name),
       sent_frame_info_(false),
       tried_to_square_pixels_(false),
-      loop_proxy_(base::MessageLoopProxy::current()),
+      task_runner_(base::MessageLoopProxy::current()),
       state_(kNotInitialized),
       weak_factory_(this),
       weak_this_(weak_factory_.GetWeakPtr()),
@@ -125,14 +132,14 @@ VideoCaptureDeviceMac::VideoCaptureDeviceMac(const Name& device_name)
 }
 
 VideoCaptureDeviceMac::~VideoCaptureDeviceMac() {
-  DCHECK_EQ(loop_proxy_, base::MessageLoopProxy::current());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   [capture_device_ release];
 }
 
 void VideoCaptureDeviceMac::AllocateAndStart(
     const VideoCaptureParams& params,
     scoped_ptr<VideoCaptureDevice::Client> client) {
-  DCHECK_EQ(loop_proxy_, base::MessageLoopProxy::current());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   if (state_ != kIdle) {
     return;
   }
@@ -174,8 +181,8 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   // out if the request is larger than the camera's native resolution.
 
   // If the resolution is HD, start capturing without setting a resolution.
-  // QTKit will produce frames at the native resolution, allowing us to
-  // identify cameras whose native resolution is too low for HD.  This
+  // QTKit/AVFoundation will produce frames at the native resolution, allowing
+  // us to identify cameras whose native resolution is too low for HD.  This
   // additional information comes at a cost in startup latency, because the
   // webcam will need to be reopened if its default resolution is not HD or VGA.
 
@@ -188,7 +195,7 @@ void VideoCaptureDeviceMac::AllocateAndStart(
 }
 
 void VideoCaptureDeviceMac::StopAndDeAllocate() {
-  DCHECK_EQ(loop_proxy_, base::MessageLoopProxy::current());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ == kCapturing || state_ == kError) << state_;
   [capture_device_ stopCapture];
 
@@ -200,13 +207,20 @@ void VideoCaptureDeviceMac::StopAndDeAllocate() {
 }
 
 bool VideoCaptureDeviceMac::Init() {
-  DCHECK_EQ(loop_proxy_, base::MessageLoopProxy::current());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kNotInitialized);
 
+  // TODO(mcasas): The following check might not be necessary; if the device has
+  // disappeared after enumeration and before coming here, opening would just
+  // fail but not necessarily produce a crash.
   Names device_names;
   GetDeviceNames(&device_names);
-  Name* found = device_names.FindById(device_name_.id());
-  if (!found)
+  Names::iterator it = device_names.begin();
+  for (; it != device_names.end(); ++it) {
+    if (it->id() == device_name_.id())
+      break;
+  }
+  if (it == device_names.end())
     return false;
 
   if (AVFoundationGlue::IsAVFoundationSupported()) {
@@ -231,7 +245,7 @@ void VideoCaptureDeviceMac::ReceiveFrame(
     int aspect_numerator,
     int aspect_denominator) {
   // This method is safe to call from a device capture thread,
-  // i.e. any thread controlled by QTKit.
+  // i.e. any thread controlled by QTKit/AVFoundation.
 
   if (!sent_frame_info_) {
     // Final resolution has not yet been selected.
@@ -299,24 +313,22 @@ void VideoCaptureDeviceMac::ReceiveFrame(
 
   client_->OnIncomingCapturedFrame(video_frame,
                                    video_frame_length,
-                                   base::Time::Now(),
+                                   base::TimeTicks::Now(),
                                    0,
-                                   false,
-                                   false,
                                    capture_format_);
 }
 
 void VideoCaptureDeviceMac::ReceiveError(const std::string& reason) {
-  loop_proxy_->PostTask(FROM_HERE,
+  task_runner_->PostTask(FROM_HERE,
       base::Bind(&VideoCaptureDeviceMac::SetErrorState, weak_this_,
           reason));
 }
 
 void VideoCaptureDeviceMac::SetErrorState(const std::string& reason) {
-  DCHECK_EQ(loop_proxy_, base::MessageLoopProxy::current());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DLOG(ERROR) << reason;
   state_ = kError;
-  client_->OnError();
+  client_->OnError(reason);
 }
 
 bool VideoCaptureDeviceMac::UpdateCaptureResolution() {

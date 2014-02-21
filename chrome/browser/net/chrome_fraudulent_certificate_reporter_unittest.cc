@@ -156,24 +156,21 @@ class MockReporter : public ChromeFraudulentCertificateReporter {
 };
 
 static void DoReportIsSent() {
-  ChromeURLRequestContext context(ChromeURLRequestContext::CONTEXT_TYPE_MAIN,
-                                  NULL);
+  ChromeURLRequestContext context;
   SendingTestReporter reporter(&context);
   SSLInfo info = GetGoodSSLInfo();
   reporter.SendReport("mail.google.com", info, true);
 }
 
 static void DoReportIsNotSent() {
-  ChromeURLRequestContext context(ChromeURLRequestContext::CONTEXT_TYPE_MAIN,
-                                  NULL);
+  ChromeURLRequestContext context;
   NotSendingTestReporter reporter(&context);
   SSLInfo info = GetBadSSLInfo();
   reporter.SendReport("www.example.com", info, true);
 }
 
 static void DoMockReportIsSent() {
-  ChromeURLRequestContext context(ChromeURLRequestContext::CONTEXT_TYPE_MAIN,
-                                  NULL);
+  ChromeURLRequestContext context;
   MockReporter reporter(&context);
   SSLInfo info = GetGoodSSLInfo();
   reporter.SendReport("mail.google.com", info, true);
@@ -188,21 +185,21 @@ TEST(ChromeFraudulentCertificateReporterTest, GoodBadInfo) {
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, ReportIsSent) {
-  base::MessageLoop loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoReportIsSent));
   loop.RunUntilIdle();
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, MockReportIsSent) {
-  base::MessageLoop loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoMockReportIsSent));
   loop.RunUntilIdle();
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, ReportIsNotSent) {
-  base::MessageLoop loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoReportIsNotSent));
   loop.RunUntilIdle();

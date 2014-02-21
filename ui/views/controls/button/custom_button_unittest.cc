@@ -80,10 +80,12 @@ TEST_F(CustomButtonTest, HoverStateOnVisibilityChange) {
 
   gfx::Point center(10, 10);
   button->OnMousePressed(ui::MouseEvent(ui::ET_MOUSE_PRESSED, center, center,
+                                        ui::EF_LEFT_MOUSE_BUTTON,
                                         ui::EF_LEFT_MOUSE_BUTTON));
   EXPECT_EQ(CustomButton::STATE_PRESSED, button->state());
 
   button->OnMouseReleased(ui::MouseEvent(ui::ET_MOUSE_RELEASED, center, center,
+                                         ui::EF_LEFT_MOUSE_BUTTON,
                                          ui::EF_LEFT_MOUSE_BUTTON));
   EXPECT_EQ(CustomButton::STATE_HOVERED, button->state());
 
@@ -153,7 +155,7 @@ TEST_F(CustomButtonTest, GestureEventsSetState) {
 // Make sure all subclasses of CustomButton are correctly recognized
 // as CustomButton.
 TEST_F(CustomButtonTest, AsCustomButton) {
-  string16 text;
+  base::string16 text;
 
   TextButton text_button(NULL, text);
   EXPECT_TRUE(CustomButton::AsCustomButton(&text_button));
@@ -176,7 +178,7 @@ TEST_F(CustomButtonTest, AsCustomButton) {
   Link link(text);
   EXPECT_FALSE(CustomButton::AsCustomButton(&link));
 
-  Textfield textfield(Textfield::STYLE_DEFAULT);
+  Textfield textfield;
   EXPECT_FALSE(CustomButton::AsCustomButton(&textfield));
 }
 

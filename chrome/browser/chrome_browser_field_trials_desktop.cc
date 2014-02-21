@@ -28,6 +28,10 @@
 #include "net/spdy/spdy_session.h"
 #include "ui/base/layout.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#endif
+
 namespace chrome {
 
 namespace {
@@ -65,17 +69,6 @@ void DisableShowProfileSwitcherTrialIfNecessary() {
   base::FieldTrial* trial = base::FieldTrialList::Find("ShowProfileSwitcher");
   if (trial && !profiles::IsMultipleProfilesEnabled())
     trial->Disable();
-}
-
-void SetupLowLatencyFlashAudioFieldTrial() {
-  scoped_refptr<base::FieldTrial> trial(
-      base::FieldTrialList::FactoryGetFieldTrial(
-          content::kLowLatencyFlashAudioFieldTrialName, 100, "Standard",
-          2013, 9, 1, base::FieldTrial::SESSION_RANDOMIZED, NULL));
-
-  // Trial is enabled for dev / beta / canary users only.
-  if (chrome::VersionInfo::GetChannel() != chrome::VersionInfo::CHANNEL_STABLE)
-    trial->AppendGroup(content::kLowLatencyFlashAudioFieldTrialEnabledName, 25);
 }
 
 void SetupPreReadFieldTrial() {
@@ -122,19 +115,31 @@ void SetupPreReadFieldTrial() {
   trial->group();
 }
 
+#if defined(OS_CHROMEOS)
+void SetupChromeOSMultiProfilesAllowedTrial() {
+  const char kTrialName[] = "ChromeOSMultiProfilesAllowed";
+  if (chromeos::UserManager::IsMultipleProfilesAllowed())
+    base::FieldTrialList::CreateFieldTrial(kTrialName, "allowed")->group();
+  else
+    base::FieldTrialList::CreateFieldTrial(kTrialName, "not_allowed")->group();
+}
+#endif  // defined(OS_CHROMEOS)
+
 }  // namespace
 
 void SetupDesktopFieldTrials(const CommandLine& parsed_command_line,
                              const base::Time& install_time,
                              PrefService* local_state) {
-  prerender::ConfigurePrefetchAndPrerender(parsed_command_line);
+  prerender::ConfigurePrerender(parsed_command_line);
   AutoLaunchChromeFieldTrial();
   OmniboxFieldTrial::ActivateStaticTrials();
   SetupInfiniteCacheFieldTrial();
   DisableShowProfileSwitcherTrialIfNecessary();
   SetupShowAppLauncherPromoFieldTrial(local_state);
-  SetupLowLatencyFlashAudioFieldTrial();
   SetupPreReadFieldTrial();
+#if defined(OS_CHROMEOS)
+  SetupChromeOSMultiProfilesAllowedTrial();
+#endif
 }
 
 }  // namespace chrome

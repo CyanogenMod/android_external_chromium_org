@@ -4,17 +4,22 @@
 
 #include "chrome/browser/prerender/prerender_link_manager.h"
 
+#include <functional>
 #include <limits>
 #include <set>
+#include <string>
 #include <utility>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_handle.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/prerender_messages.h"
+#include "chrome/common/prerender_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/session_storage_namespace.h"
@@ -27,7 +32,54 @@ using base::TimeTicks;
 using content::RenderViewHost;
 using content::SessionStorageNamespace;
 
+namespace prerender {
+
 namespace {
+
+bool ShouldStartRelNextPrerenders() {
+  const std::string experiment_name =
+      base::FieldTrialList::FindFullName("PrerenderRelNextTrial");
+
+  return experiment_name.find("Yes") != std::string::npos;
+}
+
+bool ShouldStartPrerender(const uint32 rel_types) {
+  const bool should_start_rel_next_prerenders =
+      ShouldStartRelNextPrerenders();
+
+  if (rel_types & PrerenderRelTypePrerender) {
+    return true;
+  } else if (should_start_rel_next_prerenders &&
+             (rel_types & PrerenderRelTypeNext) == PrerenderRelTypeNext) {
+    return true;
+  }
+  return false;
+}
+
+COMPILE_ASSERT(PrerenderRelTypePrerender == 0x1,
+               RelTypeHistogramEnum_must_match_PrerenderRelType);
+COMPILE_ASSERT(PrerenderRelTypeNext == 0x2,
+               RelTypeHistogramEnum_must_match_PrerenderRelType);
+enum RelTypeHistogramEnum {
+  RelTypeHistogramEnumNone = 0,
+  RelTypeHistogramEnumPrerender = PrerenderRelTypePrerender,
+  RelTypeHistogramEnumNext = PrerenderRelTypeNext,
+  RelTypeHistogramEnumPrerenderAndNext =
+      PrerenderRelTypePrerender | PrerenderRelTypeNext,
+  RelTypeHistogramEnumMax,
+};
+
+void RecordLinkManagerAdded(const uint32 rel_types) {
+  const uint32 enum_value = rel_types & (RelTypeHistogramEnumMax - 1);
+  UMA_HISTOGRAM_ENUMERATION("Prerender.RelTypesLinkAdded", enum_value,
+                            RelTypeHistogramEnumMax);
+}
+
+void RecordLinkManagerStarting(const uint32 rel_types) {
+  const uint32 enum_value = rel_types & (RelTypeHistogramEnumMax - 1);
+  UMA_HISTOGRAM_ENUMERATION("Prerender.RelTypesLinkStarted", enum_value,
+                            RelTypeHistogramEnumMax);
+}
 
 void Send(int child_id, IPC::Message* raw_message) {
   using content::RenderProcessHost;
@@ -41,12 +93,54 @@ void Send(int child_id, IPC::Message* raw_message) {
 
 }  // namespace
 
-namespace prerender {
+// Helper class to implement PrerenderContents::Observer and watch prerenders
+// which launch other prerenders.
+class PrerenderLinkManager::PendingPrerenderManager
+    : public PrerenderContents::Observer {
+ public:
+  explicit PendingPrerenderManager(PrerenderLinkManager* link_manager)
+      : link_manager_(link_manager) {}
+
+  virtual ~PendingPrerenderManager() {
+    DCHECK(observed_launchers_.empty());
+    for (std::set<PrerenderContents*>::iterator i = observed_launchers_.begin();
+         i != observed_launchers_.end(); ++i) {
+      (*i)->RemoveObserver(this);
+    }
+  }
+
+  void ObserveLauncher(PrerenderContents* launcher) {
+    DCHECK_EQ(FINAL_STATUS_MAX, launcher->final_status());
+    if (observed_launchers_.find(launcher) != observed_launchers_.end())
+      return;
+    observed_launchers_.insert(launcher);
+    launcher->AddObserver(this);
+  }
+
+  virtual void OnPrerenderStart(PrerenderContents* launcher) OVERRIDE {}
+
+  virtual void OnPrerenderStop(PrerenderContents* launcher) OVERRIDE {
+    observed_launchers_.erase(launcher);
+    if (launcher->final_status() == FINAL_STATUS_USED) {
+      link_manager_->StartPendingPrerendersForLauncher(launcher);
+    } else {
+      link_manager_->CancelPendingPrerendersForLauncher(launcher);
+    }
+  }
+
+ private:
+  // A pointer to the parent PrerenderLinkManager.
+  PrerenderLinkManager* link_manager_;
+
+  // The set of PrerenderContentses being observed. Lifetimes are managed by
+  // OnPrerenderStop.
+  std::set<PrerenderContents*> observed_launchers_;
+};
 
 PrerenderLinkManager::PrerenderLinkManager(PrerenderManager* manager)
     : has_shutdown_(false),
-      manager_(manager) {
-}
+      manager_(manager),
+      pending_prerender_manager_(new PendingPrerenderManager(this)) {}
 
 PrerenderLinkManager::~PrerenderLinkManager() {
   for (std::list<LinkPrerender>::iterator i = prerenders_.begin();
@@ -64,6 +158,7 @@ PrerenderLinkManager::~PrerenderLinkManager() {
 void PrerenderLinkManager::OnAddPrerender(int launcher_child_id,
                                           int prerender_id,
                                           const GURL& url,
+                                          uint32 rel_types,
                                           const content::Referrer& referrer,
                                           const gfx::Size& size,
                                           int render_view_route_id) {
@@ -77,11 +172,28 @@ void PrerenderLinkManager::OnAddPrerender(int launcher_child_id,
   if (rph && rph->IsGuest())
     return;
 
+  // Check if the launcher is itself an unswapped prerender.
+  PrerenderContents* prerender_contents =
+      manager_->GetPrerenderContentsForRoute(launcher_child_id,
+                                             render_view_route_id);
+  if (prerender_contents &&
+      prerender_contents->final_status() != FINAL_STATUS_MAX) {
+    // The launcher is a prerender about to be destroyed asynchronously, but
+    // its AddLinkRelPrerender message raced with shutdown. Ignore it.
+    DCHECK_NE(FINAL_STATUS_USED, prerender_contents->final_status());
+    return;
+  }
+
   LinkPrerender
-      prerender(launcher_child_id, prerender_id, url, referrer, size,
-                render_view_route_id, manager_->GetCurrentTimeTicks());
+      prerender(launcher_child_id, prerender_id, url, rel_types, referrer, size,
+                render_view_route_id, manager_->GetCurrentTimeTicks(),
+                prerender_contents);
   prerenders_.push_back(prerender);
-  StartPrerenders();
+  RecordLinkManagerAdded(rel_types);
+  if (prerender_contents)
+    pending_prerender_manager_->ObserveLauncher(prerender_contents);
+  else
+    StartPrerenders();
 }
 
 void PrerenderLinkManager::OnCancelPrerender(int child_id, int prerender_id) {
@@ -135,19 +247,24 @@ PrerenderLinkManager::LinkPrerender::LinkPrerender(
     int launcher_child_id,
     int prerender_id,
     const GURL& url,
+    uint32 rel_types,
     const content::Referrer& referrer,
     const gfx::Size& size,
     int render_view_route_id,
-    TimeTicks creation_time) : launcher_child_id(launcher_child_id),
-                               prerender_id(prerender_id),
-                               url(url),
-                               referrer(referrer),
-                               size(size),
-                               render_view_route_id(render_view_route_id),
-                               creation_time(creation_time),
-                               handle(NULL),
-                               is_match_complete_replacement(false),
-                               has_been_abandoned(false) {
+    TimeTicks creation_time,
+    PrerenderContents* deferred_launcher)
+    : launcher_child_id(launcher_child_id),
+      prerender_id(prerender_id),
+      url(url),
+      rel_types(rel_types),
+      referrer(referrer),
+      size(size),
+      render_view_route_id(render_view_route_id),
+      creation_time(creation_time),
+      deferred_launcher(deferred_launcher),
+      handle(NULL),
+      is_match_complete_replacement(false),
+      has_been_abandoned(false) {
 }
 
 PrerenderLinkManager::LinkPrerender::~LinkPrerender() {
@@ -184,6 +301,9 @@ void PrerenderLinkManager::StartPrerenders() {
   // also per launcher.
   for (std::list<LinkPrerender>::iterator i = prerenders_.begin();
        i != prerenders_.end(); ++i) {
+    // Skip prerenders launched by a prerender.
+    if (i->deferred_launcher)
+      continue;
     if (!i->handle) {
       pending_prerenders.push_back(i);
     } else {
@@ -247,9 +367,14 @@ void PrerenderLinkManager::StartPrerenders() {
       }
     }
 
+    if (!ShouldStartPrerender((*i)->rel_types)) {
+      prerenders_.erase(*i);
+      continue;
+    }
+
     PrerenderHandle* handle = manager_->AddPrerenderFromLinkRelPrerender(
         (*i)->launcher_child_id, (*i)->render_view_route_id,
-        (*i)->url, (*i)->referrer, (*i)->size);
+        (*i)->url, (*i)->rel_types, (*i)->referrer, (*i)->size);
     if (!handle) {
       // This prerender couldn't be launched, it's gone.
       prerenders_.erase(*i);
@@ -262,6 +387,7 @@ void PrerenderLinkManager::StartPrerenders() {
     handle->SetObserver(this);
     if (handle->IsPrerendering())
       OnPrerenderStart(handle);
+    RecordLinkManagerStarting((*i)->rel_types);
 
     running_launcher_and_render_view_routes.insert(
         launcher_and_render_view_route);
@@ -320,13 +446,37 @@ void PrerenderLinkManager::CancelPrerender(LinkPrerender* prerender) {
   NOTREACHED();
 }
 
+void PrerenderLinkManager::StartPendingPrerendersForLauncher(
+    PrerenderContents* launcher) {
+  for (std::list<LinkPrerender>::iterator i = prerenders_.begin();
+       i != prerenders_.end(); ++i) {
+    if (i->deferred_launcher == launcher)
+      i->deferred_launcher = NULL;
+  }
+  StartPrerenders();
+}
+
+void PrerenderLinkManager::CancelPendingPrerendersForLauncher(
+    PrerenderContents* launcher) {
+  // Remove all pending prerenders for this launcher.
+  std::vector<std::list<LinkPrerender>::iterator> to_erase;
+  for (std::list<LinkPrerender>::iterator i = prerenders_.begin();
+       i != prerenders_.end(); ++i) {
+    if (i->deferred_launcher == launcher) {
+      DCHECK(!i->handle);
+      to_erase.push_back(i);
+    }
+  }
+  std::for_each(to_erase.begin(), to_erase.end(),
+                std::bind1st(std::mem_fun(&std::list<LinkPrerender>::erase),
+                             &prerenders_));
+}
+
 void PrerenderLinkManager::Shutdown() {
   has_shutdown_ = true;
 }
 
-// In practice, this is always called from either
-// PrerenderLinkManager::OnAddPrerender in the regular case, or in the pending
-// prerender case, from PrerenderHandle::AdoptPrerenderDataFrom.
+// In practice, this is always called from PrerenderLinkManager::OnAddPrerender.
 void PrerenderLinkManager::OnPrerenderStart(
     PrerenderHandle* prerender_handle) {
   LinkPrerender* prerender = FindByPrerenderHandle(prerender_handle);
@@ -344,6 +494,16 @@ void PrerenderLinkManager::OnPrerenderStopLoading(
 
   Send(prerender->launcher_child_id,
        new PrerenderMsg_OnPrerenderStopLoading(prerender->prerender_id));
+}
+
+void PrerenderLinkManager::OnPrerenderDomContentLoaded(
+    PrerenderHandle* prerender_handle) {
+  LinkPrerender* prerender = FindByPrerenderHandle(prerender_handle);
+  if (!prerender)
+    return;
+
+  Send(prerender->launcher_child_id,
+       new PrerenderMsg_OnPrerenderDomContentLoaded(prerender->prerender_id));
 }
 
 void PrerenderLinkManager::OnPrerenderStop(

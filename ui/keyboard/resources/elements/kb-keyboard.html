@@ -10,14 +10,16 @@
     on-pointerdown="{{down}}" on-pointerout="{{out}}"
     on-enable-sel="{{enableSel}}" on-enable-dbl="{{enableDbl}}"
     on-key-out="{{keyOut}}" on-show-options="{{showOptions}}"
-    on-set-layout="{{setLayout}}"
+    on-set-layout="{{setLayout}}" on-type-key="{{type}}"
     attributes="keyset layout inputType inputTypeToLayoutMap">
   <template>
     <style>
-      @host {
-        * {
-          position: relative;
-        }
+      :host {
+        bottom: 0;
+        left: 0;
+        position: absolute;
+        right: 0;
+        top: 0;
       }
     </style>
     <!-- The ID for a keyset follows the naming convention of combining the
@@ -26,9 +28,10 @@
       -- allowing the shift and spacebar keys to be common across multiple
       -- keyboard layouts.
       -->
-    <content id="content" select="#{{layout}}-{{keyset}}"></content>
+    <content id="content"></content>
     <kb-keyboard-overlay id="overlay" hidden></kb-keyboard-overlay>
     <kb-key-codes id="keyCodeMetadata"></kb-key-codes>
+
   </template>
   <script>
     /**
@@ -146,18 +149,6 @@
     };
 
     /**
-     * The enumeration of swipe directions.
-     * @const
-     * @type {Enum}
-     */
-    var SWIPE_DIRECTION = {
-      RIGHT: 0x1,
-      LEFT: 0x2,
-      UP: 0x4,
-      DOWN: 0x8
-    };
-
-    /**
      * A structure to track the current swipe status.
      */
     var swipeTracker = {
@@ -221,17 +212,17 @@
         // Checks for horizontal swipe.
         if (Math.abs(this.offset_x) > MIN_SWIPE_DIST_X) {
           if (this.offset_x > 0) {
-            direction |= SWIPE_DIRECTION.RIGHT;
+            direction |= SwipeDirection.RIGHT;
           } else {
-            direction |= SWIPE_DIRECTION.LEFT;
+            direction |= SwipeDirection.LEFT;
           }
         }
         // Checks for vertical swipe.
         if (Math.abs(this.offset_y) > MIN_SWIPE_DIST_Y) {
           if (this.offset_y < 0) {
-            direction |= SWIPE_DIRECTION.UP;
+            direction |= SwipeDirection.UP;
           } else {
-            direction |= SWIPE_DIRECTION.DOWN;
+            direction |= SwipeDirection.DOWN;
           }
         }
         return direction;
@@ -309,12 +300,14 @@
 
     Polymer('kb-keyboard', {
       alt: null,
+      config: null,
       control: null,
       dblDetail_: null,
       dblTimer_: null,
       inputType: null,
       lastPressedKey: null,
       shift: null,
+      stale: true,
       swipeHandler: null,
       voiceInput_: null,
 
@@ -349,40 +342,31 @@
         return false;
       },
 
+      keysetChanged: function() {
+        var keyset = this.activeKeyset;
+        // Show the keyset if it has been initialized.
+        if (keyset)
+          keyset.show();
+      },
+
+      configChanged: function() {
+        this.layout = this.config.layout;
+      },
+
       ready: function() {
         this.voiceInput_ = new VoiceInput(this);
         this.swipeHandler = this.move.bind(this);
+        var self = this;
+        getKeyboardConfig(function(config) {
+          self.config = config;
+        });
       },
 
       /**
-       * Registers a callback for state change events. Lazy initializes a
-       * mutation observer used to detect when the keyset selection is changed.
+       * Registers a callback for state change events.
        * @param{!Function} callback Callback function to register.
        */
       addKeysetChangedObserver: function(callback) {
-        if (!this.keysetChangedObserver) {
-          var target = this.$.content;
-          var self = this;
-          var observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(m) {
-              if (m.type == 'attributes' && m.attributeName == 'select') {
-                var value = m.target.getAttribute('select');
-                self.fire('stateChange', {
-                  state: 'keysetChanged',
-                  value: value
-                });
-              }
-            });
-          });
-
-          observer.observe(target, {
-            attributes: true,
-            childList: true,
-            subtree: true
-          });
-          this.keysetChangedObserver = observer;
-
-        }
         this.addEventListener('stateChange', callback);
       },
 
@@ -392,6 +376,10 @@
        * Otherwise, the keyboard layout for 'text' type will be loaded.
        */
       inputTypeChanged: function() {
+        // Disable layout switching at accessbility mode.
+        if (this.config && this.config.a11ymode)
+          return;
+
         // TODO(bshe): Toggle visibility of some keys in a keyboard layout
         // according to the input type.
         var layout = this.inputTypeToLayoutMap[this.inputType];
@@ -429,7 +417,7 @@
         if (!direction)
           console.error("Swipe direction cannot be: " + direction);
         // Triggers swipe editting if it's a purely horizontal swipe.
-        if (!(direction & (SWIPE_DIRECTION.UP | SWIPE_DIRECTION.DOWN))) {
+        if (!(direction & (SwipeDirection.UP | SwipeDirection.DOWN))) {
           // Nothing to do if the swipe has ended.
           if (detail.endSwipe)
             return;
@@ -444,26 +432,18 @@
           return;
         }
         // Triggers swipe hintText if it's a purely vertical swipe.
-        if (!(direction & (SWIPE_DIRECTION.LEFT | SWIPE_DIRECTION.RIGHT))) {
+        if (!(direction & (SwipeDirection.LEFT | SwipeDirection.RIGHT))) {
           // Check if event is relevant to us.
-          if ((!detail.endSwipe) ||
-              (direction & SWIPE_DIRECTION.DOWN) ||
-              (detail.isComplex)) {
+          if ((!detail.endSwipe) || (detail.isComplex))
             return;
-          }
           // Too long a swipe.
           var distance = Math.abs(detail.startEvent.screenY -
               detail.currentEvent.screenY);
           if (distance > MAX_SWIPE_FLICK_DIST)
             return;
           var triggerKey = detail.startEvent.target;
-          // Swipe-up on a key without hintText.
-          if (!triggerKey || !triggerKey.hintTextValue)
-            return;
-          var detail = {};
-          detail.char = triggerKey.hintTextValue;
-          this.keyTyped(detail);
-          return;
+          if (triggerKey && triggerKey.onFlick)
+            triggerKey.onFlick(detail);
         }
       },
 
@@ -513,6 +493,12 @@
             // Removes modifier if already active.
             if (this.classList.contains(modifier))
               this.classList.remove(modifier);
+            break;
+          case 'Invalid':
+            // Not all Invalid keys are transition keys. Reset control keys if
+            // we pressed a transition key.
+            if (event.target.toKeyset || detail.relegateToShift)
+              this.onNonControlKeyTyped();
             break;
           default:
             // Notify shift key.
@@ -653,6 +639,16 @@
       },
 
       /**
+       * Handles a TypeKey event. This is used for when we programmatically
+       * want to type a specific key.
+       * @param {CustomEvent} event The TypeKey event that bubbled to the
+       *    kb-keyboard.
+       */
+      type: function(event) {
+        this.keyTyped(event.detail);
+      },
+
+      /**
        * Handles key-up event that is sent by kb-key-base.
        * @param {CustomEvent} event The key-up event dispatched by kb-key-base.
        * @param {Object} detail The detail of pressed kb-key.
@@ -790,7 +786,6 @@
         if (!menu) {
            console.error('Missing options menu.');
         }
-
         menu.hidden = false;
         overlay.hidden = false;
         var left = details.left + details.width - menu.clientWidth;
@@ -814,6 +809,7 @@
        * keyset for the new layout.
        */
       layoutChanged: function() {
+        this.stale = true;
         if (!this.selectDefaultKeyset()) {
           this.fire('stateChange', {state: 'loadingKeyset'});
 
@@ -843,6 +839,9 @@
               });
             }
           }
+        // New keyset has already been loaded, can show immediately.
+        } else {
+          this.activeKeyset.show();
         }
       },
 
@@ -907,8 +906,12 @@
         var keyset =  this.activeKeyset;
         if (!keyset)
           return false;
-        var content = this.$.content.getDistributedNodes()[0];
-        return content == keyset;
+        var nodes = this.$.content.getDistributedNodes();
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].id && nodes[i].id == keyset.id)
+            return true;
+        }
+        return false;
       },
 
       /**

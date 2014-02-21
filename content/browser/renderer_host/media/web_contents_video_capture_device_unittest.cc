@@ -192,7 +192,7 @@ class CaptureTestView : public TestRenderWidgetHostView {
 
   // Simulate a compositor paint event for our subscriber.
   void SimulateUpdate() {
-    const base::Time present_time = base::Time::Now();
+    const base::TimeTicks present_time = base::TimeTicks::Now();
     RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
     scoped_refptr<media::VideoFrame> target;
     if (subscriber_ && subscriber_->ShouldCaptureFrame(present_time,
@@ -228,14 +228,13 @@ class CaptureTestRenderViewHost : public TestRenderViewHost {
  public:
   CaptureTestRenderViewHost(SiteInstance* instance,
                             RenderViewHostDelegate* delegate,
-                            RenderFrameHostDelegate* frame_delegate,
                             RenderWidgetHostDelegate* widget_delegate,
                             int routing_id,
                             int main_frame_routing_id,
                             bool swapped_out,
                             CaptureTestSourceController* controller)
-      : TestRenderViewHost(instance, delegate, frame_delegate, widget_delegate,
-                           routing_id, main_frame_routing_id, swapped_out),
+      : TestRenderViewHost(instance, delegate, widget_delegate, routing_id,
+                           main_frame_routing_id, swapped_out),
         controller_(controller) {
     // Override the default view installed by TestRenderViewHost; we need
     // our special subclass which has mocked-out tab capture support.
@@ -290,15 +289,13 @@ class CaptureTestRenderViewHostFactory : public RenderViewHostFactory {
   virtual RenderViewHost* CreateRenderViewHost(
       SiteInstance* instance,
       RenderViewHostDelegate* delegate,
-      RenderFrameHostDelegate* frame_delegate,
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
       bool swapped_out) OVERRIDE {
-    return new CaptureTestRenderViewHost(instance, delegate, frame_delegate,
-                                         widget_delegate, routing_id,
-                                         main_frame_routing_id, swapped_out,
-                                         controller_);
+    return new CaptureTestRenderViewHost(instance, delegate, widget_delegate,
+                                         routing_id, main_frame_routing_id,
+                                         swapped_out, controller_);
   }
  private:
   CaptureTestSourceController* controller_;
@@ -338,10 +335,8 @@ class StubClient : public media::VideoCaptureDevice::Client {
   virtual void OnIncomingCapturedFrame(
       const uint8* data,
       int length,
-      base::Time timestamp,
+      base::TimeTicks timestamp,
       int rotation,
-      bool flip_vert,
-      bool flip_horiz,
       const media::VideoCaptureFormat& frame_format) OVERRIDE {
     FAIL();
   }
@@ -349,7 +344,7 @@ class StubClient : public media::VideoCaptureDevice::Client {
   virtual void OnIncomingCapturedBuffer(const scoped_refptr<Buffer>& buffer,
                                         media::VideoFrame::Format format,
                                         const gfx::Size& dimensions,
-                                        base::Time timestamp,
+                                        base::TimeTicks timestamp,
                                         int frame_rate) OVERRIDE {
     EXPECT_EQ(gfx::Size(kTestWidth, kTestHeight), dimensions);
     EXPECT_EQ(media::VideoFrame::I420, format);
@@ -366,7 +361,7 @@ class StubClient : public media::VideoCaptureDevice::Client {
     color_callback_.Run((SkColorSetRGB(yuv[0], yuv[1], yuv[2])));
   }
 
-  virtual void OnError() OVERRIDE {
+  virtual void OnError(const std::string& reason) OVERRIDE {
     error_callback_.Run();
   }
 

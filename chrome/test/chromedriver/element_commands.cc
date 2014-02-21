@@ -4,6 +4,7 @@
 
 #include "chrome/test/chromedriver/element_commands.h"
 
+#include <cmath>
 #include <list>
 #include <vector>
 
@@ -25,13 +26,15 @@
 #include "chrome/test/chromedriver/util.h"
 #include "third_party/webdriver/atoms.h"
 
+const int kFlickTouchEventsPerSecond = 30;
+
 namespace {
 
 Status SendKeysToElement(
     Session* session,
     WebView* web_view,
     const std::string& element_id,
-    const ListValue* key_list) {
+    const base::ListValue* key_list) {
   bool is_displayed = false;
   bool is_focused = false;
   base::TimeTicks start_time = base::TimeTicks::Now();
@@ -215,6 +218,55 @@ Status ExecuteTouchSingleTap(
   events.push_back(
       TouchEvent(kTouchEnd, location.x, location.y));
   return web_view->DispatchTouchEvents(events);
+}
+
+Status ExecuteFlick(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  WebPoint location;
+  Status status = GetElementClickableLocation(
+      session, web_view, element_id, &location);
+  if (status.IsError())
+    return status;
+
+  int xoffset, yoffset, speed;
+  if (!params.GetInteger("xoffset", &xoffset))
+    return Status(kUnknownError, "'xoffset' must be an integer");
+  if (!params.GetInteger("yoffset", &yoffset))
+    return Status(kUnknownError, "'yoffset' must be an integer");
+  if (!params.GetInteger("speed", &speed))
+    return Status(kUnknownError, "'speed' must be an integer");
+  if (speed < 1)
+    return Status(kUnknownError, "'speed' must be a positive integer");
+
+  status = web_view->DispatchTouchEvent(
+      TouchEvent(kTouchStart, location.x, location.y));
+  if (status.IsError())
+    return status;
+
+  const double offset =
+      std::sqrt(static_cast<double>(xoffset * xoffset + yoffset * yoffset));
+  const double xoffset_per_event =
+      (speed * xoffset) / (kFlickTouchEventsPerSecond * offset);
+  const double yoffset_per_event =
+      (speed * yoffset) / (kFlickTouchEventsPerSecond * offset);
+  const int total_events =
+      (offset * kFlickTouchEventsPerSecond) / speed;
+  for (int i = 0; i < total_events; i++) {
+    status = web_view->DispatchTouchEvent(
+        TouchEvent(kTouchMove,
+                   location.x + xoffset_per_event * i,
+                   location.y + yoffset_per_event * i));
+    if (status.IsError())
+      return status;
+    base::PlatformThread::Sleep(
+        base::TimeDelta::FromMilliseconds(1000 / kFlickTouchEventsPerSecond));
+  }
+  return web_view->DispatchTouchEvent(
+      TouchEvent(kTouchEnd, location.x + xoffset, location.y + yoffset));
 }
 
 Status ExecuteClearElement(

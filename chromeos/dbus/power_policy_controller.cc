@@ -84,7 +84,7 @@ PowerPolicyController::PrefValues::PrefValues()
       ac_brightness_percent(-1.0),
       battery_brightness_percent(-1.0),
       allow_screen_wake_locks(true),
-      enable_screen_lock(false),
+      enable_auto_screen_lock(false),
       presentation_screen_dim_delay_factor(1.0),
       user_activity_screen_dim_delay_factor(1.0),
       wait_for_initial_user_activity(false) {}
@@ -134,31 +134,22 @@ std::string PowerPolicyController::GetPolicyDebugString(
 }
 
 PowerPolicyController::PowerPolicyController()
-    : manager_(NULL),
-      client_(NULL),
+    : client_(NULL),
       prefs_were_set_(false),
       honor_screen_wake_locks_(true),
       next_wake_lock_id_(1) {
 }
 
 PowerPolicyController::~PowerPolicyController() {
-  DCHECK(manager_);
-  // The power manager's policy is reset before this point, in
-  // OnDBusThreadManagerDestroying().  At the time that
-  // PowerPolicyController is destroyed, PowerManagerClient's D-Bus proxy
-  // to the power manager is already gone.
-  client_->RemoveObserver(this);
-  client_ = NULL;
-  manager_->RemoveObserver(this);
-  manager_ = NULL;
+  if (client_) {
+    client_->RemoveObserver(this);
+    client_ = NULL;
+  }
 }
 
 void PowerPolicyController::Init(DBusThreadManager* manager) {
-  manager_ = manager;
-  manager_->AddObserver(this);
-  client_ = manager_->GetPowerManagerClient();
+  client_ = manager->GetPowerManagerClient();
   client_->AddObserver(this);
-  SendCurrentPolicy();
 }
 
 void PowerPolicyController::ApplyPrefs(const PrefValues& values) {
@@ -172,10 +163,10 @@ void PowerPolicyController::ApplyPrefs(const PrefValues& values) {
   delays->set_idle_warning_ms(values.ac_idle_warning_delay_ms);
   delays->set_idle_ms(values.ac_idle_delay_ms);
 
-  // If screen-locking is enabled, ensure that the screen is locked soon
+  // If auto screen-locking is enabled, ensure that the screen is locked soon
   // after it's turned off due to user inactivity.
   int64 lock_ms = delays->screen_off_ms() + kScreenLockAfterOffDelayMs;
-  if (values.enable_screen_lock && delays->screen_off_ms() > 0 &&
+  if (values.enable_auto_screen_lock && delays->screen_off_ms() > 0 &&
       (delays->screen_lock_ms() <= 0 || lock_ms < delays->screen_lock_ms()) &&
       lock_ms < delays->idle_ms()) {
     delays->set_screen_lock_ms(lock_ms);
@@ -189,7 +180,7 @@ void PowerPolicyController::ApplyPrefs(const PrefValues& values) {
   delays->set_idle_ms(values.battery_idle_delay_ms);
 
   lock_ms = delays->screen_off_ms() + kScreenLockAfterOffDelayMs;
-  if (values.enable_screen_lock && delays->screen_off_ms() > 0 &&
+  if (values.enable_auto_screen_lock && delays->screen_off_ms() > 0 &&
       (delays->screen_lock_ms() <= 0 || lock_ms < delays->screen_lock_ms()) &&
       lock_ms < delays->idle_ms()) {
     delays->set_screen_lock_ms(lock_ms);
@@ -220,13 +211,6 @@ void PowerPolicyController::ApplyPrefs(const PrefValues& values) {
   SendCurrentPolicy();
 }
 
-void PowerPolicyController::ClearPrefs() {
-  prefs_policy_.Clear();
-  honor_screen_wake_locks_ = true;
-  prefs_were_set_ = false;
-  SendCurrentPolicy();
-}
-
 int PowerPolicyController::AddScreenWakeLock(const std::string& reason) {
   int id = next_wake_lock_id_++;
   screen_wake_locks_[id] = reason;
@@ -246,12 +230,6 @@ void PowerPolicyController::RemoveWakeLock(int id) {
     LOG(WARNING) << "Ignoring request to remove nonexistent wake lock " << id;
   else
     SendCurrentPolicy();
-}
-
-void PowerPolicyController::OnDBusThreadManagerDestroying(
-    DBusThreadManager* manager) {
-  DCHECK_EQ(manager, manager_);
-  SendEmptyPolicy();
 }
 
 void PowerPolicyController::PowerManagerRestarted() {
@@ -299,10 +277,6 @@ void PowerPolicyController::SendCurrentPolicy() {
   if (!reason.empty())
     policy.set_reason(reason);
   client_->SetPolicy(policy);
-}
-
-void PowerPolicyController::SendEmptyPolicy() {
-  client_->SetPolicy(power_manager::PowerManagementPolicy());
 }
 
 }  // namespace chromeos

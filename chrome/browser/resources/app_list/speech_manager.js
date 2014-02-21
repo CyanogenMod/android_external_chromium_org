@@ -22,6 +22,7 @@ cr.define('speech', function() {
     READY: 'READY',
     HOTWORD_RECOGNIZING: 'HOTWORD_RECOGNIZING',
     RECOGNIZING: 'RECOGNIZING',
+    IN_SPEECH: 'IN_SPEECH',
     STOPPING: 'STOPPING'
   };
 
@@ -31,14 +32,7 @@ cr.define('speech', function() {
   function SpeechManager() {
     this.audioManager_ = new speech.AudioManager();
     this.audioManager_.addEventListener('audio', this.onAudioLevel_.bind(this));
-    if (speech.isPluginAvailable()) {
-      var pluginManager = new speech.PluginManager(
-          this.onHotwordRecognizerReady_.bind(this),
-          this.onHotwordRecognized_.bind(this));
-      pluginManager.scheduleInitialize(
-          this.audioManager_.getSampleRate(),
-          'chrome://app-list/okgoogle_hotword.config');
-    }
+    this.shown_ = false;
     this.speechRecognitionManager_ = new speech.SpeechRecognitionManager(this);
     this.setState_(SpeechState.READY);
   }
@@ -50,7 +44,11 @@ cr.define('speech', function() {
    * @private
    */
   SpeechManager.prototype.setState_ = function(newState) {
+    if (this.state == newState)
+      return;
+
     this.state = newState;
+    chrome.send('setSpeechRecognitionState', [this.state]);
   };
 
   /**
@@ -79,7 +77,13 @@ cr.define('speech', function() {
     this.pluginManager_ = pluginManager;
     this.audioManager_.addEventListener(
         'audio', pluginManager.sendAudioData.bind(pluginManager));
-    this.setState_(SpeechState.READY);
+    if (this.shown_) {
+      this.pluginManager_.startRecognizer();
+      this.audioManager_.start();
+      this.setState_(SpeechState.HOTWORD_RECOGNIZING);
+    } else {
+      this.setState_(SpeechState.READY);
+    }
   };
 
   /**
@@ -113,7 +117,6 @@ cr.define('speech', function() {
    */
   SpeechManager.prototype.onSpeechRecognitionStarted = function() {
     this.setState_(SpeechState.RECOGNIZING);
-    chrome.send('setSpeechRecognitionState', ['on']);
   };
 
   /**
@@ -127,8 +130,8 @@ cr.define('speech', function() {
       this.setState_(SpeechState.HOTWORD_RECOGNIZING);
     } else {
       this.audioManager_.stop();
+      this.setState_(SpeechState.READY);
     }
-    chrome.send('setSpeechRecognitionState', ['off']);
   };
 
   /**
@@ -136,15 +139,15 @@ cr.define('speech', function() {
    */
   SpeechManager.prototype.onSpeechStarted = function() {
     if (this.state == SpeechState.RECOGNIZING)
-      chrome.send('setSpeechRecognitionState', ['in-speech']);
+      this.setState_(SpeechState.IN_SPEECH);
   };
 
   /**
    * Called when a speech has ended.
    */
   SpeechManager.prototype.onSpeechEnded = function() {
-    if (this.state == SpeechState.RECOGNIZING)
-      chrome.send('setSpeechRecognitionState', ['on']);
+    if (this.state == SpeechState.IN_SPEECH)
+      this.setState_(SpeechState.RECOGNIZING);
   };
 
   /**
@@ -158,9 +161,37 @@ cr.define('speech', function() {
   };
 
   /**
-   * Starts the speech recognition session.
+   * Changes the availability of the hotword plugin.
+   *
+   * @param {boolean} enabled Whether enabled or not.
    */
-  SpeechManager.prototype.start = function() {
+  SpeechManager.prototype.setHotwordEnabled = function(enabled) {
+    var recognizer = $('recognizer');
+    if (enabled) {
+      if (recognizer)
+        return;
+
+      var pluginManager = new speech.PluginManager(
+          this.onHotwordRecognizerReady_.bind(this),
+          this.onHotwordRecognized_.bind(this));
+      pluginManager.scheduleInitialize(
+          this.audioManager_.getSampleRate(),
+          'chrome://app-list/okgoogle_hotword.config');
+    } else {
+      if (!recognizer)
+        return;
+      document.body.removeChild(recognizer);
+      this.pluginManager_ = null;
+      if (this.state == SpeechState.HOTWORD_RECOGNIZING)
+        this.setState(SpeechState.READY);
+    }
+  };
+
+  /**
+   * Called when the app-list bubble is shown.
+   */
+  SpeechManager.prototype.onShown = function() {
+    this.shown_ = true;
     if (!this.pluginManager_)
       return;
 
@@ -175,15 +206,17 @@ cr.define('speech', function() {
   };
 
   /**
-   * Stops the speech recognition session.
+   * Called when the app-list bubble is hidden.
    */
-  SpeechManager.prototype.stop = function() {
+  SpeechManager.prototype.onHidden = function() {
+    this.shown_ = false;
     if (this.pluginManager_)
       this.pluginManager_.stopRecognizer();
 
     // SpeechRecognition is asynchronous.
     this.audioManager_.stop();
-    if (this.state == SpeechState.RECOGNIZING) {
+    if (this.state == SpeechState.RECOGNIZING ||
+        this.state == SpeechState.IN_SPEECH) {
       this.setState_(SpeechState.STOPPING);
       this.speechRecognitionManager_.stop();
     } else {
@@ -195,7 +228,8 @@ cr.define('speech', function() {
    * Toggles the current state of speech recognition.
    */
   SpeechManager.prototype.toggleSpeechRecognition = function() {
-    if (this.state == SpeechState.RECOGNIZING) {
+    if (this.state == SpeechState.RECOGNIZING ||
+        this.state == SpeechState.IN_SPEECH) {
       this.audioManager_.stop();
       this.speechRecognitionManager_.stop();
     } else {

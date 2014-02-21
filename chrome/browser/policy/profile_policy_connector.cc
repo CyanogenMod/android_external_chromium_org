@@ -9,16 +9,19 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/policy_transformations.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/configuration_policy_provider.h"
 #include "components/policy/core/common/forwarding_policy_provider.h"
 #include "components/policy/core/common/policy_service_impl.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_provider.h"
 #include "chrome/browser/chromeos/policy/login_profile_policy_provider.h"
@@ -28,7 +31,10 @@ namespace policy {
 
 ProfilePolicyConnector::ProfilePolicyConnector()
 #if defined(OS_CHROMEOS)
-    : is_primary_user_(false)
+    : is_primary_user_(false),
+      user_cloud_policy_manager_(NULL)
+#else
+    : user_cloud_policy_manager_(NULL)
 #endif
       {}
 
@@ -41,6 +47,8 @@ void ProfilePolicyConnector::Init(
 #endif
     SchemaRegistry* schema_registry,
     CloudPolicyManager* user_cloud_policy_manager) {
+  user_cloud_policy_manager_ = user_cloud_policy_manager;
+
   // |providers| contains a list of the policy providers available for the
   // PolicyService of this connector, in decreasing order of priority.
   //
@@ -51,8 +59,13 @@ void ProfilePolicyConnector::Init(
   // result is true, so take care if a provider overrides that.
   std::vector<ConfigurationPolicyProvider*> providers;
 
+#if defined(OS_CHROMEOS)
+  BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+#else
   BrowserPolicyConnector* connector =
       g_browser_process->browser_policy_connector();
+#endif
 
   if (connector->GetPlatformProvider()) {
     forwarding_policy_provider_.reset(
@@ -88,8 +101,7 @@ void ProfilePolicyConnector::Init(
     providers.push_back(special_user_policy_provider_.get());
 #endif
 
-  policy_service_.reset(new PolicyServiceImpl(
-      providers, base::Bind(&policy::FixDeprecatedPolicies)));
+  policy_service_.reset(new PolicyServiceImpl(providers));
 
 #if defined(OS_CHROMEOS)
   if (is_primary_user_) {
@@ -107,8 +119,10 @@ void ProfilePolicyConnector::InitForTesting(scoped_ptr<PolicyService> service) {
 
 void ProfilePolicyConnector::Shutdown() {
 #if defined(OS_CHROMEOS)
+  BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (is_primary_user_)
-    g_browser_process->browser_policy_connector()->SetUserPolicyDelegate(NULL);
+    connector->SetUserPolicyDelegate(NULL);
   if (special_user_policy_provider_)
     special_user_policy_provider_->Shutdown();
 #endif
@@ -116,12 +130,25 @@ void ProfilePolicyConnector::Shutdown() {
     forwarding_policy_provider_->Shutdown();
 }
 
+bool ProfilePolicyConnector::IsManaged() const {
+  return !GetManagementDomain().empty();
+}
+
+std::string ProfilePolicyConnector::GetManagementDomain() const {
+  if (!user_cloud_policy_manager_)
+    return "";
+  CloudPolicyStore* store = user_cloud_policy_manager_->core()->store();
+  if (store && store->is_managed() && store->policy()->has_username())
+    return gaia::ExtractDomainName(store->policy()->username());
+  return "";
+}
+
 #if defined(OS_CHROMEOS)
 void ProfilePolicyConnector::InitializeDeviceLocalAccountPolicyProvider(
     const std::string& username,
     SchemaRegistry* schema_registry) {
-  BrowserPolicyConnector* connector =
-      g_browser_process->browser_policy_connector();
+  BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   DeviceLocalAccountPolicyService* device_local_account_policy_service =
       connector->GetDeviceLocalAccountPolicyService();
   if (!device_local_account_policy_service)

@@ -11,6 +11,9 @@
 #include <algorithm>
 
 namespace {
+
+const unsigned int kMaxLatencyInfoNumber = 100;
+
 const char* GetComponentName(ui::LatencyComponentType type) {
 #define CASE_TYPE(t) case ui::t:  return #t
   switch (type) {
@@ -119,16 +122,28 @@ LatencyInfo::LatencyInfo() : trace_id(-1), terminated(false) {
 LatencyInfo::~LatencyInfo() {
 }
 
-void LatencyInfo::MergeWith(const LatencyInfo& other) {
+bool LatencyInfo::Verify(const std::vector<LatencyInfo>& latency_info,
+                         const char* referring_msg) {
+  if (latency_info.size() > kMaxLatencyInfoNumber) {
+    LOG(ERROR) << referring_msg << ", LatencyInfo vector size "
+               << latency_info.size() << " is too big.";
+    return false;
+  }
+  return true;
+}
+
+void LatencyInfo::CopyLatencyFrom(const LatencyInfo& other,
+                                  LatencyComponentType type) {
   for (LatencyMap::const_iterator it = other.latency_components.begin();
        it != other.latency_components.end();
        ++it) {
-    AddLatencyNumberWithTimestamp(it->first.first,
-                                  it->first.second,
-                                  it->second.sequence_number,
-                                  it->second.event_time,
-                                  it->second.event_count,
-                                  false);
+    if (it->first.first == type) {
+      AddLatencyNumberWithTimestamp(it->first.first,
+                                    it->first.second,
+                                    it->second.sequence_number,
+                                    it->second.event_time,
+                                    it->second.event_count);
+    }
   }
 }
 
@@ -141,8 +156,7 @@ void LatencyInfo::AddNewLatencyFrom(const LatencyInfo& other) {
                                       it->first.second,
                                       it->second.sequence_number,
                                       it->second.event_time,
-                                      it->second.event_count,
-                                      false);
+                                      it->second.event_count);
       }
     }
 }
@@ -151,16 +165,15 @@ void LatencyInfo::AddLatencyNumber(LatencyComponentType component,
                                    int64 id,
                                    int64 component_sequence_number) {
   AddLatencyNumberWithTimestamp(component, id, component_sequence_number,
-                                base::TimeTicks::HighResNow(), 1, true);
+                                base::TimeTicks::HighResNow(), 1);
 }
 
 void LatencyInfo::AddLatencyNumberWithTimestamp(LatencyComponentType component,
                                                 int64 id,
                                                 int64 component_sequence_number,
                                                 base::TimeTicks time,
-                                                uint32 event_count,
-                                                bool dump_to_trace) {
-  if (dump_to_trace && IsBeginComponent(component)) {
+                                                uint32 event_count) {
+  if (IsBeginComponent(component)) {
     // Should only ever add begin component once.
     CHECK_EQ(-1, trace_id);
     trace_id = component_sequence_number;
@@ -188,7 +201,7 @@ void LatencyInfo::AddLatencyNumberWithTimestamp(LatencyComponentType component,
     }
   }
 
-  if (dump_to_trace && IsTerminalComponent(component) && trace_id != -1) {
+  if (IsTerminalComponent(component) && trace_id != -1) {
     // Should only ever add terminal component once.
     CHECK(!terminated);
     terminated = true;
@@ -226,6 +239,13 @@ void LatencyInfo::RemoveLatency(LatencyComponentType type) {
 
 void LatencyInfo::Clear() {
   latency_components.clear();
+}
+
+void LatencyInfo::TraceEventType(const char* event_type) {
+  TRACE_EVENT_ASYNC_STEP_INTO0("benchmark",
+                               "InputLatency",
+                               TRACE_ID_DONT_MANGLE(trace_id),
+                               event_type);
 }
 
 }  // namespace ui

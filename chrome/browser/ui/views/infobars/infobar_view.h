@@ -41,6 +41,8 @@ class InfoBarView : public InfoBar,
   const SkPath& stroke_path() const { return stroke_path_; }
 
  protected:
+  typedef std::vector<views::Label*> Labels;
+
   static const int kButtonButtonSpacing;
   static const int kEndOfLabelSpacing;
 
@@ -66,6 +68,12 @@ class InfoBarView : public InfoBar,
                                                const base::string16& text,
                                                bool needs_elevation);
 
+  // Given |labels| and the total |available_width| to display them in, sets
+  // each label's size so that the longest label shrinks until it reaches the
+  // length of the next-longest label, then both shrink until reaching the
+  // length of the next-longest, and so forth.
+  static void AssignWidths(Labels* labels, int available_width);
+
   // views::View:
   virtual void Layout() OVERRIDE;
   virtual void ViewHierarchyChanged(
@@ -80,17 +88,17 @@ class InfoBarView : public InfoBar,
   // Returns the minimum width the content (that is, everything between the icon
   // and the close button) can be shrunk to.  This is used to prevent the close
   // button from overlapping views that cannot be shrunk any further.
-  virtual int ContentMinimumWidth() const;
+  virtual int ContentMinimumWidth();
 
   // These return x coordinates delimiting the usable area for subclasses to lay
   // out their controls.
   int StartX() const;
   int EndX() const;
 
-  // Given a control with size |prefsize|, returns the centered y position
-  // within us, taking into account animation so the control "slides in" (or
-  // out) as we animate open and closed.
-  int OffsetY(const gfx::Size& prefsize) const;
+  // Given a |view|, returns the centered y position within us, taking into
+  // account animation so the control "slides in" (or out) as we animate open
+  // and closed.
+  int OffsetY(views::View* view) const;
 
   // Convenience getter.
   const InfoBarContainer::Delegate* container_delegate() const;
@@ -105,6 +113,10 @@ class InfoBarView : public InfoBar,
  private:
   static const int kHorizontalPadding;
   static const int kCloseButtonSpacing;
+
+  // Does the actual work for AssignWidths().  Assumes |labels| is sorted by
+  // decreasing preferred width.
+  static void AssignWidthsSorted(Labels* labels, int available_width);
 
   // InfoBar:
   virtual void PlatformSpecificShow(bool animate) OVERRIDE;

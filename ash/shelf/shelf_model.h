@@ -6,7 +6,7 @@
 #define ASH_SHELF_SHELF_MODEL_H_
 
 #include "ash/ash_export.h"
-#include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_item_types.h"
 #include "base/basictypes.h"
 #include "base/observer_list.h"
 
@@ -27,11 +27,11 @@ class ASH_EXPORT ShelfModel {
   ~ShelfModel();
 
   // Adds a new item to the model. Returns the resulting index.
-  int Add(const LauncherItem& item);
+  int Add(const ShelfItem& item);
 
   // Adds the item. |index| is the requested insertion index, which may be
   // modified to meet type-based ordering. Returns the actual insertion index.
-  int AddAt(int index, const LauncherItem& item);
+  int AddAt(int index, const ShelfItem& item);
 
   // Removes the item at |index|.
   void RemoveItemAt(int index);
@@ -42,31 +42,36 @@ class ASH_EXPORT ShelfModel {
 
   // Resets the item at the specified index. The item maintains its existing
   // id and type.
-  void Set(int index, const LauncherItem& item);
+  void Set(int index, const ShelfItem& item);
 
   // Returns the index of the item by id.
-  int ItemIndexByID(LauncherID id) const;
+  int ItemIndexByID(ShelfID id) const;
 
   // Returns the |index| of the item matching |type| in |items_|.
   // Returns -1 if the matching item is not found.
   // Note: Requires a linear search.
-  int GetItemIndexForType(LauncherItemType type);
+  int GetItemIndexForType(ShelfItemType type);
+
+  // Returns the index of the first running application or the index where the
+  // first running application would go if there are no running (non pinned)
+  // applications yet.
+  int FirstRunningAppIndex() const;
 
   // Returns the index of the first panel or the index where the first panel
   // would go if there are no panels.
   int FirstPanelIndex() const;
 
   // Returns the id assigned to the next item added.
-  LauncherID next_id() const { return next_id_; }
+  ShelfID next_id() const { return next_id_; }
 
   // Returns a reserved id which will not be used by the |ShelfModel|.
-  LauncherID reserve_external_id() { return next_id_++; }
+  ShelfID reserve_external_id() { return next_id_++; }
 
   // Returns an iterator into items() for the item with the specified id, or
   // items().end() if there is no item with the specified id.
-  LauncherItems::const_iterator ItemByID(LauncherID id) const;
+  ShelfItems::const_iterator ItemByID(ShelfID id) const;
 
-  const LauncherItems& items() const { return items_; }
+  const ShelfItems& items() const { return items_; }
   int item_count() const { return static_cast<int>(items_.size()); }
 
   void SetStatus(Status status);
@@ -79,12 +84,12 @@ class ASH_EXPORT ShelfModel {
   // Makes sure |index| is in line with the type-based order of items. If that
   // is not the case, adjusts index by shifting it to the valid range and
   // returns the new value.
-  int ValidateInsertionIndex(LauncherItemType type, int index) const;
+  int ValidateInsertionIndex(ShelfItemType type, int index) const;
 
   // ID assigned to the next item.
-  LauncherID next_id_;
+  ShelfID next_id_;
 
-  LauncherItems items_;
+  ShelfItems items_;
   Status status_;
   ObserverList<ShelfModelObserver> observers_;
 

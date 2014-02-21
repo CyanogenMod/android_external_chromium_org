@@ -51,7 +51,10 @@ void InputMethodAuraLinux::Initialize() {
 // Overriden from InputMethod.
 
 void InputMethodAuraLinux::Init(bool focused) {
-  CHECK(LinuxInputMethodContextFactory::instance());
+  CHECK(LinuxInputMethodContextFactory::instance())
+      << "This failure was likely caused because "
+      << "ui::InitializeInputMethod(ForTesting) was not called "
+      << "before instantiating this class.";
   input_method_context_ =
       LinuxInputMethodContextFactory::instance()->CreateInputMethodContext(
           this);
@@ -133,10 +136,6 @@ void InputMethodAuraLinux::OnInputLocaleChanged() {
 
 std::string InputMethodAuraLinux::GetInputLocale() {
   return "";
-}
-
-base::i18n::TextDirection InputMethodAuraLinux::GetInputTextDirection() {
-  return input_method_context_->GetInputTextDirection();
 }
 
 bool InputMethodAuraLinux::IsActive() {

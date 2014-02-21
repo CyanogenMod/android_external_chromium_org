@@ -16,9 +16,6 @@
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_runtime.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -26,6 +23,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/extension.h"
@@ -83,13 +82,13 @@ bool MakePathAbsolute(const base::FilePath& current_directory,
   return true;
 }
 
-bool GetAbsolutePathFromCommandLine(const CommandLine* command_line,
+bool GetAbsolutePathFromCommandLine(const CommandLine& command_line,
                                     const base::FilePath& current_directory,
                                     base::FilePath* path) {
-  if (!command_line || !command_line->GetArgs().size())
+  if (!command_line.GetArgs().size())
     return false;
 
-  base::FilePath relative_path(command_line->GetArgs()[0]);
+  base::FilePath relative_path(command_line.GetArgs()[0]);
   base::FilePath absolute_path(relative_path);
   if (!MakePathAbsolute(current_directory, &absolute_path)) {
     LOG(WARNING) << "Cannot make absolute path from " << relative_path.value();
@@ -312,7 +311,7 @@ class PlatformAppPathLauncher
 
 void LaunchPlatformAppWithCommandLine(Profile* profile,
                                       const Extension* extension,
-                                      const CommandLine* command_line,
+                                      const CommandLine& command_line,
                                       const base::FilePath& current_directory) {
   if (!AppsClient::Get()->CheckAppLaunch(profile, extension))
     return;
@@ -356,7 +355,10 @@ void LaunchPlatformAppWithPath(Profile* profile,
 }
 
 void LaunchPlatformApp(Profile* profile, const Extension* extension) {
-  LaunchPlatformAppWithCommandLine(profile, extension, NULL, base::FilePath());
+  LaunchPlatformAppWithCommandLine(profile,
+                                   extension,
+                                   CommandLine(CommandLine::NO_PROGRAM),
+                                   base::FilePath());
 }
 
 void LaunchPlatformAppWithFileHandler(Profile* profile,
@@ -386,8 +388,8 @@ void RestartPlatformApp(Profile* profile, const Extension* extension) {
     return;
   }
 
-  extensions::ExtensionPrefs* extension_prefs = ExtensionSystem::Get(profile)->
-      extension_service()->extension_prefs();
+  extensions::ExtensionPrefs* extension_prefs =
+      extensions::ExtensionPrefs::Get(profile);
   bool had_windows = extension_prefs->IsActive(extension->id());
   extension_prefs->SetIsActive(extension->id(), false);
   bool listening_to_launch = event_router->

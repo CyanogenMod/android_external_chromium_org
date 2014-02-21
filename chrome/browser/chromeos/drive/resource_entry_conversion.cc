@@ -59,10 +59,6 @@ bool ConvertToResourceEntry(const google_apis::ResourceEntry& input,
   if (parent_link)
     parent_resource_id = util::ExtractResourceIdFromUrl(parent_link->href());
 
-  // Apply mapping from an empty parent to the special dummy directory.
-  if (parent_resource_id.empty())
-    parent_resource_id = util::kDriveOtherDirLocalId;
-
   converted.set_deleted(input.deleted());
   converted.set_shared_with_me(HasLabel(input, kSharedWithMeLabel));
   converted.set_shared(HasLabel(input, kSharedLabel));
@@ -137,8 +133,8 @@ bool ConvertToResourceEntry(const google_apis::ResourceEntry& input,
   return true;
 }
 
-void ConvertResourceEntryToPlatformFileInfo(const ResourceEntry& entry,
-                                            base::PlatformFileInfo* file_info) {
+void ConvertResourceEntryToFileInfo(const ResourceEntry& entry,
+                                    base::File::Info* file_info) {
   file_info->size = entry.file_info().size();
   file_info->is_directory = entry.file_info().is_directory();
   file_info->is_symbolic_link = entry.file_info().is_symbolic_link();
@@ -150,7 +146,7 @@ void ConvertResourceEntryToPlatformFileInfo(const ResourceEntry& entry,
       entry.file_info().creation_time());
 }
 
-void SetPlatformFileInfoToResourceEntry(const base::PlatformFileInfo& file_info,
+void SetPlatformFileInfoToResourceEntry(const base::File::Info& file_info,
                                         ResourceEntry* entry) {
   PlatformFileInfoProto* entry_file_info = entry->mutable_file_info();
   entry_file_info->set_size(file_info.size);

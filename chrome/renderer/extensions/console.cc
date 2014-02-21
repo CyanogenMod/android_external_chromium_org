@@ -135,7 +135,7 @@ void AddMessage(content::RenderView* render_view,
       break;
   }
   web_view->mainFrame()->addMessageToConsole(
-      blink::WebConsoleMessage(target_level, ASCIIToUTF16(message)));
+      blink::WebConsoleMessage(target_level, base::UTF8ToUTF16(message)));
 }
 
 void Debug(v8::Handle<v8::Context> context, const std::string& message) {
@@ -177,7 +177,7 @@ void AddMessage(v8::Handle<v8::Context> context,
 v8::Local<v8::Object> AsV8Object() {
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::EscapableHandleScope handle_scope(isolate);
-  v8::Local<v8::Object> console_object = v8::Object::New();
+  v8::Local<v8::Object> console_object = v8::Object::New(isolate);
   BindLogMethod(isolate, console_object, "debug", &Debug);
   BindLogMethod(isolate, console_object, "log", &Log);
   BindLogMethod(isolate, console_object, "warn", &Warn);

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <string>
 
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,8 +23,8 @@
 #include "chrome/browser/ui/views/tab_icon_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
@@ -38,7 +37,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/path.h"
@@ -47,9 +46,14 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/layout_constants.h"
+#include "ui/views/views_delegate.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/window/frame_background.h"
 #include "ui/views/window/window_shape.h"
+
+#if defined(OS_LINUX)
+#include "ui/views/controls/menu/menu_runner.h"
+#endif
 
 using content::WebContents;
 
@@ -123,15 +127,16 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
 
   // Initializing the TabIconView is expensive, so only do it if we need to.
   if (browser_view->ShouldShowWindowIcon()) {
-    window_icon_ = new TabIconView(this);
+    window_icon_ = new TabIconView(this, this);
     window_icon_->set_is_light(true);
     window_icon_->set_id(VIEW_ID_WINDOW_ICON);
     AddChildView(window_icon_);
     window_icon_->Update();
   }
 
-  window_title_ = new views::Label(browser_view->GetWindowTitle(),
-                                   BrowserFrame::GetTitleFont());
+  window_title_ = new views::Label(
+      browser_view->GetWindowTitle(),
+      gfx::FontList(BrowserFrame::GetTitleFontList()));
   window_title_->SetVisible(browser_view->ShouldShowWindowTitle());
   window_title_->SetEnabledColor(SK_ColorWHITE);
   // TODO(msw): Use a transparent background color as a workaround to use the
@@ -142,7 +147,7 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
   AddChildView(window_title_);
 
   if (browser_view->IsRegularOrGuestSession() &&
-      profiles::IsNewProfileManagementEnabled())
+      switches::IsNewProfileManagement())
     UpdateNewStyleAvatarInfo(this, NewAvatarButton::THEMED_BUTTON);
   else
     UpdateAvatarInfo();
@@ -152,8 +157,8 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
                    content::NotificationService::AllSources());
   }
 
-  platform_observer_.reset(
-      OpaqueBrowserFrameViewPlatformSpecific::Create(this, layout_));
+  platform_observer_.reset(OpaqueBrowserFrameViewPlatformSpecific::Create(
+      this, layout_, browser_view->browser()->profile()));
 }
 
 OpaqueBrowserFrameView::~OpaqueBrowserFrameView() {
@@ -221,7 +226,7 @@ int OpaqueBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
   gfx::Rect sysmenu_rect(IconBounds());
   // In maximized mode we extend the rect to the screen corner to take advantage
   // of Fitts' Law.
-  if (frame()->IsMaximized())
+  if (layout_->IsTitleBarCondensed())
     sysmenu_rect.SetRect(0, 0, sysmenu_rect.right(), sysmenu_rect.bottom());
   sysmenu_rect.set_x(GetMirroredXForRect(sysmenu_rect));
   if (sysmenu_rect.Contains(point))
@@ -260,7 +265,7 @@ void OpaqueBrowserFrameView::GetWindowMask(const gfx::Size& size,
                                            gfx::Path* window_mask) {
   DCHECK(window_mask);
 
-  if (frame()->IsMaximized() || frame()->IsFullscreen())
+  if (layout_->IsTitleBarCondensed() || frame()->IsFullscreen())
     return;
 
   views::GetDefaultWindowMask(size, window_mask);
@@ -366,6 +371,19 @@ void OpaqueBrowserFrameView::ButtonPressed(views::Button* sender,
     browser_view()->ShowAvatarBubbleFromAvatarButton();
 }
 
+void OpaqueBrowserFrameView::OnMenuButtonClicked(views::View* source,
+                                                 const gfx::Point& point) {
+#if defined(OS_LINUX)
+  views::MenuRunner menu_runner(frame()->GetSystemMenuModel());
+  ignore_result(menu_runner.RunMenuAt(browser_view()->GetWidget(),
+                                      window_icon_,
+                                      window_icon_->GetBoundsInScreen(),
+                                      views::MenuItemView::TOPLEFT,
+                                      ui::MENU_SOURCE_MOUSE,
+                                      views::MenuRunner::HAS_MNEMONICS));
+#endif
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // OpaqueBrowserFrameView, TabIconView::TabContentsProvider implementation:
 
@@ -396,7 +414,7 @@ void OpaqueBrowserFrameView::Observe(
   switch (type) {
     case chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED:
       if (browser_view() ->IsRegularOrGuestSession() &&
-          profiles::IsNewProfileManagementEnabled())
+          switches::IsNewProfileManagement())
         UpdateNewStyleAvatarInfo(this, NewAvatarButton::THEMED_BUTTON);
       else
         UpdateAvatarInfo();
@@ -412,7 +430,8 @@ void OpaqueBrowserFrameView::Observe(
 
 bool OpaqueBrowserFrameView::ShouldShowWindowIcon() const {
   views::WidgetDelegate* delegate = frame()->widget_delegate();
-  return delegate && delegate->ShouldShowWindowIcon();
+  return ShouldShowWindowTitleBar() && delegate &&
+         delegate->ShouldShowWindowIcon();
 }
 
 bool OpaqueBrowserFrameView::ShouldShowWindowTitle() const {
@@ -420,10 +439,11 @@ bool OpaqueBrowserFrameView::ShouldShowWindowTitle() const {
   // a window is being destroyed.
   // See more discussion at http://crosbug.com/8958
   views::WidgetDelegate* delegate = frame()->widget_delegate();
-  return delegate && delegate->ShouldShowWindowTitle();
+  return ShouldShowWindowTitleBar() && delegate &&
+         delegate->ShouldShowWindowTitle();
 }
 
-string16 OpaqueBrowserFrameView::GetWindowTitle() const {
+base::string16 OpaqueBrowserFrameView::GetWindowTitle() const {
   return frame()->widget_delegate()->GetWindowTitle();
 }
 
@@ -433,7 +453,8 @@ int OpaqueBrowserFrameView::GetIconSize() const {
   // size are increased.
   return GetSystemMetrics(SM_CYSMICON);
 #else
-  return std::max(BrowserFrame::GetTitleFont().GetHeight(), kIconMinimumSize);
+  return std::max(BrowserFrame::GetTitleFontList().GetHeight(),
+                  kIconMinimumSize);
 #endif
 }
 
@@ -448,9 +469,7 @@ gfx::Size OpaqueBrowserFrameView::GetBrowserViewMinimumSize() const {
 bool OpaqueBrowserFrameView::ShouldShowCaptionButtons() const {
   if (!OpaqueBrowserFrameViewLayout::ShouldAddDefaultCaptionButtons())
     return false;
-  if (!platform_observer_)
-    return true;
-  return platform_observer_->ShouldShowCaptionButtons();
+  return ShouldShowWindowTitleBar();
 }
 
 bool OpaqueBrowserFrameView::ShouldShowAvatar() const {
@@ -506,7 +525,7 @@ void OpaqueBrowserFrameView::OnPaint(gfx::Canvas* canvas) {
   if (frame()->IsFullscreen())
     return;  // Nothing is visible, so don't bother to paint.
 
-  if (frame()->IsMaximized())
+  if (layout_->IsTitleBarCondensed())
     PaintMaximizedFrameBorder(canvas);
   else
     PaintRestoredFrameBorder(canvas);
@@ -521,7 +540,7 @@ void OpaqueBrowserFrameView::OnPaint(gfx::Canvas* canvas) {
 
   if (browser_view()->IsToolbarVisible())
     PaintToolbarBackground(canvas);
-  if (!frame()->IsMaximized())
+  if (!layout_->IsTitleBarCondensed())
     PaintRestoredClientEdge(canvas);
 }
 
@@ -570,6 +589,21 @@ int OpaqueBrowserFrameView::NonClientBorderThickness() const {
 
 gfx::Rect OpaqueBrowserFrameView::IconBounds() const {
   return layout_->IconBounds();
+}
+
+bool OpaqueBrowserFrameView::ShouldShowWindowTitleBar() const {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Do not show the custom title bar if the system title bar option is enabled.
+  if (!frame()->UseCustomFrame())
+    return false;
+#endif
+
+  // Do not show caption buttons if the window manager is forcefully providing a
+  // title bar (e.g., in Ubuntu Unity, if the window is maximized).
+  if (!views::ViewsDelegate::views_delegate)
+    return true;
+  return !views::ViewsDelegate::views_delegate->WindowManagerProvidesTitleBar(
+              IsMaximized());
 }
 
 void OpaqueBrowserFrameView::PaintRestoredFrameBorder(gfx::Canvas* canvas) {
@@ -820,24 +854,25 @@ void OpaqueBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
 
 SkColor OpaqueBrowserFrameView::GetFrameColor() const {
   bool is_incognito = browser_view()->IsOffTheRecord();
-  if (browser_view()->IsBrowserTypeNormal()) {
-    if (ShouldPaintAsActive()) {
-      return GetThemeProvider()->GetColor(is_incognito ?
-          ThemeProperties::COLOR_FRAME_INCOGNITO :
-          ThemeProperties::COLOR_FRAME);
-    }
-    return GetThemeProvider()->GetColor(is_incognito ?
-        ThemeProperties::COLOR_FRAME_INCOGNITO_INACTIVE :
-        ThemeProperties::COLOR_FRAME_INACTIVE);
-  }
-  // Never theme app and popup windows.
+  ThemeProperties::OverwritableByUserThemeProperty color_id;
   if (ShouldPaintAsActive()) {
-    return ThemeProperties::GetDefaultColor(is_incognito ?
-        ThemeProperties::COLOR_FRAME_INCOGNITO : ThemeProperties::COLOR_FRAME);
+    color_id = is_incognito ?
+               ThemeProperties::COLOR_FRAME_INCOGNITO :
+               ThemeProperties::COLOR_FRAME;
+  } else {
+    color_id = is_incognito ?
+               ThemeProperties::COLOR_FRAME_INCOGNITO_INACTIVE :
+               ThemeProperties::COLOR_FRAME_INACTIVE;
   }
-  return ThemeProperties::GetDefaultColor(is_incognito ?
-      ThemeProperties::COLOR_FRAME_INCOGNITO_INACTIVE :
-      ThemeProperties::COLOR_FRAME_INACTIVE);
+
+  if (browser_view()->IsBrowserTypeNormal() ||
+      platform_observer_->IsUsingNativeTheme()) {
+    return GetThemeProvider()->GetColor(color_id);
+  }
+
+  // Never theme app and popup windows unless the |platform_observer_|
+  // requested an override.
+  return ThemeProperties::GetDefaultColor(color_id);
 }
 
 gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {
@@ -853,8 +888,6 @@ gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {
     }
     return GetThemeProvider()->GetImageSkiaNamed(resource_id);
   }
-  // Never theme app and popup windows.
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (ShouldPaintAsActive()) {
     resource_id = is_incognito ?
         IDR_THEME_FRAME_INCOGNITO : IDR_FRAME;
@@ -862,6 +895,15 @@ gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {
     resource_id = is_incognito ?
         IDR_THEME_FRAME_INCOGNITO_INACTIVE : IDR_THEME_FRAME_INACTIVE;
   }
+
+  if (platform_observer_->IsUsingNativeTheme()) {
+    // We want to use theme images provided by the platform theme when enabled,
+    // even if we are an app or popup window.
+    return GetThemeProvider()->GetImageSkiaNamed(resource_id);
+  }
+
+  // Otherwise, never theme app and popup windows.
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetImageSkiaNamed(resource_id);
 }
 

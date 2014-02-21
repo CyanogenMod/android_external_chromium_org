@@ -10,7 +10,6 @@
 #include "mojo/public/system/core_cpp.h"
 
 namespace mojo {
-namespace utility {
 
 class RunLoopHandler;
 
@@ -37,10 +36,17 @@ class RunLoop {
                   MojoWaitFlags wait_flags,
                   MojoDeadline deadline);
   void RemoveHandler(const Handle& handle);
+  bool HasHandler(const Handle& handle) const;
 
   // Runs the loop servicing handles as they are ready. This returns when Quit()
   // is invoked, or there no more handles.
   void Run();
+
+  // Runs the loop servicing any handles that are ready. Does not wait for
+  // handles to become ready before returning. Returns early if Quit() is
+  // invoked.
+  void RunUntilIdle();
+
   void Quit();
 
  private:
@@ -65,18 +71,21 @@ class RunLoop {
   typedef std::map<Handle, HandlerData> HandleToHandlerData;
 
   // Waits for a handle to be ready. Returns after servicing at least one
-  // handle (or there are no more handles).
-  void Wait();
+  // handle (or there are no more handles) unless |non_blocking| is true,
+  // in which case it will also return if servicing at least one handle
+  // would require blocking. Returns true if a RunLoopHandler was notified.
+  bool Wait(bool non_blocking);
 
-  // Notifies any handlers whose deadline has expired.
-  void NotifyDeadlineExceeded();
+  // Notifies any handlers whose deadline has expired. Returns true if a
+  // RunLoopHandler was notified.
+  bool NotifyDeadlineExceeded();
 
   // Removes the first invalid handle. This is called if MojoWaitMany() finds an
-  // invalid handle.
-  void RemoveFirstInvalidHandle(const WaitState& wait_state);
+  // invalid handle. Returns true if a RunLoopHandler was notified.
+  bool RemoveFirstInvalidHandle(const WaitState& wait_state);
 
   // Returns the state needed to pass to WaitMany().
-  WaitState GetWaitState() const;
+  WaitState GetWaitState(bool non_blocking) const;
 
   HandleToHandlerData handler_data_;
 
@@ -94,7 +103,6 @@ class RunLoop {
   MOJO_DISALLOW_COPY_AND_ASSIGN(RunLoop);
 };
 
-}  // namespace utility
 }  // namespace mojo
 
 #endif  // MOJO_PUBLIC_UTILITY_RUN_LOOP_H_

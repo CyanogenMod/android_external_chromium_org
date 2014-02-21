@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_ITEM_CONTROLLER_H_
 #define CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_ITEM_CONTROLLER_H_
 
-#include "ash/launcher/launcher_types.h"
 #include "ash/shelf/shelf_item_delegate.h"
+#include "ash/shelf/shelf_item_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
@@ -44,8 +44,8 @@ class LauncherItemController : public ash::ShelfItemDelegate {
   virtual ~LauncherItemController();
 
   Type type() const { return type_; }
-  ash::LauncherID launcher_id() const { return launcher_id_; }
-  void set_launcher_id(ash::LauncherID id) { launcher_id_ = id; }
+  ash::ShelfID shelf_id() const { return shelf_id_; }
+  void set_shelf_id(ash::ShelfID id) { shelf_id_ = id; }
   virtual const std::string& app_id() const;
   ChromeLauncherController* launcher_controller() const {
     return launcher_controller_;
@@ -78,14 +78,11 @@ class LauncherItemController : public ash::ShelfItemDelegate {
   // Returns true when a new item got created.
   virtual bool Activate(ash::LaunchSource source) = 0;
 
-  // Closes all windows associated with this item.
-  virtual void Close() = 0;
-
   // Called to retrieve the list of running applications.
   virtual ChromeLauncherAppMenuItems GetApplicationList(int event_flags) = 0;
 
-  // Helper function to get the ash::LauncherItemType for the item type.
-  ash::LauncherItemType GetLauncherItemType() const;
+  // Helper function to get the ash::ShelfItemType for the item type.
+  ash::ShelfItemType GetShelfItemType() const;
 
  protected:
   // Helper function to return the title associated with |app_id_|.
@@ -96,7 +93,7 @@ class LauncherItemController : public ash::ShelfItemDelegate {
   const Type type_;
   // App id will be empty if there is no app associated with the window.
   const std::string app_id_;
-  ash::LauncherID launcher_id_;
+  ash::ShelfID shelf_id_;
   ChromeLauncherController* launcher_controller_;
 
   // The lock counter which tells the launcher if the item can be removed from

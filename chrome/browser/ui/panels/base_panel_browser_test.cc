@@ -11,7 +11,6 @@
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -30,6 +29,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 
@@ -554,12 +554,12 @@ NativePanelTesting* BasePanelBrowserTest::CreateNativePanelTesting(
 scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
     const base::FilePath::StringType& path,
     extensions::Manifest::Location location,
-    const DictionaryValue& extra_value) {
+    const base::DictionaryValue& extra_value) {
   extensions::ExtensionPrefs* extension_prefs =
       extensions::ExtensionPrefs::Get(browser()->profile());
   base::FilePath full_path = extension_prefs->install_directory().Append(path);
 
-  scoped_ptr<DictionaryValue> input_value(extra_value.DeepCopy());
+  scoped_ptr<base::DictionaryValue> input_value(extra_value.DeepCopy());
   input_value->SetString(extensions::manifest_keys::kVersion, "1.0.0.0");
   input_value->SetString(extensions::manifest_keys::kName, "Sample Extension");
 
@@ -572,7 +572,7 @@ scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
       OnExtensionInstalled(extension.get(),
                            syncer::StringOrdinal(),
                            false /* no requirement errors */,
-                           extensions::Blacklist::NOT_BLACKLISTED,
+                           extensions::NOT_BLACKLISTED,
                            false /* don't wait for idle */);
   return extension;
 }

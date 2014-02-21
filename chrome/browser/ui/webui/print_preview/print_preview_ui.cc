@@ -163,7 +163,7 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_PREVIEW_NATIVE_DIALOG);
   source->AddLocalizedString("previewFailed", IDS_PRINT_PREVIEW_FAILED);
   source->AddLocalizedString("invalidPrinterSettings",
-                             IDS_PRINT_PREVIEW_INVALID_PRINTER_SETTINGS);
+                             IDS_PRINT_INVALID_PRINTER_SETTINGS);
   source->AddLocalizedString("printButton", IDS_PRINT_PREVIEW_PRINT_BUTTON);
   source->AddLocalizedString("saveButton", IDS_PRINT_PREVIEW_SAVE_BUTTON);
   source->AddLocalizedString("cancelButton", IDS_PRINT_PREVIEW_CANCEL_BUTTON);
@@ -209,7 +209,7 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_PREVIEW_PAGE_LABEL_SINGULAR);
   source->AddLocalizedString("printPreviewPageLabelPlural",
                              IDS_PRINT_PREVIEW_PAGE_LABEL_PLURAL);
-  const base::string16 shortcut_text(UTF8ToUTF16(kAdvancedPrintShortcut));
+  const base::string16 shortcut_text(base::UTF8ToUTF16(kAdvancedPrintShortcut));
 #if defined(OS_CHROMEOS)
   source->AddString(
       "systemDialogOption",

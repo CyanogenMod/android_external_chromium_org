@@ -8,10 +8,10 @@
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 
 class Browser;
@@ -21,7 +21,7 @@ class Profile;
 
 // Model for the browser actions toolbar.
 class ExtensionToolbarModel : public content::NotificationObserver,
-                              public BrowserContextKeyedService   {
+                              public BrowserContextKeyedService {
  public:
   ExtensionToolbarModel(Profile* profile,
                         extensions::ExtensionPrefs* extension_prefs);
@@ -56,8 +56,9 @@ class ExtensionToolbarModel : public content::NotificationObserver,
     // Returns true if a popup was slated to be shown.
     virtual bool BrowserActionShowPopup(const extensions::Extension* extension);
 
-    // Called when the model has finished loading.
-    virtual void ModelLoaded() {}
+    // Signal when the container needs to be redrawn because of a size change,
+    // and when the model has finished loading.
+    virtual void VisibleCountChanged() {}
 
    protected:
     virtual ~Observer() {}
@@ -103,6 +104,11 @@ class ExtensionToolbarModel : public content::NotificationObserver,
   // Tells observers to display a popup without granting tab permissions and
   // returns whether the popup was slated to be shown.
   bool ShowBrowserActionPopup(const extensions::Extension* extension);
+
+  // Ensures that the extensions in the |extension_ids| list are visible on the
+  // toolbar. This might mean they need to be moved to the front (if they are in
+  // the overflow bucket).
+  void EnsureVisibility(const extensions::ExtensionIdList& extension_ids);
 
  private:
   // content::NotificationObserver implementation.

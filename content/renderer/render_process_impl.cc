@@ -30,7 +30,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webkit_glue.h"
+#include "v8/include/v8.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -48,7 +48,6 @@ RenderProcessImpl::RenderProcessImpl()
           this, &RenderProcessImpl::ClearTransportDIBCache),
       transport_dib_next_sequence_number_(0),
       enabled_bindings_(0) {
-  in_process_plugins_ = InProcessPlugins();
   for (size_t i = 0; i < arraysize(shared_mem_cache_); ++i)
     shared_mem_cache_[i] = NULL;
 
@@ -70,17 +69,23 @@ RenderProcessImpl::RenderProcessImpl()
 #endif
 
   // Out of process dev tools rely upon auto break behavior.
-  webkit_glue::SetJavaScriptFlags("--debugger-auto-break");
+  std::string auto_break_flag("--debugger-auto-break");
+  v8::V8::SetFlagsFromString(auto_break_flag.c_str(),
+                             static_cast<int>(auto_break_flag.size()));
 
 #if defined(OS_ANDROID)
-  if (base::android::SysUtils::IsLowEndDevice())
-    webkit_glue::SetJavaScriptFlags("--optimize-for-size");
+  if (base::android::SysUtils::IsLowEndDevice()) {
+    std::string optimize_flag("--optimize-for-size");
+    v8::V8::SetFlagsFromString(optimize_flag.c_str(),
+                               static_cast<int>(optimize_flag.size()));
+  }
 #endif
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kJavaScriptFlags)) {
-    webkit_glue::SetJavaScriptFlags(
+    std::string flags(
         command_line.GetSwitchValueASCII(switches::kJavaScriptFlags));
+    v8::V8::SetFlagsFromString(flags.c_str(), static_cast<int>(flags.size()));
   }
 
   // Turn on cross-site document blocking for renderer processes.
@@ -97,20 +102,6 @@ RenderProcessImpl::~RenderProcessImpl() {
 
   GetShutDownEvent()->Signal();
   ClearTransportDIBCache();
-}
-
-bool RenderProcessImpl::InProcessPlugins() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
-  // Plugin processes require a UI message loop, and the Linux message loop
-  // implementation only allows one UI loop per process.
-  if (command_line.HasSwitch(switches::kInProcessPlugins))
-    NOTIMPLEMENTED() << ": in process plugins not supported on Linux";
-  return command_line.HasSwitch(switches::kInProcessPlugins);
-#else
-  return command_line.HasSwitch(switches::kInProcessPlugins) ||
-         command_line.HasSwitch(switches::kSingleProcess);
-#endif
 }
 
 void RenderProcessImpl::AddBindings(int bindings) {
@@ -194,10 +185,6 @@ void RenderProcessImpl::ReleaseTransportDIB(TransportDIB* mem) {
   }
 
   FreeTransportDIB(mem);
-}
-
-bool RenderProcessImpl::UseInProcessPlugins() const {
-  return in_process_plugins_;
 }
 
 bool RenderProcessImpl::GetTransportDIBFromCache(TransportDIB** mem,

@@ -38,7 +38,8 @@ enum EditingBehavior {
   EDITING_BEHAVIOR_MAC,
   EDITING_BEHAVIOR_WIN,
   EDITING_BEHAVIOR_UNIX,
-  EDITING_BEHAVIOR_ANDROID
+  EDITING_BEHAVIOR_ANDROID,
+  EDITING_BEHAVIOR_LAST = EDITING_BEHAVIOR_ANDROID
 };
 
 
@@ -95,6 +96,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool allow_file_access_from_file_urls;
   bool webaudio_enabled;
   bool experimental_webgl_enabled;
+  bool pepper_3d_enabled;
   bool flash_3d_enabled;
   bool flash_stage3d_enabled;
   bool flash_stage3d_baseline_enabled;
@@ -121,6 +123,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool antialiased_2d_canvas_disabled;
   int accelerated_2d_canvas_msaa_sample_count;
   bool accelerated_filters_enabled;
+  bool deferred_filters_enabled;
   bool gesture_tap_highlight_enabled;
   bool accelerated_compositing_for_plugins_enabled;
   bool memory_info_enabled;
@@ -129,6 +132,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool allow_running_insecure_content;
   bool password_echo_enabled;
   bool should_print_backgrounds;
+  bool should_clear_document_background;
   bool enable_scroll_animator;
   bool visual_word_movement_enabled;
   bool css_variables_enabled;

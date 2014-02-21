@@ -22,14 +22,13 @@
 #include "content/common/content_constants_internal.h"
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
 #include "content/gpu/gpu_watchdog_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
-#include "crypto/hmac.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_util.h"
@@ -219,8 +218,27 @@ int GpuMain(const MainFunctionParams& parameters) {
 
     base::TimeTicks before_initialize_one_off = base::TimeTicks::Now();
 
+    // Determine if we need to initialize GL here or it has already been done.
+    bool gl_already_initialized = false;
+#if defined(OS_MACOSX)
+    if (!command_line.HasSwitch(switches::kNoSandbox)) {
+      // On Mac, if the sandbox is enabled, then GLSurface::InitializeOneOff()
+      // is called from the sandbox warmup code before getting here.
+      gl_already_initialized = true;
+    }
+#endif
+    if (command_line.HasSwitch(switches::kInProcessGPU)) {
+      // With in-process GPU, GLSurface::InitializeOneOff() is called from
+      // GpuChildThread before getting here.
+      gl_already_initialized = true;
+    }
+
     // Load and initialize the GL implementation and locate the GL entry points.
-    if (gfx::GLSurface::InitializeOneOff()) {
+    bool gl_initialized =
+        gl_already_initialized
+            ? gfx::GetGLImplementation() != gfx::kGLImplementationNone
+            : gfx::GLSurface::InitializeOneOff();
+    if (gl_initialized) {
       // We need to collect GL strings (VENDOR, RENDERER) for blacklisting
       // purposes. However, on Mac we don't actually use them. As documented in
       // crbug.com/222934, due to some driver issues, glGetString could take
@@ -236,12 +254,14 @@ int GpuMain(const MainFunctionParams& parameters) {
         VLOG(1) << "gpu::CollectGraphicsInfo failed";
       GetContentClient()->SetGpuInfo(gpu_info);
 
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
       // Recompute gpu driver bug workarounds - this is specifically useful
-      // on ChromeOS where vendor_id/device_id aren't available.
+      // on systems where vendor_id/device_id aren't available.
       if (!command_line.HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
         gpu::ApplyGpuDriverBugWorkarounds(
             gpu_info, const_cast<CommandLine*>(&command_line));
       }
+#endif
 
 #if defined(OS_LINUX)
       initialized_gl_context = true;
@@ -364,18 +384,6 @@ bool WarmUpSandbox(const CommandLine& command_line) {
     // platforms.
     (void) base::RandUint64();
   }
-  {
-    TRACE_EVENT0("gpu", "Warm up HMAC");
-    // Warm up the crypto subsystem, which needs to done pre-sandbox on all
-    // platforms.
-    crypto::HMAC hmac(crypto::HMAC::SHA256);
-    unsigned char key = '\0';
-    if (!hmac.Init(&key, sizeof(key))) {
-      LOG(ERROR) << "WarmUpSandbox() failed with crypto::HMAC::Init()";
-      return false;
-    }
-  }
-
   return true;
 }
 
@@ -401,13 +409,17 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
 
   WarmUpSandboxNvidia(gpu_info, should_initialize_gl_context);
 
-  if (watchdog_thread)
-    watchdog_thread->Stop();
+  if (watchdog_thread) {
+    // LinuxSandbox needs to be able to ensure that the thread
+    // has really been stopped.
+    LinuxSandbox::StopThread(watchdog_thread);
+  }
   // LinuxSandbox::InitializeSandbox() must always be called
   // with only one thread.
   res = LinuxSandbox::InitializeSandbox();
-  if (watchdog_thread)
+  if (watchdog_thread) {
     watchdog_thread->Start();
+  }
 
   return res;
 }

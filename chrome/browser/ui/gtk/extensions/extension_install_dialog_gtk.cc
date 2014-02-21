@@ -53,7 +53,7 @@ void AddResourceIcon(const gfx::ImageSkia* icon, void* data) {
 }
 
 // Returns an expander with the lines in |details|.
-GtkWidget* CreateDetailsWidget(const std::vector<string16>& details,
+GtkWidget* CreateDetailsWidget(const std::vector<base::string16>& details,
                                int width,
                                bool show_bullets) {
   GtkWidget* expander = gtk_expander_new(
@@ -116,6 +116,7 @@ ExtensionInstallDialog::ExtensionInstallDialog(
   bool show_retained_files = prompt.GetRetainedFileCount() > 0;
   bool is_inline_install =
       prompt.type() == ExtensionInstallPrompt::INLINE_INSTALL_PROMPT;
+  bool has_webstore_data = prompt.has_webstore_data();
   bool is_bundle_install =
       prompt.type() == ExtensionInstallPrompt::BUNDLE_INSTALL_PROMPT;
   bool is_external_install =
@@ -127,19 +128,20 @@ ExtensionInstallDialog::ExtensionInstallDialog(
   // Build the dialog.
   gfx::NativeWindow parent = show_params.parent_window;
   dialog_ = gtk_dialog_new_with_buttons(
-      UTF16ToUTF8(prompt.GetDialogTitle()).c_str(),
+      base::UTF16ToUTF8(prompt.GetDialogTitle()).c_str(),
       parent,
       GTK_DIALOG_MODAL,
       NULL);
   GtkWidget* close_button = gtk_dialog_add_button(
       GTK_DIALOG(dialog_),
       prompt.HasAbortButtonLabel() ?
-          UTF16ToUTF8(prompt.GetAbortButtonLabel()).c_str() : GTK_STOCK_CANCEL,
+          base::UTF16ToUTF8(prompt.GetAbortButtonLabel()).c_str() :
+          GTK_STOCK_CANCEL,
       GTK_RESPONSE_CLOSE);
   if (prompt.HasAcceptButtonLabel()) {
     gtk_dialog_add_button(
         GTK_DIALOG(dialog_),
-        UTF16ToUTF8(prompt.GetAcceptButtonLabel()).c_str(),
+        base::UTF16ToUTF8(prompt.GetAcceptButtonLabel()).c_str(),
         GTK_RESPONSE_ACCEPT);
   }
 #if !GTK_CHECK_VERSION(2, 22, 0)
@@ -192,24 +194,24 @@ ExtensionInstallDialog::ExtensionInstallDialog(
 
   // Heading
   GtkWidget* heading_label = gtk_util::CreateBoldLabel(
-      UTF16ToUTF8(prompt.GetHeading().c_str()));
+      base::UTF16ToUTF8(prompt.GetHeading().c_str()));
   gtk_util::SetLabelWidth(heading_label, left_column_min_width);
   gtk_box_pack_start(GTK_BOX(heading_vbox), heading_label, center_heading,
                      center_heading, 0);
 
-  if (is_inline_install) {
+  if (has_webstore_data) {
     // Average rating (as stars) and number of ratings.
     GtkWidget* stars_hbox = gtk_hbox_new(FALSE, 0);
     gtk_box_pack_start(GTK_BOX(heading_vbox), stars_hbox, FALSE, FALSE, 0);
     prompt.AppendRatingStars(AddResourceIcon, stars_hbox);
-    GtkWidget* rating_label = gtk_label_new(UTF16ToUTF8(
+    GtkWidget* rating_label = gtk_label_new(base::UTF16ToUTF8(
         prompt.GetRatingCount()).c_str());
     gtk_util::ForceFontSizePixels(rating_label, kRatingTextSize);
     gtk_box_pack_start(GTK_BOX(stars_hbox), rating_label,
                        FALSE, FALSE, 3);
 
     // User count.
-    GtkWidget* users_label = gtk_label_new(UTF16ToUTF8(
+    GtkWidget* users_label = gtk_label_new(base::UTF16ToUTF8(
         prompt.GetUserCount()).c_str());
     gtk_util::SetLabelWidth(users_label, left_column_min_width);
     gtk_util::SetLabelColor(users_label, &ui::kGdkGray);
@@ -238,7 +240,7 @@ ExtensionInstallDialog::ExtensionInstallDialog(
     BundleInstaller::ItemList items = prompt.bundle()->GetItemsWithState(
         BundleInstaller::Item::STATE_PENDING);
     for (size_t i = 0; i < items.size(); ++i) {
-      GtkWidget* extension_label = gtk_label_new(UTF16ToUTF8(
+      GtkWidget* extension_label = gtk_label_new(base::UTF16ToUTF8(
           items[i].GetNameForDisplay()).c_str());
       gtk_util::SetLabelWidth(extension_label, left_column_min_width);
       gtk_box_pack_start(GTK_BOX(extensions_vbox), extension_label,
@@ -277,7 +279,7 @@ ExtensionInstallDialog::ExtensionInstallDialog(
 
     if (prompt.GetPermissionCount() > 0) {
       GtkWidget* permissions_header = gtk_util::CreateBoldLabel(
-          UTF16ToUTF8(prompt.GetPermissionsHeading()).c_str());
+          base::UTF16ToUTF8(prompt.GetPermissionsHeading()).c_str());
       gtk_util::SetLabelWidth(permissions_header, left_column_min_width);
       gtk_box_pack_start(GTK_BOX(permissions_container), permissions_header,
                          FALSE, FALSE, 0);
@@ -291,7 +293,7 @@ ExtensionInstallDialog::ExtensionInstallDialog(
         gtk_box_pack_start(GTK_BOX(permission_vbox), permission_label,
                            FALSE, FALSE, 0);
         if (!prompt.GetPermissionsDetails(i).empty()) {
-          std::vector<string16> details;
+          std::vector<base::string16> details;
           details.push_back(prompt.GetPermissionsDetails(i));
           gtk_box_pack_start(
               GTK_BOX(permission_vbox),
@@ -322,7 +324,7 @@ ExtensionInstallDialog::ExtensionInstallDialog(
         (show_permissions ? kImageSize : 0);
 
     GtkWidget* oauth_issues_header = gtk_util::CreateBoldLabel(
-        UTF16ToUTF8(prompt.GetOAuthHeading()).c_str());
+        base::UTF16ToUTF8(prompt.GetOAuthHeading()).c_str());
     gtk_util::SetLabelWidth(oauth_issues_header, pixel_width);
     gtk_box_pack_start(GTK_BOX(oauth_issues_container), oauth_issues_header,
                        FALSE, FALSE, 0);
@@ -344,12 +346,12 @@ ExtensionInstallDialog::ExtensionInstallDialog(
         ((show_permissions || show_oauth_issues) ? kImageSize : 0);
 
     GtkWidget* retained_files_header = gtk_util::CreateBoldLabel(
-        UTF16ToUTF8(prompt.GetRetainedFilesHeading()).c_str());
+        base::UTF16ToUTF8(prompt.GetRetainedFilesHeading()).c_str());
     gtk_util::SetLabelWidth(retained_files_header, pixel_width);
     gtk_box_pack_start(GTK_BOX(retained_files_container), retained_files_header,
                        FALSE, FALSE, 0);
 
-    std::vector<string16> paths;
+    std::vector<base::string16> paths;
     for (size_t i = 0; i < prompt.GetRetainedFileCount(); ++i) {
       paths.push_back(prompt.GetRetainedFile(i));
     }

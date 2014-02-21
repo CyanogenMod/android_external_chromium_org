@@ -4,6 +4,8 @@
 
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 
+#include <cstring>
+
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
@@ -24,6 +26,11 @@ namespace content {
 uint32 ProxyDecryptor::next_session_id_ = 100000;
 
 const uint32 kInvalidSessionId = 0;
+
+// Special system code to signal a closed persistent session in a SessionError()
+// call. This is needed because there is no SessionClosed() call in the prefixed
+// EME API.
+const int kSessionClosedSystemCode = 7 * 1024 * 1024 + 7;
 
 #if defined(ENABLE_PEPPER_CDMS)
 void ProxyDecryptor::DestroyHelperPlugin() {
@@ -62,68 +69,59 @@ ProxyDecryptor::ProxyDecryptor(
 
 ProxyDecryptor::~ProxyDecryptor() {
   // Destroy the decryptor explicitly before destroying the plugin.
-  {
-    base::AutoLock auto_lock(lock_);
-    media_keys_.reset();
-  }
+  media_keys_.reset();
 }
 
-// TODO(xhwang): Support multiple decryptor notification request (e.g. from
-// video and audio decoders). The current implementation is okay for the current
-// media pipeline since we initialize audio and video decoders in sequence.
-// But ProxyDecryptor should not depend on media pipeline's implementation
-// detail.
-void ProxyDecryptor::SetDecryptorReadyCB(
-     const media::DecryptorReadyCB& decryptor_ready_cb) {
-  base::AutoLock auto_lock(lock_);
-
-  // Cancels the previous decryptor request.
-  if (decryptor_ready_cb.is_null()) {
-    if (!decryptor_ready_cb_.is_null())
-      base::ResetAndReturn(&decryptor_ready_cb_).Run(NULL);
-    return;
-  }
-
-  // Normal decryptor request.
-  DCHECK(decryptor_ready_cb_.is_null());
-  if (media_keys_) {
-    decryptor_ready_cb.Run(media_keys_->GetDecryptor());
-    return;
-  }
-  decryptor_ready_cb_ = decryptor_ready_cb;
+media::Decryptor* ProxyDecryptor::GetDecryptor() {
+  return media_keys_ ? media_keys_->GetDecryptor() : NULL;
 }
 
 bool ProxyDecryptor::InitializeCDM(const std::string& key_system,
                                    const GURL& frame_url) {
   DVLOG(1) << "InitializeCDM: key_system = " << key_system;
 
-  base::AutoLock auto_lock(lock_);
-
   DCHECK(!media_keys_);
   media_keys_ = CreateMediaKeys(key_system, frame_url);
   if (!media_keys_)
     return false;
-
-  if (!decryptor_ready_cb_.is_null())
-    base::ResetAndReturn(&decryptor_ready_cb_).Run(media_keys_->GetDecryptor());
 
   is_clear_key_ =
       media::IsClearKey(key_system) || media::IsExternalClearKey(key_system);
   return true;
 }
 
-bool ProxyDecryptor::GenerateKeyRequest(const std::string& type,
+// Returns true if |data| is prefixed with |header| and has data after the
+// |header|.
+bool HasHeader(const uint8* data, int data_length, const std::string& header) {
+  return static_cast<size_t>(data_length) > header.size() &&
+         std::equal(data, data + header.size(), header.begin());
+}
+
+bool ProxyDecryptor::GenerateKeyRequest(const std::string& content_type,
                                         const uint8* init_data,
                                         int init_data_length) {
   // Use a unique reference id for this request.
   uint32 session_id = next_session_id_++;
-  if (!media_keys_->CreateSession(
-           session_id, type, init_data, init_data_length)) {
-    media_keys_.reset();
-    return false;
+
+  const char kPrefixedApiPersistentSessionHeader[] = "PERSISTENT|";
+  const char kPrefixedApiLoadSessionHeader[] = "LOAD_SESSION|";
+
+  if (HasHeader(init_data, init_data_length, kPrefixedApiLoadSessionHeader)) {
+    persistent_sessions_.insert(session_id);
+    media_keys_->LoadSession(
+        session_id,
+        std::string(reinterpret_cast<const char*>(
+                        init_data + strlen(kPrefixedApiLoadSessionHeader)),
+                    init_data_length - strlen(kPrefixedApiLoadSessionHeader)));
+    return true;
   }
 
-  return true;
+  if (HasHeader(
+          init_data, init_data_length, kPrefixedApiPersistentSessionHeader))
+    persistent_sessions_.insert(session_id);
+
+  return media_keys_->CreateSession(
+      session_id, content_type, init_data, init_data_length);
 }
 
 void ProxyDecryptor::AddKey(const uint8* key,
@@ -234,7 +232,14 @@ void ProxyDecryptor::OnSessionReady(uint32 session_id) {
 }
 
 void ProxyDecryptor::OnSessionClosed(uint32 session_id) {
-  // No closed event in EME v0.1b.
+  std::set<uint32>::iterator it = persistent_sessions_.find(session_id);
+  if (it != persistent_sessions_.end()) {
+    persistent_sessions_.erase(it);
+    OnSessionError(
+        session_id, media::MediaKeys::kUnknownError, kSessionClosedSystemCode);
+  }
+
+  sessions_.erase(session_id);
 }
 
 void ProxyDecryptor::OnSessionError(uint32 session_id,
@@ -244,8 +249,8 @@ void ProxyDecryptor::OnSessionError(uint32 session_id,
   key_error_cb_.Run(LookupWebSessionId(session_id), error_code, system_code);
 }
 
-uint32 ProxyDecryptor::LookupSessionId(const std::string& session_id) {
-  for (SessionIdMap::iterator it = sessions_.begin();
+uint32 ProxyDecryptor::LookupSessionId(const std::string& session_id) const {
+  for (SessionIdMap::const_iterator it = sessions_.begin();
        it != sessions_.end();
        ++it) {
     if (it->second == session_id)
@@ -259,11 +264,11 @@ uint32 ProxyDecryptor::LookupSessionId(const std::string& session_id) {
   return kInvalidSessionId;
 }
 
-const std::string& ProxyDecryptor::LookupWebSessionId(uint32 session_id) {
+const std::string& ProxyDecryptor::LookupWebSessionId(uint32 session_id) const {
   DCHECK_NE(session_id, kInvalidSessionId);
 
   // Session may not exist if error happens during GenerateKeyRequest().
-  SessionIdMap::iterator it = sessions_.find(session_id);
+  SessionIdMap::const_iterator it = sessions_.find(session_id);
   return (it != sessions_.end()) ? it->second : base::EmptyString();
 }
 

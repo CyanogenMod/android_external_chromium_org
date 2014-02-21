@@ -61,10 +61,6 @@
 #include "content/public/browser/browser_message_filter.h"
 #include "ipc/ipc_message.h"
 
-namespace media {
-class VideoCaptureCapability;
-}
-
 namespace content {
 class MediaStreamManager;
 
@@ -88,11 +84,10 @@ class CONTENT_EXPORT VideoCaptureHost
                                int buffer_id) OVERRIDE;
   virtual void OnBufferDestroyed(const VideoCaptureControllerID& id,
                                  int buffer_id) OVERRIDE;
-  virtual void OnBufferReady(
-      const VideoCaptureControllerID& id,
-      int buffer_id,
-      base::Time timestamp,
-      const media::VideoCaptureFormat& format) OVERRIDE;
+  virtual void OnBufferReady(const VideoCaptureControllerID& id,
+                             int buffer_id,
+                             base::TimeTicks timestamp,
+                             const media::VideoCaptureFormat& format) OVERRIDE;
   virtual void OnEnded(const VideoCaptureControllerID& id) OVERRIDE;
 
  private:
@@ -127,6 +122,19 @@ class CONTENT_EXPORT VideoCaptureHost
   // referenced by |device_id|.
   void OnReceiveEmptyBuffer(int device_id, int buffer_id);
 
+  // IPC message: Get supported formats referenced by |capture_session_id|.
+  // |device_id| is needed for message back-routing purposes.
+  void OnGetDeviceSupportedFormats(
+      int device_id,
+      media::VideoCaptureSessionId capture_session_id);
+
+  // IPC message: Get a device's currently in use format(s), referenced by
+  // |capture_session_id|. |device_id| is needed for message back-routing
+  // purposes.
+  void OnGetDeviceFormatsInUse(
+      int device_id,
+      media::VideoCaptureSessionId capture_session_id);
+
   // Send a newly created buffer to the VideoCaptureMessageFilter.
   void DoSendNewBufferOnIOThread(
       const VideoCaptureControllerID& controller_id,
@@ -142,7 +150,7 @@ class CONTENT_EXPORT VideoCaptureHost
   void DoSendFilledBufferOnIOThread(
       const VideoCaptureControllerID& controller_id,
       int buffer_id,
-      base::Time timestamp,
+      base::TimeTicks timestamp,
       const media::VideoCaptureFormat& format);
 
   // Handle error coming from VideoCaptureDevice.

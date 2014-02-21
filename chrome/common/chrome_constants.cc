@@ -164,6 +164,7 @@ const base::FilePath::CharType kExtensionsCookieFilename[] =
     FPL("Extension Cookies");
 const base::FilePath::CharType kFaviconsFilename[] = FPL("Favicons");
 const base::FilePath::CharType kFirstRunSentinel[] = FPL("First Run");
+const base::FilePath::CharType kGCMStoreDirname[] = FPL("GCM Store");
 const base::FilePath::CharType kHistoryFilename[] = FPL("History");
 const base::FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
 const base::FilePath::CharType kLocalStateFilename[] = FPL("Local State");
@@ -265,6 +266,10 @@ const char kTestUserProfileDir[] = "test-user";
 // {2676A9A2-D919-4FEE-9187-152100393AB2}
 const char kApplicationClientIDStringForAVScanning[] =
     "2676A9A2-D919-4FEE-9187-152100393AB2";
+
+#if defined(OS_ANDROID)
+const size_t kMaxMetaTagAttributeLength = 2000;
+#endif
 
 }  // namespace chrome
 

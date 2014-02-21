@@ -17,7 +17,6 @@
 #include "remoting/client/client_user_interface.h"
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/jni/jni_frame_consumer.h"
-#include "remoting/jingle_glue/network_settings.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/connection_to_host.h"
@@ -29,6 +28,8 @@ namespace protocol {
 class ClipboardEvent;
 class CursorShapeInfo;
 }  // namespace protocol
+
+class VideoRenderer;
 
 // ClientUserInterface that indirectly makes and receives JNI calls.
 class ChromotingJniInstance
@@ -81,6 +82,8 @@ class ChromotingJniInstance
       protocol::ConnectionToHost::State state,
       protocol::ErrorCode error) OVERRIDE;
   virtual void OnConnectionReady(bool ready) OVERRIDE;
+  virtual void OnRouteChanged(const std::string& channel_name,
+                              const protocol::TransportRoute& route) OVERRIDE;
   virtual void SetCapabilities(const std::string& capabilities) OVERRIDE;
   virtual void SetPairingResponse(
       const protocol::PairingResponse& response) OVERRIDE;
@@ -135,11 +138,11 @@ class ChromotingJniInstance
   // This group of variables is to be used on the network thread.
   ClientConfig client_config_;
   scoped_ptr<ClientContext> client_context_;
+  scoped_ptr<VideoRenderer> video_renderer_;
   scoped_ptr<protocol::ConnectionToHost> connection_;
   scoped_ptr<ChromotingClient> client_;
   XmppSignalStrategy::XmppServerConfig xmpp_config_;
   scoped_ptr<XmppSignalStrategy> signaling_;  // Must outlive client_
-  scoped_ptr<NetworkSettings> network_settings_;
 
   // Pass this the user's PIN once we have it. To be assigned and accessed on
   // the UI thread, but must be posted to the network thread to call it.

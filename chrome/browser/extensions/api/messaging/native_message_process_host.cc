@@ -8,12 +8,15 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/platform_file.h"
+#include "base/prefs/pref_service.h"
 #include "base/process/kill.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/messaging/native_messaging_host_manifest.h"
 #include "chrome/browser/extensions/api/messaging/native_process_launcher.h"
 #include "chrome/common/chrome_version_info.h"
+#include "content/public/browser/browser_thread.h"
+#include "extensions/browser/pref_names.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/features/feature.h"
 #include "net/base/file_stream.h"
@@ -48,6 +51,45 @@ const char kHostInputOuputError[] =
 }  // namespace
 
 namespace extensions {
+
+// static
+NativeMessageProcessHost::PolicyPermission
+NativeMessageProcessHost::IsHostAllowed(const PrefService* pref_service,
+                                        const std::string& native_host_name) {
+  NativeMessageProcessHost::PolicyPermission allow_result = ALLOW_ALL;
+  if (pref_service->IsManagedPreference(
+          pref_names::kNativeMessagingUserLevelHosts)) {
+    if (!pref_service->GetBoolean(pref_names::kNativeMessagingUserLevelHosts))
+      allow_result = ALLOW_SYSTEM_ONLY;
+  }
+
+  // All native messaging hosts are allowed if there is no blacklist.
+  if (!pref_service->IsManagedPreference(pref_names::kNativeMessagingBlacklist))
+    return allow_result;
+  const base::ListValue* blacklist =
+      pref_service->GetList(pref_names::kNativeMessagingBlacklist);
+  if (!blacklist)
+    return allow_result;
+
+  // Check if the name or the wildcard is in the blacklist.
+  base::StringValue name_value(native_host_name);
+  base::StringValue wildcard_value("*");
+  if (blacklist->Find(name_value) == blacklist->end() &&
+      blacklist->Find(wildcard_value) == blacklist->end()) {
+    return allow_result;
+  }
+
+  // The native messaging host is blacklisted. Check the whitelist.
+  if (pref_service->IsManagedPreference(
+          pref_names::kNativeMessagingWhitelist)) {
+    const base::ListValue* whitelist =
+        pref_service->GetList(pref_names::kNativeMessagingWhitelist);
+    if (whitelist && whitelist->Find(name_value) != whitelist->end())
+      return allow_result;
+  }
+
+  return DISALLOW;
+}
 
 NativeMessageProcessHost::NativeMessageProcessHost(
     base::WeakPtr<Client> weak_client_ui,
@@ -85,10 +127,12 @@ scoped_ptr<NativeMessageProcessHost> NativeMessageProcessHost::Create(
     base::WeakPtr<Client> weak_client_ui,
     const std::string& source_extension_id,
     const std::string& native_host_name,
-    int destination_port) {
+    int destination_port,
+    bool allow_user_level) {
   return CreateWithLauncher(weak_client_ui, source_extension_id,
                             native_host_name, destination_port,
-                            NativeProcessLauncher::CreateDefault(native_view));
+                            NativeProcessLauncher::CreateDefault(
+                                allow_user_level, native_view));
 }
 
 // static

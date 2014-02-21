@@ -16,6 +16,8 @@
 #include "base/win/scoped_handle.h"
 #include "chrome/installer/util/util_constants.h"
 
+namespace component_updater {
+
 namespace {
 
 std::string PatchTypeToCommandLineSwitch(
@@ -112,3 +114,4 @@ ComponentUnpacker::Error ComponentPatcherWin::Patch(
                   ComponentUnpacker::kNone;
 }
 
+}  // namespace component_updater

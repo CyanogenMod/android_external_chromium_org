@@ -21,10 +21,8 @@
 #include "cc/test/pixel_test_output_surface.h"
 #include "cc/test/pixel_test_software_output_device.h"
 #include "cc/test/pixel_test_utils.h"
+#include "cc/test/test_in_process_context_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gl/gl_implementation.h"
-#include "webkit/common/gpu/context_provider_in_process.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace cc {
 
@@ -59,13 +57,12 @@ bool PixelTest::RunPixelTestWithReadbackTarget(
                  base::Unretained(this),
                  run_loop.QuitClosure())));
 
-  scoped_refptr<webkit::gpu::ContextProviderInProcess> offscreen_contexts;
+  scoped_refptr<ContextProvider> offscreen_contexts;
   switch (provide_offscreen_context) {
     case NoOffscreenContext:
       break;
     case WithOffscreenContext:
-      offscreen_contexts =
-          webkit::gpu::ContextProviderInProcess::CreateOffscreen();
+      offscreen_contexts = new TestInProcessContextProvider;
       CHECK(offscreen_contexts->BindToCurrentThread());
       break;
   }
@@ -115,17 +112,13 @@ bool PixelTest::PixelsMatchReference(const base::FilePath& ref_file,
   if (cmd->HasSwitch(switches::kCCRebaselinePixeltests))
     return WritePNGFile(*result_bitmap_, test_data_dir.Append(ref_file), true);
 
-  return MatchesPNGFile(*result_bitmap_,
-                        test_data_dir.Append(ref_file),
-                        comparator);
+  return MatchesPNGFile(
+      *result_bitmap_, test_data_dir.Append(ref_file), comparator);
 }
 
 void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
-  CHECK(gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL));
-
-  using webkit::gpu::ContextProviderInProcess;
-  output_surface_.reset(new PixelTestOutputSurface(
-      ContextProviderInProcess::CreateOffscreen()));
+  output_surface_.reset(
+      new PixelTestOutputSurface(new TestInProcessContextProvider));
   output_surface_->BindToClient(output_surface_client_.get());
 
   resource_provider_ =
@@ -141,7 +134,7 @@ void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
                                  0).PassAs<DirectRenderer>();
 }
 
-void PixelTest::ForceExpandedViewport(gfx::Size surface_expansion) {
+void PixelTest::ForceExpandedViewport(const gfx::Size& surface_expansion) {
   static_cast<PixelTestOutputSurface*>(output_surface_.get())
       ->set_surface_expansion_size(surface_expansion);
   SoftwareOutputDevice* device = output_surface_->software_device();
@@ -151,11 +144,11 @@ void PixelTest::ForceExpandedViewport(gfx::Size surface_expansion) {
   }
 }
 
-void PixelTest::ForceViewportOffset(gfx::Vector2d viewport_offset) {
+void PixelTest::ForceViewportOffset(const gfx::Vector2d& viewport_offset) {
   external_device_viewport_offset_ = viewport_offset;
 }
 
-void PixelTest::ForceDeviceClip(gfx::Rect clip) {
+void PixelTest::ForceDeviceClip(const gfx::Rect& clip) {
   external_device_clip_rect_ = clip;
 }
 

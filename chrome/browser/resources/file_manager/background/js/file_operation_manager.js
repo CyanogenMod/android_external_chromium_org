@@ -30,7 +30,7 @@ fileOperationUtil.deduplicatePath = function(
               util.FileOperationErrorType.FILESYSTEM_ERROR, error));
         };
 
-        if (err.code == FileError.PATH_EXISTS_ERR) {
+        if (err.name == util.FileError.PATH_EXISTS_ERR) {
           // Failed to uniquify the file path. There should be an existing
           // entry, so return the error with it.
           util.resolvePath(
@@ -133,14 +133,14 @@ fileOperationUtil.resolveRecursively = function(
  * @param {Entry} source The entry to be copied.
  * @param {DirectoryEntry} parent The entry of the destination directory.
  * @param {string} newName The name of copied file.
- * @param {function(string, string)} entryChangedCallback
- *     Callback invoked when an entry is created with the source url and
- *     the destination url.
- * @param {function(string, number)} progressCallback Callback invoked
- *     periodically during the copying. It takes the source url and the
+ * @param {function(Entry, Entry)} entryChangedCallback
+ *     Callback invoked when an entry is created with the source Entry and
+ *     the destination Entry.
+ * @param {function(Entry, number)} progressCallback Callback invoked
+ *     periodically during the copying. It takes the source Entry and the
  *     processed bytes of it.
- * @param {function(string)} successCallback Callback invoked when the copy
- *     is successfully done with the url of the created entry.
+ * @param {function(Entry)} successCallback Callback invoked when the copy
+ *     is successfully done with the Entry of the created entry.
  * @param {function(FileError)} errorCallback Callback invoked when an error
  *     is found.
  * @return {function()} Callback to cancel the current file copy operation.
@@ -153,47 +153,73 @@ fileOperationUtil.copyTo = function(
   var copyId = null;
   var pendingCallbacks = [];
 
+  // Makes the callback called in order they were invoked.
+  var callbackQueue = new AsyncUtil.Queue();
+
   var onCopyProgress = function(progressCopyId, status) {
-    if (copyId == null) {
-      // If the copyId is not yet available, wait for it.
-      pendingCallbacks.push(
-          onCopyProgress.bind(null, progressCopyId, status));
-      return;
-    }
+    callbackQueue.run(function(callback) {
+      if (copyId === null) {
+        // If the copyId is not yet available, wait for it.
+        pendingCallbacks.push(
+            onCopyProgress.bind(null, progressCopyId, status));
+        callback();
+        return;
+      }
 
-    // This is not what we're interested in.
-    if (progressCopyId != copyId)
-      return;
+      // This is not what we're interested in.
+      if (progressCopyId != copyId) {
+        callback();
+        return;
+      }
 
-    switch (status.type) {
-      case 'begin_copy_entry':
-        break;
+      switch (status.type) {
+        case 'begin_copy_entry':
+          callback();
+          break;
 
-      case 'end_copy_entry':
-        entryChangedCallback(status.sourceUrl, status.destinationUrl);
-        break;
+        case 'end_copy_entry':
+          // TODO(mtomasz): Convert URL to Entry in custom bindings.
+          util.URLsToEntries(
+              [status.destinationUrl], function(destinationEntries) {
+            entryChangedCallback(source, destinationEntries[0] || null);
+            callback();
+          });
+          break;
 
-      case 'progress':
-        progressCallback(status.sourceUrl, status.size);
-        break;
+        case 'progress':
+          progressCallback(source, status.size);
+          callback();
+          break;
 
-      case 'success':
-        chrome.fileBrowserPrivate.onCopyProgress.removeListener(onCopyProgress);
-        successCallback(status.destinationUrl);
-        break;
+        case 'success':
+          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+              onCopyProgress);
+          // TODO(mtomasz): Convert URL to Entry in custom bindings.
+          util.URLsToEntries(
+              [status.destinationUrl], function(destinationEntries) {
+                successCallback(destinationEntries[0] || null);
+                callback();
+              });
+          break;
 
-      case 'error':
-        chrome.fileBrowserPrivate.onCopyProgress.removeListener(onCopyProgress);
-        errorCallback(util.createFileError(status.error));
-        break;
+        case 'error':
+          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+              onCopyProgress);
+          errorCallback(util.createDOMError(status.error.name));
+          callback();
+          break;
 
-      default:
-        // Found unknown state. Cancel the task, and return an error.
-        console.error('Unknown progress type: ' + status.type);
-        chrome.fileBrowserPrivate.onCopyProgress.removeListener(onCopyProgress);
-        chrome.fileBrowserPrivate.cancelCopy(copyId);
-        errorCallback(util.createFileError(FileError.INVALID_STATE_ERR));
-    }
+        default:
+          // Found unknown state. Cancel the task, and return an error.
+          console.error('Unknown progress type: ' + status.type);
+          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+              onCopyProgress);
+          chrome.fileBrowserPrivate.cancelCopy(copyId);
+          errorCallback(util.createDOMError(
+              util.FileError.INVALID_STATE_ERR));
+          callback();
+      }
+    });
   };
 
   // Register the listener before calling startCopy. Otherwise some events
@@ -201,6 +227,7 @@ fileOperationUtil.copyTo = function(
   chrome.fileBrowserPrivate.onCopyProgress.addListener(onCopyProgress);
 
   // Then starts the copy.
+  // TODO(mtomasz): Convert URL to Entry in custom bindings.
   chrome.fileBrowserPrivate.startCopy(
       source.toURL(), parent.toURL(), newName, function(startCopyId) {
         // last error contains the FileError code on error.
@@ -208,8 +235,7 @@ fileOperationUtil.copyTo = function(
           // Unsubscribe the progress listener.
           chrome.fileBrowserPrivate.onCopyProgress.removeListener(
               onCopyProgress);
-          errorCallback(util.createFileError(
-              Integer.parseInt(chrome.runtime.lastError, 10)));
+          errorCallback(util.createDOMError(chrome.runtime.lastError));
           return;
         }
 
@@ -255,7 +281,7 @@ fileOperationUtil.zipSelection = function(
         if (!success) {
           // Failed to create a zip archive.
           errorCallback(
-              util.createFileError(FileError.INVALID_MODIFICATION_ERR));
+              util.createDOMError(util.FileError.INVALID_MODIFICATION_ERR));
           return;
         }
 
@@ -272,24 +298,10 @@ function FileOperationManager() {
   this.copyTasks_ = [];
   this.deleteTasks_ = [];
   this.taskIdCounter_ = 0;
-
   this.eventRouter_ = new FileOperationManager.EventRouter();
 
   Object.seal(this);
 }
-
-/**
- * Get FileOperationManager instance. In case is hasn't been initialized, a new
- * instance is created.
- *
- * @return {FileOperationManager} A FileOperationManager instance.
- */
-FileOperationManager.getInstance = function() {
-  if (!FileOperationManager.instance_)
-    FileOperationManager.instance_ = new FileOperationManager();
-
-  return FileOperationManager.instance_;
-};
 
 /**
  * Manages Event dispatching.
@@ -315,7 +327,7 @@ FileOperationManager.EventRouter.prototype.__proto__ = cr.EventTarget.prototype;
  * @param {string} reason Event type. One of "BEGIN", "PROGRESS", "SUCCESS",
  *     "ERROR" or "CANCELLED". TODO(hidehiko): Use enum.
  * @param {Object} status Current FileOperationManager's status. See also
- *     FileOperationManager.getStatus().
+ *     FileOperationManager.Task.getStatus().
  * @param {string} taskId ID of task related with the event.
  * @param {FileOperationManager.Error=} opt_error The info for the error. This
  *     should be set iff the reason is "ERROR".
@@ -360,8 +372,6 @@ FileOperationManager.EventRouter.prototype.sendDeleteEvent = function(
   event.entries = task.entries;
   event.totalBytes = task.totalBytes;
   event.processedBytes = task.processedBytes;
-  // TODO(hirono): Remove the urls property from the event.
-  event.urls = util.entriesToURLs(task.entries);
   this.dispatchEvent(event);
 };
 
@@ -401,7 +411,12 @@ FileOperationManager.Task = function(
    */
   this.processedBytes = 0;
 
-  this.deleteAfterCopy = false;
+  /**
+   * Index of the progressing entry in sourceEntries.
+   * @type {number}
+   * @private
+   */
+  this.processingSourceIndex_ = 0;
 
   /**
    * Set to true when cancel is requested.
@@ -428,15 +443,6 @@ FileOperationManager.Task = function(
  * @param {function()} callback When entries resolved.
  */
 FileOperationManager.Task.prototype.initialize = function(callback) {
-};
-
-/**
- * Updates copy progress status for the entry.
- *
- * @param {number} size Number of bytes that has been copied since last update.
- */
-FileOperationManager.Task.prototype.updateFileCopyProgress = function(size) {
-  this.completedBytes += size;
 };
 
 /**
@@ -472,44 +478,33 @@ FileOperationManager.Task.prototype.run = function(
  * @return {object} Status object.
  */
 FileOperationManager.Task.prototype.getStatus = function() {
-  var numRemainingItems = this.countRemainingItems();
+  var processingEntry = this.sourceEntries[this.processingSourceIndex_];
   return {
     operationType: this.operationType,
-    numRemainingItems: numRemainingItems,
+    numRemainingItems: this.sourceEntries.length - this.processingSourceIndex_,
     totalBytes: this.totalBytes,
     processedBytes: this.processedBytes,
-    processingEntry: this.getSingleEntry()
+    processingEntryName: processingEntry ? processingEntry.name : ''
   };
 };
 
 /**
- * Counts the number of remaining items.
- * @return {number} Number of remaining items.
+ * Obtains the number of total processed bytes.
+ * @return {number} Number of total processed bytes.
+ * @private
  */
-FileOperationManager.Task.prototype.countRemainingItems = function() {
-  var count = 0;
-  for (var i = 0; i < this.processingEntries.length; i++) {
-    for (var url in this.processingEntries[i]) {
-      count++;
+FileOperationManager.Task.prototype.calcProcessedBytes_ = function() {
+  var bytes = 0;
+  for (var i = 0; i < this.processingSourceIndex_ + 1; i++) {
+    var entryMap = this.processingEntries[i];
+    if (!entryMap)
+      break;
+    for (var name in entryMap) {
+      bytes += i < this.processingSourceIndex_ ?
+          entryMap[name].size : entryMap[name].processedBytes;
     }
   }
-  return count;
-};
-
-/**
- * Obtains the single processing entry. If there are multiple processing
- * entries, it returns null.
- * @return {Entry} First entry.
- */
-FileOperationManager.Task.prototype.getSingleEntry = function() {
-  if (this.countRemainingItems() !== 1)
-    return null;
-  for (var i = 0; i < this.processingEntries.length; i++) {
-    var entryMap = this.processingEntries[i];
-    for (var name in entryMap)
-      return entryMap[name];
-  }
-  return null;
+  return bytes;
 };
 
 /**
@@ -517,12 +512,21 @@ FileOperationManager.Task.prototype.getSingleEntry = function() {
  *
  * @param {Array.<Entry>} sourceEntries Array of source entries.
  * @param {DirectoryEntry} targetDirEntry Target directory.
+ * @param {boolean} deleteAfterCopy Whether the delete original files after
+ *     copy.
  * @constructor
  * @extends {FileOperationManager.Task}
  */
-FileOperationManager.CopyTask = function(sourceEntries, targetDirEntry) {
+FileOperationManager.CopyTask = function(sourceEntries,
+                                         targetDirEntry,
+                                         deleteAfterCopy) {
   FileOperationManager.Task.call(
-      this, util.FileOperationType.COPY, sourceEntries, targetDirEntry);
+      this,
+      deleteAfterCopy ?
+          util.FileOperationType.MOVE : util.FileOperationType.COPY,
+      sourceEntries,
+      targetDirEntry);
+  this.deleteAfterCopy = deleteAfterCopy;
 };
 
 /**
@@ -555,8 +559,8 @@ FileOperationManager.CopyTask.prototype.initialize = function(callback) {
           }.bind(this),
           function(error) {
             console.error(
-                'Failed to resolve for copy: %s',
-                util.getFileErrorMnemonic(error.code));
+                'Failed to resolve for copy: %s', error.name);
+            callback();
           });
     }.bind(this, i));
   }
@@ -565,8 +569,8 @@ FileOperationManager.CopyTask.prototype.initialize = function(callback) {
     // Fill totalBytes.
     this.totalBytes = 0;
     for (var i = 0; i < this.processingEntries.length; i++) {
-      for (var url in this.processingEntries[i])
-        this.totalBytes += this.processingEntries[i][url].size;
+      for (var entryURL in this.processingEntries[i])
+        this.totalBytes += this.processingEntries[i][entryURL].size;
     }
 
     callback();
@@ -625,32 +629,36 @@ FileOperationManager.CopyTask.prototype.run = function(
         if (this.cancelRequested_) {
           errorCallback(new FileOperationManager.Error(
               util.FileOperationErrorType.FILESYSTEM_ERROR,
-              util.createFileError(FileError.ABORT_ERR)));
+              util.createDOMError(util.FileError.ABORT_ERR)));
           return;
         }
         progressCallback();
         this.processEntry_(
             entry, this.targetDirEntry,
-            function(sourceUrl, destinationUrl) {
+            function(sourceEntry, destinationEntry) {
               // Finalize the entry's progress state.
-              var entry = this.processingEntries[index][sourceUrl];
-              if (entry) {
-                this.processedBytes += entry.size - entry.processedBytes;
-                progressCallback();
-                delete this.processingEntries[index][sourceUrl];
-              }
+              var sourceEntryURL = sourceEntry.toURL();
+              var processedEntry =
+                  this.processingEntries[index][sourceEntryURL];
 
-              webkitResolveLocalFileSystemURL(
-                  destinationUrl, function(destinationEntry) {
-                    entryChangedCallback(
-                        util.EntryChangedKind.CREATED, destinationEntry);
-                  });
+              // Update current source index.
+              this.processingSourceIndex_ = index + 1;
+              this.processedBytes = this.calcProcessedBytes_();
+
+              // The destination entry may be null, if the copied file got
+              // deleted just after copying.
+              if (destinationEntry) {
+                entryChangedCallback(
+                    util.EntryChangedKind.CREATED, destinationEntry);
+              }
             }.bind(this),
-            function(source_url, size) {
-              var entry = this.processingEntries[index][source_url];
-              if (entry) {
-                this.processedBytes += size - entry.processedBytes;
-                entry.processedBytes = size;
+            function(sourceEntry, size) {
+              var sourceEntryURL = sourceEntry.toURL();
+              var processedEntry =
+                  this.processingEntries[index][sourceEntryURL];
+              if (processedEntry) {
+                this.processedBytes += size - processedEntry.processedBytes;
+                processedEntry.processedBytes = size;
                 progressCallback();
               }
             }.bind(this),
@@ -673,10 +681,10 @@ FileOperationManager.CopyTask.prototype.run = function(
  * @param {Entry} sourceEntry An entry to be copied.
  * @param {DirectoryEntry} destinationEntry The entry which will contain the
  *     copied entry.
- * @param {function(string, string)} entryChangedCallback
- *     Callback invoked when an entry is created with the source url and
- *     the destination url.
- * @param {function(string, number)} progressCallback Callback invoked
+ * @param {function(Entry, Entry} entryChangedCallback
+ *     Callback invoked when an entry is created with the source Entry and
+ *     the destination Entry.
+ * @param {function(Entry, number)} progressCallback Callback invoked
  *     periodically during the copying.
  * @param {function()} successCallback On success.
  * @param {function(FileOperationManager.Error)} errorCallback On error.
@@ -691,7 +699,7 @@ FileOperationManager.CopyTask.prototype.processEntry_ = function(
         if (this.cancelRequested_) {
           errorCallback(new FileOperationManager.Error(
               util.FileOperationErrorType.FILESYSTEM_ERROR,
-              util.createFileError(FileError.ABORT_ERR)));
+              util.createDOMError(util.FileError.ABORT_ERR)));
           return;
         }
         this.cancelCallback_ = fileOperationUtil.copyTo(
@@ -740,7 +748,7 @@ FileOperationManager.MoveTask.prototype.initialize = function(callback) {
   // done by a single moveTo() call, we don't need to care about the
   // recursive traversal order.
   this.sourceEntries.sort(function(entry1, entry2) {
-    return entry2.fullPath.length - entry1.fullPath.length;
+    return entry2.toURL().length - entry1.toURL().length;
   });
 
   this.processingEntries = [];
@@ -784,16 +792,16 @@ FileOperationManager.MoveTask.prototype.run = function(
         if (this.cancelRequested_) {
           errorCallback(new FileOperationManager.Error(
               util.FileOperationErrorType.FILESYSTEM_ERROR,
-              util.createFileError(FileError.ABORT_ERR)));
+              util.createDOMError(util.FileError.ABORT_ERR)));
           return;
         }
         progressCallback();
         FileOperationManager.MoveTask.processEntry_(
             entry, this.targetDirEntry, entryChangedCallback,
             function() {
-              // Erase the processing entry.
-              this.processingEntries[index] = {};
-              this.processedBytes++;
+              // Update current source index.
+              this.processingSourceIndex_ = index + 1;
+              this.processedBytes = this.calcProcessedBytes_();
               callback();
             }.bind(this),
             errorCallback);
@@ -878,7 +886,7 @@ FileOperationManager.ZipTask.prototype.initialize = function(callback) {
               resolvedEntryMap[entries[j].toURL()] = entries[j];
             callback();
           },
-          function(error) {});
+          callback);
     }.bind(this, i));
   }
 
@@ -910,11 +918,9 @@ FileOperationManager.ZipTask.prototype.run = function(
   // TODO(hidehiko): we should localize the name.
   var destName = 'Archive';
   if (this.sourceEntries.length == 1) {
-    var entryPath = this.sourceEntries[0].fullPath;
-    var i = entryPath.lastIndexOf('/');
-    var basename = (i < 0) ? entryPath : entryPath.substr(i + 1);
-    i = basename.lastIndexOf('.');
-    destName = ((i < 0) ? basename : basename.substr(0, i));
+    var entryName = this.sourceEntries[0].name;
+    var i = entryName.lastIndexOf('.');
+    destName = ((i < 0) ? entryName : entryName.substr(0, i));
   }
 
   fileOperationUtil.deduplicatePath(
@@ -964,49 +970,6 @@ FileOperationManager.Error = function(code, data) {
 };
 
 // FileOperationManager methods.
-
-/**
- * @return {Object} Status object.
- */
-FileOperationManager.prototype.getStatus = function() {
-  // TODO(hidehiko): Reorganize the structure when delete queue is merged
-  // into copy task queue.
-  var result = {
-    // Set to util.FileOperationType if all the running/pending tasks is
-    // the same kind of task.
-    operationType: null,
-
-    // The number of entries to be processed.
-    numRemainingItems: 0,
-
-    // The total number of bytes to be processed.
-    totalBytes: 0,
-
-    // The number of bytes.
-    processedBytes: 0,
-
-    // Available if numRemainingItems == 1. Pointing to an Entry which is
-    // begin processed.
-    processingEntry: task.getSingleEntry()
-  };
-
-  var operationType =
-      this.copyTasks_.length > 0 ? this.copyTasks_[0].operationType : null;
-  var task = null;
-  for (var i = 0; i < this.copyTasks_.length; i++) {
-    task = this.copyTasks_[i];
-    if (task.operationType != operationType)
-      operationType = null;
-
-    // Assuming the number of entries is small enough, count every time.
-    result.numRemainingItems += task.countRemainingItems();
-    result.totalBytes += task.totalBytes;
-    result.processedBytes += task.processedBytes;
-  }
-
-  result.operationType = operationType;
-  return result;
-};
 
 /**
  * Adds an event listener for the tasks.
@@ -1080,123 +1043,113 @@ FileOperationManager.prototype.requestTaskCancel = function(taskId) {
 /**
  * Kick off pasting.
  *
- * @param {Array.<string>} sourcePaths Path of the source files.
- * @param {string} targetPath The destination path of the target directory.
+ * @param {Array.<Entry>} sourceEntries Entries of the source files.
+ * @param {DirectoryEntry} targetEntry The destination entry of the target
+ *     directory.
  * @param {boolean} isMove True if the operation is "move", otherwise (i.e.
  *     if the operation is "copy") false.
  */
 FileOperationManager.prototype.paste = function(
-    sourcePaths, targetPath, isMove) {
-  // Do nothing if sourcePaths is empty.
-  if (sourcePaths.length == 0)
+    sourceEntries, targetEntry, isMove) {
+  // Do nothing if sourceEntries is empty.
+  if (sourceEntries.length === 0)
     return;
 
-  var errorCallback = function(error) {
-    this.eventRouter_.sendProgressEvent(
-        'ERROR',
-        this.getStatus(),
-        this.generateTaskId_(null),
-        new FileOperationManager.Error(
-            util.FileOperationErrorType.FILESYSTEM_ERROR, error));
-  }.bind(this);
+  var filteredEntries = [];
+  var resolveGroup = new AsyncUtil.Queue();
 
-  var targetEntry = null;
-  var entries = [];
-
-  // Resolve paths to entries.
-  var resolveGroup = new AsyncUtil.Group();
-  resolveGroup.add(function(callback) {
-    webkitResolveLocalFileSystemURL(
-        util.makeFilesystemUrl(targetPath),
-        function(entry) {
-          if (!entry.isDirectory) {
-            // Found a non directory entry.
-            errorCallback(util.createFileError(FileError.TYPE_MISMATCH_ERR));
-            return;
-          }
-
-          targetEntry = entry;
+  if (isMove) {
+    for (var index = 0; index < sourceEntries.length; index++) {
+      var sourceEntry = sourceEntries[index];
+      resolveGroup.run(function(sourceEntry, callback) {
+        sourceEntry.getParent(function(inParentEntry) {
+          if (!util.isSameEntry(inParentEntry, targetEntry))
+            filteredEntries.push(sourceEntry);
           callback();
-        },
-        errorCallback);
-  });
-
-  for (var i = 0; i < sourcePaths.length; i++) {
-    resolveGroup.add(function(sourcePath, callback) {
-      webkitResolveLocalFileSystemURL(
-          util.makeFilesystemUrl(sourcePath),
-          function(entry) {
-            entries.push(entry);
-            callback();
-          },
-          errorCallback);
-    }.bind(this, sourcePaths[i]));
+        }, function() {
+          console.warn(
+              'Failed to resolve the parent for: ' + sourceEntry.toURL());
+          // Even if the parent is not available, try to move it.
+          filteredEntries.push(sourceEntry);
+          callback();
+        });
+      }.bind(this, sourceEntry));
+    }
+  } else {
+    // Always copy all of the files.
+    filteredEntries = sourceEntries;
   }
 
-  resolveGroup.run(function() {
-    if (isMove) {
-      // Moving to the same directory is a redundant operation.
-      entries = entries.filter(function(entry) {
-        return targetEntry.fullPath + '/' + entry.name != entry.fullPath;
-      });
+  resolveGroup.run(function(callback) {
+    // Do nothing, if we have no entries to be pasted.
+    if (filteredEntries.length === 0)
+       return;
 
-      // Do nothing, if we have no entries to be moved.
-      if (entries.length == 0)
-        return;
-    }
-
-    this.queueCopy_(targetEntry, entries, isMove);
+    this.queueCopy_(targetEntry, filteredEntries, isMove);
   }.bind(this));
 };
 
 /**
  * Checks if the move operation is available between the given two locations.
+ * This method uses the volume manager, which is lazily created, therefore the
+ * result is returned asynchronously.
  *
  * @param {DirectoryEntry} sourceEntry An entry from the source.
  * @param {DirectoryEntry} targetDirEntry Directory entry for the target.
- * @return {boolean} Whether we can move from the source to the target.
+ * @param {function(boolean)} callback Callback with result whether the entries
+ *     can be directly moved.
+ * @private
  */
-FileOperationManager.prototype.isMovable = function(sourceEntry,
-                                               targetDirEntry) {
-  return (PathUtil.isDriveBasedPath(sourceEntry.fullPath) &&
-          PathUtil.isDriveBasedPath(targetDirEntry.fullPath)) ||
-         (PathUtil.getRootPath(sourceEntry.fullPath) ==
-          PathUtil.getRootPath(targetDirEntry.fullPath));
+FileOperationManager.prototype.isMovable_ = function(
+    sourceEntry, targetDirEntry, callback) {
+  VolumeManager.getInstance(function(volumeManager) {
+    var sourceLocationInfo = volumeManager.getLocationInfo(sourceEntry);
+    var targetDirLocationInfo = volumeManager.getLocationInfo(targetDirEntry);
+    callback(
+        sourceLocationInfo && targetDirLocationInfo &&
+        sourceLocationInfo.volumeInfo === targetDirLocationInfo.volumeInfo);
+  });
 };
 
 /**
- * Initiate a file copy.
+ * Initiate a file copy. When copying files, null can be specified as source
+ * directory.
  *
  * @param {DirectoryEntry} targetDirEntry Target directory.
  * @param {Array.<Entry>} entries Entries to copy.
  * @param {boolean} isMove In case of move.
- * @return {FileOperationManager.Task} Copy task.
  * @private
  */
 FileOperationManager.prototype.queueCopy_ = function(
     targetDirEntry, entries, isMove) {
-  // When copying files, null can be specified as source directory.
+  var createTask = function(task) {
+    task.taskId = this.generateTaskId_();
+    task.initialize(function() {
+      this.copyTasks_.push(task);
+      this.eventRouter_.sendProgressEvent(
+          'BEGIN', task.getStatus(), task.taskId);
+      if (this.copyTasks_.length === 1)
+        this.serviceAllTasks_();
+    }.bind(this));
+  }.bind(this);
+
   var task;
   if (isMove) {
-    if (this.isMovable(entries[0], targetDirEntry)) {
-      task = new FileOperationManager.MoveTask(entries, targetDirEntry);
-    } else {
-      task = new FileOperationManager.CopyTask(entries, targetDirEntry);
-      task.deleteAfterCopy = true;
-    }
+    // When moving between different volumes, moving is implemented as a copy
+    // and delete. This is because moving between volumes is slow, and moveTo()
+    // is not cancellable nor provides progress feedback.
+    this.isMovable_(entries[0], targetDirEntry, function(isMovable) {
+      if (isMovable) {
+        createTask(new FileOperationManager.MoveTask(entries, targetDirEntry));
+      } else {
+        createTask(
+            new FileOperationManager.CopyTask(entries, targetDirEntry, true));
+      }
+    });
   } else {
-    task = new FileOperationManager.CopyTask(entries, targetDirEntry);
+    createTask(
+        new FileOperationManager.CopyTask(entries, targetDirEntry, false));
   }
-
-  task.taskId = this.generateTaskId_();
-  task.initialize(function() {
-    this.copyTasks_.push(task);
-    this.eventRouter_.sendProgressEvent('BEGIN', task.getStatus(), task.taskId);
-    if (this.copyTasks_.length == 1)
-      this.serviceAllTasks_();
-  }.bind(this));
-
-  return task;
 };
 
 /**
@@ -1228,7 +1181,8 @@ FileOperationManager.prototype.serviceAllTasks_ = function() {
 
   var onTaskError = function(err) {
     var task = this.copyTasks_.shift();
-    var reason = err.data.code === FileError.ABORT_ERR ? 'CANCELED' : 'ERROR';
+    var reason = err.data.name === util.FileError.ABORT_ERR ?
+        'CANCELED' : 'ERROR';
     this.eventRouter_.sendProgressEvent(reason,
                                         task.getStatus(),
                                         task.taskId,

@@ -28,7 +28,7 @@ bool ReadLaunchDimension(const extensions::Manifest* manifest,
                          int* target,
                          bool is_valid_container,
                          base::string16* error) {
-  const Value* temp = NULL;
+  const base::Value* temp = NULL;
   if (manifest->Get(key, &temp)) {
     if (!is_valid_container) {
       *error = ErrorUtils::FormatErrorMessageUTF16(
@@ -112,18 +112,18 @@ bool AppLaunchInfo::Parse(Extension* extension, base::string16* error) {
 }
 
 bool AppLaunchInfo::LoadLaunchURL(Extension* extension, base::string16* error) {
-  const Value* temp = NULL;
+  const base::Value* temp = NULL;
 
   // Launch URL can be either local (to chrome-extension:// root) or an absolute
   // web URL.
   if (extension->manifest()->Get(keys::kLaunchLocalPath, &temp)) {
     if (extension->manifest()->Get(keys::kLaunchWebURL, NULL)) {
-      *error = ASCIIToUTF16(errors::kLaunchPathAndURLAreExclusive);
+      *error = base::ASCIIToUTF16(errors::kLaunchPathAndURLAreExclusive);
       return false;
     }
 
     if (extension->manifest()->Get(keys::kWebURLs, NULL)) {
-      *error = ASCIIToUTF16(errors::kLaunchPathAndExtentAreExclusive);
+      *error = base::ASCIIToUTF16(errors::kLaunchPathAndExtentAreExclusive);
       return false;
     }
 
@@ -166,7 +166,7 @@ bool AppLaunchInfo::LoadLaunchURL(Extension* extension, base::string16* error) {
 
     launch_web_url_ = url;
   } else if (extension->is_legacy_packaged_app()) {
-    *error = ASCIIToUTF16(errors::kLaunchURLRequired);
+    *error = base::ASCIIToUTF16(errors::kLaunchURLRequired);
     return false;
   }
 
@@ -226,14 +226,14 @@ bool AppLaunchInfo::LoadLaunchURL(Extension* extension, base::string16* error) {
 
 bool AppLaunchInfo::LoadLaunchContainer(Extension* extension,
                                         base::string16* error) {
-  const Value* tmp_launcher_container = NULL;
+  const base::Value* tmp_launcher_container = NULL;
   if (!extension->manifest()->Get(keys::kLaunchContainer,
                                   &tmp_launcher_container))
     return true;
 
   std::string launch_container_string;
   if (!tmp_launcher_container->GetAsString(&launch_container_string)) {
-    *error = ASCIIToUTF16(errors::kInvalidLaunchContainer);
+    *error = base::ASCIIToUTF16(errors::kInvalidLaunchContainer);
     return false;
   }
 
@@ -242,7 +242,7 @@ bool AppLaunchInfo::LoadLaunchContainer(Extension* extension,
   } else if (launch_container_string == values::kLaunchContainerTab) {
     launch_container_ = LAUNCH_CONTAINER_TAB;
   } else {
-    *error = ASCIIToUTF16(errors::kInvalidLaunchContainer);
+    *error = base::ASCIIToUTF16(errors::kInvalidLaunchContainer);
     return false;
   }
 

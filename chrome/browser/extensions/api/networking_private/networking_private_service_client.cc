@@ -23,7 +23,6 @@ namespace extensions {
 
 namespace {
 
-const char kNetworkingPrivateServiceClient[] = "NetworkingPrivateServiceClient";
 const char kNetworkingPrivateSequenceTokenName[] = "NetworkingPrivate";
 
 // Implementation of Verify* methods using NetworkingPrivateCrypto.
@@ -124,6 +123,7 @@ NetworkingPrivateServiceClient::NetworkingPrivateServiceClient(
         &WiFiService::Initialize,
         base::Unretained(wifi_service_.get()),
         task_runner_));
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
 }
 
 NetworkingPrivateServiceClient::~NetworkingPrivateServiceClient() {
@@ -144,6 +144,7 @@ NetworkingPrivateServiceClient::ServiceCallbacks::~ServiceCallbacks() {}
 
 void NetworkingPrivateServiceClient::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
   // Clear callbacks map to release callbacks from UI thread.
   callbacks_map_.Clear();
   // Post ShutdownServicesOnWorkerThread task to delete services when all posted
@@ -161,6 +162,14 @@ void NetworkingPrivateServiceClient::AddObserver(Observer* observer) {
 
 void NetworkingPrivateServiceClient::RemoveObserver(Observer* observer) {
   network_events_observers_.RemoveObserver(observer);
+}
+
+void NetworkingPrivateServiceClient::OnNetworkChanged(
+    net::NetworkChangeNotifier::ConnectionType type) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&WiFiService::RequestConnectedNetworkUpdate,
+                 base::Unretained(wifi_service_.get())));
 }
 
 NetworkingPrivateServiceClient::ServiceCallbacks*
@@ -183,7 +192,7 @@ void NetworkingPrivateServiceClient::GetProperties(
   service_callbacks->error_callback = error_callback;
   service_callbacks->get_properties_callback = callback;
 
-  DictionaryValue* properties = new DictionaryValue();
+  base::DictionaryValue* properties = new base::DictionaryValue();
   std::string* error = new std::string;
 
   task_runner_->PostTaskAndReply(
@@ -209,7 +218,7 @@ void NetworkingPrivateServiceClient::GetManagedProperties(
   service_callbacks->error_callback = error_callback;
   service_callbacks->get_properties_callback = callback;
 
-  DictionaryValue* properties = new DictionaryValue();
+  base::DictionaryValue* properties = new base::DictionaryValue();
   std::string* error = new std::string;
 
   task_runner_->PostTaskAndReply(
@@ -235,7 +244,7 @@ void NetworkingPrivateServiceClient::GetState(
   service_callbacks->error_callback = error_callback;
   service_callbacks->get_properties_callback = callback;
 
-  DictionaryValue* properties = new DictionaryValue();
+  base::DictionaryValue* properties = new base::DictionaryValue();
   std::string* error = new std::string;
 
   task_runner_->PostTaskAndReply(
@@ -259,7 +268,7 @@ void NetworkingPrivateServiceClient::GetVisibleNetworks(
   ServiceCallbacks* service_callbacks = AddServiceCallbacks();
   service_callbacks->get_visible_networks_callback = callback;
 
-  ListValue* networks = new ListValue();
+  base::ListValue* networks = new base::ListValue();
 
   task_runner_->PostTaskAndReply(
       FROM_HERE,
@@ -430,7 +439,7 @@ void NetworkingPrivateServiceClient::VerifyAndEncryptData(
 void NetworkingPrivateServiceClient::AfterGetProperties(
     ServiceCallbacksID callback_id,
     const std::string& network_guid,
-    const DictionaryValue* properties,
+    const base::DictionaryValue* properties,
     const std::string* error) {
   ServiceCallbacks* service_callbacks = callbacks_map_.Lookup(callback_id);
   DCHECK(service_callbacks);
@@ -447,7 +456,7 @@ void NetworkingPrivateServiceClient::AfterGetProperties(
 
 void NetworkingPrivateServiceClient::AfterGetVisibleNetworks(
     ServiceCallbacksID callback_id,
-    const ListValue* networks) {
+    const base::ListValue* networks) {
   ServiceCallbacks* service_callbacks = callbacks_map_.Lookup(callback_id);
   DCHECK(service_callbacks);
   DCHECK(!service_callbacks->get_visible_networks_callback.is_null());

@@ -13,10 +13,10 @@
 #include "base/prefs/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/synchronization/waitable_event_watcher.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/time/time.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_method_call_status.h"
 #endif
@@ -85,6 +85,9 @@ class BrowsingDataRemover
     REMOVE_WEBSQL = 1 << 11,
     REMOVE_SERVER_BOUND_CERTS = 1 << 12,
     REMOVE_CONTENT_LICENSES = 1 << 13,
+#if defined(OS_ANDROID)
+    REMOVE_APP_BANNER_DATA = 1 << 14,
+#endif
     // The following flag is used only in tests. In normal usage, hosted app
     // data is controlled by the REMOVE_COOKIES flag, applied to the
     // protected-web origin.
@@ -92,19 +95,28 @@ class BrowsingDataRemover
 
     // "Site data" includes cookies, appcache, file systems, indexedDBs, local
     // storage, webSQL, and plugin data.
-    REMOVE_SITE_DATA = REMOVE_APPCACHE | REMOVE_COOKIES | REMOVE_FILE_SYSTEMS |
-                       REMOVE_INDEXEDDB | REMOVE_LOCAL_STORAGE |
-                       REMOVE_PLUGIN_DATA | REMOVE_WEBSQL |
+    REMOVE_SITE_DATA = REMOVE_APPCACHE |
+                       REMOVE_COOKIES |
+                       REMOVE_FILE_SYSTEMS |
+                       REMOVE_INDEXEDDB |
+                       REMOVE_LOCAL_STORAGE |
+                       REMOVE_PLUGIN_DATA |
+                       REMOVE_WEBSQL |
+#if defined(OS_ANDROID)
+                       REMOVE_APP_BANNER_DATA |
+#endif
                        REMOVE_SERVER_BOUND_CERTS,
 
     // Includes all the available remove options. Meant to be used by clients
     // that wish to wipe as much data as possible from a Profile, to make it
     // look like a new Profile.
-    REMOVE_ALL = REMOVE_APPCACHE | REMOVE_CACHE | REMOVE_COOKIES |
-                 REMOVE_DOWNLOADS | REMOVE_FILE_SYSTEMS | REMOVE_FORM_DATA |
-                 REMOVE_HISTORY | REMOVE_INDEXEDDB | REMOVE_LOCAL_STORAGE |
-                 REMOVE_PLUGIN_DATA | REMOVE_PASSWORDS | REMOVE_WEBSQL |
-                 REMOVE_SERVER_BOUND_CERTS | REMOVE_CONTENT_LICENSES,
+    REMOVE_ALL = REMOVE_SITE_DATA |
+                 REMOVE_CACHE |
+                 REMOVE_DOWNLOADS |
+                 REMOVE_FORM_DATA |
+                 REMOVE_HISTORY |
+                 REMOVE_PASSWORDS |
+                 REMOVE_CONTENT_LICENSES,
   };
 
   // When BrowsingDataRemover successfully removes data, a notification of type
@@ -401,7 +413,7 @@ class BrowsingDataRemover
   ObserverList<Observer> observer_list_;
 
   // Used if we need to clear history.
-  CancelableTaskTracker history_task_tracker_;
+  base::CancelableTaskTracker history_task_tracker_;
 
   scoped_ptr<TemplateURLService::Subscription> template_url_sub_;
 

@@ -22,6 +22,7 @@
 
 namespace net {
 
+class CryptoHandshakeMessage;
 class EphemeralKeySource;
 class KeyExchange;
 class ProofSource;
@@ -38,6 +39,14 @@ struct ClientHelloInfo;
 namespace test {
 class QuicCryptoServerConfigPeer;
 }  // namespace test
+
+// Hook that allows application code to subscribe to primary config changes.
+class PrimaryConfigChangedCallback {
+ public:
+  PrimaryConfigChangedCallback();
+  virtual ~PrimaryConfigChangedCallback();
+  virtual void Run(const std::string& scid) = 0;
+};
 
 // Callback used to accept the result of the |client_hello| validation step.
 class NET_EXPORT_PRIVATE ValidateClientHelloResultCallback {
@@ -101,9 +110,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // TESTING is a magic parameter for passing to the constructor in tests.
   static const char TESTING[];
 
-  // DefaultConfig generates a QuicServerConfigProtobuf protobuf suitable for
-  // using in tests.
-  static QuicServerConfigProtobuf* DefaultConfig(
+  // Generates a QuicServerConfigProtobuf protobuf suitable for
+  // AddConfig and SetConfigs.
+  static QuicServerConfigProtobuf* GenerateConfig(
       QuicRandom* rand,
       const QuicClock* clock,
       const ConfigOptions& options);
@@ -133,6 +142,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // encountered and no changes to the QuicCryptoServerConfig will occur.
   bool SetConfigs(const std::vector<QuicServerConfigProtobuf*>& protobufs,
                   QuicWallTime now);
+
+  // Get the server config ids for all known configs.
+  void GetConfigIds(std::vector<std::string>* scids) const;
 
   // Checks |client_hello| for gross errors and determines whether it
   // can be shown to be fresh (i.e. not a replay).  The result of the
@@ -168,8 +180,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   //     ValidateClientHello.  Contains the client hello message and
   //     information about it.
   // guid: the GUID for the connection, which is used in key derivation.
-  // client_ip: the IP address of the client, which is used to generate and
-  //     validate source-address tokens.
+  // client_address: the IP address and port of the client. The IP address is
+  //     used to generate and validate source-address tokens.
   // version: version of the QUIC protocol in use for this connection
   // supported_versions: versions of the QUIC protocol that this server
   //     supports.
@@ -183,7 +195,7 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   QuicErrorCode ProcessClientHello(
       const ValidateClientHelloResultCallback::Result& validate_chlo_result,
       QuicGuid guid,
-      IPEndPoint client_ip,
+      IPEndPoint client_address,
       QuicVersion version,
       const QuicVersionVector& supported_versions,
       const QuicClock* clock,
@@ -254,6 +266,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // uniqueness.
   void set_server_nonce_strike_register_window_secs(uint32 window_secs);
 
+  // Set and take ownership of the callback to invoke on primary config changes.
+  void AcquirePrimaryConfigChangedCb(PrimaryConfigChangedCallback* cb);
+
  private:
   friend class test::QuicCryptoServerConfigPeer;
 
@@ -295,6 +310,11 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
     // primary config. A value of QuicWallTime::Zero() means that this config
     // will not be promoted at a specific time.
     QuicWallTime primary_time;
+
+    // Secondary sort key for use when selecting primary configs and
+    // there are multiple configs with the same primary time.
+    // Smaller numbers mean higher priority.
+    uint64 priority;
 
    private:
     friend class base::RefCounted<Config>;
@@ -377,7 +397,10 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // next_config_promotion_time_ contains the nearest, future time when an
   // active config will be promoted to primary.
   mutable QuicWallTime next_config_promotion_time_;
+  // Callback to invoke when the primary config changes.
+  scoped_ptr<PrimaryConfigChangedCallback> primary_config_changed_cb_;
 
+  // Protects access to the pointer held by strike_register_client_.
   mutable base::Lock strike_register_client_lock_;
   // strike_register_ contains a data structure that keeps track of previously
   // observed client nonces in order to prevent replay attacks.

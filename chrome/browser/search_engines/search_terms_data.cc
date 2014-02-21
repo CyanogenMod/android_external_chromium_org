@@ -8,17 +8,18 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
-#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "sync/protocol/sync.pb.h"
 #include "url/gurl.h"
 
 #if defined(ENABLE_RLZ)
@@ -61,7 +62,7 @@ std::string SearchTermsData::GetApplicationLocale() const {
   return "en";
 }
 
-string16 SearchTermsData::GetRlzParameterValue() const {
+base::string16 SearchTermsData::GetRlzParameterValue() const {
   return base::string16();
 }
 
@@ -73,12 +74,7 @@ std::string SearchTermsData::GetSuggestClient() const {
   return std::string();
 }
 
-std::string SearchTermsData::ForceInstantResultsParam(
-    bool for_prerender) const {
-  return std::string();
-}
-
-std::string SearchTermsData::InstantExtendedEnabledParam() const {
+std::string SearchTermsData::GetSuggestRequestIdentifier() const {
   return std::string();
 }
 
@@ -116,7 +112,7 @@ std::string UIThreadSearchTermsData::GetApplicationLocale() const {
 
 // Android implementations are located in search_terms_data_android.cc.
 #if !defined(OS_ANDROID)
-string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
+base::string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::string16 rlz_string;
@@ -148,26 +144,27 @@ std::string UIThreadSearchTermsData::GetSearchClient() const {
 std::string UIThreadSearchTermsData::GetSuggestClient() const {
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(OS_ANDROID)
+  sync_pb::SyncEnums::DeviceType device_type =
+      browser_sync::DeviceInfo::GetLocalDeviceType();
+  return device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE ?
+    "chrome" : "chrome-omni";
+#else
   return chrome::IsInstantExtendedAPIEnabled() ? "chrome-omni" : "chrome";
+#endif
 }
 
-std::string UIThreadSearchTermsData::ForceInstantResultsParam(
-    bool for_prerender) const {
+std::string UIThreadSearchTermsData::GetSuggestRequestIdentifier() const {
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return (for_prerender || !chrome::IsInstantExtendedAPIEnabled()) ? "ion=1&" :
-      std::string();
-}
-
-std::string UIThreadSearchTermsData::InstantExtendedEnabledParam() const {
-  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
-  uint64 instant_extended_api_version = chrome::EmbeddedSearchPageVersion();
-  if (instant_extended_api_version) {
-    return std::string(google_util::kInstantExtendedAPIParam) + "=" +
-        base::Uint64ToString(instant_extended_api_version) + "&";
-  }
-  return std::string();
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(OS_ANDROID)
+  sync_pb::SyncEnums::DeviceType device_type =
+      browser_sync::DeviceInfo::GetLocalDeviceType();
+  return device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE ?
+    "chrome-mobile-ext" : "chrome-ext";
+#else
+  return "chrome-ext";
+#endif
 }
 
 std::string UIThreadSearchTermsData::NTPIsThemedParam() const {

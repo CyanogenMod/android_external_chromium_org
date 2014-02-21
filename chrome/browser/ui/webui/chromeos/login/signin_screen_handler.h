@@ -8,19 +8,20 @@
 #include <set>
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/chromeos/events/system_key_event_listener.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/system_key_event_listener.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
@@ -37,6 +38,7 @@ class ListValue;
 
 namespace chromeos {
 
+class AuthenticatedUserEmailRetriever;
 class CaptivePortalWindowProxy;
 class CoreOobeActor;
 class LocallyManagedUserCreationScreenHandler;
@@ -74,6 +76,9 @@ class LoginDisplayWebUIHandler {
   virtual void OnPreferencesChanged() = 0;
   virtual void ResetSigninScreenHandlerDelegate() = 0;
   virtual void ShowBannerMessage(const std::string& message) = 0;
+  virtual void ShowUserPodButton(const std::string& username,
+                                 const std::string& iconURL,
+                                 const base::Closure& click_callback) = 0;
   virtual void ShowError(int login_attempts,
                          const std::string& error_text,
                          const std::string& help_link_text,
@@ -182,7 +187,8 @@ class SigninScreenHandlerDelegate {
   virtual void Signout() = 0;
 
   // Login to kiosk mode for app with |app_id|.
-  virtual void LoginAsKioskApp(const std::string& app_id) = 0;
+  virtual void LoginAsKioskApp(const std::string& app_id,
+                               bool diagnostic_mode) = 0;
 
  protected:
   virtual ~SigninScreenHandlerDelegate() {}
@@ -195,8 +201,7 @@ class SigninScreenHandler
       public LoginDisplayWebUIHandler,
       public SystemKeyEventListener::CapsLockObserver,
       public content::NotificationObserver,
-      public NetworkStateInformer::NetworkStateInformerObserver,
-      public WallpaperManager::Observer {
+      public NetworkStateInformer::NetworkStateInformerObserver {
  public:
   SigninScreenHandler(
       const scoped_refptr<NetworkStateInformer>& network_state_informer,
@@ -229,17 +234,12 @@ class SigninScreenHandler
     kiosk_enable_flow_aborted_callback_for_test_ = callback;
   }
 
-  // From WallpaperManager::Observer
-  virtual void OnWallpaperAnimationFinished(const std::string& email) OVERRIDE;
-
  private:
   enum UIState {
     UI_STATE_UNKNOWN = 0,
     UI_STATE_GAIA_SIGNIN,
     UI_STATE_ACCOUNT_PICKER,
   };
-
-  typedef base::hash_set<std::string> WebUIObservers;
 
   friend class ReportDnsCacheClearedOnUIThread;
   friend class LocallyManagedUserCreationScreenHandler;
@@ -249,7 +249,7 @@ class SigninScreenHandler
   // Updates current UI of the signin screen according to |ui_state|
   // argument.  Optionally it can pass screen initialization data via
   // |params| argument.
-  void UpdateUIState(UIState ui_state, DictionaryValue* params);
+  void UpdateUIState(UIState ui_state, base::DictionaryValue* params);
 
   void UpdateStateInternal(ErrorScreenActor::ErrorReason reason,
                            bool force_update);
@@ -276,6 +276,9 @@ class SigninScreenHandler
   virtual void OnPreferencesChanged() OVERRIDE;
   virtual void ResetSigninScreenHandlerDelegate() OVERRIDE;
   virtual void ShowBannerMessage(const std::string& message) OVERRIDE;
+  virtual void ShowUserPodButton(const std::string& username,
+                                 const std::string& iconURL,
+                                 const base::Closure& click_callback) OVERRIDE;
   virtual void ShowError(int login_attempts,
                          const std::string& error_text,
                          const std::string& help_link_text,
@@ -318,8 +321,12 @@ class SigninScreenHandler
                                     const std::string& password,
                                     const std::string& auth_code);
   void HandleCompleteLogin(const std::string& typed_email,
-                           const std::string& password);
+                           const std::string& password,
+                           bool using_saml);
   void HandleGetUsers();
+  void HandleUsingSAMLAPI();
+  void HandleScrapedPasswordCount(int password_count);
+  void HandleScrapedPasswordVerificationFailed();
   void HandleAuthenticateUser(const std::string& username,
                               const std::string& password);
   void HandleLaunchDemoUser();
@@ -355,12 +362,15 @@ class SigninScreenHandler
   void HandleUpdateOfflineLogin(bool offline_login_active);
   void HandleShowLocallyManagedUserCreationScreen();
   void HandleFocusPod(const std::string& user_id);
-  void HandleLaunchKioskApp(const std::string& app_id);
+  void HandleLaunchKioskApp(const std::string& app_id, bool diagnostic_mode);
+  void HandleCustomButtonClicked(const std::string& username);
+  void HandleRetrieveAuthenticatedUserEmail(double attempt_token);
 
   // Fills |user_dict| with information about |user|.
   static void FillUserDictionary(User* user,
                                  bool is_owner,
-                                 DictionaryValue* user_dict);
+                                 bool is_signin_to_add,
+                                 base::DictionaryValue* user_dict);
 
   // Sends user list to account picker.
   void SendUserList(bool animated);
@@ -420,6 +430,10 @@ class SigninScreenHandler
   // Shows signin screen for |email|.
   void OnShowAddUser(const std::string& email);
 
+  // Updates the member variable and UMA histogram indicating whether the
+  // principals API was used during SAML login.
+  void SetSAMLPrincipalsAPIUsed(bool api_used);
+
   GaiaScreenHandler::FrameState FrameState() const;
   net::Error FrameError() const;
 
@@ -470,6 +484,10 @@ class SigninScreenHandler
   // Emails of the users, whose passwords have recently been changed.
   std::set<std::string> password_changed_for_;
 
+  // If the user authenticated via SAML, this indicates whether the principals
+  // API was used.
+  bool using_saml_api_;
+
   // Test credentials.
   std::string test_user_;
   std::string test_pass_;
@@ -505,9 +523,15 @@ class SigninScreenHandler
 
   base::Closure kiosk_enable_flow_aborted_callback_for_test_;
 
+  // Map of callbacks run when the custom button on a user pod is clicked.
+  std::map<std::string, base::Closure> user_pod_button_callback_map_;
+
   // Non-owning ptr.
   // TODO (ygorshenin@): remove this dependency.
   GaiaScreenHandler* gaia_screen_handler_;
+
+  // Helper that retrieves the authenticated user's e-mail address.
+  scoped_ptr<AuthenticatedUserEmailRetriever> email_retriever_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninScreenHandler);
 };

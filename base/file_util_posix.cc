@@ -244,12 +244,12 @@ bool DeleteFile(const FilePath& path, bool recursive) {
 
 bool ReplaceFile(const FilePath& from_path,
                  const FilePath& to_path,
-                 PlatformFileError* error) {
+                 File::Error* error) {
   ThreadRestrictions::AssertIOAllowed();
   if (rename(from_path.value().c_str(), to_path.value().c_str()) == 0)
     return true;
   if (error)
-    *error = ErrnoToPlatformFileError(errno);
+    *error = File::OSErrorToFileError(errno);
   return false;
 }
 
@@ -260,13 +260,10 @@ bool CopyDirectory(const FilePath& from_path,
   // Some old callers of CopyDirectory want it to support wildcards.
   // After some discussion, we decided to fix those callers.
   // Break loudly here if anyone tries to do this.
-  // TODO(evanm): remove this once we're sure it's ok.
   DCHECK(to_path.value().find('*') == std::string::npos);
   DCHECK(from_path.value().find('*') == std::string::npos);
 
-  char top_dir[PATH_MAX];
-  if (strlcpy(top_dir, from_path.value().c_str(),
-              arraysize(top_dir)) >= arraysize(top_dir)) {
+  if (from_path.value().size() >= PATH_MAX) {
     return false;
   }
 
@@ -286,10 +283,10 @@ bool CopyDirectory(const FilePath& from_path,
     return false;
   if (real_to_path.value().size() >= real_from_path.value().size() &&
       real_to_path.value().compare(0, real_from_path.value().size(),
-      real_from_path.value()) == 0)
+                                   real_from_path.value()) == 0) {
     return false;
+  }
 
-  bool success = true;
   int traverse_type = FileEnumerator::FILES | FileEnumerator::SHOW_SYM_LINKS;
   if (recursive)
     traverse_type |= FileEnumerator::DIRECTORIES;
@@ -302,7 +299,7 @@ bool CopyDirectory(const FilePath& from_path,
   if (stat(from_path.value().c_str(), &from_stat) < 0) {
     DLOG(ERROR) << "CopyDirectory() couldn't stat source directory: "
                 << from_path.value() << " errno = " << errno;
-    success = false;
+    return false;
   }
   struct stat to_path_stat;
   FilePath from_path_base = from_path;
@@ -315,8 +312,10 @@ bool CopyDirectory(const FilePath& from_path,
 
   // The Windows version of this function assumes that non-recursive calls
   // will always have a directory for from_path.
+  // TODO(maruel): This is not necessary anymore.
   DCHECK(recursive || S_ISDIR(from_stat.st_mode));
 
+  bool success = true;
   while (success && !current.empty()) {
     // current is the source path, including from_path, so append
     // the suffix after from_path to to_path to create the target_path.
@@ -589,7 +588,7 @@ bool CreateNewTempDirectory(const FilePath::StringType& prefix,
 }
 
 bool CreateDirectoryAndGetError(const FilePath& full_path,
-                                PlatformFileError* error) {
+                                File::Error* error) {
   ThreadRestrictions::AssertIOAllowed();  // For call to mkdir().
   std::vector<FilePath> subpaths;
 
@@ -616,7 +615,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
     int saved_errno = errno;
     if (!DirectoryExists(*i)) {
       if (error)
-        *error = ErrnoToPlatformFileError(saved_errno);
+        *error = File::OSErrorToFileError(saved_errno);
       return false;
     }
   }
@@ -654,7 +653,7 @@ bool IsLink(const FilePath& file_path) {
     return false;
 }
 
-bool GetFileInfo(const FilePath& file_path, PlatformFileInfo* results) {
+bool GetFileInfo(const FilePath& file_path, File::Info* results) {
   stat_wrapper_t file_info;
 #if defined(OS_ANDROID)
   if (file_path.IsContentUri()) {

@@ -5,14 +5,18 @@
 #ifndef CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_CONTEXT_MENU_H_
 #define CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_CONTEXT_MENU_H_
 
-#include "ash/launcher/launcher_types.h"
 #include "ash/shelf/shelf_alignment_menu.h"
+#include "ash/shelf/shelf_item_types.h"
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/models/simple_menu_model.h"
 
 class ChromeLauncherController;
+
+namespace ash {
+class ShelfItemDelegate;
+}
 
 namespace aura {
 class Window;
@@ -29,8 +33,15 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
   // |item| is NULL if the context menu is for the launcher (the user right
   // |clicked on an area with no icons).
   LauncherContextMenu(ChromeLauncherController* controller,
-                      const ash::LauncherItem* item,
+                      const ash::ShelfItem* item,
                       aura::Window* root_window);
+
+  // Creates a menu used by item created by ShelfWindowWatcher.
+  LauncherContextMenu(ChromeLauncherController* controller,
+                      ash::ShelfItemDelegate* item_delegate,
+                      ash::ShelfItem* item,
+                      aura::Window* root_window);
+
   // Creates a menu used as a desktop context menu on |root_window|.
   LauncherContextMenu(ChromeLauncherController* controller,
                       aura::Window* root_window);
@@ -39,7 +50,7 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
   void Init();
 
   // ID of the item we're showing the context menu for.
-  ash::LauncherID id() const { return item_.id; }
+  ash::ShelfID id() const { return item_.id; }
 
   // ui::SimpleMenuModel::Delegate overrides:
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
@@ -82,13 +93,16 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
 
   ChromeLauncherController* controller_;
 
-  ash::LauncherItem item_;
+  ash::ShelfItem item_;
 
   ash::ShelfAlignmentMenu shelf_alignment_menu_;
 
   scoped_ptr<extensions::ContextMenuMatcher> extension_items_;
 
   aura::Window* root_window_;
+
+  // Not owned.
+  ash::ShelfItemDelegate* item_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherContextMenu);
 };

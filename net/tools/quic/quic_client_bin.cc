@@ -26,6 +26,11 @@ std::string FLAGS_hostname = "localhost";
 int main(int argc, char *argv[]) {
   CommandLine::Init(argc, argv);
   CommandLine* line = CommandLine::ForCurrentProcess();
+
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  CHECK(logging::InitLogging(settings));
+
   if (line->HasSwitch("h") || line->HasSwitch("help")) {
     const char* help_str =
         "Usage: quic_client [options]\n"
@@ -50,9 +55,9 @@ int main(int argc, char *argv[]) {
   if (line->HasSwitch("hostname")) {
     FLAGS_hostname = line->GetSwitchValueASCII("hostname");
   }
-  LOG(INFO) << "server port: " << FLAGS_port
-            << " address: " << FLAGS_address
-            << " hostname: " << FLAGS_hostname;
+  VLOG(1) << "server port: " << FLAGS_port
+          << " address: " << FLAGS_address
+          << " hostname: " << FLAGS_hostname;
 
   base::AtExitManager exit_manager;
 

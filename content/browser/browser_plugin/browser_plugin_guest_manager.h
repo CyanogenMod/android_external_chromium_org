@@ -17,6 +17,7 @@
 
 struct BrowserPluginHostMsg_Attach_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
+struct FrameHostMsg_BuffersSwappedACK_Params;
 class GURL;
 
 namespace gfx {
@@ -36,7 +37,6 @@ class RenderWidgetHostImpl;
 class SiteInstance;
 class WebContents;
 class WebContentsImpl;
-struct NativeWebKeyboardEvent;
 
 // WARNING: All APIs should be guarded with a process ID check like
 // CanEmbedderAccessInstanceIDMaybeKill, to prevent abuse by normal renderer
@@ -86,10 +86,9 @@ class CONTENT_EXPORT BrowserPluginGuestManager :
   bool CanEmbedderAccessInstanceIDMaybeKill(int embedder_render_process_id,
                                             int instance_id) const;
 
-  void DidSendScreenRects(WebContentsImpl* embedder_web_contents);
-
-  bool UnlockMouseIfNecessary(WebContentsImpl* embedder_web_contents_,
-                              const NativeWebKeyboardEvent& event);
+  typedef base::Callback<bool(BrowserPluginGuest*)> GuestCallback;
+  bool ForEachGuest(WebContentsImpl* embedder_web_contents,
+                    const GuestCallback& callback);
 
   void OnMessageReceived(const IPC::Message& message, int render_process_id);
 
@@ -117,11 +116,9 @@ class CONTENT_EXPORT BrowserPluginGuestManager :
   SiteInstance* GetGuestSiteInstance(const GURL& guest_site);
 
   // Message handlers.
-  void OnUnhandledSwapBuffersACK(int instance_id,
-                                 int route_id,
-                                 int gpu_host_id,
-                                 const std::string& mailbox_name,
-                                 uint32 sync_point);
+  void OnUnhandledSwapBuffersACK(
+      int instance_id,
+      const FrameHostMsg_BuffersSwappedACK_Params& params);
 
   // Static factory instance (always NULL outside of tests).
   static BrowserPluginHostFactory* factory_;

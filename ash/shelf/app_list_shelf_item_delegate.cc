@@ -6,6 +6,7 @@
 
 #include "ash/shelf/shelf_model.h"
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -13,7 +14,7 @@ namespace ash {
 namespace internal {
 
 AppListShelfItemDelegate::AppListShelfItemDelegate() {
-  LauncherItem app_list;
+  ShelfItem app_list;
   app_list.type = TYPE_APP_LIST;
   Shell::GetInstance()->shelf_model()->Add(app_list);
 }
@@ -38,7 +39,9 @@ base::string16 AppListShelfItemDelegate::GetTitle() {
 
 ui::MenuModel* AppListShelfItemDelegate::CreateContextMenu(
     aura::Window* root_window) {
-  return NULL;
+  return Shell::GetInstance()->delegate()->CreateContextMenu(root_window,
+                                                             NULL,
+                                                             NULL);
 }
 
 ShelfMenuModel* AppListShelfItemDelegate::CreateApplicationMenu(
@@ -53,6 +56,9 @@ bool AppListShelfItemDelegate::IsDraggable() {
 
 bool AppListShelfItemDelegate::ShouldShowTooltip() {
   return true;
+}
+
+void AppListShelfItemDelegate::Close() {
 }
 
 }  // namespace internal

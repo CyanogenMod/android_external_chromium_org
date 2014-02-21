@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/password_manager/mock_password_store.h"
+#include "chrome/browser/password_manager/mock_password_store_service.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/ui/passwords/password_manager_presenter.h"
 #include "chrome/browser/ui/passwords/password_ui_view.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/password_manager/core/browser/mock_password_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -53,8 +54,8 @@ class PasswordManagerPresenterTest : public testing::Test {
 
   virtual ~PasswordManagerPresenterTest() {}
   virtual void SetUp() OVERRIDE {
-    PasswordStoreFactory::GetInstance()->SetTestingFactoryAndUse(
-        &profile_, MockPasswordStore::Build);
+    PasswordStoreFactory::GetInstance()->SetTestingFactory(
+        &profile_, MockPasswordStoreService::Build);
     mock_controller_.reset(new MockPasswordUIView(&profile_));
   }
   void AddPasswordEntry(const GURL& origin,
@@ -77,10 +78,10 @@ void PasswordManagerPresenterTest::AddPasswordEntry(
     const std::string& password) {
   autofill::PasswordForm* form = new autofill::PasswordForm();
   form->origin = origin;
-  form->username_element = ASCIIToUTF16("Email");
-  form->username_value = ASCIIToUTF16(user_name);
-  form->password_element = ASCIIToUTF16("Passwd");
-  form->password_value = ASCIIToUTF16(password);
+  form->username_element = base::ASCIIToUTF16("Email");
+  form->username_value = base::ASCIIToUTF16(user_name);
+  form->password_element = base::ASCIIToUTF16("Passwd");
+  form->password_value = base::ASCIIToUTF16(password);
   mock_controller_->GetPasswordManagerPresenter()->password_list_
       .push_back(form);
 }

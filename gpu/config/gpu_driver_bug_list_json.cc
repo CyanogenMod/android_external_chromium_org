@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "3.7",
+  "version": "3.11",
   "entries": [
     {
       "id": 1,
@@ -386,14 +386,14 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     {
       "id": 31,
       "cr_bugs": [154715, 10068, 269829, 294779, 285292],
-      "description": "The Mali T-6xx driver does not guarantee flush ordering.",
+      "description": "The Mali-Txxx driver does not guarantee flush ordering.",
       "gl_vendor": {
         "op": "beginwith",
         "value": "ARM"
       },
       "gl_renderer": {
         "op": "beginwith",
-        "value": "Mali-T6"
+        "value": "Mali-T"
       },
       "features": [
         "use_virtualized_gl_contexts"
@@ -689,7 +689,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "value": "Qualcomm"
       },
       "features": [
-        "disable_framebuffer_multisample"
+        "disable_multisampling"
       ]
     },
     {
@@ -705,7 +705,133 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "value": "Mali"
       },
       "features": [
-        "disable_framebuffer_multisample"
+        "disable_multisampling"
+      ]
+    },
+    {
+      "id": 54,
+      "cr_bugs": [124764],
+      "description": "Clear uniforms before first program use on all platforms",
+      "features": [
+        "clear_uniforms_before_first_program_use"
+      ]
+    },
+    {
+      "id": 55,
+      "cr_bugs": [333885],
+      "description": "Mesa drivers in Linux handle varyings without static use incorrectly",
+      "os": {
+        "type": "linux"
+      },
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "features": [
+        "count_all_in_varyings_packing"
+      ]
+    },
+    {
+      "id": 56,
+      "cr_bugs": [333885],
+      "description": "Mesa drivers in ChromeOS handle varyings without static use incorrectly",
+      "os": {
+        "type": "chromeos"
+      },
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "features": [
+        "count_all_in_varyings_packing"
+      ]
+    },
+    {
+      "id": 57,
+      "cr_bugs": [322760],
+      "description": "Mac drivers handle varyings without static use incorrectly",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "init_varyings_without_static_use"
+      ]
+    },
+    {
+      "id": 58,
+      "description": "Multisampling is buggy in ATI cards on older MacOSX",
+      "cr_bugs": [67752, 83153],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.7.2"
+        }
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "disable_multisampling"
+      ]
+    },
+    {
+      "id": 59,
+      "description": "Multisampling is buggy in Intel IvyBridge",
+      "cr_bugs": [116370],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
+      "features": [
+        "disable_multisampling"
+      ]
+    },
+    {
+      "id": 60,
+      "description": "Multisampling is buggy on Mac with NVIDIA gpu prior to 10.8.3",
+      "cr_bugs": [137303],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.8.3"
+        }
+      },
+      "vendor_id": "0x10de",
+      "features": [
+        "disable_multisampling"
+      ]
+    },
+    {
+      "id": 61,
+      "description": "Multisampling is buggy on Mac with Intel gpu prior to 10.8.3",
+      "cr_bugs": [137303],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.8.3"
+        }
+      },
+      "vendor_id": "0x8086",
+      "features": [
+        "disable_multisampling"
+      ]
+    },
+    {
+      "id": 62,
+      "description": "Multisampling is buggy on Mac with AMD gpu prior to 10.8.3",
+      "cr_bugs": [162466],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.8.3"
+        }
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "disable_multisampling"
       ]
     }
   ]

@@ -39,8 +39,7 @@ class InstallationValidator {
       CHROME_MULTI            = 0x02,
       CHROME_FRAME_SINGLE     = 0x04,
       CHROME_FRAME_MULTI      = 0x08,
-      CHROME_FRAME_READY_MODE = 0x10,
-      CHROME_APP_HOST         = 0x20,
+      CHROME_APP_HOST         = 0x10,
     };
   };  // class ProductBits
 
@@ -61,8 +60,6 @@ class InstallationValidator {
         ProductBits::CHROME_FRAME_MULTI,
     CHROME_FRAME_MULTI_CHROME_MULTI =
         ProductBits::CHROME_FRAME_MULTI | ProductBits::CHROME_MULTI,
-    CHROME_FRAME_READY_MODE_CHROME_MULTI =
-        ProductBits::CHROME_FRAME_READY_MODE | ProductBits::CHROME_MULTI,
     CHROME_APP_HOST =
         ProductBits::CHROME_APP_HOST,
     CHROME_APP_HOST_CHROME_FRAME_SINGLE =
@@ -77,9 +74,6 @@ class InstallationValidator {
         ProductBits::CHROME_MULTI,
     CHROME_APP_HOST_CHROME_MULTI =
         ProductBits::CHROME_APP_HOST | ProductBits::CHROME_MULTI,
-    CHROME_APP_HOST_CHROME_MULTI_CHROME_FRAME_READY_MODE =
-        ProductBits::CHROME_APP_HOST | ProductBits::CHROME_MULTI |
-        ProductBits::CHROME_FRAME_READY_MODE,
   };
 
   // Validates |machine_state| at user or system level, returning true if valid.
@@ -101,7 +95,7 @@ class InstallationValidator {
   typedef void (*CommandValidatorFn)(const ProductContext& ctx,
                                      const AppCommand& app_cmd,
                                      bool* is_valid);
-  typedef std::map<string16, CommandValidatorFn> CommandExpectations;
+  typedef std::map<base::string16, CommandValidatorFn> CommandExpectations;
 
   // An interface to product-specific validation rules.
   class ProductRules {
@@ -193,11 +187,12 @@ class InstallationValidator {
   // Helper to validate the values of bool elements in AppCommand, and to output
   // error messages. |flag_expect| is a bit mask specifying the expected
   // presence/absence of bool variables.
-  static void ValidateAppCommandFlags(const ProductContext& ctx,
-                                      const AppCommand& app_cmd,
-                                      const std::set<string16>& flags_expected,
-                                      const string16& name,
-                                      bool* is_valid);
+  static void ValidateAppCommandFlags(
+      const ProductContext& ctx,
+      const AppCommand& app_cmd,
+      const std::set<base::string16>& flags_expected,
+      const base::string16& name,
+      bool* is_valid);
   static void ValidateInstallCommand(const ProductContext& ctx,
                                      const AppCommand& app_cmd,
                                      const wchar_t* expected_command,
@@ -216,9 +211,6 @@ class InstallationValidator {
   static void ValidateQueryEULAAcceptanceCommand(const ProductContext& ctx,
                                                  const AppCommand& app_cmd,
                                                  bool* is_valid);
-  static void ValidateQuickEnableCfCommand(const ProductContext& ctx,
-                                           const AppCommand& app_cmd,
-                                           bool* is_valid);
   static void ValidateQuickEnableApplicationHostCommand(
     const ProductContext& ctx,
     const AppCommand& app_cmd,
@@ -236,16 +228,16 @@ class InstallationValidator {
                                bool* is_valid);
   static void ValidateSetupPath(const ProductContext& ctx,
                                 const base::FilePath& setup_exe,
-                                const string16& purpose,
+                                const base::string16& purpose,
                                 bool* is_valid);
   static void ValidateCommandExpectations(const ProductContext& ctx,
                                           const CommandLine& command,
                                           const SwitchExpectations& expected,
-                                          const string16& source,
+                                          const base::string16& source,
                                           bool* is_valid);
   static void ValidateUninstallCommand(const ProductContext& ctx,
                                        const CommandLine& command,
-                                       const string16& source,
+                                       const base::string16& source,
                                        bool* is_valid);
   static void ValidateRenameCommand(const ProductContext& ctx,
                                     bool* is_valid);

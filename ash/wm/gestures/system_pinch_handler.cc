@@ -4,8 +4,8 @@
 
 #include "ash/wm/gestures/system_pinch_handler.h"
 
-#include "ash/launcher/launcher.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/wm/window_animations.h"
@@ -30,7 +30,6 @@ const int SystemPinchHandler::kSystemGesturePoints = 4;
 
 SystemPinchHandler::SystemPinchHandler(aura::Window* target)
     : target_(target),
-      phantom_(target),
       phantom_state_(PHANTOM_WINDOW_NORMAL),
       pinch_factor_(1.) {
   widget_ = views::Widget::GetWidgetForNativeWindow(target_);
@@ -72,13 +71,16 @@ SystemGestureStatus SystemPinchHandler::ProcessGestureEvent(
       pinch_factor_ *= event.details().scale();
       gfx::Rect bounds =
           GetPhantomWindowScreenBounds(target_, event.location());
-      if (phantom_state_ != PHANTOM_WINDOW_NORMAL || phantom_.IsShowing())
-        phantom_.Show(bounds);
+      if (phantom_state_ != PHANTOM_WINDOW_NORMAL || phantom_.get()) {
+        if (!phantom_.get())
+          phantom_.reset(new internal::PhantomWindowController(target_));
+        phantom_->Show(bounds);
+     }
       break;
     }
 
     case ui::ET_GESTURE_MULTIFINGER_SWIPE: {
-      phantom_.Hide();
+      phantom_.reset();
       pinch_factor_ = 1.0;
       phantom_state_ = PHANTOM_WINDOW_NORMAL;
 
@@ -112,9 +114,9 @@ gfx::Rect SystemPinchHandler::GetPhantomWindowScreenBounds(
     const gfx::Point& point) {
   if (pinch_factor_ > kPinchThresholdForMaximize) {
     phantom_state_ = PHANTOM_WINDOW_MAXIMIZED;
-    return ScreenAsh::ConvertRectToScreen(
+    return ScreenUtil::ConvertRectToScreen(
         target_->parent(),
-        ScreenAsh::GetMaximizedWindowBoundsInParent(target_));
+        ScreenUtil::GetMaximizedWindowBoundsInParent(target_));
   }
 
   if (pinch_factor_ < kPinchThresholdForMinimize) {

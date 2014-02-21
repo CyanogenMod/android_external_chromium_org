@@ -132,6 +132,15 @@ void WebUILoginDisplay::ShowBannerMessage(const std::string& message) {
   webui_handler_->ShowBannerMessage(message);
 }
 
+void WebUILoginDisplay::ShowUserPodButton(
+    const std::string& username,
+    const std::string& iconURL,
+    const base::Closure& click_callback) {
+  if (!webui_handler_)
+    return;
+  webui_handler_->ShowUserPodButton(username, iconURL, click_callback);
+}
+
 void WebUILoginDisplay::ShowError(int error_msg_id,
                                   int login_attempts,
                                   HelpAppLauncher::HelpTopic help_topic_id) {
@@ -278,11 +287,11 @@ void WebUILoginDisplay::MigrateUserData(const std::string& old_password) {
 }
 
 void WebUILoginDisplay::LoadWallpaper(const std::string& username) {
-  WallpaperManager::Get()->SetUserWallpaper(username);
+  WallpaperManager::Get()->SetUserWallpaperDelayed(username);
 }
 
 void WebUILoginDisplay::LoadSigninWallpaper() {
-  WallpaperManager::Get()->SetDefaultWallpaper();
+  WallpaperManager::Get()->SetDefaultWallpaperDelayed(UserManager::kSignInUser);
 }
 
 void WebUILoginDisplay::OnSigninScreenReady() {
@@ -370,8 +379,9 @@ void WebUILoginDisplay::Signout() {
   delegate_->Signout();
 }
 
-void WebUILoginDisplay::LoginAsKioskApp(const std::string& app_id) {
-  delegate_->LoginAsKioskApp(app_id);
+void WebUILoginDisplay::LoginAsKioskApp(const std::string& app_id,
+                                        bool diagnostic_mode) {
+  delegate_->LoginAsKioskApp(app_id, diagnostic_mode);
 }
 
 void WebUILoginDisplay::OnUserActivity(const ui::Event* event) {

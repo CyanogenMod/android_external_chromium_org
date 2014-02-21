@@ -15,22 +15,22 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/history.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -66,7 +66,7 @@ scoped_ptr<HistoryItem> GetHistoryItem(const history::URLRow& row) {
 
   history_item->id = base::Int64ToString(row.id());
   history_item->url.reset(new std::string(row.url().spec()));
-  history_item->title.reset(new std::string(UTF16ToUTF8(row.title())));
+  history_item->title.reset(new std::string(base::UTF16ToUTF8(row.title())));
   history_item->last_visit_time.reset(
       new double(MilliSecondsFromTime(row.last_visit())));
   history_item->typed_count.reset(new int(row.typed_count()));
@@ -219,7 +219,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<HistoryAPI>* HistoryAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 template<>
@@ -334,7 +334,7 @@ bool HistorySearchFunction::RunAsyncImpl() {
   scoped_ptr<Search::Params> params(Search::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  base::string16 search_text = UTF8ToUTF16(params->query.text);
+  base::string16 search_text = base::UTF8ToUTF16(params->query.text);
 
   history::QueryOptions options;
   options.SetRecentDayRange(1);

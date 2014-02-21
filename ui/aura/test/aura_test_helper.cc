@@ -26,12 +26,8 @@
 #include "ui/gfx/screen.h"
 
 #if defined(USE_X11)
-#include "ui/aura/root_window_host_x11.h"
+#include "ui/aura/window_tree_host_x11.h"
 #include "ui/base/x/x11_util.h"
-#endif
-
-#if defined(USE_OZONE)
-#include "ui/gfx/ozone/surface_factory_ozone.h"
 #endif
 
 namespace aura {
@@ -49,10 +45,6 @@ AuraTestHelper::AuraTestHelper(base::MessageLoopForUI* message_loop)
 #if defined(USE_X11)
   test::SetUseOverrideRedirectWindowByDefault(true);
 #endif
-#if defined(USE_OZONE)
-  surface_factory_.reset(gfx::SurfaceFactoryOzone::CreateTestHelper());
-  gfx::SurfaceFactoryOzone::SetInstance(surface_factory_.get());
-#endif
 }
 
 AuraTestHelper::~AuraTestHelper() {
@@ -62,11 +54,10 @@ AuraTestHelper::~AuraTestHelper() {
       << "AuraTestHelper::TearDown() never called.";
 }
 
-void AuraTestHelper::SetUp() {
+void AuraTestHelper::SetUp(bool allow_test_contexts) {
   setup_called_ = true;
 
   // The ContextFactory must exist before any Compositors are created.
-  bool allow_test_contexts = true;
   ui::InitializeContextFactoryForTests(allow_test_contexts);
 
   Env::CreateInstance();
@@ -94,7 +85,7 @@ void AuraTestHelper::SetUp() {
 
   root_window()->Show();
   // Ensure width != height so tests won't confuse them.
-  dispatcher()->SetHostSize(gfx::Size(800, 600));
+  dispatcher()->host()->SetBounds(gfx::Rect(800, 600));
 }
 
 void AuraTestHelper::TearDown() {
@@ -106,6 +97,7 @@ void AuraTestHelper::TearDown() {
   focus_client_.reset();
   client::SetFocusClient(root_window(), NULL);
   root_window_.reset();
+  ui::GestureRecognizer::Reset();
   test_screen_.reset();
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, NULL);
 
@@ -123,7 +115,7 @@ void AuraTestHelper::TearDown() {
 void AuraTestHelper::RunAllPendingInMessageLoop() {
   // TODO(jbates) crbug.com/134753 Find quitters of this RunLoop and have them
   //              use run_loop.QuitClosure().
-  base::RunLoop run_loop(Env::GetInstance()->GetDispatcher());
+  base::RunLoop run_loop;
   run_loop.RunUntilIdle();
 }
 

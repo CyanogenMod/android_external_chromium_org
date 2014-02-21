@@ -1,14 +1,18 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import logging
 import os
-import subprocess
+
+from telemetry import decorators
 
 from telemetry.core import exceptions
+from telemetry.core import forwarders
 from telemetry.core import util
-from telemetry.core.backends import browser_backend
 from telemetry.core.backends.chrome import chrome_browser_backend
+from telemetry.core.forwarders import cros_forwarder
+
 
 class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   # Some developers' workflow includes running the Chrome process from
@@ -32,17 +36,18 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._browser_type = browser_type
     self._cri = cri
     self._is_guest = is_guest
-
-    self.wpr_http_port_pair.remote_port = self._cri.GetRemotePort()
-    self.wpr_https_port_pair.remote_port = self._cri.GetRemotePort()
-    self._remote_debugging_port = self._cri.GetRemotePort()
-    self._port = self._remote_debugging_port
     self._forwarder = None
 
-    self._SetBranchNumber(self._GetChromeVersion())
+    self.wpr_port_pairs = forwarders.PortPairs(
+        http=forwarders.PortPair(self.wpr_port_pairs.http.local_port,
+                                 self._cri.GetRemotePort()),
+        https=forwarders.PortPair(self.wpr_port_pairs.https.local_port,
+                                  self._cri.GetRemotePort()),
+        dns=None)
+    self._remote_debugging_port = self._cri.GetRemotePort()
+    self._port = self._remote_debugging_port
 
-    self._username = 'test@test.test'
-    self._password = ''
+    self._SetBranchNumber(self._GetChromeVersion())
 
     self._login_ext_dir = None
     if not self._use_oobe_login_for_testing:
@@ -50,7 +55,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                                          'chromeos_login_ext')
 
       # Push a dummy login extension to the device.
-      # This extension automatically logs in test user self._username.
+      # This extension automatically logs in test user specified by
+      # self.browser_options.username.
       # Note that we also perform this copy locally to ensure that
       # the owner of the extensions is set to chronos.
       logging.info('Copying dummy login extension to the device')
@@ -75,7 +81,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     # Delete test user's cryptohome vault (user data directory).
     if not self.browser_options.dont_override_profile:
       self._cri.RunCmdOnDevice(['cryptohome', '--action=remove', '--force',
-                                '--user=%s' % self._username])
+                                '--user=%s' % self.browser_options.username])
     if self.browser_options.profile_dir:
       cri.RmRF(self.profile_directory)
       cri.PushFile(self.browser_options.profile_dir + '/Default',
@@ -98,8 +104,9 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             '--remote-debugging-port=%i' % self._remote_debugging_port,
             # Open a maximized window.
             '--start-maximized',
-            # Workaround for crbug.com/308224. TODO(achuith): Remove this flag.
-            '--multi-profiles',
+            # TODO(achuith): Re-enable this flag again before multi-profiles
+            # will become enabled by default to have telemetry mileage on it.
+            # '--multi-profiles',
             # Debug logging for login flake (crbug.com/263527).
             '--vmodule=*/browser/automation/*=2,*/chromeos/net/*=2,'
                 '*/chromeos/login/*=2,*/extensions/*=2,'
@@ -187,7 +194,9 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     """Oobe.LoginForTesting was introduced after branch 1599."""
     return self.chrome_branch_number > 1599
 
-  def GetRemotePort(self, _):
+  def GetRemotePort(self, port):
+    if self._cri.local:
+      return port
     return self._cri.GetRemotePort()
 
   def __del__(self):
@@ -209,15 +218,12 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._cri.RunCmdOnDevice(args)
 
     if not self._cri.local:
-      # Find a free local port.
       self._port = util.GetUnreservedAvailableLocalPort()
-
-      # Forward the remote debugging port.
-      logging.info('Forwarding remote debugging port %d to local port %d',
-                   self._remote_debugging_port, self._port)
-      self._forwarder = SSHForwarder(
-        self._cri, 'L',
-        util.PortPair(self._port, self._remote_debugging_port))
+      self._forwarder = self.forwarder_factory.Create(
+          forwarders.PortPairs(
+              http=forwarders.PortPair(self._port, self._remote_debugging_port),
+              https=None,
+              dns=None), forwarding_flag='L')
 
     try:
       self._WaitForBrowserToComeUp(wait_for_extensions=False)
@@ -236,7 +242,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
           'Hardware id not set on device/VM. --skip-hwid-check not supported '
           'with chrome branches 1500 or earlier.')
 
-    util.WaitFor(lambda: self.oobe, 10)
+    util.WaitFor(lambda: self.oobe_exists, 10)
 
     if self.browser_options.auto_login:
       if self._is_guest:
@@ -256,10 +262,9 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     self._RestartUI() # Logs out.
 
-    if not self._cri.local:
-      if self._forwarder:
-        self._forwarder.Close()
-        self._forwarder = None
+    if self._forwarder:
+      self._forwarder.Close()
+      self._forwarder = None
 
     if self._login_ext_dir:
       self._cri.RmRF(self._login_ext_dir)
@@ -270,6 +275,11 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     self._cri = None
 
+  @property
+  @decorators.Cache
+  def forwarder_factory(self):
+    return cros_forwarder.CrOsForwarderFactory(self._cri)
+
   def IsBrowserRunning(self):
     return bool(self.pid)
 
@@ -278,11 +288,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def GetStackTrace(self):
     return 'Cannot get stack trace on CrOS'
-
-  def CreateForwarder(self, *port_pairs):
-    assert self._cri
-    return (browser_backend.DoNothingForwarder(*port_pairs) if self._cri.local
-        else SSHForwarder(self._cri, 'R', *port_pairs))
 
   def _RestartUI(self):
     if self._cri:
@@ -295,6 +300,10 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   @property
   def oobe(self):
     return self.misc_web_contents_backend.GetOobe()
+
+  @property
+  def oobe_exists(self):
+    return self.misc_web_contents_backend.oobe_exists
 
   def _SigninUIState(self):
     """Returns the signin ui state of the oobe. HIDDEN: 0, GAIA_SIGNIN: 1,
@@ -316,7 +325,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def _IsCryptohomeMounted(self):
     """Returns True if a cryptohome vault at the user mount point."""
-    profile_path = self._CryptohomePath(self._username)
+    profile_path = self._CryptohomePath(self.browser_options.username)
     mount = self._cri.FilesystemMountedAt(profile_path)
     return mount and mount.startswith('/home/.shadow/')
 
@@ -341,7 +350,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     has been dismissed."""
     if self.chrome_branch_number <= 1547:
       self._HandleUserImageSelectionScreen()
-    return self._IsCryptohomeMounted() and not self.oobe
+    return self._IsCryptohomeMounted() and not self.oobe_exists
 
   def _StartupWindow(self):
     """Closes the startup window, which is an extension on official builds,
@@ -386,7 +395,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def _NavigateGuestLogin(self):
     """Navigates through oobe login screen as guest"""
-    assert self.oobe
+    if not self.oobe_exists:
+      raise exceptions.LoginException('Oobe missing')
     self._WaitForSigninScreen()
     self._ClickBrowseAsGuest()
     self._WaitForGuestFsMounted()
@@ -395,31 +405,25 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     """Navigates through oobe login screen"""
     if self._use_oobe_login_for_testing:
       logging.info('Invoking Oobe.loginForTesting')
-      assert self.oobe
-      util.WaitFor(lambda: self.oobe.EvaluateJavaScript(
+      if not self.oobe_exists:
+        raise exceptions.LoginException('Oobe missing')
+      oobe = self.oobe
+      util.WaitFor(lambda: oobe.EvaluateJavaScript(
           'typeof Oobe !== \'undefined\''), 10)
 
-      if self.oobe.EvaluateJavaScript(
+      if oobe.EvaluateJavaScript(
           'typeof Oobe.loginForTesting == \'undefined\''):
         raise exceptions.LoginException('Oobe.loginForTesting js api missing')
 
-      self.oobe.ExecuteJavaScript(
-          'Oobe.loginForTesting(\'%s\', \'%s\');' % (self._username,
-                                                     self._password))
+      oobe.ExecuteJavaScript(
+          'Oobe.loginForTesting(\'%s\', \'%s\');'
+              % (self.browser_options.username, self.browser_options.password))
 
     try:
       util.WaitFor(self._IsLoggedIn, 60)
     except util.TimeoutException:
       self._cri.TakeScreenShot('login-screen')
       raise exceptions.LoginException('Timed out going through login screen')
-
-    if self.chrome_branch_number < 1500:
-      # Wait for the startup window, then close it. Startup window doesn't exist
-      # post-M27. crrev.com/197900
-      util.WaitFor(self._StartupWindow, 20).Close()
-    else:
-      # Open a new window/tab.
-      self.tab_list_backend.New(15)
 
     # Wait for extensions to load.
     try:
@@ -429,42 +433,22 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       self._cri.TakeScreenShot('extension-timeout')
       raise
 
-
-class SSHForwarder(object):
-  def __init__(self, cri, forwarding_flag, *port_pairs):
-    self._proc = None
-
-    if forwarding_flag == 'R':
-      self._host_port = port_pairs[0].remote_port
-      command_line = ['-%s%i:localhost:%i' % (forwarding_flag,
-                                              port_pair.remote_port,
-                                              port_pair.local_port)
-                      for port_pair in port_pairs]
+    if self.chrome_branch_number < 1500:
+      # Wait for the startup window, then close it. Startup window doesn't exist
+      # post-M27. crrev.com/197900
+      util.WaitFor(self._StartupWindow, 20).Close()
     else:
-      self._host_port = port_pairs[0].local_port
-      command_line = ['-%s%i:localhost:%i' % (forwarding_flag,
-                                              port_pair.local_port,
-                                              port_pair.remote_port)
-                      for port_pair in port_pairs]
-
-    self._device_port = port_pairs[0].remote_port
-
-    self._proc = subprocess.Popen(
-      cri.FormSSHCommandLine(['sleep', '999999999'], command_line),
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-      stdin=subprocess.PIPE,
-      shell=False)
-
-    util.WaitFor(lambda: cri.IsHTTPServerRunningOnPort(self._device_port), 60)
-
-  @property
-  def url(self):
-    assert self._proc
-    return 'http://localhost:%i' % self._host_port
-
-  def Close(self):
-    if self._proc:
-      self._proc.kill()
-      self._proc = None
-
+      # Workaround for crbug.com/329271, crbug.com/334726.
+      retries = 3
+      while not len(self.tab_list_backend):
+        try:
+          # Open a new window/tab.
+          tab = self.tab_list_backend.New(timeout=30)
+          tab.Navigate('about:blank', timeout=10)
+        except (exceptions.TabCrashException, util.TimeoutException):
+          retries -= 1
+          logging.warn('TabCrashException/TimeoutException in '
+                       'new tab creation/navigation, '
+                       'remaining retries %d' % retries)
+          if not retries:
+            raise

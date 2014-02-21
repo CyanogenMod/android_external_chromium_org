@@ -26,7 +26,6 @@
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/in_memory_url_index.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -162,7 +161,7 @@ ScoredHistoryMatches URLIndexPrivateData::HistoryItemsForTerms(
   if ((cursor_position != base::string16::npos) &&
       (cursor_position < search_string.length()) &&
       (cursor_position > 0)) {
-    search_string.insert(cursor_position, ASCIIToUTF16(" "));
+    search_string.insert(cursor_position, base::ASCIIToUTF16(" "));
   }
   pre_filter_item_count_ = 0;
   post_filter_item_count_ = 0;
@@ -804,7 +803,7 @@ void URLIndexPrivateData::AddWordHistory(const base::string16& term,
   Char16Set characters = Char16SetFromString16(term);
   for (Char16Set::iterator uni_char_iter = characters.begin();
        uni_char_iter != characters.end(); ++uni_char_iter) {
-    char16 uni_char = *uni_char_iter;
+    base::char16 uni_char = *uni_char_iter;
     CharWordIDMap::iterator char_iter = char_word_map_.find(uni_char);
     if (char_iter != char_word_map_.end()) {
       // Update existing entry in the char/word index.
@@ -868,7 +867,7 @@ void URLIndexPrivateData::RemoveRowWordsFromIndex(const URLRow& row) {
     Char16Set characters = Char16SetFromString16(word);
     for (Char16Set::iterator uni_char_iter = characters.begin();
          uni_char_iter != characters.end(); ++uni_char_iter) {
-      char16 uni_char = *uni_char_iter;
+      base::char16 uni_char = *uni_char_iter;
       char_word_map_[uni_char].erase(word_id);
       if (char_word_map_[uni_char].empty())
         char_word_map_.erase(uni_char);  // No longer in use.
@@ -932,7 +931,7 @@ void URLIndexPrivateData::SaveWordList(InMemoryURLIndexCacheItem* cache) const {
   list_item->set_word_count(word_list_.size());
   for (String16Vector::const_iterator iter = word_list_.begin();
        iter != word_list_.end(); ++iter)
-    list_item->add_word(UTF16ToUTF8(*iter));
+    list_item->add_word(base::UTF16ToUTF8(*iter));
 }
 
 void URLIndexPrivateData::SaveWordMap(InMemoryURLIndexCacheItem* cache) const {
@@ -943,7 +942,7 @@ void URLIndexPrivateData::SaveWordMap(InMemoryURLIndexCacheItem* cache) const {
   for (WordMap::const_iterator iter = word_map_.begin();
        iter != word_map_.end(); ++iter) {
     WordMapEntry* map_entry = map_item->add_word_map_entry();
-    map_entry->set_word(UTF16ToUTF8(iter->first));
+    map_entry->set_word(base::UTF16ToUTF8(iter->first));
     map_entry->set_word_id(iter->second);
   }
 }
@@ -1002,7 +1001,7 @@ void URLIndexPrivateData::SaveHistoryInfoMap(
     map_entry->set_typed_count(url_row.typed_count());
     map_entry->set_last_visit(url_row.last_visit().ToInternalValue());
     map_entry->set_url(url_row.url().spec());
-    map_entry->set_title(UTF16ToUTF8(url_row.title()));
+    map_entry->set_title(base::UTF16ToUTF8(url_row.title()));
     const VisitInfoVector& visits(iter->second.visits);
     for (VisitInfoVector::const_iterator visit_iter = visits.begin();
          visit_iter != visits.end(); ++visit_iter) {
@@ -1083,7 +1082,7 @@ bool URLIndexPrivateData::RestoreWordList(
   const RepeatedPtrField<std::string>& words(list_item.word());
   for (RepeatedPtrField<std::string>::const_iterator iter = words.begin();
        iter != words.end(); ++iter)
-    word_list_.push_back(UTF8ToUTF16(*iter));
+    word_list_.push_back(base::UTF8ToUTF16(*iter));
   return true;
 }
 
@@ -1099,7 +1098,7 @@ bool URLIndexPrivateData::RestoreWordMap(
   const RepeatedPtrField<WordMapEntry>& entries(list_item.word_map_entry());
   for (RepeatedPtrField<WordMapEntry>::const_iterator iter = entries.begin();
        iter != entries.end(); ++iter)
-    word_map_[UTF8ToUTF16(iter->word())] = iter->word_id();
+    word_map_[base::UTF8ToUTF16(iter->word())] = iter->word_id();
   return true;
 }
 
@@ -1120,7 +1119,7 @@ bool URLIndexPrivateData::RestoreCharWordMap(
     actual_item_count = iter->word_id_size();
     if (actual_item_count == 0 || actual_item_count != expected_item_count)
       return false;
-    char16 uni_char = static_cast<char16>(iter->char_16());
+    base::char16 uni_char = static_cast<base::char16>(iter->char_16());
     WordIDSet word_id_set;
     const RepeatedField<int32>& word_ids(iter->word_id());
     for (RepeatedField<int32>::const_iterator jiter = word_ids.begin();
@@ -1181,7 +1180,7 @@ bool URLIndexPrivateData::RestoreHistoryInfoMap(
     url_row.set_typed_count(iter->typed_count());
     url_row.set_last_visit(base::Time::FromInternalValue(iter->last_visit()));
     if (iter->has_title()) {
-      base::string16 title(UTF8ToUTF16(iter->title()));
+      base::string16 title(base::UTF8ToUTF16(iter->title()));
       url_row.set_title(title);
     }
     history_info_map_[history_id].url_row = url_row;

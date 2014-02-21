@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/capture_client.h"
@@ -19,6 +19,7 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/visibility_client.h"
+#include "ui/aura/client/window_stacking_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/root_window.h"
@@ -39,19 +40,6 @@ namespace aura {
 
 namespace {
 
-WindowLayerType UILayerTypeToWindowLayerType(ui::LayerType layer_type) {
-  switch (layer_type) {
-    case ui::LAYER_NOT_DRAWN:
-      return WINDOW_LAYER_NOT_DRAWN;
-    case ui::LAYER_TEXTURED:
-      return WINDOW_LAYER_TEXTURED;
-    case ui::LAYER_SOLID_COLOR:
-      return WINDOW_LAYER_SOLID_COLOR;
-  }
-  NOTREACHED();
-  return WINDOW_LAYER_NOT_DRAWN;
-}
-
 ui::LayerType WindowLayerTypeToUILayerType(WindowLayerType window_layer_type) {
   switch (window_layer_type) {
     case WINDOW_LAYER_NONE:
@@ -65,6 +53,106 @@ ui::LayerType WindowLayerTypeToUILayerType(WindowLayerType window_layer_type) {
   }
   NOTREACHED();
   return ui::LAYER_NOT_DRAWN;
+}
+
+// Used when searching for a Window to stack relative to.
+template <class T>
+T IteratorForDirectionBegin(aura::Window* window);
+
+template <>
+Window::Windows::const_iterator IteratorForDirectionBegin(
+    aura::Window* window) {
+  return window->children().begin();
+}
+
+template <>
+Window::Windows::const_reverse_iterator IteratorForDirectionBegin(
+    aura::Window* window) {
+  return window->children().rbegin();
+}
+
+template <class T>
+T IteratorForDirectionEnd(aura::Window* window);
+
+template <>
+Window::Windows::const_iterator IteratorForDirectionEnd(aura::Window* window) {
+  return window->children().end();
+}
+
+template <>
+Window::Windows::const_reverse_iterator IteratorForDirectionEnd(
+    aura::Window* window) {
+  return window->children().rend();
+}
+
+// Depth first search for the first Window with a layer to stack relative
+// to. Starts at target. Does not descend into |ignore|.
+template <class T>
+ui::Layer* FindStackingTargetLayerDown(aura::Window* target,
+                                       aura::Window* ignore) {
+  if (target == ignore)
+    return NULL;
+
+  if (target->layer())
+    return target->layer();
+
+  for (T i = IteratorForDirectionBegin<T>(target);
+       i != IteratorForDirectionEnd<T>(target); ++i) {
+    ui::Layer* layer = FindStackingTargetLayerDown<T>(*i, ignore);
+    if (layer)
+      return layer;
+  }
+  return NULL;
+}
+
+// Depth first search through the siblings of |target||. This does not search
+// all the siblings, only those before/after |target| (depening upon the
+// template type) and ignoring |ignore|. Returns the Layer of the first Window
+// encountered with a Layer.
+template <class T>
+ui::Layer* FindStackingLayerInSiblings(aura::Window* target,
+                                       aura::Window* ignore) {
+  aura::Window* parent = target->parent();
+  for (T i = std::find(IteratorForDirectionBegin<T>(parent),
+                  IteratorForDirectionEnd<T>(parent), target);
+       i != IteratorForDirectionEnd<T>(parent); ++i) {
+    ui::Layer* layer = FindStackingTargetLayerDown<T>(*i, ignore);
+    if (layer)
+      return layer;
+  }
+  return NULL;
+}
+
+// Returns the first Window that has a Layer. This does a depth first search
+// through the descendants of |target| first, then ascends up doing a depth
+// first search through siblings of all ancestors until a Layer is found or an
+// ancestor with a layer is found. This is intended to locate a layer to stack
+// other layers relative to.
+template <class T>
+ui::Layer* FindStackingTargetLayer(aura::Window* target, aura::Window* ignore) {
+  ui::Layer* result = FindStackingTargetLayerDown<T>(target, ignore);
+  if (result)
+    return result;
+  while (target->parent()) {
+    ui::Layer* result = FindStackingLayerInSiblings<T>(target, ignore);
+    if (result)
+      return result;
+    target = target->parent();
+    if (target->layer())
+      return NULL;
+  }
+  return NULL;
+}
+
+// Does a depth first search for all descendants of |child| that have layers.
+// This stops at any descendants that have layers (and adds them to |layers|).
+void GetLayersToStack(aura::Window* child, std::vector<ui::Layer*>* layers) {
+  if (child->layer()) {
+    layers->push_back(child->layer());
+    return;
+  }
+  for (size_t i = 0; i < child->children().size(); ++i)
+    GetLayersToStack(child->children()[i], layers);
 }
 
 }  // namespace
@@ -112,11 +200,10 @@ class ScopedCursorHider {
 
 Window::Window(WindowDelegate* delegate)
     : dispatcher_(NULL),
-      type_(client::WINDOW_TYPE_UNKNOWN),
+      type_(ui::wm::WINDOW_TYPE_UNKNOWN),
       owned_by_parent_(true),
       delegate_(delegate),
       parent_(NULL),
-      transient_parent_(NULL),
       visible_(false),
       id_(-1),
       transparent_(false),
@@ -147,24 +234,11 @@ Window::~Window() {
   // Then destroy the children.
   RemoveOrDestroyChildren();
 
-  // Removes ourselves from our transient parent (if it hasn't been done by the
-  // RootWindow).
-  if (transient_parent_)
-    transient_parent_->RemoveTransientChild(this);
-
   // The window needs to be removed from the parent before calling the
   // WindowDestroyed callbacks of delegate and the observers.
   if (parent_)
     parent_->RemoveChild(this);
 
-  // Destroy transient children, only after we've removed ourselves from our
-  // parent, as destroying an active transient child may otherwise attempt to
-  // refocus us.
-  Windows transient_children(transient_children_);
-  STLDeleteElements(&transient_children);
-  DCHECK(transient_children_.empty());
-
-  // Delegate and observers need to be notified after transients are deleted.
   if (delegate_)
     delegate_->OnWindowDestroyed();
   ObserverListBase<WindowObserver>::Iterator iter(observers_);
@@ -192,11 +266,7 @@ Window::~Window() {
   }
 }
 
-void Window::Init(ui::LayerType layer_type) {
-  InitWithWindowLayerType(UILayerTypeToWindowLayerType(layer_type));
-}
-
-void Window::InitWithWindowLayerType(WindowLayerType window_layer_type) {
+void Window::Init(WindowLayerType window_layer_type) {
   if (window_layer_type != WINDOW_LAYER_NONE) {
     layer_ = new ui::Layer(WindowLayerTypeToUILayerType(window_layer_type));
     layer_owner_.reset(layer_);
@@ -214,6 +284,8 @@ ui::Layer* Window::RecreateLayer() {
   ui::Layer* old_layer = AcquireLayer();
   if (!old_layer)
     return NULL;
+
+  bounds_.SetRect(0, 0, 0, 0);
 
   old_layer->set_delegate(NULL);
 
@@ -246,7 +318,7 @@ ui::Layer* Window::RecreateLayer() {
   return old_layer;
 }
 
-void Window::SetType(client::WindowType type) {
+void Window::SetType(ui::wm::WindowType type) {
   // Cannot change type after the window is initialized.
   DCHECK(!layer_);
   type_ = type;
@@ -289,12 +361,8 @@ void Window::Show() {
 }
 
 void Window::Hide() {
-  for (Windows::iterator it = transient_children_.begin();
-       it != transient_children_.end(); ++it) {
-    (*it)->Hide();
-  }
+  // RootWindow::OnVisibilityChanged will call ReleaseCapture.
   SetVisible(false);
-  ReleaseCapture();
 }
 
 bool Window::IsVisible() const {
@@ -363,6 +431,13 @@ void Window::SetLayoutManager(LayoutManager* layout_manager) {
        it != children_.end();
        ++it)
     layout_manager_->OnWindowAddedToLayout(*it);
+}
+
+scoped_ptr<ui::EventTargeter>
+Window::SetEventTargeter(scoped_ptr<ui::EventTargeter> targeter) {
+  scoped_ptr<ui::EventTargeter> old_targeter = targeter_.Pass();
+  targeter_ = targeter.Pass();
+  return old_targeter.Pass();
 }
 
 void Window::SetBounds(const gfx::Rect& new_bounds) {
@@ -503,28 +578,6 @@ bool Window::Contains(const Window* other) const {
   return false;
 }
 
-void Window::AddTransientChild(Window* child) {
-  if (child->transient_parent_)
-    child->transient_parent_->RemoveTransientChild(child);
-  DCHECK(std::find(transient_children_.begin(), transient_children_.end(),
-                   child) == transient_children_.end());
-  transient_children_.push_back(child);
-  child->transient_parent_ = this;
-  FOR_EACH_OBSERVER(WindowObserver, observers_,
-                    OnAddTransientChild(this, child));
-}
-
-void Window::RemoveTransientChild(Window* child) {
-  Windows::iterator i =
-      std::find(transient_children_.begin(), transient_children_.end(), child);
-  DCHECK(i != transient_children_.end());
-  transient_children_.erase(i);
-  if (child->transient_parent_ == this)
-    child->transient_parent_ = NULL;
-  FOR_EACH_OBSERVER(WindowObserver, observers_,
-                    OnRemoveTransientChild(this, child));
-}
-
 Window* Window::GetChildById(int id) {
   return const_cast<Window*>(const_cast<const Window*>(this)->GetChildById(id));
 }
@@ -577,7 +630,7 @@ void Window::MoveCursorTo(const gfx::Point& point_in_window) {
   DCHECK(root_window);
   gfx::Point point_in_root(point_in_window);
   ConvertPointToTarget(this, root_window, &point_in_root);
-  root_window->GetDispatcher()->MoveCursorTo(point_in_root);
+  root_window->GetDispatcher()->host()->MoveCursorTo(point_in_root);
 }
 
 gfx::NativeCursor Window::GetCursor(const gfx::Point& point) const {
@@ -618,13 +671,7 @@ bool Window::ContainsPoint(const gfx::Point& local_point) const {
 }
 
 bool Window::HitTest(const gfx::Point& local_point) {
-  // Expand my bounds for hit testing (override is usually zero but it's
-  // probably cheaper to do the math every time than to branch).
-  gfx::Rect local_bounds(gfx::Point(), bounds().size());
-  local_bounds.Inset(aura::Env::GetInstance()->is_touch_down() ?
-      hit_test_bounds_override_outer_touch_ :
-      hit_test_bounds_override_outer_mouse_);
-
+  gfx::Rect local_bounds(bounds().size());
   if (!delegate_ || !delegate_->HasHitTestMask())
     return local_bounds.Contains(local_point);
 
@@ -731,7 +778,8 @@ bool Window::HasCapture() {
 }
 
 void Window::SuppressPaint() {
-  layer_->SuppressPaint();
+  if (layer_)
+    layer_->SuppressPaint();
 }
 
 // {Set,Get,Clear}Property are implemented in window_property.h.
@@ -753,15 +801,17 @@ void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
 }
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
 std::string Window::GetDebugInfo() const {
   return base::StringPrintf(
       "%s<%d> bounds(%d, %d, %d, %d) %s %s opacity=%.1f",
       name().empty() ? "Unknown" : name().c_str(), id(),
       bounds().x(), bounds().y(), bounds().width(), bounds().height(),
       visible_ ? "WindowVisible" : "WindowHidden",
-      layer_->GetTargetVisibility() ? "LayerVisible" : "LayerHidden",
-      layer_->opacity());
+      layer_ ?
+          (layer_->GetTargetVisibility() ? "LayerVisible" : "LayerHidden") :
+          "NoLayer",
+      layer_ ? layer_->opacity() : 1.0f);
 }
 
 void Window::PrintWindowHierarchy(int depth) const {
@@ -1055,46 +1105,6 @@ void Window::OnParentChanged() {
       WindowObserver, observers_, OnWindowParentChanged(this, parent_));
 }
 
-bool Window::GetAllTransientAncestors(Window* window,
-                                      Windows* ancestors) const {
-  for (; window; window = window->transient_parent()) {
-    if (window->parent() == this)
-      ancestors->push_back(window);
-  }
-  return (!ancestors->empty());
-}
-
-void Window::FindCommonSiblings(Window** window1, Window** window2) const {
-  DCHECK(window1);
-  DCHECK(window2);
-  DCHECK(*window1);
-  DCHECK(*window2);
-  // Assemble chains of ancestors of both windows.
-  Windows ancestors1;
-  Windows ancestors2;
-  if (!GetAllTransientAncestors(*window1, &ancestors1) ||
-      !GetAllTransientAncestors(*window2, &ancestors2)) {
-    return;
-  }
-  // Walk the two chains backwards and look for the first difference.
-  Windows::const_reverse_iterator it1 = ancestors1.rbegin();
-  Windows::const_reverse_iterator it2 = ancestors2.rbegin();
-  for (; it1  != ancestors1.rend() && it2  != ancestors2.rend(); ++it1, ++it2) {
-    if (*it1 != *it2) {
-      *window1 = *it1;
-      *window2 = *it2;
-      break;
-    }
-  }
-}
-
-bool Window::HasTransientAncestor(const Window* ancestor) const {
-  if (transient_parent_ == ancestor)
-    return true;
-  return transient_parent_ ?
-      transient_parent_->HasTransientAncestor(ancestor) : false;
-}
-
 void Window::StackChildRelativeTo(Window* child,
                                   Window* target,
                                   StackDirection direction) {
@@ -1104,71 +1114,11 @@ void Window::StackChildRelativeTo(Window* child,
   DCHECK_EQ(this, child->parent());
   DCHECK_EQ(this, target->parent());
 
-  // Consider all transient children of both child's and target's ancestors
-  // up to the common ancestor if such exists and stack them as a unit.
-  // This prevents one transient group from being inserted in the middle of
-  // another.
-  FindCommonSiblings(&child, &target);
-
-  const size_t target_i =
-      std::find(children_.begin(), children_.end(), target) - children_.begin();
-
-  // When stacking above skip to the topmost transient descendant of the target.
-  size_t final_target_i = target_i;
-  if (direction == STACK_ABOVE && !child->HasTransientAncestor(target)) {
-    while (final_target_i + 1 < children_.size() &&
-           children_[final_target_i + 1]->HasTransientAncestor(target)) {
-      ++final_target_i;
-    }
-  }
-
-  // By convention we don't stack on top of windows with layers with NULL
-  // delegates.  Walk backward to find a valid target window.
-  // See tests WindowTest.StackingMadrigal and StackOverClosingTransient
-  // for an explanation of this.
-  while (final_target_i > 0 &&
-         children_[direction == STACK_ABOVE ? final_target_i :
-                                              final_target_i - 1]->layer_
-             ->delegate() == NULL) {
-    --final_target_i;
-  }
-
-  Window* final_target = children_[final_target_i];
-
-  // If we couldn't find a valid target position, don't move anything.
-  if (direction == STACK_ABOVE && final_target->layer_->delegate() == NULL)
+  client::WindowStackingClient* stacking_client =
+      client::GetWindowStackingClient();
+  if (stacking_client &&
+      !stacking_client->AdjustStacking(&child, &target, &direction))
     return;
-
-  // Don't try to stack a child above itself.
-  if (child == final_target)
-    return;
-
-  // Move the child.
-  StackChildRelativeToImpl(child, final_target, direction);
-
-  // Stack any transient children that share the same parent to be in front of
-  // 'child'. Preserve the existing stacking order by iterating in the order
-  // those children appear in children_ array.
-  Window* last_transient = child;
-  Windows children(children_);
-  for (Windows::iterator it = children.begin(); it != children.end(); ++it) {
-    Window* transient_child = *it;
-    if (transient_child != last_transient &&
-        transient_child->HasTransientAncestor(child)) {
-      StackChildRelativeToImpl(transient_child, last_transient, STACK_ABOVE);
-      last_transient = transient_child;
-    }
-  }
-}
-
-void Window::StackChildRelativeToImpl(Window* child,
-                                      Window* target,
-                                      StackDirection direction) {
-  DCHECK_NE(child, target);
-  DCHECK(child);
-  DCHECK(target);
-  DCHECK_EQ(this, child->parent());
-  DCHECK_EQ(this, target->parent());
 
   const size_t child_i =
       std::find(children_.begin(), children_.end(), child) - children_.begin();
@@ -1187,12 +1137,64 @@ void Window::StackChildRelativeToImpl(Window* child,
   children_.erase(children_.begin() + child_i);
   children_.insert(children_.begin() + dest_i, child);
 
-  if (direction == STACK_ABOVE)
-    layer_->StackAbove(child->layer_, target->layer_);
-  else
-    layer_->StackBelow(child->layer_, target->layer_);
+  StackChildLayerRelativeTo(child, target, direction);
 
   child->OnStackingChanged();
+}
+
+void Window::StackChildLayerRelativeTo(Window* child,
+                                       Window* target,
+                                       StackDirection direction) {
+  Window* ancestor_with_layer = GetAncestorWithLayer(NULL);
+  ui::Layer* ancestor_layer =
+      ancestor_with_layer ? ancestor_with_layer->layer() : NULL;
+  if (!ancestor_layer)
+    return;
+
+  if (child->layer_ && target->layer_) {
+    if (direction == STACK_ABOVE)
+      ancestor_layer->StackAbove(child->layer_, target->layer_);
+    else
+      ancestor_layer->StackBelow(child->layer_, target->layer_);
+    return;
+  }
+  typedef std::vector<ui::Layer*> Layers;
+  Layers layers;
+  GetLayersToStack(child, &layers);
+  if (layers.empty())
+    return;
+
+  ui::Layer* target_layer;
+  if (direction == STACK_ABOVE) {
+    target_layer =
+        FindStackingTargetLayer<Windows::const_reverse_iterator>(target, child);
+  } else {
+    target_layer =
+        FindStackingTargetLayer<Windows::const_iterator>(target, child);
+  }
+
+  if (!target_layer) {
+    if (direction == STACK_ABOVE) {
+      for (Layers::const_reverse_iterator i = layers.rbegin(),
+               rend = layers.rend(); i != rend; ++i) {
+        ancestor_layer->StackAtBottom(*i);
+      }
+    } else {
+      for (Layers::const_iterator i = layers.begin(); i != layers.end(); ++i)
+        ancestor_layer->StackAtTop(*i);
+    }
+    return;
+  }
+
+  if (direction == STACK_ABOVE) {
+    for (Layers::const_reverse_iterator i = layers.rbegin(),
+             rend = layers.rend(); i != rend; ++i) {
+      ancestor_layer->StackAbove(*i, target_layer);
+    }
+  } else {
+    for (Layers::const_iterator i = layers.begin(); i != layers.end(); ++i)
+      ancestor_layer->StackBelow(*i, target_layer);
+  }
 }
 
 void Window::OnStackingChanged() {
@@ -1411,13 +1413,11 @@ void Window::UpdateLayerName(const std::string& name) {
 
   std::string layer_name(name_);
   if (layer_name.empty())
-    layer_name.append("Unnamed Window");
+    layer_name = "Unnamed Window";
 
-  if (id_ != -1) {
-    char id_buf[10];
-    base::snprintf(id_buf, sizeof(id_buf), " %d", id_);
-    layer_name.append(id_buf);
-  }
+  if (id_ != -1)
+    layer_name += " " + base::IntToString(id_);
+
   layer_->set_name(layer_name);
 #endif
 }
@@ -1436,9 +1436,11 @@ const Window* Window::GetAncestorWithLayer(gfx::Vector2d* offset) const {
   for (const aura::Window* window = this; window; window = window->parent()) {
     if (window->layer_)
       return window;
-    *offset += window->bounds().OffsetFromOrigin();
+    if (offset)
+      *offset += window->bounds().OffsetFromOrigin();
   }
-  *offset = gfx::Vector2d();
+  if (offset)
+    *offset = gfx::Vector2d();
   return NULL;
 }
 

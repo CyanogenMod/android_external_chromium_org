@@ -14,16 +14,19 @@
 #include "base/prefs/pref_member.h"
 #include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
-#include "chrome/browser/ui/login/login_model.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
-#include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_user_data.h"
+#include "components/password_manager/core/browser/login_model.h"
 
-class PasswordManagerDelegate;
+class PasswordManagerClient;
+class PasswordManagerDriver;
 class PasswordManagerTest;
 class PasswordFormManager;
 class PrefRegistrySimple;
+
+namespace content {
+class WebContents;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -33,17 +36,15 @@ class PrefRegistrySyncable;
 // receiving password form data from the renderer and managing the password
 // database through the PasswordStore. The PasswordManager is a LoginModel
 // for purposes of supporting HTTP authentication dialogs.
-class PasswordManager : public LoginModel,
-                        public content::WebContentsObserver,
-                        public content::WebContentsUserData<PasswordManager> {
+class PasswordManager : public LoginModel {
  public:
+  static const char kOtherPossibleUsernamesExperiment[];
+
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 #if defined(OS_WIN)
   static void RegisterLocalPrefs(PrefRegistrySimple* registry);
 #endif
-  static void CreateForWebContentsAndDelegate(
-      content::WebContents* contents,
-      PasswordManagerDelegate* delegate);
+  explicit PasswordManager(PasswordManagerClient* client);
   virtual ~PasswordManager();
 
   typedef base::Callback<void(const autofill::PasswordForm&)>
@@ -80,31 +81,22 @@ class PasswordManager : public LoginModel,
   // of 2 (see SavePassword).
   void ProvisionallySavePassword(const autofill::PasswordForm& form);
 
-  // content::WebContentsObserver overrides.
-  virtual void DidNavigateMainFrame(
-      const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  // Should be called when the user navigates the main frame.
+  void DidNavigateMainFrame(bool is_in_page);
 
-  // TODO(isherman): This should not be public, but is currently being used by
-  // the LoginPrompt code.
+  // Handles password forms being parsed.
   void OnPasswordFormsParsed(
       const std::vector<autofill::PasswordForm>& forms);
+
+  // Handles password forms being rendered.
   void OnPasswordFormsRendered(
       const std::vector<autofill::PasswordForm>& visible_forms);
 
- protected:
-  // Subclassed for unit tests.
-  PasswordManager(content::WebContents* web_contents,
-                  PasswordManagerDelegate* delegate);
-
-  // Handle notification that a password form was submitted.
+  // Handles a password form being submitted.
   virtual void OnPasswordFormSubmitted(
       const autofill::PasswordForm& password_form);
 
  private:
-  friend class content::WebContentsUserData<PasswordManager>;
-
   enum ProvisionalSaveFailure {
     SAVING_DISABLED,
     EMPTY_PASSWORD,
@@ -112,6 +104,7 @@ class PasswordManager : public LoginModel,
     MATCHING_NOT_COMPLETE,
     FORM_BLACKLISTED,
     INVALID_FORM,
+    AUTOCOMPLETE_OFF,
     MAX_FAILURE_VALUE
   };
 
@@ -133,9 +126,11 @@ class PasswordManager : public LoginModel,
   // the username for the form is ambigious.
   bool OtherPossibleUsernamesEnabled() const;
 
-  // Returns true if we should show an infobar instead of automatically saving
-  // the password, based on inspecting the state of |provisional_save_manager_|.
-  bool ShouldShowSavePasswordInfoBar() const;
+  // Returns true if the user needs to be prompted before a password can be
+  // saved (instead of automatically saving
+  // the password), based on inspecting the state of
+  // |provisional_save_manager_|.
+  bool ShouldPromptUserToSavePassword() const;
 
   // Note about how a PasswordFormManager can transition from
   // pending_login_managers_ to provisional_save_manager_ and the infobar.
@@ -161,9 +156,11 @@ class PasswordManager : public LoginModel,
   // time a user submits a login form and gets to the next page.
   scoped_ptr<PasswordFormManager> provisional_save_manager_;
 
-  // Our delegate for carrying out external operations.  This is typically the
-  // containing WebContents.
-  PasswordManagerDelegate* const delegate_;
+  // The embedder-level client. Must outlive this class.
+  PasswordManagerClient* const client_;
+
+  // The platform-level driver. Must outlive this class.
+  PasswordManagerDriver* const driver_;
 
   // Set to false to disable the password manager (will no longer ask if you
   // want to save passwords but will continue to fill passwords).

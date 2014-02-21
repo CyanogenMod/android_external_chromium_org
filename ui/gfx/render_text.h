@@ -27,6 +27,7 @@
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/size_f.h"
 #include "ui/gfx/text_constants.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/gfx/vector2d.h"
 
 class SkCanvas;
@@ -50,7 +51,10 @@ class SkiaTextRenderer {
   ~SkiaTextRenderer();
 
   void SetDrawLooper(SkDrawLooper* draw_looper);
-  void SetFontSmoothingSettings(bool enable_smoothing, bool enable_lcd_text);
+  void SetFontSmoothingSettings(bool antialiasing,
+                                bool subpixel_rendering,
+                                bool subpixel_positioning);
+  void SetFontHinting(SkPaint::Hinting hinting);
   void SetTypeface(SkTypeface* typeface);
   void SetTextSize(SkScalar size);
   void SetFontFamilyWithStyle(const std::string& family, int font_style);
@@ -169,13 +173,6 @@ class GFX_EXPORT RenderText {
 
   const FontList& font_list() const { return font_list_; }
   void SetFontList(const FontList& font_list);
-  void SetFont(const Font& font);
-
-  // Set the font size to |size| in pixels.
-  void SetFontSize(int size);
-
-  // Get the first font in |font_list_|.
-  const Font& GetPrimaryFont() const;
 
   bool cursor_enabled() const { return cursor_enabled_; }
   void SetCursorEnabled(bool cursor_enabled);
@@ -226,6 +223,11 @@ class GFX_EXPORT RenderText {
   // functionality of very long strings. Applies to subsequent SetText calls.
   // WARNING: Only use this for system limits, it lacks complex text support.
   void set_truncate_length(size_t length) { truncate_length_ = length; }
+
+  // Elides the text to fit in |display_rect| according to the specified
+  // |elide_behavior|. |ELIDE_IN_MIDDLE| is not supported.  If both truncate
+  // and elide are specified, the shorter of the two will be applicable.
+  void SetElideBehavior(ElideBehavior elide_behavior);
 
   const Rect& display_rect() const { return display_rect_; }
   void SetDisplayRect(const Rect& r);
@@ -535,6 +537,8 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ApplyColorAndStyle);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, RevealObscuredText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ElidedText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ElidedObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, TruncatedText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, TruncatedObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GraphemePositions);
@@ -555,6 +559,10 @@ class GFX_EXPORT RenderText {
 
   // Updates |layout_text_| if the text is obscured or truncated.
   void UpdateLayoutText();
+
+  // Elides |text| to fit in the |display_rect_| with given |elide_behavior_|.
+  // See ElideText in ui/gfx/text_elider.cc for reference.
+  base::string16 ElideText(const base::string16& text);
 
   // Update the cached bounds and display offset to ensure that the current
   // cursor is within the visible display area.
@@ -627,6 +635,9 @@ class GFX_EXPORT RenderText {
 
   // The maximum length of text to display, 0 forgoes a hard limit.
   size_t truncate_length_;
+
+  // The behavior for eliding or truncating.
+  ElideBehavior elide_behavior_;
 
   // The obscured and/or truncated text that will be displayed.
   base::string16 layout_text_;

@@ -28,6 +28,7 @@
 
 class AppModalDialog;
 class Browser;
+class DevToolsWindow;
 class LocationBar;
 class Profile;
 class SkBitmap;
@@ -74,7 +75,7 @@ enum BrowserTestWaitFlags {
 };
 
 // Puts the current tab title in |title|. Returns true on success.
-bool GetCurrentTabTitle(const Browser* browser, string16* title);
+bool GetCurrentTabTitle(const Browser* browser, base::string16* title);
 
 // Opens |url| in an incognito browser window with the incognito profile of
 // |profile|, blocking until the navigation finishes. This will create a new
@@ -110,6 +111,9 @@ void NavigateToURLBlockUntilNavigationsComplete(Browser* browser,
                                                 const GURL& url,
                                                 int number_of_navigations);
 
+// Blocks until DevTools window is loaded.
+void WaitUntilDevToolsWindowLoaded(DevToolsWindow* window);
+
 // Generate the file path for testing a particular test.
 // The file for the tests is all located in
 // test_root_directory/dir/<file>
@@ -134,7 +138,7 @@ AppModalDialog* WaitForAppModalDialog();
 // of the current match. |selection_rect| is an optional parameter which is set
 // to the location of the current match.
 int FindInPage(content::WebContents* tab,
-               const string16& search_string,
+               const base::string16& search_string,
                bool forward,
                bool case_sensitive,
                int* ordinal,
@@ -256,12 +260,6 @@ class BrowserAddedObserver {
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAddedObserver);
 };
-
-// Takes a snapshot of the given render widget, rendered at |page_size|. The
-// snapshot is set to |bitmap|. Returns true on success.
-bool TakeRenderWidgetSnapshot(content::RenderWidgetHost* rwh,
-                              const gfx::Size& page_size,
-                              SkBitmap* bitmap) WARN_UNUSED_RESULT;
 
 // Takes a snapshot of the entire page, according to the width and height
 // properties of the DOM's document. Returns true on success. DOMAutomation

@@ -4,10 +4,6 @@
 
 #include "chrome/browser/ui/views/hung_renderer_view.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include <windows.h>
-#endif
-
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/utf_string_conversions.h"
@@ -122,7 +118,7 @@ int HungPagesTableModel::RowCount() {
   return static_cast<int>(tab_observers_.size());
 }
 
-string16 HungPagesTableModel::GetText(int row, int column_id) {
+base::string16 HungPagesTableModel::GetText(int row, int column_id) {
   DCHECK(row >= 0 && row < RowCount());
   base::string16 title = tab_observers_[row]->web_contents()->GetTitle();
   if (title.empty())
@@ -303,7 +299,7 @@ void HungRendererDialogView::EndForWebContents(WebContents* contents) {
 ///////////////////////////////////////////////////////////////////////////////
 // HungRendererDialogView, views::DialogDelegate implementation:
 
-string16 HungRendererDialogView::GetWindowTitle() const {
+base::string16 HungRendererDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_TITLE);
 }
 
@@ -322,7 +318,7 @@ int HungRendererDialogView::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_OK;
 }
 
-string16 HungRendererDialogView::GetDialogButtonLabel(
+base::string16 HungRendererDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_WAIT);
@@ -333,7 +329,7 @@ views::View* HungRendererDialogView::CreateExtraView() {
   DCHECK(!kill_button_);
   kill_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_END));
-  kill_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  kill_button_->SetStyle(views::Button::STYLE_BUTTON);
   return kill_button_;
 }
 

@@ -20,10 +20,11 @@
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/focus/focus_manager_test.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
+
+using base::ASCIIToUTF16;
 
 namespace views {
 
@@ -89,7 +90,7 @@ class DummyComboboxModel : public ui::ComboboxModel {
  public:
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE { return 10; }
-  virtual string16 GetItemAt(int index) OVERRIDE {
+  virtual base::string16 GetItemAt(int index) OVERRIDE {
     return ASCIIToUTF16("Item ") + base::IntToString16(index);
   }
 };
@@ -136,7 +137,7 @@ class BorderView : public NativeViewHost {
  public:
   explicit BorderView(View* child) : child_(child), widget_(NULL) {
     DCHECK(child);
-    set_focusable(false);
+    SetFocusable(false);
   }
 
   virtual ~BorderView() {}
@@ -294,7 +295,7 @@ void FocusTraversalTest::InitContentView() {
   cb->set_id(kTopCheckBoxID);
 
   left_container_ = new PaneView();
-  left_container_->set_border(Border::CreateSolidBorder(1, SK_ColorBLACK));
+  left_container_->SetBorder(Border::CreateSolidBorder(1, SK_ColorBLACK));
   left_container_->set_background(
       Background::CreateSolidBackground(240, 240, 240));
   left_container_->set_id(kLeftContainerID);
@@ -361,7 +362,7 @@ void FocusTraversalTest::InitContentView() {
   y += label_height + gap_between_labels;
 
   LabelButton* button = new LabelButton(NULL, ASCIIToUTF16("Click me"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   button->SetBounds(label_x, y + 10, 80, 30);
   button->set_id(kFruitButtonID);
   left_container_->AddChildView(button);
@@ -379,7 +380,7 @@ void FocusTraversalTest::InitContentView() {
   left_container_->AddChildView(combobox);
 
   right_container_ = new PaneView();
-  right_container_->set_border(Border::CreateSolidBorder(1, SK_ColorBLACK));
+  right_container_->SetBorder(Border::CreateSolidBorder(1, SK_ColorBLACK));
   right_container_->set_background(
       Background::CreateSolidBackground(240, 240, 240));
   right_container_->set_id(kRightContainerID);
@@ -410,7 +411,7 @@ void FocusTraversalTest::InitContentView() {
   y += radio_button_height + gap_between_radio_buttons;
 
   View* inner_container = new View();
-  inner_container->set_border(Border::CreateSolidBorder(1, SK_ColorBLACK));
+  inner_container->SetBorder(Border::CreateSolidBorder(1, SK_ColorBLACK));
   inner_container->set_background(
       Background::CreateSolidBackground(230, 230, 230));
   inner_container->set_id(kInnerContainerID);
@@ -457,7 +458,7 @@ void FocusTraversalTest::InitContentView() {
   y = 250;
   int width = 60;
   button = new LabelButton(NULL, ASCIIToUTF16("OK"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   button->set_id(kOKButtonID);
   button->SetIsDefault(true);
 
@@ -465,13 +466,13 @@ void FocusTraversalTest::InitContentView() {
   button->SetBounds(150, y, width, 30);
 
   button = new LabelButton(NULL, ASCIIToUTF16("Cancel"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   button->set_id(kCancelButtonID);
   GetContentsView()->AddChildView(button);
   button->SetBounds(220, y, width, 30);
 
   button = new LabelButton(NULL, ASCIIToUTF16("Help"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   button->set_id(kHelpButtonID);
   GetContentsView()->AddChildView(button);
   button->SetBounds(290, y, width, 30);
@@ -525,7 +526,7 @@ void FocusTraversalTest::InitContentView() {
   text_field->set_id(kSearchTextfieldID);
 
   button = new LabelButton(NULL, ASCIIToUTF16("Search"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   contents->AddChildView(button);
   button->SetBounds(112, 5, 60, 30);
   button->set_id(kSearchButtonID);
@@ -545,16 +546,16 @@ void FocusTraversalTest::InitContentView() {
   y += 60;
 
   contents = new View();
-  contents->set_focusable(true);
+  contents->SetFocusable(true);
   contents->set_background(Background::CreateSolidBackground(SK_ColorBLUE));
   contents->set_id(kThumbnailContainerID);
   button = new LabelButton(NULL, ASCIIToUTF16("Star"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   contents->AddChildView(button);
   button->SetBounds(5, 5, 50, 30);
   button->set_id(kThumbnailStarID);
   button = new LabelButton(NULL, ASCIIToUTF16("SuperStar"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   contents->AddChildView(button);
   button->SetBounds(60, 5, 100, 30);
   button->set_id(kThumbnailSuperStarID);
@@ -578,9 +579,6 @@ TEST_F(FocusTraversalTest, NormalTraversal) {
       kUnderlinedCheckBoxID, kStyleHelpLinkID, kStyleTextEditID,
       kSearchTextfieldID, kSearchButtonID, kHelpLinkID,
       kThumbnailContainerID, kThumbnailStarID, kThumbnailSuperStarID };
-
-  // Uncomment the following line to manually test the UI of this test.
-  // base::RunLoop(new AcceleratorHandler()).Run();
 
   // Let's traverse the whole focus hierarchy (several times, to make sure it
   // loops OK).
@@ -631,9 +629,6 @@ TEST_F(FocusTraversalTest, TraversalWithNonEnabledViews) {
     v->SetEnabled(false);
   }
 
-  // Uncomment the following line to manually test the UI of this test.
-  // base::RunLoop(new AcceleratorHandler()).Run();
-
   View* focused_view;
   // Let's do one traversal (several times, to make sure it loops ok).
   GetFocusManager()->ClearFocus();
@@ -681,9 +676,6 @@ TEST_F(FocusTraversalTest, TraversalWithInvisibleViews) {
     ASSERT_TRUE(v != NULL);
     v->SetVisible(false);
   }
-
-  // Uncomment the following line to manually test the UI of this test.
-  // base::RunLoop(new AcceleratorHandler()).Run();
 
   View* focused_view;
   // Let's do one traversal (several times, to make sure it loops ok).
@@ -758,10 +750,10 @@ TEST_F(FocusTraversalTest, PaneTraversal) {
 
   FocusSearch focus_search_right(right_container_, true, true);
   right_container_->EnablePaneFocus(&focus_search_right);
-  FindViewByID(kRosettaLinkID)->set_focusable(false);
-  FindViewByID(kStupeurEtTremblementLinkID)->set_focusable(false);
-  FindViewByID(kDinerGameLinkID)->set_accessibility_focusable(true);
-  FindViewByID(kDinerGameLinkID)->set_focusable(false);
+  FindViewByID(kRosettaLinkID)->SetFocusable(false);
+  FindViewByID(kStupeurEtTremblementLinkID)->SetFocusable(false);
+  FindViewByID(kDinerGameLinkID)->SetAccessibilityFocusable(true);
+  FindViewByID(kDinerGameLinkID)->SetFocusable(false);
   FindViewByID(kAsterixLinkID)->RequestFocus();
 
   // Traverse the focus hierarchy within the pane several times.

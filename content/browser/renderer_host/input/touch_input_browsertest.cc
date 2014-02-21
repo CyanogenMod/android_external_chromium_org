@@ -82,7 +82,8 @@ namespace content {
 class InputEventMessageFilter : public BrowserMessageFilter {
  public:
   InputEventMessageFilter()
-      : type_(WebInputEvent::Undefined),
+      : BrowserMessageFilter(InputMsgStart),
+        type_(WebInputEvent::Undefined),
         state_(INPUT_EVENT_ACK_STATE_UNKNOWN) {}
 
   void WaitForAck(WebInputEvent::Type type) {
@@ -157,19 +158,6 @@ class TouchInputBrowserTest : public ContentBrowserTest,
 
     filter_ = new InputEventMessageFilter();
     host->GetProcess()->AddFilter(filter_);
-  }
-
-  // ContentBrowserTest:
-  virtual void SetUp() OVERRIDE {
-    // We expect real pixel output for these tests.
-    UseRealGLContexts();
-
-    // On legacy windows, these tests need real GL bindings to pass.
-#if defined(OS_WIN) && !defined(USE_AURA)
-    UseRealGLBindings();
-#endif
-
-    ContentBrowserTest::SetUp();
   }
 
   virtual void SetUpCommandLine(CommandLine* cmd) OVERRIDE {

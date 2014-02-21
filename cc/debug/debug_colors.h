@@ -29,6 +29,9 @@ class DebugColors {
   static SkColor ContainerLayerBorderColor();
   static int ContainerLayerBorderWidth(const LayerTreeImpl* tree_impl);
 
+  static SkColor SurfaceLayerBorderColor();
+  static int SurfaceLayerBorderWidth(const LayerTreeImpl* tree_impl);
+
   static SkColor SurfaceBorderColor();
   static int SurfaceBorderWidth(const LayerTreeImpl* tree_impl);
 
@@ -66,9 +69,9 @@ class DebugColors {
   static SkColor EvictedTileCheckerboardColor();
   static SkColor InvalidatedTileCheckerboardColor();
 
-  static SkColor PaintRectBorderColor();
+  static SkColor PaintRectBorderColor(int color_index);
   static int PaintRectBorderWidth();
-  static SkColor PaintRectFillColor();
+  static SkColor PaintRectFillColor(int color_index);
 
   static SkColor PropertyChangedRectBorderColor();
   static int PropertyChangedRectBorderWidth();

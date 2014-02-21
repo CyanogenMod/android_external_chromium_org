@@ -23,7 +23,7 @@
 #include "cc/scheduler/delay_based_time_source.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/frame_time.h"
@@ -117,11 +117,14 @@ void OutputSurface::SetMaxFramesPending(int max_frames_pending) {
   max_frames_pending_ = max_frames_pending;
 }
 
-void OutputSurface::OnVSyncParametersChanged(base::TimeTicks timebase,
-                                             base::TimeDelta interval) {
-  TRACE_EVENT2("cc", "OutputSurface::OnVSyncParametersChanged",
-               "timebase", (timebase - base::TimeTicks()).InSecondsF(),
-               "interval", interval.InSecondsF());
+void OutputSurface::CommitVSyncParameters(base::TimeTicks timebase,
+                                          base::TimeDelta interval) {
+  TRACE_EVENT2("cc",
+               "OutputSurface::CommitVSyncParameters",
+               "timebase",
+               (timebase - base::TimeTicks()).InSecondsF(),
+               "interval",
+               interval.InSecondsF());
   if (frame_rate_controller_)
     frame_rate_controller_->SetTimebaseAndInterval(timebase, interval);
 }
@@ -136,7 +139,7 @@ void OutputSurface::FrameRateControllerTick(bool throttled,
 }
 
 // Forwarded to OutputSurfaceClient
-void OutputSurface::SetNeedsRedrawRect(gfx::Rect damage_rect) {
+void OutputSurface::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
   TRACE_EVENT0("cc", "OutputSurface::SetNeedsRedrawRect");
   client_->SetNeedsRedrawRect(damage_rect);
 }
@@ -242,8 +245,8 @@ void OutputSurface::SetExternalStencilTest(bool enabled) {
 }
 
 void OutputSurface::SetExternalDrawConstraints(const gfx::Transform& transform,
-                                               gfx::Rect viewport,
-                                               gfx::Rect clip,
+                                               const gfx::Rect& viewport,
+                                               const gfx::Rect& clip,
                                                bool valid_for_tile_management) {
   client_->SetExternalDrawConstraints(
       transform, viewport, clip, valid_for_tile_management);
@@ -326,12 +329,12 @@ void OutputSurface::ResetContext3d() {
     while (!pending_gpu_latency_query_ids_.empty()) {
       unsigned query_id = pending_gpu_latency_query_ids_.front();
       pending_gpu_latency_query_ids_.pop_front();
-      context_provider_->Context3d()->deleteQueryEXT(query_id);
+      context_provider_->ContextGL()->DeleteQueriesEXT(1, &query_id);
     }
     while (!available_gpu_latency_query_ids_.empty()) {
       unsigned query_id = available_gpu_latency_query_ids_.front();
       available_gpu_latency_query_ids_.pop_front();
-      context_provider_->Context3d()->deleteQueryEXT(query_id);
+      context_provider_->ContextGL()->DeleteQueriesEXT(1, &query_id);
     }
     context_provider_->SetLostContextCallback(
         ContextProvider::LostContextCallback());
@@ -344,27 +347,25 @@ void OutputSurface::ResetContext3d() {
 }
 
 void OutputSurface::EnsureBackbuffer() {
-  if (context_provider_)
-    context_provider_->Context3d()->ensureBackbufferCHROMIUM();
   if (software_device_)
     software_device_->EnsureBackbuffer();
 }
 
 void OutputSurface::DiscardBackbuffer() {
   if (context_provider_)
-    context_provider_->Context3d()->discardBackbufferCHROMIUM();
+    context_provider_->ContextGL()->DiscardBackbufferCHROMIUM();
   if (software_device_)
     software_device_->DiscardBackbuffer();
 }
 
-void OutputSurface::Reshape(gfx::Size size, float scale_factor) {
+void OutputSurface::Reshape(const gfx::Size& size, float scale_factor) {
   if (size == surface_size_ && scale_factor == device_scale_factor_)
     return;
 
   surface_size_ = size;
   device_scale_factor_ = scale_factor;
   if (context_provider_) {
-    context_provider_->Context3d()->reshapeWithScaleFactor(
+    context_provider_->ContextGL()->ResizeCHROMIUM(
         size.width(), size.height(), scale_factor);
   }
   if (software_device_)
@@ -377,7 +378,7 @@ gfx::Size OutputSurface::SurfaceSize() const {
 
 void OutputSurface::BindFramebuffer() {
   DCHECK(context_provider_);
-  context_provider_->Context3d()->bindFramebuffer(GL_FRAMEBUFFER, 0);
+  context_provider_->ContextGL()->BindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void OutputSurface::SwapBuffers(CompositorFrame* frame) {
@@ -422,13 +423,13 @@ void OutputSurface::UpdateAndMeasureGpuLatency() {
   while (pending_gpu_latency_query_ids_.size()) {
     unsigned query_id = pending_gpu_latency_query_ids_.front();
     unsigned query_complete = 1;
-    context_provider_->Context3d()->getQueryObjectuivEXT(
+    context_provider_->ContextGL()->GetQueryObjectuivEXT(
         query_id, GL_QUERY_RESULT_AVAILABLE_EXT, &query_complete);
     if (!query_complete)
       break;
 
     unsigned value = 0;
-    context_provider_->Context3d()->getQueryObjectuivEXT(
+    context_provider_->ContextGL()->GetQueryObjectuivEXT(
         query_id, GL_QUERY_RESULT_EXT, &value);
     pending_gpu_latency_query_ids_.pop_front();
     available_gpu_latency_query_ids_.push_back(query_id);
@@ -465,12 +466,12 @@ void OutputSurface::UpdateAndMeasureGpuLatency() {
     gpu_latency_query_id = available_gpu_latency_query_ids_.front();
     available_gpu_latency_query_ids_.pop_front();
   } else {
-    gpu_latency_query_id = context_provider_->Context3d()->createQueryEXT();
+    context_provider_->ContextGL()->GenQueriesEXT(1, &gpu_latency_query_id);
   }
 
-  context_provider_->Context3d()->beginQueryEXT(GL_LATENCY_QUERY_CHROMIUM,
+  context_provider_->ContextGL()->BeginQueryEXT(GL_LATENCY_QUERY_CHROMIUM,
                                                 gpu_latency_query_id);
-  context_provider_->Context3d()->endQueryEXT(GL_LATENCY_QUERY_CHROMIUM);
+  context_provider_->ContextGL()->EndQueryEXT(GL_LATENCY_QUERY_CHROMIUM);
   pending_gpu_latency_query_ids_.push_back(gpu_latency_query_id);
 }
 

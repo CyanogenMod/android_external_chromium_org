@@ -7,10 +7,12 @@
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
+#include "chrome/browser/ui/autofill/popup_constants.h"
 #include "chrome/browser/ui/cocoa/autofill/autofill_popup_view_bridge.h"
 #include "grit/ui_resources.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -117,12 +119,12 @@ NSColor* SubtextColor() {
   // TODO(isherman): We should consider using asset-based drawing for the
   // border, creating simple bitmaps for the view's border and background, and
   // drawing them using NSDrawNinePartImage().
-  CGFloat inset = autofill::AutofillPopupView::kBorderThickness / 2.0;
+  CGFloat inset = autofill::kPopupBorderThickness / 2.0;
   NSRect borderRect = NSInsetRect([self bounds], inset, inset);
   NSBezierPath* path = [NSBezierPath bezierPathWithRect:borderRect];
   [BackgroundColor() setFill];
   [path fill];
-  [path setLineWidth:autofill::AutofillPopupView::kBorderThickness];
+  [path setLineWidth:autofill::kPopupBorderThickness];
   [BorderColor() setStroke];
   [path stroke];
 
@@ -158,8 +160,7 @@ NSColor* SubtextColor() {
                                fromView:nil];
 
   if (NSPointInRect(location, [self bounds])) {
-    controller_->LineAcceptedAtPoint(static_cast<int>(location.x),
-                                     static_cast<int>(location.y));
+    controller_->AcceptSelectionAtPoint(gfx::Point(NSPointToCGPoint(location)));
   }
 }
 
@@ -171,8 +172,7 @@ NSColor* SubtextColor() {
   NSPoint location = [self convertPoint:[theEvent locationInWindow]
                                fromView:nil];
 
-  controller_->LineSelectedAtPoint(static_cast<int>(location.x),
-                                   static_cast<int>(location.y));
+  controller_->SetSelectionAtPoint(gfx::Point(NSPointToCGPoint(location)));
 }
 
 - (void)mouseDragged:(NSEvent*)theEvent {
@@ -221,7 +221,8 @@ NSColor* SubtextColor() {
       controller_->IsWarning(index) ? WarningColor() : NameColor();
   NSDictionary* nameAttributes =
       [NSDictionary dictionaryWithObjectsAndKeys:
-           controller_->GetNameFontForRow(index).GetNativeFont(),
+           controller_->GetNameFontListForRow(index).GetPrimaryFont().
+               GetNativeFont(),
            NSFontAttributeName, nameColor, NSForegroundColorAttributeName,
            nil];
   NSSize nameSize = [name sizeWithAttributes:nameAttributes];
@@ -260,8 +261,8 @@ NSColor* SubtextColor() {
   // Draw the subtext.
   NSDictionary* subtextAttributes =
       [NSDictionary dictionaryWithObjectsAndKeys:
-           controller_->subtext_font().GetNativeFont(), NSFontAttributeName,
-           SubtextColor(), NSForegroundColorAttributeName,
+           controller_->subtext_font_list().GetPrimaryFont().GetNativeFont(),
+           NSFontAttributeName, SubtextColor(), NSForegroundColorAttributeName,
            nil];
   NSSize subtextSize = [subtext sizeWithAttributes:subtextAttributes];
   x += isRTL ? 0 : -subtextSize.width;

@@ -25,6 +25,7 @@
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "google/cacheinvalidation/types.pb.h"
@@ -63,7 +64,7 @@ ProfileSyncServiceAndroid::ProfileSyncServiceAndroid(JNIEnv* env, jobject obj)
     return;
   }
 
-  profile_ = g_browser_process->profile_manager()->GetDefaultProfile();
+  profile_ = ProfileManager::GetActiveUserProfile();
   if (profile_ == NULL) {
     NOTREACHED() << "Sync Init: Profile not found.";
     return;
@@ -324,7 +325,7 @@ ScopedJavaLocalRef<jstring>
   return base::android::ConvertUTF16ToJavaString(env,
       l10n_util::GetStringFUTF16(
           IDS_SYNC_ACCOUNT_SYNCING_TO_USER,
-          ASCIIToUTF16(sync_username)));
+          base::ASCIIToUTF16(sync_username)));
 }
 
 ScopedJavaLocalRef<jstring>
@@ -457,7 +458,7 @@ ScopedJavaLocalRef<jstring> ProfileSyncServiceAndroid::GetAboutInfoForTest(
     JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  scoped_ptr<DictionaryValue> about_info =
+  scoped_ptr<base::DictionaryValue> about_info =
       sync_ui_util::ConstructAboutInformation(sync_service_);
   std::string about_info_json;
   base::JSONWriter::Write(about_info.get(), &about_info_json);

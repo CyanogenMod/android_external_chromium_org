@@ -11,9 +11,9 @@
 
 class CommandLine;
 class GURL;
-class Profile;
 class PrefRegistrySimple;
 class PrefService;
+class Profile;
 
 namespace chromeos {
 
@@ -48,8 +48,9 @@ class LoginUtils {
   static void Set(LoginUtils* ptr);
 
   // Checks if the given username is whitelisted and allowed to sign-in to
-  // this device.
-  static bool IsWhitelisted(const std::string& username);
+  // this device. |wildcard_match| may be NULL. If it's present, it'll be set to
+  // true if the whitelist check was satisfied via a wildcard.
+  static bool IsWhitelisted(const std::string& username, bool* wildcard_match);
 
   virtual ~LoginUtils() {}
 
@@ -60,7 +61,6 @@ class LoginUtils {
                                LoginDisplayHost* login_host) = 0;
 
   // Loads and prepares profile for the session. Fires |delegate| in the end.
-  // If |pending_requests| is true, there's a pending online auth request.
   // If |display_email| is not empty, user's displayed email will be set to
   // this value, shown in UI.
   // |user_context.username_hash| defines when user homedir is mounted.
@@ -103,6 +103,9 @@ class LoginUtils {
 
   // Initialize RLZ.
   virtual void InitRlzDelayed(Profile* user_profile) = 0;
+
+  // Initiates process of starting CertLoader for the user_profile.
+  virtual void StartCertLoader(Profile* user_profile) = 0;
 };
 
 }  // namespace chromeos

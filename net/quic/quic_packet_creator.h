@@ -18,8 +18,6 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
 
-NET_EXPORT_PRIVATE extern bool FLAGS_pad_quic_handshake_packets;
-
 namespace net {
 namespace test {
 class QuicPacketCreatorPeer;
@@ -27,6 +25,7 @@ class QuicPacketCreatorPeer;
 
 class QuicAckNotifier;
 class QuicRandom;
+class QuicRandomBoolSource;
 
 class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
  public:
@@ -187,7 +186,6 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   void FillPacketHeader(QuicFecGroupNumber fec_group,
                         bool fec_flag,
-                        bool fec_entropy_flag,
                         QuicPacketHeader* header);
 
   // Allows a frame to be added without creating retransmittable frames.
@@ -202,7 +200,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   Options options_;
   QuicGuid guid_;
   QuicFramer* framer_;
-  QuicRandom* random_generator_;
+  scoped_ptr<QuicRandomBoolSource> random_bool_source_;
   QuicPacketSequenceNumber sequence_number_;
   QuicFecGroupNumber fec_group_number_;
   scoped_ptr<QuicFecGroup> fec_group_;

@@ -12,7 +12,7 @@
 #include "base/i18n/rtl.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_handle.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
@@ -59,8 +59,7 @@ SkBitmap DecodeImage(const base::FilePath& path) {
   SkBitmap bitmap = content::DecodeImage(data,
                                          gfx::Size(),
                                          file_contents.length());
-  Sk64 bitmap_size = bitmap.getSize64();
-  if (!bitmap_size.is32() || bitmap_size.get32() > kMaxImageCanvas)
+  if (bitmap.computeSize64() > kMaxImageCanvas)
     return SkBitmap();
   return bitmap;
 }
@@ -87,7 +86,7 @@ bool PathContainsParentDirectory(const base::FilePath& path) {
 }
 
 bool WritePickle(const IPC::Message& pickle, const base::FilePath& dest_path) {
-  int size = base::checked_numeric_cast<int>(pickle.size());
+  int size = base::checked_cast<int>(pickle.size());
   const char* data = static_cast<const char*>(pickle.data());
   int bytes_written = file_util::WriteFile(dest_path, data, size);
   return (bytes_written == size);
@@ -289,14 +288,14 @@ bool Unpacker::ReadMessageCatalog(const base::FilePath& message_path) {
   scoped_ptr<base::DictionaryValue> root(static_cast<base::DictionaryValue*>(
       serializer.Deserialize(NULL, &error)));
   if (!root.get()) {
-    string16 messages_file = message_path.LossyDisplayName();
+    base::string16 messages_file = message_path.LossyDisplayName();
     if (error.empty()) {
       // If file is missing, Deserialize will fail with empty error.
       SetError(base::StringPrintf("%s %s", errors::kLocalesMessagesFileMissing,
-                                  UTF16ToUTF8(messages_file).c_str()));
+                                  base::UTF16ToUTF8(messages_file).c_str()));
     } else {
       SetError(base::StringPrintf("%s: %s",
-                                  UTF16ToUTF8(messages_file).c_str(),
+                                  base::UTF16ToUTF8(messages_file).c_str(),
                                   error.c_str()));
     }
     return false;
@@ -320,10 +319,10 @@ bool Unpacker::ReadMessageCatalog(const base::FilePath& message_path) {
 }
 
 void Unpacker::SetError(const std::string &error) {
-  SetUTF16Error(UTF8ToUTF16(error));
+  SetUTF16Error(base::UTF8ToUTF16(error));
 }
 
-void Unpacker::SetUTF16Error(const string16 &error) {
+void Unpacker::SetUTF16Error(const base::string16& error) {
   error_message_ = error;
 }
 

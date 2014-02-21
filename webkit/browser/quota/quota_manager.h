@@ -229,6 +229,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
   // utilized by a single host (ie. 5 for 20%).
   static const int kPerHostTemporaryPortion;
 
+  static const int64 kPerHostPersistentQuotaLimit;
+
   static const char kDatabaseName[];
 
   static const int64 kMinimumPreserveForSystem;
@@ -432,52 +434,6 @@ struct QuotaManagerDeleter {
   static void Destruct(const QuotaManager* manager) {
     manager->DeleteOnCorrectThread();
   }
-};
-
-// The proxy may be called and finally released on any thread.
-class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManagerProxy
-    : public base::RefCountedThreadSafe<QuotaManagerProxy> {
- public:
-  typedef QuotaManager::GetUsageAndQuotaCallback
-      GetUsageAndQuotaCallback;
-
-  virtual void RegisterClient(QuotaClient* client);
-  virtual void NotifyStorageAccessed(QuotaClient::ID client_id,
-                                     const GURL& origin,
-                                     StorageType type);
-  virtual void NotifyStorageModified(QuotaClient::ID client_id,
-                                     const GURL& origin,
-                                     StorageType type,
-                                     int64 delta);
-  virtual void NotifyOriginInUse(const GURL& origin);
-  virtual void NotifyOriginNoLongerInUse(const GURL& origin);
-
-  virtual void SetUsageCacheEnabled(QuotaClient::ID client_id,
-                                    const GURL& origin,
-                                    StorageType type,
-                                    bool enabled);
-  virtual void GetUsageAndQuota(
-      base::SequencedTaskRunner* original_task_runner,
-      const GURL& origin,
-      StorageType type,
-      const GetUsageAndQuotaCallback& callback);
-
-  // This method may only be called on the IO thread.
-  // It may return NULL if the manager has already been deleted.
-  QuotaManager* quota_manager() const;
-
- protected:
-  friend class QuotaManager;
-  friend class base::RefCountedThreadSafe<QuotaManagerProxy>;
-
-  QuotaManagerProxy(QuotaManager* manager,
-                    base::SingleThreadTaskRunner* io_thread);
-  virtual ~QuotaManagerProxy();
-
-  QuotaManager* manager_;  // only accessed on the io thread
-  scoped_refptr<base::SingleThreadTaskRunner> io_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(QuotaManagerProxy);
 };
 
 }  // namespace quota

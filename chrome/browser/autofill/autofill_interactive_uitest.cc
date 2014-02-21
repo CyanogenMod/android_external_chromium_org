@@ -22,7 +22,8 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
-#include "chrome/browser/translate/translate_manager.h"
+#include "chrome/browser/translate/translate_service.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -53,6 +54,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
+using base::ASCIIToUTF16;
 
 namespace autofill {
 
@@ -204,6 +206,8 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
 
   // InProcessBrowserTest:
   virtual void SetUpOnMainThread() OVERRIDE {
+    TranslateService::SetUseInfobar(true);
+
     // Don't want Keychain coming up on Mac.
     test::DisableSystemServices(browser()->profile());
 
@@ -837,8 +841,7 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
       InfoBarService::FromWebContents(GetWebContents())->infobar_at(0)->
           delegate()->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(delegate);
-  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            delegate->infobar_type());
+  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, delegate->translate_step());
 
   // Simulate translation button press.
   delegate->Translate();
@@ -1031,15 +1034,16 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest,
     base::string16 street = ASCIIToUTF16(
         base::IntToString(base::RandInt(0, 10000)) + " " +
         streets[base::RandInt(0, streets.size() - 1)]);
-    base::string16 city = ASCIIToUTF16(cities[base::RandInt(0, cities.size() - 1)]);
+    base::string16 city =
+        ASCIIToUTF16(cities[base::RandInt(0, cities.size() - 1)]);
     base::string16 zip(base::IntToString16(base::RandInt(0, 10000)));
     profile.SetRawInfo(NAME_FIRST, name);
     profile.SetRawInfo(EMAIL_ADDRESS, email);
     profile.SetRawInfo(ADDRESS_HOME_LINE1, street);
     profile.SetRawInfo(ADDRESS_HOME_CITY, city);
-    profile.SetRawInfo(ADDRESS_HOME_STATE, WideToUTF16(L"CA"));
+    profile.SetRawInfo(ADDRESS_HOME_STATE, ASCIIToUTF16("CA"));
     profile.SetRawInfo(ADDRESS_HOME_ZIP, zip);
-    profile.SetRawInfo(ADDRESS_HOME_COUNTRY, WideToUTF16(L"US"));
+    profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("US"));
     profiles.push_back(profile);
   }
   SetProfiles(&profiles);

@@ -10,15 +10,18 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.text.TextUtils;
 import android.util.Base64;
+import android.util.Base64InputStream;
 import android.util.Log;
 import android.view.Surface;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -134,11 +137,12 @@ public class MediaPlayerBridge {
 
     @CalledByNative
     protected boolean setDataSource(
-            Context context, String url, String cookies, boolean hideUrlLog) {
+            Context context, String url, String cookies, String userAgent, boolean hideUrlLog) {
         Uri uri = Uri.parse(url);
         HashMap<String, String> headersMap = new HashMap<String, String>();
         if (hideUrlLog) headersMap.put("x-hide-urls-from-log", "true");
         if (!TextUtils.isEmpty(cookies)) headersMap.put("Cookie", cookies);
+        if (!TextUtils.isEmpty(userAgent)) headersMap.put("User-Agent", userAgent);
         try {
             getLocalPlayer().setDataSource(context, uri, headersMap);
             return true;
@@ -182,14 +186,27 @@ public class MediaPlayerBridge {
 
         @Override
         protected Boolean doInBackground(Void... params) {
+            FileOutputStream fos = null;
             try {
                 mTempFile = File.createTempFile("decoded", "mediadata");
-                FileOutputStream fos = new FileOutputStream(mTempFile);
-                fos.write(Base64.decode(mData, Base64.DEFAULT));
-                fos.close();
+                fos = new FileOutputStream(mTempFile);
+                InputStream stream = new ByteArrayInputStream(mData.getBytes());
+                Base64InputStream decoder = new Base64InputStream(stream, Base64.DEFAULT);
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = decoder.read(buffer)) != -1) {
+                    fos.write(buffer, 0, len);
+                }
+                decoder.close();
                 return true;
             } catch (IOException e) {
                 return false;
+            } finally {
+                try {
+                    if (fos != null) fos.close();
+                } catch (IOException e) {
+                    // Can't do anything.
+                }
             }
         }
 

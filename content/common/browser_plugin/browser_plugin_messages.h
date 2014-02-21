@@ -15,6 +15,7 @@
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
+#include "content/common/frame_param_macros.h"
 #include "content/public/common/browser_plugin_permission_type.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/drop_data.h"
@@ -22,6 +23,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/WebKit/public/web/WebDragStatus.h"
 #include "ui/gfx/point.h"
@@ -36,7 +38,7 @@
 #define IPC_MESSAGE_START BrowserPluginMsgStart
 
 
-IPC_ENUM_TRAITS(blink::WebDragStatus)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebDragStatus, blink::WebDragStatusLast)
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_AutoSize_Params)
   IPC_STRUCT_MEMBER(bool, enable)
@@ -82,14 +84,6 @@ IPC_STRUCT_BEGIN(BrowserPluginMsg_Attach_ACK_Params)
   IPC_STRUCT_MEMBER(std::string, storage_partition_id)
   IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(std::string, name)
-IPC_STRUCT_END()
-
-IPC_STRUCT_BEGIN(BrowserPluginMsg_BuffersSwapped_Params)
-  IPC_STRUCT_MEMBER(gfx::Size, size)
-  IPC_STRUCT_MEMBER(gfx::Rect, damage_rect)
-  IPC_STRUCT_MEMBER(std::string, mailbox_name)
-  IPC_STRUCT_MEMBER(int, route_id)
-  IPC_STRUCT_MEMBER(int, host_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginMsg_UpdateRect_Params)
@@ -155,6 +149,30 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
                     int /* instance_id */,
                     std::vector<content::EditCommand> /* edit_commands */)
 
+// This message is sent from BrowserPlugin to BrowserPluginGuest whenever IME
+// composition state is updated.
+IPC_MESSAGE_ROUTED5(
+    BrowserPluginHostMsg_ImeSetComposition,
+    int /* instance_id */,
+    std::string /* text */,
+    std::vector<blink::WebCompositionUnderline> /* underlines */,
+    int /* selectiont_start */,
+    int /* selection_end */)
+
+// This message is sent from BrowserPlugin to BrowserPluginGuest to notify that
+// confirming the current composition is requested.
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_ImeConfirmComposition,
+                    int /* instance_id */,
+                    std::string /* text */,
+                    bool /* keep selection */)
+
+// Deletes the current selection plus the specified number of characters before
+// and after the selection or caret.
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_ExtendSelectionAndDelete,
+                    int /* instance_id */,
+                    int /* before */,
+                    int /* after */)
+
 // This message is sent to the browser process to enable or disable autosize
 // mode.
 IPC_MESSAGE_ROUTED3(
@@ -203,37 +221,16 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_NavigateGuest,
                     int /* instance_id*/,
                     std::string /* src */)
 
-// Acknowledge that we presented a HW buffer and provide a sync point
-// to specify the location in the command stream when the compositor
-// is no longer using it.
-IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_BuffersSwappedACK,
-                    int /* instance_id */,
-                    int /* route_id */,
-                    int /* gpu_host_id */,
-                    std::string /* mailbox_name */,
-                    uint32 /* sync_point */)
-
 IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
                     int /* instance_id */,
                     int /* request_id */,
                     SkBitmap);
 
-// Acknowledge that we presented an ubercomp frame.
-IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_CompositorFrameACK,
-                    int /* instance_id */,
-                    int /* route_id */,
-                    uint32 /* output_surface_id */,
-                    int /* renderer_host_id */,
-                    cc::CompositorFrameAck /* ack */)
-
 // Notify the guest renderer that some resources given to the embededer
 // are not used any more.
-IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_ReclaimCompositorResources,
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ReclaimCompositorResources,
                     int /* instance_id */,
-                    int /* route_id */,
-                    uint32 /* output_surface_id */,
-                    int /* renderer_host_id */,
-                    cc::CompositorFrameAck /* ack */)
+                    FrameHostMsg_ReclaimCompositorResources_Params /* params */)
 
 // When a BrowserPlugin has been removed from the embedder's DOM, it informs
 // the browser process to cleanup the guest.
@@ -364,22 +361,31 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_UpdatedName,
                      std::string /* name */)
 
 // Guest renders into an FBO with textures provided by the embedder.
-// When HW accelerated buffers are swapped in the guest, the message
-// is forwarded to the embedder to notify it of a new texture
-// available for compositing.
+// BrowserPlugin shares mostly the same logic as out-of-process RenderFrames but
+// because BrowserPlugins implement custom a second level of routing logic,
+// the IPCs need to be annotated with an extra instance_id. These messages
+// provide that extra id.
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_BuffersSwapped,
                      int /* instance_id */,
-                     BrowserPluginMsg_BuffersSwapped_Params)
+                     FrameMsg_BuffersSwapped_Params /* params */)
 
-IPC_MESSAGE_CONTROL5(BrowserPluginMsg_CompositorFrameSwapped,
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_CompositorFrameSwapped,
                      int /* instance_id */,
-                     cc::CompositorFrame /* frame */,
-                     int /* route_id */,
-                     uint32 /* output_surface_id */,
-                     int /* renderer_host_id */)
+                     FrameMsg_CompositorFrameSwapped_Params /* params */)
 
 // Forwards a PointerLock Unlock request to the BrowserPlugin.
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetMouseLock,
                      int /* instance_id */,
                      bool /* enable */)
 
+// See comment about BrowserPluginMsg_BuffersSwapped and
+// BrowserPluginMsg_CompositorFrameSwapped for how these related
+// to the FrameHostMsg variants.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_BuffersSwappedACK,
+                    int /* instance_id */,
+                    FrameHostMsg_BuffersSwappedACK_Params /* params */)
+
+// Acknowledge that we presented an ubercomp frame.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_CompositorFrameSwappedACK,
+                    int /* instance_id */,
+                    FrameHostMsg_CompositorFrameSwappedACK_Params /* params */)

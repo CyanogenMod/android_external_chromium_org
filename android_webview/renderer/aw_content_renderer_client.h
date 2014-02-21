@@ -23,24 +23,25 @@ class AwContentRendererClient : public content::ContentRendererClient {
 
   // ContentRendererClient implementation.
   virtual void RenderThreadStarted() OVERRIDE;
+  virtual void RenderFrameCreated(content::RenderFrame* render_frame) OVERRIDE;
   virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
   virtual std::string GetDefaultEncoding() OVERRIDE;
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain) OVERRIDE;
   virtual void GetNavigationErrorStrings(
+      content::RenderView* render_view,
       blink::WebFrame* frame,
       const blink::WebURLRequest& failed_request,
       const blink::WebURLError& error,
-      const std::string& accept_languages,
       std::string* error_html,
-      string16* error_description) OVERRIDE;
+      base::string16* error_description) OVERRIDE;
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length) OVERRIDE;
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
   virtual void AddKeySystems(
       std::vector<content::KeySystemInfo>* key_systems) OVERRIDE;
 
-  virtual bool HandleNavigation(content::RenderView* view,
+  virtual bool HandleNavigation(content::RenderFrame* render_frame,
                                 content::DocumentState* document_state,
                                 int opener_id,
                                 blink::WebFrame* frame,

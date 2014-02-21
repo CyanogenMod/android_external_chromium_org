@@ -12,16 +12,19 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "net/base/url_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 SigninGlobalError::SigninGlobalError(Profile* profile)
@@ -96,7 +99,7 @@ int SigninGlobalError::MenuItemCommandID() {
   return IDC_SHOW_SIGNIN_ERROR;
 }
 
-string16 SigninGlobalError::MenuItemLabel() {
+base::string16 SigninGlobalError::MenuItemLabel() {
   if (account_id_.empty() ||
       auth_error_.state() == GoogleServiceAuthError::NONE ||
       auth_error_.state() == GoogleServiceAuthError::CONNECTION_FAILED) {
@@ -112,16 +115,12 @@ string16 SigninGlobalError::MenuItemLabel() {
 void SigninGlobalError::ExecuteMenuItem(Browser* browser) {
 #if defined(OS_CHROMEOS)
   if (auth_error_.state() != GoogleServiceAuthError::NONE) {
-    DLOG(INFO) << "Signing out the user to fix a sync error.";
+    DVLOG(1) << "Signing out the user to fix a sync error.";
     // TODO(beng): seems like this could just call chrome::AttemptUserExit().
     chrome::ExecuteCommand(browser, IDC_EXIT);
     return;
   }
 #endif
-
-  // TODO(rogerta): what we do depends on which account is reporting an error.
-  // This will be needed once the account reconcilor is implemented.  The
-  // LoginUIService will support multi-login as well.
 
   // Global errors don't show up in the wrench menu on android.
 #if !defined(OS_ANDROID)
@@ -130,8 +129,9 @@ void SigninGlobalError::ExecuteMenuItem(Browser* browser) {
     login_ui->current_login_ui()->FocusUI();
     return;
   }
-  // Need to navigate to the settings page and display the UI.
-  chrome::ShowSettingsSubPage(browser, chrome::kSyncSetupSubPage);
+
+  chrome::ShowSingletonTab(browser, signin::GetReauthURL(profile_,
+                                                         account_id_));
 #endif
 }
 
@@ -139,12 +139,12 @@ bool SigninGlobalError::HasBubbleView() {
   return !GetBubbleViewMessages().empty();
 }
 
-string16 SigninGlobalError::GetBubbleViewTitle() {
+base::string16 SigninGlobalError::GetBubbleViewTitle() {
   return l10n_util::GetStringUTF16(IDS_SIGNIN_ERROR_BUBBLE_VIEW_TITLE);
 }
 
-std::vector<string16> SigninGlobalError::GetBubbleViewMessages() {
-  std::vector<string16> messages;
+std::vector<base::string16> SigninGlobalError::GetBubbleViewMessages() {
+  std::vector<base::string16> messages;
 
   // If the user isn't signed in, no need to display an error bubble.
   SigninManagerBase* signin_manager =
@@ -169,28 +169,25 @@ std::vector<string16> SigninGlobalError::GetBubbleViewMessages() {
     case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::ACCOUNT_DELETED:
     case GoogleServiceAuthError::ACCOUNT_DISABLED:
-      messages.push_back(l10n_util::GetStringFUTF16(
-          IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+      messages.push_back(l10n_util::GetStringUTF16(
+          IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE));
       break;
 
     // Sync service is not available for this account's domain.
     case GoogleServiceAuthError::SERVICE_UNAVAILABLE:
-      messages.push_back(l10n_util::GetStringFUTF16(
-          IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+      messages.push_back(l10n_util::GetStringUTF16(
+          IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE));
       break;
 
     // Generic message for "other" errors.
     default:
-      messages.push_back(l10n_util::GetStringFUTF16(
-          IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+      messages.push_back(l10n_util::GetStringUTF16(
+          IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE));
   }
   return messages;
 }
 
-string16 SigninGlobalError::GetBubbleViewAcceptButtonLabel() {
+base::string16 SigninGlobalError::GetBubbleViewAcceptButtonLabel() {
   // If the service is unavailable, don't give the user the option to try
   // signing in again.
   if (auth_error_.state() == GoogleServiceAuthError::SERVICE_UNAVAILABLE) {
@@ -201,7 +198,7 @@ string16 SigninGlobalError::GetBubbleViewAcceptButtonLabel() {
   }
 }
 
-string16 SigninGlobalError::GetBubbleViewCancelButtonLabel() {
+base::string16 SigninGlobalError::GetBubbleViewCancelButtonLabel() {
   return base::string16();
 }
 

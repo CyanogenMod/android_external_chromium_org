@@ -4,11 +4,12 @@
 
 #include "net/quic/quic_config.h"
 
-#include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_time.h"
+#include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -29,6 +30,8 @@ class QuicConfigTest : public ::testing::Test {
 };
 
 TEST_F(QuicConfigTest, ToHandshakeMessage) {
+  FLAGS_enable_quic_pacing = false;
+  config_.SetDefaults();
   config_.set_idle_connection_state_lifetime(QuicTime::Delta::FromSeconds(5),
                                              QuicTime::Delta::FromSeconds(2));
   config_.set_max_streams_per_connection(4, 2);

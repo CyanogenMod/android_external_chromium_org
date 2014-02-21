@@ -18,6 +18,7 @@
 #include "cc/quads/shared_quad_state.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/stream_video_draw_quad.h"
+#include "cc/quads/surface_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
@@ -115,9 +116,11 @@ struct CONTENT_EXPORT ParamTraits<cc::DelegatedFrameData> {
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
-IPC_ENUM_TRAITS(cc::DrawQuad::Material)
-IPC_ENUM_TRAITS(cc::IOSurfaceDrawQuad::Orientation)
-IPC_ENUM_TRAITS(cc::FilterOperation::FilterType)
+IPC_ENUM_TRAITS_MAX_VALUE(cc::DrawQuad::Material, cc::DrawQuad::MATERIAL_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(cc::IOSurfaceDrawQuad::Orientation,
+                          cc::IOSurfaceDrawQuad::ORIENTATION_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(cc::FilterOperation::FilterType,
+                          cc::FilterOperation::FILTER_TYPE_LAST )
 IPC_ENUM_TRAITS_MAX_VALUE(cc::ResourceFormat, cc::RESOURCE_FORMAT_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(SkXfermode::Mode, SkXfermode::kLastMode)
 
@@ -175,6 +178,11 @@ IPC_STRUCT_TRAITS_BEGIN(cc::StreamVideoDrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(matrix)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(cc::SurfaceDrawQuad)
+  IPC_STRUCT_TRAITS_PARENT(cc::DrawQuad)
+  IPC_STRUCT_TRAITS_MEMBER(surface_id)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(cc::TextureDrawQuad)
   IPC_STRUCT_TRAITS_PARENT(cc::DrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(resource_id)
@@ -218,12 +226,10 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
   IPC_STRUCT_TRAITS_MEMBER(id)
-  IPC_STRUCT_TRAITS_MEMBER(sync_point)
   IPC_STRUCT_TRAITS_MEMBER(format)
-  IPC_STRUCT_TRAITS_MEMBER(target)
   IPC_STRUCT_TRAITS_MEMBER(filter)
   IPC_STRUCT_TRAITS_MEMBER(size)
-  IPC_STRUCT_TRAITS_MEMBER(mailbox)
+  IPC_STRUCT_TRAITS_MEMBER(mailbox_holder)
   IPC_STRUCT_TRAITS_MEMBER(is_software)
 IPC_STRUCT_TRAITS_END()
 

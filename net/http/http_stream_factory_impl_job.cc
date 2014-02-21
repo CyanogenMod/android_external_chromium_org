@@ -291,8 +291,9 @@ bool HttpStreamFactoryImpl::Job::CanUseExistingSpdySession() const {
   // The only time we can use an existing session is if the request URL is
   // https (the normal case) or if we're connection to a SPDY proxy, or
   // if we're running with force_spdy_always_.  crbug.com/133176
+  // TODO(ricea): Add "wss" back to this list when SPDY WebSocket support is
+  // working.
   return request_info_.url.SchemeIs("https") ||
-         request_info_.url.SchemeIs("wss") ||
          proxy_info_.proxy_server().is_https() ||
          force_spdy_always_;
 }
@@ -674,7 +675,7 @@ int HttpStreamFactoryImpl::Job::DoResolveProxyComplete(int result) {
   if (result == OK) {
     // Remove unsupported proxies from the list.
     proxy_info_.RemoveProxiesWithoutScheme(
-        ProxyServer::SCHEME_DIRECT |
+        ProxyServer::SCHEME_DIRECT | ProxyServer::SCHEME_QUIC |
         ProxyServer::SCHEME_HTTP | ProxyServer::SCHEME_HTTPS |
         ProxyServer::SCHEME_SOCKS4 | ProxyServer::SCHEME_SOCKS5);
 
@@ -742,18 +743,25 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   if (ShouldForceQuic())
     using_quic_ = true;
 
+  if (proxy_info_.is_quic())
+    using_quic_ = true;
+
   if (using_quic_) {
     DCHECK(session_->params().enable_quic);
-    if (!proxy_info_.is_direct()) {
+    if (proxy_info_.is_quic() && !request_info_.url.SchemeIs("http")) {
       NOTREACHED();
-      // TODO(rch): support QUIC proxies.
+      // TODO(rch): support QUIC proxies for HTTPS urls.
       return ERR_NOT_IMPLEMENTED;
     }
+    HostPortProxyPair destination;
+    destination.first = proxy_info_.is_quic() ?
+        proxy_info_.proxy_server().host_port_pair() : origin_;
+    destination.second = ProxyServer::Direct();
     next_state_ = STATE_INIT_CONNECTION_COMPLETE;
-    const ProxyServer& proxy_server = proxy_info_.proxy_server();
-    int rv = quic_request_.Request(HostPortProxyPair(origin_, proxy_server),
-                                   using_ssl_, session_->cert_verifier(),
-                                   net_log_, io_callback_);
+    bool secure_quic = using_ssl_ || proxy_info_.is_quic();
+    int rv = quic_request_.Request(
+        destination, secure_quic, request_info_.method,
+        session_->cert_verifier(), net_log_, io_callback_);
     if (rv != OK) {
       // OK, there's no available QUIC session. Let |waiting_job_| resume
       // if it's paused.
@@ -855,10 +863,13 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
                    GetSpdySessionKey()) :
         OnHostResolutionCallback();
     if (stream_factory_->for_websockets_) {
+      // TODO(ricea): Re-enable NPN when WebSockets over SPDY is supported.
+      SSLConfig websocket_server_ssl_config = server_ssl_config_;
+      websocket_server_ssl_config.next_protos.clear();
       return InitSocketHandleForWebSocketRequest(
           origin_url_, request_info_.extra_headers, request_info_.load_flags,
           priority_, session_, proxy_info_, ShouldForceSpdySSL(),
-          want_spdy_over_npn, server_ssl_config_, proxy_ssl_config_,
+          want_spdy_over_npn, websocket_server_ssl_config, proxy_ssl_config_,
           request_info_.privacy_mode, net_log_,
           connection_.get(), resolution_callback, io_callback_);
     }
@@ -1140,12 +1151,8 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
   // will know when SpdySessions become available.
 
   if (stream_factory_->for_websockets_) {
-    DCHECK(request_);
-    DCHECK(request_->websocket_handshake_stream_create_helper());
-    bool use_relative_url = direct || request_info_.url.SchemeIs("wss");
-    websocket_stream_.reset(
-        request_->websocket_handshake_stream_create_helper()->CreateSpdyStream(
-            spdy_session, use_relative_url));
+    // TODO(ricea): Restore this code when WebSockets over SPDY is implemented.
+    NOTREACHED();
   } else {
     bool use_relative_url = direct || request_info_.url.SchemeIs("https");
     stream_.reset(new SpdyHttpStream(spdy_session, use_relative_url));
@@ -1338,7 +1345,7 @@ int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
 
   if (proxy_info_.is_https() && proxy_ssl_config_.send_client_cert) {
     session_->ssl_client_auth_cache()->Remove(
-        proxy_info_.proxy_server().host_port_pair().ToString());
+        proxy_info_.proxy_server().host_port_pair());
   }
 
   int rv = session_->proxy_service()->ReconsiderProxyAfterError(

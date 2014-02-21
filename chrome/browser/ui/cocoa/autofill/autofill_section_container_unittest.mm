@@ -18,7 +18,9 @@
 #include "testing/platform_test.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/models/simple_menu_model.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
+
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -117,9 +119,7 @@ TEST_F(AutofillSectionContainerTest, OutputMatchesDefinition) {
   using namespace testing;
 
   const DetailInput kTestInputs[] = {
-    { DetailInput::LONG,
-      EMAIL_ADDRESS,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_EMAIL },
+    { DetailInput::LONG, EMAIL_ADDRESS },
     { DetailInput::SHORT, CREDIT_CARD_EXP_MONTH },
   };
   autofill::MonthComboboxModel comboModel;
@@ -182,9 +182,7 @@ TEST_F(AutofillSectionContainerTest, FieldsAreInitiallyValid) {
   using namespace testing;
 
   const DetailInput kTestInputs[] = {
-    { DetailInput::LONG,
-      EMAIL_ADDRESS,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_EMAIL },
+    { DetailInput::LONG, EMAIL_ADDRESS },
     { DetailInput::SHORT, CREDIT_CARD_EXP_MONTH },
   };
 
@@ -212,8 +210,8 @@ TEST_F(AutofillSectionContainerTest, ControllerInformsValidity) {
   using namespace testing;
 
   const DetailInput kTestInputs[] = {
-    { DetailInput::LONG, EMAIL_ADDRESS, IDS_AUTOFILL_DIALOG_PLACEHOLDER_EMAIL },
-    { DetailInput::SHORT, CREDIT_CARD_EXP_MONTH }
+    { DetailInput::LONG, EMAIL_ADDRESS },
+    { DetailInput::SHORT, CREDIT_CARD_EXP_MONTH },
   };
 
   MonthComboboxModel comboModel;

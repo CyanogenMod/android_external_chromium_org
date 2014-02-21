@@ -71,6 +71,20 @@ class NfcRecordClientImpl : public NfcRecordClient,
     observers_.RemoveObserver(observer);
   }
 
+  virtual std::vector<dbus::ObjectPath> GetRecordsForDevice(
+      const dbus::ObjectPath& device_path) OVERRIDE {
+    DBusObjectMap* object_map =
+        devices_and_tags_to_object_maps_.GetObjectMap(device_path);
+    if (!object_map)
+      return std::vector<dbus::ObjectPath>();
+    return object_map->GetObjectPaths();
+  }
+
+  virtual std::vector<dbus::ObjectPath> GetRecordsForTag(
+      const dbus::ObjectPath& tag_path) OVERRIDE {
+    return GetRecordsForDevice(tag_path);
+  }
+
   // NfcRecordClient override.
   virtual Properties* GetProperties(
       const dbus::ObjectPath& object_path) OVERRIDE {

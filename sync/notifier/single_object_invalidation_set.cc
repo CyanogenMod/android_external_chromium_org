@@ -26,6 +26,10 @@ void SingleObjectInvalidationSet::Clear() {
   invalidations_.clear();
 }
 
+void SingleObjectInvalidationSet::Erase(const_iterator it) {
+  invalidations_.erase(*it);
+}
+
 bool SingleObjectInvalidationSet::StartsWithUnknownVersion() const {
   return !invalidations_.empty() &&
       invalidations_.begin()->is_unknown_version();
@@ -82,7 +86,7 @@ const Invalidation& SingleObjectInvalidationSet::back() const {
 }
 
 scoped_ptr<base::ListValue> SingleObjectInvalidationSet::ToValue() const {
-  scoped_ptr<base::ListValue> value(new ListValue);
+  scoped_ptr<base::ListValue> value(new base::ListValue);
   for (InvalidationsSet::const_iterator it = invalidations_.begin();
        it != invalidations_.end(); ++it) {
     value->Append(it->ToValue().release());

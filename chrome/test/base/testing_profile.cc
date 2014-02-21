@@ -22,7 +22,6 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/favicon/favicon_service.h"
@@ -63,11 +62,13 @@
 #include "components/policy/core/common/policy_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -123,7 +124,9 @@ class QuittingHistoryDBTask : public history::HistoryDBTask {
 class TestExtensionURLRequestContext : public net::URLRequestContext {
  public:
   TestExtensionURLRequestContext() {
-    net::CookieMonster* cookie_monster = new net::CookieMonster(NULL, NULL);
+    net::CookieMonster* cookie_monster =
+        content::CreateCookieStore(content::CookieStoreConfig())->
+            GetCookieMonster();
     const char* schemes[] = {extensions::kExtensionScheme};
     cookie_monster->SetCookieableSchemes(schemes, 1);
     set_cookie_store(cookie_monster);
@@ -655,8 +658,7 @@ void TestingProfile::CreateProfilePolicyConnector() {
 if (!policy_service_) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
     std::vector<policy::ConfigurationPolicyProvider*> providers;
-    policy_service_.reset(new policy::PolicyServiceImpl(
-        providers, policy::PolicyServiceImpl::PreprocessCallback()));
+    policy_service_.reset(new policy::PolicyServiceImpl(providers));
 #else
     policy_service_.reset(new policy::PolicyServiceStub());
 #endif
@@ -722,21 +724,36 @@ TestingProfile::GetMediaRequestContextForStoragePartition(
   return NULL;
 }
 
-void TestingProfile::RequestMIDISysExPermission(
+void TestingProfile::RequestMidiSysExPermission(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
-      const MIDISysExPermissionCallback& callback) {
+      const MidiSysExPermissionCallback& callback) {
   // Always reject requests for testing.
   callback.Run(false);
 }
 
-void TestingProfile::CancelMIDISysExPermissionRequest(
+void TestingProfile::CancelMidiSysExPermissionRequest(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame) {
+}
+
+void TestingProfile::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
+void TestingProfile::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
 }
 
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForExtensions() {

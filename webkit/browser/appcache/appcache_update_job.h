@@ -35,6 +35,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
       public AppCacheHost::Observer,
       public AppCacheService::Observer {
  public:
+  // Used for uma stats only for now, so new values are append only.
+  enum ResultType {
+    UPDATE_OK, DB_ERROR, DISKCACHE_ERROR, QUOTA_ERROR, REDIRECT_ERROR,
+    MANIFEST_ERROR, NETWORK_ERROR, SERVER_ERROR,
+    NUM_UPDATE_JOB_RESULT_TYPES
+  };
+
   AppCacheUpdateJob(AppCacheService* service, AppCacheGroup* group);
   virtual ~AppCacheUpdateJob();
 
@@ -118,6 +125,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
     void set_existing_entry(const AppCacheEntry& entry) {
       existing_entry_ = entry;
     }
+    ResultType result() const { return result_; }
 
    private:
     // URLRequest::Delegate overrides
@@ -144,6 +152,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
     AppCacheEntry existing_entry_;
     scoped_refptr<net::HttpResponseHeaders> existing_response_headers_;
     std::string manifest_data_;
+    ResultType result_;
     scoped_ptr<AppCacheResponseWriter> response_writer_;
   };  // class URLFetcher
 
@@ -166,7 +175,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   virtual void OnServiceReinitialized(
       AppCacheStorageReference* old_storage) OVERRIDE;
 
-  void HandleCacheFailure(const std::string& error_message);
+  void HandleCacheFailure(const std::string& error_message, ResultType result);
 
   void FetchManifest(bool is_first_fetch);
   void HandleManifestFetchCompleted(URLFetcher* fetcher);
@@ -245,6 +254,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   AppCacheService* service_;
   const GURL manifest_url_;  // here for easier access
 
+  // Defined prior to refs to AppCaches and Groups because destruction
+  // order matters, the disabled_storage_reference_ must outlive those
+  // objects.
+  scoped_refptr<AppCacheStorageReference> disabled_storage_reference_;
+
   scoped_refptr<AppCache> inprogress_cache_;
 
   AppCacheGroup* group_;
@@ -307,7 +321,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   StoredState stored_state_;
 
   AppCacheStorage* storage_;
-  scoped_refptr<AppCacheStorageReference> disabled_storage_reference_;
 
   FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, QueueUpdate);
 

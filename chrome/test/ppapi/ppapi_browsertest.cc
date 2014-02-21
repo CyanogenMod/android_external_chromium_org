@@ -484,14 +484,9 @@ TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(HostResolverPrivate_ResolveIPv4)
 TEST_PPAPI_NACL(HostResolverPrivate_Resolve)
 TEST_PPAPI_NACL(HostResolverPrivate_ResolveIPv4)
 
-// Flaky on official Windows builder. http://crbug.com/95005
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_WIN)
-#define MAYBE_PPAPIURLLoader DISABLED_URLLoader
-#else
-#define MAYBE_PPAPIURLLoader URLLoader
-#endif
-// URLLoader tests.
-IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_PPAPIURLLoader) {
+// URLLoader tests. These are split into multiple test fixtures because if we
+// run them all together, they tend to time out.
+IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader1) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -503,6 +498,10 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_PPAPIURLLoader) {
       LIST_TEST(URLLoader_CustomRequestHeader)
       LIST_TEST(URLLoader_FailsBogusContentLength)
       LIST_TEST(URLLoader_StreamToFile)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader2) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedSameOriginRestriction)
       LIST_TEST(URLLoader_TrustedSameOriginRestriction)
       LIST_TEST(URLLoader_UntrustedCrossOriginRequest)
@@ -511,6 +510,10 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_PPAPIURLLoader) {
       // TODO(bbudge) Fix Javascript URLs for trusted loaders.
       // http://crbug.com/103062
       LIST_TEST(DISABLED_URLLoader_TrustedJavascriptURLRestriction)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader3) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedHttpRequests)
       LIST_TEST(URLLoader_TrustedHttpRequests)
       LIST_TEST(URLLoader_FollowURLRedirect)
@@ -520,13 +523,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_PPAPIURLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-// Timing out on Windows dbg. http://crbug.com/95005
-#if defined(OS_WIN) && (!defined(NDEBUG) || defined(GOOGLE_CHROME_BUILD))
-#define MAYBE_OutOfProcessURLLoader DISABLED_URLLoader
-#else
-#define MAYBE_OutOfProcessURLLoader URLLoader
-#endif
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_OutOfProcessURLLoader) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader1) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -538,6 +535,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_OutOfProcessURLLoader) {
       LIST_TEST(URLLoader_CustomRequestHeader)
       LIST_TEST(URLLoader_FailsBogusContentLength)
       LIST_TEST(URLLoader_StreamToFile)
+  );
+}
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader2) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedSameOriginRestriction)
       LIST_TEST(URLLoader_TrustedSameOriginRestriction)
       LIST_TEST(URLLoader_UntrustedCrossOriginRequest)
@@ -546,6 +547,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_OutOfProcessURLLoader) {
       // TODO(bbudge) Fix Javascript URLs for trusted loaders.
       // http://crbug.com/103062
       LIST_TEST(DISABLED_URLLoader_TrustedJavascriptURLRestriction)
+  );
+}
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader3) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedHttpRequests)
       LIST_TEST(URLLoader_TrustedHttpRequests)
       LIST_TEST(URLLoader_FollowURLRedirect)
@@ -555,7 +560,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_OutOfProcessURLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader1) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -567,6 +572,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
       LIST_TEST(URLLoader_CustomRequestHeader)
       LIST_TEST(URLLoader_FailsBogusContentLength)
       LIST_TEST(URLLoader_StreamToFile)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader2) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedSameOriginRestriction)
       // We don't support Trusted APIs in NaCl.
       LIST_TEST(DISABLED_URLLoader_TrustedSameOriginRestriction)
@@ -576,6 +585,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
       // TODO(bbudge) Fix Javascript URLs for trusted loaders.
       // http://crbug.com/103062
       LIST_TEST(DISABLED_URLLoader_TrustedJavascriptURLRestriction)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader3) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedHttpRequests)
       LIST_TEST(DISABLED_URLLoader_TrustedHttpRequests)
       LIST_TEST(URLLoader_FollowURLRedirect)
@@ -585,17 +598,18 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
+
 // Flaky on 32-bit linux bot; http://crbug.com/308906
 #if defined(OS_LINUX) && defined(ARCH_CPU_X86)
-#define MAYBE_NaCl_Glibc_URLLoader DISABLED_URLLoader
+#define MAYBE_URLLoader_BasicFilePOST DISABLED_URLLoader_BasicFilePOST
 #else
-#define MAYBE_NaCl_Glibc_URLLoader URLLoader
+#define MAYBE_URLLoader_BasicFilePOST URLLoader_BasicFilePOST
 #endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_URLLoader) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader1) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
-      LIST_TEST(URLLoader_BasicFilePOST)
+      LIST_TEST(MAYBE_URLLoader_BasicFilePOST)
       LIST_TEST(URLLoader_BasicFileRangePOST)
       LIST_TEST(URLLoader_CompoundBodyPOST)
       LIST_TEST(URLLoader_EmptyDataPOST)
@@ -603,6 +617,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_URLLoader) {
       LIST_TEST(URLLoader_CustomRequestHeader)
       LIST_TEST(URLLoader_FailsBogusContentLength)
       LIST_TEST(URLLoader_StreamToFile)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader2) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedSameOriginRestriction)
       // We don't support Trusted APIs in NaCl.
       LIST_TEST(DISABLED_URLLoader_TrustedSameOriginRestriction)
@@ -612,6 +630,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_URLLoader) {
       // TODO(bbudge) Fix Javascript URLs for trusted loaders.
       // http://crbug.com/103062
       LIST_TEST(DISABLED_URLLoader_TrustedJavascriptURLRestriction)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader3) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedHttpRequests)
       LIST_TEST(DISABLED_URLLoader_TrustedHttpRequests)
       LIST_TEST(URLLoader_FollowURLRedirect)
@@ -621,7 +643,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_URLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader1) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -633,6 +655,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader) {
       LIST_TEST(URLLoader_CustomRequestHeader)
       LIST_TEST(URLLoader_FailsBogusContentLength)
       LIST_TEST(URLLoader_StreamToFile)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader2) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedSameOriginRestriction)
       // We don't support Trusted APIs in NaCl.
       LIST_TEST(DISABLED_URLLoader_TrustedSameOriginRestriction)
@@ -642,6 +668,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader) {
       // TODO(bbudge) Fix Javascript URLs for trusted loaders.
       // http://crbug.com/103062
       LIST_TEST(DISABLED_URLLoader_TrustedJavascriptURLRestriction)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader3) {
+  RunTestViaHTTP(
       LIST_TEST(URLLoader_UntrustedHttpRequests)
       LIST_TEST(DISABLED_URLLoader_TrustedHttpRequests)
       LIST_TEST(URLLoader_FollowURLRedirect)
@@ -817,8 +847,10 @@ TEST_PPAPI_OUT_OF_PROCESS(VideoDecoder)
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
 // TODO(erg): linux_aura bringup: http://crbug.com/318961
 #define MAYBE_FileIO DISABLED_FileIO
+#define MAYBE_FileIO_Private DISABLED_FileIO_Private
 #else
 #define MAYBE_FileIO FileIO
+#define MAYBE_FileIO_Private FileIO_Private
 #endif
 
 // FileIO tests.
@@ -833,6 +865,10 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPIPrivateTest, MAYBE_FileIO_Private) {
+  RunTestViaHTTP(
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -848,6 +884,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
+  );
+}
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPIPrivateTest, MAYBE_FileIO_Private) {
+  RunTestViaHTTP(
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -856,8 +896,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FileIO) {
 // Flaky on XP; times out, http://crbug.com/313401
 #if defined(OS_WIN)
 #define MAYBE_Nacl_Newlib_FileIO DISABLED_FileIO
+#define MAYBE_Nacl_Newlib_FileIO_Private DISABLED_FileIO_Private
 #else
 #define MAYBE_Nacl_Newlib_FileIO FileIO
+#define MAYBE_Nacl_Newlib_FileIO_Private FileIO_Private
 #endif
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_Nacl_Newlib_FileIO) {
   RunTestViaHTTP(
@@ -869,6 +911,11 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_Nacl_Newlib_FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClNewlibTest,
+                       MAYBE_Nacl_Newlib_FileIO_Private) {
+  RunTestViaHTTP(
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -886,6 +933,11 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_NaCl_Glibc_FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClGLibcTest,
+                       DISABLED_NaCl_Glibc_FileIO_Private) {
+  RunTestViaHTTP(
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -894,8 +946,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_NaCl_Glibc_FileIO) {
 // Flaky on XP; times out, http://crbug.com/313205
 #if defined(OS_WIN)
 #define MAYBE_PNaCl_FileIO DISABLED_FileIO
+#define MAYBE_PNaCl_FileIO_Private DISABLED_FileIO_Private
 #else
 #define MAYBE_PNaCl_FileIO FileIO
+#define MAYBE_PNaCl_FileIO_Private FileIO_Private
 #endif
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_PNaCl_FileIO) {
   RunTestViaHTTP(
@@ -907,13 +961,29 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_PNaCl_FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClPNaClTest, MAYBE_PNaCl_FileIO_Private) {
+  RunTestViaHTTP(
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
   );
 }
 
-IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef) {
+// PPB_FileMapping is only implemented on POSIX currently.
+// http://crbug.com/83774
+#if defined(OS_WIN)
+#define MAYBE_FileMapping DISABLED_FileMapping
+#else
+#define MAYBE_FileMapping FileMapping
+#endif
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_FileMapping)
+TEST_PPAPI_NACL(MAYBE_FileMapping)
+
+// Note, the FileRef tests are split into two, because all of them together
+// sometimes take too long on windows: crbug.com/336999
+IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef1) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)
@@ -921,6 +991,10 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef) {
       LIST_TEST(FileRef_GetPath)
       LIST_TEST(FileRef_GetParent)
       LIST_TEST(FileRef_MakeDirectory)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef2) {
+  RunTestViaHTTP(
       LIST_TEST(FileRef_QueryAndTouchFile)
       LIST_TEST(FileRef_DeleteFileAndDirectory)
       LIST_TEST(FileRef_RenameFileAndDirectory)
@@ -929,9 +1003,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef) {
       LIST_TEST(FileRef_ReadDirectoryEntries)
   );
 }
-// OutOfProcessPPAPITest.FileRef times out fairly often.
-// http://crbug.com/241646
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileRef) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileRef1) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)
@@ -939,6 +1011,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileRef) {
       LIST_TEST(FileRef_GetPath)
       LIST_TEST(FileRef_GetParent)
       LIST_TEST(FileRef_MakeDirectory)
+  );
+}
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileRef2) {
+  RunTestViaHTTP(
       LIST_TEST(FileRef_QueryAndTouchFile)
       LIST_TEST(FileRef_DeleteFileAndDirectory)
       LIST_TEST(FileRef_RenameFileAndDirectory)
@@ -947,7 +1023,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileRef) {
       LIST_TEST(DISABLED_FileRef_ReadDirectoryEntries)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef1) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)
@@ -955,6 +1031,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
       LIST_TEST(FileRef_GetPath)
       LIST_TEST(FileRef_GetParent)
       LIST_TEST(FileRef_MakeDirectory)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef2) {
+  RunTestViaHTTP(
       LIST_TEST(FileRef_QueryAndTouchFile)
       LIST_TEST(FileRef_DeleteFileAndDirectory)
       LIST_TEST(FileRef_RenameFileAndDirectory)
@@ -965,11 +1045,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
 }
 // Flaky on 32-bit linux bot; http://crbug.com/308908
 #if defined(OS_LINUX) && defined(ARCH_CPU_X86)
-#define MAYBE_NaCl_Glibc_FileRef DISABLED_FileRef
+#define MAYBE_NaCl_Glibc_FileRef1 DISABLED_FileRef1
+#define MAYBE_NaCl_Glibc_FileRef2 DISABLED_FileRef2
 #else
-#define MAYBE_NaCl_Glibc_FileRef FileRef
+#define MAYBE_NaCl_Glibc_FileRef1 FileRef1
+#define MAYBE_NaCl_Glibc_FileRef2 FileRef2
 #endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileRef) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileRef1) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)
@@ -977,6 +1059,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileRef) {
       LIST_TEST(FileRef_GetPath)
       LIST_TEST(FileRef_GetParent)
       LIST_TEST(FileRef_MakeDirectory)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileRef2) {
+  RunTestViaHTTP(
       LIST_TEST(FileRef_QueryAndTouchFile)
       LIST_TEST(FileRef_DeleteFileAndDirectory)
       LIST_TEST(FileRef_RenameFileAndDirectory)
@@ -985,7 +1071,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileRef) {
       LIST_TEST(DISABLED_FileRef_ReadDirectoryEntries)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileRef) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileRef1) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)
@@ -993,6 +1079,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileRef) {
       LIST_TEST(FileRef_GetPath)
       LIST_TEST(FileRef_GetParent)
       LIST_TEST(FileRef_MakeDirectory)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileRef2) {
+  RunTestViaHTTP(
       LIST_TEST(FileRef_QueryAndTouchFile)
       LIST_TEST(FileRef_DeleteFileAndDirectory)
       LIST_TEST(FileRef_RenameFileAndDirectory)
@@ -1021,6 +1111,9 @@ TEST_PPAPI_NACL(MAYBE_FileSystem)
 #elif defined(OS_LINUX)
 // http://crbug.com/146008
 #define MAYBE_Fullscreen DISABLED_Fullscreen
+#elif defined(OS_WIN)
+// http://crbug.com/342269
+#define MAYBE_Fullscreen DISABLED_Fullscreen
 #else
 #define MAYBE_Fullscreen Fullscreen
 #endif
@@ -1031,9 +1124,9 @@ TEST_PPAPI_NACL(MAYBE_Fullscreen)
 
 TEST_PPAPI_OUT_OF_PROCESS(X509CertificatePrivate)
 
-// There is no proxy. This is used for PDF metrics reporting, and PDF only
-// runs in process, so there's currently no need for a proxy.
 TEST_PPAPI_IN_PROCESS(UMA)
+TEST_PPAPI_OUT_OF_PROCESS(UMA)
+TEST_PPAPI_NACL(UMA)
 
 // NetAddress tests
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, NetAddress) {
@@ -1174,8 +1267,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
   );
 }
 
-// In-process WebSocket tests
-IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket) {
+// In-process WebSocket tests. Note, the WebSocket tests are split into two,
+// because all of them together sometimes take too long on windows:
+// crbug.com/336999
+IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
   RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_IsWebSocket)
       LIST_TEST(WebSocket_UninitializedPropertiesAccess)
@@ -1190,6 +1285,10 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket) {
       LIST_TEST(WebSocket_BinarySendReceive)
       LIST_TEST(WebSocket_StressedSendReceive)
       LIST_TEST(WebSocket_BufferedAmount)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket2) {
+  RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_AbortCallsWithCallback)
       LIST_TEST(WebSocket_AbortSendMessageCall)
       LIST_TEST(WebSocket_AbortCloseCall)
@@ -1208,7 +1307,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket) {
 }
 
 // Out-of-process WebSocket tests
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket1) {
   RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_IsWebSocket)
       LIST_TEST(WebSocket_UninitializedPropertiesAccess)
@@ -1223,6 +1322,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket) {
       LIST_TEST(WebSocket_BinarySendReceive)
       LIST_TEST(WebSocket_StressedSendReceive)
       LIST_TEST(WebSocket_BufferedAmount)
+  );
+}
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket2) {
+  RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_AbortCallsWithCallback)
       LIST_TEST(WebSocket_AbortSendMessageCall)
       LIST_TEST(WebSocket_AbortCloseCall)
@@ -1241,7 +1344,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket) {
 }
 
 // NaClNewlib WebSocket tests
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket1) {
   RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_IsWebSocket)
       LIST_TEST(WebSocket_UninitializedPropertiesAccess)
@@ -1256,6 +1359,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket) {
       LIST_TEST(WebSocket_BinarySendReceive)
       LIST_TEST(WebSocket_StressedSendReceive)
       LIST_TEST(WebSocket_BufferedAmount)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket2) {
+  RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_AbortCallsWithCallback)
       LIST_TEST(WebSocket_AbortSendMessageCall)
       LIST_TEST(WebSocket_AbortCloseCall)
@@ -1274,7 +1381,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket) {
 }
 
 // NaClGLibc WebSocket tests
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket1)) {
   RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_IsWebSocket)
       LIST_TEST(WebSocket_UninitializedPropertiesAccess)
@@ -1289,6 +1396,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket)) {
       LIST_TEST(WebSocket_BinarySendReceive)
       LIST_TEST(WebSocket_StressedSendReceive)
       LIST_TEST(WebSocket_BufferedAmount)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket2)) {
+  RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_AbortCallsWithCallback)
       LIST_TEST(WebSocket_AbortSendMessageCall)
       LIST_TEST(WebSocket_AbortCloseCall)
@@ -1307,7 +1418,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket)) {
 }
 
 // PNaCl WebSocket tests
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket1) {
   RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_IsWebSocket)
       LIST_TEST(WebSocket_UninitializedPropertiesAccess)
@@ -1322,6 +1433,10 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket) {
       LIST_TEST(WebSocket_BinarySendReceive)
       LIST_TEST(WebSocket_StressedSendReceive)
       LIST_TEST(WebSocket_BufferedAmount)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket2) {
+  RunTestWithWebSocketServer(
       LIST_TEST(WebSocket_AbortCallsWithCallback)
       LIST_TEST(WebSocket_AbortSendMessageCall)
       LIST_TEST(WebSocket_AbortCloseCall)
@@ -1517,19 +1632,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(View)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, View) {
   RunTestViaHTTP(LIST_TEST(View_SizeChange)
                  LIST_TEST(View_ClipChange));
-}
-
-IN_PROC_BROWSER_TEST_F(PPAPITest, ResourceArray) {
-  RunTest(LIST_TEST(ResourceArray_Basics)
-          LIST_TEST(ResourceArray_OutOfRangeAccess)
-          LIST_TEST(ResourceArray_EmptyArray)
-          LIST_TEST(ResourceArray_InvalidElement));
-}
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, ResourceArray) {
-  RunTest(LIST_TEST(ResourceArray_Basics)
-          LIST_TEST(ResourceArray_OutOfRangeAccess)
-          LIST_TEST(ResourceArray_EmptyArray)
-          LIST_TEST(ResourceArray_InvalidElement));
 }
 
 IN_PROC_BROWSER_TEST_F(PPAPITest, FlashMessageLoop) {

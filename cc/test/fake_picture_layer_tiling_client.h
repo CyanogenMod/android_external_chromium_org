@@ -16,21 +16,21 @@ namespace cc {
 
 class FakePictureLayerTilingClient : public PictureLayerTilingClient {
  public:
-  explicit FakePictureLayerTilingClient(TileManager* tile_manager);
+  FakePictureLayerTilingClient();
+  explicit FakePictureLayerTilingClient(ResourceProvider* resource_provider);
   virtual ~FakePictureLayerTilingClient();
 
   // PictureLayerTilingClient implementation.
   virtual scoped_refptr<Tile> CreateTile(
-      PictureLayerTiling* tiling, gfx::Rect rect) OVERRIDE;
-  virtual scoped_refptr<TileBundle> CreateTileBundle(int offset_x,
-                                                     int offset_y,
-                                                     int width,
-                                                     int height) OVERRIDE;
+      PictureLayerTiling* tiling, const gfx::Rect& rect) OVERRIDE;
   virtual void UpdatePile(Tile* tile) OVERRIDE {}
   virtual gfx::Size CalculateTileSize(
-      gfx::Size content_bounds) const OVERRIDE;
+      const gfx::Size& content_bounds) const OVERRIDE;
+  virtual size_t GetMaxTilesForInterestArea() const OVERRIDE;
+  virtual float GetSkewportTargetTimeInSeconds() const OVERRIDE;
+  virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
 
-  void SetTileSize(gfx::Size tile_size);
+  void SetTileSize(const gfx::Size& tile_size);
   gfx::Size TileSize() const { return tile_size_; }
   scoped_refptr<PicturePileImpl> pile() { return pile_; }
   const PicturePileImpl* pile() const { return pile_.get(); }
@@ -40,24 +40,35 @@ class FakePictureLayerTilingClient : public PictureLayerTilingClient {
       const PictureLayerTiling* tiling) const OVERRIDE;
 
   void set_twin_tiling(PictureLayerTiling* tiling) { twin_tiling_ = tiling; }
-  void set_text_rect(gfx::Rect rect) { text_rect_ = rect; }
+  void set_text_rect(const gfx::Rect& rect) { text_rect_ = rect; }
   void set_allow_create_tile(bool allow) { allow_create_tile_ = allow; }
   void set_invalidation(const Region& region) { invalidation_ = region; }
+  void set_max_tiles_for_interest_area(size_t area) {
+    max_tiles_for_interest_area_ = area;
+  }
+  void set_skewport_target_time_in_seconds(float time) {
+    skewport_target_time_in_seconds_ = time;
+  }
+  void set_skewport_extrapolation_limit_in_content_pixels(int limit) {
+    skewport_extrapolation_limit_in_content_pixels_ = limit;
+  }
 
   TileManager* tile_manager() const {
-    return tile_manager_;
+    return tile_manager_.get();
   }
 
  protected:
-  TileManager* tile_manager_;
+  FakeTileManagerClient tile_manager_client_;
+  scoped_ptr<TileManager> tile_manager_;
   scoped_refptr<PicturePileImpl> pile_;
   gfx::Size tile_size_;
   PictureLayerTiling* twin_tiling_;
   gfx::Rect text_rect_;
   bool allow_create_tile_;
   Region invalidation_;
-  bool is_active_;
-  bool is_pending_;
+  size_t max_tiles_for_interest_area_;
+  float skewport_target_time_in_seconds_;
+  int skewport_extrapolation_limit_in_content_pixels_;
 };
 
 }  // namespace cc

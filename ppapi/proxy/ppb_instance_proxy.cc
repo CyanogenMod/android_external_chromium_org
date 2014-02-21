@@ -19,6 +19,7 @@
 #include "ppapi/proxy/content_decryptor_private_serializer.h"
 #include "ppapi/proxy/enter_proxy.h"
 #include "ppapi/proxy/extensions_common_resource.h"
+#include "ppapi/proxy/file_mapping_resource.h"
 #include "ppapi/proxy/flash_clipboard_resource.h"
 #include "ppapi/proxy/flash_file_resource.h"
 #include "ppapi/proxy/flash_fullscreen_resource.h"
@@ -32,6 +33,7 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_var.h"
 #include "ppapi/proxy/truetype_font_singleton_resource.h"
+#include "ppapi/proxy/uma_private_resource.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppb_url_util_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
@@ -60,10 +62,6 @@ namespace {
 const char kSerializationError[] = "Failed to convert a PostMessage "
     "argument from a PP_Var to a Javascript value. It may have cycles or be of "
     "an unsupported type.";
-
-InterfaceProxy* CreateInstanceProxy(Dispatcher* dispatcher) {
-  return new PPB_Instance_Proxy(dispatcher);
-}
 
 void RequestSurroundingText(PP_Instance instance) {
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
@@ -94,18 +92,6 @@ PPB_Instance_Proxy::PPB_Instance_Proxy(Dispatcher* dispatcher)
 }
 
 PPB_Instance_Proxy::~PPB_Instance_Proxy() {
-}
-
-// static
-const InterfaceProxy::Info* PPB_Instance_Proxy::GetInfoPrivate() {
-  static const Info info = {
-    ppapi::thunk::GetPPB_Instance_Private_0_1_Thunk(),
-    PPB_INSTANCE_PRIVATE_INTERFACE_0_1,
-    API_ID_NONE,  // 1_0 is the canonical one.
-    false,
-    &CreateInstanceProxy,
-  };
-  return &info;
 }
 
 bool PPB_Instance_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -378,6 +364,9 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
     case EXTENSIONS_COMMON_SINGLETON_ID:
       new_singleton = new ExtensionsCommonResource(connection, instance);
       break;
+    case FILE_MAPPING_SINGLETON_ID:
+      new_singleton = new FileMappingResource(connection, instance);
+      break;
     case GAMEPAD_SINGLETON_ID:
       new_singleton = new GamepadResource(connection, instance);
       break;
@@ -390,6 +379,9 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
       break;
     case TRUETYPE_FONT_SINGLETON_ID:
       new_singleton = new TrueTypeFontSingletonResource(connection, instance);
+      break;
+    case UMA_SINGLETON_ID:
+      new_singleton = new UMAPrivateResource(connection, instance);
       break;
 // Flash/trusted resources aren't needed for NaCl.
 #if !defined(OS_NACL) && !defined(NACL_WIN64)

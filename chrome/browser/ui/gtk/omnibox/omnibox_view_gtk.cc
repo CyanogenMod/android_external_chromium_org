@@ -66,7 +66,7 @@ const double kStrikethroughStrokeRed = 162.0 / 256.0;
 const double kStrikethroughStrokeWidth = 2.0;
 
 size_t GetUTF8Offset(const base::string16& text, size_t text_offset) {
-  return UTF16ToUTF8(text.substr(0, text_offset)).size();
+  return base::UTF16ToUTF8(text.substr(0, text_offset)).size();
 }
 
 // Stores GTK+-specific state so it can be restored after switching tabs.
@@ -194,7 +194,8 @@ OmniboxViewGtk::OmniboxViewGtk(OmniboxEditController* controller,
       update_popup_without_focus_(false),
       supports_pre_edit_(!gtk_check_version(2, 20, 0)),
       pre_edit_size_before_change_(0),
-      going_to_focus_(NULL) {
+      going_to_focus_(NULL),
+      font_baseline_shift_(0) {
   OmniboxPopupViewGtk* view = new OmniboxPopupViewGtk(
       GetFont(), this, model(), location_bar);
   view->Init();
@@ -219,9 +220,7 @@ OmniboxViewGtk::~OmniboxViewGtk() {
 void OmniboxViewGtk::Init() {
   SetEntryStyle();
 
-  // The height of the text view is going to change based on the font used.  We
-  // don't want to stretch the height, and we want it vertically centered.
-  alignment_.Own(gtk_alignment_new(0., 0.5, 1.0, 0.0));
+  alignment_.Own(gtk_alignment_new(0.0, 0.0, 1.0, 1.0));
   gtk_widget_set_name(alignment_.get(),
                       "chrome-autocomplete-edit-view");
 
@@ -325,8 +324,10 @@ void OmniboxViewGtk::Init() {
                    G_CALLBACK(&HandleCutClipboardThunk), this);
   g_signal_connect(text_view_, "paste-clipboard",
                    G_CALLBACK(&HandlePasteClipboardThunk), this);
+  g_signal_connect(text_view_, "expose-event",
+                   G_CALLBACK(&HandleExposeEventThunk), this);
   g_signal_connect_after(text_view_, "expose-event",
-                         G_CALLBACK(&HandleExposeEventThunk), this);
+                         G_CALLBACK(&HandleExposeEventAfterThunk), this);
   g_signal_connect(text_view_, "direction-changed",
                    G_CALLBACK(&HandleWidgetDirectionChangedThunk), this);
   g_signal_connect(text_view_, "delete-from-cursor",
@@ -469,7 +470,7 @@ base::string16 OmniboxViewGtk::GetText() const {
   GtkTextIter start, end;
   GetTextBufferBounds(&start, &end);
   gchar* utf8 = gtk_text_buffer_get_text(text_buffer_, &start, &end, false);
-  base::string16 out(UTF8ToUTF16(utf8));
+  base::string16 out(base::UTF8ToUTF16(utf8));
   g_free(utf8);
 
   if (supports_pre_edit_) {
@@ -503,7 +504,7 @@ void OmniboxViewGtk::SetForcedQuery() {
   const base::string16 current_text(GetText());
   const size_t start = current_text.find_first_not_of(base::kWhitespaceUTF16);
   if (start == base::string16::npos || (current_text[start] != '?')) {
-    SetUserText(ASCIIToUTF16("?"));
+    SetUserText(base::ASCIIToUTF16("?"));
   } else {
     StartUpdatingHighlightedText();
     SetSelectedRange(CharRange(current_text.size(), start + 1));
@@ -701,7 +702,7 @@ gfx::NativeView OmniboxViewGtk::GetRelativeWindowForPopup() const {
 
 void OmniboxViewGtk::SetGrayTextAutocompletion(
     const base::string16& suggestion) {
-  std::string suggestion_utf8 = UTF16ToUTF8(suggestion);
+  std::string suggestion_utf8 = base::UTF16ToUTF8(suggestion);
 
   gtk_label_set_text(GTK_LABEL(gray_text_view_), suggestion_utf8.c_str());
 
@@ -715,12 +716,12 @@ void OmniboxViewGtk::SetGrayTextAutocompletion(
   UpdateGrayTextViewColors();
 }
 
-string16 OmniboxViewGtk::GetGrayTextAutocompletion() const {
+base::string16 OmniboxViewGtk::GetGrayTextAutocompletion() const {
   const gchar* suggestion = gtk_label_get_text(GTK_LABEL(gray_text_view_));
-  return suggestion ? UTF8ToUTF16(suggestion) : base::string16();
+  return suggestion ? base::UTF8ToUTF16(suggestion) : base::string16();
 }
 
-int OmniboxViewGtk::TextWidth() const {
+int OmniboxViewGtk::GetTextWidth() const {
   // TextWidth may be called after gtk widget tree is destroyed but
   // before OmniboxViewGtk gets deleted.  This is a safe guard
   // to avoid accessing |text_view_| that has already been destroyed.
@@ -765,6 +766,12 @@ int OmniboxViewGtk::TextWidth() const {
   return text_width + horizontal_border_size;
 }
 
+int OmniboxViewGtk::GetWidth() const {
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(text_view_, &allocation);
+  return allocation.width;
+}
+
 bool OmniboxViewGtk::IsImeComposing() const {
   return supports_pre_edit_ && !pre_edit_.empty();
 }
@@ -774,70 +781,7 @@ void OmniboxViewGtk::Observe(int type,
                              const content::NotificationDetails& details) {
   DCHECK(type == chrome::NOTIFICATION_BROWSER_THEME_CHANGED);
 
-  SetBaseColor();
-}
-
-void OmniboxViewGtk::SetBaseColor() {
-  DCHECK(text_view_);
-
-  bool use_gtk = theme_service_->UsingNativeTheme();
-  if (use_gtk) {
-    gtk_widget_modify_cursor(text_view_, NULL, NULL);
-    gtk_widget_modify_base(text_view_, GTK_STATE_NORMAL, NULL);
-    gtk_widget_modify_base(text_view_, GTK_STATE_SELECTED, NULL);
-    gtk_widget_modify_text(text_view_, GTK_STATE_SELECTED, NULL);
-    gtk_widget_modify_base(text_view_, GTK_STATE_ACTIVE, NULL);
-    gtk_widget_modify_text(text_view_, GTK_STATE_ACTIVE, NULL);
-
-    gtk_util::UndoForceFontSize(text_view_);
-    gtk_util::UndoForceFontSize(gray_text_view_);
-
-    // Grab the text colors out of the style and set our tags to use them.
-    GtkStyle* style = gtk_rc_get_style(text_view_);
-
-    // style may be unrealized at this point, so calculate the halfway point
-    // between text[] and base[] manually instead of just using text_aa[].
-    GdkColor average_color = gtk_util::AverageColors(
-        style->text[GTK_STATE_NORMAL], style->base[GTK_STATE_NORMAL]);
-
-    g_object_set(faded_text_tag_, "foreground-gdk", &average_color, NULL);
-    g_object_set(normal_text_tag_, "foreground-gdk",
-                 &style->text[GTK_STATE_NORMAL], NULL);
-  } else {
-    const GdkColor* background_color_ptr =
-        &LocationBarViewGtk::kBackgroundColor;
-    gtk_widget_modify_cursor(text_view_, &ui::kGdkBlack, &ui::kGdkGray);
-    gtk_widget_modify_base(text_view_, GTK_STATE_NORMAL, background_color_ptr);
-
-    GdkColor c;
-    // Override the selected colors so we don't leak colors from the current
-    // gtk theme into the chrome-theme.
-    c = gfx::SkColorToGdkColor(
-        theme_service_->get_active_selection_bg_color());
-    gtk_widget_modify_base(text_view_, GTK_STATE_SELECTED, &c);
-
-    c = gfx::SkColorToGdkColor(
-        theme_service_->get_active_selection_fg_color());
-    gtk_widget_modify_text(text_view_, GTK_STATE_SELECTED, &c);
-
-    c = gfx::SkColorToGdkColor(
-        theme_service_->get_inactive_selection_bg_color());
-    gtk_widget_modify_base(text_view_, GTK_STATE_ACTIVE, &c);
-
-    c = gfx::SkColorToGdkColor(
-        theme_service_->get_inactive_selection_fg_color());
-    gtk_widget_modify_text(text_view_, GTK_STATE_ACTIVE, &c);
-
-    // Until we switch to vector graphics, force the font size.
-    gtk_util::ForceFontSizePixels(text_view_, GetFont().GetFontSize());
-    gtk_util::ForceFontSizePixels(gray_text_view_, GetFont().GetFontSize());
-
-    g_object_set(faded_text_tag_, "foreground", kTextBaseColor, NULL);
-    g_object_set(normal_text_tag_, "foreground", "#000000", NULL);
-  }
-
-  AdjustVerticalAlignmentOfGrayTextView();
-  UpdateGrayTextViewColors();
+  OnBrowserThemeChanged();
 }
 
 void OmniboxViewGtk::UpdateGrayTextViewColors() {
@@ -1215,7 +1159,8 @@ void OmniboxViewGtk::HandlePopulatePopup(GtkWidget* sender, GtkMenu* menu) {
   GtkClipboard* x_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
   gchar* text = gtk_clipboard_wait_for_text(x_clipboard);
   sanitized_text_for_paste_and_go_ = text ?
-      StripJavascriptSchemas(CollapseWhitespace(UTF8ToUTF16(text), true)) :
+      StripJavascriptSchemas(
+          CollapseWhitespace(base::UTF8ToUTF16(text), true)) :
       base::string16();
   g_free(text);
   GtkWidget* paste_and_go_menuitem = gtk_menu_item_new_with_mnemonic(
@@ -1354,7 +1299,8 @@ void OmniboxViewGtk::HandleDragDataReceived(GtkWidget* sender,
   if (!text)
     return;
 
-  base::string16 possible_url = UTF8ToUTF16(reinterpret_cast<char*>(text));
+  base::string16 possible_url =
+      base::UTF8ToUTF16(reinterpret_cast<char*>(text));
   g_free(text);
   if (OnPerformDropImpl(possible_url)) {
     gtk_drag_finish(context, TRUE, FALSE, time);
@@ -1392,7 +1338,7 @@ void OmniboxViewGtk::HandleDragDataGet(GtkWidget* widget,
 
 void OmniboxViewGtk::HandleDragBegin(GtkWidget* widget,
                                        GdkDragContext* context) {
-  base::string16 text = UTF8ToUTF16(GetSelectedText());
+  base::string16 text = base::UTF8ToUTF16(GetSelectedText());
 
   if (text.empty())
     return;
@@ -1404,7 +1350,7 @@ void OmniboxViewGtk::HandleDragBegin(GtkWidget* widget,
   model()->AdjustTextForCopy(selection.selection_min(), IsSelectAll(), &text,
                             &url, &write_url);
   if (write_url) {
-    selected_text_ = UTF16ToUTF8(text);
+    selected_text_ = base::UTF16ToUTF8(text);
     GtkTargetList* copy_targets =
         gtk_text_buffer_get_copy_target_list(text_buffer_);
     gtk_target_list_add(copy_targets,
@@ -1457,7 +1403,7 @@ void OmniboxViewGtk::HandleInsertText(GtkTextBuffer* buffer,
     // If the user is pasting all-whitespace, paste a single space
     // rather than nothing, since pasting nothing feels broken.
     filtered_text = CollapseWhitespace(filtered_text, true);
-    filtered_text = filtered_text.empty() ? ASCIIToUTF16(" ") :
+    filtered_text = filtered_text.empty() ? base::ASCIIToUTF16(" ") :
         StripJavascriptSchemas(filtered_text);
   }
 
@@ -1467,7 +1413,7 @@ void OmniboxViewGtk::HandleInsertText(GtkTextBuffer* buffer,
 
     // Call the default handler to insert filtered text.
     GtkTextBufferClass* klass = GTK_TEXT_BUFFER_GET_CLASS(buffer);
-    std::string utf8_text = UTF16ToUTF8(filtered_text);
+    std::string utf8_text = base::UTF16ToUTF8(filtered_text);
     klass->insert_text(buffer, location, utf8_text.data(),
                        static_cast<gint>(utf8_text.length()));
   }
@@ -1563,7 +1509,7 @@ void OmniboxViewGtk::HandleCopyOrCutClipboard(bool copy) {
 
   CharRange selection = GetSelection();
   GURL url;
-  base::string16 text(UTF8ToUTF16(GetSelectedText()));
+  base::string16 text(base::UTF8ToUTF16(GetSelectedText()));
   bool write_url;
   model()->AdjustTextForCopy(selection.selection_min(), IsSelectAll(), &text,
                             &url, &write_url);
@@ -1593,7 +1539,7 @@ void OmniboxViewGtk::HandleCopyOrCutClipboard(bool copy) {
       gtk_text_buffer_delete_selection(text_buffer_, true, true);
   }
 
-  OwnPrimarySelection(UTF16ToUTF8(text));
+  OwnPrimarySelection(base::UTF16ToUTF8(text));
 }
 
 int OmniboxViewGtk::GetOmniboxTextLength() const {
@@ -1634,7 +1580,7 @@ void OmniboxViewGtk::EmphasizeURLComponents() {
   GetTextBufferBounds(&start, &end);
   gtk_text_buffer_remove_all_tags(text_buffer_, &start, &end);
   bool grey_out_url = text.substr(scheme.begin, scheme.len) ==
-       UTF8ToUTF16(extensions::kExtensionScheme);
+       base::UTF8ToUTF16(extensions::kExtensionScheme);
   bool grey_base = model()->CurrentTextIsURL() &&
       (host.is_nonempty() || grey_out_url);
   gtk_text_buffer_apply_tag(
@@ -1683,6 +1629,76 @@ bool OmniboxViewGtk::OnPerformDropImpl(const base::string16& text) {
   }
 
   return false;
+}
+
+void OmniboxViewGtk::OnBrowserThemeChanged() {
+  DCHECK(text_view_);
+
+  bool use_gtk = theme_service_->UsingNativeTheme();
+  if (use_gtk) {
+    gtk_widget_modify_cursor(text_view_, NULL, NULL);
+    gtk_widget_modify_base(text_view_, GTK_STATE_NORMAL, NULL);
+    gtk_widget_modify_base(text_view_, GTK_STATE_SELECTED, NULL);
+    gtk_widget_modify_text(text_view_, GTK_STATE_SELECTED, NULL);
+    gtk_widget_modify_base(text_view_, GTK_STATE_ACTIVE, NULL);
+    gtk_widget_modify_text(text_view_, GTK_STATE_ACTIVE, NULL);
+
+    gtk_util::UndoForceFontSize(text_view_);
+    gtk_util::UndoForceFontSize(gray_text_view_);
+
+    // Grab the text colors out of the style and set our tags to use them.
+    GtkStyle* style = gtk_rc_get_style(text_view_);
+
+    // style may be unrealized at this point, so calculate the halfway point
+    // between text[] and base[] manually instead of just using text_aa[].
+    GdkColor average_color = gtk_util::AverageColors(
+        style->text[GTK_STATE_NORMAL], style->base[GTK_STATE_NORMAL]);
+
+    g_object_set(faded_text_tag_, "foreground-gdk", &average_color, NULL);
+    g_object_set(normal_text_tag_, "foreground-gdk",
+                 &style->text[GTK_STATE_NORMAL], NULL);
+  } else {
+    const GdkColor* background_color_ptr =
+        &LocationBarViewGtk::kBackgroundColor;
+    gtk_widget_modify_cursor(text_view_, &ui::kGdkBlack, &ui::kGdkGray);
+    gtk_widget_modify_base(text_view_, GTK_STATE_NORMAL, background_color_ptr);
+
+    GdkColor c;
+    // Override the selected colors so we don't leak colors from the current
+    // gtk theme into the chrome-theme.
+    c = gfx::SkColorToGdkColor(
+        theme_service_->get_active_selection_bg_color());
+    gtk_widget_modify_base(text_view_, GTK_STATE_SELECTED, &c);
+
+    c = gfx::SkColorToGdkColor(
+        theme_service_->get_active_selection_fg_color());
+    gtk_widget_modify_text(text_view_, GTK_STATE_SELECTED, &c);
+
+    c = gfx::SkColorToGdkColor(
+        theme_service_->get_inactive_selection_bg_color());
+    gtk_widget_modify_base(text_view_, GTK_STATE_ACTIVE, &c);
+
+    c = gfx::SkColorToGdkColor(
+        theme_service_->get_inactive_selection_fg_color());
+    gtk_widget_modify_text(text_view_, GTK_STATE_ACTIVE, &c);
+
+    // Until we switch to vector graphics, force the font size.
+    const gfx::Font& font = GetFont();
+    gtk_util::ForceFontSizePixels(text_view_, font.GetFontSize());
+    gtk_util::ForceFontSizePixels(gray_text_view_, font.GetFontSize());
+
+    g_object_set(faded_text_tag_, "foreground", kTextBaseColor, NULL);
+    g_object_set(normal_text_tag_, "foreground", "#000000", NULL);
+  }
+
+  const gfx::Font& font = GetFont();
+  const int cap_height = font.GetCapHeight();
+  const int internal_leading = font.GetBaseline() - cap_height;
+  font_baseline_shift_ =
+      (font.GetHeight() - cap_height) / 2.0 - internal_leading;
+
+  AdjustVerticalAlignmentOfGrayTextView();
+  UpdateGrayTextViewColors();
 }
 
 gfx::Font OmniboxViewGtk::GetFont() {
@@ -1752,7 +1768,50 @@ gfx::Rect OmniboxViewGtk::WindowBoundsFromIters(GtkTextIter* iter1,
 }
 
 gboolean OmniboxViewGtk::HandleExposeEvent(GtkWidget* sender,
-                                           GdkEventExpose* expose) {
+                                           GdkEventExpose* event) {
+  // Adjust vertical alignment of |sender| before we start rendering it.
+  // GtkTextView is a multi-line text edit control and scrollable.  Thus we
+  // have to adjust the amount of scroll in order to put the content text at
+  // the center of Omnibox.
+
+  GtkTextView* text_view = GTK_TEXT_VIEW(sender);
+  GtkTextIter iter;
+  gtk_text_view_get_iter_at_location(text_view, &iter, 0, 0);
+  gint line_height = 0;
+  gtk_text_view_get_line_yrange(text_view, &iter, NULL, &line_height);
+
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(alignment_.get(), &allocation);
+
+  const double shift =
+      (line_height - allocation.height) / 2.0 + font_baseline_shift_;
+
+  // If the desired shift is positive (upwards), we can scroll the control to
+  // accomplish it; but if the desired shift is downwards, we need to add extra
+  // padding atop the control.
+  const gdouble new_scroll = std::max(shift, 0.);
+  const guint new_top_padding = std::max(0., -shift);
+
+  // Changing the amount of scroll may fire another "expose-event", so avoid
+  // unnecessary change.
+  GtkAdjustment* adjustment = gtk_text_view_get_vadjustment(text_view);
+  if (new_scroll != gtk_adjustment_get_value(adjustment))
+    gtk_adjustment_set_value(adjustment, new_scroll);
+  guint top_padding = 0;
+  guint bottom_padding = 0;
+  guint left_padding = 0;
+  guint right_padding = 0;
+  gtk_alignment_get_padding(GTK_ALIGNMENT(alignment_.get()), &top_padding,
+                            &bottom_padding, &left_padding, &right_padding);
+  if (new_top_padding != top_padding)
+    gtk_alignment_set_padding(GTK_ALIGNMENT(alignment_.get()), new_top_padding,
+                              bottom_padding, left_padding, right_padding);
+
+  return FALSE;
+}
+
+gboolean OmniboxViewGtk::HandleExposeEventAfter(GtkWidget* sender,
+                                                GdkEventExpose* expose) {
   if (strikethrough_.cp_min >= strikethrough_.cp_max)
     return FALSE;
   DCHECK(text_view_);
@@ -1886,7 +1945,7 @@ void OmniboxViewGtk::SavePrimarySelection(const std::string& selected_text) {
 void OmniboxViewGtk::SetTextAndSelectedRange(const base::string16& text,
                                              const CharRange& range) {
   if (text != GetText()) {
-    std::string utf8 = UTF16ToUTF8(text);
+    std::string utf8 = base::UTF16ToUTF8(text);
     gtk_text_buffer_set_text(text_buffer_, utf8.data(), utf8.length());
   }
   SetSelectedRange(range);
@@ -2055,7 +2114,7 @@ std::string OmniboxViewGtk::GetSelectedText() const {
 }
 
 void OmniboxViewGtk::UpdatePrimarySelectionIfValidURL() {
-  base::string16 text = UTF8ToUTF16(GetSelectedText());
+  base::string16 text = base::UTF8ToUTF16(GetSelectedText());
 
   if (text.empty())
     return;
@@ -2067,7 +2126,7 @@ void OmniboxViewGtk::UpdatePrimarySelectionIfValidURL() {
   model()->AdjustTextForCopy(selection.selection_min(), IsSelectAll(), &text,
                             &url, &write_url);
   if (write_url) {
-    selected_text_ = UTF16ToUTF8(text);
+    selected_text_ = base::UTF16ToUTF8(text);
     OwnPrimarySelection(selected_text_);
   }
 }
@@ -2084,7 +2143,7 @@ void OmniboxViewGtk::HandlePreEditChanged(GtkWidget* sender,
     // delete the selection range here explicitly. See http://crbug.com/18808.
     if (pre_edit_.empty())
       gtk_text_buffer_delete_selection(text_buffer_, false, true);
-    pre_edit_ = UTF8ToUTF16(pre_edit);
+    pre_edit_ = base::UTF8ToUTF16(pre_edit);
   } else {
     pre_edit_.clear();
   }

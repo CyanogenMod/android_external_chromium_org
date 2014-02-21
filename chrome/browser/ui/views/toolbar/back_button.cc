@@ -27,10 +27,12 @@ void BackButton::SetLeadingMargin(int margin) {
   // Adjust border insets to follow the margin change,
   // which will be reflected in where the border is painted
   // through |GetThemePaintRect|.
-  gfx::Insets insets(border()->GetInsets());
-  static_cast<views::LabelButtonBorder*>(border())->set_insets(
-      gfx::Insets(insets.top(), insets.left() + margin - margin_leading_,
-                  insets.bottom(), insets.right()));
+  scoped_ptr<views::LabelButtonBorder> border(
+      new views::LabelButtonBorder(style()));
+  const gfx::Insets insets(border->GetInsets());
+  border->set_insets(gfx::Insets(insets.top(), insets.left() + margin,
+                                 insets.bottom(), insets.right()));
+  UpdateThemedBorder(border.PassAs<views::Border>());
 
   // Similarly fiddle the focus border. Value consistent with LabelButton
   // and TextButton.

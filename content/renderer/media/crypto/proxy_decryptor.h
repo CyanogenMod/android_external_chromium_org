@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_MEDIA_CRYPTO_PROXY_DECRYPTOR_H_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -69,14 +70,12 @@ class ProxyDecryptor {
       const KeyMessageCB& key_message_cb);
   virtual ~ProxyDecryptor();
 
+  // Returns the Decryptor associated with this object. May be NULL if no
+  // Decryptor is associated.
+  media::Decryptor* GetDecryptor();
+
   // Only call this once.
   bool InitializeCDM(const std::string& key_system, const GURL& frame_url);
-
-  // Requests the ProxyDecryptor to notify the decryptor when it's ready through
-  // the |decryptor_ready_cb| provided.
-  // If |decryptor_ready_cb| is null, the existing callback will be fired with
-  // NULL immediately and reset.
-  void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
   // May only be called after InitializeCDM() succeeds.
   bool GenerateKeyRequest(const std::string& type,
@@ -107,12 +106,12 @@ class ProxyDecryptor {
                       int system_code);
 
   // Helper function to determine session_id for the provided |web_session_id|.
-  uint32 LookupSessionId(const std::string& web_session_id);
+  uint32 LookupSessionId(const std::string& web_session_id) const;
 
   // Helper function to determine web_session_id for the provided |session_id|.
   // The returned web_session_id is only valid on the main thread, and should be
   // stored by copy.
-  const std::string& LookupWebSessionId(uint32 session_id);
+  const std::string& LookupWebSessionId(uint32 session_id) const;
 
   base::WeakPtrFactory<ProxyDecryptor> weak_ptr_factory_;
 
@@ -129,7 +128,6 @@ class ProxyDecryptor {
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
   // The real MediaKeys that manages key operations for the ProxyDecryptor.
-  // This pointer is protected by the |lock_|.
   scoped_ptr<media::MediaKeys> media_keys_;
 
   // Callbacks for firing key events.
@@ -137,18 +135,14 @@ class ProxyDecryptor {
   KeyErrorCB key_error_cb_;
   KeyMessageCB key_message_cb_;
 
-  // Protects the |decryptor_|. Note that |decryptor_| itself should be thread
-  // safe as per the Decryptor interface.
-  base::Lock lock_;
-
-  media::DecryptorReadyCB decryptor_ready_cb_;
-
   // Session IDs are used to uniquely track sessions so that CDM callbacks
   // can get mapped to the correct session ID. Session ID should be unique
   // per renderer process for debugging purposes.
   static uint32 next_session_id_;
 
   SessionIdMap sessions_;
+
+  std::set<uint32> persistent_sessions_;
 
   bool is_clear_key_;
 

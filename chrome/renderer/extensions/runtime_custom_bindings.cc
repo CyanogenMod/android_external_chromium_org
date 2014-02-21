@@ -58,7 +58,13 @@ void RuntimeCustomBindings::OpenChannelToExtension(
   CHECK(args[0]->IsString() && args[1]->IsString() && args[2]->IsBoolean());
 
   ExtensionMsg_ExternalConnectionInfo info;
-  info.source_id = context()->GetExtensionID();
+
+  // For messaging APIs, hosted apps should be considered a web page so hide
+  // its extension ID.
+  const Extension* extension = context()->extension();
+  if (extension && !extension->is_hosted_app())
+    info.source_id = extension->id();
+
   info.target_id = *v8::String::Utf8Value(args[0]->ToString());
   info.source_url = context()->GetURL();
   std::string channel_name = *v8::String::Utf8Value(args[1]->ToString());
@@ -167,7 +173,7 @@ void RuntimeCustomBindings::GetExtensionViews(
     if (!context.IsEmpty()) {
       v8::Local<v8::Value> window = context->Global();
       DCHECK(!window.IsEmpty());
-      v8_views->Set(v8::Integer::New(v8_index++), window);
+      v8_views->Set(v8::Integer::New(args.GetIsolate(), v8_index++), window);
     }
   }
 

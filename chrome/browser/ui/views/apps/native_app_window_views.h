@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_APPS_NATIVE_APP_WINDOW_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_APPS_NATIVE_APP_WINDOW_VIEWS_H_
 
-#include "apps/shell_window.h"
+#include "apps/app_window.h"
 #include "apps/ui/native_app_window.h"
 #include "base/observer_list.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -18,10 +18,6 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
-#if defined(OS_WIN)
-#include "chrome/browser/shell_integration.h"
-#endif
-
 #if defined(USE_ASH)
 namespace ash {
 class ImmersiveFullscreenController;
@@ -29,13 +25,13 @@ class ImmersiveFullscreenController;
 #endif
 
 class ExtensionKeybindingRegistryViews;
-class Profile;
 
 namespace apps {
-class ShellWindowFrameView;
+class AppWindowFrameView;
 }
 
 namespace content {
+class BrowserContext;
 class RenderViewHost;
 class WebContents;
 }
@@ -59,9 +55,12 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
                              public views::WidgetDelegateView,
                              public views::WidgetObserver {
  public:
-  NativeAppWindowViews(apps::ShellWindow* shell_window,
-                       const apps::ShellWindow::CreateParams& params);
+  NativeAppWindowViews();
   virtual ~NativeAppWindowViews();
+  void Init(apps::AppWindow* app_window,
+            const apps::AppWindow::CreateParams& create_params);
+
+  SkRegion* shape() { return shape_.get(); }
 
  protected:
   // Called before views::Widget::Init() to allow subclasses to customize
@@ -73,28 +72,27 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual void Show() OVERRIDE;
   virtual void Activate() OVERRIDE;
 
-  Profile* profile() { return shell_window_->profile(); }
-  const extensions::Extension* extension() {
-    return shell_window_->extension();
+  content::BrowserContext* browser_context() {
+    return app_window_->browser_context();
   }
 
+  const extensions::Extension* extension() { return app_window_->extension(); }
+  const views::Widget* window() const { return window_; }
+
+  virtual void InitializeDefaultWindow(
+      const apps::AppWindow::CreateParams& create_params);
+  virtual void InitializePanelWindow(
+      const apps::AppWindow::CreateParams& create_params);
+
  private:
-  void InitializeDefaultWindow(
-      const apps::ShellWindow::CreateParams& create_params);
-  void InitializePanelWindow(
-      const apps::ShellWindow::CreateParams& create_params);
+  friend class ShapedAppWindowTargeterTest;
+
   void OnViewWasResized();
 
   bool ShouldUseChromeStyleFrame() const;
 
   // Caller owns the returned object.
-  apps::ShellWindowFrameView* CreateShellWindowFrameView();
-
-#if defined(OS_WIN)
-  void OnShortcutInfoLoaded(
-      const ShellIntegration::ShortcutInfo& shortcut_info);
-  HWND GetNativeAppWindowHWND() const;
-#endif
+  apps::AppWindowFrameView* CreateAppWindowFrameView();
 
   // ui::BaseWindow implementation.
   virtual bool IsActive() const OVERRIDE;
@@ -175,6 +173,7 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
+  virtual void UpdateBadgeIcon() OVERRIDE;
   virtual void UpdateDraggableRegions(
       const std::vector<extensions::DraggableRegion>& regions) OVERRIDE;
   virtual SkRegion* GetDraggableRegion() OVERRIDE;
@@ -196,11 +195,9 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual void RemoveObserver(
       web_modal::ModalDialogHostObserver* observer) OVERRIDE;
 
-  content::WebContents* web_contents() {
-    return shell_window_->web_contents();
-  }
+  content::WebContents* web_contents() { return app_window_->web_contents(); }
 
-  apps::ShellWindow* shell_window_; // weak - ShellWindow owns NativeAppWindow.
+  apps::AppWindow* app_window_;  // Not owned.
   views::WebView* web_view_;
   views::Widget* window_;
   bool is_fullscreen_;
@@ -211,8 +208,8 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
 
   scoped_ptr<SkRegion> draggable_region_;
 
-  const bool frameless_;
-  const bool transparent_background_;
+  bool frameless_;
+  bool transparent_background_;
   gfx::Size preferred_size_;
   bool resizable_;
 

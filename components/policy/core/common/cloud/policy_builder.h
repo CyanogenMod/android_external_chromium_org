@@ -15,7 +15,7 @@
 #include "policy/proto/cloud_policy.pb.h"
 #include "policy/proto/device_management_backend.pb.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "policy/proto/chrome_extension_policy.pb.h"
 #endif
 
@@ -61,6 +61,11 @@ class PolicyBuilder {
   void SetDefaultSigningKey();
   void UnsetSigningKey();
 
+  // Sets the default initial signing key - the resulting policy will be signed
+  // by the default signing key, and will have that key set as the
+  // new_public_key field, as if it were an initial key provision.
+  void SetDefaultInitialSigningKey();
+
   scoped_ptr<crypto::RSAPrivateKey> GetNewSigningKey();
   void SetDefaultNewSigningKey();
   void UnsetNewSigningKey();
@@ -78,6 +83,14 @@ class PolicyBuilder {
   // These return hard-coded testing keys. Don't use in production!
   static scoped_ptr<crypto::RSAPrivateKey> CreateTestSigningKey();
   static scoped_ptr<crypto::RSAPrivateKey> CreateTestOtherSigningKey();
+
+  // Verification signatures for the two hard-coded testing keys above. These
+  // signatures are valid only for the kFakeDomain domain.
+  static std::string GetTestSigningKeySignature();
+  static std::string GetTestOtherSigningKeySignature();
+
+  std::vector<uint8> raw_signing_key() { return raw_signing_key_; }
+  std::vector<uint8> raw_new_signing_key() { return raw_new_signing_key_; }
 
  private:
   // Produces |key|'s signature over |data| and stores it in |signature|.
@@ -97,6 +110,7 @@ class PolicyBuilder {
   // temporary RSAPrivateKey is created.
   std::vector<uint8> raw_signing_key_;
   std::vector<uint8> raw_new_signing_key_;
+  std::string raw_new_signing_key_signature_;
 
   DISALLOW_COPY_AND_ASSIGN(PolicyBuilder);
 };
@@ -136,7 +150,7 @@ class TypedPolicyBuilder : public PolicyBuilder {
 typedef TypedPolicyBuilder<enterprise_management::CloudPolicySettings>
     UserPolicyBuilder;
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 typedef TypedPolicyBuilder<enterprise_management::ExternalPolicyData>
     ComponentPolicyBuilder;
 #endif

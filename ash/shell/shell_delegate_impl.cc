@@ -8,7 +8,8 @@
 #include "ash/caps_lock_delegate_stub.h"
 #include "ash/default_accessibility_delegate.h"
 #include "ash/default_user_wallpaper_delegate.h"
-#include "ash/host/root_window_host_factory.h"
+#include "ash/gpu_support_stub.h"
+#include "ash/host/window_tree_host_factory.h"
 #include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/session_state_delegate.h"
@@ -113,7 +114,7 @@ keyboard::KeyboardControllerProxy*
   return new KeyboardControllerProxyStub();
 }
 
-content::BrowserContext* ShellDelegateImpl::GetCurrentBrowserContext() {
+content::BrowserContext* ShellDelegateImpl::GetActiveBrowserContext() {
   return browser_context_;
 }
 
@@ -158,15 +159,20 @@ aura::client::UserActionClient* ShellDelegateImpl::CreateUserActionClient() {
   return NULL;
 }
 
-void ShellDelegateImpl::RecordUserMetricsAction(UserMetricsAction action) {
-}
-
-ui::MenuModel* ShellDelegateImpl::CreateContextMenu(aura::Window* root) {
+ui::MenuModel* ShellDelegateImpl::CreateContextMenu(
+    aura::Window* root,
+    ash::ShelfItemDelegate* item_delegate,
+    ash::ShelfItem* item) {
   return new ContextMenu(root);
 }
 
-RootWindowHostFactory* ShellDelegateImpl::CreateRootWindowHostFactory() {
-  return RootWindowHostFactory::Create();
+WindowTreeHostFactory* ShellDelegateImpl::CreateWindowTreeHostFactory() {
+  return WindowTreeHostFactory::Create();
+}
+
+GPUSupport* ShellDelegateImpl::CreateGPUSupport() {
+  // Real GPU support depends on src/content, so just use a stub.
+  return new GPUSupportStub;
 }
 
 base::string16 ShellDelegateImpl::GetProductName() const {

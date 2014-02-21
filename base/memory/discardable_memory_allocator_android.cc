@@ -44,6 +44,18 @@ namespace {
 // issues.
 const size_t kMaxChunkFragmentationBytes = 4096 - 1;
 
+const size_t kMinAshmemRegionSize = 32 * 1024 * 1024;
+
+// Returns 0 if the provided size is too high to be aligned.
+size_t AlignToNextPage(size_t size) {
+  const size_t kPageSize = 4096;
+  DCHECK_EQ(static_cast<int>(kPageSize), getpagesize());
+  if (size > std::numeric_limits<size_t>::max() - kPageSize + 1)
+    return 0;
+  const size_t mask = ~(kPageSize - 1);
+  return (size + kPageSize - 1) & mask;
+}
+
 }  // namespace
 
 namespace internal {
@@ -70,7 +82,7 @@ class DiscardableMemoryAllocator::DiscardableAshmemChunk
   virtual ~DiscardableAshmemChunk();
 
   // DiscardableMemory:
-  virtual LockDiscardableMemoryStatus Lock() OVERRIDE {
+  virtual DiscardableMemoryLockStatus Lock() OVERRIDE {
     DCHECK(!locked_);
     locked_ = true;
     return internal::LockAshmemRegion(fd_, offset_, size_, address_);
@@ -104,6 +116,7 @@ class DiscardableMemoryAllocator::AshmemRegion {
       size_t size,
       const std::string& name,
       DiscardableMemoryAllocator* allocator) {
+    DCHECK_EQ(size, AlignToNextPage(size));
     int fd;
     void* base;
     if (!internal::CreateAshmemRegion(name.c_str(), size, &fd, &base))
@@ -111,7 +124,7 @@ class DiscardableMemoryAllocator::AshmemRegion {
     return make_scoped_ptr(new AshmemRegion(fd, size, base, allocator));
   }
 
-  virtual ~AshmemRegion() {
+  ~AshmemRegion() {
     const bool result = internal::CloseAshmemRegion(fd_, size_, base_);
     DCHECK(result);
   }
@@ -364,8 +377,14 @@ DiscardableMemoryAllocator::DiscardableAshmemChunk::~DiscardableAshmemChunk() {
   ashmem_region_->OnChunkDeletion(address_, size_);
 }
 
-DiscardableMemoryAllocator::DiscardableMemoryAllocator(const std::string& name)
-    : name_(name) {
+DiscardableMemoryAllocator::DiscardableMemoryAllocator(
+    const std::string& name,
+    size_t ashmem_region_size)
+    : name_(name),
+      ashmem_region_size_(
+          std::max(kMinAshmemRegionSize, AlignToNextPage(ashmem_region_size))),
+      last_ashmem_region_size_(0) {
+  DCHECK_GE(ashmem_region_size_, kMinAshmemRegionSize);
 }
 
 DiscardableMemoryAllocator::~DiscardableMemoryAllocator() {
@@ -375,7 +394,9 @@ DiscardableMemoryAllocator::~DiscardableMemoryAllocator() {
 
 scoped_ptr<DiscardableMemory> DiscardableMemoryAllocator::Allocate(
     size_t size) {
-  const size_t aligned_size = internal::AlignToNextPage(size);
+  const size_t aligned_size = AlignToNextPage(size);
+  if (!aligned_size)
+    return scoped_ptr<DiscardableMemory>();
   // TODO(pliard): make this function less naive by e.g. moving the free chunks
   // multiset to the allocator itself in order to decrease even more
   // fragmentation/speedup allocation. Note that there should not be more than a
@@ -389,16 +410,28 @@ scoped_ptr<DiscardableMemory> DiscardableMemoryAllocator::Allocate(
     if (memory)
       return memory.Pass();
   }
-  scoped_ptr<AshmemRegion> new_region(
-      AshmemRegion::Create(
-          std::max(static_cast<size_t>(kMinAshmemRegionSize), aligned_size),
-          name_.c_str(), this));
-  if (!new_region) {
-    // TODO(pliard): consider adding an histogram to see how often this happens.
-    return scoped_ptr<DiscardableMemory>();
+  // The creation of the (large) ashmem region might fail if the address space
+  // is too fragmented. In case creation fails the allocator retries by
+  // repetitively dividing the size by 2.
+  const size_t min_region_size = std::max(kMinAshmemRegionSize, aligned_size);
+  for (size_t region_size = std::max(ashmem_region_size_, aligned_size);
+       region_size >= min_region_size;
+       region_size = AlignToNextPage(region_size / 2)) {
+    scoped_ptr<AshmemRegion> new_region(
+        AshmemRegion::Create(region_size, name_.c_str(), this));
+    if (!new_region)
+      continue;
+    last_ashmem_region_size_ = region_size;
+    ashmem_regions_.push_back(new_region.release());
+    return ashmem_regions_.back()->Allocate_Locked(size, aligned_size);
   }
-  ashmem_regions_.push_back(new_region.release());
-  return ashmem_regions_.back()->Allocate_Locked(size, aligned_size);
+  // TODO(pliard): consider adding an histogram to see how often this happens.
+  return scoped_ptr<DiscardableMemory>();
+}
+
+size_t DiscardableMemoryAllocator::last_ashmem_region_size() const {
+  AutoLock auto_lock(lock_);
+  return last_ashmem_region_size_;
 }
 
 void DiscardableMemoryAllocator::DeleteAshmemRegion_Locked(

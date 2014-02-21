@@ -32,7 +32,6 @@
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_details.h"
@@ -42,7 +41,6 @@
 #include "url/gurl.h"
 
 using base::Time;
-using base::TimeDelta;
 
 // This file only tests functionality where it is most convenient to call the
 // backend directly. Most of the history backend functions are tested by the
@@ -360,6 +358,11 @@ class HistoryBackendTest : public testing::Test {
   BookmarkModel bookmark_model_;
 
  protected:
+  bool loaded_;
+
+ private:
+  friend class HistoryBackendTestDelegate;
+
   // testing::Test
   virtual void SetUp() {
     if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("BackendTest"),
@@ -371,11 +374,6 @@ class HistoryBackendTest : public testing::Test {
                                   &bookmark_model_);
     backend_->Init(std::string(), false);
   }
-
-  bool loaded_;
-
- private:
-  friend class HistoryBackendTestDelegate;
 
   virtual void TearDown() {
     if (backend_.get())
@@ -602,7 +600,7 @@ TEST_F(HistoryBackendTest, DeleteAllThenAddData) {
   ASSERT_EQ(0U, all_visits.size());
 
   // Try and set the title.
-  backend_->SetPageTitle(url, UTF8ToUTF16("Title"));
+  backend_->SetPageTitle(url, base::UTF8ToUTF16("Title"));
 
   // The row should still be deleted.
   EXPECT_FALSE(backend_->db_->GetRowForURL(url, &outrow));
@@ -2614,7 +2612,7 @@ TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
   ASSERT_TRUE(backend_.get());
 
   GURL url("http://www.google.com");
-  base::string16 title(UTF8ToUTF16("Bookmark title"));
+  base::string16 title(base::UTF8ToUTF16("Bookmark title"));
   backend_->AddPageNoVisitForBookmark(url, title);
 
   URLRow row;
@@ -2627,7 +2625,7 @@ TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
   backend_->AddPageNoVisitForBookmark(url, base::string16());
   backend_->GetURL(url, &row);
   EXPECT_EQ(url, row.url());
-  EXPECT_EQ(UTF8ToUTF16(url.spec()), row.title());
+  EXPECT_EQ(base::UTF8ToUTF16(url.spec()), row.title());
   EXPECT_EQ(0, row.visit_count());
 }
 
@@ -2743,36 +2741,23 @@ TEST_F(HistoryBackendTest, ExpireHistory) {
   ASSERT_EQ(0U, visits.size());
 }
 
-class HistoryBackendSegmentDurationTest : public HistoryBackendTest {
- public:
-  HistoryBackendSegmentDurationTest() {}
-
-  virtual void SetUp() {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kTrackActiveVisitTime);
-    HistoryBackendTest::SetUp();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(HistoryBackendSegmentDurationTest);
-};
-
-// Assertions around segment durations.
-TEST_F(HistoryBackendSegmentDurationTest, SegmentDuration) {
-  const GURL url1("http://www.google.com");
-  const GURL url2("http://www.foo.com/m");
-  const std::string segment1(VisitSegmentDatabase::ComputeSegmentName(url1));
-  const std::string segment2(VisitSegmentDatabase::ComputeSegmentName(url2));
-
-  Time segment_time(VisitSegmentDatabase::SegmentTime(Time::Now()));
+TEST_F(HistoryBackendTest, DeleteMatchingUrlsForKeyword) {
+  // Set up urls and keyword_search_terms
+  GURL url1("https://www.bing.com/?q=bar");
   URLRow url_info1(url1);
   url_info1.set_visit_count(0);
   url_info1.set_typed_count(0);
-  url_info1.set_last_visit(segment_time);
+  url_info1.set_last_visit(Time());
   url_info1.set_hidden(false);
   const URLID url1_id = backend_->db()->AddURL(url_info1);
   EXPECT_NE(0, url1_id);
 
+  TemplateURLID keyword_id = 1;
+  base::string16 keyword = base::UTF8ToUTF16("bar");
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url1_id, keyword_id, keyword));
+
+  GURL url2("https://www.google.com/?q=bar");
   URLRow url_info2(url2);
   url_info2.set_visit_count(0);
   url_info2.set_typed_count(0);
@@ -2780,53 +2765,37 @@ TEST_F(HistoryBackendSegmentDurationTest, SegmentDuration) {
   url_info2.set_hidden(false);
   const URLID url2_id = backend_->db()->AddURL(url_info2);
   EXPECT_NE(0, url2_id);
-  EXPECT_NE(url1_id, url2_id);
 
-  // Should not have any segments for the urls.
-  EXPECT_EQ(0, backend_->db()->GetSegmentNamed(segment1));
-  EXPECT_EQ(0, backend_->db()->GetSegmentNamed(segment2));
+  TemplateURLID keyword_id2 = 2;
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url2_id, keyword_id2, keyword));
 
-  // Update the duration, which should implicitly create the segments.
-  const TimeDelta segment1_time_delta(TimeDelta::FromHours(1));
-  const TimeDelta segment2_time_delta(TimeDelta::FromHours(2));
-  backend_->IncreaseSegmentDuration(url1, segment_time, segment1_time_delta);
-  backend_->IncreaseSegmentDuration(url2, segment_time, segment2_time_delta);
+  // Add another visit to the same URL
+  URLRow url_info3(url2);
+  url_info3.set_visit_count(0);
+  url_info3.set_typed_count(0);
+  url_info3.set_last_visit(Time());
+  url_info3.set_hidden(false);
+  const URLID url3_id = backend_->db()->AddURL(url_info3);
+  EXPECT_NE(0, url3_id);
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url3_id, keyword_id2, keyword));
 
-  // Get the ids of the segments that were created.
-  const SegmentID segment1_id = backend_->db()->GetSegmentNamed(segment1);
-  EXPECT_NE(0, segment1_id);
-  const SegmentID segment2_id = backend_->db()->GetSegmentNamed(segment2);
-  EXPECT_NE(0, segment2_id);
-  EXPECT_NE(segment1_id, segment2_id);
+  // Test that deletion works correctly
+  backend_->DeleteMatchingURLsForKeyword(keyword_id2, keyword);
 
-  // Make sure the values made it to the db.
-  SegmentDurationID segment1_duration_id;
-  TimeDelta fetched_delta;
-  EXPECT_TRUE(backend_->db()->GetSegmentDuration(
-                  segment1_id, segment_time, &segment1_duration_id,
-                  &fetched_delta));
-  EXPECT_NE(0, segment1_duration_id);
-  EXPECT_EQ(segment1_time_delta.InHours(), fetched_delta.InHours());
+  // Test that rows 2 and 3 are deleted, while 1 is intact
+  URLRow row;
+  EXPECT_TRUE(backend_->db()->GetURLRow(url1_id, &row));
+  EXPECT_EQ(url1.spec(), row.url().spec());
+  EXPECT_FALSE(backend_->db()->GetURLRow(url2_id, &row));
+  EXPECT_FALSE(backend_->db()->GetURLRow(url3_id, &row));
 
-  SegmentDurationID segment2_duration_id;
-  EXPECT_TRUE(backend_->db()->GetSegmentDuration(
-                  segment2_id, segment_time, &segment2_duration_id,
-                  &fetched_delta));
-  EXPECT_NE(0, segment2_duration_id);
-  EXPECT_NE(segment1_duration_id, segment2_duration_id);
-  EXPECT_EQ(segment2_time_delta.InHours(), fetched_delta.InHours());
-
-  // Query by duration. |url2| should be first as it has a longer view time.
-  ScopedVector<PageUsageData> data;
-  backend_->db()->QuerySegmentDuration(segment_time, 10, &data.get());
-  ASSERT_EQ(2u, data.size());
-  EXPECT_EQ(url2.spec(), data[0]->GetURL().spec());
-  EXPECT_EQ(url2_id, data[0]->GetID());
-  EXPECT_EQ(segment2_time_delta.InHours(), data[0]->duration().InHours());
-
-  EXPECT_EQ(url1.spec(), data[1]->GetURL().spec());
-  EXPECT_EQ(url1_id, data[1]->GetID());
-  EXPECT_EQ(segment1_time_delta.InHours(), data[1]->duration().InHours());
+  // Test that corresponding keyword search terms are deleted for rows 2 & 3,
+  // but not for row 1
+  EXPECT_TRUE(backend_->db()->GetKeywordSearchTermRow(url1_id, NULL));
+  EXPECT_FALSE(backend_->db()->GetKeywordSearchTermRow(url2_id, NULL));
+  EXPECT_FALSE(backend_->db()->GetKeywordSearchTermRow(url3_id, NULL));
 }
 
 // Simple test that removes a bookmark. This test exercises the code paths in

@@ -15,6 +15,10 @@ namespace {
 // Default delay when more changes are available.
 const int64 kSyncDelayInMilliseconds = 1 * base::Time::kMillisecondsPerSecond;
 
+// Default delay when the previous change has had an error (but remote service
+// is running).
+const int64 kSyncDelayWithSyncError = 3 * base::Time::kMillisecondsPerSecond;
+
 // Default delay when there're more than 10 pending changes.
 const int64 kSyncDelayFastInMilliseconds = 100;
 const int kPendingChangeThresholdForFastSync = 10;
@@ -26,6 +30,15 @@ const int64 kSyncDelaySlowInMilliseconds =
 // Default delay when there're no changes.
 const int64 kSyncDelayMaxInMilliseconds =
     30 * 60 * base::Time::kMillisecondsPerSecond;  // 30 min
+
+bool WasSuccessfulSync(SyncStatusCode status) {
+  return status == SYNC_STATUS_OK ||
+         status == SYNC_STATUS_HAS_CONFLICT ||
+         status == SYNC_STATUS_NO_CONFLICT ||
+         status == SYNC_STATUS_NO_CHANGE_TO_SYNC ||
+         status == SYNC_STATUS_UNKNOWN_ORIGIN ||
+         status == SYNC_STATUS_RETRY;
+}
 
 }  // namespace
 
@@ -80,12 +93,15 @@ void SyncProcessRunner::ScheduleIfNotRunning() {
 void SyncProcessRunner::OnChangesUpdated(
     int64 pending_changes) {
   DCHECK_GE(pending_changes, 0);
-  if (pending_changes_ != pending_changes) {
+  int64 old_pending_changes = pending_changes_;
+  pending_changes_ = pending_changes;
+  if (old_pending_changes != pending_changes) {
+    if (pending_changes == 0)
+      sync_service()->OnSyncIdle();
     util::Log(logging::LOG_VERBOSE, FROM_HERE,
               "[%s] pending_changes updated: %" PRId64,
               name_.c_str(), pending_changes);
   }
-  pending_changes_ = pending_changes;
   Schedule();
 }
 
@@ -103,6 +119,9 @@ void SyncProcessRunner::Finished(SyncStatusCode status) {
   if (status == SYNC_STATUS_NO_CHANGE_TO_SYNC ||
       status == SYNC_STATUS_FILE_BUSY)
     ScheduleInternal(kSyncDelayMaxInMilliseconds);
+  else if (!WasSuccessfulSync(status) &&
+           GetServiceState() == SYNC_SERVICE_RUNNING)
+    ScheduleInternal(kSyncDelayWithSyncError);
   else
     Schedule();
 }

@@ -35,6 +35,9 @@
 #include "base/win/scoped_handle.h"
 #endif
 
+// Provide a BackendImpl object to macros from histogram_macros.h.
+#define CACHE_UMA_BACKEND_IMPL_OBJ backend_
+
 using base::Time;
 
 namespace {
@@ -518,9 +521,13 @@ void DiskCacheBackendTest::BackendShutdownWithPendingFileIO(bool fast) {
 
   base::MessageLoop::current()->RunUntilIdle();
 
+#if !defined(OS_IOS)
   // Wait for the actual operation to complete, or we'll keep a file handle that
-  // may cause issues later.
+  // may cause issues later. Note that on iOS systems even though this test
+  // uses a single thread, the actual IO is posted to a worker thread and the
+  // cache destructor breaks the link to reach cb when the operation completes.
   rv = cb.GetResult(rv);
+#endif
 }
 
 TEST_F(DiskCacheBackendTest, ShutdownWithPendingFileIO) {
@@ -529,10 +536,9 @@ TEST_F(DiskCacheBackendTest, ShutdownWithPendingFileIO) {
 
 // Here and below, tests that simulate crashes are not compiled in LeakSanitizer
 // builds because they contain a lot of intentional memory leaks.
-// The wrapper scripts used to run tests under Valgrind Memcheck and
-// Heapchecker will also disable these tests under those tools. See:
+// The wrapper scripts used to run tests under Valgrind Memcheck will also
+// disable these tests. See:
 // tools/valgrind/gtest_exclude/net_unittests.gtest-memcheck.txt
-// tools/heapcheck/net_unittests.gtest-heapcheck.txt
 #if !defined(LEAK_SANITIZER)
 // We'll be leaking from this test.
 TEST_F(DiskCacheBackendTest, ShutdownWithPendingFileIO_Fast) {
@@ -543,6 +549,8 @@ TEST_F(DiskCacheBackendTest, ShutdownWithPendingFileIO_Fast) {
 }
 #endif
 
+// See crbug.com/330074
+#if !defined(OS_IOS)
 // Tests that one cache instance is not affected by another one going away.
 TEST_F(DiskCacheBackendTest, MultipleInstancesWithPendingFileIO) {
   base::ScopedTempDir store;
@@ -576,6 +584,7 @@ TEST_F(DiskCacheBackendTest, MultipleInstancesWithPendingFileIO) {
   // may cause issues later.
   rv = cb.GetResult(rv);
 }
+#endif
 
 // Tests that we deal with background-thread pending operations.
 void DiskCacheBackendTest::BackendShutdownWithPendingIO(bool fast) {
@@ -2719,6 +2728,21 @@ TEST_F(DiskCacheTest, Backend_UsageStatsTimer) {
   // Wait for a callback that never comes... about 2 secs :). The message loop
   // has to run to allow invocation of the usage timer.
   helper.WaitUntilCacheIoFinished(1);
+}
+
+TEST_F(DiskCacheBackendTest, TimerNotCreated) {
+  ASSERT_TRUE(CopyTestCache("wrong_version"));
+
+  scoped_ptr<disk_cache::BackendImpl> cache;
+  cache.reset(new disk_cache::BackendImpl(
+      cache_path_, base::MessageLoopProxy::current().get(), NULL));
+  ASSERT_TRUE(NULL != cache.get());
+  cache->SetUnitTestMode();
+  ASSERT_NE(net::OK, cache->SyncInit());
+
+  ASSERT_TRUE(NULL == cache->GetTimerForTest());
+
+  DisableIntegrityCheck();
 }
 
 TEST_F(DiskCacheBackendTest, Backend_UsageStats) {

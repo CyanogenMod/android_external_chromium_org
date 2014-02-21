@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "tools/gn/builder_record.h"
 #include "tools/gn/config_values_extractors.h"
 #include "tools/gn/err.h"
@@ -66,6 +67,48 @@ std::string GetVCOptimization(std::vector<std::string>* cflags) {
   return "'2'";  // Default value.
 }
 
+// Returns the value from the already-filled in cflags for the processor
+// architecture to set in the GYP file. Additionally, this removes the flag
+// from the given vector so we don't get duplicates.
+std::string GetMacArch(std::vector<std::string>* cflags) {
+  // Searches for the "-arch" option and returns the corresponding GYP value.
+  for (size_t i = 0; i < cflags->size(); i++) {
+    const std::string& cur = (*cflags)[i];
+    if (cur == "-arch") {
+      // This is the first part of a list with ["-arch", "i386"], return the
+      // following item, and delete both of them.
+      if (i < cflags->size() - 1) {
+        std::string ret = (*cflags)[i + 1];
+        cflags->erase(cflags->begin() + i, cflags->begin() + i + 2);
+        return ret;
+      }
+    } else if (StartsWithASCII(cur, "-arch ", true)) {
+      // The arch was passed as one GN string value, e.g. "-arch i386". Return
+      // the stuff following the space and delete the item.
+      std::string ret = cur.substr(6);
+      cflags->erase(cflags->begin() + i);
+      return ret;
+    }
+  }
+  return std::string();
+}
+
+// Searches for -miphoneos-version-min, returns the resulting value, and
+// removes it from the list. Returns the empty string if it's not found.
+std::string GetIPhoneVersionMin(std::vector<std::string>* cflags) {
+  // Searches for the "-arch" option and returns the corresponding GYP value.
+  const char prefix[] = "-miphoneos-version-min=";
+  for (size_t i = 0; i < cflags->size(); i++) {
+    const std::string& cur = (*cflags)[i];
+    if (StartsWithASCII(cur, prefix, true)) {
+      std::string result = cur.substr(arraysize(prefix) - 1);
+      cflags->erase(cflags->begin() + i);
+      return result;
+    }
+  }
+  return std::string();
+}
+
 // Finds all values from the given getter from all configs in the given list,
 // and adds them to the given result vector.
 template<typename T>
@@ -81,15 +124,49 @@ void FillConfigListValues(
   }
 }
 
+bool IsClang(const Target* target) {
+  const Value* is_clang =
+      target->settings()->base_config()->GetValue("is_clang");
+  return is_clang && is_clang->type() == Value::BOOLEAN &&
+      is_clang->boolean_value();
+}
+
+bool IsIOS(const Target* target) {
+  const Value* is_ios = target->settings()->base_config()->GetValue("is_ios");
+  return is_ios && is_ios->type() == Value::BOOLEAN && is_ios->boolean_value();
+}
+
+// Returns true if the current target is an iOS simulator build.
+bool IsIOSSimulator(const std::vector<std::string>& cflags) {
+  // Search for the sysroot flag. We expect one flag to be the
+  // switch, and the following one to be the value.
+  const char sysroot[] = "-isysroot";
+  for (size_t i = 0; i < cflags.size(); i++) {
+    const std::string& cur = cflags[i];
+    if (cur == sysroot) {
+      if (i == cflags.size() - 1)
+        return false;  // No following value.
+
+      // The argument is a file path, we check the prefix of the file name.
+      base::FilePath path(UTF8ToFilePath(cflags[i + 1]));
+      std::string path_file_part = FilePathToUTF8(path.BaseName());
+      return StartsWithASCII(path_file_part, "iphonesimulator", false);
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 GypBinaryTargetWriter::Flags::Flags() {}
 GypBinaryTargetWriter::Flags::~Flags() {}
 
 GypBinaryTargetWriter::GypBinaryTargetWriter(const TargetGroup& group,
+                                             const Toolchain* debug_toolchain,
                                              const SourceDir& gyp_dir,
                                              std::ostream& out)
-    : GypTargetWriter(group.debug->item()->AsTarget(), gyp_dir, out),
+    : GypTargetWriter(group.get()->item()->AsTarget(), debug_toolchain,
+                      gyp_dir, out),
       group_(group) {
 }
 
@@ -154,23 +231,52 @@ void GypBinaryTargetWriter::WriteType(int indent) {
 
   if (target_->hard_dep())
     Indent(indent) << "'hard_dependency': 1,\n";
+
+  // Write out the toolsets depending on whether there is a host build. If no
+  // toolset is specified, GYP assumes a target build.
+  if (group_.debug && group_.host_debug)
+    Indent(indent) << "'toolsets': ['target', 'host'],\n";
+  else if (group_.host_debug)
+    Indent(indent) << "'toolsets': ['host'],\n";
 }
 
 void GypBinaryTargetWriter::WriteVCConfiguration(int indent) {
   Indent(indent) << "'configurations': {\n";
 
   Indent(indent + kExtraIndent) << "'Debug': {\n";
+  Indent(indent + kExtraIndent * 2) <<
+      "'msvs_configuration_platform': 'Win32',\n";
   Flags debug_flags(FlagsFromTarget(group_.debug->item()->AsTarget()));
   WriteVCFlags(debug_flags, indent + kExtraIndent * 2);
   Indent(indent + kExtraIndent) << "},\n";
 
   Indent(indent + kExtraIndent) << "'Release': {\n";
+  Indent(indent + kExtraIndent * 2) <<
+      "'msvs_configuration_platform': 'Win32',\n";
   Flags release_flags(FlagsFromTarget(group_.release->item()->AsTarget()));
   WriteVCFlags(release_flags, indent + kExtraIndent * 2);
   Indent(indent + kExtraIndent) << "},\n";
 
-  Indent(indent + kExtraIndent) << "'Debug_x64': {},\n";
-  Indent(indent + kExtraIndent) << "'Release_x64': {},\n";
+  // Note that we always need Debug_x64 and Release_x64 defined or GYP will get
+  // confused, but we ca leave them empty if there's no 64-bit target.
+  Indent(indent + kExtraIndent) << "'Debug_x64': {\n";
+  if (group_.debug64) {
+    Indent(indent + kExtraIndent * 2) <<
+        "'msvs_configuration_platform': 'x64',\n";
+    Flags flags(FlagsFromTarget(group_.debug64->item()->AsTarget()));
+    WriteVCFlags(flags, indent + kExtraIndent * 2);
+  }
+  Indent(indent + kExtraIndent) << "},\n";
+
+  Indent(indent + kExtraIndent) << "'Release_x64': {\n";
+  if (group_.release64) {
+    Indent(indent + kExtraIndent * 2) <<
+        "'msvs_configuration_platform': 'x64',\n";
+    Flags flags(FlagsFromTarget(group_.release64->item()->AsTarget()));
+    WriteVCFlags(flags, indent + kExtraIndent * 2);
+  }
+  Indent(indent + kExtraIndent) << "},\n";
+
   Indent(indent) << "},\n";
 
   WriteSources(target_, indent);
@@ -227,16 +333,46 @@ void GypBinaryTargetWriter::WriteLinuxConfiguration(int indent) {
 }
 
 void GypBinaryTargetWriter::WriteMacConfiguration(int indent) {
+  // The Mac flags are parameterized by the GYP generator (Ninja vs. XCode).
+  const char kNinjaGeneratorCondition[] =
+      "'conditions': [['\"<(GENERATOR)\"==\"ninja\"', {\n";
+  const char kNinjaGeneratorElse[] = "}, {\n";
+  const char kNinjaGeneratorEnd[] = "}]],\n";
+
   Indent(indent) << "'configurations': {\n";
 
+  // Debug.
   Indent(indent + kExtraIndent) << "'Debug': {\n";
-  Flags debug_flags(FlagsFromTarget(group_.debug->item()->AsTarget()));
-  WriteMacFlags(debug_flags, indent + kExtraIndent * 2);
+  Indent(indent + kExtraIndent * 2) << kNinjaGeneratorCondition;
+  {
+    // Ninja generator.
+    WriteMacTargetAndHostFlags(group_.debug, group_.host_debug,
+                               indent + kExtraIndent * 3);
+  }
+  Indent(indent + kExtraIndent * 2) << kNinjaGeneratorElse;
+  if (group_.xcode_debug) {
+    // XCode generator.
+    WriteMacTargetAndHostFlags(group_.xcode_debug, group_.xcode_host_debug,
+                               indent + kExtraIndent * 3);
+  }
+  Indent(indent + kExtraIndent * 2) << kNinjaGeneratorEnd;
   Indent(indent + kExtraIndent) << "},\n";
 
+  // Release.
   Indent(indent + kExtraIndent) << "'Release': {\n";
-  Flags release_flags(FlagsFromTarget(group_.release->item()->AsTarget()));
-  WriteMacFlags(release_flags, indent + kExtraIndent * 2);
+  Indent(indent + kExtraIndent * 2) << kNinjaGeneratorCondition;
+  {
+    // Ninja generator.
+    WriteMacTargetAndHostFlags(group_.release, group_.host_release,
+                               indent + kExtraIndent * 3);
+  }
+  Indent(indent + kExtraIndent * 2) << kNinjaGeneratorElse;
+  if (group_.xcode_release) {
+    // XCode generator.
+    WriteMacTargetAndHostFlags(group_.xcode_release, group_.xcode_host_release,
+                               indent + kExtraIndent * 3);
+  }
+  Indent(indent + kExtraIndent * 2) << kNinjaGeneratorEnd;
   Indent(indent + kExtraIndent) << "},\n";
 
   Indent(indent) << "},\n";
@@ -294,7 +430,9 @@ void GypBinaryTargetWriter::WriteVCFlags(Flags& flags, int indent) {
   Indent(indent) << "},\n";
 }
 
-void GypBinaryTargetWriter::WriteMacFlags(Flags& flags, int indent) {
+void GypBinaryTargetWriter::WriteMacFlags(const Target* target,
+                                          Flags& flags,
+                                          int indent) {
   WriteNamedArray("defines", flags.defines, indent);
   WriteIncludeDirs(flags, indent);
 
@@ -326,6 +464,39 @@ void GypBinaryTargetWriter::WriteMacFlags(Flags& flags, int indent) {
 
   Indent(indent) << "'xcode_settings': {\n";
 
+  // Architecture. GYP reads this value and uses it to generate the -arch
+  // flag, so we always want to remove it from the cflags (which is a side
+  // effect of what GetMacArch does), even in cases where we don't use the
+  // value (in the iOS arm below).
+  std::string arch = GetMacArch(&flags.cflags);
+  if (IsIOS(target)) {
+    // When writing an iOS "target" (not host) target, we set VALID_ARCHS
+    // instead of ARCHS and always use this hardcoded value. This matches the
+    // GYP build.
+    Indent(indent + kExtraIndent) << "'VALID_ARCHS': 'armv7 i386',\n";
+
+    // Tell XCode to target both iPhone and iPad. GN has no such concept.
+    Indent(indent + kExtraIndent) << "'TARGETED_DEVICE_FAMILY': '1,2',\n";
+
+    if (IsIOSSimulator(flags.cflags)) {
+      Indent(indent + kExtraIndent) << "'SDKROOT': 'iphonesimulator',\n";
+    } else {
+      Indent(indent + kExtraIndent) << "'SDKROOT': 'iphoneos',\n";
+      std::string min_ver = GetIPhoneVersionMin(&flags.cflags);
+      if (!min_ver.empty()) {
+        Indent(indent + kExtraIndent) << "'IPHONEOS_DEPLOYMENT_TARGET': '"
+                                      << min_ver << "',\n";
+      }
+    }
+  } else {
+    // When doing regular Mac and "host" iOS (which look like regular Mac)
+    // builds, we can set the ARCHS value to what's specified in the build.
+    if (arch == "i386")
+      Indent(indent + kExtraIndent) << "'ARCHS': [ 'i386' ],\n";
+    else if (arch == "x86_64")
+      Indent(indent + kExtraIndent) << "'ARCHS': [ 'x86_64' ],\n";
+  }
+
   // C/C++ flags.
   if (!flags.cflags.empty() || !flags.cflags_c.empty() ||
       !flags.cflags_objc.empty()) {
@@ -347,19 +518,29 @@ void GypBinaryTargetWriter::WriteMacFlags(Flags& flags, int indent) {
   // Ld flags. Don't write these for static libraries. Otherwise, they'll be
   // passed to the library tool which doesn't expect it (the toolchain does
   // not use ldflags so these are ignored in the normal build).
-  if (target_->output_type() != Target::STATIC_LIBRARY)
+  if (target->output_type() != Target::STATIC_LIBRARY)
     WriteNamedArray("OTHER_LDFLAGS", flags.ldflags, indent + kExtraIndent);
 
-  base::FilePath clang_path =
-      target_->settings()->build_settings()->GetFullPath(SourceFile(
-          "//third_party/llvm-build/Release+Asserts/bin/clang"));
-  base::FilePath clang_pp_path =
-      target_->settings()->build_settings()->GetFullPath(SourceFile(
-          "//third_party/llvm-build/Release+Asserts/bin/clang++"));
+  // Write the compiler that XCode should use. When we're using clang, we want
+  // the custom one, otherwise don't add this and the default compiler will be
+  // used.
+  //
+  // TODO(brettw) this is a hack. We could add a way for the GN build to set
+  // these values but as far as I can see this is the only use for them, so
+  // currently we manually check the build config's is_clang value.
+  if (IsClang(target)) {
+    base::FilePath clang_path =
+        target_->settings()->build_settings()->GetFullPath(SourceFile(
+            "//third_party/llvm-build/Release+Asserts/bin/clang"));
+    base::FilePath clang_pp_path =
+        target_->settings()->build_settings()->GetFullPath(SourceFile(
+            "//third_party/llvm-build/Release+Asserts/bin/clang++"));
 
-  Indent(indent) << "'CC': '" << FilePathToUTF8(clang_path) << "',\n";
-  Indent(indent) << "'LDPLUSPLUS': '"
-                 << FilePathToUTF8(clang_pp_path) << "',\n";
+    Indent(indent + kExtraIndent)
+        << "'CC': '" << FilePathToUTF8(clang_path) << "',\n";
+    Indent(indent + kExtraIndent)
+        << "'LDPLUSPLUS': '" << FilePathToUTF8(clang_pp_path) << "',\n";
+  }
 
   Indent(indent) << "},\n";
 }
@@ -399,6 +580,40 @@ void GypBinaryTargetWriter::WriteLinuxFlags(const Flags& flags, int indent) {
     out_ << "',";
   }
   out_ << " ],\n";
+}
+
+void GypBinaryTargetWriter::WriteMacTargetAndHostFlags(
+    const BuilderRecord* target,
+    const BuilderRecord* host,
+    int indent) {
+  // The Mac flags are sometimes (when cross-compiling) also parameterized on
+  // the toolset.
+  const char kToolsetTargetCondition[] =
+      "'target_conditions': [['_toolset==\"target\"', {\n";
+  const char kToolsetTargetElse[] = "}, {\n";
+  const char kToolsetTargetEnd[] = "}]],\n";
+
+  int extra_indent = 0;
+  if (host) {
+    // Write out the first part of the conditional.
+    Indent(indent) << kToolsetTargetCondition;
+    extra_indent = kExtraIndent;
+  }
+
+  // Always write the target flags (may or may not be inside a target
+  // conditional).
+  {
+    Flags flags(FlagsFromTarget(target->item()->AsTarget()));
+    WriteMacFlags(target->item()->AsTarget(), flags, indent + extra_indent);
+  }
+
+  // Now optionally write the host conditional arm.
+  if (host) {
+    Indent(indent) << kToolsetTargetElse;
+    Flags flags(FlagsFromTarget(host->item()->AsTarget()));
+    WriteMacFlags(host->item()->AsTarget(), flags, indent + kExtraIndent);
+    Indent(indent) << kToolsetTargetEnd;
+  }
 }
 
 void GypBinaryTargetWriter::WriteSources(const Target* target, int indent) {
@@ -461,7 +676,7 @@ void GypBinaryTargetWriter::WriteDirectDependentSettings(int indent) {
   else if (target_->settings()->IsWin())
     WriteVCFlags(flags, indent + kExtraIndent);
   else if (target_->settings()->IsMac())
-    WriteMacFlags(flags, indent + kExtraIndent);
+    WriteMacFlags(target_, flags, indent + kExtraIndent);
   Indent(indent) << "},\n";
 }
 
@@ -476,7 +691,7 @@ void GypBinaryTargetWriter::WriteAllDependentSettings(int indent) {
   else if (target_->settings()->IsWin())
     WriteVCFlags(flags, indent + kExtraIndent);
   else if (target_->settings()->IsMac())
-    WriteMacFlags(flags, indent + kExtraIndent);
+    WriteMacFlags(target_, flags, indent + kExtraIndent);
   Indent(indent) << "},\n";
 }
 

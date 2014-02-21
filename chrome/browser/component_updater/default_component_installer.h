@@ -18,6 +18,8 @@ class DictionaryValue;
 class FilePath;
 }  // namespace base
 
+namespace component_updater {
+
 // Components should use a DefaultComponentInstaller by defining a class that
 // implements the members of ComponentInstallerTraits, and then registering a
 // DefaultComponentInstaller that has been constructed with an instance of that
@@ -28,6 +30,9 @@ class ComponentInstallerTraits {
 
   // Verifies that a working installation resides within the directory specified
   // by |dir|. |dir| is of the form <base directory>/<version>.
+  // Called only from a thread belonging to a blocking thread pool.
+  // The implementation of this function must be efficient since the function
+  // can be called when Chrome starts.
   virtual bool VerifyInstallation(const base::FilePath& dir) const = 0;
 
   // Returns true if the component can be automatically updated. Called once
@@ -102,5 +107,7 @@ class DefaultComponentInstaller : public ComponentInstaller {
 
   DISALLOW_COPY_AND_ASSIGN(DefaultComponentInstaller);
 };
+
+}  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_DEFAULT_COMPONENT_INSTALLER_H_

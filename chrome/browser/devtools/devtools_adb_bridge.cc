@@ -67,17 +67,12 @@ const char kPageReloadCommand[] = "Page.reload";
 const char kPageNavigateCommand[] = "Page.navigate";
 
 const char kChromeDefaultName[] = "Chrome";
-const char kChromeDefaultActivity[] = "com.google.android.apps.chrome.Main";
 const char kChromeDefaultSocket[] = "chrome_devtools_remote";
 const int kMinVersionNewWithURL = 32;
 const int kNewPageNavigateDelayMs = 500;
 
 const char kWebViewSocketPrefix[] = "webview_devtools_remote";
 const char kWebViewNameTemplate[] = "WebView in %s";
-
-#if defined(DEBUG_DEVTOOLS)
-const char kLocalChrome[] = "Local Chrome";
-#endif  // defined(DEBUG_DEVTOOLS)
 
 typedef DevToolsAdbBridge::Callback Callback;
 typedef std::vector<scoped_refptr<AndroidDevice> >
@@ -87,7 +82,6 @@ typedef base::Callback<void(const AndroidDevices&)> AndroidDevicesCallback;
 
 struct BrowserDescriptor {
   const char* package;
-  const char* launch_activity;
   const char* socket;
   const char* display_name;
 };
@@ -95,43 +89,36 @@ struct BrowserDescriptor {
 const BrowserDescriptor kBrowserDescriptors[] = {
   {
     "com.android.chrome",
-    kChromeDefaultActivity,
     kChromeDefaultSocket,
     kChromeDefaultName
   },
   {
     "com.chrome.beta",
-    kChromeDefaultActivity,
     kChromeDefaultSocket,
     "Chrome Beta"
   },
   {
     "com.google.android.apps.chrome_dev",
-    kChromeDefaultActivity,
     kChromeDefaultSocket,
     "Chrome Dev"
   },
   {
     "com.google.android.apps.chrome",
-    kChromeDefaultActivity,
     kChromeDefaultSocket,
     "Chromium"
   },
   {
     "org.chromium.content_shell_apk",
-    "org.chromium.content_shell_apk.ContentShellActivity",
     "content_shell_devtools_remote",
     "Content Shell"
   },
   {
     "org.chromium.chrome.testshell",
-    "org.chromium.chrome.testshell.ChromiumTestShellActivity",
     "chromium_testshell_devtools_remote",
     "Chromium Test Shell"
   },
   {
     "org.chromium.android_webview.shell",
-    "org.chromium.android_webview.shell.AwShellActivity",
     "webview_devtools_remote",
     "WebView Test Shell"
   }
@@ -311,7 +298,7 @@ AdbPagesCommand::AdbPagesCommand(
     const Callback& callback)
     : adb_thread_(adb_thread),
       callback_(callback),
-      device_providers_(device_providers){
+      device_providers_(device_providers) {
   remote_devices_.reset(new DevToolsAdbBridge::RemoteDevices());
 
   ProcessDeviceProviders();
@@ -361,24 +348,6 @@ void AdbPagesCommand::ProcessSerials() {
   }
 
   scoped_refptr<AndroidDevice> device = current_device();
-#if defined(DEBUG_DEVTOOLS)
-  // For desktop remote debugging.
-  if (device->serial().empty()) {
-    device->set_model(kLocalChrome);
-    remote_devices_->push_back(
-        new DevToolsAdbBridge::RemoteDevice(device));
-    scoped_refptr<DevToolsAdbBridge::RemoteBrowser> remote_browser =
-        new DevToolsAdbBridge::RemoteBrowser(
-            adb_thread_, device, std::string());
-    remote_browser->set_display_name(kChromeDefaultName);
-    remote_devices_->back()->AddBrowser(remote_browser);
-    browsers_.push_back(remote_browser);
-    device->HttpQuery(
-        std::string(), kVersionRequest,
-        base::Bind(&AdbPagesCommand::ReceivedVersion, this));
-    return;
-  }
-#endif  // defined(DEBUG_DEVTOOLS)
 
   if (device->is_connected()) {
     device->RunCommand(kDeviceModelCommand,
@@ -461,11 +430,6 @@ void AdbPagesCommand::ProcessSockets() {
     return;
   }
 
-  if (!current_device()->serial().empty() &&
-     current_browser()->socket().empty()) {
-    NextBrowser();
-    return;
-  }
   current_device()->HttpQuery(
       current_browser()->socket(),
       kVersionRequest,
@@ -766,11 +730,11 @@ DevToolsAdbBridge::Factory::BuildServiceInstanceFor(
 class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
                           public AdbWebSocket::Delegate {
  public:
-   static void Create(const std::string& id,
-                      scoped_refptr<DevToolsAdbBridge::RemoteBrowser> browser,
-                      const std::string& debug_url,
-                      const std::string& frontend_url,
-                      Profile* profile) {
+  static void Create(const std::string& id,
+                     scoped_refptr<DevToolsAdbBridge::RemoteBrowser> browser,
+                     const std::string& debug_url,
+                     const std::string& frontend_url,
+                     Profile* profile) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     AgentHostDelegates::iterator it =
         g_host_delegates.Get().find(id);
@@ -794,7 +758,6 @@ class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
       Profile* profile)
       : id_(id),
         frontend_url_(frontend_url),
-        adb_message_loop_(adb_message_loop),
         profile_(profile) {
     web_socket_ = new AdbWebSocket(
         device, socket_name, debug_url, adb_message_loop, this);
@@ -802,10 +765,10 @@ class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
 
     if (socket_name.find(kWebViewSocketPrefix) == 0) {
       content::RecordAction(
-          content::UserMetricsAction("DevTools_InspectAndroidWebView"));
+          base::UserMetricsAction("DevTools_InspectAndroidWebView"));
     } else {
       content::RecordAction(
-          content::UserMetricsAction("DevTools_InspectAndroidPage"));
+          base::UserMetricsAction("DevTools_InspectAndroidPage"));
     }
   }
 
@@ -851,7 +814,6 @@ class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
 
   const std::string id_;
   const std::string frontend_url_;
-  base::MessageLoop* adb_message_loop_;
   Profile* profile_;
 
   scoped_ptr<content::DevToolsExternalAgentProxy> proxy_;
@@ -882,7 +844,7 @@ class RemotePageTarget : public DevToolsTargetImpl {
   scoped_refptr<DevToolsAdbBridge::RemoteBrowser> browser_;
   std::string debug_url_;
   std::string frontend_url_;
-  std::string agent_id_;
+  std::string remote_id_;
   DISALLOW_COPY_AND_ASSIGN(RemotePageTarget);
 };
 
@@ -891,12 +853,12 @@ RemotePageTarget::RemotePageTarget(
     const base::DictionaryValue& value)
     : browser_(browser) {
   type_ = "adb_page";
-  value.GetString("id", &id_);
+  value.GetString("id", &remote_id_);
   std::string url;
   value.GetString("url", &url);
   url_ = GURL(url);
   value.GetString("title", &title_);
-  title_ = UTF16ToUTF8(net::UnescapeForHTML(UTF8ToUTF16(title_)));
+  title_ = base::UTF16ToUTF8(net::UnescapeForHTML(base::UTF8ToUTF16(title_)));
   value.GetString("description", &description_);
   std::string favicon_url;
   value.GetString("faviconUrl", &favicon_url);
@@ -904,12 +866,12 @@ RemotePageTarget::RemotePageTarget(
   value.GetString("webSocketDebuggerUrl", &debug_url_);
   value.GetString("devtoolsFrontendUrl", &frontend_url_);
 
-  if (id_.empty() && !debug_url_.empty())  {
+  if (remote_id_.empty() && !debug_url_.empty())  {
     // Target id is not available until Chrome 26. Use page id at the end of
     // debug_url_ instead. For attached targets the id will remain empty.
     std::vector<std::string> parts;
     Tokenize(debug_url_, "/", &parts);
-    id_ = parts[parts.size()-1];
+    remote_id_ = parts[parts.size()-1];
   }
 
   if (debug_url_.find("ws://") == 0)
@@ -923,10 +885,10 @@ RemotePageTarget::RemotePageTarget(
   if (frontend_url_.find("http:") == 0)
     frontend_url_ = "https:" + frontend_url_.substr(5);
 
-  agent_id_ = base::StringPrintf("%s:%s:%s",
+  id_ = base::StringPrintf("%s:%s:%s",
       browser_->device()->serial().c_str(),
       browser_->socket().c_str(),
-      id_.c_str());
+      remote_id_.c_str());
 }
 
 RemotePageTarget::~RemotePageTarget() {
@@ -937,14 +899,16 @@ bool RemotePageTarget::IsAttached() const {
 }
 
 void RemotePageTarget::Inspect(Profile* profile) const {
-  std::string request = base::StringPrintf(kActivatePageRequest, id_.c_str());
+  std::string request = base::StringPrintf(kActivatePageRequest,
+                                           remote_id_.c_str());
   base::Closure inspect_callback = base::Bind(&AgentHostDelegate::Create,
       id_, browser_, debug_url_, frontend_url_, profile);
   browser_->SendJsonRequest(request, inspect_callback);
 }
 
 bool RemotePageTarget::Activate() const {
-  std::string request = base::StringPrintf(kActivatePageRequest, id_.c_str());
+  std::string request = base::StringPrintf(kActivatePageRequest,
+                                           remote_id_.c_str());
   browser_->SendJsonRequest(request, base::Closure());
   return true;
 }
@@ -952,7 +916,8 @@ bool RemotePageTarget::Activate() const {
 bool RemotePageTarget::Close() const {
   if (IsAttached())
     return false;
-  std::string request = base::StringPrintf(kClosePageRequest, id_.c_str());
+  std::string request = base::StringPrintf(kClosePageRequest,
+                                           remote_id_.c_str());
   browser_->SendJsonRequest(request, base::Closure());
   return true;
 }

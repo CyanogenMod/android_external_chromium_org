@@ -15,7 +15,6 @@
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_move_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/client/window_types.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -25,9 +24,10 @@
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme_aura.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/views_delegate.h"
@@ -39,20 +39,21 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
+#include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 #endif
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #endif
 
 #if !defined(OS_CHROMEOS)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #endif
 
 namespace views {
@@ -82,15 +83,15 @@ NativeWidgetAura::NativeWidgetAura(internal::NativeWidgetDelegate* delegate)
 }
 
 // static
-gfx::Font NativeWidgetAura::GetWindowTitleFont() {
+gfx::FontList NativeWidgetAura::GetWindowTitleFontList() {
 #if defined(OS_WIN)
   NONCLIENTMETRICS ncm;
   base::win::GetNonClientMetrics(&ncm);
   l10n_util::AdjustUIFont(&(ncm.lfCaptionFont));
   base::win::ScopedHFONT caption_font(CreateFontIndirect(&(ncm.lfCaptionFont)));
-  return gfx::Font(caption_font);
+  return gfx::FontList(gfx::Font(caption_font));
 #else
-  return gfx::Font();
+  return gfx::FontList();
 #endif
 }
 
@@ -130,8 +131,8 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   if (!params.child) {
     // Set up the transient child before the window is added. This way the
     // LayoutManager knows the window has a transient parent.
-    if (parent && parent->type() != aura::client::WINDOW_TYPE_UNKNOWN) {
-      parent->AddTransientChild(window_);
+    if (parent && parent->type() != ui::wm::WINDOW_TYPE_UNKNOWN) {
+      corewm::AddTransientChild(parent, window_);
       if (!context)
         context = parent;
       parent = NULL;
@@ -194,6 +195,10 @@ NonClientFrameView* NativeWidgetAura::CreateNonClientFrameView() {
 
 bool NativeWidgetAura::ShouldUseNativeFrame() const {
   // There is only one frame type for aura.
+  return false;
+}
+
+bool NativeWidgetAura::ShouldWindowContentsBeTransparent() const {
   return false;
 }
 
@@ -310,9 +315,9 @@ void NativeWidgetAura::CenterWindow(const gfx::Size& size) {
 
   // If |window_|'s transient parent's bounds are big enough to fit it, then we
   // center it with respect to the transient parent.
-  if (window_->transient_parent()) {
-    gfx::Rect transient_parent_rect = window_->transient_parent()->
-        GetBoundsInRootWindow();
+  if (views::corewm::GetTransientParent(window_)) {
+    gfx::Rect transient_parent_rect =
+        views::corewm::GetTransientParent(window_)->GetBoundsInRootWindow();
     transient_parent_rect.Intersect(work_area);
     if (transient_parent_rect.height() >= size.height() &&
         transient_parent_rect.width() >= size.width())
@@ -345,7 +350,7 @@ void NativeWidgetAura::GetWindowPlacement(
       ui::SHOW_STATE_DEFAULT;
 }
 
-bool NativeWidgetAura::SetWindowTitle(const string16& title) {
+bool NativeWidgetAura::SetWindowTitle(const base::string16& title) {
   if (!window_)
     return false;
   if (window_->title() == title)
@@ -461,7 +466,7 @@ void NativeWidgetAura::CloseNow() {
 }
 
 void NativeWidgetAura::Show() {
-  ShowWithWindowState(ui::SHOW_STATE_INACTIVE);
+  ShowWithWindowState(ui::SHOW_STATE_NORMAL);
 }
 
 void NativeWidgetAura::Hide() {
@@ -486,13 +491,9 @@ void NativeWidgetAura::ShowWithWindowState(ui::WindowShowState state) {
     if (state != ui::SHOW_STATE_INACTIVE)
       Activate();
     // SetInitialFocus() should be always be called, even for
-    // SHOW_STATE_INACTIVE. When a frameless modal dialog is created by
-    // a widget of TYPE_WINDOW_FRAMELESS, Widget::Show() will call into
-    // this function with the window state SHOW_STATE_INACTIVE,
-    // SetInitialFoucs() has to be called so that the dialog can get focus.
-    // This also matches NativeWidgetWin which invokes SetInitialFocus
-    // regardless of show state.
-    SetInitialFocus();
+    // SHOW_STATE_INACTIVE. If the window has to stay inactive, the method will
+    // do the right thing.
+    SetInitialFocus(state);
   }
 }
 
@@ -522,14 +523,7 @@ void NativeWidgetAura::Deactivate() {
 }
 
 bool NativeWidgetAura::IsActive() const {
-  if (!window_)
-    return false;
-
-  // We may up here during destruction of the root, in which case
-  // GetRootWindow() returns NULL (~RootWindow() has run and we're in ~Window).
-  aura::Window* root = window_->GetRootWindow();
-  return root &&
-      aura::client::GetActivationClient(root)->GetActiveWindow() == window_;
+  return window_ && corewm::IsActiveWindow(window_);
 }
 
 void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
@@ -648,27 +642,32 @@ Widget::MoveLoopResult NativeWidgetAura::RunMoveLoop(
     Widget::MoveLoopEscapeBehavior escape_behavior) {
   // |escape_behavior| is only needed on windows when running the native message
   // loop.
-  if (window_ && window_->parent() &&
-      aura::client::GetWindowMoveClient(window_->parent())) {
-    SetCapture();
-    aura::client::WindowMoveSource window_move_source =
-        source == Widget::MOVE_LOOP_SOURCE_MOUSE ?
-        aura::client::WINDOW_MOVE_SOURCE_MOUSE :
-        aura::client::WINDOW_MOVE_SOURCE_TOUCH;
-    if (aura::client::GetWindowMoveClient(window_->parent())->RunMoveLoop(
-            window_, drag_offset, window_move_source) ==
-        aura::client::MOVE_SUCCESSFUL) {
-      return Widget::MOVE_LOOP_SUCCESSFUL;
-    }
+  if (!window_ || !window_->GetRootWindow())
+    return Widget::MOVE_LOOP_CANCELED;
+  aura::client::WindowMoveClient* move_client =
+      aura::client::GetWindowMoveClient(window_->GetRootWindow());
+  if (!move_client)
+    return Widget::MOVE_LOOP_CANCELED;
+
+  SetCapture();
+  aura::client::WindowMoveSource window_move_source =
+      source == Widget::MOVE_LOOP_SOURCE_MOUSE ?
+      aura::client::WINDOW_MOVE_SOURCE_MOUSE :
+      aura::client::WINDOW_MOVE_SOURCE_TOUCH;
+  if (move_client->RunMoveLoop(window_, drag_offset, window_move_source) ==
+          aura::client::MOVE_SUCCESSFUL) {
+    return Widget::MOVE_LOOP_SUCCESSFUL;
   }
   return Widget::MOVE_LOOP_CANCELED;
 }
 
 void NativeWidgetAura::EndMoveLoop() {
-  if (window_ && window_->parent() &&
-      aura::client::GetWindowMoveClient(window_->parent())) {
-    aura::client::GetWindowMoveClient(window_->parent())->EndMoveLoop();
-  }
+  if (!window_ || !window_->GetRootWindow())
+    return;
+  aura::client::WindowMoveClient* move_client =
+      aura::client::GetWindowMoveClient(window_->GetRootWindow());
+  if (move_client)
+    move_client->EndMoveLoop();
 }
 
 void NativeWidgetAura::SetVisibilityChangedAnimationsEnabled(bool value) {
@@ -678,7 +677,7 @@ void NativeWidgetAura::SetVisibilityChangedAnimationsEnabled(bool value) {
 
 ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 #if !defined(OS_CHROMEOS)
-  return DesktopRootWindowHost::GetNativeTheme(window_);
+  return DesktopWindowTreeHost::GetNativeTheme(window_);
 #else
   return ui::NativeThemeAura::instance();
 #endif
@@ -711,8 +710,13 @@ gfx::Size NativeWidgetAura::GetMaximumSize() const {
 
 void NativeWidgetAura::OnBoundsChanged(const gfx::Rect& old_bounds,
                                        const gfx::Rect& new_bounds) {
-  if (old_bounds.origin() != new_bounds.origin())
+  // Assume that if the old bounds was completely empty a move happened. This
+  // handles the case of a maximize animation acquiring the layer (acquiring a
+  // layer results in clearing the bounds).
+  if (old_bounds.origin() != new_bounds.origin() ||
+      (old_bounds == gfx::Rect(0, 0, 0, 0) && !new_bounds.IsEmpty())) {
     delegate_->OnNativeWidgetMove();
+  }
   if (old_bounds.size() != new_bounds.size())
     delegate_->OnNativeWidgetSizeChanged(new_bounds.size());
 }
@@ -878,8 +882,6 @@ void NativeWidgetAura::OnWindowActivated(aura::Window* gained_active,
       GetWidget()->GetFocusManager()->StoreFocusedView(true);
   }
   delegate_->OnNativeWidgetActivationChanged(window_ == gained_active);
-  if (IsVisible() && GetWidget()->non_client_view())
-    GetWidget()->non_client_view()->SchedulePaint();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -962,19 +964,14 @@ NativeWidgetAura::~NativeWidgetAura() {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetAura, private:
 
-void NativeWidgetAura::SetInitialFocus() {
+void NativeWidgetAura::SetInitialFocus(ui::WindowShowState show_state) {
   // The window does not get keyboard messages unless we focus it.
-  if (!GetWidget()->SetInitialFocus())
+  if (!GetWidget()->SetInitialFocus(show_state))
     window_->Focus();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, public:
-
-// static
-void Widget::NotifyLocaleChanged() {
-  // Deliberately not implemented.
-}
 
 namespace {
 #if defined(OS_WIN) || (defined(USE_X11) && !defined(OS_CHROMEOS))
@@ -994,7 +991,7 @@ void CloseWindow(aura::Window* window) {
 #if defined(OS_WIN)
 BOOL CALLBACK WindowCallbackProc(HWND hwnd, LPARAM lParam) {
   aura::Window* root_window =
-      DesktopRootWindowHostWin::GetContentWindowForHWND(hwnd);
+      DesktopWindowTreeHostWin::GetContentWindowForHWND(hwnd);
   CloseWindow(root_window);
   return TRUE;
 }
@@ -1009,9 +1006,9 @@ void Widget::CloseAllSecondaryWidgets() {
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
   std::vector<aura::Window*> open_windows =
-      DesktopRootWindowHostX11::GetAllOpenWindows();
+      DesktopWindowTreeHostX11::GetAllOpenWindows();
   std::for_each(open_windows.begin(), open_windows.end(), CloseWindow);
-  DesktopRootWindowHostX11::CleanUpWindowList();
+  DesktopWindowTreeHostX11::CleanUpWindowList();
 #endif
 }
 
@@ -1082,7 +1079,7 @@ void NativeWidgetPrivate::GetAllChildWidgets(gfx::NativeView native_view,
 void NativeWidgetPrivate::GetAllOwnedWidgets(gfx::NativeView native_view,
                                              Widget::Widgets* owned) {
   const aura::Window::Windows& transient_children =
-      native_view->transient_children();
+      views::corewm::GetTransientChildren(native_view);
   for (aura::Window::Windows::const_iterator i = transient_children.begin();
        i != transient_children.end(); ++i) {
     NativeWidgetPrivate* native_widget = static_cast<NativeWidgetPrivate*>(

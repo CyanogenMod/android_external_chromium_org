@@ -29,12 +29,12 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
-#include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/browser.h"
@@ -53,7 +53,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/find_in_page_observer.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -83,7 +82,6 @@
 #include "ui/aura/root_window.h"
 #endif
 
-using content::BrowserThread;
 using content::DomOperationNotificationDetails;
 using content::NativeWebKeyboardEvent;
 using content::NavigationController;
@@ -138,7 +136,7 @@ Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
 
 }  // namespace
 
-bool GetCurrentTabTitle(const Browser* browser, string16* title) {
+bool GetCurrentTabTitle(const Browser* browser, base::string16* title) {
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   if (!web_contents)
@@ -267,6 +265,13 @@ void NavigateToURLBlockUntilNavigationsComplete(Browser* browser,
       BROWSER_TEST_WAIT_FOR_NAVIGATION);
 }
 
+void WaitUntilDevToolsWindowLoaded(DevToolsWindow* window) {
+  scoped_refptr<content::MessageLoopRunner> runner =
+      new content::MessageLoopRunner;
+  window->SetLoadCompletedCallback(runner->QuitClosure());
+  runner->Run();
+}
+
 base::FilePath GetTestFilePath(const base::FilePath& dir,
                                const base::FilePath& file) {
   base::FilePath path;
@@ -333,8 +338,11 @@ AppModalDialog* WaitForAppModalDialog() {
   return content::Source<AppModalDialog>(observer.source()).ptr();
 }
 
-int FindInPage(WebContents* tab, const string16& search_string,
-               bool forward, bool match_case, int* ordinal,
+int FindInPage(WebContents* tab,
+               const base::string16& search_string,
+               bool forward,
+               bool match_case,
+               int* ordinal,
                gfx::Rect* selection_rect) {
   FindTabHelper* find_tab_helper = FindTabHelper::FromWebContents(tab);
   find_tab_helper->StartFinding(search_string, forward, match_case);
@@ -390,7 +398,7 @@ void SendToOmniboxAndSubmit(LocationBar* location_bar,
                             const std::string& input) {
   OmniboxView* omnibox = location_bar->GetOmniboxView();
   omnibox->model()->OnSetFocus(false);
-  omnibox->SetUserText(ASCIIToUTF16(input));
+  omnibox->SetUserText(base::ASCIIToUTF16(input));
   location_bar->AcceptInput();
   while (!omnibox->model()->autocomplete_controller()->done()) {
     content::WindowedNotificationObserver observer(
@@ -523,7 +531,7 @@ HistoryEnumerator::HistoryEnumerator(Profile* profile) {
   HistoryService* hs = HistoryServiceFactory::GetForProfile(
       profile, Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(
-      string16(),
+      base::string16(),
       history::QueryOptions(),
       &consumer_,
       base::Bind(&HistoryEnumerator::HistoryQueryComplete,

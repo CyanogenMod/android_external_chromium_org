@@ -10,14 +10,12 @@
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/shell.h"
-#include "ash/wm/event_rewriter_event_filter.h"
 #include "base/command_line.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
-#include "chrome/browser/ui/ash/event_rewriter.h"
 #include "chrome/browser/ui/ash/screenshot_taker.h"
 #include "chrome/common/chrome_switches.h"
 #include "ui/aura/env.h"
@@ -58,14 +56,12 @@ void OpenAsh() {
 
   // Shell takes ownership of ChromeShellDelegate.
   ash::Shell* shell = ash::Shell::CreateInstance(new ChromeShellDelegate);
-  shell->event_rewriter_filter()->SetEventRewriterDelegate(
-      scoped_ptr<ash::EventRewriterDelegate>(new EventRewriter).Pass());
   shell->accelerator_controller()->SetScreenshotDelegate(
       scoped_ptr<ash::ScreenshotDelegate>(new ScreenshotTaker).Pass());
 #if defined(OS_CHROMEOS)
   shell->accelerator_controller()->SetImeControlDelegate(
       scoped_ptr<ash::ImeControlDelegate>(new ImeController).Pass());
-  ash::Shell::GetInstance()->high_contrast_controller()->SetEnabled(
+  shell->high_contrast_controller()->SetEnabled(
       chromeos::AccessibilityManager::Get()->IsHighContrastEnabled());
 
   DCHECK(chromeos::MagnificationManager::Get());
@@ -73,9 +69,9 @@ void OpenAsh() {
       chromeos::MagnificationManager::Get()->IsMagnifierEnabled();
   ash::MagnifierType magnifier_type =
       chromeos::MagnificationManager::Get()->GetMagnifierType();
-  ash::Shell::GetInstance()->magnification_controller()->
+  shell->magnification_controller()->
       SetEnabled(magnifier_enabled && magnifier_type == ash::MAGNIFIER_FULL);
-  ash::Shell::GetInstance()->partial_magnification_controller()->
+  shell->partial_magnification_controller()->
       SetEnabled(magnifier_enabled && magnifier_type == ash::MAGNIFIER_PARTIAL);
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(

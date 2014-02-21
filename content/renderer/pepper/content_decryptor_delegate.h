@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -39,20 +40,23 @@ class ContentDecryptorDelegate {
       const PPP_ContentDecryptor_Private* plugin_decryption_interface);
   ~ContentDecryptorDelegate();
 
-  void Initialize(const std::string& key_system);
+  // This object should not be accessed after |fatal_plugin_error_cb| is called.
+  void Initialize(const std::string& key_system,
+                  const media::SessionCreatedCB& session_created_cb,
+                  const media::SessionMessageCB& session_message_cb,
+                  const media::SessionReadyCB& session_ready_cb,
+                  const media::SessionClosedCB& session_closed_cb,
+                  const media::SessionErrorCB& session_error_cb,
+                  const base::Closure& fatal_plugin_error_cb);
 
-  void SetSessionEventCallbacks(
-      const media::SessionCreatedCB& session_created_cb,
-      const media::SessionMessageCB& session_message_cb,
-      const media::SessionReadyCB& session_ready_cb,
-      const media::SessionClosedCB& session_closed_cb,
-      const media::SessionErrorCB& session_error_cb);
+  void InstanceCrashed();
 
   // Provides access to PPP_ContentDecryptor_Private.
   bool CreateSession(uint32 session_id,
-                     const std::string& type,
+                     const std::string& content_type,
                      const uint8* init_data,
                      int init_data_length);
+  void LoadSession(uint32 session_id, const std::string& web_session_id);
   bool UpdateSession(uint32 session_id,
                      const uint8* response,
                      int response_length);
@@ -104,6 +108,37 @@ class ContentDecryptorDelegate {
                       const PP_DecryptedSampleInfo* sample_info);
 
  private:
+  template <typename Callback>
+  class TrackableCallback {
+   public:
+    TrackableCallback() : id_(0u) {}
+    ~TrackableCallback() {
+      // Callbacks must be satisfied.
+      DCHECK_EQ(id_, 0u);
+      DCHECK(is_null());
+    };
+
+    bool Matches(uint32_t id) const { return id == id_; }
+
+    bool is_null() const { return cb_.is_null(); }
+
+    void Set(uint32_t id, const Callback& cb) {
+      DCHECK_EQ(id_, 0u);
+      DCHECK(cb_.is_null());
+      id_ = id;
+      cb_ = cb;
+    }
+
+    Callback ResetAndReturn() {
+      id_ = 0;
+      return base::ResetAndReturn(&cb_);
+    }
+
+   private:
+    uint32_t id_;
+    Callback cb_;
+  };
+
   // Cancels the pending decrypt-and-decode callback for |stream_type|.
   void CancelDecode(media::Decryptor::StreamType stream_type);
 
@@ -133,6 +168,8 @@ class ContentDecryptorDelegate {
                               media::SampleFormat sample_format,
                               media::Decryptor::AudioBuffers* frames);
 
+  void SatisfyAllPendingCallbacksOnError();
+
   const PP_Instance pp_instance_;
   const PPP_ContentDecryptor_Private* const plugin_decryption_interface_;
 
@@ -146,6 +183,10 @@ class ContentDecryptorDelegate {
   media::SessionClosedCB session_closed_cb_;
   media::SessionErrorCB session_error_cb_;
 
+  // Callback to notify that unexpected error happened and |this| should not
+  // be used anymore.
+  base::Closure fatal_plugin_error_cb_;
+
   gfx::Size natural_size_;
 
   // Request ID for tracking pending content decryption callbacks.
@@ -154,23 +195,12 @@ class ContentDecryptorDelegate {
   // of request IDs.
   uint32_t next_decryption_request_id_;
 
-  uint32_t pending_audio_decrypt_request_id_;
-  media::Decryptor::DecryptCB pending_audio_decrypt_cb_;
-
-  uint32_t pending_video_decrypt_request_id_;
-  media::Decryptor::DecryptCB pending_video_decrypt_cb_;
-
-  uint32_t pending_audio_decoder_init_request_id_;
-  media::Decryptor::DecoderInitCB pending_audio_decoder_init_cb_;
-
-  uint32_t pending_video_decoder_init_request_id_;
-  media::Decryptor::DecoderInitCB pending_video_decoder_init_cb_;
-
-  uint32_t pending_audio_decode_request_id_;
-  media::Decryptor::AudioDecodeCB pending_audio_decode_cb_;
-
-  uint32_t pending_video_decode_request_id_;
-  media::Decryptor::VideoDecodeCB pending_video_decode_cb_;
+  TrackableCallback<media::Decryptor::DecryptCB> audio_decrypt_cb_;
+  TrackableCallback<media::Decryptor::DecryptCB> video_decrypt_cb_;
+  TrackableCallback<media::Decryptor::DecoderInitCB> audio_decoder_init_cb_;
+  TrackableCallback<media::Decryptor::DecoderInitCB> video_decoder_init_cb_;
+  TrackableCallback<media::Decryptor::AudioDecodeCB> audio_decode_cb_;
+  TrackableCallback<media::Decryptor::VideoDecodeCB> video_decode_cb_;
 
   // Cached audio and video input buffers. See MakeMediaBufferResource.
   scoped_refptr<PPB_Buffer_Impl> audio_input_resource_;

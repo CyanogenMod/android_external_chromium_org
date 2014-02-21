@@ -182,6 +182,10 @@ class Plugin(cr.loader.AutoExport):
         getattr(self, config_root.property_name).enabled = False
 
   @classmethod
+  def ClassInit(cls):
+    pass
+
+  @classmethod
   def GetInstance(cls):
     """Gets an instance of this plugin.
 
@@ -193,6 +197,8 @@ class Plugin(cr.loader.AutoExport):
     """
     plugin = _plugins.get(cls, None)
     if plugin is None:
+      # Run delayed class initialization
+      cls.ClassInit()
       # Build a new instance of cls, and register it as the main instance.
       plugin = cls()
       _plugins[cls] = plugin
@@ -269,13 +275,7 @@ class Plugin(cr.loader.AutoExport):
     Returns:
       the plugin that is currently active.
     """
-    actives = cls.GetAllActive()
-    plugin = cls.Select(context)
-    for active in actives:
-      if active != plugin:
-        active.Deactivate()
-    if plugin and not plugin.is_active:
-      plugin.Activate(context)
+    plugin, _ = _GetActivePlugin(cls, context)
     return plugin
 
   @classproperty
@@ -313,8 +313,26 @@ def ChainModuleConfigs(module):
 cr.loader.scan_hooks.append(ChainModuleConfigs)
 
 
+def _GetActivePlugin(cls, context):
+  activated = False
+  actives = cls.GetAllActive()
+  plugin = cls.Select(context)
+  for active in actives:
+    if active != plugin:
+      active.Deactivate()
+  if plugin and not plugin.is_active:
+    activated = True
+    plugin.Activate(context)
+  return plugin, activated
+
+
 def Activate(context):
   """Activates a plugin for all known plugin types."""
   types = Plugin.Type.__subclasses__()
-  for child in types:
-    child.GetActivePlugin(context)
+  modified = True
+  while modified:
+    modified = False
+    for child in types:
+      _, activated = _GetActivePlugin(child, context)
+      if activated:
+        modified = True

@@ -216,6 +216,8 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
 }
 
 ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
+  // If a DownloadManager was set for this, Shutdown() must be called.
+  DCHECK(!download_manager_);
 }
 
 void ChromeDownloadManagerDelegate::SetDownloadManager(DownloadManager* dm) {
@@ -225,6 +227,13 @@ void ChromeDownloadManagerDelegate::SetDownloadManager(DownloadManager* dm) {
 void ChromeDownloadManagerDelegate::Shutdown() {
   download_prefs_.reset();
   weak_ptr_factory_.InvalidateWeakPtrs();
+  download_manager_ = NULL;
+}
+
+content::DownloadIdCallback
+ChromeDownloadManagerDelegate::GetDownloadIdReceiverCallback() {
+  return base::Bind(&ChromeDownloadManagerDelegate::SetNextId,
+                    weak_ptr_factory_.GetWeakPtr());
 }
 
 void ChromeDownloadManagerDelegate::SetNextId(uint32 next_id) {
@@ -427,7 +436,7 @@ void ChromeDownloadManagerDelegate::OpenDownloadUsingPlatformHandler(
   base::FilePath platform_path(
       GetPlatformDownloadPath(profile_, download, PLATFORM_TARGET_PATH));
   DCHECK(!platform_path.empty());
-  platform_util::OpenItem(platform_path);
+  platform_util::OpenItem(profile_, platform_path);
 }
 
 void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
@@ -474,7 +483,7 @@ void ChromeDownloadManagerDelegate::ShowDownloadInShell(
   base::FilePath platform_path(
       GetPlatformDownloadPath(profile_, download, PLATFORM_CURRENT_PATH));
   DCHECK(!platform_path.empty());
-  platform_util::ShowItemInFolder(platform_path);
+  platform_util::ShowItemInFolder(profile_, platform_path);
 }
 
 void ChromeDownloadManagerDelegate::CheckForFileExistence(
@@ -696,7 +705,7 @@ void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
   DownloadItem* item = download_manager_->GetDownload(download_id);
   if (!target_info->target_path.empty() && item &&
       IsOpenInBrowserPreferreredForFile(target_info->target_path) &&
-      target_info->is_filetype_handled_securely)
+      target_info->is_filetype_handled_safely)
     DownloadItemModel(item).SetShouldPreferOpeningInBrowser(true);
   callback.Run(target_info->target_path,
                target_info->target_disposition,

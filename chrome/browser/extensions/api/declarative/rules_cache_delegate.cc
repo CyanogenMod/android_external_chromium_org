@@ -7,12 +7,12 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/info_map.h"
 
 namespace {
@@ -140,7 +140,7 @@ void RulesCacheDelegate::ReadRulesForInstalledExtensions() {
           (*i)->HasAPIPermission(APIPermission::kDeclarativeWebRequest);
       bool respects_off_the_record =
           !(profile_->IsOffTheRecord()) ||
-          extension_util::IsIncognitoEnabled((*i)->id(), extension_service);
+          util::IsIncognitoEnabled((*i)->id(), profile_);
       if (needs_apis_storing_rules && respects_off_the_record)
         ReadFromStorage((*i)->id());
     }
@@ -213,6 +213,10 @@ void RulesCacheDelegate::SetDeclarativeRulesStored(
     const std::string& extension_id,
     bool rules_stored) {
   CHECK(profile_);
+  ExtensionSystem& system = *ExtensionSystem::Get(profile_);
+  ExtensionService* extension_service = system.extension_service();
+  DCHECK(extension_service);
+  DCHECK(extension_service->GetInstalledExtension(extension_id));
   ExtensionScopedPrefs* extension_prefs = ExtensionPrefs::Get(profile_);
   extension_prefs->UpdateExtensionPref(
       extension_id,

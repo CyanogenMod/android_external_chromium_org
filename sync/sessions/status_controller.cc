@@ -22,10 +22,6 @@ void StatusController::increment_num_updates_downloaded_by(int value) {
   model_neutral_.num_updates_downloaded_total += value;
 }
 
-void StatusController::set_types_needing_local_migration(ModelTypeSet types) {
-  model_neutral_.types_needing_local_migration = types;
-}
-
 void StatusController::increment_num_tombstone_updates_downloaded_by(
     int value) {
   model_neutral_.num_tombstone_updates_downloaded_total += value;
@@ -79,11 +75,6 @@ void StatusController::increment_num_local_overwrites() {
 
 void StatusController::increment_num_server_overwrites() {
   model_neutral_.num_server_overwrites++;
-}
-
-void StatusController::set_sync_protocol_error(
-    const SyncProtocolError& error) {
-  model_neutral_.sync_protocol_error = error;
 }
 
 void StatusController::set_last_get_key_result(const SyncerError result) {

@@ -21,6 +21,7 @@
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
+        '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/url/url.gyp:url_lib',
@@ -74,30 +75,25 @@
           ],
         }],
         ['use_aura==1 and use_x11==1', {
-          'link_settings': {
-            'libraries': [ '-lXcursor', ],
-          },
+          'dependencies': [
+            '<(DEPTH)/build/linux/system.gyp:xcursor',
+          ],
         }],
         ['use_ozone==0', {
           'sources!': [
             'cursors/webcursor_null.cc',
           ],
         }],
-        ['OS!="mac"', {
-          'sources/': [['exclude', '_mac\\.(cc|mm)$']],
-        }, {  # else: OS=="mac"
+        ['OS=="mac"', {
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
             ],
           },
         }],
-        ['OS!="win"', {
-          'sources/': [['exclude', '_win\\.cc$']],
-        }, {  # else: OS=="win"
+        ['OS=="win"', {
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4800, 4267 ],
-          'sources/': [['exclude', '_posix\\.cc$']],
         }],
       ],
     },

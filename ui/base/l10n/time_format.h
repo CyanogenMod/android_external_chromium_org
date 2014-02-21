@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace base {
 class Time;
@@ -17,12 +17,10 @@ class TimeDelta;
 namespace ui {
 
 // Methods to format time values as strings.
-class UI_EXPORT TimeFormat {
+class UI_BASE_EXPORT TimeFormat {
  public:
-  // TimeElapsed, TimeRemaining and TimeRemainingShort functions:
-  // These functions return a localized string of approximate time duration. The
-  // conditions are simpler than PastTime since these functions are used for
-  // in-progress operations and users have different expectations of units.
+  // TimeElapsed, TimeRemaining* and TimeDuration*:
+  // These functions return a localized string of approximate time duration.
 
   // Returns times in elapsed-format: "3 mins ago", "2 days ago".
   static base::string16 TimeElapsed(const base::TimeDelta& delta);
@@ -31,12 +29,10 @@ class UI_EXPORT TimeFormat {
   static base::string16 TimeRemaining(const base::TimeDelta& delta);
 
   // Returns times in remaining-long-format: "3 minutes left", "2 days left".
-  // Currently, this only affects the minutes in long format, the rest
-  // of the time units are formatted the same as TimeRemaining does.
   static base::string16 TimeRemainingLong(const base::TimeDelta& delta);
 
   // Returns times in short-format: "3 mins", "2 days".
-  static base::string16 TimeRemainingShort(const base::TimeDelta& delta);
+  static base::string16 TimeDurationShort(const base::TimeDelta& delta);
 
   // Return times in long-format: "2 hours", "25 minutes".
   static base::string16 TimeDurationLong(const base::TimeDelta& delta);

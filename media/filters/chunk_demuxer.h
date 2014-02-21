@@ -124,6 +124,17 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // middle of parsing a media segment.
   bool SetTimestampOffset(const std::string& id, base::TimeDelta offset);
 
+  // Set the append mode to be applied to subsequent buffers appended to the
+  // source buffer associated with |id|. If |sequence_mode| is true, caller
+  // is requesting "sequence" mode. Otherwise, caller is requesting "segments"
+  // mode. Returns true if the mode update was allowed. Returns false if
+  // the mode cannot be updated because we're in the middle of parsing a media
+  // segment.
+  // In "sequence" mode, appended media will be treated as adjacent in time.
+  // In "segments" mode, timestamps in appended media determine coded frame
+  // placement.
+  bool SetSequenceMode(const std::string& id, bool sequence_mode);
+
   // Called to signal changes in the "end of stream"
   // state. UnmarkEndOfStream() must not be called if a matching
   // MarkEndOfStream() has not come before it.
@@ -137,6 +148,8 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   void Shutdown();
 
+  // Sets the memory limit on each stream. |memory_limit| is the
+  // maximum number of bytes each stream is allowed to hold in its buffer.
   void SetMemoryLimitsForTesting(int memory_limit);
 
   // Returns the ranges representing the buffered data in the demuxer.
@@ -181,10 +194,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   void OnNewMediaSegment(const std::string& source_id,
                          base::TimeDelta start_timestamp);
 
-  // Computes the intersection between the video & audio
-  // buffered ranges.
-  Ranges<base::TimeDelta> ComputeIntersection() const;
-
   // Applies |time_offset| to the timestamps of |buffers|.
   void AdjustBufferTimestamps(const StreamParser::BufferQueue& buffers,
                               base::TimeDelta timestamp_offset);
@@ -221,6 +230,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Seeks all SourceBufferStreams to |seek_time|.
   void SeekAllSources(base::TimeDelta seek_time);
+
+  // Shuts down all DemuxerStreams by calling Shutdown() on
+  // all objects in |source_state_map_|.
+  void ShutdownAllStreams();
 
   mutable base::Lock lock_;
   State state_;

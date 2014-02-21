@@ -18,12 +18,15 @@ tfoot, thead, tr, th, td, button {
   vertical-align: baseline;
 }
 
+.inset {
+  padding: 20px 20px 0 20px;
+}
+
 body {
   font-family: "Arial", "Helvetica", sans-serif;
   color: #222;
   font-size: 13px;
   margin: 0;
-  padding: 20px 20px 0 20px;
   direction: __MSG_@@bidi_dir__;
 }
 
@@ -275,14 +278,13 @@ section h2 {
 }
 
 header {
-  display: -webkit-flex;
+  display: flex;
   width: 100%;
 }
 
 html {
   -webkit-user-select: none;
   cursor: default;
-  height: 100%; /* Remove phantom pixels at the bottom of the body. */
 }
 
 section {
@@ -308,7 +310,7 @@ section {
 }
 
 .box-spacer {
-  -webkit-flex: 1;
+  flex: 1;
 }
 
 .centered {
@@ -316,9 +318,9 @@ section {
 }
 
 .button-row {
-  display: -webkit-flex;
-  -webkit-flex-direction: row;
-  -webkit-justify-content: flex-end;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
   margin-top: 20px;
 }
 
@@ -335,7 +337,7 @@ section {
 }
 
 .box {
-  display: -webkit-flex;
+  display: flex;
 }
 
 .host-list-empty-instructions {
@@ -359,7 +361,7 @@ section {
 }
 
 .section-row {
-  display: -webkit-flex;
+  display: flex;
   -webkit-align-items: center;
   padding: 10px 0;
   border-top: 1px solid #EBEBEB;
@@ -443,8 +445,8 @@ section {
 #butter-bar > p {
   background-color: #f9edbe;
   border: 1px solid #f0c36d;
-  -webkit-border-radius: 2px;
-  -webkit-box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
+  border-radius: 2px;
+  box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
   color: #222;
   font-size: 12px;
   padding: 4px 16px;
@@ -615,7 +617,7 @@ button {
   top: 200px;
   left: 0;
   width: 100%;
-  display: -webkit-flex;
+  display: flex;
 }
 
 .dialog-screen {
@@ -666,8 +668,7 @@ html.apps-v2.scrollable {
   width: 315px;
 }
 
-#session-mode {
-  position: absolute;
+#session-client-plugin {
   box-shadow: 0 0 8px 0 black;
   -webkit-user-select: none;
 }
@@ -678,7 +679,7 @@ html.apps-v2.scrollable {
 
 .session-client-inactive {
   -webkit-filter: grayscale(70%);
-  -webkit-transition: -webkit-filter 0.218s;
+  transition: -webkit-filter 0.218s;
 }
 
 #set-pin-table td {
@@ -703,4 +704,70 @@ html.apps-v2.scrollable {
  */
 [hidden] {
   display: none !important;
+}
+
+.full-height {
+  height: 100%;
+}
+
+.horizontally-centered {
+  display: flex;
+}
+
+.vertically-centered {
+  display: flex;
+  flex-direction: column;
+  height: 100%
+}
+
+.horizontally-centered::before,
+.horizontally-centered::after,
+.vertically-centered::before,
+.vertically-centered::after {
+  content: "";
+  flex: 1;
+}
+
+/* Bump-scrolling is currently implemented by adjusting the margins, which is
+ * easier to implement with "position: fixed". In full-screen mode there are
+ * no scroll-bars, so the advantages of flex-box layout to achieve centering
+ * (ie, the DOM is easier to measure to determine when scroll-bars are needed)
+ * don't apply */
+.full-screen #session-mode {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+/* video-container needs relative position so that mediasource-video-output can
+ * be positioned relative to the parent with position:absolute. */
+#video-container {
+  position: relative;
+}
+
+/* mediasource-video-output is hidden by default. */
+#mediasource-video-output {
+  display: none;
+}
+
+/* Use absolute positioning for mediasource-video-output so that it's rendered
+ * at the same position as the plugin. */
+#video-container.mediasource-rendering #mediasource-video-output {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-shadow: 0 0 8px 0 black;
+}
+
+/*
+ * With MediaSource-based rendering the plugin is transparent and is placed on
+ * top of the <video> element so that it can still receive mouse events.
+ *
+ * TODO(sergeyu): This is temporary solution. Ideally mouse and keyboard events
+ * should be captured on JS level and passed to the plugin.
+ */
+#video-container.mediasource-rendering #client-plugin-container {
+  opacity: 0;
 }

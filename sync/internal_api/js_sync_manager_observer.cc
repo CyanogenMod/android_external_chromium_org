@@ -60,6 +60,8 @@ void JsSyncManagerObserver::OnActionableError(
                 JsEventDetails(&details));
 }
 
+void JsSyncManagerObserver::OnMigrationRequested(ModelTypeSet types) { }
+
 void JsSyncManagerObserver::OnInitializationComplete(
     const WeakHandle<JsBackend>& js_backend,
     const WeakHandle<DataTypeDebugInfoListener>& debug_info_listener,
@@ -76,13 +78,6 @@ void JsSyncManagerObserver::OnInitializationComplete(
   HandleJsEvent(FROM_HERE,
                 "onInitializationComplete",
                 JsEventDetails(&details));
-}
-
-void JsSyncManagerObserver::OnStopSyncingPermanently() {
-  if (!event_handler_.IsInitialized()) {
-    return;
-  }
-  HandleJsEvent(FROM_HERE, "onStopSyncingPermanently", JsEventDetails());
 }
 
 void JsSyncManagerObserver::HandleJsEvent(

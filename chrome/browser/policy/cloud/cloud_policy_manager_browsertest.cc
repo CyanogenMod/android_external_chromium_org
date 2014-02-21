@@ -6,14 +6,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/cloud/test_request_interceptor.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
+#include "components/policy/core/common/policy_switches.h"
 #include "components/policy/core/common/policy_test_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_errors.h"
@@ -26,10 +26,10 @@
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #endif
 
 using content::BrowserThread;

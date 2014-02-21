@@ -90,9 +90,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DISABLE_UNKNOWN_FROM_SYNC = 1 << 5,
     DISABLE_PERMISSIONS_CONSENT = 1 << 6,  // Unused - abandoned experiment.
     DISABLE_KNOWN_DISABLED = 1 << 7,
-
-    // Disabled because we could not verify the install.
-    DISABLE_NOT_VERIFIED = 1 << 8,
+    DISABLE_NOT_VERIFIED = 1 << 8,  // Disabled because we could not verify
+                                    // the install.
+    DISABLE_GREYLIST = 1 << 9
   };
 
   enum InstallType {
@@ -133,8 +133,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // Chrome Web Store.
     FROM_WEBSTORE = 1 << 3,
 
-    // |FROM_BOOKMARK| indicates the extension was created using a mock App
-    // created from a bookmark.
+    // |FROM_BOOKMARK| indicates the extension is a bookmark app which has been
+    // generated from a web page. Bookmark apps have no permissions or extent
+    // and launch the web page they are created from when run.
     FROM_BOOKMARK = 1 << 4,
 
     // |FOLLOW_SYMLINKS_ANYWHERE| means that resources can be symlinks to
@@ -341,7 +342,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                               const base::FilePath& path,
                               const std::string& explicit_id,
                               int creation_flags,
-                              string16* error);
+                              base::string16* error);
 
   Extension(const base::FilePath& path,
             scoped_ptr<extensions::Manifest> manifest);
@@ -353,28 +354,28 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // of the underlying DictionaryValue in its members. We should decide to
   // either wrap the DictionaryValue and go with that only, or we should parse
   // into strong types and discard the value. But doing both is bad.
-  bool InitFromValue(int flags, string16* error);
+  bool InitFromValue(int flags, base::string16* error);
 
   // The following are helpers for InitFromValue to load various features of the
   // extension from the manifest.
 
-  bool LoadRequiredFeatures(string16* error);
-  bool LoadName(string16* error);
-  bool LoadVersion(string16* error);
+  bool LoadRequiredFeatures(base::string16* error);
+  bool LoadName(base::string16* error);
+  bool LoadVersion(base::string16* error);
 
-  bool LoadAppFeatures(string16* error);
+  bool LoadAppFeatures(base::string16* error);
   bool LoadExtent(const char* key,
                   URLPatternSet* extent,
                   const char* list_error,
                   const char* value_error,
-                  string16* error);
+                  base::string16* error);
 
-  bool LoadSharedFeatures(string16* error);
-  bool LoadDescription(string16* error);
-  bool LoadManifestVersion(string16* error);
-  bool LoadShortName(string16* error);
+  bool LoadSharedFeatures(base::string16* error);
+  bool LoadDescription(base::string16* error);
+  bool LoadManifestVersion(base::string16* error);
+  bool LoadShortName(base::string16* error);
 
-  bool CheckMinimumChromeVersion(string16* error) const;
+  bool CheckMinimumChromeVersion(base::string16* error) const;
 
   // The extension's human-readable name. Name is used for display purpose. It
   // might be wrapped with unicode bidi control characters so that it is

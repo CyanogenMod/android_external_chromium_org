@@ -75,9 +75,6 @@ const base::FilePath::CharType kEffectsPluginFileName[] =
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 
-const base::FilePath::CharType kO3DPluginFileName[] =
-    FILE_PATH_LITERAL("pepper/libppo3dautoplugin.so");
-
 const base::FilePath::CharType kO1DPluginFileName[] =
     FILE_PATH_LITERAL("pepper/libppo1d.so");
 
@@ -334,11 +331,6 @@ bool PathProvider(int key, base::FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("pnacl"));
       break;
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
-    case chrome::FILE_O3D_PLUGIN:
-      if (!PathService::Get(base::DIR_MODULE, &cur))
-        return false;
-      cur = cur.Append(kO3DPluginFileName);
-      break;
     case chrome::FILE_O1D_PLUGIN:
       if (!PathService::Get(base::DIR_MODULE, &cur))
         return false;
@@ -510,6 +502,34 @@ bool PathProvider(int key, base::FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("default_apps"));
 #endif
       break;
+
+#if defined(OS_LINUX) || (defined(OS_MACOSX) && !defined(OS_IOS))
+    case chrome::DIR_NATIVE_MESSAGING:
+#if defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD)
+      cur = base::FilePath(FILE_PATH_LITERAL(
+           "/Library/Google/Chrome/NativeMessagingHosts"));
+#else
+      cur = base::FilePath(FILE_PATH_LITERAL(
+          "/Library/Application Support/Chromium/NativeMessagingHosts"));
+#endif
+#else  // defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD)
+      cur = base::FilePath(FILE_PATH_LITERAL(
+          "/etc/opt/chrome/native-messaging-hosts"));
+#else
+      cur = base::FilePath(FILE_PATH_LITERAL(
+          "/etc/chromium/native-messaging-hosts"));
+#endif
+#endif  // !defined(OS_MACOSX)
+      break;
+
+    case chrome::DIR_USER_NATIVE_MESSAGING:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("NativeMessagingHosts"));
+      break;
+#endif  // defined(OS_LINUX) || (defined(OS_MACOSX) && !defined(OS_IOS))
 
     default:
       return false;

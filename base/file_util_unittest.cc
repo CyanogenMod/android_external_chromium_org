@@ -485,25 +485,6 @@ TEST_F(FileUtilTest, DevicePathToDriveLetter) {
       &win32_path));
 }
 
-TEST_F(FileUtilTest, GetPlatformFileInfoForDirectory) {
-  FilePath empty_dir = temp_dir_.path().Append(FPL("gpfi_test"));
-  ASSERT_TRUE(CreateDirectory(empty_dir));
-  win::ScopedHandle dir(
-      ::CreateFile(empty_dir.value().c_str(),
-                   FILE_ALL_ACCESS,
-                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                   NULL,
-                   OPEN_EXISTING,
-                   FILE_FLAG_BACKUP_SEMANTICS,  // Needed to open a directory.
-                   NULL));
-  ASSERT_TRUE(dir.IsValid());
-  PlatformFileInfo info;
-  EXPECT_TRUE(GetPlatformFileInfo(dir.Get(), &info));
-  EXPECT_TRUE(info.is_directory);
-  EXPECT_FALSE(info.is_symbolic_link);
-  EXPECT_EQ(0, info.size);
-}
-
 TEST_F(FileUtilTest, CreateTemporaryFileInDirLongPathTest) {
   // Test that CreateTemporaryFileInDir() creates a path and returns a long path
   // if it is available. This test requires that:
@@ -1379,6 +1360,60 @@ TEST_F(FileUtilTest, CopyDirectoryWithTrailingSeparators) {
   EXPECT_TRUE(PathExists(file_name_to));
 }
 
+// Sets the source file to read-only.
+void SetReadOnly(const FilePath& path) {
+#if defined(OS_WIN)
+  // On Windows, it involves setting a bit.
+  DWORD attrs = GetFileAttributes(path.value().c_str());
+  ASSERT_NE(INVALID_FILE_ATTRIBUTES, attrs);
+  ASSERT_TRUE(SetFileAttributes(
+      path.value().c_str(), attrs | FILE_ATTRIBUTE_READONLY));
+  attrs = GetFileAttributes(path.value().c_str());
+  // Files in the temporary directory should not be indexed ever. If this
+  // assumption change, fix this unit test accordingly.
+  // FILE_ATTRIBUTE_NOT_CONTENT_INDEXED doesn't exist on XP.
+  DWORD expected = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_READONLY;
+  if (win::GetVersion() >= win::VERSION_VISTA)
+    expected |= FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+  ASSERT_EQ(expected, attrs);
+#else
+  // On all other platforms, it involves removing the write bit.
+  EXPECT_TRUE(SetPosixFilePermissions(path, S_IRUSR));
+#endif
+}
+
+bool IsReadOnly(const FilePath& path) {
+#if defined(OS_WIN)
+  DWORD attrs = GetFileAttributes(path.value().c_str());
+  EXPECT_NE(INVALID_FILE_ATTRIBUTES, attrs);
+  return attrs & FILE_ATTRIBUTE_READONLY;
+#else
+  int mode = 0;
+  EXPECT_TRUE(GetPosixFilePermissions(path, &mode));
+  return !(mode & S_IWUSR);
+#endif
+}
+
+TEST_F(FileUtilTest, CopyDirectoryACL) {
+  // Create a directory.
+  FilePath src = temp_dir_.path().Append(FILE_PATH_LITERAL("src"));
+  CreateDirectory(src);
+  ASSERT_TRUE(PathExists(src));
+
+  // Create a file under the directory.
+  FilePath src_file = src.Append(FILE_PATH_LITERAL("src.txt"));
+  CreateTextFile(src_file, L"Gooooooooooooooooooooogle");
+  SetReadOnly(src_file);
+  ASSERT_TRUE(IsReadOnly(src_file));
+
+  // Copy the directory recursively.
+  FilePath dst = temp_dir_.path().Append(FILE_PATH_LITERAL("dst"));
+  FilePath dst_file = dst.Append(FILE_PATH_LITERAL("src.txt"));
+  EXPECT_TRUE(CopyDirectory(src, dst, true));
+
+  ASSERT_FALSE(IsReadOnly(dst_file));
+}
+
 TEST_F(FileUtilTest, CopyFile) {
   // Create a directory
   FilePath dir_name_from =
@@ -1415,6 +1450,27 @@ TEST_F(FileUtilTest, CopyFile) {
   EXPECT_EQ(file_contents, read_contents);
   EXPECT_TRUE(PathExists(dest_file2_test));
   EXPECT_TRUE(PathExists(dest_file2));
+}
+
+TEST_F(FileUtilTest, CopyFileACL) {
+  // While FileUtilTest.CopyFile asserts the content is correctly copied over,
+  // this test case asserts the access control bits are meeting expectations in
+  // CopyFileUnsafe().
+  FilePath src = temp_dir_.path().Append(FILE_PATH_LITERAL("src.txt"));
+  const std::wstring file_contents(L"Gooooooooooooooooooooogle");
+  CreateTextFile(src, file_contents);
+
+  // Set the source file to read-only.
+  ASSERT_FALSE(IsReadOnly(src));
+  SetReadOnly(src);
+  ASSERT_TRUE(IsReadOnly(src));
+
+  // Copy the file.
+  FilePath dst = temp_dir_.path().Append(FILE_PATH_LITERAL("dst.txt"));
+  ASSERT_TRUE(CopyFile(src, dst));
+  EXPECT_EQ(file_contents, ReadTextFile(dst));
+
+  ASSERT_FALSE(IsReadOnly(dst));
 }
 
 // file_util winds up using autoreleased objects on the Mac, so this needs
@@ -1885,6 +1941,51 @@ TEST_F(FileUtilTest, AppendToFile) {
   EXPECT_EQ(L"hellohello", read_content);
 }
 
+TEST_F(FileUtilTest, ReadFileToString) {
+  const char kTestData[] = "0123";
+  std::string data;
+
+  FilePath file_path =
+      temp_dir_.path().Append(FILE_PATH_LITERAL("ReadFileToStringTest"));
+
+  ASSERT_EQ(4, file_util::WriteFile(file_path, kTestData, 4));
+
+  EXPECT_TRUE(ReadFileToString(file_path, &data));
+  EXPECT_EQ(kTestData, data);
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 0));
+  EXPECT_EQ(data.length(), 0u);
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 2));
+  EXPECT_EQ("01", data);
+
+  data.clear();
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 3));
+  EXPECT_EQ("012", data);
+
+  data.clear();
+  EXPECT_TRUE(ReadFileToString(file_path, &data, 4));
+  EXPECT_EQ("0123", data);
+
+  data.clear();
+  EXPECT_TRUE(ReadFileToString(file_path, &data, 6));
+  EXPECT_EQ("0123", data);
+
+  EXPECT_TRUE(ReadFileToString(file_path, NULL, 6));
+
+  EXPECT_TRUE(ReadFileToString(file_path, NULL));
+
+  EXPECT_TRUE(base::DeleteFile(file_path, false));
+
+  EXPECT_FALSE(ReadFileToString(file_path, &data));
+  EXPECT_EQ(data.length(), 0u);
+
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 6));
+  EXPECT_EQ(data.length(), 0u);
+}
+
 TEST_F(FileUtilTest, TouchFile) {
   FilePath data_dir =
       temp_dir_.path().Append(FILE_PATH_LITERAL("FilePathTest"));
@@ -1912,7 +2013,7 @@ TEST_F(FileUtilTest, TouchFile) {
               &modification_time));
 
   ASSERT_TRUE(TouchFile(foobar, access_time, modification_time));
-  PlatformFileInfo file_info;
+  File::Info file_info;
   ASSERT_TRUE(GetFileInfo(foobar, &file_info));
   EXPECT_EQ(file_info.last_accessed.ToInternalValue(),
             access_time.ToInternalValue());

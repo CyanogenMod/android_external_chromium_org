@@ -24,7 +24,7 @@ class Profile;
 namespace chromeos {
 class InputMethodEngineInterface;
 class ImeObserver;
-}
+}  // namespace chromeos
 
 namespace extensions {
 struct InputComponentInfo;
@@ -184,6 +184,30 @@ class InputImeKeyEventHandledFunction : public AsyncExtensionFunction {
 
  protected:
   virtual ~InputImeKeyEventHandledFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class InputImeSendKeyEventsFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.sendKeyEvents",
+                             INPUT_IME_SENDKEYEVENTS)
+
+ protected:
+  virtual ~InputImeSendKeyEventsFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class InputImeHideInputViewFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.hideInputView",
+                             INPUT_IME_HIDEINPUTVIEW)
+
+ protected:
+  virtual ~InputImeHideInputViewFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;

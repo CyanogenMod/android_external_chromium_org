@@ -36,24 +36,27 @@
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/dns_probe_service.h"
 #include "chrome/browser/net/http_pipelining_compatibility_client.h"
-#include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/net/sdch_dictionary_fetcher.h"
 #include "chrome/browser/net/spdyproxy/http_auth_handler_spdyproxy.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_util.h"
 #include "net/base/network_time_notifier.h"
 #include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/cert_verify_proc.h"
 #include "net/cert/ct_known_logs.h"
 #include "net/cert/ct_verifier.h"
-#include "net/cookies/cookie_monster.h"
+#include "net/cert/multi_threaded_cert_verifier.h"
+#include "net/cookies/cookie_store.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -65,6 +68,7 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
+#include "net/quic/quic_protocol.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/spdy/spdy_session.h"
 #include "net/ssl/default_server_bound_cert_store.h"
@@ -100,6 +104,11 @@
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
 #include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
 #endif
 
 using content::BrowserThread;
@@ -449,6 +458,11 @@ IOThread::IOThread(
   dns_client_enabled_.MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 
+  quick_check_enabled_.Init(prefs::kQuickCheckEnabled,
+                            local_state);
+  quick_check_enabled_.MoveToThread(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
   is_spdy_disabled_by_policy_ = policy_service->GetPolicies(
       policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME, std::string())).Get(
@@ -538,7 +552,17 @@ void IOThread::InitAsync() {
   globals_->system_network_delegate.reset(network_delegate);
   globals_->host_resolver = CreateGlobalHostResolver(net_log_);
   UpdateDnsClientEnabled();
-  globals_->cert_verifier.reset(net::CertVerifier::CreateDefault());
+#if defined(OS_CHROMEOS)
+  if (chromeos::UserManager::IsMultipleProfilesAllowed()) {
+    // Creates a CertVerifyProc that doesn't allow any profile-provided certs.
+    globals_->cert_verifier.reset(new net::MultiThreadedCertVerifier(
+        new chromeos::CertVerifyProcChromeOS()));
+  } else  // NOLINT Fallthrough to normal verifier if multiprofiles not allowed.
+#endif
+  {
+    globals_->cert_verifier.reset(new net::MultiThreadedCertVerifier(
+        net::CertVerifyProc::CreateDefault()));
+  }
   globals_->transport_security_state.reset(new net::TransportSecurityState());
 #if !defined(USE_OPENSSL)
   // For now, Certificate Transparency is only implemented for platforms
@@ -555,19 +579,26 @@ void IOThread::InitAsync() {
   if (command_line.HasSwitch(switches::kCertificateTransparencyLog)) {
     std::string switch_value = command_line.GetSwitchValueASCII(
         switches::kCertificateTransparencyLog);
-    size_t delim_pos = switch_value.find(":");
-    CHECK(delim_pos != std::string::npos)
-        << "CT log description not provided (switch format"
-           " is 'description:base64_key')";
-    std::string log_description(switch_value.substr(0, delim_pos));
-    std::string ct_public_key_data;
-    CHECK(base::Base64Decode(
-          switch_value.substr(delim_pos + 1),
-          &ct_public_key_data)) << "Unable to decode CT public key.";
-    scoped_ptr<net::CTLogVerifier> external_log_verifier(
-        net::CTLogVerifier::Create(ct_public_key_data, log_description));
-    CHECK(external_log_verifier) << "Unable to parse CT public key.";
-    ct_verifier->AddLog(external_log_verifier.Pass());
+    std::vector<std::string> logs;
+    base::SplitString(switch_value, ',', &logs);
+    for (std::vector<std::string>::iterator it = logs.begin(); it != logs.end();
+         ++it) {
+      const std::string& curr_log = *it;
+      size_t delim_pos = curr_log.find(":");
+      CHECK(delim_pos != std::string::npos)
+          << "CT log description not provided (switch format"
+             " is 'description:base64_key')";
+      std::string log_description(curr_log.substr(0, delim_pos));
+      std::string ct_public_key_data;
+      CHECK(base::Base64Decode(curr_log.substr(delim_pos + 1),
+                               &ct_public_key_data))
+          << "Unable to decode CT public key.";
+      scoped_ptr<net::CTLogVerifier> external_log_verifier(
+          net::CTLogVerifier::Create(ct_public_key_data, log_description));
+      CHECK(external_log_verifier) << "Unable to parse CT public key.";
+      VLOG(1) << "Adding log with description " << log_description;
+      ct_verifier->AddLog(external_log_verifier.Pass());
+    }
   }
 #else
   if (command_line.HasSwitch(switches::kCertificateTransparencyLog)) {
@@ -589,14 +620,14 @@ void IOThread::InitAsync() {
   globals_->proxy_script_fetcher_proxy_service.reset(
       net::ProxyService::CreateDirectWithNetLog(net_log_));
   // In-memory cookie store.
-  globals_->system_cookie_store = new net::CookieMonster(NULL, NULL);
+  globals_->system_cookie_store =
+        content::CreateCookieStore(content::CookieStoreConfig());
   // In-memory server bound cert store.
   globals_->system_server_bound_cert_service.reset(
       new net::ServerBoundCertService(
           new net::DefaultServerBoundCertStore(NULL),
           base::WorkerPool::GetTaskRunner(true)));
   globals_->dns_probe_service.reset(new chrome_browser_net::DnsProbeService());
-  globals_->load_time_stats.reset(new chrome_browser_net::LoadTimeStats());
   globals_->host_mapping_rules.reset(new net::HostMappingRules());
   globals_->http_user_agent_settings.reset(
       new BasicHttpUserAgentSettings(std::string()));
@@ -637,10 +668,10 @@ void IOThread::InitAsync() {
   TRACE_EVENT_END0("startup", "IOThread::InitAsync:HttpNetworkSession");
   scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
       new net::URLRequestJobFactoryImpl());
-  job_factory->SetProtocolHandler(chrome::kDataScheme,
+  job_factory->SetProtocolHandler(content::kDataScheme,
                                   new net::DataProtocolHandler());
   job_factory->SetProtocolHandler(
-      chrome::kFileScheme,
+      content::kFileScheme,
       new net::FileProtocolHandler(
           content::BrowserThread::GetBlockingPool()->
               GetTaskRunnerWithShutdownBehavior(
@@ -721,12 +752,6 @@ void IOThread::CleanUp() {
 }
 
 void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
-  if (command_line.HasSwitch(switches::kEnableFileCookies)) {
-    // Enable cookie storage for file:// URLs.  Must do this before the first
-    // Profile (and therefore the first CookieMonster) is created.
-    net::CookieMonster::EnableFileScheme();
-  }
-
   // Only handle use-spdy command line flags if "spdy.disabled" preference is
   // not disabled via policy.
   if (is_spdy_disabled_by_policy_) {
@@ -894,6 +919,7 @@ void IOThread::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterInt64Pref(prefs::kDailyHttpContentLengthLastUpdateDate, 0L);
 #endif
   registry->RegisterBooleanPref(prefs::kBuiltInDnsClientEnabled, true);
+  registry->RegisterBooleanPref(prefs::kQuickCheckEnabled, true);
 }
 
 net::HttpAuthHandlerFactory* IOThread::CreateDefaultAuthHandlerFactory(
@@ -974,7 +1000,11 @@ void IOThread::InitializeNetworkSessionParams(
       &params->trusted_spdy_proxy);
   globals_->enable_quic.CopyToIfSet(&params->enable_quic);
   globals_->enable_quic_https.CopyToIfSet(&params->enable_quic_https);
+  globals_->enable_quic_port_selection.CopyToIfSet(
+      &params->enable_quic_port_selection);
   globals_->quic_max_packet_length.CopyToIfSet(&params->quic_max_packet_length);
+  globals_->quic_supported_versions.CopyToIfSet(
+      &params->quic_supported_versions);
   globals_->origin_to_force_quic_on.CopyToIfSet(
       &params->origin_to_force_quic_on);
   params->enable_user_alternate_protocol_ports =
@@ -1025,7 +1055,8 @@ void IOThread::InitSystemRequestContextOnIOThread() {
           globals_->proxy_script_fetcher_context.get(),
           globals_->system_network_delegate.get(),
           system_proxy_config_service_.release(),
-          command_line));
+          command_line,
+          quick_check_enabled_.GetValue()));
 
   net::HttpNetworkSession::Params system_params;
   InitializeNetworkSessionParams(&system_params);
@@ -1058,12 +1089,21 @@ void IOThread::ConfigureQuic(const CommandLine& command_line) {
   if (enable_quic) {
     globals_->enable_quic_https.set(
         ShouldEnableQuicHttps(command_line, quic_trial_group));
+    globals_->enable_quic_port_selection.set(
+        ShouldEnableQuicPortSelection(command_line));
   }
 
   size_t max_packet_length = GetQuicMaxPacketLength(command_line,
                                                     quic_trial_group);
   if (max_packet_length != 0) {
     globals_->quic_max_packet_length.set(max_packet_length);
+  }
+
+  net::QuicVersion version = GetQuicVersion(command_line);
+  if (version != net::QUIC_VERSION_UNSUPPORTED) {
+    net::QuicVersionVector supported_versions;
+    supported_versions.push_back(version);
+    globals_->quic_supported_versions.set(supported_versions);
   }
 
   if (command_line.HasSwitch(switches::kOriginToForceQuicOn)) {
@@ -1099,6 +1139,34 @@ bool IOThread::ShouldEnableQuicHttps(const CommandLine& command_line,
   return quic_trial_group.starts_with(kQuicFieldTrialHttpsEnabledGroupName);
 }
 
+bool IOThread::ShouldEnableQuicPortSelection(
+      const CommandLine& command_line) {
+  if (command_line.HasSwitch(switches::kDisableQuicPortSelection))
+    return false;
+
+  if (command_line.HasSwitch(switches::kEnableQuicPortSelection))
+    return true;
+
+#if defined(OS_WIN)
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  // Avoid picking ports (which might induce a security dialog) when we have a
+  // beta or stable release.  Allow in all other cases, including when we do a
+  // developer build (CHANNEL_UNKNOWN).
+  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
+      channel == chrome::VersionInfo::CHANNEL_BETA) {
+    // TODO(grt) bug=329255: Detect presence of rule on Windows that allows us
+    // to do port selection without inducing a dialog.
+    // When we have an API to see if the administrative security manager will
+    // allow port selection without a security dialog, we may return true if
+    // we're sure there will be no security dialog.
+    return false;
+  }
+  return true;
+#else
+  return true;
+#endif
+}
+
 size_t IOThread::GetQuicMaxPacketLength(const CommandLine& command_line,
                                         base::StringPiece quic_trial_group) {
   if (command_line.HasSwitch(switches::kQuicMaxPacketLength)) {
@@ -1130,4 +1198,20 @@ size_t IOThread::GetQuicMaxPacketLength(const CommandLine& command_line,
     return 0;
   }
   return value;
+}
+
+net::QuicVersion IOThread::GetQuicVersion(const CommandLine& command_line) {
+  if (!command_line.HasSwitch(switches::kQuicVersion)) {
+    return net::QUIC_VERSION_UNSUPPORTED;
+  }
+  net::QuicVersionVector supported_versions = net::QuicSupportedVersions();
+  std::string version_flag =
+      command_line.GetSwitchValueASCII(switches::kQuicVersion);
+  for (size_t i = 0; i < supported_versions.size(); ++i) {
+    net::QuicVersion version = supported_versions[i];
+    if (net::QuicVersionToString(version) == version_flag) {
+      return version;
+    }
+  }
+  return net::QUIC_VERSION_UNSUPPORTED;
 }

@@ -23,7 +23,8 @@
 using content::BrowserThread;
 
 SpellCheckMessageFilter::SpellCheckMessageFilter(int render_process_id)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(SpellCheckMsgStart),
+      render_process_id_(render_process_id),
       client_(new SpellingServiceClient) {
 }
 
@@ -144,7 +145,7 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
   // in-dictionary feedback.
   std::vector<SpellCheckResult>::iterator write_iter;
   std::vector<SpellCheckResult>::iterator iter;
-  std::string text_copy = UTF16ToUTF8(text);
+  std::string text_copy = base::UTF16ToUTF8(text);
   for (iter = write_iter = results_copy.begin();
        iter != results_copy.end();
        ++iter) {

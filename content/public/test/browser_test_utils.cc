@@ -82,7 +82,7 @@ class DOMOperationObserver : public NotificationObserver,
 bool ExecuteScriptHelper(RenderViewHost* render_view_host,
                          const std::string& frame_xpath,
                          const std::string& original_script,
-                         scoped_ptr<Value>* result) WARN_UNUSED_RESULT;
+                         scoped_ptr<base::Value>* result) WARN_UNUSED_RESULT;
 
 // Executes the passed |original_script| in the frame pointed to by
 // |frame_xpath|.  If |result| is not NULL, stores the value that the evaluation
@@ -90,14 +90,14 @@ bool ExecuteScriptHelper(RenderViewHost* render_view_host,
 bool ExecuteScriptHelper(RenderViewHost* render_view_host,
                          const std::string& frame_xpath,
                          const std::string& original_script,
-                         scoped_ptr<Value>* result) {
+                         scoped_ptr<base::Value>* result) {
   // TODO(jcampan): we should make the domAutomationController not require an
   //                automation id.
   std::string script =
       "window.domAutomationController.setAutomationId(0);" + original_script;
   DOMOperationObserver dom_op_observer(render_view_host);
-  render_view_host->ExecuteJavascriptInWebFrame(UTF8ToUTF16(frame_xpath),
-                                                UTF8ToUTF16(script));
+  render_view_host->ExecuteJavascriptInWebFrame(base::UTF8ToUTF16(frame_xpath),
+                                                base::UTF8ToUTF16(script));
   std::string json;
   if (!dom_op_observer.WaitAndGetResponse(&json)) {
     DLOG(ERROR) << "Cannot communicate with DOMOperationObserver.";
@@ -213,11 +213,10 @@ void WaitForLoadStop(WebContents* web_contents) {
 
 void CrashTab(WebContents* web_contents) {
   RenderProcessHost* rph = web_contents->GetRenderProcessHost();
-  WindowedNotificationObserver observer(
-      NOTIFICATION_RENDERER_PROCESS_CLOSED,
-      Source<RenderProcessHost>(rph));
+  RenderProcessHostWatcher watcher(
+      rph, RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
   base::KillProcess(rph->GetHandle(), 0, false);
-  observer.Wait();
+  watcher.Wait();
 }
 
 void SimulateMouseClick(WebContents* web_contents,
@@ -415,7 +414,7 @@ bool ExecuteScriptInFrameAndExtractInt(
     const std::string& script,
     int* result) {
   DCHECK(result);
-  scoped_ptr<Value> value;
+  scoped_ptr<base::Value> value;
   if (!ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
                            &value) || !value.get())
     return false;
@@ -429,7 +428,7 @@ bool ExecuteScriptInFrameAndExtractBool(
     const std::string& script,
     bool* result) {
   DCHECK(result);
-  scoped_ptr<Value> value;
+  scoped_ptr<base::Value> value;
   if (!ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
                            &value) || !value.get())
     return false;
@@ -443,7 +442,7 @@ bool ExecuteScriptInFrameAndExtractString(
     const std::string& script,
     std::string* result) {
   DCHECK(result);
-  scoped_ptr<Value> value;
+  scoped_ptr<base::Value> value;
   if (!ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
                            &value) || !value.get())
     return false;
@@ -554,6 +553,7 @@ TitleWatcher::~TitleWatcher() {
 }
 
 const base::string16& TitleWatcher::WaitAndGetTitle() {
+  TestTitle();
   message_loop_runner_->Run();
   return observed_title_;
 }
@@ -599,6 +599,47 @@ void WebContentsDestroyedWatcher::Wait() {
 void WebContentsDestroyedWatcher::WebContentsDestroyed(
     WebContents* web_contents) {
   message_loop_runner_->Quit();
+}
+
+RenderProcessHostWatcher::RenderProcessHostWatcher(
+    RenderProcessHost* render_process_host, WatchType type)
+    : render_process_host_(render_process_host),
+      type_(type),
+      message_loop_runner_(new MessageLoopRunner) {
+  render_process_host_->AddObserver(this);
+}
+
+RenderProcessHostWatcher::RenderProcessHostWatcher(
+    WebContents* web_contents, WatchType type)
+    : render_process_host_(web_contents->GetRenderProcessHost()),
+      type_(type),
+      message_loop_runner_(new MessageLoopRunner) {
+  render_process_host_->AddObserver(this);
+}
+
+RenderProcessHostWatcher::~RenderProcessHostWatcher() {
+  if (render_process_host_)
+    render_process_host_->RemoveObserver(this);
+}
+
+void RenderProcessHostWatcher::Wait() {
+  message_loop_runner_->Run();
+}
+
+void RenderProcessHostWatcher::RenderProcessExited(
+    RenderProcessHost* host,
+    base::ProcessHandle handle,
+    base::TerminationStatus status,
+    int exit_code) {
+  if (type_ == WATCH_FOR_PROCESS_EXIT)
+    message_loop_runner_->Quit();
+}
+
+void RenderProcessHostWatcher::RenderProcessHostDestroyed(
+    RenderProcessHost* host) {
+  render_process_host_ = NULL;
+  if (type_ == WATCH_FOR_HOST_DESTRUCTION)
+    message_loop_runner_->Quit();
 }
 
 DOMMessageQueue::DOMMessageQueue() : waiting_for_message_(false) {

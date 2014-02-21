@@ -9,6 +9,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -16,6 +17,8 @@
 #if defined(USE_X11)
 #include <X11/Xlib.h>
 #include "ui/base/x/x11_util.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/test/events_test_utils_x11.h"
 #endif
 
 #if defined(OS_WIN)
@@ -150,18 +153,18 @@ void EventGenerator::SendMouseExit() {
   gfx::Point exit_location(current_location_);
   ConvertPointToTarget(current_root_window_->window(), &exit_location);
   ui::MouseEvent mouseev(ui::ET_MOUSE_EXITED, exit_location, exit_location,
-                         flags_);
+                         flags_, 0);
   Dispatch(&mouseev);
 }
 
 void EventGenerator::MoveMouseToInHost(const gfx::Point& point_in_host) {
   const ui::EventType event_type = (flags_ & ui::EF_LEFT_MOUSE_BUTTON) ?
       ui::ET_MOUSE_DRAGGED : ui::ET_MOUSE_MOVED;
-  ui::MouseEvent mouseev(event_type, point_in_host, point_in_host, flags_);
+  ui::MouseEvent mouseev(event_type, point_in_host, point_in_host, flags_, 0);
   Dispatch(&mouseev);
 
   current_location_ = point_in_host;
-  current_root_window_->ConvertPointFromHost(&current_location_);
+  current_root_window_->host()->ConvertPointFromHost(&current_location_);
 }
 
 void EventGenerator::MoveMouseTo(const gfx::Point& point_in_screen,
@@ -178,7 +181,7 @@ void EventGenerator::MoveMouseTo(const gfx::Point& point_in_screen,
     if (!grab_)
       UpdateCurrentRootWindow(move_point);
     ConvertPointToTarget(current_root_window_->window(), &move_point);
-    ui::MouseEvent mouseev(event_type, move_point, move_point, flags_);
+    ui::MouseEvent mouseev(event_type, move_point, move_point, flags_, 0);
     Dispatch(&mouseev);
   }
   current_location_ = point_in_screen;
@@ -243,6 +246,18 @@ void EventGenerator::PressMoveAndReleaseTouchTo(const gfx::Point& point) {
 
 void EventGenerator::PressMoveAndReleaseTouchToCenterOf(Window* window) {
   PressMoveAndReleaseTouchTo(CenterOfWindow(window));
+}
+
+void EventGenerator::GestureEdgeSwipe() {
+  ui::GestureEvent gesture(
+      ui::ET_GESTURE_WIN8_EDGE_SWIPE,
+      0,
+      0,
+      0,
+      ui::EventTimeForNow(),
+      ui::GestureEventDetails(ui::ET_GESTURE_WIN8_EDGE_SWIPE, 0, 0),
+      0);
+  Dispatch(&gesture);
 }
 
 void EventGenerator::GestureTapAt(const gfx::Point& location) {
@@ -495,6 +510,12 @@ void EventGenerator::DispatchKeyEvent(bool is_press,
   MSG native_event =
       { NULL, (is_press ? key_press : WM_KEYUP), key_code, 0 };
   TestKeyEvent keyev(native_event, flags, key_press == WM_CHAR);
+#elif defined(USE_X11)
+  ui::ScopedXI2Event xevent;
+  xevent.InitKeyEvent(is_press ? ui::ET_KEY_PRESSED : ui::ET_KEY_RELEASED,
+                      key_code,
+                      flags);
+  ui::KeyEvent keyev(xevent, false);
 #else
   ui::EventType type = is_press ? ui::ET_KEY_PRESSED : ui::ET_KEY_RELEASED;
   ui::KeyEvent keyev(type, key_code, flags, false);
@@ -511,7 +532,8 @@ void EventGenerator::PressButton(int flag) {
     flags_ |= flag;
     grab_ = flags_ & kAllButtonMask;
     gfx::Point location = GetLocationInCurrentRoot();
-    ui::MouseEvent mouseev(ui::ET_MOUSE_PRESSED, location, location, flags_);
+    ui::MouseEvent mouseev(ui::ET_MOUSE_PRESSED, location, location, flags_,
+                           flag);
     Dispatch(&mouseev);
   }
 }
@@ -520,7 +542,7 @@ void EventGenerator::ReleaseButton(int flag) {
   if (flags_ & flag) {
     gfx::Point location = GetLocationInCurrentRoot();
     ui::MouseEvent mouseev(ui::ET_MOUSE_RELEASED, location,
-                           location, flags_);
+                           location, flags_, flag);
     Dispatch(&mouseev);
     flags_ ^= flag;
   }
@@ -585,23 +607,9 @@ void EventGenerator::DoDispatchEvent(ui::Event* event, bool async) {
     }
     pending_events_.push_back(pending_event);
   } else {
-    RootWindowHostDelegate* root_window_host_delegate =
-        current_root_window_->AsRootWindowHostDelegate();
-    if (event->IsKeyEvent()) {
-      root_window_host_delegate->OnHostKeyEvent(
-          static_cast<ui::KeyEvent*>(event));
-    } else if (event->IsMouseEvent()) {
-      root_window_host_delegate->OnHostMouseEvent(
-          static_cast<ui::MouseEvent*>(event));
-    } else if (event->IsTouchEvent()) {
-      root_window_host_delegate->OnHostTouchEvent(
-          static_cast<ui::TouchEvent*>(event));
-    } else if (event->IsScrollEvent()) {
-      root_window_host_delegate->OnHostScrollEvent(
-          static_cast<ui::ScrollEvent*>(event));
-    } else {
-      NOTREACHED() << "Invalid event type";
-    }
+    ui::EventDispatchDetails details = current_root_window_->OnEventFromSource(
+        event);
+    CHECK(!details.dispatcher_destroyed);
   }
 }
 

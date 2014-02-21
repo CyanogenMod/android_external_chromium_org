@@ -21,10 +21,13 @@ using content::BrowserThread;
 namespace browser_sync {
 
 NonUIDataTypeController::NonUIDataTypeController(
+    scoped_refptr<base::MessageLoopProxy> ui_thread,
+    const base::Closure& error_callback,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : profile_sync_factory_(profile_sync_factory),
+    : DataTypeController(ui_thread, error_callback),
+      profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       sync_service_(sync_service),
       state_(NOT_RUNNING) {
@@ -81,7 +84,7 @@ bool NonUIDataTypeController::StartModels() {
 }
 
 void NonUIDataTypeController::StopModels() {
-  // Do nothing by default.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 void NonUIDataTypeController::StartAssociating(
@@ -137,10 +140,11 @@ void NonUIDataTypeController::Stop() {
                     syncer::SyncMergeResult(type()));
       // We continue on to deactivate the datatype and stop the local service.
       break;
+    case MODEL_LOADED:
     case DISABLED:
-      // If we're disabled we never succeded associating and never activated the
-      // datatype. We would have already stopped the local service in
-      // StartDoneImpl(..).
+      // If DTC is loaded or disabled, we never attempted or succeeded
+      // associating and never activated the datatype. We would have already
+      // stopped the local service in StartDoneImpl(..).
       state_ = NOT_RUNNING;
       StopModels();
       return;
@@ -185,7 +189,8 @@ void NonUIDataTypeController::OnSingleDatatypeUnrecoverableError(
 }
 
 NonUIDataTypeController::NonUIDataTypeController()
-    : profile_sync_factory_(NULL),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+      profile_sync_factory_(NULL),
       profile_(NULL),
       sync_service_(NULL) {}
 

@@ -6,7 +6,7 @@
 #define MEDIA_FILTERS_MOCK_GPU_VIDEO_ACCELERATOR_FACTORIES_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "media/filters/gpu_video_accelerator_factories.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
@@ -44,12 +44,10 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   MOCK_METHOD1(WaitSyncPoint, void(uint32 sync_point));
   MOCK_METHOD3(ReadPixels,
                void(uint32 texture_id,
-                    const gfx::Size& size,
+                    const gfx::Rect& visible_rect,
                     const SkBitmap& pixels));
   MOCK_METHOD1(CreateSharedMemory, base::SharedMemory*(size_t size));
-  MOCK_METHOD0(GetMessageLoop, scoped_refptr<base::MessageLoopProxy>());
-  MOCK_METHOD0(Abort, void());
-  MOCK_METHOD0(IsAborted, bool());
+  MOCK_METHOD0(GetTaskRunner, scoped_refptr<base::SingleThreadTaskRunner>());
 
   virtual scoped_ptr<VideoDecodeAccelerator> CreateVideoDecodeAccelerator(
       VideoCodecProfile profile,

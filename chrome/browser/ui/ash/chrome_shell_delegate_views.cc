@@ -116,11 +116,18 @@ class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
     return std::numeric_limits<double>::min();
   }
 
-  virtual bool ShouldAlwaysShowAccessibilityMenu() const OVERRIDE {
+  virtual bool ShouldShowAccessibilityMenu() const OVERRIDE {
     return false;
   }
 
   virtual void SilenceSpokenFeedback() const OVERRIDE {
+  }
+
+  virtual void SetVirtualKeyboardEnabled(bool enabled) OVERRIDE {
+  }
+
+  virtual bool IsVirtualKeyboardEnabled() const OVERRIDE {
+    return false;
   }
 
   virtual void TriggerAccessibilityAlert(
@@ -129,6 +136,10 @@ class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
 
   virtual ash::AccessibilityAlert GetLastAccessibilityAlert() OVERRIDE {
     return ash::A11Y_ALERT_NONE;
+  }
+
+  base::TimeDelta PlayShutdownSound() const OVERRIDE {
+    return base::TimeDelta();
   }
 
  private:
@@ -188,12 +199,14 @@ void ChromeShellDelegate::Observe(int type,
                                   const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_ASH_SESSION_STARTED: {
+#if defined(OS_WIN)
       // If we are launched to service a windows 8 search request then let the
       // IPC which carries the search string create the browser and initiate
       // the navigation.
       if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kWindows8Search))
         break;
+#endif
       // If Chrome ASH is launched when no browser is open in the desktop,
       // we should execute the startup code.
       // If there are browsers open in the desktop, we create a browser window
@@ -210,10 +223,11 @@ void ChromeShellDelegate::Observe(int type,
             base::FilePath(),
             dummy,
             chrome::startup::IS_NOT_FIRST_RUN);
-        startup_impl.Launch(ProfileManager::GetDefaultProfileOrOffTheRecord(),
-                            std::vector<GURL>(),
-                            true,
-                            chrome::HOST_DESKTOP_TYPE_ASH);
+        startup_impl.Launch(
+            ProfileManager::GetActiveUserProfile(),
+            std::vector<GURL>(),
+            true,
+            chrome::HOST_DESKTOP_TYPE_ASH);
       } else {
         Browser* browser =
             chrome::FindBrowserWithWindow(ash::wm::GetActiveWindow());
@@ -223,7 +237,7 @@ void ChromeShellDelegate::Observe(int type,
         }
 
         chrome::ScopedTabbedBrowserDisplayer displayer(
-            ProfileManager::GetDefaultProfileOrOffTheRecord(),
+            ProfileManager::GetActiveUserProfile(),
             chrome::HOST_DESKTOP_TYPE_ASH);
         chrome::AddTabAt(displayer.browser(), GURL(), -1, true);
       }

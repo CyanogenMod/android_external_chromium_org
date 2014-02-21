@@ -45,6 +45,14 @@ _COUNTER_NAMES = [
     'V8.SizeOf_BYTE_ARRAY_TYPE',
     'V8.SizeOf_CALL_HANDLER_INFO_TYPE',
     'V8.SizeOf_CELL_TYPE',
+    'V8.SizeOf_CODE_AGE-NotExecuted',
+    'V8.SizeOf_CODE_AGE-ExecutedOnce',
+    'V8.SizeOf_CODE_AGE-NoAge',
+    'V8.SizeOf_CODE_AGE-Quadragenarian',
+    'V8.SizeOf_CODE_AGE-Quinquagenarian',
+    'V8.SizeOf_CODE_AGE-Sexagenarian',
+    'V8.SizeOf_CODE_AGE-Septuagenarian',
+    'V8.SizeOf_CODE_AGE-Octogenarian',
     'V8.SizeOf_CODE_CACHE_TYPE',
     'V8.SizeOf_CODE_TYPE',
     'V8.SizeOf_CODE_TYPE-BINARY_OP_IC',
@@ -154,9 +162,10 @@ class V8ObjectStatsMetric(Metric):
   these statistics from the StatsTableMetric.
   """
 
-  def __init__(self):
+  def __init__(self, counters=None):
     super(V8ObjectStatsMetric, self).__init__()
     self._results = None
+    self._counters = counters or _COUNTER_NAMES
 
   @classmethod
   def CustomizeBrowserOptions(cls, options):
@@ -170,15 +179,18 @@ class V8ObjectStatsMetric(Metric):
     ])
 
   @staticmethod
-  def GetV8StatsTable(tab, counters=None):
-    counters = counters or _COUNTER_NAMES
+  def GetV8StatsTable(tab, counters):
 
     return tab.EvaluateJavaScript("""
      (function(counters) {
        var results = {};
        if (!window.chrome || !window.chrome.benchmarking)
         return results;
-       window.gc();  // Trigger GC to ensure stats are checkpointed.
+       try {
+        window.gc();  // Trigger GC to ensure stats are checkpointed.
+       } catch(e) {
+        // window.gc() could have been mapped to something else, just continue.
+       }
        for (var i = 0; i < counters.length; i++)
          results[counters[i]] =
              chrome.benchmarking.counterForRenderer(counters[i]);
@@ -192,7 +204,7 @@ class V8ObjectStatsMetric(Metric):
 
   def Stop(self, page, tab):
     """Get the values in the stats table after the page is loaded."""
-    self._results = V8ObjectStatsMetric.GetV8StatsTable(tab)
+    self._results = V8ObjectStatsMetric.GetV8StatsTable(tab, self._counters)
     if not self._results:
       logging.warning('No V8 object stats from website: ' + page.display_name)
 
@@ -200,4 +212,5 @@ class V8ObjectStatsMetric(Metric):
     """Add results for this page to the results object."""
     assert self._results != None, 'Must call Stop() first'
     for counter_name in self._results:
-      results.Add(counter_name, 'kb', self._results[counter_name] / 1024.0)
+      display_name = counter_name.replace('.', '_')
+      results.Add(display_name, 'kb', self._results[counter_name] / 1024.0)

@@ -42,13 +42,6 @@ const Command* CommandsInfo::GetPageActionCommand(const Extension* extension) {
 }
 
 // static
-const Command* CommandsInfo::GetScriptBadgeCommand(const Extension* extension) {
-  CommandsInfo* info = static_cast<CommandsInfo*>(
-      extension->GetManifestData(keys::kCommands));
-  return info ? info->script_badge_command.get() : NULL;
-}
-
-// static
 const CommandMap* CommandsInfo::GetNamedCommands(const Extension* extension) {
   CommandsInfo* info = static_cast<CommandsInfo*>(
       extension->GetManifestData(keys::kCommands));
@@ -72,7 +65,7 @@ bool CommandsHandler::Parse(Extension* extension, base::string16* error) {
 
   const base::DictionaryValue* dict = NULL;
   if (!extension->manifest()->GetDictionary(keys::kCommands, &dict)) {
-    *error = ASCIIToUTF16(manifest_errors::kInvalidCommandsKey);
+    *error = base::ASCIIToUTF16(manifest_errors::kInvalidCommandsKey);
     return false;
   }
 
@@ -80,11 +73,11 @@ bool CommandsHandler::Parse(Extension* extension, base::string16* error) {
 
   int command_index = 0;
   int keybindings_found = 0;
-  for (DictionaryValue::Iterator iter(*dict); !iter.IsAtEnd();
+  for (base::DictionaryValue::Iterator iter(*dict); !iter.IsAtEnd();
        iter.Advance()) {
     ++command_index;
 
-    const DictionaryValue* command = NULL;
+    const base::DictionaryValue* command = NULL;
     if (!iter.value().GetAsDictionary(&command)) {
       *error = ErrorUtils::FormatErrorMessageUTF16(
           manifest_errors::kInvalidKeyBindingDictionary,
@@ -111,9 +104,6 @@ bool CommandsHandler::Parse(Extension* extension, base::string16* error) {
     } else if (command_name ==
                    manifest_values::kPageActionCommandEvent) {
       commands_info->page_action_command.reset(binding.release());
-    } else if (command_name ==
-                   manifest_values::kScriptBadgeCommandEvent) {
-      commands_info->script_badge_command.reset(binding.release());
     } else {
       if (command_name[0] != '_')  // All commands w/underscore are reserved.
         commands_info->named_commands[command_name] = *binding.get();

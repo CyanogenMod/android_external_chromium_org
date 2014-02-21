@@ -14,6 +14,8 @@
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
@@ -52,10 +54,13 @@ namespace chromeos {
 OAuth2LoginVerifier::OAuth2LoginVerifier(
     OAuth2LoginVerifier::Delegate* delegate,
     net::URLRequestContextGetter* system_request_context,
-    net::URLRequestContextGetter* user_request_context)
-    : delegate_(delegate),
+    net::URLRequestContextGetter* user_request_context,
+    const std::string& oauthlogin_access_token)
+    : OAuth2TokenService::Consumer("cros_login_verifier"),
+      delegate_(delegate),
       system_request_context_(system_request_context),
       user_request_context_(user_request_context),
+      access_token_(oauthlogin_access_token),
       retry_count_(0) {
   DCHECK(delegate);
 }
@@ -63,32 +68,36 @@ OAuth2LoginVerifier::OAuth2LoginVerifier(
 OAuth2LoginVerifier::~OAuth2LoginVerifier() {
 }
 
-void OAuth2LoginVerifier::VerifyProfileTokens(Profile* profile) {
+void OAuth2LoginVerifier::VerifyUserCookies(Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // Delay the verification if the network is not connected or on a captive
-  // portal.
-  const NetworkState* default_network =
-      NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
-  NetworkPortalDetector* detector = NetworkPortalDetector::Get();
-  if (!default_network ||
-      default_network->connection_state() == shill::kStatePortal ||
-      (detector && detector->GetCaptivePortalState(default_network).status !=
-           NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE)) {
-    // If network is offline, defer the token fetching until online.
-    VLOG(1) << "Network is offline.  Deferring OAuth2 access token fetch.";
-    BrowserThread::PostDelayedTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(
-            &OAuth2LoginVerifier::VerifyProfileTokens, AsWeakPtr(), profile),
-        base::TimeDelta::FromMilliseconds(kRequestRestartDelay));
+  if (DelayNetworkCall(base::Bind(&OAuth2LoginVerifier::VerifyUserCookies,
+                                  AsWeakPtr(),
+                                  profile))) {
     return;
   }
 
-  access_token_.clear();
+  StartAuthCookiesVerification();
+}
+
+void OAuth2LoginVerifier::VerifyProfileTokens(Profile* profile) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (DelayNetworkCall(base::Bind(&OAuth2LoginVerifier::VerifyProfileTokens,
+                                  AsWeakPtr(),
+                                  profile))) {
+    return;
+  }
+
   gaia_token_.clear();
-  StartFetchingOAuthLoginAccessToken(profile);
+  if (access_token_.empty()) {
+    // Fetch /OAuthLogin scoped access token.
+    StartFetchingOAuthLoginAccessToken(profile);
+  } else {
+    // If OAuthLogin-scoped access token already exists (if it's generated
+    // together with freshly minted refresh token), then fetch GAIA uber token.
+    StartOAuthLoginForUberToken();
+  }
 }
 
 void OAuth2LoginVerifier::StartFetchingOAuthLoginAccessToken(Profile* profile) {
@@ -96,8 +105,10 @@ void OAuth2LoginVerifier::StartFetchingOAuthLoginAccessToken(Profile* profile) {
   scopes.insert(GaiaUrls::GetInstance()->oauth1_login_scope());
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile);
   login_token_request_ = token_service->StartRequestWithContext(
-      token_service->GetPrimaryAccountId(),
+      signin_manager->GetAuthenticatedAccountId(),
       system_request_context_.get(),
       scopes,
       this);
@@ -156,11 +167,11 @@ void OAuth2LoginVerifier::SchedulePostMergeVerification() {
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(
-          &OAuth2LoginVerifier::StartPostRestoreVerification, AsWeakPtr()),
+          &OAuth2LoginVerifier::StartAuthCookiesVerification, AsWeakPtr()),
       base::TimeDelta::FromMilliseconds(kPostResoreVerificationDelay));
 }
 
-void OAuth2LoginVerifier::StartPostRestoreVerification() {
+void OAuth2LoginVerifier::StartAuthCookiesVerification() {
   gaia_fetcher_.reset(
       new GaiaAuthFetcher(this,
                           std::string(GaiaConstants::kChromeOSSource),
@@ -226,7 +237,7 @@ void OAuth2LoginVerifier::OnListAccountsFailure(
   RetryOnError(
       "ListAccounts",
       error,
-      base::Bind(&OAuth2LoginVerifier::StartPostRestoreVerification,
+      base::Bind(&OAuth2LoginVerifier::StartAuthCookiesVerification,
                  AsWeakPtr()),
       base::Bind(&Delegate::OnListAccountsFailure,
                  base::Unretained(delegate_)));
@@ -257,6 +268,29 @@ void OAuth2LoginVerifier::RetryOnError(const char* operation_id,
       GoogleServiceAuthError::NUM_STATES);
 
   error_handler.Run(IsConnectionOrServiceError(error));
+}
+
+bool OAuth2LoginVerifier::DelayNetworkCall(const base::Closure& callback) {
+  // Delay the verification if the network is not connected or on a captive
+  // portal.
+  const NetworkState* default_network =
+      NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
+  NetworkPortalDetector* detector = NetworkPortalDetector::Get();
+  if (!default_network ||
+      default_network->connection_state() == shill::kStatePortal ||
+      (detector && detector->GetCaptivePortalState(default_network).status !=
+           NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE)) {
+    // If network is offline, defer the token fetching until online.
+    LOG(WARNING) << "Network is offline. Deferring call.";
+    BrowserThread::PostDelayedTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        callback,
+        base::TimeDelta::FromMilliseconds(kRequestRestartDelay));
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace chromeos

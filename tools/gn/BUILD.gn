@@ -177,7 +177,7 @@ executable("gn") {
   ]
   if (!is_gyp) {
     # Currently this only works in GYP (see GN_BUILD above).
-    deps += "//build/util:last_change"
+    deps += [ "//build/util:last_change" ]
   }
 }
 
@@ -196,10 +196,12 @@ test("gn_unittests") {
     "ninja_copy_target_writer_unittest.cc",
     "ninja_helper_unittest.cc",
     "ninja_script_target_writer_unittest.cc",
+    "operators_unittest.cc",
     "parser_unittest.cc",
     "path_output_unittest.cc",
     "pattern_unittest.cc",
     "scope_per_file_provider_unittest.cc",
+    "scope_unittest.cc",
     "source_dir_unittest.cc",
     "string_utils_unittest.cc",
     "target_generator_unittest.cc",
@@ -210,9 +212,9 @@ test("gn_unittests") {
   ]
   deps = [
     ":gn_lib",
-    "//base:run_all_unittests",
-    "//base:test_support_base",
-    "//testing:gtest",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support_base",
+    "//testing/gtest",
   ]
 }
 

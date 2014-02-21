@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/drive/sync/entry_revert_performer.h"
 
+#include "chrome/browser/chromeos/drive/change_list_processor.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
@@ -48,13 +49,12 @@ FileError FinishRevert(ResourceMetadata* metadata,
 
     changed_directories->insert(original_path.DirName());
   } else {
-    std::string parent_local_id;
-    error = metadata->GetIdByResourceId(parent_resource_id, &parent_local_id);
+    error = ChangeListProcessor::SetParentLocalIdOfEntry(metadata, &entry,
+                                                         parent_resource_id);
     if (error != FILE_ERROR_OK)
       return error;
 
     entry.set_local_id(local_id);
-    entry.set_parent_local_id(parent_local_id);
     error = metadata->RefreshEntry(entry);
     if (error != FILE_ERROR_OK)
       return error;
@@ -85,6 +85,7 @@ EntryRevertPerformer::~EntryRevertPerformer() {
 }
 
 void EntryRevertPerformer::RevertEntry(const std::string& local_id,
+                                       const ClientContext& context,
                                        const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -97,16 +98,20 @@ void EntryRevertPerformer::RevertEntry(const std::string& local_id,
       base::Bind(&ResourceMetadata::GetResourceEntryById,
                  base::Unretained(metadata_), local_id, entry_ptr),
       base::Bind(&EntryRevertPerformer::RevertEntryAfterPrepare,
-                 weak_ptr_factory_.GetWeakPtr(), callback,
+                 weak_ptr_factory_.GetWeakPtr(), context, callback,
                  base::Passed(&entry)));
 }
 
 void EntryRevertPerformer::RevertEntryAfterPrepare(
+    const ClientContext& context,
     const FileOperationCallback& callback,
     scoped_ptr<ResourceEntry> entry,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+
+  if (error == FILE_ERROR_OK && entry->resource_id().empty())
+    error = FILE_ERROR_INVALID_OPERATION;
 
   if (error != FILE_ERROR_OK) {
     callback.Run(error);
@@ -115,7 +120,7 @@ void EntryRevertPerformer::RevertEntryAfterPrepare(
 
   scheduler_->GetResourceEntry(
       entry->resource_id(),
-      ClientContext(BACKGROUND),
+      context,
       base::Bind(&EntryRevertPerformer::RevertEntryAfterGetResourceEntry,
                  weak_ptr_factory_.GetWeakPtr(), callback, entry->local_id()));
 }

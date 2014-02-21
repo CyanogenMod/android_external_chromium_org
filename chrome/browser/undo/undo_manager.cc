@@ -7,6 +7,8 @@
 #include "base/auto_reset.h"
 #include "base/logging.h"
 #include "chrome/browser/undo/undo_operation.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -17,13 +19,19 @@ const size_t kMaxUndoGroups = 100;
 
 // UndoGroup ------------------------------------------------------------------
 
-UndoGroup::UndoGroup() {
+UndoGroup::UndoGroup()
+    : undo_label_id_(IDS_BOOKMARK_BAR_UNDO),
+      redo_label_id_(IDS_BOOKMARK_BAR_REDO) {
 }
 
 UndoGroup::~UndoGroup() {
 }
 
 void UndoGroup::AddOperation(scoped_ptr<UndoOperation> operation) {
+  if (operations_.empty()) {
+    set_undo_label_id(operation->GetUndoLabelId());
+    set_redo_label_id(operation->GetRedoLabelId());
+  }
   operations_.push_back(operation.release());
 }
 
@@ -38,6 +46,7 @@ void UndoGroup::Undo() {
 
 UndoManager::UndoManager()
     : group_actions_count_(0),
+      undo_in_progress_action_(NULL),
       undo_suspended_count_(0),
       performing_undo_(false),
       performing_redo_(false) {
@@ -56,6 +65,18 @@ void UndoManager::Undo() {
 
 void UndoManager::Redo() {
   Undo(&performing_redo_, &redo_actions_);
+}
+
+base::string16 UndoManager::GetUndoLabel() const {
+  return l10n_util::GetStringUTF16(
+      undo_actions_.empty() ? IDS_BOOKMARK_BAR_UNDO
+                            : undo_actions_.back()->get_undo_label_id());
+}
+
+base::string16 UndoManager::GetRedoLabel() const {
+  return l10n_util::GetStringUTF16(
+      redo_actions_.empty() ? IDS_BOOKMARK_BAR_REDO
+                            : redo_actions_.back()->get_redo_label_id());
 }
 
 void UndoManager::AddUndoOperation(scoped_ptr<UndoOperation> operation) {
@@ -127,6 +148,15 @@ std::vector<UndoOperation*> UndoManager::GetAllUndoOperations() const {
         redo_actions_[i]->undo_operations();
     result.insert(result.end(), operations.begin(), operations.end());
   }
+  // Ensure that if an Undo is in progress the UndoOperations part of that
+  // UndoGroup are included in the returned set. This will ensure that any
+  // changes (such as renumbering) will be applied to any potentially
+  // unprocessed UndoOperations.
+  if (undo_in_progress_action_) {
+    const std::vector<UndoOperation*>& operations =
+        undo_in_progress_action_->undo_operations();
+    result.insert(result.end(), operations.begin(), operations.end());
+  }
 
   return result;
 }
@@ -147,6 +177,8 @@ void UndoManager::Undo(bool* performing_indicator,
 
   base::AutoReset<bool> incoming_changes(performing_indicator, true);
   scoped_ptr<UndoGroup> action(active_undo_group->back());
+  base::AutoReset<UndoGroup*> action_context(&undo_in_progress_action_,
+      action.get());
   active_undo_group->weak_erase(
       active_undo_group->begin() + active_undo_group->size() - 1);
 

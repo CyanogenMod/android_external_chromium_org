@@ -6,11 +6,11 @@
 
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -105,10 +105,7 @@ void AppIconLoaderImpl::BuildImage(const std::string& id,
                                    const gfx::ImageSkia& icon) {
   gfx::ImageSkia image = icon;
 
-  const ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const bool can_launch = extension_util::IsAppLaunchable(id, service);
-  if (!can_launch) {
+  if (!util::IsAppLaunchable(id, profile_)) {
     const color_utils::HSL shift = {-1, 0, 0.6};
     image = gfx::ImageSkiaOperations::CreateHSLShiftedImage(image, shift);
   }

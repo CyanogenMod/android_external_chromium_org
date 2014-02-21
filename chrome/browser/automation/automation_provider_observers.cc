@@ -33,19 +33,12 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/metrics/metric_event_duration_details.h"
-#include "chrome/browser/notifications/balloon.h"
-#include "chrome/browser/notifications/balloon_collection.h"
-#include "chrome/browser/notifications/balloon_host.h"
-#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
-#include "chrome/browser/notifications/notification.h"
-#include "chrome/browser/password_manager/password_store_change.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -69,6 +62,7 @@
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/password_manager/core/browser/password_store_change.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
@@ -76,13 +70,21 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/process_type.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/runtime_data.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/view_type.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
+
+#if !defined(OS_CHROMEOS)
+#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
+#endif
 
 using content::BrowserThread;
 using content::DomOperationNotificationDetails;
@@ -180,24 +182,24 @@ void InitialLoadObserver::Observe(int type,
     ConditionMet();
 }
 
-DictionaryValue* InitialLoadObserver::GetTimingInformation() const {
-  ListValue* items = new ListValue;
+base::DictionaryValue* InitialLoadObserver::GetTimingInformation() const {
+  base::ListValue* items = new base::ListValue;
   for (TabTimeMap::const_iterator it = loading_tabs_.begin();
        it != loading_tabs_.end();
        ++it) {
-    DictionaryValue* item = new DictionaryValue;
+    base::DictionaryValue* item = new base::DictionaryValue;
     base::TimeDelta delta_start = it->second.start_time() - init_time_;
 
     item->SetDouble("load_start_ms", delta_start.InMillisecondsF());
     if (it->second.stop_time().is_null()) {
-      item->Set("load_stop_ms", Value::CreateNullValue());
+      item->Set("load_stop_ms", base::Value::CreateNullValue());
     } else {
       base::TimeDelta delta_stop = it->second.stop_time() - init_time_;
       item->SetDouble("load_stop_ms", delta_stop.InMillisecondsF());
     }
     items->Append(item);
   }
-  DictionaryValue* return_value = new DictionaryValue;
+  base::DictionaryValue* return_value = new base::DictionaryValue;
   return_value->Set("tabs", items);
   return return_value;
 }
@@ -206,30 +208,6 @@ void InitialLoadObserver::ConditionMet() {
   registrar_.RemoveAll();
   if (automation_.get())
     automation_->OnInitialTabLoadsComplete();
-}
-
-NewTabUILoadObserver::NewTabUILoadObserver(AutomationProvider* automation,
-                                           Profile* profile)
-    : automation_(automation->AsWeakPtr()) {
-  registrar_.Add(this, chrome::NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD,
-                 content::Source<Profile>(profile));
-}
-
-NewTabUILoadObserver::~NewTabUILoadObserver() {
-}
-
-void NewTabUILoadObserver::Observe(int type,
-                                   const content::NotificationSource& source,
-                                   const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD) {
-    content::Details<int> load_time(details);
-    if (automation_.get()) {
-      automation_->Send(
-          new AutomationMsg_InitialNewTabUILoadComplete(*load_time.ptr()));
-    }
-  } else {
-    NOTREACHED();
-  }
 }
 
 NavigationControllerRestoredObserver::NavigationControllerRestoredObserver(
@@ -352,7 +330,7 @@ void NavigationNotificationObserver::ConditionMet(
   if (automation_.get()) {
     if (use_json_interface_) {
       if (navigation_result == AUTOMATION_MSG_NAVIGATION_SUCCESS) {
-        DictionaryValue dict;
+        base::DictionaryValue dict;
         dict.SetInteger("result", navigation_result);
         AutomationJSONReply(automation_.get(), reply_message_.release())
             .SendSuccess(&dict);
@@ -562,7 +540,8 @@ void ExtensionUninstallObserver::Observe(
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
       if (id_ == content::Details<extensions::Extension>(details).ptr()->id()) {
-        scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+        scoped_ptr<base::DictionaryValue> return_value(
+            new base::DictionaryValue);
         return_value->SetBoolean("success", true);
         AutomationJSONReply(automation_.get(), reply_message_.release())
             .SendSuccess(return_value.get());
@@ -576,7 +555,8 @@ void ExtensionUninstallObserver::Observe(
       const extensions::Extension* extension =
           content::Details<extensions::Extension>(details).ptr();
       if (id_ == extension->id()) {
-        scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+        scoped_ptr<base::DictionaryValue> return_value(
+            new base::DictionaryValue);
         return_value->SetBoolean("success", false);
         AutomationJSONReply(automation_.get(), reply_message_.release())
             .SendSuccess(return_value.get());
@@ -592,10 +572,10 @@ void ExtensionUninstallObserver::Observe(
 }
 
 ExtensionReadyNotificationObserver::ExtensionReadyNotificationObserver(
-    extensions::ProcessManager* manager, ExtensionService* service,
-    AutomationProvider* automation, IPC::Message* reply_message)
-    : manager_(manager),
-      service_(service),
+    extensions::ExtensionSystem* extension_system,
+    AutomationProvider* automation,
+    IPC::Message* reply_message)
+    : extension_system_(extension_system),
       automation_(automation->AsWeakPtr()),
       reply_message_(reply_message),
       extension_(NULL) {
@@ -630,7 +610,8 @@ void ExtensionReadyNotificationObserver::Observe(
     case content::NOTIFICATION_LOAD_STOP:
       // Only continue on with this method if our extension has been loaded
       // and all the extension views have stopped loading.
-      if (!extension_ || !DidExtensionViewsStopLoading(manager_))
+      if (!extension_ ||
+          !DidExtensionViewsStopLoading(extension_system_->process_manager()))
         return;
       break;
     case chrome::NOTIFICATION_EXTENSION_LOADED: {
@@ -642,13 +623,13 @@ void ExtensionReadyNotificationObserver::Observe(
           !extensions::Manifest::IsUnpackedLocation(location))
         return;
       extension_ = loaded_extension;
-      if (!DidExtensionViewsStopLoading(manager_))
+      if (!DidExtensionViewsStopLoading(extension_system_->process_manager()))
         return;
       // For some reason, the background extension view is not yet
       // created at this point so just checking whether all extension views
       // are loaded is not sufficient. If background page is not ready,
       // we wait for NOTIFICATION_LOAD_STOP.
-      if (!service_->IsBackgroundPageReady(extension_))
+      if (!extension_system_->runtime_data()->IsBackgroundPageReady(extension_))
         return;
       break;
     }
@@ -663,7 +644,7 @@ void ExtensionReadyNotificationObserver::Observe(
 
   AutomationJSONReply reply(automation_.get(), reply_message_.release());
   if (extension_) {
-    DictionaryValue dict;
+    base::DictionaryValue dict;
     dict.SetString("id", extension_->id());
     reply.SendSuccess(&dict);
   } else {
@@ -1074,7 +1055,7 @@ void FindInPageNotificationObserver::Observe(
   // This message comes to us before the final update is sent.
   if (find_details->request_id() == kFindInPageRequestId) {
     if (reply_with_json_) {
-      scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+      scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
       return_value->SetInteger("match_count",
           find_details->number_of_matches());
       gfx::Rect rect = find_details->selection_rect();
@@ -1155,7 +1136,7 @@ void DomOperationMessageSender::OnDomOperationCompleted(
     const std::string& json) {
   if (automation_.get()) {
     if (use_json_interface_) {
-      DictionaryValue dict;
+      base::DictionaryValue dict;
       dict.SetString("result", json);
       AutomationJSONReply(automation_.get(), reply_message_.release())
           .SendSuccess(&dict);
@@ -1263,8 +1244,9 @@ AutomationProviderBookmarkModelObserver::
   model_->RemoveObserver(this);
 }
 
-void AutomationProviderBookmarkModelObserver::Loaded(BookmarkModel* model,
-                                                     bool ids_reassigned) {
+void AutomationProviderBookmarkModelObserver::BookmarkModelLoaded(
+    BookmarkModel* model,
+    bool ids_reassigned) {
   ReplyAndDelete(true);
 }
 
@@ -1316,7 +1298,7 @@ void AutomationProviderDownloadUpdatedObserver::OnDownloadUpdated(
   download->RemoveObserver(this);
 
   if (provider_.get()) {
-    scoped_ptr<DictionaryValue> return_value(
+    scoped_ptr<base::DictionaryValue> return_value(
         provider_->GetDictionaryFromDownloadItem(download, incognito_));
     AutomationJSONReply(provider_.get(), reply_message_.release())
         .SendSuccess(return_value.get());
@@ -1329,7 +1311,7 @@ void AutomationProviderDownloadUpdatedObserver::OnDownloadOpened(
   download->RemoveObserver(this);
 
   if (provider_.get()) {
-    scoped_ptr<DictionaryValue> return_value(
+    scoped_ptr<base::DictionaryValue> return_value(
         provider_->GetDictionaryFromDownloadItem(download, incognito_));
     AutomationJSONReply(provider_.get(), reply_message_.release())
         .SendSuccess(return_value.get());
@@ -1371,11 +1353,11 @@ AllDownloadsCompleteObserver::AllDownloadsCompleteObserver(
     AutomationProvider* provider,
     IPC::Message* reply_message,
     DownloadManager* download_manager,
-    ListValue* pre_download_ids)
+    base::ListValue* pre_download_ids)
     : provider_(provider->AsWeakPtr()),
       reply_message_(reply_message),
       download_manager_(download_manager) {
-  for (ListValue::iterator it = pre_download_ids->begin();
+  for (base::ListValue::iterator it = pre_download_ids->begin();
        it != pre_download_ids->end(); ++it) {
     int val = 0;
     if ((*it)->GetAsInteger(&val)) {
@@ -1486,11 +1468,11 @@ void AutomationProviderHistoryObserver::HistoryQueryComplete(
     return;
   }
 
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
 
-  ListValue* history_list = new ListValue;
+  base::ListValue* history_list = new base::ListValue;
   for (size_t i = 0; i < results->size(); ++i) {
-    DictionaryValue* page_value = new DictionaryValue;
+    base::DictionaryValue* page_value = new base::DictionaryValue;
     history::URLResult const &page = (*results)[i];
     page_value->SetString("title", page.title());
     page_value->SetString("url", page.url().spec());
@@ -1550,20 +1532,19 @@ AutomationProviderGetPasswordsObserver::AutomationProviderGetPasswordsObserver(
 AutomationProviderGetPasswordsObserver::
     ~AutomationProviderGetPasswordsObserver() {}
 
-void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
-    CancelableRequestProvider::Handle handle,
-    const std::vector<autofill::PasswordForm*>& result) {
+void AutomationProviderGetPasswordsObserver::OnGetPasswordStoreResults(
+    const std::vector<autofill::PasswordForm*>& results) {
   if (!provider_.get()) {
     delete this;
     return;
   }
 
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
 
-  ListValue* passwords = new ListValue;
+  base::ListValue* passwords = new base::ListValue;
   for (std::vector<autofill::PasswordForm*>::const_iterator it =
-           result.begin(); it != result.end(); ++it) {
-    DictionaryValue* password_val = new DictionaryValue;
+           results.begin(); it != results.end(); ++it) {
+    base::DictionaryValue* password_val = new base::DictionaryValue;
     autofill::PasswordForm* password_form = *it;
     password_val->SetString("username_value", password_form->username_value);
     password_val->SetString("password_value", password_form->password_value);
@@ -1585,101 +1566,6 @@ void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
   AutomationJSONReply(provider_.get(), reply_message_.release())
       .SendSuccess(return_value.get());
   delete this;
-}
-
-void AutomationProviderGetPasswordsObserver::OnGetPasswordStoreResults(
-    const std::vector<autofill::PasswordForm*>& results) {
-  // TODO(kaiwang): Implement when I refactor
-  // PasswordManager::GetAutofillableLogins.
-  NOTIMPLEMENTED();
-}
-
-PasswordStoreLoginsChangedObserver::PasswordStoreLoginsChangedObserver(
-    AutomationProvider* automation,
-    IPC::Message* reply_message,
-    PasswordStoreChange::Type expected_type,
-    const std::string& result_key)
-    : automation_(automation->AsWeakPtr()),
-      reply_message_(reply_message),
-      expected_type_(expected_type),
-      result_key_(result_key),
-      done_event_(false, false) {
-  AddRef();
-}
-
-PasswordStoreLoginsChangedObserver::~PasswordStoreLoginsChangedObserver() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-}
-
-void PasswordStoreLoginsChangedObserver::Init() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  BrowserThread::PostTask(
-      BrowserThread::DB,
-      FROM_HERE,
-      base::Bind(&PasswordStoreLoginsChangedObserver::RegisterObserversTask,
-                 this));
-  done_event_.Wait();
-}
-
-void PasswordStoreLoginsChangedObserver::RegisterObserversTask() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-  registrar_.reset(new content::NotificationRegistrar);
-  registrar_->Add(this, chrome::NOTIFICATION_LOGINS_CHANGED,
-                  content::NotificationService::AllSources());
-  done_event_.Signal();
-}
-
-void PasswordStoreLoginsChangedObserver::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-  DCHECK(type == chrome::NOTIFICATION_LOGINS_CHANGED);
-  registrar_.reset();  // Must be done from the DB thread.
-  PasswordStoreChangeList* change_details =
-      content::Details<PasswordStoreChangeList>(details).ptr();
-  if (change_details->size() != 1 ||
-      change_details->front().type() != expected_type_) {
-    // Notify the UI thread that there's an error.
-    std::string error = "Unexpected password store login change details.";
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&PasswordStoreLoginsChangedObserver::IndicateError, this,
-                   error));
-    return;
-  }
-
-  // Notify the UI thread that we're done listening.
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&PasswordStoreLoginsChangedObserver::IndicateDone, this));
-}
-
-void PasswordStoreLoginsChangedObserver::IndicateDone() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (automation_.get()) {
-    if (result_key_.empty()) {
-      AutomationJSONReply(automation_.get(), reply_message_.release())
-          .SendSuccess(NULL);
-    } else {
-      scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
-      return_value->SetBoolean(result_key_, true);
-      AutomationJSONReply(automation_.get(), reply_message_.release())
-          .SendSuccess(return_value.get());
-    }
-  }
-  Release();
-}
-
-void PasswordStoreLoginsChangedObserver::IndicateError(
-    const std::string& error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (automation_.get())
-    AutomationJSONReply(automation_.get(), reply_message_.release())
-        .SendError(error);
-  Release();
 }
 
 OmniboxAcceptNotificationObserver::OmniboxAcceptNotificationObserver(
@@ -1747,16 +1633,16 @@ namespace {
 // Returns a vector of dictionaries containing information about installed apps,
 // as identified from a given list of extensions.  The caller takes ownership
 // of the created vector.
-std::vector<DictionaryValue*>* GetAppInfoFromExtensions(
-    const ExtensionSet* extensions,
+std::vector<base::DictionaryValue*>* GetAppInfoFromExtensions(
+    const extensions::ExtensionSet* extensions,
     ExtensionService* ext_service) {
-  std::vector<DictionaryValue*>* apps_list =
-      new std::vector<DictionaryValue*>();
-  for (ExtensionSet::const_iterator ext = extensions->begin();
+  std::vector<base::DictionaryValue*>* apps_list =
+      new std::vector<base::DictionaryValue*>();
+  for (extensions::ExtensionSet::const_iterator ext = extensions->begin();
        ext != extensions->end(); ++ext) {
     // Only return information about extensions that are actually apps.
     if ((*ext)->is_app()) {
-      DictionaryValue* app_info = new DictionaryValue();
+      base::DictionaryValue* app_info = new base::DictionaryValue();
       AppLauncherHandler::CreateAppInfo(ext->get(), ext_service, app_info);
       app_info->SetBoolean(
           "is_component_extension",
@@ -1794,7 +1680,7 @@ NTPInfoObserver::NTPInfoObserver(AutomationProvider* automation,
     : automation_(automation->AsWeakPtr()),
       reply_message_(reply_message),
       request_(0),
-      ntp_info_(new DictionaryValue) {
+      ntp_info_(new base::DictionaryValue) {
   top_sites_ = automation_->profile()->GetTopSites();
   if (!top_sites_) {
     AutomationJSONReply(automation_.get(), reply_message_.release())
@@ -1818,32 +1704,36 @@ NTPInfoObserver::NTPInfoObserver(AutomationProvider* automation,
     return;
   }
   // Process enabled extensions.
-  ListValue* apps_list = new ListValue();
-  const ExtensionSet* extensions = ext_service->extensions();
-  std::vector<DictionaryValue*>* enabled_apps = GetAppInfoFromExtensions(
-      extensions, ext_service);
-  for (std::vector<DictionaryValue*>::const_iterator app =
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(automation_->profile());
+  base::ListValue* apps_list = new base::ListValue();
+  const extensions::ExtensionSet& enabled_extensions =
+      extension_registry->enabled_extensions();
+  std::vector<base::DictionaryValue*>* enabled_apps = GetAppInfoFromExtensions(
+      &enabled_extensions, ext_service);
+  for (std::vector<base::DictionaryValue*>::const_iterator app =
        enabled_apps->begin(); app != enabled_apps->end(); ++app) {
     (*app)->SetBoolean("is_disabled", false);
     apps_list->Append(*app);
   }
   delete enabled_apps;
   // Process disabled extensions.
-  const ExtensionSet* disabled_extensions = ext_service->disabled_extensions();
-  std::vector<DictionaryValue*>* disabled_apps = GetAppInfoFromExtensions(
-      disabled_extensions, ext_service);
-  for (std::vector<DictionaryValue*>::const_iterator app =
+  const extensions::ExtensionSet& disabled_extensions =
+      extension_registry->disabled_extensions();
+  std::vector<base::DictionaryValue*>* disabled_apps = GetAppInfoFromExtensions(
+      &disabled_extensions, ext_service);
+  for (std::vector<base::DictionaryValue*>::const_iterator app =
        disabled_apps->begin(); app != disabled_apps->end(); ++app) {
     (*app)->SetBoolean("is_disabled", true);
     apps_list->Append(*app);
   }
   delete disabled_apps;
   // Process terminated extensions.
-  const ExtensionSet* terminated_extensions =
-      ext_service->terminated_extensions();
-  std::vector<DictionaryValue*>* terminated_apps = GetAppInfoFromExtensions(
-      terminated_extensions, ext_service);
-  for (std::vector<DictionaryValue*>::const_iterator app =
+  const extensions::ExtensionSet& terminated_extensions =
+      extension_registry->terminated_extensions();
+  std::vector<base::DictionaryValue*>* terminated_apps =
+      GetAppInfoFromExtensions(&terminated_extensions, ext_service);
+  for (std::vector<base::DictionaryValue*>::const_iterator app =
        terminated_apps->begin(); app != terminated_apps->end(); ++app) {
     (*app)->SetBoolean("is_disabled", true);
     apps_list->Append(*app);
@@ -1852,16 +1742,16 @@ NTPInfoObserver::NTPInfoObserver(AutomationProvider* automation,
   ntp_info_->Set("apps", apps_list);
 
   // Get the info that would be displayed in the recently closed section.
-  ListValue* recently_closed_list = new ListValue;
+  base::ListValue* recently_closed_list = new base::ListValue;
   RecentlyClosedTabsHandler::CreateRecentlyClosedValues(service->entries(),
                                                         recently_closed_list);
   ntp_info_->Set("recently_closed", recently_closed_list);
 
   // Add default site URLs.
-  ListValue* default_sites_list = new ListValue;
+  base::ListValue* default_sites_list = new base::ListValue;
   history::MostVisitedURLList urls = top_sites_->GetPrepopulatePages();
   for (size_t i = 0; i < urls.size(); ++i) {
-    default_sites_list->Append(Value::CreateStringValue(
+    default_sites_list->Append(base::Value::CreateStringValue(
         urls[i].url.possibly_invalid_spec()));
   }
   ntp_info_->Set("default_sites", default_sites_list);
@@ -1905,12 +1795,12 @@ void NTPInfoObserver::OnTopSitesReceived(
     return;
   }
 
-  ListValue* list_value = new ListValue;
+  base::ListValue* list_value = new base::ListValue;
   for (size_t i = 0; i < visited_list.size(); ++i) {
     const history::MostVisitedURL& visited = visited_list[i];
     if (visited.url.spec().empty())
       break;  // This is the signal that there are no more real visited sites.
-    DictionaryValue* dict = new DictionaryValue;
+    base::DictionaryValue* dict = new base::DictionaryValue;
     dict->SetString("url", visited.url.spec());
     dict->SetString("title", visited.title);
     list_value->Append(dict);
@@ -1965,159 +1855,6 @@ void AppLaunchObserver::Observe(int type,
       AutomationJSONReply(automation_.get(), reply_message_.release())
           .SendSuccess(NULL);
     }
-    delete this;
-  }
-}
-
-namespace {
-
-// Returns whether all active notifications have an associated process ID.
-bool AreActiveNotificationProcessesReady() {
-  BalloonNotificationUIManager* manager =
-      BalloonNotificationUIManager::GetInstanceForTesting();
-  const BalloonCollection::Balloons& balloons =
-      manager->balloon_collection()->GetActiveBalloons();
-  BalloonCollection::Balloons::const_iterator iter;
-  for (iter = balloons.begin(); iter != balloons.end(); ++iter) {
-    BalloonHost* balloon_host = (*iter)->balloon_view()->GetHost();
-    if (balloon_host && !balloon_host->IsRenderViewReady())
-      return false;
-  }
-  return true;
-}
-
-}  // namespace
-
-GetAllNotificationsObserver::GetAllNotificationsObserver(
-    AutomationProvider* automation,
-    IPC::Message* reply_message)
-    : automation_(automation->AsWeakPtr()),
-      reply_message_(reply_message) {
-  if (AreActiveNotificationProcessesReady()) {
-    SendMessage();
-  } else {
-    registrar_.Add(this, chrome::NOTIFICATION_NOTIFY_BALLOON_CONNECTED,
-                   content::NotificationService::AllSources());
-  }
-}
-
-GetAllNotificationsObserver::~GetAllNotificationsObserver() {}
-
-void GetAllNotificationsObserver::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (!automation_.get()) {
-    delete this;
-    return;
-  }
-  if (AreActiveNotificationProcessesReady())
-    SendMessage();
-}
-
-base::DictionaryValue* GetAllNotificationsObserver::NotificationToJson(
-    const Notification* note) {
-  DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetString("content_url", note->content_url().spec());
-  dict->SetString("origin_url", note->origin_url().spec());
-  dict->SetString("display_source", note->display_source());
-  dict->SetString("id", note->notification_id());
-  return dict;
-}
-
-void GetAllNotificationsObserver::SendMessage() {
-  BalloonNotificationUIManager* manager =
-      BalloonNotificationUIManager::GetInstanceForTesting();
-  const BalloonCollection::Balloons& balloons =
-      manager->balloon_collection()->GetActiveBalloons();
-  DictionaryValue return_value;
-  ListValue* list = new ListValue;
-  return_value.Set("notifications", list);
-  BalloonCollection::Balloons::const_iterator balloon_iter;
-  for (balloon_iter = balloons.begin(); balloon_iter != balloons.end();
-       ++balloon_iter) {
-    base::DictionaryValue* note = NotificationToJson(
-        &(*balloon_iter)->notification());
-    BalloonHost* balloon_host = (*balloon_iter)->balloon_view()->GetHost();
-    if (balloon_host) {
-      int pid = base::GetProcId(balloon_host->web_contents()->
-                                GetRenderViewHost()->GetProcess()->GetHandle());
-      note->SetInteger("pid", pid);
-    }
-    list->Append(note);
-  }
-  std::vector<const Notification*> queued_notes;
-  manager->GetQueuedNotificationsForTesting(&queued_notes);
-  std::vector<const Notification*>::const_iterator queued_iter;
-  for (queued_iter = queued_notes.begin(); queued_iter != queued_notes.end();
-       ++queued_iter) {
-    list->Append(NotificationToJson(*queued_iter));
-  }
-  AutomationJSONReply(automation_.get(), reply_message_.release())
-      .SendSuccess(&return_value);
-  delete this;
-}
-
-NewNotificationBalloonObserver::NewNotificationBalloonObserver(
-    AutomationProvider* provider,
-    IPC::Message* reply_message)
-    : automation_(provider->AsWeakPtr()),
-      reply_message_(reply_message) {
-  registrar_.Add(this, chrome::NOTIFICATION_NOTIFY_BALLOON_CONNECTED,
-                 content::NotificationService::AllSources());
-}
-
-NewNotificationBalloonObserver::~NewNotificationBalloonObserver() { }
-
-void NewNotificationBalloonObserver::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (automation_.get()) {
-    AutomationJSONReply(automation_.get(), reply_message_.release())
-        .SendSuccess(NULL);
-  }
-  delete this;
-}
-
-OnNotificationBalloonCountObserver::OnNotificationBalloonCountObserver(
-    AutomationProvider* provider,
-    IPC::Message* reply_message,
-    int count)
-    : automation_(provider->AsWeakPtr()),
-      reply_message_(reply_message),
-      collection_(BalloonNotificationUIManager::GetInstanceForTesting()->
-          balloon_collection()),
-      count_(count) {
-  registrar_.Add(this, chrome::NOTIFICATION_NOTIFY_BALLOON_CONNECTED,
-                 content::NotificationService::AllSources());
-  collection_->set_on_collection_changed_callback(
-      base::Bind(&OnNotificationBalloonCountObserver::CheckBalloonCount,
-                 base::Unretained(this)));
-  CheckBalloonCount();
-}
-
-OnNotificationBalloonCountObserver::~OnNotificationBalloonCountObserver() {
-}
-
-void OnNotificationBalloonCountObserver::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  CheckBalloonCount();
-}
-
-void OnNotificationBalloonCountObserver::CheckBalloonCount() {
-  bool balloon_count_met = AreActiveNotificationProcessesReady() &&
-      static_cast<int>(collection_->GetActiveBalloons().size()) == count_;
-
-  if (balloon_count_met && automation_.get()) {
-    AutomationJSONReply(automation_.get(), reply_message_.release())
-        .SendSuccess(NULL);
-  }
-
-  if (balloon_count_met || !automation_.get()) {
-    collection_->set_on_collection_changed_callback(base::Closure());
     delete this;
   }
 }
@@ -2315,31 +2052,31 @@ ProcessInfoObserver::ProcessInfoObserver(
 ProcessInfoObserver::~ProcessInfoObserver() {}
 
 void ProcessInfoObserver::OnDetailsAvailable() {
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
-  ListValue* browser_proc_list = new ListValue();
+  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
+  base::ListValue* browser_proc_list = new base::ListValue();
   const std::vector<ProcessData>& all_processes = processes();
   for (size_t index = 0; index < all_processes.size(); ++index) {
-    DictionaryValue* browser_data = new DictionaryValue();
+    base::DictionaryValue* browser_data = new base::DictionaryValue();
     browser_data->SetString("name", all_processes[index].name);
     browser_data->SetString("process_name", all_processes[index].process_name);
 
-    ListValue* proc_list = new ListValue();
+    base::ListValue* proc_list = new base::ListValue();
     for (ProcessMemoryInformationList::const_iterator iterator =
              all_processes[index].processes.begin();
          iterator != all_processes[index].processes.end(); ++iterator) {
-      DictionaryValue* proc_data = new DictionaryValue();
+      base::DictionaryValue* proc_data = new base::DictionaryValue();
 
       proc_data->SetInteger("pid", iterator->pid);
 
       // Working set (resident) memory usage, in KBytes.
-      DictionaryValue* working_set = new DictionaryValue();
+      base::DictionaryValue* working_set = new base::DictionaryValue();
       working_set->SetInteger("priv", iterator->working_set.priv);
       working_set->SetInteger("shareable", iterator->working_set.shareable);
       working_set->SetInteger("shared", iterator->working_set.shared);
       proc_data->Set("working_set_mem", working_set);
 
       // Committed (resident + paged) memory usage, in KBytes.
-      DictionaryValue* committed = new DictionaryValue();
+      base::DictionaryValue* committed = new base::DictionaryValue();
       committed->SetInteger("priv", iterator->committed.priv);
       committed->SetInteger("mapped", iterator->committed.mapped);
       committed->SetInteger("image", iterator->committed.image);
@@ -2370,10 +2107,12 @@ void ProcessInfoObserver::OnDetailsAvailable() {
       proc_data->SetString("renderer_type", renderer_type);
 
       // Titles associated with this process.
-      ListValue* titles = new ListValue();
+      base::ListValue* titles = new base::ListValue();
       for (size_t title_index = 0; title_index < iterator->titles.size();
-           ++title_index)
-        titles->Append(Value::CreateStringValue(iterator->titles[title_index]));
+           ++title_index) {
+        titles->Append(
+            base::Value::CreateStringValue(iterator->titles[title_index]));
+      }
       proc_data->Set("titles", titles);
 
       proc_list->Append(proc_data);
@@ -2420,7 +2159,7 @@ void V8HeapStatsObserver::Observe(
   ChromeRenderMessageFilter::V8HeapStatsDetails* v8_heap_details =
       content::Details<ChromeRenderMessageFilter::V8HeapStatsDetails>(details)
           .ptr();
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
   return_value->SetInteger("renderer_id", updated_renderer_id);
   return_value->SetInteger("v8_memory_allocated",
                            v8_heap_details->v8_memory_allocated());
@@ -2470,7 +2209,7 @@ void FPSObserver::Observe(
   if (routing_id_ != fps_details->routing_id())
     return;
 
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
   return_value->SetInteger("renderer_id", updated_renderer_id);
   return_value->SetInteger("routing_id", fps_details->routing_id());
   return_value->SetDouble("fps", fps_details->fps());

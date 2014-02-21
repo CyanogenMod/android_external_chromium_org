@@ -61,6 +61,15 @@ class BackgroundContentsService : private content::NotificationObserver,
   static void SetRestartDelayForForceInstalledAppsAndExtensionsForTesting(
       int restart_delay_in_ms);
 
+  // Get the crash notification's id for the extension.
+  static std::string GetNotificationIdForExtensionForTesting(
+      const std::string& extension_id);
+
+  // Show a popup notification balloon with a crash message for a given app/
+  // extension.
+  static void ShowBalloonForTesting(const extensions::Extension* extension,
+                                    Profile* profile);
+
   // Returns the BackgroundContents associated with the passed application id,
   // or NULL if none.
   BackgroundContents* GetAppBackgroundContents(const base::string16& appid);
@@ -204,7 +213,8 @@ class BackgroundContentsService : private content::NotificationObserver,
   // applications.
   // Key: application id
   // Value: BackgroundContentsInfo for the BC associated with that application
-  typedef std::map<string16, BackgroundContentsInfo> BackgroundContentsMap;
+  typedef std::map<base::string16, BackgroundContentsInfo>
+      BackgroundContentsMap;
   BackgroundContentsMap contents_map_;
 
   DISALLOW_COPY_AND_ASSIGN(BackgroundContentsService);

@@ -10,7 +10,6 @@ for more details about the presubmit API built into gcl.
 
 
 import re
-import subprocess
 import sys
 
 
@@ -26,6 +25,15 @@ _EXCLUDED_PATHS = (
     r".+_autogen\.h$",
     r".+[\\\/]pnacl_shim\.c$",
     r"^gpu[\\\/]config[\\\/].*_list_json\.cc$",
+    r"^chrome[\\\/]browser[\\\/]resources[\\\/]pdf[\\\/]index.js"
+)
+
+# TestRunner and NetscapePlugIn library is temporarily excluded from pan-project
+# checks until it's transitioned to chromium coding style.
+_TESTRUNNER_PATHS = (
+    r"^content[\\\/]shell[\\\/]renderer[\\\/]test_runner[\\\/].*",
+    r"^content[\\\/]shell[\\\/]common[\\\/]test_runner[\\\/].*",
+    r"^content[\\\/]shell[\\\/]tools[\\\/]plugin[\\\/].*",
 )
 
 # Fragment of a regular expression that matches C++ and Objective-C++
@@ -37,7 +45,7 @@ _IMPLEMENTATION_EXTENSIONS = r'\.(cc|cpp|cxx|mm)$'
 _TEST_CODE_EXCLUDED_PATHS = (
     r'.*[/\\](fake_|test_|mock_).+%s' % _IMPLEMENTATION_EXTENSIONS,
     r'.+_test_(base|support|util)%s' % _IMPLEMENTATION_EXTENSIONS,
-    r'.+_(api|browser|perf|pixel|unit|ui)?test(_[a-z]+)?%s' %
+    r'.+_(api|browser|kif|perf|pixel|unit|ui)?test(_[a-z]+)?%s' %
         _IMPLEMENTATION_EXTENSIONS,
     r'.+profile_sync_service_harness%s' % _IMPLEMENTATION_EXTENSIONS,
     r'.*[/\\](test|tool(s)?)[/\\].*',
@@ -242,6 +250,7 @@ _VALID_OS_MACROS = (
     'OS_NACL',
     'OS_OPENBSD',
     'OS_POSIX',
+    'OS_QNX',
     'OS_SOLARIS',
     'OS_WIN',
 )
@@ -277,15 +286,12 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   problems = []
   for f in input_api.AffectedSourceFiles(FilterFile):
     local_path = f.LocalPath()
-    lines = input_api.ReadFile(f).splitlines()
-    line_number = 0
-    for line in lines:
+    for line_number, line in f.ChangedContents():
       if (inclusion_pattern.search(line) and
           not comment_pattern.search(line) and
           not exclusion_pattern.search(line)):
         problems.append(
           '%s:%d\n    %s' % (local_path, line_number, line.strip()))
-      line_number += 1
 
   if problems:
     return [output_api.PresubmitPromptOrNotify(_TEST_ONLY_WARNING, problems)]
@@ -518,18 +524,19 @@ def _CheckUnwantedDependencies(input_api, output_api):
 
 def _CheckFilePermissions(input_api, output_api):
   """Check that all files have their permissions properly set."""
+  if input_api.platform == 'win32':
+    return []
   args = [sys.executable, 'tools/checkperms/checkperms.py', '--root',
           input_api.change.RepositoryRoot()]
   for f in input_api.AffectedFiles():
     args += ['--file', f.LocalPath()]
-  errors = []
-  (errors, stderrdata) = subprocess.Popen(args).communicate()
-
-  results = []
+  checkperms = input_api.subprocess.Popen(args,
+                                          stdout=input_api.subprocess.PIPE)
+  errors = checkperms.communicate()[0].strip()
   if errors:
-    results.append(output_api.PresubmitError('checkperms.py failed.',
-                                             errors))
-  return results
+    return [output_api.PresubmitError('checkperms.py failed.',
+                                      errors.splitlines())]
+  return []
 
 
 def _CheckNoAuraWindowPropertyHInHeaders(input_api, output_api):
@@ -662,7 +669,7 @@ def _CheckIncludeOrderInFile(input_api, f, changed_linenums):
   for line in contents[line_num:]:
     line_num += 1
     if uncheckable_includes_pattern.match(line):
-      return []
+      continue
     if if_pattern.match(line):
       scopes.append(current_scope)
       current_scope = []
@@ -776,9 +783,14 @@ def _CheckNoAbbreviationInPngFileName(input_api, output_api):
   return results
 
 
-def _DepsFilesToCheck(re, changed_lines):
+def _FilesToCheckForIncomingDeps(re, changed_lines):
   """Helper method for _CheckAddedDepsHaveTargetApprovals. Returns
-  a set of DEPS entries that we should look up."""
+  a set of DEPS entries that we should look up.
+
+  For a directory (rather than a specific filename) we fake a path to
+  a specific filename by adding /DEPS. This is chosen as a file that
+  will seldom or never be subject to per-file include_rules.
+  """
   # We ignore deps entries on auto-generated directories.
   AUTO_GENERATED_DIRS = ['grit', 'jni']
 
@@ -794,7 +806,10 @@ def _DepsFilesToCheck(re, changed_lines):
     if m:
       path = m.group(1)
       if path.split('/')[0] not in AUTO_GENERATED_DIRS:
-        results.add('%s/DEPS' % m.group(1))
+        if m.group(2):
+          results.add('%s%s' % (path, m.group(2)))
+        else:
+          results.add('%s/DEPS' % path)
   return results
 
 
@@ -814,7 +829,8 @@ def _CheckAddedDepsHaveTargetApprovals(input_api, output_api):
   if not changed_lines:
     return []
 
-  virtual_depended_on_files = _DepsFilesToCheck(input_api.re, changed_lines)
+  virtual_depended_on_files = _FilesToCheckForIncomingDeps(input_api.re,
+                                                           changed_lines)
   if not virtual_depended_on_files:
     return []
 
@@ -843,12 +859,22 @@ def _CheckAddedDepsHaveTargetApprovals(input_api, output_api):
     reviewers_plus_owner.add(owner_email)
   missing_files = owners_db.files_not_covered_by(virtual_depended_on_files,
                                                  reviewers_plus_owner)
-  unapproved_dependencies = ["'+%s'," % path[:-len('/DEPS')]
+
+  # We strip the /DEPS part that was added by
+  # _FilesToCheckForIncomingDeps to fake a path to a file in a
+  # directory.
+  def StripDeps(path):
+    start_deps = path.rfind('/DEPS')
+    if start_deps != -1:
+      return path[:start_deps]
+    else:
+      return path
+  unapproved_dependencies = ["'+%s'," % StripDeps(path)
                              for path in missing_files]
 
   if unapproved_dependencies:
     output_list = [
-      output('Missing LGTM from OWNERS of directories added to DEPS:\n    %s' %
+      output('Missing LGTM from OWNERS of dependencies added to DEPS:\n    %s' %
              '\n    '.join(sorted(unapproved_dependencies)))]
     if not input_api.is_committing:
       suggested_owners = owners_db.reviewers_for(missing_files, owner_email)
@@ -866,13 +892,22 @@ def _CheckSpamLogging(input_api, output_api):
                 _TEST_CODE_EXCLUDED_PATHS +
                 input_api.DEFAULT_BLACK_LIST +
                 (r"^base[\\\/]logging\.h$",
+                 r"^base[\\\/]logging\.cc$",
+                 r"^cloud_print[\\\/]",
                  r"^chrome[\\\/]app[\\\/]chrome_main_delegate\.cc$",
                  r"^chrome[\\\/]browser[\\\/]chrome_browser_main\.cc$",
+                 r"^chrome[\\\/]browser[\\\/]ui[\\\/]startup[\\\/]"
+                     r"startup_browser_creator\.cc$",
                  r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
                  r"^chrome[\\\/]renderer[\\\/]extensions[\\\/]"
                      r"logging_native_handler\.cc$",
+                 r"^content[\\\/]common[\\\/]gpu[\\\/]client[\\\/]"
+                     r"gl_helper_benchmark\.cc$",
                  r"^remoting[\\\/]base[\\\/]logging\.h$",
-                 r"^sandbox[\\\/]linux[\\\/].*",))
+                 r"^remoting[\\\/]host[\\\/].*",
+                 r"^sandbox[\\\/]linux[\\\/].*",
+                 r"^tools[\\\/]",
+                 r"^ui[\\\/]aura[\\\/]bench[\\\/]bench_main\.cc$",))
   source_file_filter = lambda x: input_api.FilterSourceFile(
       x, white_list=(file_inclusion_pattern,), black_list=black_list)
 
@@ -995,7 +1030,8 @@ def _CommonChecks(input_api, output_api):
   """Checks common to both upload and commit."""
   results = []
   results.extend(input_api.canned_checks.PanProjectChecks(
-      input_api, output_api, excluded_paths=_EXCLUDED_PATHS))
+      input_api, output_api,
+      excluded_paths=_EXCLUDED_PATHS + _TESTRUNNER_PATHS))
   results.extend(_CheckAuthorizedAuthor(input_api, output_api))
   results.extend(
       _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
@@ -1173,6 +1209,172 @@ def CheckChangeOnUpload(input_api, output_api):
   return results
 
 
+def GetDefaultTryConfigs(bots=None):
+  """Returns a list of ('bot', set(['tests']), optionally filtered by [bots].
+
+  To add tests to this list, they MUST be in the the corresponding master's
+  gatekeeper config. For example, anything on master.chromium would be closed by
+  tools/build/masters/master.chromium/master_gatekeeper_cfg.py.
+
+  If 'bots' is specified, will only return configurations for bots in that list.
+  """
+
+  standard_tests = [
+      'base_unittests',
+      'browser_tests',
+      'cacheinvalidation_unittests',
+      'check_deps',
+      'check_deps2git',
+      'content_browsertests',
+      'content_unittests',
+      'crypto_unittests',
+      #'gfx_unittests',
+      'gpu_unittests',
+      'interactive_ui_tests',
+      'ipc_tests',
+      'jingle_unittests',
+      'media_unittests',
+      'net_unittests',
+      'ppapi_unittests',
+      'printing_unittests',
+      'sql_unittests',
+      'sync_unit_tests',
+      'unit_tests',
+      # Broken in release.
+      #'url_unittests',
+      #'webkit_unit_tests',
+  ]
+
+  builders_and_tests = {
+      # TODO(maruel): Figure out a way to run 'sizes' where people can
+      # effectively update the perf expectation correctly.  This requires a
+      # clobber=True build running 'sizes'. 'sizes' is not accurate with
+      # incremental build. Reference:
+      # http://chromium.org/developers/tree-sheriffs/perf-sheriffs.
+      # TODO(maruel): An option would be to run 'sizes' but not count a failure
+      # of this step as a try job failure.
+      'android_aosp': ['compile'],
+      'android_clang_dbg': ['slave_steps'],
+      'android_dbg': ['slave_steps'],
+      'cros_x86': ['defaulttests'],
+      'ios_dbg_simulator': [
+          'compile',
+          'base_unittests',
+          'content_unittests',
+          'crypto_unittests',
+          'url_unittests',
+          'net_unittests',
+          'sql_unittests',
+          'ui_unittests',
+      ],
+      'ios_rel_device': ['compile'],
+      'linux_asan': ['defaulttests'],
+      #TODO(stip): Change the name of this builder to reflect that it's release.
+      'linux_gtk': standard_tests,
+      'linux_chromeos_asan': ['defaulttests'],
+      'linux_chromeos_clang': ['compile'],
+      # Note: It is a Release builder even if its name convey otherwise.
+      'linux_chromeos': standard_tests + [
+          'app_list_unittests',
+          'aura_unittests',
+          'ash_unittests',
+          'chromeos_unittests',
+          'components_unittests',
+          'dbus_unittests',
+          'device_unittests',
+          'events_unittests',
+          'google_apis_unittests',
+          'sandbox_linux_unittests',
+      ],
+      'linux_chromium_dbg': ['defaulttests'],
+      'linux_chromium_rel': ['defaulttests'],
+      'linux_clang': ['compile'],
+      'linux_nacl_sdk_build': ['compile'],
+      'linux_rel': standard_tests + [
+          'app_list_unittests',
+          'aura_unittests',
+          'cc_unittests',
+          'chromedriver_unittests',
+          'components_unittests',
+          'compositor_unittests',
+          'events_unittests',
+          'google_apis_unittests',
+          'nacl_integration',
+          'remoting_unittests',
+          'sandbox_linux_unittests',
+          'sync_integration_tests',
+          'telemetry_perf_unittests',
+          'telemetry_unittests',
+      ],
+      'mac': ['compile'],
+      'mac_chromium_dbg': ['defaulttests'],
+      'mac_chromium_rel': ['defaulttests'],
+      'mac_nacl_sdk_build': ['compile'],
+      'mac_rel': standard_tests + [
+          'app_list_unittests',
+          'cc_unittests',
+          'chromedriver_unittests',
+          'components_unittests',
+          'google_apis_unittests',
+          'message_center_unittests',
+          'nacl_integration',
+          'remoting_unittests',
+          'sync_integration_tests',
+          'telemetry_perf_unittests',
+          'telemetry_unittests',
+      ],
+      'win': ['compile'],
+      'win_nacl_sdk_build': ['compile'],
+      'win_rel': standard_tests + [
+          'app_list_unittests',
+          'ash_unittests',
+          'aura_unittests',
+          'cc_unittests',
+          'chrome_elf_unittests',
+          'chromedriver_unittests',
+          'components_unittests',
+          'compositor_unittests',
+          'events_unittests',
+          'google_apis_unittests',
+          'installer_util_unittests',
+          'mini_installer_test',
+          'nacl_integration',
+          'remoting_unittests',
+          'sync_integration_tests',
+          'telemetry_perf_unittests',
+          'telemetry_unittests',
+          'views_unittests',
+      ],
+      'win_x64_rel': [
+          'base_unittests',
+      ],
+  }
+
+  swarm_enabled_builders = (
+      'linux_rel',
+      'mac_rel',
+      'win_rel',
+  )
+
+  swarm_enabled_tests = (
+      'base_unittests',
+      'browser_tests',
+      'interactive_ui_tests',
+      'net_unittests',
+      'unit_tests',
+  )
+
+  for bot in builders_and_tests:
+    if bot in swarm_enabled_builders:
+      builders_and_tests[bot] = [x + '_swarm' if x in swarm_enabled_tests else x
+                                 for x in builders_and_tests[bot]]
+
+  if bots:
+    return [(bot, set(builders_and_tests[bot])) for bot in bots]
+  else:
+    return [(bot, set(tests)) for bot, tests in builders_and_tests.iteritems()]
+
+
 def CheckChangeOnCommit(input_api, output_api):
   results = []
   results.extend(_CommonChecks(input_api, output_api))
@@ -1204,37 +1406,43 @@ def GetPreferredTrySlaves(project, change):
     return []
 
   if all(re.search('\.(m|mm)$|(^|[/_])mac[/_.]', f) for f in files):
-    return ['mac_rel', 'mac:compile']
+    return GetDefaultTryConfigs(['mac', 'mac_rel'])
   if all(re.search('(^|[/_])win[/_.]', f) for f in files):
-    return ['win_rel', 'win:compile']
+    return GetDefaultTryConfigs(['win', 'win_rel'])
   if all(re.search('(^|[/_])android[/_.]', f) for f in files):
-    return ['android_aosp', 'android_dbg', 'android_clang_dbg']
-  if all(re.search('^native_client_sdk', f) for f in files):
-    return ['linux_nacl_sdk', 'win_nacl_sdk', 'mac_nacl_sdk']
+    return GetDefaultTryConfigs([
+        'android_aosp',
+        'android_clang_dbg',
+        'android_dbg',
+    ])
   if all(re.search('[/_]ios[/_.]', f) for f in files):
-    return ['ios_rel_device', 'ios_dbg_simulator']
+    return GetDefaultTryConfigs(['ios_rel_device', 'ios_dbg_simulator'])
 
-  trybots = [
+  trybots = GetDefaultTryConfigs([
       'android_clang_dbg',
       'android_dbg',
       'ios_dbg_simulator',
       'ios_rel_device',
+      'linux_gtk',
       'linux_asan',
-      'linux_aura',
       'linux_chromeos',
-      'linux_clang:compile',
+      'linux_clang',
+      'linux_nacl_sdk_build',
       'linux_rel',
+      'mac',
+      'mac_nacl_sdk_build',
       'mac_rel',
-      'mac:compile',
+      'win',
+      'win_nacl_sdk_build',
       'win_rel',
-      'win:compile',
-      'win_x64_rel:base_unittests',
-  ]
+      'win_x64_rel',
+  ])
 
   # Match things like path/aura/file.cc and path/file_aura.cc.
   # Same for chromeos.
   if any(re.search('[/_](aura|chromeos)', f) for f in files):
-    trybots += ['linux_chromeos_clang:compile', 'linux_chromeos_asan']
+    trybots.extend(GetDefaultTryConfigs([
+        'linux_chromeos_asan', 'linux_chromeos_clang']))
 
   # If there are gyp changes to base, build, or chromeos, run a full cros build
   # in addition to the shorter linux_chromeos build. Changes to high level gyp
@@ -1242,13 +1450,13 @@ def GetPreferredTrySlaves(project, change):
   # differnt from the linux_chromeos build that most chrome developers test
   # with.
   if any(re.search('^(base|build|chromeos).*\.gypi?$', f) for f in files):
-    trybots += ['cros_x86']
+    trybots.extend(GetDefaultTryConfigs(['cros_x86']))
 
   # The AOSP bot doesn't build the chrome/ layer, so ignore any changes to it
   # unless they're .gyp(i) files as changes to those files can break the gyp
   # step on that bot.
   if (not all(re.search('^chrome', f) for f in files) or
       any(re.search('\.gypi?$', f) for f in files)):
-    trybots += ['android_aosp']
+    trybots.extend(GetDefaultTryConfigs(['android_aosp']))
 
   return trybots

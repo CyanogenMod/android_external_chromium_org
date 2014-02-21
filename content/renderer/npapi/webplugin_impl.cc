@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/user_metrics_action.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -131,7 +132,9 @@ class MultiPartResponseClient : public WebURLLoaderClient {
     byte_range_lower_bound_ += data_length;
   }
 
-  virtual void didFinishLoading(WebURLLoader*, double finishTime) {}
+  virtual void didFinishLoading(WebURLLoader*,
+                                double finishTime,
+                                int64_t total_encoded_data_length) {}
   virtual void didFail(WebURLLoader*, const WebURLError&) {}
 
  private:
@@ -232,9 +235,8 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
     return false;
   }
 
-  WebPluginDelegate* plugin_delegate = CreatePluginDelegate();
-  if (!plugin_delegate)
-    return false;
+  WebPluginDelegateProxy* plugin_delegate = new WebPluginDelegateProxy(
+      this, mime_type_, render_view_, render_frame_);
 
   // Store the plugin's unique identifier, used by the container to track its
   // script objects.
@@ -324,9 +326,8 @@ void WebPluginImpl::updateGeometry(
     new_geometry.cutout_rects.push_back(cutout_rects[i]);
 
   // Only send DidMovePlugin if the geometry changed in some way.
-  if (window_ && render_view_.get() &&
-      (first_geometry_update_ || !new_geometry.Equals(geometry_))) {
-    render_view_->SchedulePluginMove(new_geometry);
+  if (window_ && (first_geometry_update_ || !new_geometry.Equals(geometry_))) {
+    render_frame_->GetRenderWidget()->SchedulePluginMove(new_geometry);
     // We invalidate windowed plugins during the first geometry update to
     // ensure that they get reparented to the wrapper window in the browser.
     // This ensures that they become visible and are painted by the OS. This is
@@ -385,7 +386,7 @@ void WebPluginImpl::updateFocus(bool focused) {
 }
 
 void WebPluginImpl::updateVisibility(bool visible) {
-  if (!window_ || !render_view_.get())
+  if (!window_)
     return;
 
   WebPluginGeometry move;
@@ -395,7 +396,7 @@ void WebPluginImpl::updateVisibility(bool visible) {
   move.rects_valid = false;
   move.visible = visible;
 
-  render_view_->SchedulePluginMove(move);
+  render_frame_->GetRenderWidget()->SchedulePluginMove(move);
 }
 
 bool WebPluginImpl::acceptsInputEvents() {
@@ -476,6 +477,51 @@ bool WebPluginImpl::isPlaceholder() {
   return false;
 }
 
+WebPluginImpl::LoaderClient::LoaderClient(WebPluginImpl* parent)
+    : parent_(parent) {}
+
+void WebPluginImpl::LoaderClient::willSendRequest(
+    blink::WebURLLoader* loader, blink::WebURLRequest& newRequest,
+    const blink::WebURLResponse& redirectResponse) {
+  parent_->willSendRequest(loader, newRequest, redirectResponse);
+}
+
+void WebPluginImpl::LoaderClient::didSendData(
+    blink::WebURLLoader* loader, unsigned long long bytesSent,
+    unsigned long long totalBytesToBeSent) {
+  parent_->didSendData(loader, bytesSent, totalBytesToBeSent);
+}
+
+void WebPluginImpl::LoaderClient::didReceiveResponse(
+    blink::WebURLLoader* loader, const blink::WebURLResponse& response) {
+  parent_->didReceiveResponse(loader, response);
+}
+
+void WebPluginImpl::LoaderClient::didDownloadData(
+    blink::WebURLLoader* loader, int dataLength, int encodedDataLength) {
+}
+
+void WebPluginImpl::LoaderClient::didReceiveData(
+    blink::WebURLLoader* loader, const char* data,
+    int dataLength, int encodedDataLength) {
+  parent_->didReceiveData(loader, data, dataLength, encodedDataLength);
+}
+
+void WebPluginImpl::LoaderClient::didReceiveCachedMetadata(
+    blink::WebURLLoader* loader, const char* data, int dataLength) {
+}
+
+void WebPluginImpl::LoaderClient::didFinishLoading(
+    blink::WebURLLoader* loader, double finishTime,
+    int64_t total_encoded_data_length) {
+  parent_->didFinishLoading(loader, finishTime);
+}
+
+void WebPluginImpl::LoaderClient::didFail(
+    blink::WebURLLoader* loader, const blink::WebURLError& error) {
+  parent_->didFail(loader, error);
+}
+
 // -----------------------------------------------------------------------------
 
 WebPluginImpl::WebPluginImpl(
@@ -499,7 +545,8 @@ WebPluginImpl::WebPluginImpl(
       ignore_response_error_(false),
       file_path_(file_path),
       mime_type_(UTF16ToASCII(params.mimeType)),
-      weak_factory_(this) {
+      weak_factory_(this),
+      loader_client_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
   StringToLowerASCII(&mime_type_);
 
@@ -534,8 +581,8 @@ void WebPluginImpl::SetWindow(gfx::PluginWindowHandle window) {
 #if defined(USE_X11)
     // Tell the view delegate that the plugin window was created, so that it
     // can create necessary container widgets.
-    render_view_->Send(new ViewHostMsg_CreatePluginContainer(
-        render_view_->routing_id(), window));
+    render_frame_->Send(new ViewHostMsg_CreatePluginContainer(
+        render_frame_->GetRenderWidget()->routing_id(), window));
 #endif  // USE_X11
 
 #endif  // OS_MACOSX
@@ -555,10 +602,10 @@ void WebPluginImpl::WillDestroyWindow(gfx::PluginWindowHandle window) {
   window_ = gfx::kNullPluginWindow;
   if (render_view_.get()) {
 #if defined(USE_X11)
-    render_view_->Send(new ViewHostMsg_DestroyPluginContainer(
-        render_view_->routing_id(), window));
+    render_frame_->Send(new ViewHostMsg_DestroyPluginContainer(
+        render_frame_->GetRenderWidget()->routing_id(), window));
 #endif
-    render_view_->CleanupWindowInPluginMoves(window);
+    render_frame_->GetRenderWidget()->CleanupWindowInPluginMoves(window);
   }
 }
 
@@ -637,22 +684,6 @@ bool WebPluginImpl::IsValidUrl(const GURL& url, Referrer referrer_flag) {
   }
 
   return true;
-}
-
-WebPluginDelegate* WebPluginImpl::CreatePluginDelegate() {
-  bool in_process_plugin = RenderProcess::current()->UseInProcessPlugins();
-  if (in_process_plugin) {
-#if defined(OS_WIN) && !defined(USE_AURA)
-    return WebPluginDelegateImpl::Create(this, file_path_, mime_type_);
-#else
-    // In-proc plugins aren't supported on non-Windows.
-    NOTIMPLEMENTED();
-    return NULL;
-#endif
-  }
-
-  return new WebPluginDelegateProxy(
-      this, mime_type_, render_view_, render_frame_);
 }
 
 WebPluginImpl::RoutingStatus WebPluginImpl::RouteToFrame(
@@ -753,7 +784,7 @@ void WebPluginImpl::SetCookie(const GURL& url,
   if (!render_view_.get())
     return;
 
-  WebCookieJar* cookie_jar = render_view_->cookie_jar();
+  WebCookieJar* cookie_jar = render_frame_->cookie_jar();
   if (!cookie_jar) {
     DLOG(WARNING) << "No cookie jar!";
     return;
@@ -768,13 +799,13 @@ std::string WebPluginImpl::GetCookies(const GURL& url,
   if (!render_view_.get())
     return std::string();
 
-  WebCookieJar* cookie_jar = render_view_->cookie_jar();
+  WebCookieJar* cookie_jar = render_frame_->cookie_jar();
   if (!cookie_jar) {
     DLOG(WARNING) << "No cookie jar!";
     return std::string();
   }
 
-  return UTF16ToUTF8(cookie_jar->cookies(url, first_party_for_cookies));
+  return base::UTF16ToUTF8(cookie_jar->cookies(url, first_party_for_cookies));
 }
 
 void WebPluginImpl::URLRedirectResponse(bool allow, int resource_id) {
@@ -973,7 +1004,7 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
                                                    &instance_size);
     } else if (response.httpStatusCode() == kHttpResponseSuccessStatusCode) {
       RenderThreadImpl::current()->RecordAction(
-          UserMetricsAction("Plugin_200ForByteRange"));
+          base::UserMetricsAction("Plugin_200ForByteRange"));
       // If the client issued a byte range request and the server responds with
       // HTTP 200 OK, it indicates that the server does not support byte range
       // requests.
@@ -1220,7 +1251,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
     delegate_->FetchURL(resource_id, notify_id, complete_url,
                         first_party_for_cookies, method, buf, len, referrer,
                         notify_redirects, is_plugin_src_load, 0,
-                        render_view_->routing_id());
+                        render_frame_->GetRoutingID(),
+                        render_view_->GetRoutingID());
   } else {
     WebPluginResourceClient* resource_client = delegate_->CreateResourceClient(
         resource_id, complete_url, notify_id);
@@ -1291,7 +1323,7 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
   info.loader.reset(webframe_->createAssociatedURLLoader(options));
   if (!info.loader.get())
     return false;
-  info.loader->loadAsynchronously(info.request, this);
+  info.loader->loadAsynchronously(info.request, &loader_client_);
 
   clients_.push_back(info);
   return true;
@@ -1408,7 +1440,8 @@ bool WebPluginImpl::ReinitializePluginForResponse(
   container_ = container_widget;
   webframe_ = webframe;
 
-  WebPluginDelegate* plugin_delegate = CreatePluginDelegate();
+  WebPluginDelegateProxy* plugin_delegate = new WebPluginDelegateProxy(
+      this, mime_type_, render_view_, render_frame_);
 
   // Store the plugin's unique identifier, used by the container to track its
   // script objects, and enable script objects (since Initialize may use them

@@ -10,6 +10,7 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/views/corewm/window_util.h"
 
 using aura::Window;
 
@@ -24,8 +25,8 @@ class StackingControllerTest : public test::AshTestBase {
   aura::Window* CreateTestWindow() {
     aura::Window* window = new aura::Window(NULL);
     window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-    window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    window->Init(ui::LAYER_TEXTURED);
+    window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
     return window;
   }
 
@@ -48,7 +49,7 @@ TEST_F(StackingControllerTest, TransientParent) {
 
   // Window with a transient parent.
   scoped_ptr<Window> w1(CreateTestWindow());
-  w2->AddTransientChild(w1.get());
+  views::corewm::AddTransientChild(w2.get(), w1.get());
   w1->SetBounds(gfx::Rect(10, 11, 250, 251));
   ParentWindowInPrimaryRootWindow(w1.get());
   w1->Show();

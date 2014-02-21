@@ -17,7 +17,6 @@
       'pnacl_options.cc',
       'pnacl_resources.cc',
       'pnacl_translate_thread.cc',
-      'scriptable_plugin.cc',
       'sel_ldr_launcher_chrome.cc',
       'service_runtime.cc',
       'srpc_client.cc',
@@ -61,7 +60,7 @@
           '-Wno-unused-parameter', # be a bit stricter to match NaCl flags.
         ],
         'conditions': [
-          ['asan!=1', {
+          ['asan!=1 and msan!=1', {
             'ldflags': [
               # Catch unresolved symbols.
               '-Wl,-z,defs',

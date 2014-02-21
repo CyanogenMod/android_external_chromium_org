@@ -9,7 +9,9 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/services/native_viewport/native_viewport.h"
+#include "mojo/services/native_viewport/native_viewport_export.h"
 #include "ui/events/event_constants.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/sequential_id_generator.h"
 #include "ui/gfx/size.h"
 
@@ -22,9 +24,10 @@ struct ANativeWindow;
 namespace mojo {
 namespace services {
 
-class NativeViewportAndroid : public NativeViewport {
+class MOJO_NATIVE_VIEWPORT_EXPORT NativeViewportAndroid
+    : public NativeViewport {
  public:
-  static bool Register(JNIEnv* env);
+  static MOJO_NATIVE_VIEWPORT_EXPORT bool Register(JNIEnv* env);
 
   explicit NativeViewportAndroid(shell::Context* context,
                                  NativeViewportDelegate* delegate);
@@ -39,9 +42,12 @@ class NativeViewportAndroid : public NativeViewport {
 
  private:
   // Overridden from NativeViewport:
-  virtual void Init() OVERRIDE;
+  virtual void Init(const gfx::Rect& bounds) OVERRIDE;
+  virtual void Show() OVERRIDE;
+  virtual void Hide() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
+  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
 
@@ -50,7 +56,7 @@ class NativeViewportAndroid : public NativeViewport {
   NativeViewportDelegate* delegate_;
   shell::Context* context_;
   ANativeWindow* window_;
-  gfx::Size size_;
+  gfx::Rect bounds_;
   ui::SequentialIDGenerator id_generator_;
 
   base::WeakPtrFactory<NativeViewportAndroid> weak_factory_;

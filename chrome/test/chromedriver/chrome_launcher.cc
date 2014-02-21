@@ -25,6 +25,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_existing_impl.h"
@@ -95,12 +96,11 @@ Status PrepareCommandLine(int port,
   CommandLine command(program);
   Switches switches;
 
-  // TODO(chrisgao): Add "disable-sync" when chrome 30- is not supported.
-  // For chrome 30-, it leads to crash when opening chrome://settings.
   for (size_t i = 0; i < arraysize(kCommonSwitches); ++i)
     switches.SetSwitch(kCommonSwitches[i]);
   switches.SetSwitch("disable-hang-monitor");
   switches.SetSwitch("disable-prompt-on-repost");
+  switches.SetSwitch("disable-sync");
   switches.SetSwitch("full-memory-crash-report");
   switches.SetSwitch("no-first-run");
   switches.SetSwitch("disable-background-networking");
@@ -160,7 +160,7 @@ Status WaitForDevToolsAndCheckVersion(
   scoped_ptr<DevToolsHttpClient> client(new DevToolsHttpClient(
       address, context_getter, socket_factory));
   base::TimeTicks deadline =
-      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(20);
+      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(60);
   Status status = client->Init(deadline - base::TimeTicks::Now());
   if (status.IsError())
     return status;
@@ -352,7 +352,7 @@ Status LaunchAndroidChrome(
     status = device_manager->AcquireSpecificDevice(
         capabilities.android_device_serial, &device);
   }
-  if (!status.IsOk())
+  if (status.IsError())
     return status;
 
   Switches switches(capabilities.switches);
@@ -366,7 +366,7 @@ Status LaunchAndroidChrome(
                          switches.ToString(),
                          capabilities.android_use_running_app,
                          port);
-  if (!status.IsOk()) {
+  if (status.IsError()) {
     device->TearDown();
     return status;
   }
@@ -376,8 +376,10 @@ Status LaunchAndroidChrome(
                                           context_getter,
                                           socket_factory,
                                           &devtools_client);
-  if (status.IsError())
+  if (status.IsError()) {
+    device->TearDown();
     return status;
+  }
 
   chrome->reset(new ChromeAndroidImpl(devtools_client.Pass(),
                                       devtools_event_listeners,
@@ -406,14 +408,12 @@ Status LaunchChrome(
   int port = 0;
   scoped_ptr<PortReservation> port_reservation;
   Status port_status(kOk);
-  if (port_server)
-    port_status = port_server->ReservePort(&port, &port_reservation);
-  else
-    port_status = port_manager->ReservePort(&port, &port_reservation);
-  if (port_status.IsError())
-    return Status(kUnknownError, "cannot reserve port for Chrome", port_status);
 
   if (capabilities.IsAndroid()) {
+    port_status = port_manager->ReservePortFromPool(&port, &port_reservation);
+    if (port_status.IsError())
+      return Status(kUnknownError, "cannot reserve port for Chrome",
+                    port_status);
     return LaunchAndroidChrome(context_getter,
                                port,
                                port_reservation.Pass(),
@@ -423,6 +423,13 @@ Status LaunchChrome(
                                device_manager,
                                chrome);
   } else {
+    if (port_server)
+      port_status = port_server->ReservePort(&port, &port_reservation);
+    else
+      port_status = port_manager->ReservePort(&port, &port_reservation);
+    if (port_status.IsError())
+      return Status(kUnknownError, "cannot reserve port for Chrome",
+                    port_status);
     return LaunchDesktopChrome(context_getter,
                                port,
                                port_reservation.Pass(),
@@ -655,28 +662,28 @@ Status PrepareUserDataDir(
     const base::FilePath& user_data_dir,
     const base::DictionaryValue* custom_prefs,
     const base::DictionaryValue* custom_local_state) {
-  base::FilePath default_dir = user_data_dir.AppendASCII("Default");
+  base::FilePath default_dir =
+      user_data_dir.AppendASCII(chrome::kInitialProfile);
   if (!base::CreateDirectory(default_dir))
     return Status(kUnknownError, "cannot create default profile directory");
 
-  Status status = WritePrefsFile(
-      kPreferences,
-      custom_prefs,
-      default_dir.AppendASCII("Preferences"));
+  Status status =
+      WritePrefsFile(kPreferences,
+                     custom_prefs,
+                     default_dir.Append(chrome::kPreferencesFilename));
   if (status.IsError())
     return status;
 
-  status = WritePrefsFile(
-      kLocalState,
-      custom_local_state,
-      user_data_dir.AppendASCII("Local State"));
+  status = WritePrefsFile(kLocalState,
+                          custom_local_state,
+                          user_data_dir.Append(chrome::kLocalStateFilename));
   if (status.IsError())
     return status;
 
   // Write empty "First Run" file, otherwise Chrome will wipe the default
   // profile that was written.
   if (file_util::WriteFile(
-          user_data_dir.AppendASCII("First Run"), "", 0) != 0) {
+          user_data_dir.Append(chrome::kFirstRunSentinel), "", 0) != 0) {
     return Status(kUnknownError, "failed to write first run file");
   }
   return Status(kOk);

@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -13,6 +14,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #endif
 
 namespace multi_user_util {
@@ -43,6 +45,21 @@ Profile* GetProfileFromUserID(const std::string& user_id) {
   return NULL;
 }
 
+Profile* GetProfileFromWindow(aura::Window* window) {
+#if defined(OS_CHROMEOS)
+  chrome::MultiUserWindowManager* manager =
+      chrome::MultiUserWindowManager::GetInstance();
+  // We might come here before the manager got created - or in a unit test.
+  if (!manager)
+    return NULL;
+  const std::string user_id = manager->GetUserPresentingWindow(window);
+  return user_id.empty() ? NULL :
+                           multi_user_util::GetProfileFromUserID(user_id);
+#else
+  return NULL;
+#endif
+}
+
 bool IsProfileFromActiveUser(Profile* profile) {
 #if defined(OS_CHROMEOS)
   return GetUserIDFromProfile(profile) ==
@@ -51,6 +68,23 @@ bool IsProfileFromActiveUser(Profile* profile) {
   // In non Chrome OS configurations this will be always true since this only
   // makes sense in separate desktop mode.
   return true;
+#endif
+}
+
+const std::string& GetCurrentUserId() {
+#if defined(OS_CHROMEOS)
+  return chromeos::UserManager::Get()->GetActiveUser()->email();
+#else
+  return base::EmptyString();
+#endif
+}
+
+// Move the window to the current user's desktop.
+void MoveWindowToCurrentDesktop(aura::Window* window) {
+#if defined(OS_CHROMEOS)
+  chrome::MultiUserWindowManager::GetInstance()->ShowWindowForUser(
+      window,
+      GetCurrentUserId());
 #endif
 }
 

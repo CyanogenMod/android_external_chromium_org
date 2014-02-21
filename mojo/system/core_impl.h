@@ -19,50 +19,87 @@ namespace system {
 class CoreImpl;
 class Dispatcher;
 
-namespace test {
-class CoreTestBase;
+// Test-only function (defined/used in embedder/test_embedder.cc). Declared here
+// so it can be friended.
+namespace internal {
+bool ShutdownCheckNoLeaks(CoreImpl*);
 }
 
-// |CoreImpl| is a singleton object that implements the Mojo system calls. With
-// the (obvious) exception of |Init()|, which must be called first (and the call
-// completed) before making any other calls, all the public methods are
-// thread-safe.
+// |CoreImpl| is a singleton object that implements the Mojo system calls. All
+// public methods are thread-safe.
 class MOJO_SYSTEM_IMPL_EXPORT CoreImpl : public Core {
  public:
-  static void Init();
+  // These methods are only to be used by via the embedder API.
+  CoreImpl();
+  virtual ~CoreImpl();
+  MojoHandle AddDispatcher(const scoped_refptr<Dispatcher>& dispatcher);
 
+  // |CorePrivate| implementation:
+  virtual MojoTimeTicks GetTimeTicksNow() OVERRIDE;
   virtual MojoResult Close(MojoHandle handle) OVERRIDE;
-
   virtual MojoResult Wait(MojoHandle handle,
                           MojoWaitFlags flags,
                           MojoDeadline deadline) OVERRIDE;
-
   virtual MojoResult WaitMany(const MojoHandle* handles,
                               const MojoWaitFlags* flags,
                               uint32_t num_handles,
                               MojoDeadline deadline) OVERRIDE;
-
-  virtual MojoResult CreateMessagePipe(MojoHandle* handle_0,
-                                       MojoHandle* handle_1) OVERRIDE;
-
-  virtual MojoResult WriteMessage(MojoHandle handle,
+  virtual MojoResult CreateMessagePipe(
+      MojoHandle* message_pipe_handle0,
+      MojoHandle* message_pipe_handle1) OVERRIDE;
+  virtual MojoResult WriteMessage(MojoHandle message_pipe_handle,
                                   const void* bytes,
                                   uint32_t num_bytes,
                                   const MojoHandle* handles,
                                   uint32_t num_handles,
                                   MojoWriteMessageFlags flags) OVERRIDE;
-
-  virtual MojoResult ReadMessage(MojoHandle handle,
+  virtual MojoResult ReadMessage(MojoHandle message_pipe_handle,
                                  void* bytes,
                                  uint32_t* num_bytes,
                                  MojoHandle* handles,
                                  uint32_t* num_handles,
                                  MojoReadMessageFlags flags) OVERRIDE;
-
-  virtual MojoTimeTicks GetTimeTicksNow() OVERRIDE;
+  virtual MojoResult CreateDataPipe(
+      const MojoCreateDataPipeOptions* options,
+      MojoHandle* data_pipe_producer_handle,
+      MojoHandle* data_pipe_consumer_handle) OVERRIDE;
+  virtual MojoResult WriteData(MojoHandle data_pipe_producer_handle,
+                               const void* elements,
+                               uint32_t* num_bytes,
+                               MojoWriteDataFlags flags) OVERRIDE;
+  virtual MojoResult BeginWriteData(MojoHandle data_pipe_producer_handle,
+                                    void** buffer,
+                                    uint32_t* buffer_num_bytes,
+                                    MojoWriteDataFlags flags) OVERRIDE;
+  virtual MojoResult EndWriteData(MojoHandle data_pipe_producer_handle,
+                                  uint32_t num_bytes_written) OVERRIDE;
+  virtual MojoResult ReadData(MojoHandle data_pipe_consumer_handle,
+                              void* elements,
+                              uint32_t* num_bytes,
+                              MojoReadDataFlags flags) OVERRIDE;
+  virtual MojoResult BeginReadData(MojoHandle data_pipe_consumer_handle,
+                                   const void** buffer,
+                                   uint32_t* buffer_num_bytes,
+                                   MojoReadDataFlags flags) OVERRIDE;
+  virtual MojoResult EndReadData(MojoHandle data_pipe_consumer_handle,
+                                 uint32_t num_bytes_read) OVERRIDE;
+  virtual MojoResult CreateSharedBuffer(
+      const MojoCreateSharedBufferOptions* options,
+      uint64_t* num_bytes,
+      MojoHandle* shared_buffer_handle) OVERRIDE;
+  virtual MojoResult DuplicateBufferHandle(
+      MojoHandle buffer_handle,
+      const MojoDuplicateBufferHandleOptions* options,
+      MojoHandle* new_buffer_handle) OVERRIDE;
+  virtual MojoResult MapBuffer(MojoHandle buffer_handle,
+                               uint64_t offset,
+                               uint64_t num_bytes,
+                               void** buffer,
+                               MojoMapBufferFlags flags) OVERRIDE;
+  virtual MojoResult UnmapBuffer(void* buffer) OVERRIDE;
 
  private:
-  friend class test::CoreTestBase;
+  friend bool internal::ShutdownCheckNoLeaks(CoreImpl*);
 
   // The |busy| member is used only to deal with functions (in particular
   // |WriteMessage()|) that want to hold on to a dispatcher and later remove it
@@ -99,16 +136,13 @@ class MOJO_SYSTEM_IMPL_EXPORT CoreImpl : public Core {
   };
   typedef base::hash_map<MojoHandle, HandleTableEntry> HandleTableMap;
 
-  CoreImpl();
-  virtual ~CoreImpl();
-
   // Looks up the dispatcher for the given handle. Returns null if the handle is
   // invalid.
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
-  // Assigns a new handle for the given dispatcher (which must be valid);
-  // returns |MOJO_HANDLE_INVALID| on failure (due to hitting resource limits).
-  // Must be called under |handle_table_lock_|.
+  // Assigns a new handle for the given dispatcher; returns
+  // |MOJO_HANDLE_INVALID| on failure (due to hitting resource limits) or if
+  // |dispatcher| is null. Must be called under |handle_table_lock_|.
   MojoHandle AddDispatcherNoLock(const scoped_refptr<Dispatcher>& dispatcher);
 
   // Internal implementation of |Wait()| and |WaitMany()|; doesn't do basic

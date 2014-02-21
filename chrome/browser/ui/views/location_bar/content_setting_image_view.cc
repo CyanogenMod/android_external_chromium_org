@@ -43,7 +43,7 @@ ContentSettingImageView::ContentSettingImageView(
       background_painter_(
           views::Painter::CreateImageGridPainter(kBackgroundImages)),
       icon_(new views::ImageView),
-      text_label_(new views::Label(string16(), font_list)),
+      text_label_(new views::Label(base::string16(), font_list)),
       slide_animator_(this),
       pause_animation_(false),
       pause_animation_state_(0.0),
@@ -102,7 +102,7 @@ void ContentSettingImageView::Update(content::WebContents* web_contents) {
   icon_->SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
       content_setting_image_model_->get_icon()));
   icon_->SetTooltipText(
-      UTF8ToUTF16(content_setting_image_model_->get_tooltip()));
+      base::UTF8ToUTF16(content_setting_image_model_->get_tooltip()));
   SetVisible(true);
 
   // If the content blockage should be indicated to the user, start the

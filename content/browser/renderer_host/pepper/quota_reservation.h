@@ -12,14 +12,12 @@
 #include "base/platform_file.h"
 #include "content/common/content_export.h"
 #include "ppapi/c/pp_stdint.h"  // For int64_t on Windows.
+#include "ppapi/shared_impl/file_growth.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 
-namespace base {
-class FilePath;
-}
-
 namespace fileapi {
+class FileSystemURL;
 class OpenFileHandle;
 class QuotaReservation;
 }
@@ -44,17 +42,22 @@ class CONTENT_EXPORT QuotaReservation
       fileapi::FileSystemType file_system_type);
 
   // Opens a file with the given id and path and returns its current size.
-  int64_t OpenFile(int32_t id, const base::FilePath& file_path);
+  int64_t OpenFile(int32_t id, const fileapi::FileSystemURL& url);
   // Closes the file opened by OpenFile with the given id.
-  void CloseFile(int32_t id, int64_t max_written_offset);
+  void CloseFile(int32_t id, const ppapi::FileGrowth& file_growth);
   // Refreshes the quota reservation to a new amount. A map that associates file
   // ids with maximum written offsets is provided as input. The callback will
   // receive a similar map with the updated file sizes.
-  typedef std::map<int32_t, int64_t> OffsetMap;
-  typedef base::Callback<void(int64_t, const OffsetMap&)> ReserveQuotaCallback;
+  typedef base::Callback<void(int64_t, const ppapi::FileSizeMap&)>
+      ReserveQuotaCallback;
   void ReserveQuota(int64_t amount,
-                    const OffsetMap& max_written_offsets,
+                    const ppapi::FileGrowthMap& file_growth,
                     const ReserveQuotaCallback& callback);
+
+  // Notifies underlying QuotaReservation that the associated client crashed,
+  // and that the reserved quota is no longer traceable.
+  void OnClientCrash();
+
  private:
   friend class base::RefCountedThreadSafe<QuotaReservation,
                                           QuotaReservationDeleter>;
@@ -77,7 +80,7 @@ class CONTENT_EXPORT QuotaReservation
   ~QuotaReservation();
 
   void GotReservedQuota(const ReserveQuotaCallback& callback,
-                        base::PlatformFileError error);
+                        base::File::Error error);
 
   void DeleteOnCorrectThread() const;
 

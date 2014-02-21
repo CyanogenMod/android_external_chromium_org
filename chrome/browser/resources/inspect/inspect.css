@@ -14,6 +14,7 @@ body {
 }
 
 img {
+  flex-shrink: 0;
   height: 16px;
   padding-left: 2px;
   padding-right: 5px;
@@ -74,6 +75,10 @@ img {
   padding-bottom: 10px;
 }
 
+#devices-help {
+  margin-top: 10px;
+}
+
 .device-header {
   -webkit-box-align: baseline;
   -webkit-box-orient: horizontal;
@@ -127,9 +132,10 @@ img {
 }
 
 .browser-header {
-  -webkit-box-align: center;
-  -webkit-box-orient: horizontal;
-  display: -webkit-box;
+  align-items: center;
+  display: flex;
+  flex-flow: row wrap;
+  min-height: 23px;
   padding-top: 10px;
 }
 
@@ -139,6 +145,7 @@ img {
 }
 
 .row {
+  display: flex;
   padding: 6px 0;
   position: relative;
 }
@@ -149,8 +156,8 @@ img {
 }
 
 .subrow {
-  -webkit-box-orient: horizontal;
-  display: -webkit-box;
+  display: flex;
+  flex-flow: row wrap;
 }
 
 .subrow > div {
@@ -235,12 +242,10 @@ img {
 }
 
 #device-settings {
+  align-items: center;
   border-bottom: 1px solid #eee;
+  display: flex;
   padding: 5px 0;
-}
-
-#device-settings input {
-  vertical-align: middle;
 }
 
 #device-settings button {
@@ -257,6 +262,16 @@ img {
   position: absolute;
   right: 0;
   top: 0;
+}
+
+.warning {
+  background-image: -webkit-image-set(url('chrome://theme/IDR_WARNING') 1x,
+                                      url('chrome://theme/IDR_WARNING@2x') 2x);
+  background-position: 0 center;
+  background-repeat: no-repeat;
+  background-size:24px 21px;
+  margin-left: 3px;
+  padding-left: 25px;
 }
 
 #port-forwarding-overlay:not(.open) {
@@ -355,15 +370,11 @@ img {
   opacity: 0.5;
 }
 
-#port-forwarding-enable {
-  vertical-align: middle;
-}
-
-#port-forwarding-config-buttons > button {
-  float: right;
+#port-forwarding-config-buttons {
+  align-items: center;
+  display: flex;
 }
 
 #port-forwarding-config-buttons > label {
-  position: relative;
-  top: 5px;
+  flex-grow: 1
 }

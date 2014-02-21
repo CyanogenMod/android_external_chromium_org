@@ -131,7 +131,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setDefaultFixedFontSize(prefs.default_fixed_font_size);
   settings->setMinimumFontSize(prefs.minimum_font_size);
   settings->setMinimumLogicalFontSize(prefs.minimum_logical_font_size);
-  settings->setDefaultTextEncodingName(ASCIIToUTF16(prefs.default_encoding));
+  settings->setDefaultTextEncodingName(
+      base::ASCIIToUTF16(prefs.default_encoding));
   settings->setJavaScriptEnabled(prefs.javascript_enabled);
   settings->setWebSecurityEnabled(prefs.web_security_enabled);
   settings->setJavaScriptCanOpenWindowsAutomatically(
@@ -242,6 +243,9 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // Enable gpu-accelerated filters if requested on the command line.
   settings->setAcceleratedFiltersEnabled(prefs.accelerated_filters_enabled);
 
+  // Enable deferred filter rendering if requested on the command line.
+  settings->setDeferredFiltersEnabled(prefs.deferred_filters_enabled);
+
   // Enable gesture tap highlight if requested on the command line.
   settings->setGestureTapHighlightEnabled(prefs.gesture_tap_highlight_enabled);
 
@@ -288,6 +292,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
       prefs.allow_running_insecure_content);
   settings->setPasswordEchoEnabled(prefs.password_echo_enabled);
   settings->setShouldPrintBackgrounds(prefs.should_print_backgrounds);
+  settings->setShouldClearDocumentBackground(
+      prefs.should_clear_document_background);
   settings->setEnableScrollAnimator(prefs.enable_scroll_animator);
   settings->setVisualWordMovementEnabled(prefs.visual_word_movement_enabled);
 
@@ -339,7 +345,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setMediaFullscreenRequiresUserGesture(
       prefs.user_gesture_required_for_media_fullscreen);
   settings->setDefaultVideoPosterURL(
-        ASCIIToUTF16(prefs.default_video_poster_url.spec()));
+        base::ASCIIToUTF16(prefs.default_video_poster_url.spec()));
   settings->setSupportDeprecatedTargetDensityDPI(
       prefs.support_deprecated_target_density_dpi);
   settings->setUseLegacyBackgroundSizeShorthandBehavior(

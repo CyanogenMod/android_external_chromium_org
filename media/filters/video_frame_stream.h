@@ -16,15 +16,15 @@
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder.h"
+#include "media/filters/decoder_selector.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
 
 class DecryptingDemuxerStream;
-class VideoDecoderSelector;
 
 // Wraps a DemuxerStream and a list of VideoDecoders and provides decoded
 // VideoFrames to its client (e.g. VideoRendererImpl).
@@ -44,9 +44,10 @@ class MEDIA_EXPORT VideoFrameStream {
   // Indicates completion of a VideoFrameStream read.
   typedef base::Callback<void(Status, const scoped_refptr<VideoFrame>&)> ReadCB;
 
-  VideoFrameStream(const scoped_refptr<base::MessageLoopProxy>& message_loop,
-                   ScopedVector<VideoDecoder> decoders,
-                   const SetDecryptorReadyCB& set_decryptor_ready_cb);
+  VideoFrameStream(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      ScopedVector<VideoDecoder> decoders,
+      const SetDecryptorReadyCB& set_decryptor_ready_cb);
   virtual ~VideoFrameStream();
 
   // Initializes the VideoFrameStream and returns the initialization result
@@ -134,7 +135,7 @@ class MEDIA_EXPORT VideoFrameStream {
   void StopDecoder();
   void OnDecoderStopped();
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WeakPtrFactory<VideoFrameStream> weak_factory_;
 
   State state_;

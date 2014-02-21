@@ -59,7 +59,7 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
       const std::string& action,
       PrivetRegisterOperation::FailureReason reason,
       int printer_http_code,
-      const DictionaryValue* json) OVERRIDE;
+      const base::DictionaryValue* json) OVERRIDE;
 
   virtual void OnPrivetRegisterDone(
       PrivetRegisterOperation* operation,
@@ -147,15 +147,11 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
 
   void CheckUserLoggedIn();
 
-  void ScheduleQuery(int timeout_seconds);
-
-  void SendQuery(int next_timeout_seconds);
-
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
   void StartCloudPrintConnector();
   void OnCloudPrintPrefsChanged();
-  void ShowCloudPrintSetupDialog(const ListValue* args);
-  void HandleDisableCloudPrintConnector(const ListValue* args);
+  void ShowCloudPrintSetupDialog(const base::ListValue* args);
+  void HandleDisableCloudPrintConnector(const base::ListValue* args);
   void SetupCloudPrintConnectorSection();
   void RemoveCloudPrintConnectorSection();
   void RefreshCloudPrintStatusFromService();
@@ -190,9 +186,6 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
 
   // List of printers from cloud print.
   scoped_ptr<CloudPrintPrinterList> cloud_print_printer_list_;
-
-  // Callback for requery.
-  base::CancelableCallback<void()> requery_callback_;
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
   StringPrefMember cloud_print_connector_email_;

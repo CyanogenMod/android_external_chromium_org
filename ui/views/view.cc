@@ -246,6 +246,8 @@ void View::AddChildViewAt(View* view, int index) {
     const ui::NativeTheme* new_theme = widget->GetNativeTheme();
     if (new_theme != old_theme)
       PropagateNativeThemeChanged(new_theme);
+    if (view->visible())
+      view->SchedulePaint();
   }
 
   if (layout_manager_.get())
@@ -804,9 +806,7 @@ void View::set_background(Background* b) {
   background_.reset(b);
 }
 
-void View::set_border(Border* b) {
-  border_.reset(b);
-}
+void View::SetBorder(scoped_ptr<Border> b) { border_ = b.Pass(); }
 
 ui::ThemeProvider* View::GetThemeProvider() const {
   const Widget* widget = GetWidget();
@@ -875,8 +875,8 @@ View* View::GetEventHandlerForRect(const gfx::Rect& rect) {
       // |cur_view| is a suitable candidate for rect-based targeting.
       // Check to see if it is the closest suitable candidate so far.
       gfx::Point touch_center(rect.CenterPoint());
-      int cur_dist = views::DistanceSquaredFromCenterLineToPoint(
-          touch_center, cur_view_bounds);
+      int cur_dist = views::DistanceSquaredFromCenterToPoint(touch_center,
+                                                             cur_view_bounds);
       if (!rect_view || cur_dist < rect_view_distance) {
         rect_view = cur_view;
         rect_view_distance = cur_dist;
@@ -898,8 +898,8 @@ View* View::GetEventHandlerForRect(const gfx::Rect& rect) {
   gfx::Rect local_bounds(GetLocalBounds());
   if (views::PercentCoveredBy(local_bounds, rect) >= kRectTargetOverlap) {
     gfx::Point touch_center(rect.CenterPoint());
-    int cur_dist = views::DistanceSquaredFromCenterLineToPoint(touch_center,
-                                                               local_bounds);
+    int cur_dist = views::DistanceSquaredFromCenterToPoint(touch_center,
+                                                           local_bounds);
     if (!rect_view || cur_dist < rect_view_distance)
       rect_view = this;
   }
@@ -1200,12 +1200,26 @@ void View::SetNextFocusableView(View* view) {
   next_focusable_view_ = view;
 }
 
+void View::SetFocusable(bool focusable) {
+  if (focusable_ == focusable)
+    return;
+
+  focusable_ = focusable;
+}
+
 bool View::IsFocusable() const {
   return focusable_ && enabled_ && IsDrawn();
 }
 
 bool View::IsAccessibilityFocusable() const {
   return (focusable_ || accessibility_focusable_) && enabled_ && IsDrawn();
+}
+
+void View::SetAccessibilityFocusable(bool accessibility_focusable) {
+  if (accessibility_focusable_ == accessibility_focusable)
+    return;
+
+  accessibility_focusable_ = accessibility_focusable;
 }
 
 FocusManager* View::GetFocusManager() {
@@ -1238,7 +1252,7 @@ FocusTraversable* View::GetPaneFocusTraversable() {
 
 // Tooltips --------------------------------------------------------------------
 
-bool View::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
+bool View::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
   return false;
 }
 
@@ -1317,7 +1331,7 @@ void View::NotifyAccessibilityEvent(
   if (ViewsDelegate::views_delegate)
     ViewsDelegate::views_delegate->NotifyAccessibilityEvent(this, event_type);
 
-  if (send_native_event) {
+  if (send_native_event && GetWidget()) {
     if (!native_view_accessibility_)
       native_view_accessibility_ = NativeViewAccessibility::Create(this);
     if (native_view_accessibility_)
@@ -1548,7 +1562,7 @@ void View::ReorderChildLayers(ui::Layer* parent_layer) {
     // Iterate backwards through the children so that a child with a layer
     // which is further to the back is stacked above one which is further to
     // the front.
-    for (Views::const_reverse_iterator it(children_.rbegin());
+    for (Views::reverse_iterator it(children_.rbegin());
          it != children_.rend(); ++it) {
       (*it)->ReorderChildLayers(parent_layer);
     }
@@ -1806,6 +1820,7 @@ void View::DoRemoveChildView(View* view,
                              bool delete_removed_view,
                              View* new_parent) {
   DCHECK(view);
+
   const Views::iterator i(std::find(children_.begin(), children_.end(), view));
   scoped_ptr<View> view_to_be_deleted;
   if (i != children_.end()) {
@@ -1819,8 +1834,11 @@ void View::DoRemoveChildView(View* view,
         next_focusable->previous_focusable_view_ = prev_focusable;
     }
 
-    if (GetWidget())
+    if (GetWidget()) {
       UnregisterChildrenForVisibleBoundsNotification(view);
+      if (view->visible())
+        view->SchedulePaint();
+    }
     view->PropagateRemoveNotifications(this, new_parent);
     view->parent_ = NULL;
     view->UpdateLayerVisibility();
@@ -1929,14 +1947,6 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
                        parent_->CalculateOffsetToAncestorWithLayer(NULL));
       } else {
         SetLayerBounds(bounds_);
-      }
-      // TODO(beng): this seems redundant with the SchedulePaint at the top of
-      //             this function. explore collapsing.
-      if (previous_bounds.size() != bounds_.size() &&
-          !layer()->layer_updated_externally()) {
-        // If our bounds have changed then we need to update the complete
-        // texture.
-        layer()->SchedulePaint(GetLocalBounds());
       }
     } else {
       // If our bounds have changed, then any descendant layer bounds may

@@ -45,12 +45,12 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   }
 
   // Treat Native Client invocations like JavaScript.
-  if (plugin.name == ASCIIToUTF16(ChromeContentClient::kNaClPluginName))
+  if (plugin.name == base::ASCIIToUTF16(ChromeContentClient::kNaClPluginName))
     return true;
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   // Treat CDM invocations like JavaScript.
-  if (plugin.name == ASCIIToUTF16(kWidevineCdmDisplayName)) {
+  if (plugin.name == base::ASCIIToUTF16(kWidevineCdmDisplayName)) {
     DCHECK(plugin.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS);
     return true;
   }
@@ -91,7 +91,8 @@ PluginInfoMessageFilter::Context::~Context() {
 PluginInfoMessageFilter::PluginInfoMessageFilter(
     int render_process_id,
     Profile* profile)
-    : context_(render_process_id, profile),
+    : BrowserMessageFilter(ChromeMsgStart),
+      context_(render_process_id, profile),
       weak_ptr_factory_(this) {
 }
 
@@ -219,11 +220,12 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
 
   ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
   bool uses_default_content_setting = true;
+  bool is_managed = false;
   // Check plug-in content settings. The primary URL is the top origin URL and
   // the secondary URL is the plug-in URL.
   GetPluginContentSetting(plugin, params.top_origin_url, params.url,
                           plugin_metadata->identifier(), &plugin_setting,
-                          &uses_default_content_setting);
+                          &uses_default_content_setting, &is_managed);
   DCHECK(plugin_setting != CONTENT_SETTING_DEFAULT);
 
   PluginMetadata::SecurityStatus plugin_status =
@@ -272,10 +274,13 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     return;
   }
 
-  if (plugin_setting == CONTENT_SETTING_ASK)
-    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay;
-  else if (plugin_setting == CONTENT_SETTING_BLOCK)
-    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kBlocked;
+  if (plugin_setting == CONTENT_SETTING_ASK) {
+      status->value = ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay;
+  } else if (plugin_setting == CONTENT_SETTING_BLOCK) {
+    status->value =
+        is_managed ? ChromeViewHostMsg_GetPluginInfo_Status::kBlockedByPolicy
+                   : ChromeViewHostMsg_GetPluginInfo_Status::kBlocked;
+  }
 
   if (status->value == ChromeViewHostMsg_GetPluginInfo_Status::kAllowed) {
     // Allow an embedder of <webview> to block a plugin from being loaded inside
@@ -344,7 +349,8 @@ void PluginInfoMessageFilter::Context::GetPluginContentSetting(
     const GURL& plugin_url,
     const std::string& resource,
     ContentSetting* setting,
-    bool* uses_default_content_setting) const {
+    bool* uses_default_content_setting,
+    bool* is_managed) const {
   scoped_ptr<base::Value> value;
   content_settings::SettingInfo info;
   bool uses_plugin_specific_setting = false;
@@ -371,6 +377,7 @@ void PluginInfoMessageFilter::Context::GetPluginContentSetting(
       !uses_plugin_specific_setting &&
       info.primary_pattern == ContentSettingsPattern::Wildcard() &&
       info.secondary_pattern == ContentSettingsPattern::Wildcard();
+  *is_managed = info.source == content_settings::SETTING_SOURCE_POLICY;
 }
 
 void PluginInfoMessageFilter::Context::MaybeGrantAccess(

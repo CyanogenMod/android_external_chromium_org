@@ -60,6 +60,16 @@ class NfcDeviceClientImpl : public NfcDeviceClient,
   }
 
   // NfcDeviceClient override.
+  virtual std::vector<dbus::ObjectPath> GetDevicesForAdapter(
+      const dbus::ObjectPath& adapter_path) OVERRIDE {
+    DBusObjectMap* object_map =
+        adapters_to_object_maps_.GetObjectMap(adapter_path);
+    if (!object_map)
+      return std::vector<dbus::ObjectPath>();
+    return object_map->GetObjectPaths();
+  }
+
+  // NfcDeviceClient override.
   virtual Properties* GetProperties(
       const dbus::ObjectPath& object_path) OVERRIDE {
     return static_cast<Properties*>(
@@ -101,7 +111,7 @@ class NfcDeviceClientImpl : public NfcDeviceClient,
     dbus::MessageWriter array_writer(NULL);
     dbus::MessageWriter dict_entry_writer(NULL);
     writer.OpenArray("{sv}", &array_writer);
-    for (DictionaryValue::Iterator iter(attributes);
+    for (base::DictionaryValue::Iterator iter(attributes);
          !iter.IsAtEnd(); iter.Advance()) {
       array_writer.OpenDictEntry(&dict_entry_writer);
       dict_entry_writer.AppendString(iter.key());

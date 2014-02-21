@@ -6,7 +6,7 @@
 
 #include "base/mac/scoped_nsobject.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 namespace {
 
@@ -14,7 +14,8 @@ class AutofillTooltipControllerTest: public ui::CocoaTest {
  public:
   virtual void SetUp() OVERRIDE {
     CocoaTest::SetUp();
-    controller_.reset([[AutofillTooltipController alloc] init]);
+    controller_.reset([[AutofillTooltipController alloc]
+                           initWithArrowLocation:info_bubble::kTopCenter]);
     [[test_window() contentView] addSubview:[controller_ view]];
   }
 

@@ -6,9 +6,9 @@
 
 #include "apps/ui/native_app_window.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_window.h"
 #include "chrome/common/extensions/extension_messages.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -19,30 +19,22 @@
 
 namespace app_window = extensions::api::app_window;
 
-namespace {
-
-const int kUnboundedSize = apps::ShellWindow::SizeConstraints::kUnboundedSize;
-
-}
-
 namespace apps {
 
-AppWindowContents::AppWindowContents(ShellWindow* host)
-    : host_(host) {
-}
+AppWindowContentsImpl::AppWindowContentsImpl(AppWindow* host) : host_(host) {}
 
-AppWindowContents::~AppWindowContents() {
-}
+AppWindowContentsImpl::~AppWindowContentsImpl() {}
 
-void AppWindowContents::Initialize(Profile* profile, const GURL& url) {
+void AppWindowContentsImpl::Initialize(content::BrowserContext* context,
+                                       const GURL& url) {
   url_ = url;
 
   extension_function_dispatcher_.reset(
-      new ExtensionFunctionDispatcher(profile, this));
+      new ExtensionFunctionDispatcher(context, this));
 
-  web_contents_.reset(content::WebContents::Create(
-      content::WebContents::CreateParams(
-          profile, content::SiteInstance::CreateForURL(profile, url_))));
+  web_contents_.reset(
+      content::WebContents::Create(content::WebContents::CreateParams(
+          context, content::SiteInstance::CreateForURL(context, url_))));
 
   content::WebContentsObserver::Observe(web_contents_.get());
   web_contents_->GetMutableRendererPrefs()->
@@ -50,7 +42,7 @@ void AppWindowContents::Initialize(Profile* profile, const GURL& url) {
   web_contents_->GetRenderViewHost()->SyncRendererPrefs();
 }
 
-void AppWindowContents::LoadContents(int32 creator_process_id) {
+void AppWindowContentsImpl::LoadContents(int32 creator_process_id) {
   // If the new view is in the same process as the creator, block the created
   // RVH from loading anything until the background page has had a chance to
   // do any initialization it wants. If it's a different process, the new RVH
@@ -59,10 +51,9 @@ void AppWindowContents::LoadContents(int32 creator_process_id) {
       creator_process_id) {
     SuspendRenderViewHost(web_contents_->GetRenderViewHost());
   } else {
-    VLOG(1) << "ShellWindow created in new process ("
+    VLOG(1) << "AppWindow created in new process ("
             << web_contents_->GetRenderViewHost()->GetProcess()->GetID()
-            << ") != creator (" << creator_process_id
-            << "). Routing disabled.";
+            << ") != creator (" << creator_process_id << "). Routing disabled.";
   }
 
   // TODO(jeremya): there's a bug where navigating a web contents to an
@@ -81,37 +72,12 @@ void AppWindowContents::LoadContents(int32 creator_process_id) {
   registrar_.RemoveAll();
 }
 
-void AppWindowContents::NativeWindowChanged(
+void AppWindowContentsImpl::NativeWindowChanged(
     NativeAppWindow* native_app_window) {
   base::ListValue args;
-  DictionaryValue* dictionary = new DictionaryValue();
+  base::DictionaryValue* dictionary = new base::DictionaryValue();
   args.Append(dictionary);
-
-  gfx::Rect bounds = host_->GetClientBounds();
-  app_window::Bounds update;
-  update.left.reset(new int(bounds.x()));
-  update.top.reset(new int(bounds.y()));
-  update.width.reset(new int(bounds.width()));
-  update.height.reset(new int(bounds.height()));
-  dictionary->Set("bounds", update.ToValue().release());
-  dictionary->SetBoolean("fullscreen",
-                         native_app_window->IsFullscreenOrPending());
-  dictionary->SetBoolean("minimized", native_app_window->IsMinimized());
-  dictionary->SetBoolean("maximized", native_app_window->IsMaximized());
-  dictionary->SetBoolean("alwaysOnTop", host_->IsAlwaysOnTop());
-
-  const ShellWindow::SizeConstraints& size_constraints =
-      host_->size_constraints();
-  gfx::Size min_size = size_constraints.GetMinimumSize();
-  gfx::Size max_size = size_constraints.GetMaximumSize();
-  if (min_size.width() != kUnboundedSize)
-    dictionary->SetInteger("minWidth", min_size.width());
-  if (min_size.height() != kUnboundedSize)
-    dictionary->SetInteger("minHeight", min_size.height());
-  if (max_size.width() != kUnboundedSize)
-    dictionary->SetInteger("maxWidth", max_size.width());
-  if (max_size.height() != kUnboundedSize)
-    dictionary->SetInteger("maxHeight", max_size.height());
+  host_->GetSerializedState(dictionary);
 
   content::RenderViewHost* rvh = web_contents_->GetRenderViewHost();
   rvh->Send(new ExtensionMsg_MessageInvoke(rvh->GetRoutingID(),
@@ -122,16 +88,16 @@ void AppWindowContents::NativeWindowChanged(
                                            false));
 }
 
-void AppWindowContents::NativeWindowClosed() {
+void AppWindowContentsImpl::NativeWindowClosed() {
   content::RenderViewHost* rvh = web_contents_->GetRenderViewHost();
   rvh->Send(new ExtensionMsg_AppWindowClosed(rvh->GetRoutingID()));
 }
 
-content::WebContents* AppWindowContents::GetWebContents() const {
+content::WebContents* AppWindowContentsImpl::GetWebContents() const {
   return web_contents_.get();
 }
 
-void AppWindowContents::Observe(
+void AppWindowContentsImpl::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
@@ -152,9 +118,9 @@ void AppWindowContents::Observe(
   }
 }
 
-bool AppWindowContents::OnMessageReceived(const IPC::Message& message) {
+bool AppWindowContentsImpl::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(AppWindowContents, message)
+  IPC_BEGIN_MESSAGE_MAP(AppWindowContentsImpl, message)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_Request, OnRequest)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_UpdateDraggableRegions,
                         UpdateDraggableRegions)
@@ -164,26 +130,26 @@ bool AppWindowContents::OnMessageReceived(const IPC::Message& message) {
 }
 
 extensions::WindowController*
-AppWindowContents::GetExtensionWindowController() const {
+AppWindowContentsImpl::GetExtensionWindowController() const {
   return NULL;
 }
 
-content::WebContents* AppWindowContents::GetAssociatedWebContents() const {
+content::WebContents* AppWindowContentsImpl::GetAssociatedWebContents() const {
   return web_contents_.get();
 }
 
-void AppWindowContents::OnRequest(
+void AppWindowContentsImpl::OnRequest(
     const ExtensionHostMsg_Request_Params& params) {
   extension_function_dispatcher_->Dispatch(
       params, web_contents_->GetRenderViewHost());
 }
 
-void AppWindowContents::UpdateDraggableRegions(
+void AppWindowContentsImpl::UpdateDraggableRegions(
     const std::vector<extensions::DraggableRegion>& regions) {
   host_->UpdateDraggableRegions(regions);
 }
 
-void AppWindowContents::SuspendRenderViewHost(
+void AppWindowContentsImpl::SuspendRenderViewHost(
     content::RenderViewHost* rvh) {
   DCHECK(rvh);
   content::BrowserThread::PostTask(

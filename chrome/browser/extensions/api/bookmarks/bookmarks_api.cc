@@ -28,7 +28,6 @@
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_uma.h"
 #include "chrome/browser/platform_util.h"
@@ -44,12 +43,13 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/quota_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(OS_WIN) && defined(USE_AURA)
-#include "ui/aura/remote_root_window_host_win.h"
+#if defined(OS_WIN)
+#include "ui/aura/remote_window_tree_host_win.h"
 #endif
 
 namespace extensions {
@@ -149,14 +149,14 @@ bool BookmarksFunction::EditBookmarksEnabled() {
 void BookmarksFunction::BookmarkModelChanged() {
 }
 
-void BookmarksFunction::Loaded(BookmarkModel* model, bool ids_reassigned) {
+void BookmarksFunction::BookmarkModelLoaded(BookmarkModel* model,
+                                            bool ids_reassigned) {
   model->RemoveObserver(this);
   Run();
   Release();  // Balanced in Run().
 }
 
-BookmarkEventRouter::BookmarkEventRouter(Profile* profile,
-                                         BookmarkModel* model)
+BookmarkEventRouter::BookmarkEventRouter(Profile* profile, BookmarkModel* model)
     : profile_(profile),
       model_(model) {
   model_->AddObserver(this);
@@ -177,7 +177,8 @@ void BookmarkEventRouter::DispatchEvent(
   }
 }
 
-void BookmarkEventRouter::Loaded(BookmarkModel* model, bool ids_reassigned) {
+void BookmarkEventRouter::BookmarkModelLoaded(BookmarkModel* model,
+                                              bool ids_reassigned) {
   // TODO(erikkay): Perhaps we should send this event down to the extension
   // so they know when it's safe to use the API?
 }
@@ -325,7 +326,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<BookmarksAPI>* BookmarksAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void BookmarksAPI::OnListenerAdded(const EventListenerInfo& details) {
@@ -438,12 +439,36 @@ bool BookmarksSearchFunction::RunImpl() {
   PrefService* prefs = user_prefs::UserPrefs::Get(GetProfile());
   std::string lang = prefs->GetString(prefs::kAcceptLanguages);
   std::vector<const BookmarkNode*> nodes;
-  bookmark_utils::GetBookmarksContainingText(
-      BookmarkModelFactory::GetForProfile(GetProfile()),
-      UTF8ToUTF16(params->query),
-      std::numeric_limits<int>::max(),
-      lang,
-      &nodes);
+  if (params->query.as_string) {
+    bookmark_utils::QueryFields query;
+    query.word_phrase_query.reset(
+        new base::string16(base::UTF8ToUTF16(*params->query.as_string)));
+    bookmark_utils::GetBookmarksMatchingProperties(
+        BookmarkModelFactory::GetForProfile(GetProfile()),
+        query,
+        std::numeric_limits<int>::max(),
+        lang,
+        &nodes);
+  } else {
+    DCHECK(params->query.as_object);
+    const bookmarks::Search::Params::Query::Object& object =
+        *params->query.as_object;
+    bookmark_utils::QueryFields query;
+    if (object.query) {
+      query.word_phrase_query.reset(
+          new base::string16(base::UTF8ToUTF16(*object.query)));
+    }
+    if (object.url)
+      query.url.reset(new base::string16(base::UTF8ToUTF16(*object.url)));
+    if (object.title)
+      query.title.reset(new base::string16(base::UTF8ToUTF16(*object.title)));
+    bookmark_utils::GetBookmarksMatchingProperties(
+        BookmarkModelFactory::GetForProfile(GetProfile()),
+        query,
+        std::numeric_limits<int>::max(),
+        lang,
+        &nodes);
+  }
 
   std::vector<linked_ptr<BookmarkTreeNode> > tree_nodes;
   for (std::vector<const BookmarkNode*>::iterator node_iter = nodes.begin();
@@ -534,7 +559,7 @@ bool BookmarksCreateFunction::RunImpl() {
 
   base::string16 title;  // Optional.
   if (params->bookmark.title.get())
-    title = UTF8ToUTF16(*params->bookmark.title.get());
+    title = base::UTF8ToUTF16(*params->bookmark.title.get());
 
   std::string url_string;  // Optional.
   if (params->bookmark.url.get())
@@ -651,7 +676,7 @@ bool BookmarksUpdateFunction::RunImpl() {
   base::string16 title;
   bool has_title = false;
   if (params->changes.title.get()) {
-    title = UTF8ToUTF16(*params->changes.title);
+    title = base::UTF8ToUTF16(*params->changes.title);
     has_title = true;
   }
 
@@ -729,7 +754,7 @@ class CreateBookmarkBucketMapper : public BookmarkBucketMapper<std::string> {
     if (!parent)
       return;
 
-    std::string bucket_id = UTF16ToUTF8(parent->GetTitle());
+    std::string bucket_id = base::UTF16ToUTF8(parent->GetTitle());
     std::string title;
     json->GetString(keys::kTitleKey, &title);
     std::string url_string;
@@ -766,8 +791,8 @@ class RemoveBookmarksBucketMapper : public BookmarkBucketMapper<std::string> {
         return;
 
       std::string bucket_id;
-      bucket_id += UTF16ToUTF8(node->parent()->GetTitle());
-      bucket_id += UTF16ToUTF8(node->GetTitle());
+      bucket_id += base::UTF16ToUTF8(node->parent()->GetTitle());
+      bucket_id += base::UTF16ToUTF8(node->GetTitle());
       bucket_id += node->url().spec();
       buckets->push_back(GetBucket(base::SHA1HashString(bucket_id)));
     }
@@ -921,10 +946,10 @@ void BookmarksIOFunction::ShowSelectFileDialog(
   gfx::NativeWindow owning_window = web_contents ?
       platform_util::GetTopLevel(web_contents->GetView()->GetNativeView())
           : NULL;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   if (!owning_window &&
       chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
-    owning_window = aura::RemoteRootWindowHostWin::Instance()->GetAshWindow();
+    owning_window = aura::RemoteWindowTreeHostWin::Instance()->GetAshWindow();
 #endif
   // |web_contents| can be NULL (for background pages), which is fine. In such
   // a case if file-selection dialogs are forbidden by policy, we will not

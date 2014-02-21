@@ -5,9 +5,9 @@
 #include "media/cast/rtp_receiver/rtp_receiver.h"
 
 #include "base/logging.h"
-#include "media/cast/rtp_common/rtp_defines.h"
 #include "media/cast/rtp_receiver/receiver_stats.h"
 #include "media/cast/rtp_receiver/rtp_parser/rtp_parser.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 #include "net/base/big_endian.h"
 
 namespace media {
@@ -50,7 +50,8 @@ uint32 RtpReceiver::GetSsrcOfSender(const uint8* rtcp_buffer, size_t length) {
 
 bool RtpReceiver::ReceivedPacket(const uint8* packet, size_t length) {
   RtpCastHeader rtp_header;
-  if (!parser_->ParsePacket(packet, length, &rtp_header)) return false;
+  if (!parser_->ParsePacket(packet, length, &rtp_header))
+    return false;
 
   stats_->UpdateStatistics(rtp_header);
   return true;
@@ -60,10 +61,8 @@ void RtpReceiver::GetStatistics(uint8* fraction_lost,
                                 uint32* cumulative_lost,
                                 uint32* extended_high_sequence_number,
                                 uint32* jitter) {
-  stats_->GetStatistics(fraction_lost,
-                        cumulative_lost,
-                        extended_high_sequence_number,
-                        jitter);
+  stats_->GetStatistics(
+      fraction_lost, cumulative_lost, extended_high_sequence_number, jitter);
 }
 
 }  // namespace cast

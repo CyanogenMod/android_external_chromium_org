@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * AwContents tests.
  */
 public class AwContentsTest extends AwTestBase {
-    public static class OnDownloadStartHelper extends CallbackHelper {
+    private static class OnDownloadStartHelper extends CallbackHelper {
         String mUrl;
         String mUserAgent;
         String mContentDisposition;
@@ -163,12 +163,12 @@ public class AwContentsTest extends AwTestBase {
 
         System.gc();
 
-        assertTrue(pollOnUiThread(new Callable<Boolean>() {
+        pollOnUiThread(new Callable<Boolean>() {
             @Override
             public Boolean call() {
                 return AwContents.getNativeInstanceCount() <= MAX_IDLE_INSTANCES;
             }
-        }));
+        });
         for (int i = 0; i < REPETITIONS; ++i) {
             for (int j = 0; j < CONCURRENT_INSTANCES; ++j) {
                 AwTestContainerView view = createAwTestContainerViewOnMainSync(mContentsClient);
@@ -186,12 +186,12 @@ public class AwContentsTest extends AwTestBase {
 
         System.gc();
 
-        assertTrue(pollOnUiThread(new Callable<Boolean>() {
+        pollOnUiThread(new Callable<Boolean>() {
             @Override
             public Boolean call() {
                 return AwContents.getNativeInstanceCount() <= MAX_IDLE_INSTANCES;
             }
-        }));
+        });
     }
 
     private int callDocumentHasImagesSync(final AwContents awContents)
@@ -213,7 +213,7 @@ public class AwContentsTest extends AwTestBase {
               awContents.documentHasImages(msg);
             }
         });
-        assertTrue(s.tryAcquire(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(s.tryAcquire(WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS));
         int result = val.get();
         return result;
     }
@@ -311,9 +311,6 @@ public class AwContentsTest extends AwTestBase {
         });
     }
 
-    private static final long TEST_TIMEOUT = 20000L;
-    private static final int CHECK_INTERVAL = 100;
-
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testGetFavicon() throws Throwable {
@@ -337,13 +334,13 @@ public class AwContentsTest extends AwTestBase {
             getAwSettingsOnUiThread(awContents).setImagesEnabled(true);
             loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
 
-            assertTrue(pollOnUiThread(new Callable<Boolean>() {
+            pollOnUiThread(new Callable<Boolean>() {
                 @Override
                 public Boolean call() {
                     return awContents.getFavicon() != null &&
                         !awContents.getFavicon().sameAs(defaultFavicon);
                 }
-            }));
+            });
 
             final Object originalFaviconSource = (new URL(faviconUrl)).getContent();
             final Bitmap originalFavicon =
@@ -447,6 +444,6 @@ public class AwContentsTest extends AwTestBase {
                         "javascript:window.bridge.run();");
             }
         });
-        callback.waitForCallback(0, 1, 20, TimeUnit.SECONDS);
+        callback.waitForCallback(0, 1, WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
     }
 }

@@ -18,6 +18,8 @@
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
+#include "media/cast/transport/cast_transport_sender.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 
 namespace media {
 class AudioBus;
@@ -38,14 +40,6 @@ class FrameInput : public base::RefCountedThreadSafe<FrameInput> {
       const scoped_refptr<media::VideoFrame>& video_frame,
       const base::TimeTicks& capture_time) = 0;
 
-  // The video_frame must be valid until the callback is called.
-  // The callback is called from the main cast thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  virtual void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                                     const base::TimeTicks& capture_time,
-                                     const base::Closure callback) = 0;
-
   // The |audio_bus| must be valid until the |done_callback| is called.
   // The callback is called from the main cast thread as soon as the encoder is
   // done with |audio_bus|; it does not mean that the encoded data has been
@@ -53,14 +47,6 @@ class FrameInput : public base::RefCountedThreadSafe<FrameInput> {
   virtual void InsertAudio(const AudioBus* audio_bus,
                            const base::TimeTicks& recorded_time,
                            const base::Closure& done_callback) = 0;
-
-  // The audio_frame must be valid until the callback is called.
-  // The callback is called from the main cast thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  virtual void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                                     const base::TimeTicks& recorded_time,
-                                     const base::Closure callback) = 0;
 
  protected:
   virtual ~FrameInput() {}
@@ -70,16 +56,18 @@ class FrameInput : public base::RefCountedThreadSafe<FrameInput> {
 };
 
 // This Class is thread safe.
-// The provided PacketSender object will always be called form the main cast
-// thread.
+// The provided CastTransportSender object will always be called from the main
+// cast thread.
+//  At least one of AudioSenderConfig and VideoSenderConfig have to be provided.
 class CastSender {
  public:
   static CastSender* CreateCastSender(
       scoped_refptr<CastEnvironment> cast_environment,
-      const AudioSenderConfig& audio_config,
-      const VideoSenderConfig& video_config,
-      VideoEncoderController* const video_encoder_controller,
-      PacketSender* const packet_sender);
+      const AudioSenderConfig* audio_config,
+      const VideoSenderConfig* video_config,
+      const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+      const CastInitializationCallback& cast_initialization,
+      transport::CastTransportSender* const transport_sender);
 
   virtual ~CastSender() {}
 
@@ -90,7 +78,7 @@ class CastSender {
 
   // All RTCP packets for the session should be inserted to this object.
   // Can be called from any thread.
-  virtual scoped_refptr<PacketReceiver> packet_receiver() = 0;
+  virtual transport::PacketReceiverCallback packet_receiver() = 0;
 };
 
 }  // namespace cast

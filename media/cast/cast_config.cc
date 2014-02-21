@@ -8,10 +8,13 @@ namespace media {
 namespace cast {
 
 VideoSenderConfig::VideoSenderConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
+    : sender_ssrc(0),
+      incoming_feedback_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
-      rtp_history_ms(kDefaultRtpHistoryMs),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
+      use_external_encoder(false),
+      width(0),
+      height(0),
       congestion_control_back_off(kDefaultCongestionControlBackOff),
       max_qp(kDefaultMaxQp),
       min_qp(kDefaultMinQp),
@@ -19,36 +22,39 @@ VideoSenderConfig::VideoSenderConfig()
       max_number_of_video_buffers_used(kDefaultNumberOfVideoBuffers) {}
 
 AudioSenderConfig::AudioSenderConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
+    : sender_ssrc(0),
+      incoming_feedback_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
-      rtp_history_ms(kDefaultRtpHistoryMs),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs) {}
+      use_external_encoder(false),
+      frequency(0),
+      channels(0),
+      bitrate(0) {}
 
 AudioReceiverConfig::AudioReceiverConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
-      rtcp_mode(kRtcpReducedSize),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs) {}
-
-VideoReceiverConfig::VideoReceiverConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
+    : feedback_ssrc(0),
+      incoming_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
       rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
+      rtp_payload_type(0),
+      use_external_decoder(false),
+      frequency(0),
+      channels(0) {}
+
+VideoReceiverConfig::VideoReceiverConfig()
+    : feedback_ssrc(0),
+      incoming_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
+      rtcp_mode(kRtcpReducedSize),
+      rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
+      rtp_payload_type(0),
+      use_external_decoder(false),
       max_frame_rate(kDefaultMaxFrameRate),
       decoder_faster_than_max_frame_rate(true) {}
 
-EncodedVideoFrame::EncodedVideoFrame() {}
-EncodedVideoFrame::~EncodedVideoFrame() {}
-
-EncodedAudioFrame::EncodedAudioFrame() {}
-EncodedAudioFrame::~EncodedAudioFrame() {}
-
 PcmAudioFrame::PcmAudioFrame() {}
 PcmAudioFrame::~PcmAudioFrame() {}
-
-// static
-void PacketReceiver::DeletePacket(const uint8* packet) {
-  delete [] packet;
-}
 
 }  // namespace cast
 }  // namespace media

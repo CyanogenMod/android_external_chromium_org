@@ -8,7 +8,6 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -24,6 +23,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/switches.h"
@@ -32,7 +32,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(USE_ASH)
-#include "apps/shell_window_registry.h"
+#include "apps/app_window_registry.h"
 #endif
 
 #if defined(USE_ASH) && !defined(OS_WIN)
@@ -57,8 +57,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_WindowOpen) {
 
 int GetPanelCount(Browser* browser) {
 #if defined(USE_ASH_PANELS)
-  return static_cast<int>(apps::ShellWindowRegistry::Get(
-      browser->profile())->shell_windows().size());
+  return static_cast<int>(
+      apps::AppWindowRegistry::Get(browser->profile())->app_windows().size());
 #else
   return PanelManager::GetInstance()->num_panels();
 #endif

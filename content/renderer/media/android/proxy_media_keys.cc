@@ -32,6 +32,7 @@ ProxyMediaKeys::ProxyMediaKeys(
 }
 
 ProxyMediaKeys::~ProxyMediaKeys() {
+  manager_->CancelAllPendingSessionCreations(media_keys_id_);
 }
 
 void ProxyMediaKeys::InitializeCDM(const std::string& key_system,
@@ -46,15 +47,36 @@ void ProxyMediaKeys::InitializeCDM(const std::string& key_system,
 }
 
 bool ProxyMediaKeys::CreateSession(uint32 session_id,
-                                   const std::string& type,
+                                   const std::string& content_type,
                                    const uint8* init_data,
                                    int init_data_length) {
+  // TODO(xhwang): Move these checks up to blink and DCHECK here.
+  // See http://crbug.com/342510
+  MediaKeysHostMsg_CreateSession_Type session_type;
+  if (content_type == "audio/mp4" || content_type == "video/mp4") {
+    session_type = CREATE_SESSION_TYPE_MP4;
+  } else if (content_type == "audio/webm" || content_type == "video/webm") {
+    session_type = CREATE_SESSION_TYPE_WEBM;
+  } else {
+    DLOG(ERROR) << "Unsupported EME CreateSession content type of "
+                << content_type;
+    return false;
+  }
+
   manager_->CreateSession(
       media_keys_id_,
       session_id,
-      type,
+      session_type,
       std::vector<uint8>(init_data, init_data + init_data_length));
   return true;
+}
+
+void ProxyMediaKeys::LoadSession(uint32 session_id,
+                                 const std::string& web_session_id) {
+  // TODO(xhwang): Check key system and platform support for LoadSession in
+  // blink and add NOTREACHED() here.
+  DLOG(ERROR) << "ProxyMediaKeys doesn't support session loading.";
+  OnSessionError(session_id, media::MediaKeys::kUnknownError, 0);
 }
 
 void ProxyMediaKeys::UpdateSession(uint32 session_id,

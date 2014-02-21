@@ -34,7 +34,6 @@
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/signed_certificate_timestamp_id_and_status.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
 #include "grit/chromium_strings.h"
@@ -52,6 +51,9 @@
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
 #endif
 
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
+using base::UTF16ToUTF8;
 using content::BrowserThread;
 
 namespace {
@@ -160,7 +162,7 @@ WebsiteSettings::WebsiteSettings(
 
   // Every time the Website Settings UI is opened a |WebsiteSettings| object is
   // created. So this counts how ofter the Website Settings UI is opened.
-  content::RecordAction(content::UserMetricsAction("WebsiteSettings_Opened"));
+  content::RecordAction(base::UserMetricsAction("WebsiteSettings_Opened"));
 }
 
 WebsiteSettings::~WebsiteSettings() {
@@ -232,7 +234,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     // This is not a concern for CONTENT_SETTINGS_TYPE_MEDIASTREAM since users
     // can not create media settings exceptions by hand.
     content_settings::SettingInfo info;
-    scoped_ptr<Value> v(content_settings_->GetWebsiteSetting(
+    scoped_ptr<base::Value> v(content_settings_->GetWebsiteSetting(
         site_url_, site_url_, type, std::string(), &info));
     DCHECK(info.source == content_settings::SETTING_SOURCE_USER);
     ContentSettingsPattern::Relation r1 =
@@ -250,9 +252,9 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
         secondary_pattern = info.secondary_pattern;
     }
 
-    Value* value = NULL;
+    base::Value* value = NULL;
     if (setting != CONTENT_SETTING_DEFAULT)
-      value = Value::CreateIntegerValue(setting);
+      value = base::Value::CreateIntegerValue(setting);
     content_settings_->SetWebsiteSetting(
         primary_pattern, secondary_pattern, type, std::string(), value);
   }
@@ -293,7 +295,7 @@ void WebsiteSettings::OnUIClosing() {
 void WebsiteSettings::Init(Profile* profile,
                            const GURL& url,
                            const content::SSLStatus& ssl) {
-  if (url.SchemeIs(chrome::kChromeUIScheme)) {
+  if (url.SchemeIs(content::kChromeUIScheme)) {
     site_identity_status_ = SITE_IDENTITY_STATUS_INTERNAL_PAGE;
     site_identity_details_ =
         l10n_util::GetStringUTF16(IDS_PAGE_INFO_INTERNAL_PAGE);
@@ -311,6 +313,12 @@ void WebsiteSettings::Init(Profile* profile,
   }
 
   cert_id_ = ssl.cert_id;
+
+  if (ssl.cert_id && !ssl.signed_certificate_timestamp_ids.empty()) {
+    signed_certificate_timestamp_ids_.assign(
+        ssl.signed_certificate_timestamp_ids.begin(),
+        ssl.signed_certificate_timestamp_ids.end());
+  }
 
   if (ssl.cert_id &&
       cert_store_->RetrieveCert(ssl.cert_id, &cert) &&
@@ -574,10 +582,10 @@ void WebsiteSettings::PresentSitePermissions() {
       else
         permission_info.setting = mic_setting;
     } else {
-      scoped_ptr<Value> value(content_settings_->GetWebsiteSetting(
+      scoped_ptr<base::Value> value(content_settings_->GetWebsiteSetting(
           site_url_, site_url_, permission_info.type, std::string(), &info));
       DCHECK(value.get());
-      if (value->GetType() == Value::TYPE_INTEGER) {
+      if (value->GetType() == base::Value::TYPE_INTEGER) {
         permission_info.setting =
             content_settings::ValueToContentSetting(value.get());
       } else {
@@ -615,7 +623,7 @@ void WebsiteSettings::PresentSiteData() {
   std::string cookie_source =
       net::registry_controlled_domains::GetDomainAndRegistry(
           site_url_,
-          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
   if (cookie_source.empty())
     cookie_source = site_url_.host();
   cookie_info.cookie_source = cookie_source;
@@ -651,12 +659,15 @@ void WebsiteSettings::PresentSiteIdentity() {
   info.identity_status_description =
       UTF16ToUTF8(site_identity_details_);
   info.cert_id = cert_id_;
+  info.signed_certificate_timestamp_ids.assign(
+      signed_certificate_timestamp_ids_.begin(),
+      signed_certificate_timestamp_ids_.end());
   ui_->SetIdentityInfo(info);
 }
 
 void WebsiteSettings::PresentHistoryInfo(base::Time first_visit) {
   if (first_visit == base::Time()) {
-    ui_->SetFirstVisit(string16());
+    ui_->SetFirstVisit(base::string16());
     return;
   }
 
@@ -673,7 +684,6 @@ void WebsiteSettings::PresentHistoryInfo(base::Time first_visit) {
   } else {
     first_visit_text = l10n_util::GetStringUTF16(
         IDS_PAGE_INFO_SECURITY_TAB_FIRST_VISITED_TODAY);
-
   }
   ui_->SetFirstVisit(first_visit_text);
 }

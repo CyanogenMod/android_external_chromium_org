@@ -12,33 +12,21 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
-#include "chrome/browser/password_manager/password_manager_delegate.h"
-#include "chrome/browser/password_manager/password_manager_metrics_util.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_version_info.h"
+#include "chrome/browser/password_manager/password_manager_client.h"
+#include "chrome/browser/password_manager/password_manager_driver.h"
 #include "chrome/common/pref_names.h"
-#include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/core/common/password_autofill_util.h"
+#include "components/password_manager/core/browser/password_manager_metrics_util.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
-#include "content/public/browser/navigation_details.h"
-#include "content/public/browser/user_metrics.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/common/frame_navigate_params.h"
 #include "grit/generated_resources.h"
 
 using autofill::PasswordForm;
 using autofill::PasswordFormMap;
-using content::UserMetricsAction;
-using content::WebContents;
-
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordManager);
 
 namespace {
 
 const char kSpdyProxyRealm[] = "/SpdyProxy";
-const char kOtherPossibleUsernamesExperiment[] =
-    "PasswordManagerOtherPossibleUsernames";
 
 // This routine is called when PasswordManagers are constructed.
 //
@@ -61,6 +49,9 @@ void ReportMetrics(bool password_manager_enabled) {
 
 }  // namespace
 
+const char PasswordManager::kOtherPossibleUsernamesExperiment[] =
+    "PasswordManagerOtherPossibleUsernames";
+
 // static
 void PasswordManager::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
@@ -76,26 +67,12 @@ void PasswordManager::RegisterProfilePrefs(
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-// static
-void PasswordManager::CreateForWebContentsAndDelegate(
-    content::WebContents* contents,
-    PasswordManagerDelegate* delegate) {
-  if (FromWebContents(contents)) {
-    DCHECK_EQ(delegate, FromWebContents(contents)->delegate_);
-    return;
-  }
-
-  contents->SetUserData(UserDataKey(),
-                        new PasswordManager(contents, delegate));
-}
-
-PasswordManager::PasswordManager(WebContents* web_contents,
-                                 PasswordManagerDelegate* delegate)
-    : content::WebContentsObserver(web_contents),
-      delegate_(delegate) {
-  DCHECK(delegate_);
+PasswordManager::PasswordManager(PasswordManagerClient* client)
+    : client_(client), driver_(client->GetDriver()) {
+  DCHECK(client_);
+  DCHECK(driver_);
   password_manager_enabled_.Init(prefs::kPasswordManagerEnabled,
-                                 delegate_->GetProfile()->GetPrefs());
+                                 client_->GetPrefs());
 
   ReportMetrics(*password_manager_enabled_);
 }
@@ -118,21 +95,16 @@ void PasswordManager::SetFormHasGeneratedPassword(const PasswordForm& form) {
   // not the common case, and should only happen when there is a bug in our
   // ability to detect forms.
   bool ssl_valid = (form.origin.SchemeIsSecure() &&
-                    !delegate_->DidLastPageLoadEncounterSSLErrors());
-  PasswordFormManager* manager =
-      new PasswordFormManager(delegate_->GetProfile(),
-                              this,
-                              web_contents(),
-                              form,
-                              ssl_valid);
+                    !driver_->DidLastPageLoadEncounterSSLErrors());
+  PasswordFormManager* manager = new PasswordFormManager(
+      this, client_, driver_, form, ssl_valid);
   pending_login_managers_.push_back(manager);
   manager->SetHasGeneratedPassword();
   // TODO(gcasto): Add UMA stats to track this.
 }
 
 bool PasswordManager::IsSavingEnabled() const {
-  return *password_manager_enabled_ &&
-         !delegate_->GetProfile()->IsOffTheRecord();
+  return *password_manager_enabled_ && !driver_->IsOffTheRecord();
 }
 
 void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
@@ -203,10 +175,19 @@ void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
   }
 
   // Always save generated passwords, as the user expresses explicit intent for
-  // Chrome to manage such passwords.
+  // Chrome to manage such passwords. For other passwords, respect the
+  // autocomplete attribute if autocomplete='off' is not ignored.
+  if (!autofill::ShouldIgnoreAutocompleteOffForPasswordFields() &&
+      !manager->HasGeneratedPassword() &&
+      !form.password_autocomplete_set) {
+    RecordFailure(AUTOCOMPLETE_OFF, form.origin.host());
+    return;
+  }
+
   PasswordForm provisionally_saved_form(form);
-  provisionally_saved_form.ssl_valid = form.origin.SchemeIsSecure() &&
-      !delegate_->DidLastPageLoadEncounterSSLErrors();
+  provisionally_saved_form.ssl_valid =
+      form.origin.SchemeIsSecure() &&
+      !driver_->DidLastPageLoadEncounterSSLErrors();
   provisionally_saved_form.preferred = true;
   PasswordFormManager::OtherPossibleUsernamesAction action =
       PasswordFormManager::IGNORE_OTHER_POSSIBLE_USERNAMES;
@@ -223,7 +204,7 @@ void PasswordManager::RecordFailure(ProvisionalSaveFailure failure,
 
   std::string group_name = password_manager_metrics_util::GroupIdToString(
       password_manager_metrics_util::MonitoredDomainGroupId(
-          form_origin, delegate_->GetProfile()->GetPrefs()));
+          form_origin, client_->GetPrefs()));
   if (!group_name.empty()) {
     password_manager_metrics_util::LogUMAHistogramEnumeration(
         "PasswordManager.ProvisionalSaveFailure_" + group_name, failure,
@@ -244,28 +225,11 @@ void PasswordManager::RemoveObserver(LoginModelObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void PasswordManager::DidNavigateMainFrame(
-      const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) {
-  // Clear data after main frame navigation. We don't want to clear data after
-  // subframe navigation as there might be password forms on other frames that
-  // could be submitted.
-  if (!details.is_in_page)
+void PasswordManager::DidNavigateMainFrame(bool is_in_page) {
+  // Clear data after main frame navigation if the navigation was to a
+  // different page.
+  if (!is_in_page)
     pending_login_managers_.clear();
-}
-
-bool PasswordManager::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(PasswordManager, message)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_PasswordFormsParsed,
-                        OnPasswordFormsParsed)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_PasswordFormsRendered,
-                        OnPasswordFormsRendered)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_PasswordFormSubmitted,
-                        OnPasswordFormSubmitted)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
 }
 
 void PasswordManager::OnPasswordFormSubmitted(
@@ -281,7 +245,7 @@ void PasswordManager::OnPasswordFormSubmitted(
 void PasswordManager::OnPasswordFormsParsed(
     const std::vector<PasswordForm>& forms) {
   // Ask the SSLManager for current security.
-  bool had_ssl_error = delegate_->DidLastPageLoadEncounterSSLErrors();
+  bool had_ssl_error = driver_->DidLastPageLoadEncounterSSLErrors();
 
   for (std::vector<PasswordForm>::const_iterator iter = forms.begin();
        iter != forms.end(); ++iter) {
@@ -291,18 +255,21 @@ void PasswordManager::OnPasswordFormsParsed(
       continue;
 
     bool ssl_valid = iter->origin.SchemeIsSecure() && !had_ssl_error;
-    PasswordFormManager* manager =
-        new PasswordFormManager(delegate_->GetProfile(),
-                                this,
-                                web_contents(),
-                                *iter,
-                                ssl_valid);
+    PasswordFormManager* manager = new PasswordFormManager(
+        this, client_, driver_, *iter, ssl_valid);
     pending_login_managers_.push_back(manager);
-    manager->FetchMatchingLoginsFromPasswordStore();
+
+    // Avoid prompting the user for access to a password if they don't have
+    // password saving enabled.
+    PasswordStore::AuthorizationPromptPolicy prompt_policy =
+        *password_manager_enabled_ ? PasswordStore::ALLOW_PROMPT
+                                   : PasswordStore::DISALLOW_PROMPT;
+
+    manager->FetchMatchingLoginsFromPasswordStore(prompt_policy);
   }
 }
 
-bool PasswordManager::ShouldShowSavePasswordInfoBar() const {
+bool PasswordManager::ShouldPromptUserToSavePassword() const {
   return provisional_save_manager_->IsNewLogin() &&
          !provisional_save_manager_->HasGeneratedPassword() &&
          !provisional_save_manager_->IsPendingCredentialsPublicSuffixMatch();
@@ -315,12 +282,18 @@ void PasswordManager::OnPasswordFormsRendered(
 
   DCHECK(IsSavingEnabled());
 
-  // We now assume that if there is at least one visible password form
-  // that means that the previous login attempt failed.
-  if (!visible_forms.empty()) {
-    provisional_save_manager_->SubmitFailed();
-    provisional_save_manager_.reset();
-    return;
+  // If we see the login form again, then the login failed.
+  for (size_t i = 0; i < visible_forms.size(); ++i) {
+    // TODO(vabr): The similarity check is just action equality for now. If it
+    // becomes more complex, it may make sense to consider modifying and using
+    // PasswordFormManager::DoesManage for it.
+    if (visible_forms[i].action.is_valid() &&
+        provisional_save_manager_->pending_credentials().action ==
+            visible_forms[i].action) {
+      provisional_save_manager_->SubmitFailed();
+      provisional_save_manager_.reset();
+      return;
+    }
   }
 
   // Looks like a successful login attempt. Either show an infobar or
@@ -331,21 +304,8 @@ void PasswordManager::OnPasswordFormsRendered(
   if (provisional_save_manager_->HasGeneratedPassword())
     UMA_HISTOGRAM_COUNTS("PasswordGeneration.Submitted", 1);
 
-  if (ShouldShowSavePasswordInfoBar()) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableSavePasswordBubble)) {
-      ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-          ManagePasswordsBubbleUIController::FromWebContents(web_contents());
-      if (manage_passwords_bubble_ui_controller) {
-        manage_passwords_bubble_ui_controller->OnPasswordSubmitted(
-            provisional_save_manager_.release());
-      } else {
-        provisional_save_manager_.reset();
-      }
-    } else {
-      delegate_->AddSavePasswordInfoBarIfPermitted(
-          provisional_save_manager_.release());
-    }
+  if (ShouldPromptUserToSavePassword()) {
+    client_->PromptUserToSavePassword(provisional_save_manager_.release());
   } else {
     provisional_save_manager_->Save();
     provisional_save_manager_.reset();
@@ -373,19 +333,13 @@ void PasswordManager::PossiblyInitializeUsernamesExperiment(
   scoped_refptr<base::FieldTrial> trial(
       base::FieldTrialList::FactoryGetFieldTrial(
           kOtherPossibleUsernamesExperiment,
-          kDivisor, "Disabled", 2013, 12, 31,
-          base::FieldTrial::ONE_TIME_RANDOMIZED, NULL));
-  base::FieldTrial::Probability enabled_probability = 0;
-
-  switch (chrome::VersionInfo::GetChannel()) {
-    case chrome::VersionInfo::CHANNEL_DEV:
-    case chrome::VersionInfo::CHANNEL_BETA:
-      enabled_probability = 50;
-      break;
-    default:
-      break;
-  }
-
+          kDivisor,
+          "Disabled",
+          2013, 12, 31,
+          base::FieldTrial::ONE_TIME_RANDOMIZED,
+          NULL));
+  base::FieldTrial::Probability enabled_probability =
+      client_->GetProbabilityForExperiment(kOtherPossibleUsernamesExperiment);
   trial->AppendGroup("Enabled", enabled_probability);
 }
 
@@ -400,18 +354,33 @@ void PasswordManager::Autofill(
     const PasswordForm& preferred_match,
     bool wait_for_username) const {
   PossiblyInitializeUsernamesExperiment(best_matches);
+
+  // TODO(tedchoc): Switch to only requesting authentication if the user is
+  //                acting on the autofilled forms (crbug.com/342594) instead
+  //                of on page load.
+  bool authentication_required = preferred_match.use_additional_authentication;
+  for (autofill::PasswordFormMap::const_iterator it = best_matches.begin();
+       !authentication_required && it != best_matches.end(); ++it) {
+    if (it->second->use_additional_authentication)
+      authentication_required = true;
+  }
+
   switch (form_for_autofill.scheme) {
     case PasswordForm::SCHEME_HTML: {
       // Note the check above is required because the observers_ for a non-HTML
       // schemed password form may have been freed, so we need to distinguish.
-      autofill::PasswordFormFillData fill_data;
+      scoped_ptr<autofill::PasswordFormFillData> fill_data(
+          new autofill::PasswordFormFillData());
       InitPasswordFormFillData(form_for_autofill,
                                best_matches,
                                &preferred_match,
                                wait_for_username,
                                OtherPossibleUsernamesEnabled(),
-                               &fill_data);
-      delegate_->FillPasswordForm(fill_data);
+                               fill_data.get());
+      if (authentication_required)
+        client_->AuthenticateAutofillAndFillForm(fill_data.Pass());
+      else
+        driver_->FillPasswordForm(*fill_data.get());
       break;
     }
     default:
@@ -423,11 +392,5 @@ void PasswordManager::Autofill(
       break;
   }
 
-  ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents());
-  if (manage_passwords_bubble_ui_controller &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableSavePasswordBubble)) {
-    manage_passwords_bubble_ui_controller->OnPasswordAutofilled(best_matches);
-  }
+  client_->PasswordWasAutofilled(best_matches);
 }

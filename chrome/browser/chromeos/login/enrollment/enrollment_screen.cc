@@ -15,8 +15,8 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -167,8 +167,9 @@ void EnrollmentScreen::OnCancel() {
 void EnrollmentScreen::OnConfirmationClosed() {
   // If the machine has been put in KIOSK mode we have to restart the session
   // here to go in the proper KIOSK mode login screen.
-  if (g_browser_process->browser_policy_connector()->GetDeviceMode() ==
-          policy::DEVICE_MODE_RETAIL_KIOSK) {
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  if (connector->GetDeviceMode() == policy::DEVICE_MODE_RETAIL_KIOSK) {
     DBusThreadManager::Get()->GetSessionManagerClient()->StopSession();
     return;
   }
@@ -176,7 +177,7 @@ void EnrollmentScreen::OnConfirmationClosed() {
   if (is_auto_enrollment_ &&
       !enrollment_failed_once_ &&
       !user_.empty() &&
-      LoginUtils::IsWhitelisted(user_)) {
+      LoginUtils::IsWhitelisted(user_, NULL)) {
     actor_->ShowLoginSpinnerScreen();
     get_screen_observer()->OnExit(
         ScreenObserver::ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED);
@@ -190,8 +191,8 @@ void EnrollmentScreen::OnConfirmationClosed() {
 
 void EnrollmentScreen::RegisterForDevicePolicy(
     const std::string& token) {
-  policy::BrowserPolicyConnector* connector =
-      g_browser_process->browser_policy_connector();
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (connector->IsEnterpriseManaged() &&
       connector->GetEnterpriseDomain() != gaia::ExtractDomainName(user_)) {
     LOG(ERROR) << "Trying to re-enroll to a different domain than "
@@ -250,6 +251,9 @@ void EnrollmentScreen::ReportEnrollmentStatus(
           return;
         case policy::DM_STATUS_SERVICE_MISSING_LICENSES:
           UMAFailure(policy::kMetricMissingLicensesError);
+          return;
+        case policy::DM_STATUS_SERVICE_DEPROVISIONED:
+          UMAFailure(policy::kMetricEnrollmentDeprovisioned);
           return;
       }
       break;

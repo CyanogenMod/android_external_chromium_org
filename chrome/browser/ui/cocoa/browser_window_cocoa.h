@@ -101,10 +101,12 @@ class BrowserWindowCocoa :
   virtual void ShowUpdateChromeDialog() OVERRIDE;
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE;
-  virtual void ShowTranslateBubble(
-      content::WebContents* contents,
-      TranslateBubbleModel::ViewState view_state,
-      TranslateErrors::Type error_type) OVERRIDE;
+  virtual void ShowBookmarkAppBubble(
+      const WebApplicationInfo& web_app_info,
+      const std::string& extension_id) OVERRIDE;
+  virtual void ShowTranslateBubble(content::WebContents* contents,
+                                   TranslateTabHelper::TranslateStep step,
+                                   TranslateErrors::Type error_type) OVERRIDE;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
@@ -135,7 +137,6 @@ class BrowserWindowCocoa :
   virtual void Cut() OVERRIDE;
   virtual void Copy() OVERRIDE;
   virtual void Paste() OVERRIDE;
-  virtual void OpenTabpose() OVERRIDE;
   virtual void EnterFullscreenWithChrome() OVERRIDE;
   virtual bool IsFullscreenWithChrome() OVERRIDE;
   virtual bool IsFullscreenWithoutChrome() OVERRIDE;

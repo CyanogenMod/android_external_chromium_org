@@ -9,6 +9,7 @@
 #include "ui/events/event_constants.h"
 #include "ui/events/events_export.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_conversions.h"
 
 namespace ui {
 
@@ -27,11 +28,24 @@ struct EVENTS_EXPORT GestureEventDetails {
   int touch_points() const { return touch_points_; }
   void set_touch_points(int touch_points) { touch_points_ = touch_points; }
 
-  const gfx::Rect& bounding_box() const { return bounding_box_; }
-  void set_bounding_box(const gfx::Rect& box) { bounding_box_ = box; }
+  // TODO(tdresser): Return RectF. See crbug.com/337824.
+  const gfx::Rect bounding_box() const {
+    return ToEnclosingRect(bounding_box_);
+  }
+  void set_bounding_box(const gfx::RectF& box) { bounding_box_ = box; }
 
   void SetScrollVelocity(float velocity_x, float velocity_y,
                          float velocity_x_ordinal, float velocity_y_ordinal);
+
+  float scroll_x_hint() const {
+    CHECK_EQ(ui::ET_GESTURE_SCROLL_BEGIN, type_);
+    return data.scroll_begin.x_hint;
+  }
+
+  float scroll_y_hint() const {
+    CHECK_EQ(ui::ET_GESTURE_SCROLL_BEGIN, type_);
+    return data.scroll_begin.y_hint;
+  }
 
   float scroll_x() const {
     CHECK_EQ(ui::ET_GESTURE_SCROLL_UPDATE, type_);
@@ -132,6 +146,13 @@ struct EVENTS_EXPORT GestureEventDetails {
  private:
   ui::EventType type_;
   union {
+    struct {  // SCROLL start details.
+      // Distance that caused the scroll to start.  Generally redundant with
+      // the x/y values from the first scroll_update.
+      float x_hint;
+      float y_hint;
+    } scroll_begin;
+
     struct {  // SCROLL delta.
       float x;
       float y;
@@ -174,7 +195,7 @@ struct EVENTS_EXPORT GestureEventDetails {
 
   // Bounding box is an axis-aligned rectangle that contains all the
   // enclosing rectangles of the touch-points in the gesture.
-  gfx::Rect bounding_box_;
+  gfx::RectF bounding_box_;
 };
 
 // An abstract type for consumers of gesture-events created by the

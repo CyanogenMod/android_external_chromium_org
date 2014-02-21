@@ -21,7 +21,7 @@ class GoogleServiceAuthError;
 class Profile;
 class SigninGlobalError;
 
-// ProfileOAuth2TokenService is a BrowserContextKeyedService that retrieves
+// ProfileOAuth2TokenService is a class that retrieves
 // OAuth2 access tokens for a given set of scopes using the OAuth2 login
 // refresh tokens.
 //
@@ -35,38 +35,40 @@ class SigninGlobalError;
 //
 // Note: requests should be started from the UI thread. To start a
 // request from other thread, please use ProfileOAuth2TokenServiceRequest.
-class ProfileOAuth2TokenService : public OAuth2TokenService,
-                                  public BrowserContextKeyedService {
+class ProfileOAuth2TokenService : public OAuth2TokenService {
  public:
+  virtual ~ProfileOAuth2TokenService();
+
   // Initializes this token service with the profile.
   virtual void Initialize(Profile* profile);
 
-  // Loads credentials from a backing persistent store to make them available
-  // after service is used between profile restarts.
-  // Usually it's not necessary to directly call this method.
-  // TODO(bauerb): Make this method protected once this class initializes itself
-  // automatically.
-  virtual void LoadCredentials();
-
-  // BrowserContextKeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  virtual void Shutdown();
 
   // Gets an account id of the primary account related to the profile.
+  // DEPRECATED: Use SigninManagerBase::GetAuthenticatedAccountId() instead.
   std::string GetPrimaryAccountId();
 
   // Lists account IDs of all accounts with a refresh token.
   virtual std::vector<std::string> GetAccounts() OVERRIDE;
+
+  // Loads credentials from a backing persistent store to make them available
+  // after service is used between profile restarts.
+  //
+  // Only call this method if there is at least one account connected to the
+  // profile, otherwise startup will cause unneeded work on the IO thread.  The
+  // primary account is specified with the |primary_account_id| argument and
+  // should not be empty.  For a regular profile, the primary account id comes
+  // from SigninManager.  For a managed account, the id comes from
+  // ManagedUserService.
+  virtual void LoadCredentials(const std::string& primary_account_id);
 
   // Updates a |refresh_token| for an |account_id|. Credentials are persisted,
   // and available through |LoadCredentials| after service is restarted.
   virtual void UpdateCredentials(const std::string& account_id,
                                  const std::string& refresh_token);
 
-  // Revokes credentials related to |account_id|.
-  void RevokeCredentials(const std::string& account_id);
-
   // Revokes all credentials handled by the object.
-  void RevokeAllCredentials();
+  virtual void RevokeAllCredentials();
 
   SigninGlobalError* signin_global_error() {
     return signin_global_error_.get();
@@ -79,45 +81,18 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   Profile* profile() const { return profile_; }
 
  protected:
-  class AccountInfo : public SigninGlobalError::AuthStatusProvider {
-   public:
-    AccountInfo(ProfileOAuth2TokenService* token_service,
-                const std::string& account_id,
-                const std::string& refresh_token);
-    virtual ~AccountInfo();
-
-    const std::string& refresh_token() const { return refresh_token_; }
-    void set_refresh_token(const std::string& token) {
-      refresh_token_ = token;
-    }
-
-    void SetLastAuthError(const GoogleServiceAuthError& error);
-
-    // SigninGlobalError::AuthStatusProvider implementation.
-    virtual std::string GetAccountId() const OVERRIDE;
-    virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
-
-   private:
-    ProfileOAuth2TokenService* token_service_;
-    std::string account_id_;
-    std::string refresh_token_;
-    GoogleServiceAuthError last_auth_error_;
-
-    DISALLOW_COPY_AND_ASSIGN(AccountInfo);
-  };
-
-  // Maps the |account_id| of accounts known to ProfileOAuth2TokenService
-  // to information about the account.
-  typedef std::map<std::string, linked_ptr<AccountInfo> > AccountInfoMap;
-
   ProfileOAuth2TokenService();
-  virtual ~ProfileOAuth2TokenService();
 
   // OAuth2TokenService overrides.
-  virtual std::string GetRefreshToken(const std::string& account_id) OVERRIDE;
+  // Note: These methods are overriden so that ProfileOAuth2TokenService is a
+  // concrete class.
 
-  // OAuth2TokenService implementation.
+  // Simply returns NULL and should be overriden by subsclasses.
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
+
+  // Default implementation of this method is NOTREACHED as it should be be
+  // overriden by subclasses.
+  virtual std::string GetRefreshToken(const std::string& account_id) OVERRIDE;
 
   // Updates the internal cache of the result from the most-recently-completed
   // auth request (used for reporting errors to the user).
@@ -125,33 +100,9 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
       const std::string& account_id,
       const GoogleServiceAuthError& error) OVERRIDE;
 
-  // Persists credentials for |account_id|. Enables overriding for
-  // testing purposes, or other cases, when accessing the DB is not desired.
-  virtual void PersistCredentials(const std::string& account_id,
-                                  const std::string& refresh_token);
-
-  // Clears credentials persisted for |account_id|. Enables overriding for
-  // testing purposes, or other cases, when accessing the DB is not desired.
-  virtual void ClearPersistedCredentials(const std::string& account_id);
-
-  AccountInfoMap& refresh_tokens() { return refresh_tokens_; }
-
  private:
-  FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceTest,
-                           TokenServiceUpdateClearsCache);
-  FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceTest,
-                           PersistenceDBUpgrade);
-  FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceTest,
-                           PersistenceLoadCredentials);
-
-  // Revokes the refresh token on the server.
-  virtual void RevokeCredentialsOnServer(const std::string& refresh_token);
-
   // The profile with which this instance was initialized, or NULL.
   Profile* profile_;
-
-  // In memory refresh token store mapping account_id to refresh_token.
-  AccountInfoMap refresh_tokens_;
 
   // Used to show auth errors in the wrench menu. The SigninGlobalError is
   // different than most GlobalErrors in that its lifetime is controlled by

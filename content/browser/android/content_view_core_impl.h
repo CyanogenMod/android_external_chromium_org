@@ -14,6 +14,7 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/process.h"
+#include "content/browser/renderer_host/input/touch_disposition_gesture_filter.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/android/content_view_core.h"
@@ -37,12 +38,12 @@ struct MenuItem;
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
                             public NotificationObserver,
+                            public TouchDispositionGestureFilterClient,
                             public WebContentsObserver {
  public:
   static ContentViewCoreImpl* FromWebContents(WebContents* web_contents);
   ContentViewCoreImpl(JNIEnv* env,
                       jobject obj,
-                      bool hardware_accelerated,
                       WebContents* web_contents,
                       ui::ViewAndroid* view_android,
                       ui::WindowAndroid* window_android);
@@ -56,13 +57,16 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual void LoadUrl(NavigationController::LoadURLParams& params) OVERRIDE;
   virtual jint GetCurrentRenderProcessId(JNIEnv* env, jobject obj) OVERRIDE;
   virtual void ShowPastePopup(int x, int y) OVERRIDE;
-  virtual unsigned int GetScaledContentTexture(
+  virtual void GetScaledContentBitmap(
       float scale,
-      gfx::Size* out_size) OVERRIDE;
+      gfx::Size* out_size,
+      const base::Callback<void(bool, const SkBitmap&)>& result_callback)
+      OVERRIDE;
   virtual float GetDpiScale() const OVERRIDE;
   virtual void RequestContentClipping(const gfx::Rect& clipping,
                                       const gfx::Size& content_size) OVERRIDE;
   virtual void PauseVideo() OVERRIDE;
+  virtual void PauseOrResumeGeolocation(bool should_pause) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -93,11 +97,10 @@ class ContentViewCoreImpl : public ContentViewCore,
       JNIEnv* env, jobject obj) const;
   jboolean IsIncognito(JNIEnv* env, jobject obj);
   void SendOrientationChangeEvent(JNIEnv* env, jobject obj, jint orientation);
-  jboolean SendTouchEvent(JNIEnv* env,
-                          jobject obj,
-                          jlong time_ms,
-                          jint type,
-                          jobjectArray pts);
+  void OnTouchEventHandlingBegin(JNIEnv* env,
+                                 jobject obj,
+                                 jobject motion_event);
+  void OnTouchEventHandlingEnd(JNIEnv* env, jobject obj);
   jboolean SendMouseMoveEvent(JNIEnv* env,
                               jobject obj,
                               jlong time_ms,
@@ -109,7 +112,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                                jfloat x,
                                jfloat y,
                                jfloat vertical_axis);
-  void ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms, jfloat x, jfloat y);
+  void ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms,
+                   jfloat x, jfloat y, jfloat hintx, jfloat hinty);
   void ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms);
   void ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
                 jfloat x, jfloat y, jfloat dx, jfloat dy);
@@ -121,8 +125,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                  jboolean disambiguation_popup_tap);
   void SingleTapUnconfirmed(JNIEnv* env, jobject obj, jlong time_ms,
                             jfloat x, jfloat y);
-  void ShowPressState(JNIEnv* env, jobject obj, jlong time_ms,
-                      jfloat x, jfloat y);
+  void ShowPress(JNIEnv* env, jobject obj, jlong time_ms,
+                 jfloat x, jfloat y);
   void TapCancel(JNIEnv* env, jobject obj, jlong time_ms,
                  jfloat x, jfloat y);
   void TapDown(JNIEnv* env, jobject obj, jlong time_ms,
@@ -225,9 +229,17 @@ class ContentViewCoreImpl : public ContentViewCore,
                                    jint count);
   void SendSingleTapUma(JNIEnv* env, jobject obj, jint type, jint count);
 
+  void ExtractSmartClipData(JNIEnv* env,
+                            jobject obj,
+                            jint x,
+                            jint y,
+                            jint width,
+                            jint height);
   // --------------------------------------------------------------------------
   // Public methods that call to Java via JNI
   // --------------------------------------------------------------------------
+
+  void OnSmartClipDataExtracted(const base::string16& result);
 
   // Creates a popup menu with |items|.
   // |multiple| defines if it should support multi-select.
@@ -259,9 +271,9 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   bool HasFocus();
   void ConfirmTouchEvent(InputEventAckState ack_result);
-  void UnhandledFlingStartEvent();
-  void OnScrollUpdateGestureConsumed();
-  void HasTouchEventHandlers(bool need_touch_events);
+  void OnGestureEventAck(const blink::WebGestureEvent& event,
+                         InputEventAckState ack_result);
+  bool FilterInputEvent(const blink::WebInputEvent& event);
   void OnSelectionChanged(const std::string& text);
   void OnSelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params);
@@ -292,6 +304,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Returns True if the given media should be blocked to load.
   bool ShouldBlockMediaRequest(const GURL& url);
 
+  void DidStopFlinging();
+
   // --------------------------------------------------------------------------
   // Methods called from native code
   // --------------------------------------------------------------------------
@@ -320,6 +334,11 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // WebContentsObserver implementation.
   virtual void RenderViewReady() OVERRIDE;
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+
+  // TouchDispositionGestureFilterClient implementation.
+  virtual void ForwardGestureEvent(
+      const blink::WebGestureEvent& event) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Other private methods and data
@@ -342,6 +361,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void DeleteScaledSnapshotTexture();
 
   void SendGestureEvent(const blink::WebGestureEvent& event);
+  void SendSyntheticGestureEvent(const blink::WebGestureEvent& event);
 
   // Update focus state of the RenderWidgetHostView.
   void SetFocusInternal(bool focused);
@@ -378,6 +398,14 @@ class ContentViewCoreImpl : public ContentViewCore,
   // The cache of device's current orientation set from Java side, this value
   // will be sent to Renderer once it is ready.
   int device_orientation_;
+
+  bool geolocation_needs_pause_;
+
+  // Handles gesture dispatch as the generating touch events are ack'ed.
+  TouchDispositionGestureFilter touch_disposition_gesture_filter_;
+  bool handling_touch_event_;
+  blink::WebTouchEvent pending_touch_event_;
+  GestureEventPacket pending_gesture_packet_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

@@ -8,12 +8,13 @@
 #include "base/stl_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager_base.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "content/public/browser/notification_details.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -52,9 +53,9 @@ void AccountTracker::RemoveObserver(Observer* observer) {
 
 void AccountTracker::OnRefreshTokenAvailable(const std::string& account_id) {
   // Ignore refresh tokens if there is no primary account ID at all.
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  if (token_service->GetPrimaryAccountId().empty())
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile_);
+  if (signin_manager->GetAuthenticatedAccountId().empty())
     return;
 
   DVLOG(1) << "AVAILABLE " << account_id;
@@ -204,7 +205,8 @@ void AccountTracker::DeleteFetcher(AccountIdFetcher* fetcher) {
 AccountIdFetcher::AccountIdFetcher(Profile* profile,
                                    AccountTracker* tracker,
                                    const std::string& account_key)
-    : profile_(profile),
+    : OAuth2TokenService::Consumer("extensions_account_tracker"),
+      profile_(profile),
       tracker_(tracker),
       account_key_(account_key) {}
 
@@ -233,7 +235,7 @@ void AccountIdFetcher::OnGetTokenSuccess(
 void AccountIdFetcher::OnGetTokenFailure(
     const OAuth2TokenService::Request* request,
     const GoogleServiceAuthError& error) {
-  LOG(ERROR) << "OnGetTokenFailure: " << error.error_message();
+  LOG(ERROR) << "OnGetTokenFailure: " << error.ToString();
   DCHECK_EQ(request, login_token_request_.get());
   tracker_->OnUserInfoFetchFailure(this);
 }

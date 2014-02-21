@@ -262,7 +262,9 @@ FileListBannerController.prototype.showLowDriveSpaceWarning_ =
     close.className = 'cr-dialog-close';
     box.appendChild(close);
     close.addEventListener('click', function(total) {
-      window.localStorage[WARNING_DISMISSED_KEY] = total;
+      var values = {};
+      values[WARNING_DISMISSED_KEY] = total;
+      chrome.storage.local.set(values);
       box.hidden = true;
       this.requestRelayout_(100);
     }.bind(this, sizeStats.totalSize));
@@ -343,8 +345,10 @@ FileListBannerController.prototype.checkSpaceAndMaybeShowWelcomeBanner_ =
     // getSizeStats for Drive file system accesses to the server, so we should
     // minimize the invocation.
     group.add(function(onCompleted) {
+      // Current directory must be set, since this code is called after
+      // scaning is completed. However, the volumeInfo may be gone.
       chrome.fileBrowserPrivate.getSizeStats(
-          util.makeFilesystemUrl(this.directoryModel_.getCurrentRootPath()),
+          driveVolume.volumeId,
           function(result) {
             if (result && result.totalSize >= offerSize * 1024 * 1024 * 1024)
               this.usePromoWelcomeBanner_ = false;
@@ -512,8 +516,12 @@ FileListBannerController.prototype.maybeShowLowSpaceWarning_ = function(
       return;
   }
 
+  // If not mounted correctly, then do not continue.
+  if (!volume.root)
+    return;
+
   chrome.fileBrowserPrivate.getSizeStats(
-      volume.getDisplayRootDirectoryURL(),
+      volume.root.toURL(),
       function(sizeStats) {
         var currentVolume = this.volumeManager_.getVolumeInfo(
             this.directoryModel_.getCurrentDirEntry());
@@ -569,9 +577,10 @@ FileListBannerController.prototype.showLowDownloadsSpaceWarning_ =
   if (show) {
     var html = util.htmlUnescape(str('DOWNLOADS_DIRECTORY_WARNING'));
     box.innerHTML = html;
-    var link = box.querySelector('a');
-    link.href = str('DOWNLOADS_LOW_SPACE_WARNING_HELP_URL');
-    link.target = '_blank';
+    box.querySelector('a').addEventListener('click', function(e) {
+      util.visitURL(str('DOWNLOADS_LOW_SPACE_WARNING_HELP_URL'));
+      e.preventDefault();
+    });
   } else {
     box.innerHTML = '';
   }

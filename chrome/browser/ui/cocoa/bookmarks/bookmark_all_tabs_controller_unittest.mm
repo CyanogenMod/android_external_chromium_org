@@ -14,6 +14,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
+using base::ASCIIToUTF16;
+
 @interface BookmarkAllTabsControllerOverride : BookmarkAllTabsController
 @end
 
@@ -54,7 +56,7 @@ class BookmarkAllTabsControllerTest : public CocoaProfileTest {
                          profile:profile()
                           parent:folder_a_
                              url:GURL()
-                           title:string16()
+                           title:base::string16()
                    configuration:BookmarkEditor::SHOW_TREE];
   }
 

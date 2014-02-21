@@ -8,6 +8,7 @@
 
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
 #include "ash/system/tray/actionable_view.h"
 #include "ash/system/tray/fixed_sized_scroll_view.h"
@@ -28,6 +29,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/controls/button/image_button.h"
@@ -90,17 +92,17 @@ base::string16 GetAudioDeviceName(const chromeos::AudioDevice& device) {
     case chromeos::AUDIO_TYPE_USB:
       return l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_AUDIO_USB_DEVICE,
-          UTF8ToUTF16(device.display_name));
+          base::UTF8ToUTF16(device.display_name));
     case chromeos::AUDIO_TYPE_BLUETOOTH:
       return l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_AUDIO_BLUETOOTH_DEVICE,
-          UTF8ToUTF16(device.display_name));
+          base::UTF8ToUTF16(device.display_name));
     case chromeos::AUDIO_TYPE_HDMI:
       return l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_AUDIO_HDMI_DEVICE,
-          UTF8ToUTF16(device.display_name));
+          base::UTF8ToUTF16(device.display_name));
     default:
-      return UTF8ToUTF16(device.display_name);
+      return base::UTF8ToUTF16(device.display_name);
   }
 }
 
@@ -205,7 +207,7 @@ class VolumeView : public ActionableView,
         device_type_(NULL),
         more_(NULL),
         is_default_view_(is_default_view) {
-    set_focusable(false);
+    SetFocusable(false);
     SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal,
           kTrayPopupPaddingHorizontal, 0, kTrayPopupPaddingBetweenItems));
 
@@ -380,6 +382,10 @@ class VolumeView : public ActionableView,
       // 1%, which is beyond cras audio api's granularity for output volume.
       if (std::abs(volume - old_volume) < 1)
         return;
+      Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+          is_default_view_ ?
+          ash::UMA_STATUS_AREA_CHANGED_VOLUME_MENU :
+          ash::UMA_STATUS_AREA_CHANGED_VOLUME_POPUP);
       if (volume > old_volume)
         HandleVolumeUp(volume);
       else
@@ -388,7 +394,7 @@ class VolumeView : public ActionableView,
     icon_->Update();
   }
 
-  // Overriden from ActinableView.
+  // Overriden from ActionableView.
   virtual bool PerformAction(const ui::Event& event) OVERRIDE {
     if (!more_->visible())
       return false;
@@ -481,8 +487,11 @@ class AudioDetailedView : public TrayDetailsView,
     scroller()->Layout();
   }
 
-  void AddScrollListInfoItem(const string16& text) {
-    views::Label* label = new views::Label(text);
+  void AddScrollListInfoItem(const base::string16& text) {
+    views::Label* label = new views::Label(
+        text,
+        ui::ResourceBundle::GetSharedInstance().GetFontList(
+            ui::ResourceBundle::BoldFont));
 
     //  Align info item with checkbox items
     int margin = kTrayPopupPaddingHorizontal +
@@ -494,19 +503,18 @@ class AudioDetailedView : public TrayDetailsView,
     else
       left_margin = margin;
 
-    label->set_border(views::Border::CreateEmptyBorder(
-        ash::kTrayPopupPaddingBetweenItems,
-        left_margin,
-        ash::kTrayPopupPaddingBetweenItems,
-        right_margin));
+    label->SetBorder(
+        views::Border::CreateEmptyBorder(ash::kTrayPopupPaddingBetweenItems,
+                                         left_margin,
+                                         ash::kTrayPopupPaddingBetweenItems,
+                                         right_margin));
     label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     label->SetEnabledColor(SkColorSetARGB(192, 0, 0, 0));
-    label->SetFont(label->font().DeriveFont(0, gfx::Font::BOLD));
 
     scroll_content()->AddChildView(label);
   }
 
-  HoverHighlightView* AddScrollListItem(const string16& text,
+  HoverHighlightView* AddScrollListItem(const base::string16& text,
                                         gfx::Font::FontStyle style,
                                         bool checked) {
     HoverHighlightView* container = new HoverHighlightView(this);
@@ -567,6 +575,8 @@ views::View* TrayAudio::CreateDetailedView(user::LoginStatus status) {
     volume_view_ = new tray::VolumeView(this, false);
     return volume_view_;
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_DETAILED_AUDIO_VIEW);
     audio_detail_ = new tray::AudioDetailedView(this, status);
     return audio_detail_;
   }
@@ -589,7 +599,7 @@ bool TrayAudio::ShouldHideArrow() const {
   return true;
 }
 
-bool TrayAudio::ShouldShowLauncher() const {
+bool TrayAudio::ShouldShowShelf() const {
   return ash::switches::ShowAudioDeviceMenu() && !pop_up_volume_view_;
 }
 

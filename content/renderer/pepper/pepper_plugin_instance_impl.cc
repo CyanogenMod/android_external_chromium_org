@@ -41,7 +41,6 @@
 #include "content/renderer/pepper/ppb_buffer_impl.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
-#include "content/renderer/pepper/ppp_pdf.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/pepper/url_request_info_util.h"
 #include "content/renderer/pepper/url_response_info_util.h"
@@ -67,8 +66,10 @@
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
 #include "ppapi/c/private/ppp_instance_private.h"
+#include "ppapi/c/private/ppp_pdf.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/uma_private_resource.h"
 #include "ppapi/proxy/url_loader_resource.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
@@ -109,6 +110,7 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/image/image_skia.h"
@@ -426,8 +428,8 @@ void PepperPluginInstanceImpl::ExternalDocumentLoader::ReplayReceivedData(
                                     0 /* encoded_data_length */);
   }
   if (finished_loading_) {
-    document_loader->didFinishLoading(NULL,
-                                      0 /* finish_time */);
+    document_loader->didFinishLoading(NULL, 0 /* finish_time */,
+        blink::WebURLLoaderClient::kUnknownEncodedDataLength);
   }
   if (error_.get()) {
     document_loader->didFail(NULL, *error_);
@@ -444,7 +446,8 @@ void PepperPluginInstanceImpl::ExternalDocumentLoader::didReceiveData(
 
 void PepperPluginInstanceImpl::ExternalDocumentLoader::didFinishLoading(
     WebURLLoader* loader,
-    double finish_time) {
+    double finish_time,
+    int64_t total_encoded_data_length) {
   DCHECK(!finished_loading_);
   finished_loading_ = true;
 }
@@ -482,7 +485,8 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
     ppapi::PPP_Instance_Combined* instance_interface,
     WebPluginContainer* container,
     const GURL& plugin_url)
-    : render_frame_(render_frame),
+    : RenderFrameObserver(render_frame),
+      render_frame_(render_frame),
       module_(module),
       instance_interface_(instance_interface),
       pp_instance_(0),
@@ -508,6 +512,7 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       checked_for_plugin_messaging_interface_(false),
       checked_for_plugin_pdf_interface_(false),
       gamepad_impl_(new GamepadImpl()),
+      uma_private_impl_(NULL),
       plugin_print_interface_(NULL),
       plugin_graphics_3d_interface_(NULL),
       always_on_top_(false),
@@ -537,7 +542,27 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
   module_->InstanceCreated(this);
 
   if (render_frame) {  // NULL in tests
-    render_frame->PepperInstanceCreated(this);
+    render_frame->render_view()->PepperInstanceCreated(this);
+    // Bind a callback now so that we can inform the RenderViewImpl when we are
+    // destroyed. This works around a temporary problem stemming from work to
+    // move parts of RenderViewImpl in to RenderFrameImpl (see
+    // crbug.com/245126). If destruction happens in this order:
+    //  1) RenderFrameImpl
+    //  2) PepperPluginInstanceImpl
+    //  3) RenderViewImpl
+    // Then after 1), the PepperPluginInstanceImpl doesn't have any way to talk
+    // to the RenderViewImpl. But when the instance is destroyed, it still
+    // needs to inform the RenderViewImpl that it has gone away, otherwise
+    // between (2) and (3), the RenderViewImpl will still have the dead
+    // instance in its active set, and so might make calls on the deleted
+    // instance. See crbug.com/343576 for more information. Once the plugin
+    // calls move entirely from RenderViewImpl in to RenderFrameImpl, this
+    // can be a little bit simplified by instead making a direct call on
+    // RenderFrameImpl in the destructor (but only if render_frame_ is valid).
+    instance_deleted_callback_ =
+        base::Bind(&RenderViewImpl::PepperInstanceDeleted,
+                   render_frame->render_view()->AsWeakPtr(),
+                   base::Unretained(this));
     view_data_.is_page_visible = !render_frame_->GetRenderWidget()->is_hidden();
 
     // Set the initial focus.
@@ -548,7 +573,7 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
           PepperBrowserConnection::Get(render_frame_);
       browser_connection->DidCreateInProcessInstance(
           pp_instance(),
-          render_frame_->render_view()->GetRoutingID(),
+          render_frame_->GetRoutingID(),
           container_->element().document().url(),
           GetPluginURL());
     }
@@ -579,8 +604,8 @@ PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
   if (TrackedCallback::IsPending(lock_mouse_callback_))
     lock_mouse_callback_->Abort();
 
-  if (render_frame_)
-    render_frame_->PepperInstanceDeleted(this);
+  if (!instance_deleted_callback_.is_null())
+    instance_deleted_callback_.Run();
 
   if (!module_->IsProxied() && render_frame_) {
     PepperBrowserConnection* browser_connection =
@@ -718,7 +743,13 @@ void PepperPluginInstanceImpl::InstanceCrashed() {
   BindGraphics(pp_instance(), 0);
   InvalidateRect(gfx::Rect());
 
-  render_frame_->PluginCrashed(module_->path(), module_->GetPeerProcessId());
+  if (content_decryptor_delegate_) {
+    content_decryptor_delegate_->InstanceCrashed();
+    content_decryptor_delegate_.reset();
+  }
+
+  if (render_frame_)
+    render_frame_->PluginCrashed(module_->path(), module_->GetPeerProcessId());
   UnSetAndDeleteLockTargetAdapter();
 }
 
@@ -757,6 +788,8 @@ bool PepperPluginInstanceImpl::Initialize(
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
     bool full_frame) {
+  if (!render_frame_)
+    return false;
   message_channel_.reset(new MessageChannel(this));
 
   full_frame_ = full_frame;
@@ -996,6 +1029,8 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
     WebCursorInfo* cursor_info) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleInputEvent");
 
+  if (!render_frame_)
+    return false;
   if (WebInputEvent::isMouseEventType(event.type)) {
     render_frame_->PepperDidReceiveMouseEvent(this);
   }
@@ -1238,18 +1273,27 @@ bool PepperPluginInstanceImpl::GetBitmapForOptimizedPluginPaint(
   return true;
 }
 
+void PepperPluginInstanceImpl::SetSelectedText(
+    const base::string16& selected_text) {
+  selected_text_ = selected_text;
+}
+
+void PepperPluginInstanceImpl::SetLinkUnderCursor(const std::string& url) {
+  link_under_cursor_ = base::UTF8ToUTF16(url);
+}
+
 base::string16 PepperPluginInstanceImpl::GetSelectedText(bool html) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
   if (!LoadSelectionInterface())
-    return base::string16();
+    return selected_text_;
 
   PP_Var rv = plugin_selection_interface_->GetSelectedText(pp_instance(),
                                                            PP_FromBool(html));
   StringVar* string = StringVar::FromPPVar(rv);
   base::string16 selection;
   if (string)
-    selection = UTF8ToUTF16(string->value());
+    selection = base::UTF8ToUTF16(string->value());
   // Release the ref the plugin transfered to us.
   HostGlobals::Get()->GetVarTracker()->ReleaseVar(rv);
   return selection;
@@ -1259,17 +1303,25 @@ base::string16 PepperPluginInstanceImpl::GetLinkAtPosition(
     const gfx::Point& point) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
-  if (!LoadPdfInterface())
-    return base::string16();
+  if (!LoadPdfInterface()) {
+    // TODO(koz): Change the containing function to GetLinkUnderCursor(). We can
+    // return |link_under_cursor_| here because this is only ever called with
+    // the current mouse coordinates.
+    return link_under_cursor_;
+  }
 
   PP_Point p;
   p.x = point.x();
   p.y = point.y();
   PP_Var rv = plugin_pdf_interface_->GetLinkAtPosition(pp_instance(), p);
+  // If the plugin returns undefined for this function it has switched to
+  // providing us with the link under the cursor eagerly.
+  if (rv.type == PP_VARTYPE_UNDEFINED)
+    return link_under_cursor_;
   StringVar* string = StringVar::FromPPVar(rv);
   base::string16 link;
   if (string)
-    link = UTF8ToUTF16(string->value());
+    link = base::UTF8ToUTF16(string->value());
   // Release the ref the plugin transfered to us.
   PpapiGlobals::Get()->GetVarTracker()->ReleaseVar(rv);
   return link;
@@ -1304,7 +1356,7 @@ bool PepperPluginInstanceImpl::StartFind(const base::string16& search_text,
   return PP_ToBool(
       plugin_find_interface_->StartFind(
           pp_instance(),
-          UTF16ToUTF8(search_text.c_str()).c_str(),
+          base::UTF16ToUTF8(search_text.c_str()).c_str(),
           PP_FromBool(case_sensitive)));
 }
 
@@ -1449,8 +1501,11 @@ void PepperPluginInstanceImpl::SendFocusChangeNotification() {
   // plugin behavior described at the NOTE above Delete().
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
 
+  if (!render_frame_)
+    return;
+
   bool has_focus = PluginHasFocus();
-  render_frame_->PepperFocusChanged(this, has_focus);
+  render_frame_->render_view()->PepperFocusChanged(this, has_focus);
 
   // instance_interface_ may have been cleared in Delete() if the
   // PepperWebPluginImpl is destroyed.
@@ -1688,6 +1743,8 @@ bool PepperPluginInstanceImpl::SetFullscreen(bool fullscreen) {
   if (fullscreen == IsFullscreenOrPending())
     return false;
 
+  if (!render_frame_)
+    return false;
   if (fullscreen &&
       !render_frame_->render_view()->renderer_preferences().
           plugin_fullscreen_allowed)
@@ -1859,7 +1916,7 @@ bool PepperPluginInstanceImpl::PrintPDFOutput(PP_Resource print_output,
 #endif
 }
 
-static void IgnoreCallback(unsigned, bool) {}
+static void IgnoreCallback(uint32, bool) {}
 
 void PepperPluginInstanceImpl::UpdateLayer() {
   if (!container_)
@@ -1878,8 +1935,10 @@ void PepperPluginInstanceImpl::UpdateLayer() {
 
   if ((want_layer == !!texture_layer_.get()) &&
       (want_3d_layer == layer_is_hardware_) &&
-      layer_bound_to_fullscreen_ == !!fullscreen_container_)
+      layer_bound_to_fullscreen_ == !!fullscreen_container_) {
+    UpdateLayerTransform();
     return;
+  }
 
   if (texture_layer_) {
     if (!layer_bound_to_fullscreen_)
@@ -1897,7 +1956,7 @@ void PepperPluginInstanceImpl::UpdateLayer() {
       texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
       opaque = bound_graphics_3d_->IsOpaque();
       texture_layer_->SetTextureMailbox(
-          cc::TextureMailbox(mailbox, 0),
+          cc::TextureMailbox(mailbox, GL_TEXTURE_2D, 0),
           cc::SingleReleaseCallback::Create(base::Bind(&IgnoreCallback)));
       plugin_layer = texture_layer_;
     } else {
@@ -1947,6 +2006,10 @@ bool PepperPluginInstanceImpl::PrepareTextureMailbox(
       mailbox, release_callback);
 }
 
+void PepperPluginInstanceImpl::OnDestruct() {
+  render_frame_ = NULL;
+}
+
 void PepperPluginInstanceImpl::UpdateLayerTransform() {
   if (!bound_graphics_2d_platform_ || !texture_layer_) {
     // Currently the transform is only applied for Graphics2D.
@@ -1955,7 +2018,9 @@ void PepperPluginInstanceImpl::UpdateLayerTransform() {
 
   gfx::RectF backing_store(bound_graphics_2d_platform_->plugin_offset(),
                            bound_graphics_2d_platform_->Size());
-  gfx::PointF scale = bound_graphics_2d_platform_->GetResizeScale();
+  gfx::PointF scale = gfx::ScalePoint(
+      bound_graphics_2d_platform_->GetResizeScale(),
+      bound_graphics_2d_platform_->GetScale());
   backing_store = ScaleRect(backing_store, scale.x(), scale.y());
 
   gfx::Rect layer_rect(ToEnclosingRect(backing_store));
@@ -2052,8 +2117,10 @@ bool PepperPluginInstanceImpl::SimulateIMEEvent(
       SimulateImeSetCompositionEvent(input_event);
       break;
     case PP_INPUTEVENT_TYPE_IME_TEXT:
+      if (!render_frame_)
+        return false;
       render_frame_->SimulateImeConfirmComposition(
-          UTF8ToUTF16(input_event.character_text), gfx::Range());
+          base::UTF8ToUTF16(input_event.character_text), gfx::Range());
       break;
     default:
       return false;
@@ -2063,6 +2130,9 @@ bool PepperPluginInstanceImpl::SimulateIMEEvent(
 
 void PepperPluginInstanceImpl::SimulateImeSetCompositionEvent(
     const InputEventData& input_event) {
+  if (!render_frame_)
+    return;
+
   std::vector<size_t> offsets;
   offsets.push_back(input_event.composition_selection_start);
   offsets.push_back(input_event.composition_selection_end);
@@ -2260,6 +2330,8 @@ uint32_t PepperPluginInstanceImpl::GetAudioHardwareOutputBufferSize(
 }
 
 PP_Var PepperPluginInstanceImpl::GetDefaultCharSet(PP_Instance instance) {
+  if (!render_frame_)
+    return PP_MakeUndefined();
   return StringVar::StringToPPVar(
       render_frame_->render_view()->webkit_preferences().default_encoding);
 }
@@ -2351,15 +2423,19 @@ void PepperPluginInstanceImpl::NumberOfFindResultsChanged(
     int32_t total,
     PP_Bool final_result) {
   DCHECK_NE(find_identifier_, -1);
-  render_frame_->reportFindInPageMatchCount(
-      find_identifier_, total, PP_ToBool(final_result));
+  if (render_frame_) {
+    render_frame_->reportFindInPageMatchCount(
+        find_identifier_, total, PP_ToBool(final_result));
+  }
 }
 
 void PepperPluginInstanceImpl::SelectedFindResultChanged(PP_Instance instance,
                                                          int32_t index) {
   DCHECK_NE(find_identifier_, -1);
-  render_frame_->reportFindInPageSelection(
-      find_identifier_, index + 1, blink::WebRect());
+  if (render_frame_) {
+    render_frame_->reportFindInPageSelection(
+        find_identifier_, index + 1, blink::WebRect());
+  }
 }
 
 PP_Bool PepperPluginInstanceImpl::IsFullscreen(PP_Instance instance) {
@@ -2386,6 +2462,7 @@ ppapi::Resource* PepperPluginInstanceImpl::GetSingletonResource(
     case ppapi::BROKER_SINGLETON_ID:
     case ppapi::BROWSER_FONT_SINGLETON_ID:
     case ppapi::EXTENSIONS_COMMON_SINGLETON_ID:
+    case ppapi::FILE_MAPPING_SINGLETON_ID:
     case ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ppapi::FLASH_FILE_SINGLETON_ID:
     case ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
@@ -2398,6 +2475,17 @@ ppapi::Resource* PepperPluginInstanceImpl::GetSingletonResource(
       return NULL;
     case ppapi::GAMEPAD_SINGLETON_ID:
       return gamepad_impl_.get();
+    case ppapi::UMA_SINGLETON_ID: {
+      if (!uma_private_impl_) {
+        RendererPpapiHostImpl* host_impl = module_->renderer_ppapi_host();
+        if (host_impl->in_process_router()) {
+          uma_private_impl_ = new ppapi::proxy::UMAPrivateResource(
+              host_impl->in_process_router()->GetPluginConnection(instance),
+              instance);
+        }
+      }
+      return uma_private_impl_.get();
+    }
   }
 
   NOTREACHED();
@@ -2440,6 +2528,8 @@ void PepperPluginInstanceImpl::ZoomChanged(PP_Instance instance,
 void PepperPluginInstanceImpl::ZoomLimitsChanged(PP_Instance instance,
                                                  double minimum_factor,
                                                  double maximum_factor) {
+  if (!render_frame_)
+    return;
   if (minimum_factor > maximum_factor) {
     NOTREACHED();
     return;
@@ -2530,6 +2620,8 @@ void PepperPluginInstanceImpl::UnlockMouse(PP_Instance instance) {
 
 void PepperPluginInstanceImpl::SetTextInputType(PP_Instance instance,
                                                 PP_TextInput_Type type) {
+  if (!render_frame_)
+    return;
   int itype = type;
   if (itype < 0 || itype > ui::TEXT_INPUT_TYPE_URL)
     itype = ui::TEXT_INPUT_TYPE_NONE;
@@ -2541,6 +2633,8 @@ void PepperPluginInstanceImpl::UpdateCaretPosition(
     PP_Instance instance,
     const PP_Rect& caret,
     const PP_Rect& bounding_box) {
+  if (!render_frame_)
+    return;
   text_input_caret_ = PP_ToGfxRect(caret);
   text_input_caret_bounds_ = PP_ToGfxRect(bounding_box);
   text_input_caret_set_ = true;
@@ -2548,7 +2642,8 @@ void PepperPluginInstanceImpl::UpdateCaretPosition(
 }
 
 void PepperPluginInstanceImpl::CancelCompositionText(PP_Instance instance) {
-  render_frame_->PepperCancelComposition(this);
+  if (render_frame_)
+    render_frame_->PepperCancelComposition(this);
 }
 
 void PepperPluginInstanceImpl::SelectionChanged(PP_Instance instance) {
@@ -2571,6 +2666,8 @@ void PepperPluginInstanceImpl::UpdateSurroundingText(PP_Instance instance,
                                                      const char* text,
                                                      uint32_t caret,
                                                      uint32_t anchor) {
+  if (!render_frame_)
+    return;
   surrounding_text_ = text;
   selection_caret_ = caret;
   selection_anchor_ = anchor;
@@ -2742,7 +2839,7 @@ PepperPluginInstance* PepperPluginInstance::Get(PP_Instance instance_id) {
 }
 
 RenderView* PepperPluginInstanceImpl::GetRenderView() {
-  return render_frame_->render_view();
+  return render_frame_ ? render_frame_->render_view() : NULL;
 }
 
 blink::WebPluginContainer* PepperPluginInstanceImpl::GetContainer() {
@@ -2834,7 +2931,7 @@ void PepperPluginInstanceImpl::DoSetCursor(WebCursorInfo* cursor) {
   cursor_.reset(cursor);
   if (fullscreen_container_) {
     fullscreen_container_->DidChangeCursor(*cursor);
-  } else {
+  } else if (render_frame_) {
     render_frame_->PepperDidChangeCursor(this, *cursor);
   }
 }
@@ -2856,6 +2953,8 @@ bool PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,
   if (fullscreen == FlashIsFullscreenOrPending())
     return true;
 
+  if (!render_frame_)
+    return false;
   if (fullscreen &&
       !render_frame_->render_view()->renderer_preferences().
           plugin_fullscreen_allowed)
@@ -2983,6 +3082,8 @@ void PepperPluginInstanceImpl::KeepSizeAttributesBeforeFullscreen() {
 }
 
 void PepperPluginInstanceImpl::SetSizeAttributesForFullscreen() {
+  if (!render_frame_)
+    return;
   blink::WebScreenInfo info = render_frame_->GetRenderWidget()->screenInfo();
   screen_size_for_fullscreen_ = gfx::Size(info.rect.width, info.rect.height);
   std::string width = StringPrintf("%d", screen_size_for_fullscreen_.width());
@@ -3037,9 +3138,10 @@ MouseLockDispatcher* PepperPluginInstanceImpl::GetMouseLockDispatcher() {
     RenderWidgetFullscreenPepper* container =
         static_cast<RenderWidgetFullscreenPepper*>(fullscreen_container_);
     return container->mouse_lock_dispatcher();
-  } else {
+  } else if (render_frame_) {
     return render_frame_->render_view()->mouse_lock_dispatcher();
   }
+  return NULL;
 }
 
 void PepperPluginInstanceImpl::UnSetAndDeleteLockTargetAdapter() {

@@ -8,12 +8,12 @@
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/signed_in_devices/id_mapping_helper.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/extensions/api/signed_in_devices.h"
+#include "extensions/browser/extension_prefs.h"
 
 using base::DictionaryValue;
 using browser_sync::DeviceInfo;
@@ -34,7 +34,7 @@ const base::DictionaryValue* GetIdMappingDictionary(
           &out_value) || out_value == NULL) {
     // Looks like this is the first call to get the dictionary. Let us create
     // a dictionary and set it in to |extension_prefs|.
-    scoped_ptr<DictionaryValue> dictionary(new DictionaryValue());
+    scoped_ptr<base::DictionaryValue> dictionary(new base::DictionaryValue());
     out_value = dictionary.get();
     extension_prefs->UpdateExtensionPref(
         extension_id,
@@ -53,14 +53,14 @@ ScopedVector<DeviceInfo> GetAllSignedInDevices(
     ProfileSyncService* pss,
     ExtensionPrefs* extension_prefs) {
   ScopedVector<DeviceInfo> devices = pss->GetAllSignedInDevices();
-  const DictionaryValue* mapping_dictionary = GetIdMappingDictionary(
+  const base::DictionaryValue* mapping_dictionary = GetIdMappingDictionary(
       extension_prefs,
       extension_id);
 
   CHECK(mapping_dictionary);
 
   // |mapping_dictionary| is const. So make an editable copy.
-  scoped_ptr<DictionaryValue> editable_mapping_dictionary(
+  scoped_ptr<base::DictionaryValue> editable_mapping_dictionary(
       mapping_dictionary->DeepCopy());
 
   CreateMappingForUnmappedDevices(&(devices.get()),

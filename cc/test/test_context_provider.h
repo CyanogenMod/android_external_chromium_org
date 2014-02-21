@@ -14,8 +14,6 @@
 #include "cc/test/test_context_support.h"
 #include "gpu/command_buffer/client/gles2_interface_stub.h"
 
-namespace blink { class WebGraphicsContext3D; }
-
 namespace cc {
 class TestWebGraphicsContext3D;
 class TestGLES2Interface;
@@ -31,11 +29,9 @@ class TestContextProvider : public ContextProvider {
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual Capabilities ContextCapabilities() OVERRIDE;
-  virtual blink::WebGraphicsContext3D* Context3d() OVERRIDE;
   virtual gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
   virtual gpu::ContextSupport* ContextSupport() OVERRIDE;
   virtual class GrContext* GrContext() OVERRIDE;
-  virtual void MakeGrContextCurrent() OVERRIDE;
   virtual bool IsContextLost() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
   virtual bool DestroyedOnMainThread() OVERRIDE;
@@ -78,9 +74,6 @@ class TestContextProvider : public ContextProvider {
 
   LostContextCallback lost_context_callback_;
   MemoryPolicyChangedCallback memory_policy_changed_callback_;
-
-  class LostContextCallbackProxy;
-  scoped_ptr<LostContextCallbackProxy> lost_context_callback_proxy_;
 
   base::WeakPtrFactory<TestContextProvider> weak_ptr_factory_;
 

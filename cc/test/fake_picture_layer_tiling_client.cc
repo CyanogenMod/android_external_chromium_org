@@ -23,42 +23,57 @@ class FakeInfinitePicturePileImpl : public PicturePileImpl {
   virtual ~FakeInfinitePicturePileImpl() {}
 };
 
-FakePictureLayerTilingClient::FakePictureLayerTilingClient(
-    TileManager* tile_manager)
-    : tile_manager_(tile_manager),
+FakePictureLayerTilingClient::FakePictureLayerTilingClient()
+    : tile_manager_(new FakeTileManager(&tile_manager_client_)),
       pile_(new FakeInfinitePicturePileImpl()),
       twin_tiling_(NULL),
       allow_create_tile_(true),
-      is_active_(false),
-      is_pending_(false) {}
+      max_tiles_for_interest_area_(10000),
+      skewport_target_time_in_seconds_(1.0f),
+      skewport_extrapolation_limit_in_content_pixels_(2000) {}
+
+FakePictureLayerTilingClient::FakePictureLayerTilingClient(
+    ResourceProvider* resource_provider)
+    : tile_manager_(
+          new FakeTileManager(&tile_manager_client_, resource_provider)),
+      pile_(new FakeInfinitePicturePileImpl()),
+      twin_tiling_(NULL),
+      allow_create_tile_(true),
+      max_tiles_for_interest_area_(10000),
+      skewport_target_time_in_seconds_(1.0f) {}
 
 FakePictureLayerTilingClient::~FakePictureLayerTilingClient() {
 }
 
 scoped_refptr<Tile> FakePictureLayerTilingClient::CreateTile(
     PictureLayerTiling*,
-    gfx::Rect rect) {
+    const gfx::Rect& rect) {
   if (!allow_create_tile_)
     return scoped_refptr<Tile>();
-  return tile_manager()->CreateTile(
+  return tile_manager_->CreateTile(
       pile_.get(), tile_size_, rect, gfx::Rect(), 1, 0, 0, Tile::USE_LCD_TEXT);
 }
 
-scoped_refptr<TileBundle> FakePictureLayerTilingClient::CreateTileBundle(
-    int offset_x,
-    int offset_y,
-    int width,
-    int height) {
-  return tile_manager()->CreateTileBundle(offset_x, offset_y, width, height);
-}
-
-void FakePictureLayerTilingClient::SetTileSize(gfx::Size tile_size) {
+void FakePictureLayerTilingClient::SetTileSize(const gfx::Size& tile_size) {
   tile_size_ = tile_size;
 }
 
 gfx::Size FakePictureLayerTilingClient::CalculateTileSize(
-    gfx::Size /* content_bounds */) const {
+    const gfx::Size& /* content_bounds */) const {
   return tile_size_;
+}
+
+size_t FakePictureLayerTilingClient::GetMaxTilesForInterestArea() const {
+  return max_tiles_for_interest_area_;
+}
+
+float FakePictureLayerTilingClient::GetSkewportTargetTimeInSeconds() const {
+  return skewport_target_time_in_seconds_;
+}
+
+int FakePictureLayerTilingClient::GetSkewportExtrapolationLimitInContentPixels()
+    const {
+  return skewport_extrapolation_limit_in_content_pixels_;
 }
 
 const Region* FakePictureLayerTilingClient::GetInvalidation() {

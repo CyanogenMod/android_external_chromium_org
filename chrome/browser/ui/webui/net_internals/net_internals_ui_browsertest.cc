@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -160,7 +161,7 @@ class NetInternalsTest::MessageHandler : public content::WebUIMessageHandler {
 
   // Creates a simple log with a NetLogLogger, and returns it to the
   // Javascript callback.
-  void GetNetLogLoggerLog(const ListValue* list_value);
+  void GetNetLogLoggerLog(const base::ListValue* list_value);
 
   Browser* browser() { return net_internals_test_->browser(); }
 
@@ -212,22 +213,22 @@ void NetInternalsTest::MessageHandler::RegisterMessages() {
 }
 
 void NetInternalsTest::MessageHandler::RunJavascriptCallback(
-    Value* value) {
+    base::Value* value) {
   web_ui()->CallJavascriptFunction("NetInternalsTest.callback", *value);
 }
 
 void NetInternalsTest::MessageHandler::GetTestServerURL(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   ASSERT_TRUE(net_internals_test_->StartTestServer());
   std::string path;
   ASSERT_TRUE(list_value->GetString(0, &path));
   GURL url = net_internals_test_->test_server()->GetURL(path);
-  scoped_ptr<Value> url_value(Value::CreateStringValue(url.spec()));
+  scoped_ptr<base::Value> url_value(base::Value::CreateStringValue(url.spec()));
   RunJavascriptCallback(url_value.get());
 }
 
 void NetInternalsTest::MessageHandler::AddCacheEntry(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   std::string hostname;
   std::string ip_literal;
   double net_error;
@@ -249,7 +250,7 @@ void NetInternalsTest::MessageHandler::AddCacheEntry(
 }
 
 void NetInternalsTest::MessageHandler::LoadPage(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   std::string url;
   ASSERT_TRUE(list_value->GetString(0, &url));
   LOG(WARNING) << "url: [" << url << "]";
@@ -261,7 +262,7 @@ void NetInternalsTest::MessageHandler::LoadPage(
 }
 
 void NetInternalsTest::MessageHandler::PrerenderPage(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   std::string prerender_url;
   ASSERT_TRUE(list_value->GetString(0, &prerender_url));
   GURL loader_url =
@@ -274,24 +275,28 @@ void NetInternalsTest::MessageHandler::PrerenderPage(
 }
 
 void NetInternalsTest::MessageHandler::NavigateToPrerender(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
+  std::string url;
+  ASSERT_TRUE(list_value->GetString(0, &url));
   content::RenderViewHost* host =
       browser()->tab_strip_model()->GetWebContentsAt(1)->GetRenderViewHost();
-  host->ExecuteJavascriptInWebFrame(string16(), ASCIIToUTF16("Click()"));
+  host->ExecuteJavascriptInWebFrame(
+      base::string16(),
+      base::ASCIIToUTF16(base::StringPrintf("Click('%s')", url.c_str())));
 }
 
 void NetInternalsTest::MessageHandler::CreateIncognitoBrowser(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   ASSERT_FALSE(incognito_browser_);
   incognito_browser_ = net_internals_test_->CreateIncognitoBrowser();
 
   // Tell the test harness that creation is complete.
-  StringValue command_value("onIncognitoBrowserCreatedForTest");
+  base::StringValue command_value("onIncognitoBrowserCreatedForTest");
   web_ui()->CallJavascriptFunction("g_browser.receive", command_value);
 }
 
 void NetInternalsTest::MessageHandler::CloseIncognitoBrowser(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   ASSERT_TRUE(incognito_browser_);
   incognito_browser_->tab_strip_model()->CloseAllTabs();
   // Closing all a Browser's tabs will ultimately result in its destruction,
@@ -300,7 +305,7 @@ void NetInternalsTest::MessageHandler::CloseIncognitoBrowser(
 }
 
 void NetInternalsTest::MessageHandler::EnableHttpPipelining(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   bool enable;
   ASSERT_TRUE(list_value->GetBoolean(0, &enable));
   BrowserThread::PostTask(
@@ -311,7 +316,7 @@ void NetInternalsTest::MessageHandler::EnableHttpPipelining(
 }
 
 void NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   std::string hostname;
   double port;
   std::string raw_capability;
@@ -336,7 +341,7 @@ void NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback(
 }
 
 void NetInternalsTest::MessageHandler::GetNetLogLoggerLog(
-    const ListValue* list_value) {
+    const base::ListValue* list_value) {
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   base::FilePath temp_file;
@@ -362,7 +367,8 @@ void NetInternalsTest::MessageHandler::GetNetLogLoggerLog(
   ASSERT_TRUE(base::ReadFileToString(temp_file, &log_contents));
   ASSERT_GT(log_contents.length(), 0u);
 
-  scoped_ptr<Value> log_contents_value(new base::StringValue(log_contents));
+  scoped_ptr<base::Value> log_contents_value(
+      new base::StringValue(log_contents));
   RunJavascriptCallback(log_contents_value.get());
 }
 
@@ -376,16 +382,6 @@ NetInternalsTest::NetInternalsTest()
 }
 
 NetInternalsTest::~NetInternalsTest() {
-}
-
-void NetInternalsTest::SetUp() {
-#if defined(OS_WIN) && defined(USE_AURA)
-  // The NetInternalsTest.netInternalsTimelineViewScrollbar test requires real
-  // GL bindings to pass on Win7 Aura.
-  UseRealGLBindings();
-#endif
-
-  WebUIBrowserTest::SetUp();
 }
 
 void NetInternalsTest::SetUpCommandLine(CommandLine* command_line) {
@@ -415,8 +411,6 @@ GURL NetInternalsTest::CreatePrerenderLoaderUrl(
   std::vector<net::SpawnedTestServer::StringPair> replacement_text;
   replacement_text.push_back(
       make_pair("REPLACE_WITH_PRERENDER_URL", prerender_url.spec()));
-  replacement_text.push_back(
-      make_pair("REPLACE_WITH_DESTINATION_URL", prerender_url.spec()));
   std::string replacement_path;
   EXPECT_TRUE(net::SpawnedTestServer::GetFilePathWithReplacements(
       "files/prerender/prerender_loader.html",

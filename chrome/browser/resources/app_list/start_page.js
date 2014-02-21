@@ -67,17 +67,26 @@ cr.define('appList.startPage', function() {
   }
 
   /**
+   * Invoked when the hotword plugin availability is changed.
+   *
+   * @param {boolean} enabled Whether the plugin is enabled or not.
+   */
+  function setHotwordEnabled(enabled) {
+    speechManager.setHotwordEnabled(enabled);
+  }
+
+  /**
    * Invoked when the app-list bubble is shown.
    */
   function onAppListShown() {
-    speechManager.start();
+    speechManager.onShown();
   }
 
   /**
    * Invoked when the app-list bubble is hidden.
    */
   function onAppListHidden() {
-    speechManager.stop();
+    speechManager.onHidden();
   }
 
   /**
@@ -91,6 +100,7 @@ cr.define('appList.startPage', function() {
   return {
     initialize: initialize,
     setRecommendedApps: setRecommendedApps,
+    setHotwordEnabled: setHotwordEnabled,
     onAppListShown: onAppListShown,
     onAppListHidden: onAppListHidden,
     toggleSpeechRecognition: toggleSpeechRecognition

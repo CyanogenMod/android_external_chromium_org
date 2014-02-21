@@ -444,13 +444,9 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   virtual void discardFramebufferEXT(WGC3Denum target,
                                      WGC3Dsizei numAttachments,
                                      const WGC3Denum* attachments);
-  virtual void discardBackbufferCHROMIUM();
-  virtual void ensureBackbufferCHROMIUM();
 
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
-
-  virtual void rateLimitOffscreenContextCHROMIUM();
 
   virtual blink::WebString getRequestableExtensionsCHROMIUM();
   virtual void requestExtensionCHROMIUM(const char*);
@@ -475,9 +471,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void bindTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId);
   virtual void releaseTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId);
-
-  virtual WebGLId createStreamTextureCHROMIUM(WebGLId texture);
-  virtual void destroyStreamTextureCHROMIUM(WebGLId texture);
 
   virtual void texStorage2DEXT(
       WGC3Denum target, WGC3Dint levels, WGC3Duint internalformat,
@@ -522,6 +515,19 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void* mapBufferCHROMIUM(WGC3Denum target, WGC3Denum access);
   virtual WGC3Dboolean unmapBufferCHROMIUM(WGC3Denum target);
+
+  virtual void framebufferTexture2DMultisampleEXT(WGC3Denum target,
+                                                  WGC3Denum attachment,
+                                                  WGC3Denum textarget,
+                                                  WebGLId texture,
+                                                  WGC3Dint level,
+                                                  WGC3Dsizei samples);
+  virtual void renderbufferStorageMultisampleEXT(WGC3Denum target,
+                                                 WGC3Dsizei samples,
+                                                 WGC3Denum internalformat,
+                                                 WGC3Dsizei width,
+                                                 WGC3Dsizei height);
+
 
   // Async pixel transfer functions.
   virtual void asyncTexImage2DCHROMIUM(

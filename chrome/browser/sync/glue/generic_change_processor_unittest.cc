@@ -8,7 +8,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
+#include "components/sync_driver/data_type_error_handler_mock.h"
 #include "sync/api/fake_syncable_service.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_merge_result.h"
@@ -31,7 +31,6 @@ class SyncGenericChangeProcessorTest : public testing::Test {
   static const syncer::ModelType kType = syncer::PREFERENCES;
 
   SyncGenericChangeProcessorTest() :
-      loop_(base::MessageLoop::TYPE_UI),
       sync_merge_result_(kType),
       merge_result_ptr_factory_(&sync_merge_result_),
       syncable_service_ptr_factory_(&fake_syncable_service_) {
@@ -78,7 +77,7 @@ class SyncGenericChangeProcessorTest : public testing::Test {
   }
 
  private:
-  base::MessageLoop loop_;
+  base::MessageLoopForUI loop_;
 
   syncer::SyncMergeResult sync_merge_result_;
   base::WeakPtrFactory<syncer::SyncMergeResult> merge_result_ptr_factory_;

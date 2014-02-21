@@ -10,7 +10,7 @@
 #import "chrome/browser/ui/cocoa/media_picker/desktop_media_picker_item.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "ui/base/cocoa/flipped_view.h"
 #import "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -55,6 +55,7 @@ const int kExcessButtonPadding = 6;
 @implementation DesktopMediaPickerController
 
 - (id)initWithMediaList:(scoped_ptr<DesktopMediaList>)media_list
+                 parent:(NSWindow*)parent
                callback:(const DesktopMediaPicker::DoneCallback&)callback
                 appName:(const base::string16&)appName {
   const NSUInteger kStyleMask =
@@ -66,6 +67,7 @@ const int kExcessButtonPadding = 6;
                                       defer:NO]);
 
   if ((self = [super initWithWindow:window])) {
+    [parent addChildWindow:window ordered:NSWindowAbove];
     [window setDelegate:self];
     [self initializeContentsWithAppName:appName];
     media_list_ = media_list.Pass();
@@ -227,6 +229,10 @@ const int kExcessButtonPadding = 6;
   // Report the result if it hasn't been reported yet. |reportResult:| ensures
   // that the result is only reported once.
   [self reportResult:content::DesktopMediaID()];
+
+  // Remove self from the parent.
+  NSWindow* window = [self window];
+  [[window parentWindow] removeChildWindow:window];
 }
 
 #pragma mark IKImageBrowserDataSource
@@ -274,6 +280,14 @@ const int kExcessButtonPadding = 6;
                       byExtendingSelection:FALSE];
   }
   [items_ removeObjectAtIndex:index];
+  [sourceBrowser_ reloadData];
+}
+
+- (void)sourceMovedFrom:(int)oldIndex to:(int)newIndex {
+  base::scoped_nsobject<DesktopMediaPickerItem> item(
+      [[items_ objectAtIndex:oldIndex] retain]);
+  [items_ removeObjectAtIndex:oldIndex];
+  [items_ insertObject:item atIndex:newIndex];
   [sourceBrowser_ reloadData];
 }
 

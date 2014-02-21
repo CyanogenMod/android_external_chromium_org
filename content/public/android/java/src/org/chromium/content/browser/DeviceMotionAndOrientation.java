@@ -46,6 +46,9 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     // The lock to access the mNativePtr.
     private final Object mNativePtrLock = new Object();
 
+    // Holds a shortened version of the rotation vector for compatibility purposes.
+    private float[] mTruncatedRotationVector;
+
     // Lazily initialized when registering for notifications.
     private SensorManagerProxy mSensorManagerProxy;
 
@@ -55,7 +58,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
 
     /**
      * constants for using in JNI calls, also see
-     * content/browser/device_orientation/data_fetcher_impl_android.cc
+     * content/browser/device_orientation/sensor_manager_android.cc
      */
     static final int DEVICE_ORIENTATION = 0;
     static final int DEVICE_MOTION = 1;
@@ -188,7 +191,19 @@ class DeviceMotionAndOrientation implements SensorEventListener {
                 break;
             case Sensor.TYPE_ROTATION_VECTOR:
                 if (mDeviceOrientationIsActive) {
-                    getOrientationFromRotationVector(values);
+                    if (values.length > 4) {
+                        // On some Samsung devices SensorManager.getRotationMatrixFromVector
+                        // appears to throw an exception if rotation vector has length > 4.
+                        // For the purposes of this class the first 4 values of the
+                        // rotation vector are sufficient (see crbug.com/335298 for details).
+                        if (mTruncatedRotationVector == null) {
+                            mTruncatedRotationVector = new float[4];
+                        }
+                        System.arraycopy(values, 0, mTruncatedRotationVector, 0, 4);
+                        getOrientationFromRotationVector(mTruncatedRotationVector);
+                    } else {
+                        getOrientationFromRotationVector(values);
+                    }
                 }
                 break;
             default:
@@ -424,35 +439,35 @@ class DeviceMotionAndOrientation implements SensorEventListener {
 
     /**
      * Native JNI calls,
-     * see content/browser/device_orientation/data_fetcher_impl_android.cc
+     * see content/browser/device_orientation/sensor_manager_android.cc
      */
 
     /**
      * Orientation of the device with respect to its reference frame.
      */
     private native void nativeGotOrientation(
-            long nativeDataFetcherImplAndroid,
+            long nativeSensorManagerAndroid,
             double alpha, double beta, double gamma);
 
     /**
      * Linear acceleration without gravity of the device with respect to its body frame.
      */
     private native void nativeGotAcceleration(
-            long nativeDataFetcherImplAndroid,
+            long nativeSensorManagerAndroid,
             double x, double y, double z);
 
     /**
      * Acceleration including gravity of the device with respect to its body frame.
      */
     private native void nativeGotAccelerationIncludingGravity(
-            long nativeDataFetcherImplAndroid,
+            long nativeSensorManagerAndroid,
             double x, double y, double z);
 
     /**
      * Rotation rate of the device with respect to its body frame.
      */
     private native void nativeGotRotationRate(
-            long nativeDataFetcherImplAndroid,
+            long nativeSensorManagerAndroid,
             double alpha, double beta, double gamma);
 
     /**

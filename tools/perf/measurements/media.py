@@ -5,6 +5,7 @@
 from metrics import cpu
 from metrics import media
 from metrics import memory
+from metrics import power
 from telemetry.page import page_measurement
 
 
@@ -22,15 +23,25 @@ class Media(page_measurement.PageMeasurement):
     self._add_browser_metrics = False
     self._cpu_metric = None
     self._memory_metric = None
+    self._power_metric = power.PowerMetric()
 
   def results_are_the_same_on_every_page(self):
     """Results can vary from page to page based on media events taking place."""
     return False
 
+  def CustomizeBrowserOptions(self, options):
+    # Needed to run media actions in JS on touch-based devices as on Android.
+    options.AppendExtraBrowserArgs(
+        '--disable-gesture-requirement-for-media-playback')
+    memory.MemoryMetric.CustomizeBrowserOptions(options)
+    power.PowerMetric.CustomizeBrowserOptions(options)
+
   def DidNavigateToPage(self, page, tab):
     """Override to do operations right after the page is navigated."""
     self._media_metric = media.MediaMetric(tab)
     self._media_metric.Start(page, tab)
+    self._power_metric.Start(page, tab)
+
     # Reset to false for every page.
     self._add_browser_metrics = False
     if hasattr(page, 'add_browser_metrics'):
@@ -40,15 +51,17 @@ class Media(page_measurement.PageMeasurement):
     if self._add_browser_metrics:
       self._cpu_metric = cpu.CpuMetric(tab.browser)
       self._cpu_metric.Start(page, tab)
-      # No need to start memory metric since we are only interested in Summary
-      # results.
       self._memory_metric = memory.MemoryMetric(tab.browser)
+      self._memory_metric.Start(page, tab)
 
   def MeasurePage(self, page, tab, results):
     """Measure the page's performance."""
+    self._power_metric.Stop(page, tab)
     self._media_metric.Stop(page, tab)
     trace_name = self._media_metric.AddResults(tab, results)
+    self._power_metric.AddResults(tab, results)
     if self._add_browser_metrics:
       self._cpu_metric.Stop(page, tab)
       self._cpu_metric.AddResults(tab, results, trace_name=trace_name)
-      self._memory_metric.AddSummaryResults(results, trace_name=trace_name)
+      self._memory_metric.Stop(page, tab)
+      self._memory_metric.AddResults(tab, results, trace_name=trace_name)

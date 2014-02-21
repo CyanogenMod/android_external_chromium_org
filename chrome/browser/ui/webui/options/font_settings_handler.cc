@@ -19,7 +19,6 @@
 #include "chrome/browser/character_encoding.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -29,6 +28,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -70,7 +70,7 @@ FontSettingsHandler::~FontSettingsHandler() {
 }
 
 void FontSettingsHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
@@ -107,7 +107,7 @@ void FontSettingsHandler::GetLocalizedValues(
   localized_strings->SetString("advancedFontSettingsInstall",
       l10n_util::GetStringFUTF16(
           IDS_FONT_LANGUAGE_SETTING_ADVANCED_FONT_SETTINGS_INSTALL,
-          UTF8ToUTF16(
+          base::UTF8ToUTF16(
               install_url.Resolve(kAdvancedFontSettingsExtensionId).spec())));
 }
 
@@ -183,7 +183,7 @@ void FontSettingsHandler::Observe(int type,
   NotifyAdvancedFontSettingsAvailability();
 }
 
-void FontSettingsHandler::HandleFetchFontsData(const ListValue* args) {
+void FontSettingsHandler::HandleFetchFontsData(const base::ListValue* args) {
   content::GetFontListAsync(
       base::Bind(&FontSettingsHandler::FontsListHasLoaded,
                  base::Unretained(this)));
@@ -193,7 +193,7 @@ void FontSettingsHandler::FontsListHasLoaded(
     scoped_ptr<base::ListValue> list) {
   // Selects the directionality for the fonts in the given list.
   for (size_t i = 0; i < list->GetSize(); i++) {
-    ListValue* font;
+    base::ListValue* font;
     bool has_font = list->GetList(i, &font);
     DCHECK(has_font);
     base::string16 value;
@@ -203,7 +203,7 @@ void FontSettingsHandler::FontsListHasLoaded(
     font->Append(new base::StringValue(has_rtl_chars ? "rtl" : "ltr"));
   }
 
-  ListValue encoding_list;
+  base::ListValue encoding_list;
   const std::vector<CharacterEncoding::EncodingInfo>* encodings;
   PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   encodings = CharacterEncoding::GetCurrentDisplayEncodings(
@@ -215,7 +215,7 @@ void FontSettingsHandler::FontsListHasLoaded(
 
   std::vector<CharacterEncoding::EncodingInfo>::const_iterator it;
   for (it = encodings->begin(); it != encodings->end(); ++it) {
-    ListValue* option = new ListValue();
+    base::ListValue* option = new base::ListValue();
     if (it->encoding_id) {
       int cmd_id = it->encoding_id;
       std::string encoding =
@@ -233,7 +233,7 @@ void FontSettingsHandler::FontsListHasLoaded(
     encoding_list.Append(option);
   }
 
-  ListValue selected_values;
+  base::ListValue selected_values;
   selected_values.Append(new base::StringValue(MaybeGetLocalizedFontName(
       standard_font_.GetValue())));
   selected_values.Append(new base::StringValue(MaybeGetLocalizedFontName(

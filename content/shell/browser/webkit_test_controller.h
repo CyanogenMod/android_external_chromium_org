@@ -16,6 +16,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/shell/common/leak_detection_result.h"
 #include "ui/gfx/size.h"
 #include "webkit/common/webpreferences.h"
 
@@ -153,7 +154,6 @@ class WebKitTestController : public base::NonThreadSafe,
 
   static WebKitTestController* instance_;
 
-  void TimeoutHandler();
   void DiscardMainWindow();
   void SendTestConfiguration();
 
@@ -164,7 +164,8 @@ class WebKitTestController : public base::NonThreadSafe,
   void OnPrintMessage(const std::string& message);
   void OnOverridePreferences(const WebPreferences& prefs);
   void OnTestFinished();
-  void OnShowDevTools();
+  void OnClearDevToolsLocalStorage();
+  void OnShowDevTools(const std::string& settings);
   void OnCloseDevTools();
   void OnGoToOffset(int offset);
   void OnReload();
@@ -172,6 +173,7 @@ class WebKitTestController : public base::NonThreadSafe,
   void OnCaptureSessionHistory();
   void OnCloseRemainingWindows();
   void OnResetDone();
+  void OnLeakDetectionDone(const content::LeakDetectionResult& result);
 
   scoped_ptr<WebKitTestResultPrinter> printer_;
 
@@ -205,6 +207,8 @@ class WebKitTestController : public base::NonThreadSafe,
   WebPreferences prefs_;
 
   NotificationRegistrar registrar_;
+
+  const bool is_leak_detection_enabled_;
 
 #if defined(OS_ANDROID)
   // Because of the nested message pump implementation, Android needs to allow

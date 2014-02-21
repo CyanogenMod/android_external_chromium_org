@@ -209,7 +209,7 @@ This file contains the strings for ash.
         Status tray
       </message>
       <message name="IDS_ASH_STATUS_TRAY_SPOKEN_FEEDBACK_ENABLED_BUBBLE" desc="The message shown on a bubble when spoken feedback is enabled">
-Spoken feedback is enabled.
+ChromeVox (spoken feedback) is enabled.
 Press Ctrl+Alt+Z to disable.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_SETTINGS" desc="The label used for the settings item in the status tray.">
@@ -255,7 +255,7 @@ Press Ctrl+Alt+Z to disable.
         Sign in another account...
       </message>
       <message name="IDS_ASH_STATUS_TRAY_CAPTION_CANNOT_ADD_USER" desc="The caption for the error message when the user has reached the limit of multi profile users.">
-        Can't sign into another account.
+        Can't sign in to another account.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_MESSAGE_CANNOT_ADD_USER" desc="The error message when the user has reached the limit of multi profile users.">
         You can only have up to three accounts in multiple sign-in.
@@ -292,9 +292,6 @@ Press Ctrl+Alt+Z to disable.
       <message name="IDS_ASH_STATUS_TRAY_UPDATE" desc="The label used in the tray popup to notify that the user should restart to get system updates.">
         Restart to update
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_RESTART_AND_POWERWASH_UPDATE" desc="The label used in the tray popup to notify that the user should restart and powerwash to get system updates.">
-        Restart and Powerwash to update
-      </message>
 
       <message name="IDS_ASH_STATUS_TRAY_BRIGHTNESS" desc="The accessible text for the brightness slider.">
         Brightness
@@ -324,14 +321,17 @@ Press Ctrl+Alt+Z to disable.
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED_NO_INTERNAL" desc="The label used in the tray to show that the current status is extended and the device doesn't have the internal display.">
         Extending screen
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED" desc="The label used in the tray to show that the current status is docked mode.">
+      <message name="IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED" desc="The title of the notification indicating that the system is in docked mode.">
         Docked mode
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED_DESCRIPTION" desc="The label used in the notification body to describe what the docked mode means.">
-        Your Chromebook will stay on while connected to an external display, even with the lid closed.
+      <message name="IDS_ASH_STATUS_TRAY_DISPLAY_DOCKED_DESCRIPTION" desc="The body of the notification indicating that the system is in docked mode.">
+        You can keep using your Chromebook while it's connected to an external display, even with the lid closed.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_RESOLUTION_CHANGED" desc="The label used in the tray to notify that the display resolution settings has changed.">
         <ph name="DISPLAY_NAME">$1</ph> resolution was changed to <ph name="RESOLUTION">$2</ph>
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_DISPLAY_RESOLUTION_CHANGED_TO_UNSUPPORTED" desc="The label used in the tray to notify that the display resolution settings has changed to an unsupported resolution and the system falls back to another resolution.">
+        <ph name="DISPLAY_NAME">$1</ph> doesn't support <ph name="SPECIFIED_RESOLUTION">$2<ex>2560x1600</ex></ph>. The resolution was changed to <ph name="FALLBACK_RESOLUTION">$3<ex>1920x1200</ex></ph>
       </message>
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_ROTATED" desc="The label used in the tray to notify that the display rotation settings has changed.">
         <ph name="DISPLAY_NAME">$1</ph> was rotated to <ph name="ROTATION">$2</ph>
@@ -428,7 +428,7 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK" desc="The label used in the accessibility menu of the
     system tray to toggle on/off spoken feedback feature.">
-        Spoken feedback
+        ChromeVox (Spoken feedback)
       </message>
       <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGH_CONTRAST_MODE" desc="The label used in the accessibility menu of the system tray to toggle on/off high contrast feature.">
         High contrast mode
@@ -441,6 +441,9 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_AUTOCLICK" desc="The label used in the accessibility menu of the system tray to toggle on/off automatic mouse clicks.">
         Automatic clicks
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_VIRTUAL_KEYBOARD" desc="The label used in the accessibility menu of the system tray to toggle on/off the onscreen keyboard.">
+        On-screen keyboard
       </message>
       <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LEARN_MORE" desc="The label used in the accessibility menu of the system tray
      to open a webpage (article on help center) containing explanation about accessibility feature.">
@@ -504,7 +507,7 @@ Press Shift + Alt to switch.
         <ph name="short_weekday">$1<ex>Fri</ex></ph>, <ph name="date">$2<ex>Aug 31, 2012</ex></ph>
       </message>
       <message name="IDS_ASH_STATUS_TRAY_SHUTDOWN" desc="The accessible text for the shutdown button.">
-        Shutdown
+        Shut down
       </message>
       <message name="IDS_ASH_STATUS_TRAY_REMAINING_SESSION_TIME" desc="The time remaining until the end of the session. Shown if the session length is limited.">
         <ph name="hours">$1<ex>01</ex></ph>:<ph name="minutes">$2<ex>35</ex></ph>:<ph name="seconds">$3<ex>12</ex></ph>
@@ -583,6 +586,35 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_EXIT_WARNING_POPUP_TEXT_ACCESSIBLE" desc="The message used by accessibility to indicate the content of the popup when the user preses the exit shortcut.">
         Press Control Shift Q twice to quit.
+      </message>
+
+      <message name="IDS_ASH_IME_INFOLIST_WINDOW_TITLE" desc="The title of the infolist window where the meanings and the usages of words are displayed.">
+        Information
+      </message>
+
+      <message name="IDS_ASH_LOGOUT_CONFIRMATION_TITLE" desc="Dialog title for the logout confirmation dialog.">
+        Exiting Session
+      </message>
+      <message name="IDS_ASH_LOGOUT_CONFIRMATION_WARNING" desc="The text for the logout confirmation dialog.">
+        You will automatically be signed out in <ph name="LOGOUT_TIME_LEFT">$1<ex>5 seconds</ex></ph>.
+      </message>
+      <message name="IDS_ASH_LOGOUT_CONFIRMATION_WARNING_NOW" desc="The text for the logout confirmation dialog with no time left.">
+        You will be signed out now.
+      </message>
+      <message name="IDS_ASH_LOGOUT_CONFIRMATION_BUTTON" desc="The text for okay button of the logout confirmation dialog.">
+        Sign out now
+      </message>
+      <message name="IDS_ASH_CONTROL_KEY" desc="Name of [Ctrl] key name. Shouldn't be translated in many languages actually. This name should be lower case.">
+        ctrl
+      </message>
+      <message name="IDS_ASH_SHIFT_KEY" desc="Name of [Shift] key. Shouldn't be translated in many languages actually. This name should be lower case.">
+        shift
+      </message>
+      <message name="IDS_ASH_ALT_KEY" desc="Name of [Alt] key name. Shouldn't be translated in many languages actually. This name should be lower case.">
+        alt
+      </message>
+      <message name="IDS_ASH_SEARCH_KEY" desc="Name of [Search] key name. Shouldn't be translated in many languages actually. This name should be lower case.">
+        search
       </message>
 
       <!-- ChromeOS-specific strings -->

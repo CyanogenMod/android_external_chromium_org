@@ -22,10 +22,19 @@ void ReliableQuicStreamPeer::SetStreamBytesWritten(
   stream->stream_bytes_written_ = stream_bytes_written;
 }
 
-void ReliableQuicStreamPeer::SetHeadersDecompressed(
-    ReliableQuicStream* stream,
-    bool headers_decompressed) {
-  stream->headers_decompressed_ = headers_decompressed;
+// static
+void ReliableQuicStreamPeer::CloseReadSide(ReliableQuicStream* stream) {
+  stream->CloseReadSide();
+}
+
+// static
+bool ReliableQuicStreamPeer::FinSent(ReliableQuicStream* stream) {
+  return stream->fin_sent_;
+}
+
+// static
+bool ReliableQuicStreamPeer::RstSent(ReliableQuicStream* stream) {
+  return stream->rst_sent_;
 }
 
 }  // namespace test

@@ -18,7 +18,8 @@ namespace test {
 class FakeViewRequestDelegate : public ViewRequestDelegate {
  public:
   virtual ~FakeViewRequestDelegate() {}
-  MOCK_METHOD1(OnArticleReady, void(DistilledPageProto* proto));
+  MOCK_METHOD1(OnArticleReady,
+               void(const DistilledArticleProto* article_proto));
 };
 
 class TestCancelCallback {
@@ -36,7 +37,8 @@ class TestCancelCallback {
 
 class MockSaveCallback {
  public:
-  MOCK_METHOD2(Save, void(const ArticleEntry&, DistilledPageProto*));
+  MOCK_METHOD3(Save,
+               void(const ArticleEntry&, const DistilledArticleProto*, bool));
 };
 
 class DomDistillerTaskTrackerTest : public testing::Test {
@@ -109,7 +111,7 @@ TEST_F(DomDistillerTaskTrackerTest, TestViewerCancelledWithSaveRequest) {
   EXPECT_FALSE(cancel_callback.Cancelled());
 
   MockSaveCallback save_callback;
-  task_tracker.SetSaveCallback(
+  task_tracker.AddSaveCallback(
       base::Bind(&MockSaveCallback::Save, base::Unretained(&save_callback)));
   handle.reset();
 
@@ -119,7 +121,7 @@ TEST_F(DomDistillerTaskTrackerTest, TestViewerCancelledWithSaveRequest) {
 
 TEST_F(DomDistillerTaskTrackerTest, TestViewerNotifiedOnDistillationComplete) {
   MockDistillerFactory distiller_factory;
-  FakeDistiller* distiller = new FakeDistiller();
+  FakeDistiller* distiller = new FakeDistiller(true);
   EXPECT_CALL(distiller_factory, CreateDistillerImpl())
       .WillOnce(Return(distiller));
   TestCancelCallback cancel_callback;
@@ -132,7 +134,6 @@ TEST_F(DomDistillerTaskTrackerTest, TestViewerNotifiedOnDistillationComplete) {
   EXPECT_CALL(viewer_delegate, OnArticleReady(_));
 
   task_tracker.StartDistiller(&distiller_factory);
-  distiller->RunDistillerCallback(make_scoped_ptr(new DistilledPageProto));
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(cancel_callback.Cancelled());
@@ -141,21 +142,20 @@ TEST_F(DomDistillerTaskTrackerTest, TestViewerNotifiedOnDistillationComplete) {
 TEST_F(DomDistillerTaskTrackerTest,
        TestSaveCallbackCalledOnDistillationComplete) {
   MockDistillerFactory distiller_factory;
-  FakeDistiller* distiller = new FakeDistiller();
+  FakeDistiller* distiller = new FakeDistiller(true);
   EXPECT_CALL(distiller_factory, CreateDistillerImpl())
       .WillOnce(Return(distiller));
   TestCancelCallback cancel_callback;
   TaskTracker task_tracker(GetDefaultEntry(), cancel_callback.GetCallback());
 
   MockSaveCallback save_callback;
-  task_tracker.SetSaveCallback(
+  task_tracker.AddSaveCallback(
       base::Bind(&MockSaveCallback::Save, base::Unretained(&save_callback)));
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_CALL(save_callback, Save(_, _));
+  EXPECT_CALL(save_callback, Save(_, _, _));
 
   task_tracker.StartDistiller(&distiller_factory);
-  distiller->RunDistillerCallback(make_scoped_ptr(new DistilledPageProto));
   base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(cancel_callback.Cancelled());

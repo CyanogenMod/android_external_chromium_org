@@ -6,22 +6,24 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/root_window_controller.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/wm/always_on_top_controller.h"
-#include "ash/wm/base_layout_manager.h"
 #include "ash/wm/window_animations.h"
 #include "ash/wm/window_positioner.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/compositor/layer.h"
 #include "ui/events/event.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/corewm/window_util.h"
 
 using aura::Window;
@@ -36,77 +38,76 @@ namespace {
 // must be visible when the window is added to the workspace.
 const float kMinimumPercentOnScreenArea = 0.3f;
 
-void MoveToDisplayForRestore(wm::WindowState* window_state) {
-  if (!window_state->HasRestoreBounds())
-    return;
-  const gfx::Rect& restore_bounds = window_state->GetRestoreBoundsInScreen();
-
-  // Move only if the restore bounds is outside of
-  // the display. There is no information about in which
-  // display it should be restored, so this is best guess.
-  // TODO(oshima): Restore information should contain the
-  // work area information like WindowResizer does for the
-  // last window location.
-  gfx::Rect display_area = Shell::GetScreen()->GetDisplayNearestWindow(
-      window_state->window()).bounds();
-
-  if (!display_area.Intersects(restore_bounds)) {
-    DisplayController* display_controller =
-        Shell::GetInstance()->display_controller();
-    const gfx::Display& display =
-        display_controller->GetDisplayMatching(restore_bounds);
-    aura::Window* new_root =
-        display_controller->GetRootWindowForDisplayId(display.id());
-    if (new_root != window_state->window()->GetRootWindow()) {
-      aura::Window* new_container =
-          Shell::GetContainer(new_root, window_state->window()->parent()->id());
-      new_container->AddChild(window_state->window());
-    }
-  }
-}
-
 }  // namespace
 
 WorkspaceLayoutManager::WorkspaceLayoutManager(aura::Window* window)
-    : BaseLayoutManager(window->GetRootWindow()),
-      shelf_(NULL),
+    : shelf_(NULL),
       window_(window),
-      work_area_in_parent_(ScreenAsh::GetDisplayWorkAreaBoundsInParent(
-          window->parent())),
+      root_window_(window->GetRootWindow()),
+      work_area_in_parent_(ScreenUtil::ConvertRectFromScreen(
+          window_,
+          Shell::GetScreen()->GetDisplayNearestWindow(window_).work_area())),
       is_fullscreen_(GetRootWindowController(
           window->GetRootWindow())->GetWindowForFullscreenMode() != NULL) {
+  Shell::GetInstance()->activation_client()->AddObserver(this);
+  Shell::GetInstance()->AddShellObserver(this);
+  root_window_->AddObserver(this);
 }
 
 WorkspaceLayoutManager::~WorkspaceLayoutManager() {
+  if (root_window_)
+    root_window_->RemoveObserver(this);
+  for (WindowSet::const_iterator i = windows_.begin(); i != windows_.end(); ++i)
+    (*i)->RemoveObserver(this);
+  Shell::GetInstance()->RemoveShellObserver(this);
+  Shell::GetInstance()->activation_client()->RemoveObserver(this);
 }
 
 void WorkspaceLayoutManager::SetShelf(internal::ShelfLayoutManager* shelf) {
   shelf_ = shelf;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager, aura::LayoutManager implementation:
+
 void WorkspaceLayoutManager::OnWindowAddedToLayout(Window* child) {
-  AdjustWindowBoundsWhenAdded(wm::GetWindowState(child));
-  BaseLayoutManager::OnWindowAddedToLayout(child);
+  wm::WindowState* window_state = wm::GetWindowState(child);
+  AdjustWindowBoundsWhenAdded(window_state);
+
+  windows_.insert(child);
+  child->AddObserver(this);
+  window_state->AddObserver(this);
+  // TODO(oshima): This is necessary as the call in
+  // AdjustWindowBoundsWhenAdded is skipped when the bounds is
+  // empty. Investigate if we can eliminate this dup.
+  if (!window_state->is_dragged())
+    SetMaximizedOrFullscreenBounds(window_state);
   UpdateShelfVisibility();
   UpdateFullscreenState();
   WindowPositioner::RearrangeVisibleWindowOnShow(child);
 }
 
 void WorkspaceLayoutManager::OnWillRemoveWindowFromLayout(Window* child) {
-  BaseLayoutManager::OnWillRemoveWindowFromLayout(child);
+  windows_.erase(child);
+  child->RemoveObserver(this);
+  wm::GetWindowState(child)->RemoveObserver(this);
+
   if (child->TargetVisibility())
     WindowPositioner::RearrangeVisibleWindowOnHideOrRemove(child);
 }
 
 void WorkspaceLayoutManager::OnWindowRemovedFromLayout(Window* child) {
-  BaseLayoutManager::OnWindowRemovedFromLayout(child);
   UpdateShelfVisibility();
   UpdateFullscreenState();
 }
 
 void WorkspaceLayoutManager::OnChildWindowVisibilityChanged(Window* child,
                                                             bool visible) {
-  BaseLayoutManager::OnChildWindowVisibilityChanged(child, visible);
+  wm::WindowState* window_state = wm::GetWindowState(child);
+  // Attempting to show a minimized window. Unminimize it.
+  if (visible && window_state->IsMinimized())
+    window_state->Unminimize();
+
   if (child->TargetVisibility()) {
     WindowPositioner::RearrangeVisibleWindowOnShow(child);
   } else {
@@ -123,29 +124,37 @@ void WorkspaceLayoutManager::SetChildBounds(
   wm::WindowState* window_state = wm::GetWindowState(child);
   if (window_state->is_dragged()) {
     SetChildBoundsDirect(child, requested_bounds);
+  } else if (window_state->IsSnapped()) {
+    gfx::Rect child_bounds(requested_bounds);
+    wm::AdjustBoundsSmallerThan(work_area_in_parent_.size(), &child_bounds);
+    window_state->AdjustSnappedBounds(&child_bounds);
+    SetChildBoundsDirect(child, child_bounds);
   } else if (!SetMaximizedOrFullscreenBounds(window_state)) {
     // Some windows rely on this to set their initial bounds.
     // Non-maximized/full-screen windows have their size constrained to the
     // work-area.
     gfx::Rect child_bounds(requested_bounds);
-    child_bounds.set_width(std::min(work_area_in_parent_.width(),
-                                    child_bounds.width()));
-    child_bounds.set_height(std::min(work_area_in_parent_.height(),
-                                     child_bounds.height()));
-    AdjustSnappedBounds(window_state, &child_bounds);
+    wm::AdjustBoundsSmallerThan(work_area_in_parent_.size(), &child_bounds);
     SetChildBoundsDirect(child, child_bounds);
   }
   UpdateShelfVisibility();
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager, ash::ShellObserver implementation:
+
 void WorkspaceLayoutManager::OnDisplayWorkAreaInsetsChanged() {
-  const gfx::Rect work_area(ScreenAsh::GetDisplayWorkAreaBoundsInParent(
-      window_->parent()));
+  const gfx::Rect work_area(ScreenUtil::ConvertRectFromScreen(
+      window_,
+      Shell::GetScreen()->GetDisplayNearestWindow(window_).work_area()));
   if (work_area != work_area_in_parent_) {
     AdjustAllWindowsBoundsForWorkAreaChange(
         ADJUST_WINDOW_WORK_AREA_INSETS_CHANGED);
   }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager, aura::WindowObserver implementation:
 
 void WorkspaceLayoutManager::OnWindowPropertyChanged(Window* window,
                                                      const void* key,
@@ -158,62 +167,78 @@ void WorkspaceLayoutManager::OnWindowPropertyChanged(Window* window,
 }
 
 void WorkspaceLayoutManager::OnWindowStackingChanged(aura::Window* window) {
-  BaseLayoutManager::OnWindowStackingChanged(window);
   UpdateShelfVisibility();
   UpdateFullscreenState();
 }
 
-void WorkspaceLayoutManager::OnWindowShowTypeChanged(
-    wm::WindowState* window_state,
-    wm::WindowShowType old_type) {
-  ui::WindowShowState old_state = ToWindowShowState(old_type);
-  ui::WindowShowState new_state = window_state->GetShowState();
-  if (old_state != ui::SHOW_STATE_MINIMIZED &&
-      !window_state->HasRestoreBounds() &&
-      window_state->IsMaximizedOrFullscreen() &&
-      !wm::WindowState::IsMaximizedOrFullscreenState(old_state)) {
-    window_state->SaveCurrentBoundsForRestore();
+void WorkspaceLayoutManager::OnWindowDestroying(aura::Window* window) {
+  if (root_window_ == window) {
+    root_window_->RemoveObserver(this);
+    root_window_ = NULL;
   }
-  // When restoring from a minimized state, we want to restore to the
-  // previous (maybe L/R maximized) state. Since we do also want to keep the
-  // restore rectangle, we set the restore rectangle to the rectangle we want
-  // to restore to and restore it after we switched so that it is preserved.
-  gfx::Rect restore;
-  if (old_state == ui::SHOW_STATE_MINIMIZED &&
-      (new_state == ui::SHOW_STATE_NORMAL ||
-       new_state == ui::SHOW_STATE_DEFAULT) &&
-      window_state->HasRestoreBounds() &&
-      !window_state->always_restores_to_restore_bounds()) {
-    restore = window_state->GetRestoreBoundsInScreen();
-    window_state->SaveCurrentBoundsForRestore();
-  }
-  // Notify observers that fullscreen state may be changing.
-  if (old_state != new_state &&
-      (new_state == ui::SHOW_STATE_FULLSCREEN ||
-       old_state == ui::SHOW_STATE_FULLSCREEN)) {
-    UpdateFullscreenState();
-  }
-
-  UpdateBoundsFromShowState(window_state, old_state);
-  ShowStateChanged(window_state, old_state);
-
-  // Set the restore rectangle to the previously set restore rectangle.
-  if (!restore.IsEmpty())
-    window_state->SetRestoreBoundsInScreen(restore);
 }
 
-void WorkspaceLayoutManager::ShowStateChanged(
-    wm::WindowState* state,
-    ui::WindowShowState last_show_state) {
-  BaseLayoutManager::ShowStateChanged(state, last_show_state);
+void WorkspaceLayoutManager::OnWindowBoundsChanged(aura::Window* window,
+                                              const gfx::Rect& old_bounds,
+                                              const gfx::Rect& new_bounds) {
+  if (root_window_ == window)
+    AdjustAllWindowsBoundsForWorkAreaChange(ADJUST_WINDOW_DISPLAY_SIZE_CHANGED);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager,
+// aura::client::ActivationChangeObserver implementation:
+
+void WorkspaceLayoutManager::OnWindowActivated(aura::Window* gained_active,
+                                          aura::Window* lost_active) {
+  wm::WindowState* window_state = wm::GetWindowState(gained_active);
+  if (window_state && window_state->IsMinimized() &&
+      !gained_active->IsVisible()) {
+    window_state->Unminimize();
+    DCHECK(!window_state->IsMinimized());
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager, wm::WindowStateObserver implementation:
+
+void WorkspaceLayoutManager::OnPostWindowShowTypeChange(
+    wm::WindowState* window_state,
+    wm::WindowShowType old_type) {
+
+  // Notify observers that fullscreen state may be changing.
+  if (window_state->IsFullscreen() || old_type == wm::SHOW_TYPE_FULLSCREEN)
+    UpdateFullscreenState();
+
   UpdateShelfVisibility();
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager, private:
+
 void WorkspaceLayoutManager::AdjustAllWindowsBoundsForWorkAreaChange(
     AdjustWindowReason reason) {
-  work_area_in_parent_ =
-      ScreenAsh::GetDisplayWorkAreaBoundsInParent(window_->parent());
-  BaseLayoutManager::AdjustAllWindowsBoundsForWorkAreaChange(reason);
+  work_area_in_parent_ = ScreenUtil::ConvertRectFromScreen(
+      window_,
+      Shell::GetScreen()->GetDisplayNearestWindow(window_).work_area());
+
+  // Don't do any adjustments of the insets while we are in screen locked mode.
+  // This would happen if the launcher was auto hidden before the login screen
+  // was shown and then gets shown when the login screen gets presented.
+  if (reason == ADJUST_WINDOW_WORK_AREA_INSETS_CHANGED &&
+      Shell::GetInstance()->session_state_delegate()->IsScreenLocked())
+    return;
+
+  // If a user plugs an external display into a laptop running Aura the
+  // display size will change.  Maximized windows need to resize to match.
+  // We also do this when developers running Aura on a desktop manually resize
+  // the host window.
+  // We also need to do this when the work area insets changes.
+  for (WindowSet::const_iterator it = windows_.begin();
+       it != windows_.end();
+       ++it) {
+    AdjustWindowBoundsForWorkAreaChange(wm::GetWindowState(*it), reason);
+  }
 }
 
 void WorkspaceLayoutManager::AdjustWindowBoundsForWorkAreaChange(
@@ -229,8 +254,8 @@ void WorkspaceLayoutManager::AdjustWindowBoundsForWorkAreaChange(
   if (window_state->IsMaximized() &&
       reason == ADJUST_WINDOW_WORK_AREA_INSETS_CHANGED) {
     SetChildBoundsDirect(window_state->window(),
-                         ScreenAsh::GetMaximizedWindowBoundsInParent(
-                             window_state->window()->parent()->parent()));
+                         ScreenUtil::GetMaximizedWindowBoundsInParent(
+                             window_state->window()));
     return;
   }
 
@@ -249,9 +274,9 @@ void WorkspaceLayoutManager::AdjustWindowBoundsForWorkAreaChange(
           work_area_in_parent_, &bounds);
       break;
   }
-  AdjustSnappedBounds(window_state, &bounds);
+  window_state->AdjustSnappedBounds(&bounds);
   if (window_state->window()->bounds() != bounds)
-    SetChildBoundsAnimated(window_state->window(), bounds);
+    window_state->SetBoundsDirectAnimated(bounds);
 }
 
 void WorkspaceLayoutManager::AdjustWindowBoundsWhenAdded(
@@ -261,28 +286,26 @@ void WorkspaceLayoutManager::AdjustWindowBoundsWhenAdded(
   // When a window is dragged and dropped onto a different
   // root window, the bounds will be updated after they are added
   // to the root window.
-  if (window_state->window()->bounds().IsEmpty())
+  if (window_state->window()->bounds().IsEmpty() ||
+      window_state->is_dragged() ||
+      SetMaximizedOrFullscreenBounds(window_state)) {
     return;
-
-  if (window_state->is_dragged())
-    return;
-
-  if (SetMaximizedOrFullscreenBounds(window_state))
-    return;
+  }
 
   Window* window = window_state->window();
   gfx::Rect bounds = window->bounds();
-  int min_width = bounds.width() * kMinimumPercentOnScreenArea;
-  int min_height = bounds.height() * kMinimumPercentOnScreenArea;
+
   // Use entire display instead of workarea because the workarea can
   // be further shrunk by the docked area. The logic ensures 30%
   // visibility which should be enough to see where the window gets
   // moved.
-  gfx::Rect display_area = ScreenAsh::GetDisplayBoundsInParent(window);
+  gfx::Rect display_area = ScreenUtil::GetDisplayBoundsInParent(window);
 
+  int min_width = bounds.width() * kMinimumPercentOnScreenArea;
+  int min_height = bounds.height() * kMinimumPercentOnScreenArea;
   ash::wm::AdjustBoundsToEnsureWindowVisibility(
       display_area, min_width, min_height, &bounds);
-  AdjustSnappedBounds(window_state, &bounds);
+  window_state->AdjustSnappedBounds(&bounds);
   if (window->bounds() != bounds)
     window->SetBounds(bounds);
 }
@@ -302,134 +325,23 @@ void WorkspaceLayoutManager::UpdateFullscreenState() {
   }
 }
 
-void WorkspaceLayoutManager::UpdateBoundsFromShowState(
-    wm::WindowState* window_state,
-    ui::WindowShowState last_show_state) {
-  aura::Window* window = window_state->window();
-  // See comment in SetMaximizedOrFullscreenBounds() as to why we use parent in
-  // these calculation.
-  // TODO(varkha): Change the switch statement below to use wm::WindowShowType.
-  switch (window_state->GetShowState()) {
-    case ui::SHOW_STATE_DEFAULT:
-    case ui::SHOW_STATE_NORMAL: {
-      // Make sure that the part of the window is always visible
-      // when restored.
-      gfx::Rect bounds_in_parent;
-      if (window_state->HasRestoreBounds()) {
-        bounds_in_parent = window_state->GetRestoreBoundsInParent();
-        ash::wm::AdjustBoundsToEnsureMinimumWindowVisibility(
-            work_area_in_parent_, &bounds_in_parent);
-      } else {
-        // Minimized windows have no restore bounds.
-        // Use the current bounds instead.
-        bounds_in_parent = window->bounds();
-        ash::wm::AdjustBoundsToEnsureMinimumWindowVisibility(
-            work_area_in_parent_, &bounds_in_parent);
-        // Don't start animation if the bounds didn't change.
-        if (bounds_in_parent == window->bounds())
-          bounds_in_parent.SetRect(0, 0, 0, 0);
-      }
-      if (!bounds_in_parent.IsEmpty()) {
-        if ((last_show_state == ui::SHOW_STATE_DEFAULT ||
-             last_show_state == ui::SHOW_STATE_NORMAL) &&
-             window_state->IsSnapped()) {
-          AdjustSnappedBounds(window_state, &bounds_in_parent);
-          SetChildBoundsAnimated(window, bounds_in_parent);
-        } else {
-          gfx::Rect new_bounds = BaseLayoutManager::BoundsWithScreenEdgeVisible(
-              window->parent()->parent(),
-              bounds_in_parent);
-          if (last_show_state == ui::SHOW_STATE_MINIMIZED)
-            SetChildBoundsDirect(window, new_bounds);
-          else
-            CrossFadeToBounds(window, new_bounds);
-        }
-      }
-      window_state->ClearRestoreBounds();
-      break;
-    }
-
-    case ui::SHOW_STATE_MAXIMIZED: {
-      MoveToDisplayForRestore(window_state);
-      gfx::Rect new_bounds = ScreenAsh::GetMaximizedWindowBoundsInParent(
-          window->parent()->parent());
-      // If the window is restored from minimized state, do not make the cross
-      // fade animation and set the child bounds directly. The restoring
-      // animation will be done by ash/wm/window_animations.cc.
-      if (last_show_state == ui::SHOW_STATE_MINIMIZED)
-        SetChildBoundsDirect(window, new_bounds);
-      else
-        CrossFadeToBounds(window, new_bounds);
-      break;
-    }
-
-    case ui::SHOW_STATE_FULLSCREEN: {
-      MoveToDisplayForRestore(window_state);
-      gfx::Rect new_bounds = ScreenAsh::GetDisplayBoundsInParent(
-          window->parent()->parent());
-      if (window_state->animate_to_fullscreen() &&
-          last_show_state != ui::SHOW_STATE_MINIMIZED) {
-        CrossFadeToBounds(window, new_bounds);
-      } else {
-        SetChildBoundsDirect(window, new_bounds);
-      }
-      break;
-    }
-
-    default:
-      break;
-  }
-}
-
 bool WorkspaceLayoutManager::SetMaximizedOrFullscreenBounds(
     wm::WindowState* window_state) {
   DCHECK(!window_state->is_dragged());
 
-  // During animations there is a transform installed on the workspace
-  // windows. For this reason this code uses the parent so that the transform is
-  // ignored.
   if (window_state->IsMaximized()) {
     SetChildBoundsDirect(
-        window_state->window(), ScreenAsh::GetMaximizedWindowBoundsInParent(
-            window_state->window()->parent()->parent()));
+        window_state->window(), ScreenUtil::GetMaximizedWindowBoundsInParent(
+            window_state->window()));
     return true;
   }
   if (window_state->IsFullscreen()) {
     SetChildBoundsDirect(
         window_state->window(),
-        ScreenAsh::GetDisplayBoundsInParent(
-            window_state->window()->parent()->parent()));
+        ScreenUtil::GetDisplayBoundsInParent(window_state->window()));
     return true;
   }
   return false;
-}
-
-void WorkspaceLayoutManager::AdjustSnappedBounds(wm::WindowState* window_state,
-                                                 gfx::Rect* bounds) {
-  if (window_state->is_dragged() || !window_state->IsSnapped())
-    return;
-  gfx::Rect maximized_bounds = ScreenAsh::GetMaximizedWindowBoundsInParent(
-      window_state->window()->parent()->parent());
-  if (window_state->window_show_type() == wm::SHOW_TYPE_LEFT_SNAPPED)
-    bounds->set_x(maximized_bounds.x());
-  else if (window_state->window_show_type() == wm::SHOW_TYPE_RIGHT_SNAPPED)
-    bounds->set_x(maximized_bounds.right() - bounds->width());
-  bounds->set_y(maximized_bounds.y());
-  // TODO(varkha): Set width to 50% here for snapped windows.
-  bounds->set_height(maximized_bounds.height());
-}
-
-void WorkspaceLayoutManager::SetChildBoundsAnimated(Window* child,
-                                                    const gfx::Rect& bounds) {
-  const int kBoundsChangeSlideDurationMs = 120;
-
-  ui::Layer* layer = child->layer();
-  ui::ScopedLayerAnimationSettings slide_settings(layer->GetAnimator());
-  slide_settings.SetPreemptionStrategy(
-      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  slide_settings.SetTransitionDuration(
-      base::TimeDelta::FromMilliseconds(kBoundsChangeSlideDurationMs));
-  SetChildBoundsDirect(child, bounds);
 }
 
 }  // namespace internal

@@ -4,6 +4,11 @@
 
 #include "net/quic/congestion_control/inter_arrival_sender.h"
 
+#include <algorithm>
+
+using std::max;
+using std::min;
+
 namespace net {
 
 namespace {
@@ -34,7 +39,6 @@ InterArrivalSender::InterArrivalSender(const QuicClock* clock)
       state_machine_(new InterArrivalStateMachine(clock)),
       paced_sender_(new PacedSender(QuicBandwidth::FromKBytesPerSecond(
           kProbeBitrateKBytesPerSecond), max_segment_size_)),
-      accumulated_number_of_lost_packets_(0),
       bandwidth_usage_state_(kBandwidthSteady),
       back_down_time_(QuicTime::Zero()),
       back_down_bandwidth_(QuicBandwidth::Zero()),
@@ -143,26 +147,11 @@ void InterArrivalSender::OnIncomingQuicCongestionFeedbackFrame(
     return;
   }
 
-  bool packet_loss_event = false;
-  if (accumulated_number_of_lost_packets_ !=
-      feedback.inter_arrival.accumulated_number_of_lost_packets) {
-    accumulated_number_of_lost_packets_ =
-        feedback.inter_arrival.accumulated_number_of_lost_packets;
-    packet_loss_event = true;
-  }
   InterArrivalState state = state_machine_->GetInterArrivalState();
 
   if (state == kInterArrivalStatePacketLoss ||
       state == kInterArrivalStateCompetingTcpFLow) {
-    if (packet_loss_event) {
-      if (!state_machine_->PacketLossEvent()) {
-        // Less than one RTT since last PacketLossEvent.
-        return;
-      }
-      EstimateBandwidthAfterLossEvent(feedback_receive_time);
-    } else {
-      EstimateNewBandwidth(feedback_receive_time, sent_bandwidth);
-    }
+    EstimateNewBandwidth(feedback_receive_time, sent_bandwidth);
     return;
   }
   EstimateDelayBandwidth(feedback_receive_time, sent_bandwidth);
@@ -192,8 +181,8 @@ bool InterArrivalSender::ProbingPhase(QuicTime feedback_receive_time) {
       // Do nothing.
       break;
   }
-  new_rate = std::max(new_rate,
-                       QuicBandwidth::FromKBitsPerSecond(kMinBitrateKbit));
+  new_rate = max(new_rate,
+                 QuicBandwidth::FromKBitsPerSecond(kMinBitrateKbit));
 
   bitrate_ramp_up_->Reset(new_rate, available_channel_estimate,
                           channel_estimate);
@@ -211,27 +200,10 @@ bool InterArrivalSender::ProbingPhase(QuicTime feedback_receive_time) {
 
 void InterArrivalSender::OnPacketAcked(
     QuicPacketSequenceNumber /*acked_sequence_number*/,
-    QuicByteCount acked_bytes,
-    QuicTime::Delta rtt) {
-  // RTT can't be negative.
-  DCHECK_LE(0, rtt.ToMicroseconds());
-
+    QuicByteCount acked_bytes) {
   if (probing_) {
     probe_->OnAcknowledgedPacket(acked_bytes);
   }
-
-  if (rtt.IsInfinite()) {
-    return;
-  }
-
-  if (smoothed_rtt_.IsZero()) {
-    smoothed_rtt_ = rtt;
-  } else {
-    smoothed_rtt_ = QuicTime::Delta::FromMicroseconds(
-        kOneMinusAlpha * smoothed_rtt_.ToMicroseconds() +
-        kAlpha * rtt.ToMicroseconds());
-  }
-  state_machine_->set_rtt(smoothed_rtt_);
 }
 
 void InterArrivalSender::OnPacketLost(
@@ -261,8 +233,12 @@ bool InterArrivalSender::OnPacketSent(
   return true;
 }
 
-void InterArrivalSender::OnRetransmissionTimeout() {
+void InterArrivalSender::OnRetransmissionTimeout(
+    bool /*packets_retransmitted*/) {
   // TODO(ianswett): Decrease the available bandwidth.
+  if (probing_) {
+    probe_->OnRetransmissionTimeout();
+  }
 }
 
 void InterArrivalSender::OnPacketAbandoned(
@@ -326,6 +302,24 @@ void InterArrivalSender::EstimateDelayBandwidth(QuicTime feedback_receive_time,
 
 QuicBandwidth InterArrivalSender::BandwidthEstimate() const {
   return current_bandwidth_;
+}
+
+void InterArrivalSender::UpdateRtt(QuicTime::Delta rtt) {
+  // RTT can't be negative.
+  DCHECK_LE(0, rtt.ToMicroseconds());
+
+  if (rtt.IsInfinite()) {
+    return;
+  }
+
+  if (smoothed_rtt_.IsZero()) {
+    smoothed_rtt_ = rtt;
+  } else {
+    smoothed_rtt_ = QuicTime::Delta::FromMicroseconds(
+        kOneMinusAlpha * smoothed_rtt_.ToMicroseconds() +
+        kAlpha * rtt.ToMicroseconds());
+  }
+  state_machine_->set_rtt(smoothed_rtt_);
 }
 
 QuicTime::Delta InterArrivalSender::SmoothedRtt() const {
@@ -407,9 +401,9 @@ void InterArrivalSender::EstimateNewBandwidthAfterDraining(
     } else {
       // Use our drain rate and our kMinBitrateReduction to go to our
       // new estimate.
-      new_estimate = std::max(current_bandwidth_,
-                              current_bandwidth_.Add(draining_rate).Scale(
-                                  1.0f - kMinBitrateReduction));
+      new_estimate = max(current_bandwidth_,
+                         current_bandwidth_.Add(draining_rate).Scale(
+                             1.0f - kMinBitrateReduction));
       DVLOG(1) << "Draining calculation; current rate:"
                  << current_bandwidth_.ToKBitsPerSecond() << " Kbits/s "
                  << "draining rate:"
@@ -465,8 +459,8 @@ void InterArrivalSender::EstimateBandwidthAfterDelayEvent(
   float decrease_factor =
       draining_rate_per_rtt / current_bandwidth_.ToBytesPerSecond();
 
-  decrease_factor = std::max(decrease_factor, kMinBitrateReduction);
-  decrease_factor = std::min(decrease_factor, kMaxBitrateReduction);
+  decrease_factor = max(decrease_factor, kMinBitrateReduction);
+  decrease_factor = min(decrease_factor, kMaxBitrateReduction);
   back_down_congestion_delay_ = estimated_congestion_delay;
   QuicBandwidth new_target_bitrate =
       current_bandwidth_.Scale(1.0f - decrease_factor);
@@ -474,7 +468,7 @@ void InterArrivalSender::EstimateBandwidthAfterDelayEvent(
   // While in delay sensing mode send at least one packet per RTT.
   QuicBandwidth min_delay_bitrate =
       QuicBandwidth::FromBytesAndTimeDelta(max_segment_size_, SmoothedRtt());
-  new_target_bitrate = std::max(new_target_bitrate, min_delay_bitrate);
+  new_target_bitrate = max(new_target_bitrate, min_delay_bitrate);
 
   ResetCurrentBandwidth(feedback_receive_time, new_target_bitrate);
 
@@ -498,8 +492,8 @@ void InterArrivalSender::EstimateBandwidthAfterLossEvent(
 
 void InterArrivalSender::ResetCurrentBandwidth(QuicTime feedback_receive_time,
                                                QuicBandwidth new_rate) {
-  new_rate = std::max(new_rate,
-                      QuicBandwidth::FromKBitsPerSecond(kMinBitrateKbit));
+  new_rate = max(new_rate,
+                 QuicBandwidth::FromKBitsPerSecond(kMinBitrateKbit));
   QuicBandwidth channel_estimate = QuicBandwidth::Zero();
   ChannelEstimateState channel_estimator_state =
       channel_estimator_->GetChannelEstimate(&channel_estimate);

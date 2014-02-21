@@ -48,20 +48,20 @@ PermissionMessage CreateFromHostList(const std::set<std::string>& hosts) {
     case 1:
       message_id = PermissionMessage::kHosts1;
       message = l10n_util::GetStringFUTF16(IDS_EXTENSION_PROMPT_WARNING_1_HOST,
-                                           UTF8ToUTF16(host_list[0]));
+                                           base::UTF8ToUTF16(host_list[0]));
       break;
     case 2:
       message_id = PermissionMessage::kHosts2;
       message = l10n_util::GetStringFUTF16(IDS_EXTENSION_PROMPT_WARNING_2_HOSTS,
-                                           UTF8ToUTF16(host_list[0]),
-                                           UTF8ToUTF16(host_list[1]));
+                                           base::UTF8ToUTF16(host_list[0]),
+                                           base::UTF8ToUTF16(host_list[1]));
       break;
     case 3:
       message_id = PermissionMessage::kHosts3;
       message = l10n_util::GetStringFUTF16(IDS_EXTENSION_PROMPT_WARNING_3_HOSTS,
-                                           UTF8ToUTF16(host_list[0]),
-                                           UTF8ToUTF16(host_list[1]),
-                                           UTF8ToUTF16(host_list[2]));
+                                           base::UTF8ToUTF16(host_list[0]),
+                                           base::UTF8ToUTF16(host_list[1]),
+                                           base::UTF8ToUTF16(host_list[2]));
       break;
     default:
       message_id = PermissionMessage::kHosts4OrMore;
@@ -82,10 +82,10 @@ PermissionMessage CreateFromHostList(const std::set<std::string>& hosts) {
 
       for (size_t i = 0; i < host_list.size(); ++i) {
         if (i > 0)
-          details += ASCIIToUTF16("\n");
+          details += base::ASCIIToUTF16("\n");
         details += l10n_util::GetStringFUTF16(
             IDS_EXTENSION_PROMPT_WARNING_HOST_LIST_ENTRY,
-            UTF8ToUTF16(host_list[i]));
+            base::UTF8ToUTF16(host_list[i]));
       }
   }
 
@@ -103,7 +103,7 @@ std::set<std::string> GetDistinctHosts(
   HostVector hosts_best_rcd;
   for (URLPatternSet::const_iterator i = host_patterns.begin();
        i != host_patterns.end(); ++i) {
-    if (exclude_file_scheme && i->scheme() == chrome::kFileScheme)
+    if (exclude_file_scheme && i->scheme() == content::kFileScheme)
       continue;
 
     std::string host = i->host();

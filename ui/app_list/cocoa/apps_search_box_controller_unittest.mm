@@ -14,7 +14,9 @@
 #include "ui/app_list/test/app_list_test_model.h"
 #include "ui/app_list/test/app_list_test_view_delegate.h"
 #import "ui/base/cocoa/menu_controller.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
+
+using base::ASCIIToUTF16;
 
 @interface TestAppsSearchBoxDelegate : NSObject<AppsSearchBoxDelegate> {
  @private

@@ -150,13 +150,9 @@ class SyncerTest : public testing::Test,
       int size) OVERRIDE {
     last_client_invalidation_hint_buffer_size_ = size;
   }
-  virtual void OnSyncProtocolError(
-      const sessions::SyncSessionSnapshot& snapshot) OVERRIDE {
-  }
-
-  void GetWorkers(std::vector<ModelSafeWorker*>* out) {
-    out->push_back(worker_.get());
-  }
+  virtual void OnReceivedGuRetryDelay(const base::TimeDelta& delay) OVERRIDE {}
+  virtual void OnReceivedMigrationRequest(ModelTypeSet types) OVERRIDE {}
+  virtual void OnSyncProtocolError(const SyncProtocolError& error) OVERRIDE {}
 
   void GetModelSafeRoutingInfo(ModelSafeRoutingInfo* out) {
     // We're just testing the sync engine here, so we shunt everything to
@@ -167,19 +163,24 @@ class SyncerTest : public testing::Test,
     }
   }
 
-  virtual void OnSyncEngineEvent(const SyncEngineEvent& event) OVERRIDE {
+  virtual void OnSyncCycleEvent(const SyncCycleEvent& event) OVERRIDE {
     DVLOG(1) << "HandleSyncEngineEvent in unittest " << event.what_happened;
     // we only test for entry-specific events, not status changed ones.
     switch (event.what_happened) {
-      case SyncEngineEvent::SYNC_CYCLE_BEGIN: // Fall through.
-      case SyncEngineEvent::STATUS_CHANGED:
-      case SyncEngineEvent::SYNC_CYCLE_ENDED:
+      case SyncCycleEvent::SYNC_CYCLE_BEGIN: // Fall through.
+      case SyncCycleEvent::STATUS_CHANGED:
+      case SyncCycleEvent::SYNC_CYCLE_ENDED:
         return;
       default:
         CHECK(false) << "Handling unknown error type in unit tests!!";
     }
     saw_syncer_event_ = true;
   }
+
+  virtual void OnActionableError(const SyncProtocolError& error) OVERRIDE {}
+  virtual void OnRetryTimeChanged(base::Time retry_time) OVERRIDE {}
+  virtual void OnThrottledTypesChanged(ModelTypeSet throttled_types) OVERRIDE {}
+  virtual void OnMigrationRequested(ModelTypeSet types) OVERRIDE {}
 
   void ResetSession() {
     session_.reset(SyncSession::Build(context_.get(), this));
@@ -215,25 +216,26 @@ class SyncerTest : public testing::Test,
     EnableDatatype(NIGORI);
     EnableDatatype(PREFERENCES);
     EnableDatatype(NIGORI);
-    worker_ = new FakeModelWorker(GROUP_PASSIVE);
+    workers_.push_back(scoped_refptr<ModelSafeWorker>(
+        new FakeModelWorker(GROUP_PASSIVE)));
     std::vector<SyncEngineEventListener*> listeners;
     listeners.push_back(this);
 
     ModelSafeRoutingInfo routing_info;
-    std::vector<ModelSafeWorker*> workers;
-
     GetModelSafeRoutingInfo(&routing_info);
-    GetWorkers(&workers);
+
+    model_type_registry_.reset(new ModelTypeRegistry(workers_, directory()));
 
     context_.reset(
         new SyncSessionContext(
-            mock_server_.get(), directory(), workers,
+            mock_server_.get(), directory(),
             extensions_activity_,
             listeners, debug_info_getter_.get(), &traffic_recorder_,
+            model_type_registry_.get(),
             true,  // enable keystore encryption
             false,  // force enable pre-commit GU avoidance experiment
             "fake_invalidator_client_id"));
-    context_->set_routing_info(routing_info);
+    context_->SetRoutingInfo(routing_info);
     syncer_ = new Syncer(&cancelation_signal_);
 
     syncable::ReadTransaction trans(FROM_HERE, directory());
@@ -442,7 +444,7 @@ class SyncerTest : public testing::Test,
     GetModelSafeRoutingInfo(&routing_info);
 
     if (context_) {
-      context_->set_routing_info(routing_info);
+      context_->SetRoutingInfo(routing_info);
     }
 
     mock_server_->ExpectGetUpdatesRequestTypes(enabled_datatypes_);
@@ -455,7 +457,7 @@ class SyncerTest : public testing::Test,
     GetModelSafeRoutingInfo(&routing_info);
 
     if (context_) {
-      context_->set_routing_info(routing_info);
+      context_->SetRoutingInfo(routing_info);
     }
 
     mock_server_->ExpectGetUpdatesRequestTypes(enabled_datatypes_);
@@ -498,13 +500,14 @@ class SyncerTest : public testing::Test,
   Syncer* syncer_;
 
   scoped_ptr<SyncSession> session_;
+  scoped_ptr<ModelTypeRegistry> model_type_registry_;
   scoped_ptr<SyncSessionContext> context_;
   bool saw_syncer_event_;
   base::TimeDelta last_short_poll_interval_received_;
   base::TimeDelta last_long_poll_interval_received_;
   base::TimeDelta last_sessions_commit_delay_seconds_;
   int last_client_invalidation_hint_buffer_size_;
-  scoped_refptr<ModelSafeWorker> worker_;
+  std::vector<scoped_refptr<ModelSafeWorker> > workers_;
 
   ModelTypeSet enabled_datatypes_;
   TrafficRecorder traffic_recorder_;

@@ -9,8 +9,11 @@
 #include "gin/converter.h"
 #include "gin/modules/console.h"
 #include "gin/modules/module_registry.h"
+#include "gin/modules/timer.h"
 #include "gin/try_catch.h"
 #include "mojo/apps/js/bindings/core.h"
+#include "mojo/apps/js/bindings/gl/module.h"
+#include "mojo/apps/js/bindings/monotonic_clock.h"
 #include "mojo/apps/js/bindings/support.h"
 #include "mojo/apps/js/bindings/threading.h"
 
@@ -44,10 +47,13 @@ void StartCallback(base::WeakPtr<gin::Runner> runner,
 
 MojoRunnerDelegate::MojoRunnerDelegate()
     : ModuleRunnerDelegate(GetModuleSearchPaths()) {
-  AddBuiltinModule(Threading::kModuleName, Threading::GetTemplate);
-  AddBuiltinModule(gin::Console::kModuleName, gin::Console::GetTemplate);
-  AddBuiltinModule(js::Core::kModuleName, js::Core::GetTemplate);
-  AddBuiltinModule(js::Support::kModuleName, js::Support::GetTemplate);
+  AddBuiltinModule(gin::Console::kModuleName, gin::Console::GetModule);
+  AddBuiltinModule(gin::TimerModule::kName, gin::TimerModule::GetModule);
+  AddBuiltinModule(js::Core::kModuleName, js::Core::GetModule);
+  AddBuiltinModule(js::Support::kModuleName, js::Support::GetModule);
+  AddBuiltinModule(mojo::js::gl::kModuleName, mojo::js::gl::GetModule);
+  AddBuiltinModule(MonotonicClock::kModuleName, MonotonicClock::GetModule);
+  AddBuiltinModule(Threading::kModuleName, Threading::GetModule);
 }
 
 MojoRunnerDelegate::~MojoRunnerDelegate() {

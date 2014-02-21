@@ -119,12 +119,12 @@ class GtkPrinterList {
 
 // static
 printing::PrintDialogGtkInterface* PrintDialogGtk::CreatePrintDialog(
-    PrintingContextGtk* context) {
+    PrintingContextLinux* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return new PrintDialogGtk(context);
 }
 
-PrintDialogGtk::PrintDialogGtk(PrintingContextGtk* context)
+PrintDialogGtk::PrintDialogGtk(PrintingContextLinux* context)
     : context_(context),
       dialog_(NULL),
       gtk_settings_(NULL),
@@ -174,7 +174,7 @@ bool PrintDialogGtk::UpdateSettings(printing::PrintSettings* settings) {
 
   scoped_ptr<GtkPrinterList> printer_list(new GtkPrinterList);
   printer_ = printer_list->GetPrinterWithName(
-      UTF16ToUTF8(settings->device_name()));
+      base::UTF16ToUTF8(settings->device_name()));
   if (printer_) {
     g_object_ref(printer_);
     gtk_print_settings_set_printer(gtk_settings_,
@@ -229,7 +229,7 @@ bool PrintDialogGtk::UpdateSettings(printing::PrintSettings* settings) {
 void PrintDialogGtk::ShowDialog(
     gfx::NativeView parent_view,
     bool has_selection,
-    const PrintingContextGtk::PrintSettingsCallback& callback) {
+    const PrintingContextLinux::PrintSettingsCallback& callback) {
   callback_ = callback;
 
   GtkWindow* parent = GTK_WINDOW(gtk_widget_get_toplevel(parent_view));
@@ -368,13 +368,13 @@ void PrintDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
       printing::PrintSettingsInitializerGtk::InitPrintSettings(
           gtk_settings_, page_setup_, &settings);
       context_->InitWithSettings(settings);
-      callback_.Run(PrintingContextGtk::OK);
+      callback_.Run(PrintingContextLinux::OK);
       callback_.Reset();
       return;
     }
     case GTK_RESPONSE_DELETE_EVENT:  // Fall through.
     case GTK_RESPONSE_CANCEL: {
-      callback_.Run(PrintingContextGtk::CANCEL);
+      callback_.Run(PrintingContextLinux::CANCEL);
       callback_.Reset();
       return;
     }
@@ -401,7 +401,7 @@ void PrintDialogGtk::SendDocumentToPrinter(
   g_last_used_settings.Get().SetLastUsedSettings(gtk_settings_);
 
   GtkPrintJob* print_job = gtk_print_job_new(
-      UTF16ToUTF8(document_name).c_str(),
+      base::UTF16ToUTF8(document_name).c_str(),
       printer_,
       gtk_settings_,
       page_setup_);

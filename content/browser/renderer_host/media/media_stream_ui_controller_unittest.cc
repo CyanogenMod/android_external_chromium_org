@@ -43,7 +43,7 @@ class MediaStreamDeviceUIControllerTest
 
  protected:
   virtual void SetUp() {
-    message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
+    message_loop_.reset(new base::MessageLoopForIO);
     ui_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
                                            message_loop_.get()));
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
@@ -58,9 +58,7 @@ class MediaStreamDeviceUIControllerTest
   void CreateDummyRequest(const std::string& label, bool audio, bool video) {
     int dummy_render_process_id = 1;
     int dummy_render_view_id = 1;
-    StreamOptions components(
-        audio ? MEDIA_DEVICE_AUDIO_CAPTURE : MEDIA_NO_SERVICE,
-        video ? MEDIA_DEVICE_VIDEO_CAPTURE : MEDIA_NO_SERVICE);
+    StreamOptions components(audio, video );
     GURL security_origin;
     ui_controller_->MakeUIRequest(label,
                                   dummy_render_process_id,

@@ -9,11 +9,11 @@
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_prefs.h"
 
 namespace extensions {
 
@@ -551,6 +551,16 @@ IN_PROC_BROWSER_TEST_F(FileSystemApiTest,
       &test_file);
   ASSERT_TRUE(RunPlatformAppTest(
       "api_test/file_system/get_writable_file_entry_with_write")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemApiTest,
+                       FileSystemApiGetWritableRootEntryTest) {
+  base::FilePath test_file = TempFilePath("writable.txt", true);
+  ASSERT_FALSE(test_file.empty());
+  FileSystemChooseEntryFunction::SkipPickerAndAlwaysSelectPathForTest(
+      &test_file);
+  ASSERT_TRUE(RunPlatformAppTest(
+      "api_test/file_system/get_writable_root_entry")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(FileSystemApiTest, FileSystemApiIsWritableTest) {

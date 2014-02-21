@@ -12,6 +12,7 @@ class WaitAction(page_action.PageAction):
   def __init__(self, attributes=None):
     self.timeout = 60
     super(WaitAction, self).__init__(attributes)
+    self._SetTimelineMarkerBaseName('WaitAction::RunAction')
 
   def RunsPreviousAction(self):
     return (getattr(self, 'condition', None) == 'navigate' or
@@ -19,7 +20,7 @@ class WaitAction(page_action.PageAction):
 
   def RunAction(self, page, tab, previous_action):
     tab.ExecuteJavaScript(
-        'console.time("' + self.GetTimelineMarkerName() + '")')
+        'console.time("' + self._GetUniqueTimelineMarkerName() + '")')
 
     if hasattr(self, 'seconds'):
       time.sleep(self.seconds)
@@ -70,7 +71,4 @@ class WaitAction(page_action.PageAction):
       raise page_action.PageActionFailed('No wait condition found')
 
     tab.ExecuteJavaScript(
-        'console.timeEnd("' + self.GetTimelineMarkerName() + '")')
-
-  def GetTimelineMarkerName(self):
-    return 'WaitAction::RunAction'
+        'console.timeEnd("' + self._GetUniqueTimelineMarkerName() + '")')

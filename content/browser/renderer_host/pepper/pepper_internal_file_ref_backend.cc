@@ -13,7 +13,6 @@
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/renderer_host/pepper/pepper_file_system_browser_host.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "net/base/escape.h"
@@ -21,6 +20,7 @@
 #include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/c/ppb_file_ref.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -85,21 +85,21 @@ PepperInternalFileRefBackend::GetFileSystemContext() const {
 void PepperInternalFileRefBackend::DidFinish(
     ppapi::host::ReplyMessageContext context,
     const IPC::Message& msg,
-    base::PlatformFileError error) {
-  context.params.set_result(ppapi::PlatformFileErrorToPepperError(error));
+    base::File::Error error) {
+  context.params.set_result(ppapi::FileErrorToPepperError(error));
   host_->SendReply(context, msg);
 }
 
 int32_t PepperInternalFileRefBackend::MakeDirectory(
     ppapi::host::ReplyMessageContext reply_context,
-    bool make_ancestors) {
+    int32_t make_directory_flags) {
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
 
   GetFileSystemContext()->operation_runner()->CreateDirectory(
       GetFileSystemURL(),
-      false,
-      make_ancestors,
+      !!(make_directory_flags & PP_MAKEDIRECTORYFLAG_EXCLUSIVE),
+      !!(make_directory_flags & PP_MAKEDIRECTORYFLAG_WITH_ANCESTORS),
       base::Bind(&PepperInternalFileRefBackend::DidFinish,
                  weak_factory_.GetWeakPtr(),
                  reply_context,
@@ -178,13 +178,13 @@ int32_t PepperInternalFileRefBackend::Query(
 
 void PepperInternalFileRefBackend::GetMetadataComplete(
     ppapi::host::ReplyMessageContext reply_context,
-    base::PlatformFileError error,
-    const base::PlatformFileInfo& file_info) {
-  reply_context.params.set_result(ppapi::PlatformFileErrorToPepperError(error));
+    base::File::Error error,
+    const base::File::Info& file_info) {
+  reply_context.params.set_result(ppapi::FileErrorToPepperError(error));
 
   PP_FileInfo pp_file_info;
-  if (error == base::PLATFORM_FILE_OK)
-    ppapi::PlatformFileInfoToPepperFileInfo(file_info, fs_type_, &pp_file_info);
+  if (error == base::File::FILE_OK)
+    ppapi::FileInfoToPepperFileInfo(file_info, fs_type_, &pp_file_info);
   else
     memset(&pp_file_info, 0, sizeof(pp_file_info));
 
@@ -207,17 +207,17 @@ int32_t PepperInternalFileRefBackend::ReadDirectoryEntries(
 
 void PepperInternalFileRefBackend::ReadDirectoryComplete(
     ppapi::host::ReplyMessageContext context,
-    base::PlatformFileError error,
+    base::File::Error error,
     const fileapi::FileSystemOperation::FileEntryList& file_list,
     bool has_more) {
   // The current filesystem backend always returns false.
   DCHECK(!has_more);
 
-  context.params.set_result(ppapi::PlatformFileErrorToPepperError(error));
+  context.params.set_result(ppapi::FileErrorToPepperError(error));
 
   std::vector<ppapi::FileRefCreateInfo> infos;
   std::vector<PP_FileType> file_types;
-  if (error == base::PLATFORM_FILE_OK && fs_host_.get()) {
+  if (error == base::File::FILE_OK && fs_host_.get()) {
     std::string dir_path = path_;
     if (dir_path.empty() || dir_path[dir_path.size() - 1] != '/')
       dir_path += '/';

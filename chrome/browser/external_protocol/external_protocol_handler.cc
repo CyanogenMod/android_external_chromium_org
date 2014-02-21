@@ -17,8 +17,11 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/escape.h"
 #include "url/gurl.h"
 
@@ -70,11 +73,15 @@ void RunExternalProtocolDialogWithDelegate(
 
 void LaunchUrlWithoutSecurityCheckWithDelegate(
     const GURL& url,
+    int render_process_host_id,
+    int tab_contents_id,
     ExternalProtocolHandler::Delegate* delegate) {
-  if (!delegate)
-    ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(url);
-  else
+  if (!delegate) {
+    ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
+        url, render_process_host_id, tab_contents_id);
+  } else {
     delegate->LaunchUrlWithoutSecurityCheck(url);
+  }
 }
 
 // When we are about to launch a URL with the default OS level application,
@@ -96,7 +103,7 @@ class ExternalDefaultProtocolObserver
 
   virtual void SetDefaultWebClientUIState(
       ShellIntegration::DefaultWebClientUIState state) OVERRIDE {
-    DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+    DCHECK(base::MessageLoopForUI::IsCurrent());
 
     // If we are still working out if we're the default, or we've found
     // out we definately are the default, we end here.
@@ -124,7 +131,8 @@ class ExternalDefaultProtocolObserver
       return;
     }
 
-    LaunchUrlWithoutSecurityCheckWithDelegate(escaped_url_, delegate_);
+    LaunchUrlWithoutSecurityCheckWithDelegate(
+        escaped_url_, render_process_host_id_, tab_contents_id_, delegate_);
   }
 
   virtual bool IsOwnedByWorker() OVERRIDE { return true; }
@@ -140,7 +148,8 @@ class ExternalDefaultProtocolObserver
 }  // namespace
 
 // static
-void ExternalProtocolHandler::PrepopulateDictionary(DictionaryValue* win_pref) {
+void ExternalProtocolHandler::PrepopulateDictionary(
+    base::DictionaryValue* win_pref) {
   static bool is_warm = false;
   if (is_warm)
     return;
@@ -247,7 +256,7 @@ void ExternalProtocolHandler::LaunchUrlWithDelegate(const GURL& url,
                                                     int render_process_host_id,
                                                     int tab_contents_id,
                                                     Delegate* delegate) {
-  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+  DCHECK(base::MessageLoopForUI::IsCurrent());
 
   // Escape the input scheme to be sure that the command does not
   // have parameters unexpected by the external program.
@@ -282,18 +291,17 @@ void ExternalProtocolHandler::LaunchUrlWithDelegate(const GURL& url,
 }
 
 // static
-void ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(const GURL& url) {
-#if defined(OS_MACOSX)
-  // This must run on the UI thread on OS X.
-  platform_util::OpenExternal(url);
-#else
-  // Otherwise put this work on the file thread. On Windows ShellExecute may
-  // block for a significant amount of time, and it shouldn't hurt on Linux.
-  BrowserThread::PostTask(
-      BrowserThread::FILE,
-      FROM_HERE,
-      base::Bind(&platform_util::OpenExternal, url));
-#endif
+void ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
+    const GURL& url,
+    int render_process_host_id,
+    int tab_contents_id) {
+  content::WebContents* web_contents = tab_util::GetWebContentsByID(
+      render_process_host_id, tab_contents_id);
+  if (!web_contents)
+    return;
+
+  platform_util::OpenExternal(
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()), url);
 }
 
 // static
@@ -303,6 +311,6 @@ void ExternalProtocolHandler::RegisterPrefs(PrefRegistrySimple* registry) {
 
 // static
 void ExternalProtocolHandler::PermitLaunchUrl() {
-  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+  DCHECK(base::MessageLoopForUI::IsCurrent());
   g_accept_requests = true;
 }

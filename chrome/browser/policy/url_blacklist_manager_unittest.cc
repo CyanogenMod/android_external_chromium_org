@@ -2,16 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/policy/url_blacklist_manager.h"
+#include "components/policy/core/browser/url_blacklist_manager.h"
 
 #include <ostream>
 
 #include "base/basictypes.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/testing_pref_service.h"
-#include "chrome/common/pref_names.h"
-#include "content/public/test/test_browser_thread.h"
+#include "chrome/browser/policy/policy_helpers.h"
+#include "chrome/common/net/url_fixer_upper.h"
+#include "components/policy/core/common/policy_pref_names.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
@@ -19,19 +21,31 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+// TODO(joaodasilva): this file should be moved next to
+// components/policy/core/browser/url_blacklist_manager.(cc|h).
+// However, url_fixer_upper.h can't be included from the component. Rather
+// than having it mocked out, the actual URLFixerUpper::SegmentURL call is used
+// to make sure that the parsing of URL filters is correct.
+
 namespace policy {
 
 namespace {
 
-using content::BrowserThread;
+// Helper to get the disambiguated SegmentURL() function.
+URLBlacklist::SegmentURLCallback GetSegmentURLCallback() {
+  return URLFixerUpper::SegmentURL;
+}
 
 class TestingURLBlacklistManager : public URLBlacklistManager {
  public:
   explicit TestingURLBlacklistManager(PrefService* pref_service)
-      : URLBlacklistManager(pref_service),
+      : URLBlacklistManager(pref_service,
+                            base::MessageLoopProxy::current(),
+                            base::MessageLoopProxy::current(),
+                            GetSegmentURLCallback(),
+                            SkipBlacklistForURL),
         update_called_(0),
-        set_blacklist_called_(false) {
-  }
+        set_blacklist_called_(false) {}
 
   virtual ~TestingURLBlacklistManager() {
   }
@@ -70,18 +84,12 @@ class TestingURLBlacklistManager : public URLBlacklistManager {
 
 class URLBlacklistManagerTest : public testing::Test {
  protected:
-  URLBlacklistManagerTest()
-      : loop_(base::MessageLoop::TYPE_IO),
-        ui_thread_(BrowserThread::UI, &loop_),
-        file_thread_(BrowserThread::FILE, &loop_),
-        io_thread_(BrowserThread::IO, &loop_) {
-  }
+  URLBlacklistManagerTest() {}
 
   virtual void SetUp() OVERRIDE {
-    pref_service_.registry()->RegisterListPref(prefs::kUrlBlacklist);
-    pref_service_.registry()->RegisterListPref(prefs::kUrlWhitelist);
-    blacklist_manager_.reset(
-        new TestingURLBlacklistManager(&pref_service_));
+    pref_service_.registry()->RegisterListPref(policy_prefs::kUrlBlacklist);
+    pref_service_.registry()->RegisterListPref(policy_prefs::kUrlWhitelist);
+    blacklist_manager_.reset(new TestingURLBlacklistManager(&pref_service_));
     loop_.RunUntilIdle();
   }
 
@@ -94,16 +102,9 @@ class URLBlacklistManagerTest : public testing::Test {
     blacklist_manager_.reset();
   }
 
-  base::MessageLoop loop_;
+  base::MessageLoopForIO loop_;
   TestingPrefServiceSimple pref_service_;
   scoped_ptr<TestingURLBlacklistManager> blacklist_manager_;
-
- private:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
-  content::TestBrowserThread io_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(URLBlacklistManagerTest);
 };
 
 // Parameters for the FilterToComponents test.
@@ -171,8 +172,9 @@ TEST_P(URLBlacklistFilterToComponentsTest, FilterToComponents) {
   uint16 port = 42;
   std::string path;
 
-  URLBlacklist::FilterToComponents(GetParam().filter(), &scheme, &host,
-                                   &match_subdomains, &port, &path);
+  URLBlacklist::FilterToComponents(GetSegmentURLCallback(), GetParam().filter(),
+                                   &scheme, &host, &match_subdomains, &port,
+                                   &path);
   EXPECT_EQ(GetParam().scheme(), scheme);
   EXPECT_EQ(GetParam().host(), host);
   EXPECT_EQ(GetParam().match_subdomains(), match_subdomains);
@@ -181,12 +183,12 @@ TEST_P(URLBlacklistFilterToComponentsTest, FilterToComponents) {
 }
 
 TEST_F(URLBlacklistManagerTest, SingleUpdateForTwoPrefChanges) {
-  ListValue* blacklist = new ListValue;
-  blacklist->Append(new StringValue("*.google.com"));
-  ListValue* whitelist = new ListValue;
-  whitelist->Append(new StringValue("mail.google.com"));
-  pref_service_.SetManagedPref(prefs::kUrlBlacklist, blacklist);
-  pref_service_.SetManagedPref(prefs::kUrlBlacklist, whitelist);
+  base::ListValue* blacklist = new base::ListValue;
+  blacklist->Append(new base::StringValue("*.google.com"));
+  base::ListValue* whitelist = new base::ListValue;
+  whitelist->Append(new base::StringValue("mail.google.com"));
+  pref_service_.SetManagedPref(policy_prefs::kUrlBlacklist, blacklist);
+  pref_service_.SetManagedPref(policy_prefs::kUrlBlacklist, whitelist);
   loop_.RunUntilIdle();
 
   EXPECT_EQ(1, blacklist_manager_->update_called());
@@ -310,7 +312,7 @@ INSTANTIATE_TEST_CASE_P(
                          "/whatever")));
 
 TEST_F(URLBlacklistManagerTest, Filtering) {
-  URLBlacklist blacklist;
+  URLBlacklist blacklist(GetSegmentURLCallback());
 
   // Block domain and all subdomains, for any filtered scheme.
   scoped_ptr<base::ListValue> blocked(new base::ListValue);
@@ -463,7 +465,7 @@ TEST_F(URLBlacklistManagerTest, Filtering) {
 }
 
 TEST_F(URLBlacklistManagerTest, BlockAllWithExceptions) {
-  URLBlacklist blacklist;
+  URLBlacklist blacklist(GetSegmentURLCallback());
 
   scoped_ptr<base::ListValue> blocked(new base::ListValue);
   scoped_ptr<base::ListValue> allowed(new base::ListValue);
@@ -489,7 +491,7 @@ TEST_F(URLBlacklistManagerTest, BlockAllWithExceptions) {
 }
 
 TEST_F(URLBlacklistManagerTest, DontBlockResources) {
-  scoped_ptr<URLBlacklist> blacklist(new URLBlacklist());
+  scoped_ptr<URLBlacklist> blacklist(new URLBlacklist(GetSegmentURLCallback()));
   scoped_ptr<base::ListValue> blocked(new base::ListValue);
   blocked->Append(new base::StringValue("google.com"));
   blacklist->Block(blocked.get());

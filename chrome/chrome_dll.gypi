@@ -45,7 +45,6 @@
                   'action': ['tools\\build\\win\\hardlink_failsafe.bat',
                              '$(OutDir)\\initial\\chrome.dll',
                              '$(OutDir)\\chrome.dll'],
-                  'msvs_cygwin_shell': 0,
                 },
               ],
               'conditions': [
@@ -64,7 +63,6 @@
                       'action': ['tools\\build\\win\\hardlink_failsafe.bat',
                                  '$(OutDir)\\initial\\chrome.dll.pdb',
                                  '$(OutDir)\\chrome.dll.pdb'],
-                      'msvs_cygwin_shell': 0,
                     }
                   ]
                 }]
@@ -80,21 +78,21 @@
           },
           'dependencies': [
             '<@(chromium_browser_dependencies)',
+            '../components/components.gyp:policy',
             '../content/content.gyp:content_app_browser',
-            'app/policy/cloud_policy_codegen.gyp:policy',
           ],
           'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '<(DEPTH)/chrome_elf/chrome_elf.gyp:chrome_elf',
+              ],
+            }],
             ['use_aura==1', {
               'dependencies': [
                 '../ui/compositor/compositor.gyp:compositor',
               ],
             }],
-            ['OS=="win" and target_arch=="ia32" and MSVS_VERSION!="2013"', {
-              # TODO(scottmg): The assembler is very broken in VS2013 and
-              # crashes on the generated .asm file, so disable this for now.
-              # This should be revisited after a VS2013 update. See
-              # http://crbug.com/288948.
-              #
+            ['OS=="win" and target_arch=="ia32"', {
               # Add a dependency to custom import library for user32 delay
               # imports only in x86 builds.
               'dependencies': [
@@ -106,7 +104,6 @@
               'dependencies': [
                 # On Windows, link the dependencies (libraries) that make
                 # up actual Chromium functionality into this .dll.
-                'chrome_dll_pdb_workaround',
                 'chrome_version_resources',
                 '../chrome/chrome_resources.gyp:chrome_unscaled_resources',
                 '../crypto/crypto.gyp:crypto',
@@ -153,7 +150,7 @@
                       'OutputFile': '$(OutDir)\\initial\\chrome.dll',
                       'UseLibraryDependencyInputs': "true",
                     }],
-                    ['target_arch=="ia32" and MSVS_VERSION!="2013"', {
+                    ['target_arch=="ia32"', {
                       # Link against the XP-constrained user32 import library
                       # instead of the platform-SDK provided one to avoid
                       # inadvertently taking dependencies on post-XP user32
@@ -217,6 +214,11 @@
                   'dependencies': [
                     '../printing/printing.gyp:printing',
                   ],
+                }],
+                ['component!="shared_library"', {  # http://crbug.com/339215
+                  'dependencies': [
+                    'chrome_dll_pdb_workaround',
+                   ],
                 }],
               ]
             }],
@@ -289,7 +291,7 @@
                   'dependencies': [
                     '../breakpad/breakpad.gyp:breakpad',
                     '../components/components.gyp:breakpad_component',
-                    'app/policy/cloud_policy_codegen.gyp:policy',
+                    '../components/components.gyp:policy',
                   ],
                   'sources': [
                     'app/chrome_breakpad_client.cc',
@@ -356,12 +358,17 @@
             'CHROME_MULTIPLE_DLL_CHILD',
           ],
           'sources': [
-            '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/chrome/extensions_api_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_dll_version.rc',
             'app/chrome_main.cc',
             'app/chrome_main_delegate.cc',
             'app/chrome_main_delegate.h',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '<(DEPTH)/chrome_elf/chrome_elf.gyp:chrome_elf',
+              ],
+            }],
           ],
         },  # target chrome_child_dll
       ],

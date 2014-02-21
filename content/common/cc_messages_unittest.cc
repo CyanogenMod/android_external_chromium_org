@@ -27,6 +27,7 @@ using cc::RenderPassDrawQuad;
 using cc::ResourceProvider;
 using cc::SharedQuadState;
 using cc::SolidColorDrawQuad;
+using cc::SurfaceDrawQuad;
 using cc::TextureDrawQuad;
 using cc::TileDrawQuad;
 using cc::TransferableResource;
@@ -105,6 +106,10 @@ class CCMessagesTest : public testing::Test {
         Compare(StreamVideoDrawQuad::MaterialCast(a),
                 StreamVideoDrawQuad::MaterialCast(b));
         break;
+      case DrawQuad::SURFACE_CONTENT:
+        Compare(SurfaceDrawQuad::MaterialCast(a),
+                SurfaceDrawQuad::MaterialCast(b));
+        break;
       case DrawQuad::YUV_VIDEO_CONTENT:
         Compare(YUVVideoDrawQuad::MaterialCast(a),
                 YUVVideoDrawQuad::MaterialCast(b));
@@ -159,6 +164,10 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a->matrix, b->matrix);
   }
 
+  void Compare(const SurfaceDrawQuad* a, const SurfaceDrawQuad* b) {
+    EXPECT_EQ(a->surface_id, b->surface_id);
+  }
+
   void Compare(const TextureDrawQuad* a, const TextureDrawQuad* b) {
     EXPECT_EQ(a->resource_id, b->resource_id);
     EXPECT_EQ(a->premultiplied_alpha, b->premultiplied_alpha);
@@ -189,13 +198,15 @@ class CCMessagesTest : public testing::Test {
 
   void Compare(const TransferableResource& a, const TransferableResource& b) {
     EXPECT_EQ(a.id, b.id);
-    EXPECT_EQ(a.sync_point, b.sync_point);
     EXPECT_EQ(a.format, b.format);
-    EXPECT_EQ(a.target, b.target);
     EXPECT_EQ(a.filter, b.filter);
     EXPECT_EQ(a.size.ToString(), b.size.ToString());
-    for (size_t i = 0; i < arraysize(a.mailbox.name); ++i)
-      EXPECT_EQ(a.mailbox.name[i], b.mailbox.name[i]);
+    for (size_t i = 0; i < arraysize(a.mailbox_holder.mailbox.name); ++i) {
+      EXPECT_EQ(a.mailbox_holder.mailbox.name[i],
+                b.mailbox_holder.mailbox.name[i]);
+    }
+    EXPECT_EQ(a.mailbox_holder.texture_target, b.mailbox_holder.texture_target);
+    EXPECT_EQ(a.mailbox_holder.sync_point, b.mailbox_holder.sync_point);
   }
 };
 
@@ -362,6 +373,17 @@ TEST_F(CCMessagesTest, AllQuads) {
   scoped_ptr<DrawQuad> streamvideo_cmp = streamvideo_in->Copy(
       streamvideo_in->shared_quad_state);
 
+  int arbitrary_surface_id = 3;
+  scoped_ptr<SurfaceDrawQuad> surface_in = SurfaceDrawQuad::Create();
+  surface_in->SetAll(shared_state3_in.get(),
+                         arbitrary_rect2,
+                         arbitrary_rect2_inside_rect2,
+                         arbitrary_rect1_inside_rect2,
+                         arbitrary_bool1,
+                         arbitrary_surface_id);
+  scoped_ptr<DrawQuad> surface_cmp = surface_in->Copy(
+      surface_in->shared_quad_state);
+
   scoped_ptr<TextureDrawQuad> texture_in = TextureDrawQuad::Create();
   texture_in->SetAll(shared_state3_in.get(),
                      arbitrary_rect2,
@@ -422,6 +444,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   pass_in->shared_quad_state_list.push_back(shared_state3_in.Pass());
   pass_in->quad_list.push_back(solidcolor_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(streamvideo_in.PassAs<DrawQuad>());
+  pass_in->quad_list.push_back(surface_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(texture_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(tile_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(yuvvideo_in.PassAs<DrawQuad>());
@@ -442,6 +465,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   pass_cmp->shared_quad_state_list.push_back(shared_state3_cmp.Pass());
   pass_cmp->quad_list.push_back(solidcolor_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(streamvideo_cmp.PassAs<DrawQuad>());
+  pass_cmp->quad_list.push_back(surface_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(texture_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(tile_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(yuvvideo_cmp.PassAs<DrawQuad>());
@@ -449,7 +473,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   // Make sure the in and cmp RenderPasses match.
   Compare(pass_cmp.get(), pass_in.get());
   ASSERT_EQ(3u, pass_in->shared_quad_state_list.size());
-  ASSERT_EQ(9u, pass_in->quad_list.size());
+  ASSERT_EQ(10u, pass_in->quad_list.size());
   for (size_t i = 0; i < 3; ++i) {
     Compare(pass_cmp->shared_quad_state_list[i],
             pass_in->shared_quad_state_list[i]);
@@ -481,7 +505,7 @@ TEST_F(CCMessagesTest, AllQuads) {
       frame_out.render_pass_list.begin());
   Compare(pass_cmp.get(), pass_out.get());
   ASSERT_EQ(3u, pass_out->shared_quad_state_list.size());
-  ASSERT_EQ(9u, pass_out->quad_list.size());
+  ASSERT_EQ(10u, pass_out->quad_list.size());
   for (size_t i = 0; i < 3; ++i) {
     Compare(pass_cmp->shared_quad_state_list[i],
             pass_out->shared_quad_state_list[i]);
@@ -617,37 +641,33 @@ TEST_F(CCMessagesTest, Resources) {
   unsigned int arbitrary_uint1 = 71234838;
   unsigned int arbitrary_uint2 = 53589793;
 
-  GLbyte arbitrary_mailbox1[64] = {
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
-    1, 2, 3, 4
-  };
+  GLbyte arbitrary_mailbox1[GL_MAILBOX_SIZE_CHROMIUM] = {
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2,
+      3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4,
+      5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4};
 
-  GLbyte arbitrary_mailbox2[64] = {
-    0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 2, 4, 6, 8, 0,
-    0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 2, 4, 6, 8, 0,
-    0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 2, 4, 6, 8, 0,
-    0, 9, 8, 7
-  };
+  GLbyte arbitrary_mailbox2[GL_MAILBOX_SIZE_CHROMIUM] = {
+      0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 2, 4, 6, 8, 0, 0, 9,
+      8, 7, 6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 2, 4, 6, 8, 0, 0, 9, 8, 7,
+      6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 2, 4, 6, 8, 0, 0, 9, 8, 7};
 
   TransferableResource arbitrary_resource1;
   arbitrary_resource1.id = 2178312;
-  arbitrary_resource1.sync_point = arbitrary_uint1;
   arbitrary_resource1.format = cc::RGBA_8888;
-  arbitrary_resource1.target = GL_TEXTURE_2D;
   arbitrary_resource1.filter = 53;
   arbitrary_resource1.size = gfx::Size(37189, 123123);
-  arbitrary_resource1.mailbox.SetName(arbitrary_mailbox1);
+  arbitrary_resource1.mailbox_holder.mailbox.SetName(arbitrary_mailbox1);
+  arbitrary_resource1.mailbox_holder.texture_target = GL_TEXTURE_2D;
+  arbitrary_resource1.mailbox_holder.sync_point = arbitrary_uint1;
 
   TransferableResource arbitrary_resource2;
   arbitrary_resource2.id = 789132;
-  arbitrary_resource2.sync_point = arbitrary_uint2;
   arbitrary_resource2.format = cc::RGBA_4444;
-  arbitrary_resource2.target = GL_TEXTURE_EXTERNAL_OES;
   arbitrary_resource2.filter = 47;
   arbitrary_resource2.size = gfx::Size(89123, 23789);
-  arbitrary_resource2.mailbox.SetName(arbitrary_mailbox2);
+  arbitrary_resource2.mailbox_holder.mailbox.SetName(arbitrary_mailbox2);
+  arbitrary_resource2.mailbox_holder.texture_target = GL_TEXTURE_EXTERNAL_OES;
+  arbitrary_resource2.mailbox_holder.sync_point = arbitrary_uint2;
 
   scoped_ptr<RenderPass> renderpass_in = RenderPass::Create();
   renderpass_in->SetNew(
@@ -696,6 +716,9 @@ TEST_F(CCMessagesTest, LargestQuadType) {
         break;
       case cc::DrawQuad::SOLID_COLOR:
         largest = std::max(largest, sizeof(cc::SolidColorDrawQuad));
+        break;
+      case cc::DrawQuad::SURFACE_CONTENT:
+        largest = std::max(largest, sizeof(cc::SurfaceDrawQuad));
         break;
       case cc::DrawQuad::TILED_CONTENT:
         largest = std::max(largest, sizeof(cc::TileDrawQuad));

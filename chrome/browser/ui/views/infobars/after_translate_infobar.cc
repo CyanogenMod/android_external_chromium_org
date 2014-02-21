@@ -37,48 +37,44 @@ AfterTranslateInfoBar::~AfterTranslateInfoBar() {
 void AfterTranslateInfoBar::Layout() {
   TranslateInfoBarBase::Layout();
 
-  int available_width = std::max(0, EndX() - StartX() - ContentMinimumWidth());
-  gfx::Size label_1_size = label_1_->GetPreferredSize();
-  label_1_->SetBounds(StartX(), OffsetY(label_1_size),
-      std::min(label_1_size.width(), available_width), label_1_size.height());
-  available_width = std::max(0, available_width - label_1_size.width());
+  int x = StartX();
+  Labels labels;
+  labels.push_back(label_1_);
+  labels.push_back(label_2_);
+  labels.push_back(label_3_);
+  AssignWidths(&labels, std::max(0, EndX() - x - NonLabelWidth()));
+
+  label_1_->SetPosition(gfx::Point(x, OffsetY(label_1_)));
+  if (!label_1_->text().empty())
+     x = label_1_->bounds().right() + kButtonInLabelSpacing;
 
   views::MenuButton* first_button, * second_button;
   GetButtons(&first_button, &second_button);
-  gfx::Size first_button_size = first_button->GetPreferredSize();
-  first_button->SetBounds(label_1_->bounds().right() + kButtonInLabelSpacing,
-      OffsetY(first_button_size), first_button_size.width(),
-      first_button_size.height());
+  first_button->SetPosition(gfx::Point(x, OffsetY(first_button)));
+  x = first_button->bounds().right();
 
-  gfx::Size label_2_size = label_2_->GetPreferredSize();
-  label_2_->SetBounds(first_button->bounds().right() + kButtonInLabelSpacing,
-      OffsetY(label_2_size), std::min(label_2_size.width(), available_width),
-      label_2_size.height());
-  available_width = std::max(0, available_width - label_2_size.width());
+  label_2_->SetPosition(
+      gfx::Point(x + kButtonInLabelSpacing, OffsetY(label_2_)));
+  if (!label_2_->text().empty())
+    x = label_2_->bounds().right();
 
   if (!autodetermined_source_language_) {
-    gfx::Size second_button_size = second_button->GetPreferredSize();
-    second_button->SetBounds(label_2_->bounds().right() + kButtonInLabelSpacing,
-        OffsetY(second_button_size), second_button_size.width(),
-        second_button_size.height());
+    x += label_2_->text().empty() ?
+        kButtonButtonSpacing : kButtonInLabelSpacing;
+    second_button->SetPosition(gfx::Point(x, OffsetY(second_button)));
+    x = second_button->bounds().right();
 
-    gfx::Size label_3_size = label_3_->GetPreferredSize();
-    label_3_->SetBounds(second_button->bounds().right() + kButtonInLabelSpacing,
-        OffsetY(label_3_size), std::min(label_3_size.width(), available_width),
-        label_3_size.height());
+    label_3_->SetPosition(
+        gfx::Point(x + kButtonInLabelSpacing, OffsetY(label_3_)));
+    if (!label_3_->text().empty())
+      x = label_3_->bounds().right();
   }
 
-  gfx::Size revert_button_size = revert_button_->GetPreferredSize();
-  revert_button_->SetBounds(
-      (autodetermined_source_language_ ?
-          label_2_ : label_3_)->bounds().right() + kButtonInLabelSpacing,
-      OffsetY(revert_button_size),
-      revert_button_size.width(),
-      revert_button_size.height());
+  revert_button_->SetPosition(
+      gfx::Point(x + kEndOfLabelSpacing, OffsetY(revert_button_)));
 
-  gfx::Size options_size = options_menu_button_->GetPreferredSize();
-  options_menu_button_->SetBounds(EndX() - options_size.width(),
-      OffsetY(options_size), options_size.width(), options_size.height());
+  options_menu_button_->SetPosition(gfx::Point(
+      EndX() - options_menu_button_->width(), OffsetY(options_menu_button_)));
 }
 
 void AfterTranslateInfoBar::ViewHierarchyChanged(
@@ -88,7 +84,7 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(
     return;
   }
 
-  std::vector<string16> strings;
+  std::vector<base::string16> strings;
   TranslateInfoBarDelegate::GetAfterTranslateStrings(
       &strings, &swapped_language_buttons_, autodetermined_source_language_);
   DCHECK_EQ(autodetermined_source_language_ ? 2U : 3U, strings.size());
@@ -97,11 +93,11 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(
   AddChildView(label_1_);
 
   TranslateInfoBarDelegate* delegate = GetDelegate();
-  original_language_menu_button_ = CreateMenuButton(string16(), this);
+  original_language_menu_button_ = CreateMenuButton(base::string16(), this);
   original_language_menu_model_.reset(new TranslateLanguageMenuModel(
       TranslateLanguageMenuModel::ORIGINAL, delegate, this,
       original_language_menu_button_, true));
-  target_language_menu_button_ = CreateMenuButton(string16(), this);
+  target_language_menu_button_ = CreateMenuButton(base::string16(), this);
   target_language_menu_model_.reset(new TranslateLanguageMenuModel(
       TranslateLanguageMenuModel::TARGET, delegate, this,
       target_language_menu_button_, true));
@@ -118,8 +114,8 @@ void AfterTranslateInfoBar::ViewHierarchyChanged(
   AddChildView(second_button);
   if (autodetermined_source_language_)
     second_button->SetVisible(false);
-  label_3_ =
-      CreateLabel(autodetermined_source_language_ ? string16() : strings[2]);
+  label_3_ = CreateLabel(autodetermined_source_language_ ?
+      base::string16() : strings[2]);
   AddChildView(label_3_);
 
   revert_button_ = CreateLabelButton(this,
@@ -154,16 +150,10 @@ void AfterTranslateInfoBar::ButtonPressed(views::Button* sender,
     TranslateInfoBarBase::ButtonPressed(sender, event);
 }
 
-int AfterTranslateInfoBar::ContentMinimumWidth() const {
-  return
-      (kButtonInLabelSpacing +
-           original_language_menu_button_->GetPreferredSize().width() +
-           kButtonInLabelSpacing) +
-      (kButtonInLabelSpacing +
-           target_language_menu_button_->GetPreferredSize().width() +
-           kButtonInLabelSpacing) +
-      (kButtonInLabelSpacing + revert_button_->GetPreferredSize().width()) +
-      (kEndOfLabelSpacing + options_menu_button_->GetPreferredSize().width());
+int AfterTranslateInfoBar::ContentMinimumWidth() {
+  return label_1_->GetMinimumSize().width() +
+      label_2_->GetMinimumSize().width() + label_3_->GetMinimumSize().width() +
+      NonLabelWidth();
 }
 
 void AfterTranslateInfoBar::OnMenuButtonClicked(views::View* source,
@@ -190,4 +180,21 @@ void AfterTranslateInfoBar::GetButtons(
   *second_button = target_language_menu_button_;
   if (swapped_language_buttons_ || autodetermined_source_language_)
     std::swap(*first_button, *second_button);
+}
+
+int AfterTranslateInfoBar::NonLabelWidth() const {
+  views::MenuButton* first_button, *second_button;
+  GetButtons(&first_button, &second_button);
+  int width = (label_1_->text().empty() ? 0 : kButtonInLabelSpacing) +
+      first_button->width() +
+      (label_2_->text().empty() ? 0 : kButtonInLabelSpacing);
+  if (!autodetermined_source_language_) {
+    width +=
+        (label_2_->text().empty() ?
+            kButtonButtonSpacing : kButtonInLabelSpacing) +
+        second_button->width() +
+        (label_3_->text().empty() ? 0 : kButtonInLabelSpacing);
+  }
+  return width + kEndOfLabelSpacing + revert_button_->width() +
+      kEndOfLabelSpacing + options_menu_button_->width();
 }

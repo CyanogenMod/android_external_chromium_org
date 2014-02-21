@@ -14,6 +14,8 @@
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/layout/grid_layout.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 namespace examples {
 
@@ -107,9 +109,9 @@ int TableExample::RowCount() {
   return 10;
 }
 
-string16 TableExample::GetText(int row, int column_id) {
+base::string16 TableExample::GetText(int row, int column_id) {
   if (row == -1)
-    return string16();
+    return base::string16();
 
   const char* const cells[5][4] = {
     { "Orange", "Orange", "South america", "$5" },

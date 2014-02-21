@@ -13,6 +13,7 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_utils.h"
 #include "extensions/common/feature_switch.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -81,11 +82,13 @@ class ExtensionServiceTestBase : public testing::Test {
   static ExtensionServiceInitParams CreateDefaultInitParamsInTempDir(
       base::ScopedTempDir* temp_dir);
 
+  // Destroy temp_dir_ after thread_bundle_ so clean-up tasks can still use the
+  // directory.
+  base::ScopedTempDir temp_dir_;
   // Destroying at_exit_manager_ will delete all LazyInstances, so it must come
   // after thread_bundle_ in the destruction order.
   base::ShadowingAtExitManager at_exit_manager_;
   content::TestBrowserThreadBundle thread_bundle_;
-  base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingProfile> profile_;
   base::FilePath extensions_install_dir_;
   base::FilePath data_dir_;
@@ -94,6 +97,9 @@ class ExtensionServiceTestBase : public testing::Test {
   extensions::ManagementPolicy* management_policy_;
   scoped_ptr<ExtensionSyncService> extension_sync_service_;
   size_t expected_extensions_count_;
+  content::InProcessUtilityThreadHelper in_process_utility_thread_helper_;
+
+  extensions::ExtensionRegistry* registry_;
 
 #if defined OS_CHROMEOS
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;

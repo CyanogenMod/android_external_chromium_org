@@ -5,13 +5,15 @@
 #ifndef UI_MESSAGE_CENTER_VIEWS_MESSAGE_CENTER_VIEW_H_
 #define UI_MESSAGE_CENTER_VIEWS_MESSAGE_CENTER_VIEW_H_
 
-#include "ui/views/view.h"
 
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/notification_list.h"
+#include "ui/message_center/views/message_center_controller.h"
+#include "ui/message_center/views/message_view.h"
 #include "ui/views/controls/button/button.h"
+#include "ui/views/view.h"
 
 namespace gfx {
 class MultiAnimation;
@@ -30,6 +32,7 @@ class MessageCenterButtonBar;
 class MessageCenterTray;
 class MessageCenterView;
 class MessageView;
+class MessageViewContextMenuController;
 class MessageListView;
 class NotificationView;
 class NotifierSettingsView;
@@ -38,6 +41,7 @@ class NotifierSettingsView;
 
 class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
                                                 public MessageCenterObserver,
+                                                public MessageCenterController,
                                                 public gfx::AnimationDelegate {
  public:
   MessageCenterView(MessageCenter* message_center,
@@ -74,6 +78,17 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
                                      bool by_user) OVERRIDE;
   virtual void OnNotificationUpdated(const std::string& id) OVERRIDE;
 
+  // Overridden from MessageCenterController:
+  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
+  virtual void RemoveNotification(const std::string& notification_id,
+                                  bool by_user) OVERRIDE;
+  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) OVERRIDE;
+  virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
+  virtual void ClickOnNotificationButton(const std::string& notification_id,
+                                         int button_index) OVERRIDE;
+
   // Overridden from gfx::AnimationDelegate:
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
@@ -88,6 +103,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
 
   MessageCenter* message_center_;  // Weak reference.
   MessageCenterTray* tray_;  // Weak reference.
+
   // Map notification_id->NotificationView*. It contains all NotificaitonViews
   // currently displayed in MessageCenter.
   typedef std::map<std::string, NotificationView*> NotificationViewsMap;
@@ -118,6 +134,8 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   // True when the widget is closing so that further operations should be
   // ignored.
   bool is_closing_;
+
+  scoped_ptr<MessageViewContextMenuController> context_menu_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageCenterView);
 };

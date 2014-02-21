@@ -19,6 +19,11 @@ namespace chromeos {
 // and is used both in test cases in place of a mock and on the Linux desktop.
 class CHROMEOS_EXPORT FakeNfcAdapterClient : public NfcAdapterClient {
  public:
+  // The object paths for the adapters that are being emulated.
+  static const char kAdapterPath0[];
+  static const char kAdapterPath1[];
+
+  // Properties structure that provides fake behavior for D-Bus calls.
   struct Properties : public NfcAdapterClient::Properties {
     explicit Properties(const PropertyChangedCallback& callback);
     virtual ~Properties();
@@ -51,13 +56,34 @@ class CHROMEOS_EXPORT FakeNfcAdapterClient : public NfcAdapterClient {
       const base::Closure& callback,
       const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE;
 
-  // Sets the adapter as |present|.
+  // Sets the adapter as |present|. Used for testing.
   void SetAdapterPresent(bool present);
   void SetSecondAdapterPresent(bool present);
 
-  // The object paths for the adapters that are being emulated.
-  static const char kAdapterPath0[];
-  static const char kAdapterPath1[];
+  // Tells the FakeNfcAdapterClient to add the device or tag with the given path
+  // to its corresponding list for |kAdapterPath0|, if it is not already in
+  // the list and promptly triggers a property changed signal. This method will
+  // also fail, if the polling property of the adapter is false and will set it
+  // to false on success.
+  void SetDevice(const dbus::ObjectPath& device_path);
+  void SetTag(const dbus::ObjectPath& tag_path);
+
+  // Tells the FakeNfcAdapterClient to remove the device or tag with the given
+  // path from its corresponding list exposed for |kAdapterPath0|, if it
+  // is in the list. On success, this method will mark the polling property of
+  // the adapter to true.
+  void UnsetDevice(const dbus::ObjectPath& device_path);
+  void UnsetTag(const dbus::ObjectPath& tag_path);
+
+  // Sets a flag that determines whether FakeNfcAdapterClient should notify
+  // FakeNfcDeviceClient or FakeNfcTagClient to start a pairing simulation as a
+  // result of a call to StartPollLoop(). This is enabled by default. If
+  // enabled, the first call to StartPollLoop, will initiate a tag pairing
+  // simulation. The simulation will alternate between device and tag pairing on
+  // each successive call to StartPollLoop. This behavior, which is meant for
+  // feature development based on fake classes, can be disabled to allow manual
+  // control for unit tests.
+  void EnablePairingOnPoll(bool enabled);
 
  private:
   // Property changed callback passed when we create Properties* structures.
@@ -71,9 +97,17 @@ class CHROMEOS_EXPORT FakeNfcAdapterClient : public NfcAdapterClient {
   scoped_ptr<Properties> properties_;
   scoped_ptr<Properties> second_properties_;
 
-  // Whether the adapter and second adapter is present or not.
+  // Whether the adapter and second adapter are present or not.
   bool present_;
   bool second_present_;
+
+  // If true, a pairing simulation is initiated on a successful call to
+  // StartPollLoop().
+  bool start_pairing_on_poll_;
+
+  // If true, device pairing will be simulated on the next call to
+  // StartPollLoop. Otherwise, tag pairing will be simulated.
+  bool device_pairing_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeNfcAdapterClient);
 };

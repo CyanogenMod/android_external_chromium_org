@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -25,7 +26,7 @@ const char kModemStatusKeyName[] = "modem-status";
 const char kWiMaxStatusKeyName[] = "wimax-status";
 const char kUserLogFileKeyName[] = "user_log_files";
 
-namespace chromeos {
+namespace system_logs {
 
 DebugDaemonLogSource::DebugDaemonLogSource(bool scrub)
     : response_(new SystemLogsResponse()),
@@ -41,7 +42,8 @@ void DebugDaemonLogSource::Fetch(const SysLogsSourceCallback& callback) {
   DCHECK(callback_.is_null());
 
   callback_ = callback;
-  DebugDaemonClient* client = DBusThreadManager::Get()->GetDebugDaemonClient();
+  chromeos::DebugDaemonClient* client =
+      chromeos::DBusThreadManager::Get()->GetDebugDaemonClient();
 
   client->GetRoutes(true,   // Numeric
                     false,  // No IPv6
@@ -133,6 +135,16 @@ void DebugDaemonLogSource::OnGetUserLogFiles(
   if (succeeded) {
     SystemLogsResponse* response = new SystemLogsResponse;
     std::vector<Profile*> last_used = ProfileManager::GetLastOpenedProfiles();
+
+    if (last_used.empty() &&
+        chromeos::UserManager::IsInitialized() &&
+        chromeos::UserManager::Get()->IsLoggedInAsKioskApp()) {
+      // Use the kiosk app profile explicitly because kiosk session does not
+      // open any browsers thus ProfileManager::GetLastOpenedProfiles returns
+      // an empty |last_used|.
+      last_used.push_back(ProfileManager::GetActiveUserProfile());
+    }
+
     content::BrowserThread::PostBlockingPoolTaskAndReply(
         FROM_HERE,
         base::Bind(&DebugDaemonLogSource::ReadUserLogFiles,
@@ -188,4 +200,4 @@ void DebugDaemonLogSource::RequestCompleted() {
   callback_.Run(response_.get());
 }
 
-}  // namespace chromeos
+}  // namespace system_logs

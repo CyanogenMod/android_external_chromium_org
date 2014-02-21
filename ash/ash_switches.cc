@@ -66,6 +66,19 @@ const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
 const char kAshDisableDisplayChangeLimiter[] =
     "ash-disable-display-change-limiter";
 
+// Disable ability to dock windows at the desktop edge.
+const char kAshDisableDockedWindows[] = "ash-disable-docked-windows";
+
+// Disallow items to be dragged from the app launcher list into the launcher.
+const char kAshDisableDragAndDropAppListToLauncher[] =
+    "ash-disable-drag-and-drop-applist-to-launcher";
+
+// Disable dragging items off the shelf to unpin them.
+const char kAshDisableDragOffShelf[] = "ash-disable-drag-off-shelf";
+
+// Disables overview mode for window switching.
+const char kAshDisableOverviewMode[] = "ash-disable-overview-mode";
+
 #if defined(OS_CHROMEOS)
 // Disable the notification when a low-power USB charger is connected.
 const char kAshDisableUsbChargerNotification[] =
@@ -91,21 +104,14 @@ const char kAshEnableAlternateFrameCaptionButtonStyle[] =
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 
-// Disable ability to dock windows at the desktop edge.
-const char kAshDisableDockedWindows[] = "ash-disable-docked-windows";
-
-// Disable dragging items off the shelf to unpin them.
-const char kAshDisableDragOffShelf[] = "ash-disable-drag-off-shelf";
-
 // Enables putting all windows into immersive fullscreen via <F4>.
 const char kAshEnableImmersiveFullscreenForAllWindows[] =
     "ash-enable-immersive-all-windows";
 
-#if defined(OS_CHROMEOS)
-// Enables the "full multi profile mode" - as it was in M-31.
-const char kAshEnableFullMultiProfileMode[] =
-    "ash-enable-full-multi-profile-mode";
-#endif
+// Enables putting only browser windows into immersive fullscreen via <F4>.
+// <F4> puts all other windows into non-immersive fullscreen.
+const char kAshEnableImmersiveFullscreenForBrowserOnly[] =
+    "ash-enable-immersive-browser-only";
 
 #if defined(OS_LINUX)
 // Enable memory monitoring.
@@ -113,6 +119,10 @@ const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 #endif
 
 #if defined(OS_CHROMEOS)
+// Enables key bindings to scroll magnified screen.
+const char kAshEnableMagnifierKeyScroller[] =
+    "ash-enable-magnifier-key-scroller";
+
 // Enables the multi user icons in the system tray.
 const char kAshEnableMultiUserTray[] = "ash-enable-multi-user-tray";
 #endif
@@ -120,14 +130,15 @@ const char kAshEnableMultiUserTray[] = "ash-enable-multi-user-tray";
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
 
-// Disables overview mode for window switching.
-const char kAshDisableOverviewMode[] = "ash-disable-overview-mode";
-
 // Enables software based mirroring.
 const char kAshEnableSoftwareMirroring[] = "ash-enable-software-mirroring";
 
 // Enables "sticky" edges instead of "snap-to-edge"
 const char kAshEnableStickyEdges[] = "ash-enable-sticky-edges";
+
+// When this flag is set, system sounds will be played whether the
+// ChromeVox is enabled or not.
+const char kAshEnableSystemSounds[] = "ash-enable-system-sounds";
 
 // Enables showing the tray bubble by dragging on the shelf.
 const char kAshEnableTrayDragging[] = "ash-enable-tray-dragging";
@@ -177,10 +188,6 @@ const char kAshTouchHud[] = "ash-touch-hud";
 // crbug's [244983, 244990, 244994, 245005, 245012]
 const char kAshUseAlternateShelfLayout[] = "ash-use-alternate-shelf";
 
-// Flags explicitly show or hide the shelf alignment menu.
-const char kShowShelfAlignmentMenu[] = "show-launcher-alignment-menu";
-const char kHideShelfAlignmentMenu[] = "hide-launcher-alignment-menu";
-
 // Uses the 1st display in --ash-host-window-bounds as internal display.
 // This is for debugging on linux desktop.
 const char kAshUseFirstDisplayAsInternal[] =
@@ -199,9 +206,9 @@ const char kForceAshToDesktop[] = "ash-force-desktop";
 
 #endif
 
-// Disallow items to be dragged from the app launcher list into the launcher.
-const char kAshDisableDragAndDropAppListToLauncher[] =
-    "ash-disable-drag-and-drop-applist-to-launcher";
+// Flags explicitly show or hide the shelf alignment menu.
+const char kShowShelfAlignmentMenu[] = "show-launcher-alignment-menu";
+const char kHideShelfAlignmentMenu[] = "hide-launcher-alignment-menu";
 
 bool UseAlternateFrameCaptionButtonStyle() {
   // For the sake of simplicity, the alternate caption button style is only
@@ -221,19 +228,14 @@ bool UseDragOffShelf() {
       HasSwitch(kAshDisableDragOffShelf);
 }
 
+bool UseImmersiveFullscreenForAllWindows() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      kAshEnableImmersiveFullscreenForBrowserOnly);
+}
+
 bool ShowShelfAlignmentMenu() {
   return !CommandLine::ForCurrentProcess()->
       HasSwitch(kHideShelfAlignmentMenu);
-}
-
-// Returns true if the full multi profile mode (M-31 version) is active.
-bool UseFullMultiProfileMode() {
-#if defined(OS_CHROMEOS)
-  return CommandLine::ForCurrentProcess()->
-      HasSwitch(kAshEnableFullMultiProfileMode);
-#else
-  return false;
-#endif
 }
 
 bool UseMultiUserTray() {

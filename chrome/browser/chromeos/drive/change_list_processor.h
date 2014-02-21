@@ -33,14 +33,19 @@ class ResourceMetadata;
 class DirectoryFetchInfo {
  public:
   DirectoryFetchInfo() : changestamp_(0) {}
-  DirectoryFetchInfo(const std::string& resource_id,
+  DirectoryFetchInfo(const std::string& local_id,
+                     const std::string& resource_id,
                      int64 changestamp)
-      : resource_id_(resource_id),
+      : local_id_(local_id),
+        resource_id_(resource_id),
         changestamp_(changestamp) {
   }
 
   // Returns true if the object is empty.
-  bool empty() const { return resource_id_.empty(); }
+  bool empty() const { return local_id_.empty(); }
+
+  // Local ID of the directory.
+  const std::string& local_id() const { return local_id_; }
 
   // Resource ID of the directory.
   const std::string& resource_id() const { return resource_id_; }
@@ -53,6 +58,7 @@ class DirectoryFetchInfo {
   std::string ToString() const;
 
  private:
+  const std::string local_id_;
   const std::string resource_id_;
   const int64 changestamp_;
 };
@@ -74,6 +80,10 @@ class ChangeList {
   }
   const GURL& next_url() const { return next_url_; }
   int64 largest_changestamp() const { return largest_changestamp_; }
+
+  void set_largest_changestamp(int64 largest_changestamp) {
+    largest_changestamp_ = largest_changestamp;
+  }
 
  private:
   std::vector<ResourceEntry> entries_;
@@ -112,6 +122,12 @@ class ChangeListProcessor {
       const DirectoryFetchInfo& directory_fetch_info,
       ScopedVector<ChangeList> change_lists,
       base::FilePath* out_file_path);
+
+  // Sets |entry|'s parent_local_id.
+  static FileError SetParentLocalIdOfEntry(
+      ResourceMetadata* resource_metadata,
+      ResourceEntry* entry,
+      const std::string& parent_resource_id);
 
  private:
   typedef std::map<std::string /* resource_id */, ResourceEntry>

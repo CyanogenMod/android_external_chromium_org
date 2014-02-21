@@ -9,20 +9,30 @@
 #include <string>
 
 #include "ash/session_state_observer.h"
-#include "ash/wm/window_state_observer.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/aura/window_observer.h"
+#include "ui/views/corewm/transient_window_observer.h"
 
 class Browser;
+class MultiUserNotificationBlockerChromeOS;
+class MultiUserNotificationBlockerChromeOSTest;
 class Profile;
 
 namespace aura {
 class Window;
-class WindowObserver;
-}
+}  // namespace aura
+
+namespace ash {
+namespace test {
+class MultiUserWindowManagerChromeOSTest;
+}  // namespace test
+}  // namespace ash
 
 namespace chrome {
 
@@ -41,11 +51,12 @@ class AppObserver;
 //   visibility changes from the owning user. This way the visibility can be
 //   changed back to its requested state upon showing by us - or when the window
 //   gets detached from its current owning parent.
-class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
-                                       public ash::SessionStateObserver,
-                                       public aura::WindowObserver,
-                                       public content::NotificationObserver,
-                                       public ash::wm::WindowStateObserver {
+class MultiUserWindowManagerChromeOS
+    : public MultiUserWindowManager,
+      public ash::SessionStateObserver,
+      public aura::WindowObserver,
+      public content::NotificationObserver,
+      public views::corewm::TransientWindowObserver {
  public:
   // Create the manager and use |active_user_id| as the active user.
   explicit MultiUserWindowManagerChromeOS(const std::string& active_user_id);
@@ -58,11 +69,15 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
   virtual void ShowWindowForUser(
       aura::Window* window, const std::string& user_id) OVERRIDE;
   virtual bool AreWindowsSharedAmongUsers() OVERRIDE;
+  virtual void GetOwnersOfVisibleWindows(
+      std::set<std::string>* user_ids) OVERRIDE;
   virtual bool IsWindowOnDesktopOfUser(aura::Window* window,
                                        const std::string& user_id) OVERRIDE;
   virtual const std::string& GetUserPresentingWindow(
       aura::Window* window) OVERRIDE;
   virtual void AddUser(Profile* profile) OVERRIDE;
+  virtual void AddObserver(Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(Observer* observer) OVERRIDE;
 
   // SessionStateObserver overrides:
   virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE;
@@ -73,22 +88,31 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
                                           bool visible) OVERRIDE;
   virtual void OnWindowVisibilityChanged(aura::Window* window,
                                          bool visible) OVERRIDE;
-  virtual void OnAddTransientChild(aura::Window* window,
-                                   aura::Window* transient) OVERRIDE;
-  virtual void OnRemoveTransientChild(aura::Window* window,
-                                      aura::Window* transient) OVERRIDE;
 
-  // Window .. overrides:
-  virtual void OnWindowShowTypeChanged(
-      ash::wm::WindowState* state,
-      ash::wm::WindowShowType old_type) OVERRIDE;
+  // TransientWindowObserver overrides:
+  virtual void OnTransientChildAdded(aura::Window* window,
+                                     aura::Window* transient) OVERRIDE;
+  virtual void OnTransientChildRemoved(aura::Window* window,
+                                       aura::Window* transient) OVERRIDE;
 
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
                const content::NotificationSource& source,
                const content::NotificationDetails& details) OVERRIDE;
 
+  // Disable any animations for unit tests.
+  void SetAnimationsForTest(bool disable);
+
+  // Returns true when a user switch animation is running. For unit tests.
+  bool IsAnimationRunningForTest();
+
+  // Returns the current user for unit tests.
+  const std::string& GetCurrentUserForTest();
+
  private:
+  friend class ::MultiUserNotificationBlockerChromeOSTest;
+  friend class ash::test::MultiUserWindowManagerChromeOSTest;
+
   class WindowEntry {
    public:
     explicit WindowEntry(const std::string& user_id)
@@ -129,8 +153,31 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
   };
 
   typedef std::map<aura::Window*, WindowEntry*> WindowToEntryMap;
-  typedef std::map<std::string, AppObserver*> UserIDToShellWindowObserver;
+  typedef std::map<std::string, AppObserver*> UserIDToAppWindowObserver;
   typedef std::map<aura::Window*, bool> TransientWindowToVisibility;
+
+  // The animation step for the user change animation. First the old user gets
+  // hidden and then the new one gets presented.
+  enum AnimationStep {
+    HIDE_OLD_USER,
+    SHOW_NEW_USER
+  };
+
+  // Show a window for a user without switching the user.
+  // Returns true when the window moved to a new desktop.
+  bool ShowWindowForUserIntern(aura::Window* window,
+                               const std::string& user_id);
+
+  // Start the user change animation required for |animation_step|.
+  // Note that a call with SHOW_NEW_USER will finalize the animation and kill
+  // the timer (if there is one).
+  void TransitionUser(AnimationStep animtion_step);
+
+  // Start the user wallpaper animations.
+  void TransitionWallpaper(AnimationStep animtion_step);
+
+  // Start the user shelf animations.
+  void TransitionUserShelf(AnimationStep animtion_step);
 
   // Add a browser window to the system so that the owner can be remembered.
   void AddBrowserWindow(Browser* browser);
@@ -140,11 +187,17 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
   // distinguish state changes performed by this class vs. state changes
   // performed by the others. Note furthermore that system modal dialogs will
   // not get hidden. We will switch instead to the owners desktop.
-  void SetWindowVisibility(aura::Window* window, bool visible);
+  // The |animation_time_in_ms| is the time the animation should take. Set to 0
+  // if it should get set instantly.
+  void SetWindowVisibility(aura::Window* window,
+                           bool visible,
+                           int animation_time_in_ms);
 
   // Show the window and its transient children. However - if a transient child
   // was turned invisible by some other operation, it will stay invisible.
-  void ShowWithTransientChildrenRecursive(aura::Window* window);
+  // Use the given |animation_time_in_ms| for transitioning.
+  void ShowWithTransientChildrenRecursive(aura::Window* window,
+                                          int animation_time_in_ms);
 
   // Find the first owned window in the chain.
   // Returns NULL when the window itself is owned.
@@ -160,12 +213,20 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
   // unregistered.
   void RemoveTransientOwnerRecursive(aura::Window* window);
 
+  // Animate a |window| to be |visible| in |animation_time_in_ms|.
+  void SetWindowVisible(aura::Window* window,
+                        bool visible,
+                        int aimation_time_in_ms);
+
   // A lookup to see to which user the given window belongs to, where and if it
   // should get shown.
   WindowToEntryMap window_to_entry_;
 
-  // A list of all known users and their shell window observers.
-  UserIDToShellWindowObserver user_id_to_app_observer_;
+  // A list of all known users and their app window observers.
+  UserIDToAppWindowObserver user_id_to_app_observer_;
+
+  // An observer list to be notified upon window owner changes.
+  ObserverList<Observer> observers_;
 
   // A map which remembers for owned transient windows their own visibility.
   TransientWindowToVisibility transient_window_to_visibility_;
@@ -174,6 +235,10 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
   // visibility state in various cases. The state is stored here instead of
   // being read from the user manager to be in sync while a switch occurs.
   std::string current_user_id_;
+
+  // The blocker which controls the desktop notification visibility based on the
+  // current multi-user status.
+  scoped_ptr<MultiUserNotificationBlockerChromeOS> notification_blocker_;
 
   // The notification registrar to track the creation of browser windows.
   content::NotificationRegistrar registrar_;
@@ -184,6 +249,13 @@ class MultiUserWindowManagerChromeOS : public MultiUserWindowManager,
   // Caching the current multi profile mode since the detection which mode is
   // used is quite expensive.
   static MultiProfileMode multi_user_mode_;
+
+  // A timer which watches to executes the second part of a "user changed"
+  // animation. Note that this timer exists only during such an animation.
+  scoped_ptr<base::Timer> user_changed_animation_timer_;
+
+  // If true, all animations will be suppressed.
+  bool animations_disabled_;
 
   DISALLOW_COPY_AND_ASSIGN(MultiUserWindowManagerChromeOS);
 };

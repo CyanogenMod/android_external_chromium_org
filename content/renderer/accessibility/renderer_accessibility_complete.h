@@ -10,11 +10,11 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/memory/weak_ptr.h"
-#include "content/common/accessibility_node_data.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
+#include "ui/accessibility/ax_node_data.h"
 
 namespace blink {
 class WebDocument;
@@ -47,6 +47,8 @@ class CONTENT_EXPORT RendererAccessibilityComplete
   virtual void HandleWebAccessibilityEvent(
       const blink::WebAXObject& obj, blink::WebAXEvent event) OVERRIDE;
 
+  void HandleAXEvent(const blink::WebAXObject& obj, ui::AXEvent event);
+
   // In order to keep track of what nodes the browser knows about, we keep a
   // representation of the browser tree - just IDs and parent/child
   // relationships.
@@ -67,10 +69,8 @@ class CONTENT_EXPORT RendererAccessibilityComplete
 
   // Check the entire accessibility tree to see if any nodes have
   // changed location, by comparing their locations to the cached
-  // versions. If any have moved, append a event to |events|
-  // that updates the coordinates of these objects.
-  void AppendLocationChangeEvents(
-      std::vector<AccessibilityHostMsg_EventParams>* events);
+  // versions. If any have moved, send an IPC with the new locations.
+  void SendLocationChanges();
 
  private:
   // Serialize the given accessibility object |obj| and append it to
@@ -79,7 +79,7 @@ class CONTENT_EXPORT RendererAccessibilityComplete
   // The set of ids serialized is added to |ids_serialized|, and any
   // ids previously in that set are not serialized again.
   void SerializeChangedNodes(const blink::WebAXObject& obj,
-                             std::vector<AccessibilityNodeData>* dst,
+                             std::vector<ui::AXNodeData>* dst,
                              std::set<int>* ids_serialized);
 
   // Clear the given node and recursively delete all of its descendants
@@ -104,14 +104,14 @@ class CONTENT_EXPORT RendererAccessibilityComplete
   // corresponding WebAccessibility node as a child of |dst|.
   void RecursiveAddEditableTextNodesToTree(
       const blink::WebAXObject& src,
-      AccessibilityNodeData* dst);
+      ui::AXNodeData* dst);
 
-  // Build a tree of serializable AccessibilityNodeData nodes to send to the
+  // Build a tree of serializable ui::AXNodeData nodes to send to the
   // browser process, given a WebAXObject node from WebKit.
   // Modifies |dst| in-place, it's assumed to be empty.
   void BuildAccessibilityTree(const blink::WebAXObject& src,
                               bool include_children,
-                              AccessibilityNodeData* dst);
+                              ui::AXNodeData* dst);
 
   // So we can queue up tasks to be executed later.
   base::WeakPtrFactory<RendererAccessibilityComplete> weak_factory_;
@@ -131,14 +131,8 @@ class CONTENT_EXPORT RendererAccessibilityComplete
   // is fixed.
   gfx::Size last_scroll_offset_;
 
-  // The current accessibility mode.
-  AccessibilityMode mode_;
-
   // Set if we are waiting for an accessibility event ack.
   bool ack_pending_;
-
-  // True if verbose logging of accessibility events is on.
-  bool logging_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererAccessibilityComplete);
 };

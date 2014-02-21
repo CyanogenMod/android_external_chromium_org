@@ -87,17 +87,17 @@ const int kBubbleTipSizeTopBottom = 11;
 const float kMaximumLengthMovedToActivate = 4.0f;
 
 // Returns true if the mnemonic of |menu| matches key.
-bool MatchesMnemonic(MenuItemView* menu, char16 key) {
+bool MatchesMnemonic(MenuItemView* menu, base::char16 key) {
   return menu->GetMnemonic() == key;
 }
 
 // Returns true if |menu| doesn't have a mnemonic and first character of the its
 // title is |key|.
-bool TitleMatchesMnemonic(MenuItemView* menu, char16 key) {
+bool TitleMatchesMnemonic(MenuItemView* menu, base::char16 key) {
   if (menu->GetMnemonic())
     return false;
 
-  string16 lower_title = base::i18n::ToLower(menu->title());
+  base::string16 lower_title = base::i18n::ToLower(menu->title());
   return !lower_title.empty() && lower_title[0] == key;
 }
 
@@ -385,7 +385,7 @@ MenuItemView* MenuController::Run(Widget* parent,
   // Close any open menus.
   SetSelection(NULL, SELECTION_UPDATE_IMMEDIATELY | SELECTION_EXIT);
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   // On Windows, if we select the menu item by touch and if the window at the
   // location is another window on the same thread, that window gets a
   // WM_MOUSEACTIVATE message and ends up activating itself, which is not
@@ -596,13 +596,11 @@ void MenuController::OnMouseEntered(SubmenuView* source,
   // do anything here.
 }
 
-#if defined(USE_AURA)
 bool MenuController::OnMouseWheel(SubmenuView* source,
                                   const ui::MouseWheelEvent& event) {
   MenuPart part = GetMenuPart(source, event.location());
   return part.submenu && part.submenu->OnMouseWheel(event);
 }
-#endif
 
 void MenuController::OnGestureEvent(SubmenuView* source,
                                     ui::GestureEvent* event) {
@@ -1003,16 +1001,11 @@ void MenuController::StartDrag(SubmenuView* source,
 }
 
 #if defined(OS_WIN)
-bool MenuController::Dispatch(const MSG& msg) {
+uint32_t MenuController::Dispatch(const MSG& msg) {
   DCHECK(blocking_run_);
 
-  if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED) {
-    // We must translate/dispatch the message here, otherwise we would drop
-    // the message on the floor.
-    TranslateMessage(&msg);
-    DispatchMessage(&msg);
-    return false;
-  }
+  if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED)
+    return (POST_DISPATCH_QUIT_LOOP | POST_DISPATCH_PERFORM_DEFAULT);
 
   // NOTE: we don't get WM_ACTIVATE or anything else interesting in here.
   switch (msg.message) {
@@ -1027,7 +1020,7 @@ bool MenuController::Dispatch(const MSG& msg) {
         item->GetDelegate()->ShowContextMenu(item, item->GetCommand(),
                                              screen_loc, source_type);
       }
-      return true;
+      return POST_DISPATCH_NONE;
     }
 
     // NOTE: focus wasn't changed when the menu was shown. As such, don't
@@ -1035,58 +1028,62 @@ bool MenuController::Dispatch(const MSG& msg) {
     case WM_KEYDOWN: {
       bool result = OnKeyDown(ui::KeyboardCodeFromNative(msg));
       TranslateMessage(&msg);
-      return result;
+      return result ? POST_DISPATCH_NONE : POST_DISPATCH_QUIT_LOOP;
     }
-    case WM_CHAR:
-      return !SelectByChar(static_cast<char16>(msg.wParam));
+    case WM_CHAR: {
+      bool should_exit = SelectByChar(static_cast<base::char16>(msg.wParam));
+      return should_exit ? POST_DISPATCH_QUIT_LOOP : POST_DISPATCH_NONE;
+    }
     case WM_KEYUP:
-      return true;
+      return POST_DISPATCH_NONE;
 
     case WM_SYSKEYUP:
       // We may have been shown on a system key, as such don't do anything
       // here. If another system key is pushed we'll get a WM_SYSKEYDOWN and
       // close the menu.
-      return true;
+      return POST_DISPATCH_NONE;
 
     case WM_CANCELMODE:
     case WM_SYSKEYDOWN:
       // Exit immediately on system keys.
       Cancel(EXIT_ALL);
-      return false;
+      return POST_DISPATCH_QUIT_LOOP;
 
     default:
       break;
   }
-  TranslateMessage(&msg);
-  DispatchMessage(&msg);
-  return exit_type_ == EXIT_NONE;
+  return POST_DISPATCH_PERFORM_DEFAULT |
+         (exit_type_ == EXIT_NONE ? POST_DISPATCH_NONE
+                                  : POST_DISPATCH_QUIT_LOOP);
 }
-#elif defined(USE_AURA)
-bool MenuController::Dispatch(const base::NativeEvent& event) {
-  if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED) {
-    aura::Env::GetInstance()->GetDispatcher()->Dispatch(event);
-    return false;
-  }
+#else
+uint32_t MenuController::Dispatch(const base::NativeEvent& event) {
+  if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED)
+    return (POST_DISPATCH_QUIT_LOOP | POST_DISPATCH_PERFORM_DEFAULT);
+
   // Activates mnemonics only when it it pressed without modifiers except for
   // caps and shift.
   int flags = ui::EventFlagsFromNative(event) &
       ~ui::EF_CAPS_LOCK_DOWN & ~ui::EF_SHIFT_DOWN;
   if (flags == ui::EF_NONE) {
     switch (ui::EventTypeFromNative(event)) {
-      case ui::ET_KEY_PRESSED:
+      case ui::ET_KEY_PRESSED: {
         if (!OnKeyDown(ui::KeyboardCodeFromNative(event)))
-          return false;
+          return POST_DISPATCH_QUIT_LOOP;
 
-        return !SelectByChar(ui::KeyboardCodeFromNative(event));
+        bool should_exit = SelectByChar(ui::KeyboardCodeFromNative(event));
+        return should_exit ? POST_DISPATCH_QUIT_LOOP : POST_DISPATCH_NONE;
+      }
       case ui::ET_KEY_RELEASED:
-        return true;
+        return POST_DISPATCH_NONE;
       default:
         break;
     }
   }
 
-  aura::Env::GetInstance()->GetDispatcher()->Dispatch(event);
-  return exit_type_ == EXIT_NONE;
+  return POST_DISPATCH_PERFORM_DEFAULT |
+         (exit_type_ == EXIT_NONE ? POST_DISPATCH_NONE
+                                  : POST_DISPATCH_QUIT_LOOP);
 }
 #endif
 
@@ -2046,8 +2043,8 @@ void MenuController::CloseSubmenu() {
 
 MenuController::SelectByCharDetails MenuController::FindChildForMnemonic(
     MenuItemView* parent,
-    char16 key,
-    bool (*match_function)(MenuItemView* menu, char16 mnemonic)) {
+    base::char16 key,
+    bool (*match_function)(MenuItemView* menu, base::char16 mnemonic)) {
   SubmenuView* submenu = parent->GetSubmenu();
   DCHECK(submenu);
   SelectByCharDetails details;
@@ -2098,9 +2095,9 @@ bool MenuController::AcceptOrSelect(MenuItemView* parent,
   return false;
 }
 
-bool MenuController::SelectByChar(char16 character) {
-  char16 char_array[] = { character, 0 };
-  char16 key = base::i18n::ToLower(char_array)[0];
+bool MenuController::SelectByChar(base::char16 character) {
+  base::char16 char_array[] = { character, 0 };
+  base::char16 key = base::i18n::ToLower(char_array)[0];
   MenuItemView* item = pending_state_.item;
   if (!item->HasSubmenu() || !item->GetSubmenu()->IsShowing())
     item = item->GetParentMenuItem();
@@ -2133,16 +2130,15 @@ void MenuController::RepostEvent(SubmenuView* source,
   gfx::Screen* screen = gfx::Screen::GetScreenFor(native_view);
   gfx::NativeWindow window = screen->GetWindowAtScreenPoint(screen_loc);
 
-  if (!window)
-    return;
-
+  // On Windows, it is ok for window to be NULL. Please refer to the
+  // RepostLocatedEvent function for more information.
 #if defined(OS_WIN)
   // Release the capture.
   SubmenuView* submenu = state_.item->GetRootMenuItem()->GetSubmenu();
   submenu->ReleaseCapture();
 
   gfx::NativeView view = submenu->GetWidget()->GetNativeView();
-  if (view) {
+  if (view && window) {
     DWORD view_tid = GetWindowThreadProcessId(HWNDForNativeView(view), NULL);
     if (view_tid != GetWindowThreadProcessId(HWNDForNativeView(window), NULL)) {
       // Even though we have mouse capture, windows generates a mouse event if
@@ -2152,6 +2148,9 @@ void MenuController::RepostEvent(SubmenuView* source,
       return;
     }
   }
+#else
+  if (!window)
+    return;
 #endif
 
   scoped_ptr<ui::LocatedEvent> clone;
@@ -2230,12 +2229,13 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
           target_menu, active_mouse_view, &target_point);
       ui::MouseEvent mouse_entered_event(ui::ET_MOUSE_ENTERED,
                                          target_point, target_point,
-                                         0);
+                                         0, 0);
       active_mouse_view->OnMouseEntered(mouse_entered_event);
 
       ui::MouseEvent mouse_pressed_event(ui::ET_MOUSE_PRESSED,
                                          target_point, target_point,
-                                         event.flags());
+                                         event.flags(),
+                                         event.changed_button_flags());
       active_mouse_view->OnMousePressed(mouse_pressed_event);
     }
   }
@@ -2245,7 +2245,8 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
     View::ConvertPointToTarget(target_menu, active_mouse_view, &target_point);
     ui::MouseEvent mouse_dragged_event(ui::ET_MOUSE_DRAGGED,
                                        target_point, target_point,
-                                       event.flags());
+                                       event.flags(),
+                                       event.changed_button_flags());
     active_mouse_view->OnMouseDragged(mouse_dragged_event);
   }
 }
@@ -2261,7 +2262,7 @@ void MenuController::SendMouseReleaseToActiveView(SubmenuView* event_source,
                              &target_loc);
   View::ConvertPointFromScreen(active_mouse_view, &target_loc);
   ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, target_loc, target_loc,
-                               event.flags());
+                               event.flags(), event.changed_button_flags());
   // Reset active mouse view before sending mouse released. That way if it calls
   // back to us, we aren't in a weird state.
   SetActiveMouseView(NULL);
@@ -2293,7 +2294,7 @@ View* MenuController::GetActiveMouseView() {
 void MenuController::SetExitType(ExitType type) {
   exit_type_ = type;
   // Exit nested message loops as soon as possible. We do this as
-  // MessageLoop::Dispatcher is only invoked before native events, which means
+  // MessagePumpDispatcher is only invoked before native events, which means
   // its entirely possible for a Widget::CloseNow() task to be processed before
   // the next native message. By using QuitNow() we ensures the nested message
   // loop returns as soon as possible and avoids having deleted views classes

@@ -116,8 +116,8 @@ views::View* ProfileSigninConfirmationDialogViews::CreateExtraView() {
         l10n_util::GetStringUTF16(IDS_ENTERPRISE_SIGNIN_CONTINUE_NEW_STYLE);
     continue_signin_button_ =
         new views::LabelButton(this, continue_signin_text);
-    continue_signin_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
-    continue_signin_button_->set_focusable(true);
+    continue_signin_button_->SetStyle(views::Button::STYLE_BUTTON);
+    continue_signin_button_->SetFocusable(true);
   }
   return continue_signin_button_;
 }
@@ -161,8 +161,8 @@ void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
   // Create the prompt label.
   size_t offset;
   const base::string16 domain =
-      ASCIIToUTF16(gaia::ExtractDomainName(username_));
-  const base::string16 username = ASCIIToUTF16(username_);
+      base::ASCIIToUTF16(gaia::ExtractDomainName(username_));
+  const base::string16 username = base::ASCIIToUTF16(username_);
   const base::string16 prompt_text =
       l10n_util::GetStringFUTF16(
           IDS_ENTERPRISE_SIGNIN_ALERT_NEW_STYLE,
@@ -177,11 +177,13 @@ void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
 
   // Create the prompt bar.
   views::View* prompt_bar = new views::View;
-  prompt_bar->set_border(
-      views::Border::CreateSolidSidedBorder(
-          1, 0, 1, 0,
-          ui::GetSigninConfirmationPromptBarColor(
-              ui::kSigninConfirmationPromptBarBorderAlpha)));
+  prompt_bar->SetBorder(views::Border::CreateSolidSidedBorder(
+      1,
+      0,
+      1,
+      0,
+      ui::GetSigninConfirmationPromptBarColor(
+          ui::kSigninConfirmationPromptBarBorderAlpha)));
   prompt_bar->set_background(views::Background::CreateSolidBackground(
       kPromptBarBackgroundColor));
 

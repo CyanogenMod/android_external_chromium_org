@@ -6,10 +6,10 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -31,7 +31,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<SerialEventDispatcher> >
 // static
 ProfileKeyedAPIFactory<SerialEventDispatcher>*
     SerialEventDispatcher::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 // static

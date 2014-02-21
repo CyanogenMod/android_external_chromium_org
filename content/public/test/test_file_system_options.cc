@@ -7,7 +7,9 @@
 #include <string>
 #include <vector>
 
-namespace fileapi {
+using fileapi::FileSystemOptions;
+
+namespace content {
 
 FileSystemOptions CreateIncognitoFileSystemOptions() {
   std::vector<std::string> additional_allowed_schemes;
@@ -15,8 +17,9 @@ FileSystemOptions CreateIncognitoFileSystemOptions() {
   additional_allowed_schemes.push_back("chrome-extension");
 #endif
   return FileSystemOptions(FileSystemOptions::PROFILE_MODE_INCOGNITO,
-                           additional_allowed_schemes);
-};
+                           additional_allowed_schemes,
+                           NULL);
+}
 
 FileSystemOptions CreateAllowFileAccessOptions() {
   std::vector<std::string> additional_allowed_schemes;
@@ -25,8 +28,9 @@ FileSystemOptions CreateAllowFileAccessOptions() {
   additional_allowed_schemes.push_back("chrome-extension");
 #endif
   return FileSystemOptions(FileSystemOptions::PROFILE_MODE_NORMAL,
-                           additional_allowed_schemes);
-};
+                           additional_allowed_schemes,
+                           NULL);
+}
 
 FileSystemOptions CreateDisallowFileAccessOptions() {
   std::vector<std::string> additional_allowed_schemes;
@@ -34,7 +38,8 @@ FileSystemOptions CreateDisallowFileAccessOptions() {
   additional_allowed_schemes.push_back("chrome-extension");
 #endif
   return FileSystemOptions(FileSystemOptions::PROFILE_MODE_NORMAL,
-                           additional_allowed_schemes);
-};
+                           additional_allowed_schemes,
+                           NULL);
+}
 
-}  // namespace fileapi
+}  // namespace content

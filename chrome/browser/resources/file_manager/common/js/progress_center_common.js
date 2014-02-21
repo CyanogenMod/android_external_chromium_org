@@ -47,6 +47,8 @@ var ProgressItemType = Object.freeze({
   DELETE: 'delete',
   // The item is file zip operation.
   ZIP: 'zip',
+  // The item is drive sync operaiton.
+  SYNC: 'sync',
   // The item is general file transfer operation.
   // This is used for the mixed operation of summarized item.
   TRANSFER: 'transfer'
@@ -95,10 +97,17 @@ var ProgressCenterItem = function() {
   this.type = null;
 
   /**
-   * Whether the item is summarized item or not.
+   * Whether the item represents a single item or not.
    * @type {boolean}
    */
-  this.summarized = false;
+  this.single = true;
+
+  /**
+   * If the property is true, only the message of item shown in the progress
+   * center and the notification of the item is created as priority = -1.
+   * @type {boolean}
+   */
+  this.quiet = false;
 
   /**
    * Callback function to cancel the item.
@@ -131,10 +140,18 @@ ProgressCenterItem.prototype = {
 
   /**
    * Gets progress rate in percent.
+   *
+   * If the current state is canceled or completed, it always returns 0 or 100
+   * respectively.
+   *
    * @return {number} Progress rate in percent.
    */
   get progressRateInPercent() {
-    return ~~(100 * this.progressValue / this.progressMax);
+    switch (this.state) {
+      case ProgressItemState.CANCELED: return 0;
+      case ProgressItemState.COMPLETED: return 100;
+      default: return ~~(100 * this.progressValue / this.progressMax);
+    }
   },
 
   /**
@@ -144,6 +161,24 @@ ProgressCenterItem.prototype = {
   get cancelable() {
     return !!(this.state == ProgressItemState.PROGRESSING &&
               this.cancelCallback &&
-              !this.summarized);
+              this.single);
   }
+};
+
+/**
+ * Clones the item.
+ * @return {ProgressCenterItem} New item having the same properties with this.
+ */
+ProgressCenterItem.prototype.clone = function() {
+  var newItem = new ProgressCenterItem();
+  newItem.id = this.id;
+  newItem.state = this.state;
+  newItem.message = this.message;
+  newItem.progressMax = this.progressMax;
+  newItem.progressValue = this.progressValue;
+  newItem.type = this.type;
+  newItem.single = this.single;
+  newItem.quiet = this.quiet;
+  newItem.cancelCallback = this.cancelCallback;
+  return newItem;
 };

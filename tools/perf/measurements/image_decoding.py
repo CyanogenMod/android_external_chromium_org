@@ -2,12 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from metrics import power
 from telemetry.page import page_measurement
 
 
 class ImageDecoding(page_measurement.PageMeasurement):
+  def __init__(self):
+    super(ImageDecoding, self).__init__()
+    self._power_metric = power.PowerMetric()
+
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
+    power.PowerMetric.CustomizeBrowserOptions(options)
 
   def WillNavigateToPage(self, page, tab):
     tab.ExecuteJavaScript("""
@@ -17,9 +23,12 @@ class ImageDecoding(page_measurement.PageMeasurement):
           chrome.gpuBenchmarking.clearImageCache();
         }
     """)
+
+  def DidNavigateToPage(self, page, tab):
+    self._power_metric.Start(page, tab)
     tab.StartTimelineRecording()
 
-  def NeedsBrowserRestartAfterEachRun(self, browser):
+  def StopBrowserAfterPage(self, browser, page):
     return not browser.tabs[0].ExecuteJavaScript("""
         window.chrome &&
             chrome.gpuBenchmarking &&
@@ -28,6 +37,9 @@ class ImageDecoding(page_measurement.PageMeasurement):
 
   def MeasurePage(self, page, tab, results):
     tab.StopTimelineRecording()
+    self._power_metric.Stop(page, tab)
+    self._power_metric.AddResults(tab, results)
+
     def _IsDone():
       return tab.EvaluateJavaScript('isDone')
 
@@ -45,7 +57,6 @@ class ImageDecoding(page_measurement.PageMeasurement):
 
     durations = [d.duration for d in decode_image_events]
     if not durations:
-      results.Add('ImageDecoding_avg', 'ms', 'unsupported')
       return
     image_decoding_avg = sum(durations) / len(durations)
     results.Add('ImageDecoding_avg', 'ms', image_decoding_avg)

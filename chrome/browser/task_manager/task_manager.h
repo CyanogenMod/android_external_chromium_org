@@ -153,8 +153,10 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   int GroupCount() const;
 
   // Methods to return raw resource information.
+  int GetNaClDebugStubPort(int index) const;
   int64 GetNetworkUsage(int index) const;
   double GetCPUUsage(int index) const;
+  int GetIdleWakeupsPerSecond(int index) const;
   base::ProcessId GetProcessId(int index) const;
   base::ProcessHandle GetProcess(int index) const;
   int GetResourceUniqueId(int index) const;
@@ -169,6 +171,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Methods to return formatted resource information.
   const base::string16& GetResourceTitle(int index) const;
   const base::string16& GetResourceProfileName(int index) const;
+  base::string16 GetResourceNaClDebugStubPort(int index) const;
   base::string16 GetResourceNetworkUsage(int index) const;
   base::string16 GetResourceCPUUsage(int index) const;
   base::string16 GetResourcePrivateMemory(int index) const;
@@ -183,6 +186,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   base::string16 GetResourceVideoMemory(int index) const;
   base::string16 GetResourceFPS(int index) const;
   base::string16 GetResourceSqliteMemoryUsed(int index) const;
+  base::string16 GetResourceIdleWakeupsPerSecond(int index) const;
   base::string16 GetResourceGoatsTeleported(int index) const;
   base::string16 GetResourceV8MemoryAllocatedSize(int index) const;
 
@@ -358,6 +362,9 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     PerResourceValues();
     ~PerResourceValues();
 
+    bool is_nacl_debug_stub_port_valid;
+    int nacl_debug_stub_port;
+
     bool is_title_valid;
     base::string16 title;
 
@@ -396,6 +403,9 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     bool is_cpu_usage_valid;
     double cpu_usage;
 
+    bool is_idle_wakeups_valid;
+    int idle_wakeups;
+
     bool is_private_and_shared_valid;
     size_t private_bytes;
     size_t shared_bytes;
@@ -429,22 +439,22 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // This struct is used to exchange information between the io and ui threads.
   struct BytesReadParam {
     BytesReadParam(int origin_pid,
-                   int render_process_host_child_id,
-                   int routing_id,
+                   int child_id,
+                   int route_id,
                    int byte_count)
         : origin_pid(origin_pid),
-          render_process_host_child_id(render_process_host_child_id),
-          routing_id(routing_id),
+          child_id(child_id),
+          route_id(route_id),
           byte_count(byte_count) {}
 
     // The process ID that triggered the request.  For plugin requests this
     // will differ from the renderer process ID.
     int origin_pid;
 
-    // The child ID of the RenderProcessHost this request was routed through.
-    int render_process_host_child_id;
+    // The child ID of the process this request was routed through.
+    int child_id;
 
-    int routing_id;
+    int route_id;
     int byte_count;
   };
 
@@ -478,6 +488,10 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Returns the CPU usage (in %) that should be displayed for the passed
   // |resource|.
   double GetCPUUsage(task_manager::Resource* resource) const;
+
+  // Returns the idle wakeups that should be displayed for the passed
+  // |resource|.
+  int GetIdleWakeupsPerSecond(task_manager::Resource* resource) const;
 
   // Given a number, this function returns the formatted string that should be
   // displayed in the task manager's memory cell.

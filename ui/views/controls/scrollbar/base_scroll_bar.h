@@ -93,7 +93,7 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
                                       ui::MenuSourceType source_type) OVERRIDE;
 
   // Menu::Delegate overrides:
-  virtual string16 GetLabel(int id) const OVERRIDE;
+  virtual base::string16 GetLabel(int id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id) OVERRIDE;
 
@@ -177,6 +177,12 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
 
   scoped_ptr<MenuRunner> menu_runner_;
   scoped_ptr<ScrollAnimator> scroll_animator_;
+
+  // Difference between current position and cumulative deltas obtained from
+  // scroll update events.
+  // TODO(tdresser): This should be removed when raw pixel scrolling for views
+  // is enabled. See crbug.com/329354.
+  gfx::Vector2dF roundoff_error_;
 
   DISALLOW_COPY_AND_ASSIGN(BaseScrollBar);
 };

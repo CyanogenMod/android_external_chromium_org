@@ -19,7 +19,7 @@
 #include "content/public/test/test_utils.h"
 #include "ui/base/ui_base_switches.h"
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 #include "content/public/browser/web_contents_view.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -43,9 +43,11 @@ IN_PROC_BROWSER_TEST_F(StarViewTest, MAYBE_HideOnSecondClick) {
       browser_view->GetToolbarView()->location_bar()->star_view();
 
   ui::MouseEvent pressed_event(ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(),
-      ui::EF_LEFT_MOUSE_BUTTON);
+                               ui::EF_LEFT_MOUSE_BUTTON,
+                               ui::EF_LEFT_MOUSE_BUTTON);
   ui::MouseEvent released_event(ui::ET_MOUSE_RELEASED, gfx::Point(),
-      gfx::Point(), ui::EF_LEFT_MOUSE_BUTTON);
+                                gfx::Point(), ui::EF_LEFT_MOUSE_BUTTON,
+                                ui::EF_LEFT_MOUSE_BUTTON);
 
   // Verify that clicking once shows the bookmark bubble.
   EXPECT_FALSE(BookmarkBubbleView::IsShowing());
@@ -65,7 +67,7 @@ IN_PROC_BROWSER_TEST_F(StarViewTest, MAYBE_HideOnSecondClick) {
   EXPECT_FALSE(BookmarkBubbleView::IsShowing());
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 
 class StarViewTestNoDWM : public InProcessBrowserTest {
  public:
@@ -99,7 +101,7 @@ IN_PROC_BROWSER_TEST_F(StarViewTestNoDWM, WindowedNPAPIPluginHidden) {
   browser()->tab_strip_model()->ActivateTabAt(0, true);
 
   // First load the page and wait for the NPAPI plugin's window to display.
-  base::string16 expected_title(ASCIIToUTF16("ready"));
+  base::string16 expected_title(base::ASCIIToUTF16("ready"));
   content::WebContents* tab =
       browser()->tab_strip_model()->GetActiveWebContents();
   content::TitleWatcher title_watcher(tab, expected_title);

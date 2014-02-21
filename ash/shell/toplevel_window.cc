@@ -5,7 +5,6 @@
 #include "ash/shell/toplevel_window.h"
 
 #include "ash/display/display_controller.h"
-#include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/wm/window_positioner.h"
 #include "ash/wm/window_state.h"
@@ -64,7 +63,7 @@ void ToplevelWindow::OnPaint(gfx::Canvas* canvas) {
 }
 
 base::string16 ToplevelWindow::GetWindowTitle() const {
-  return ASCIIToUTF16("Examples: Toplevel Window");
+  return base::ASCIIToUTF16("Examples: Toplevel Window");
 }
 
 void ToplevelWindow::SaveWindowPlacement(const gfx::Rect& bounds,

@@ -2,10 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from HTMLParser import HTMLParser
-import logging
 import os
-import re
 
 from compiled_file_system import Unicode
 from data_source import DataSource
@@ -45,7 +42,7 @@ class IntroDataSource(DataSource):
   def get(self, key):
     path = FormatKey(key)
     def get_from_base_path(base_path):
-      return self._cache.GetFromFile('%s/%s' % (base_path, path)).Get()
+      return self._cache.GetFromFile(base_path + path).Get()
     base_paths = (INTROS_TEMPLATES, ARTICLES_TEMPLATES)
     for base_path in base_paths:
       try:

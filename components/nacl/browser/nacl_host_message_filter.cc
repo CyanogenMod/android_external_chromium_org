@@ -4,6 +4,7 @@
 
 #include "components/nacl/browser/nacl_host_message_filter.h"
 
+#include "base/sys_info.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/nacl_file_host.h"
 #include "components/nacl/browser/nacl_process_host.h"
@@ -21,7 +22,8 @@ NaClHostMessageFilter::NaClHostMessageFilter(
     bool is_off_the_record,
     const base::FilePath& profile_directory,
     net::URLRequestContextGetter* request_context)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(NaClHostMsgStart),
+      render_process_id_(render_process_id),
       off_the_record_(is_off_the_record),
       profile_directory_(profile_directory),
       request_context_(request_context),
@@ -52,6 +54,8 @@ bool NaClHostMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(NaClHostMsg_NaClErrorStatus, OnNaClErrorStatus)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(NaClHostMsg_OpenNaClExecutable,
                                     OnOpenNaClExecutable)
+    IPC_MESSAGE_HANDLER(NaClHostMsg_NaClGetNumProcessors,
+                        OnNaClGetNumProcessors)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -131,6 +135,10 @@ void NaClHostMessageFilter::AsyncReturnTemporaryFile(
       // Don't close our copy of the handle, because PnaclHost will use it
       // when the translation finishes.
       IPC::GetFileHandleForProcess(fd, PeerHandle(), false)));
+}
+
+void NaClHostMessageFilter::OnNaClGetNumProcessors(int *num_processors) {
+  *num_processors = base::SysInfo::NumberOfProcessors();
 }
 
 void NaClHostMessageFilter::OnGetNexeFd(

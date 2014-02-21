@@ -5,16 +5,17 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_STATUS_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_STATUS_H_
 
+#include "base/strings/string16.h"
+#include "content/common/service_worker/service_worker_status_code.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
+
 namespace content {
 
-// This enum is used to describe the final state of a ServiceWorkerRegistration.
-enum ServiceWorkerRegistrationStatus {
-  REGISTRATION_OK,
-  REGISTRATION_NOT_FOUND,
-  REGISTRATION_INSTALL_FAILED,
-  REGISTRATION_ACTIVATE_FAILED,
-  REGISTRATION_FAILED,
-};
+// This should only be called for errors, where status != OK.
+void GetServiceWorkerRegistrationStatusResponse(
+    ServiceWorkerStatusCode status,
+    blink::WebServiceWorkerError::ErrorType* error_type,
+    base::string16* message);
 
 }  // namespace content
 

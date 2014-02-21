@@ -81,9 +81,7 @@ PluginThread::PluginThread()
           switches::kPluginPath);
 
   lazy_tls.Pointer()->Set(this);
-#if defined(USE_AURA)
-  // TODO(saintlou):
-#elif defined(TOOLKIT_GTK)
+#if defined(TOOLKIT_GTK)
   {
     // XEmbed plugins assume they are hosted in a Gtk application, so we need
     // to initialize Gtk in the plugin process.
@@ -125,9 +123,6 @@ PluginThread::PluginThread()
   GetContentClient()->plugin()->PluginProcessStarted(
       plugin.get() ? plugin->plugin_info().name : base::string16());
 
-  // Certain plugins, such as flash, steal the unhandled exception filter
-  // thus we never get crash reports when they fault. This call fixes it.
-  message_loop()->set_exception_restoration(true);
   channel()->AddFilter(new EnsureTerminateMessageFilter());
 }
 

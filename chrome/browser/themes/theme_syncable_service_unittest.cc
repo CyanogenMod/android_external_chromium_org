@@ -148,9 +148,9 @@ scoped_refptr<extensions::Extension> MakeThemeExtension(
     const string& name,
     extensions::Manifest::Location location,
     const string& update_url) {
-  DictionaryValue source;
+  base::DictionaryValue source;
   source.SetString(extensions::manifest_keys::kName, name);
-  source.Set(extensions::manifest_keys::kTheme, new DictionaryValue());
+  source.Set(extensions::manifest_keys::kTheme, new base::DictionaryValue());
   source.SetString(extensions::manifest_keys::kUpdateURL, update_url);
   source.SetString(extensions::manifest_keys::kVersion, "0.0.0.0");
   string error;
@@ -168,8 +168,7 @@ scoped_refptr<extensions::Extension> MakeThemeExtension(
 class ThemeSyncableServiceTest : public testing::Test {
  protected:
   ThemeSyncableServiceTest()
-      : loop_(base::MessageLoop::TYPE_DEFAULT),
-        ui_thread_(content::BrowserThread::UI, &loop_),
+      : ui_thread_(content::BrowserThread::UI, &loop_),
         file_thread_(content::BrowserThread::FILE, &loop_),
         fake_theme_service_(NULL) {}
 

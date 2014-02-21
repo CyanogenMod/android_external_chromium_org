@@ -307,6 +307,12 @@ NET_ERROR(SSL_SERVER_CERT_CHANGED, -156)
 // performed.
 NET_ERROR(SSL_INAPPROPRIATE_FALLBACK, -157)
 
+// Certificate Transparency: All Signed Certificate Timestamps failed to verify.
+NET_ERROR(CT_NO_SCTS_VERIFIED_OK, -158)
+
+// The SSL server sent us a fatal unrecognized_name alert.
+NET_ERROR(SSL_UNRECOGNIZED_NAME_ALERT, -159)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -404,17 +410,16 @@ NET_ERROR(CERT_NON_UNIQUE_NAME, -210)
 // a too-small RSA key).
 NET_ERROR(CERT_WEAK_KEY, -211)
 
+// The certificate claimed DNS names that are in violation of name constraints.
+NET_ERROR(CERT_NAME_CONSTRAINT_VIOLATION, -212)
+
 // Add new certificate error codes here.
 //
 // Update the value of CERT_END whenever you add a new certificate error
 // code.
 
 // The value immediately past the last certificate error code.
-NET_ERROR(CERT_END, -212)
-
-// Certificate Transparency: All Signed Certificate Timestamps failed to verify.
-// XXX(eranm): Move this error to a more appropriate category.
-NET_ERROR(CT_NO_SCTS_VERIFIED_OK, -299)
+NET_ERROR(CERT_END, -213)
 
 // The URL is invalid.
 NET_ERROR(INVALID_URL, -300)

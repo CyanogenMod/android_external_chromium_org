@@ -7,9 +7,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
+#include "chrome/browser/extensions/dev_mode_bubble_controller.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -121,7 +123,7 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       delegate_(delegate),
       context_menu_(NULL),
       called_registered_extension_command_(false) {
-  set_border(NULL);
+  SetBorder(views::Border::NullBorder());
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
 
@@ -238,7 +240,11 @@ void BrowserActionButton::UpdateState() {
     ThemeService* theme =
         ThemeServiceFactory::GetForProfile(browser_->profile());
 
-    gfx::ImageSkia bg = *theme->GetImageSkiaNamed(IDR_BROWSER_ACTION);
+    int background_id = IDR_BROWSER_ACTION;
+    if (extensions::DevModeBubbleController::IsDevModeExtension(extension_))
+      background_id = IDR_BROWSER_ACTION_HIGHLIGHT;
+
+    gfx::ImageSkia bg = *theme->GetImageSkiaNamed(background_id);
     SetIcon(gfx::ImageSkiaOperations::CreateSuperimposedImage(bg, icon));
 
     gfx::ImageSkia bg_h = *theme->GetImageSkiaNamed(IDR_BROWSER_ACTION_H);
@@ -252,7 +258,7 @@ void BrowserActionButton::UpdateState() {
   // If the browser action name is empty, show the extension name instead.
   std::string title = browser_action()->GetTitle(tab_id);
   base::string16 name =
-      UTF8ToUTF16(title.empty() ? extension()->name() : title);
+      base::UTF8ToUTF16(title.empty() ? extension()->name() : title);
   SetTooltipText(delegate_->NeedToShowTooltip() ? name : base::string16());
   SetAccessibleName(name);
 

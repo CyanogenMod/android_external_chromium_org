@@ -32,6 +32,8 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
     // displayed.  NotifyLockScreenShown() is called after the lock screen
     // is shown (the canonical "is the screen locked?" state lives in the
     // session manager).
+    // TODO(derat): Delete this once the session manager is calling the
+    // "LockScreen" method instead.
     virtual void LockScreen() {}
 
     // Called when the session manager announces that the screen has been locked
@@ -51,9 +53,6 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
   virtual bool HasObserver(Observer* observer) = 0;
-
-  // Kicks off an attempt to emit the "login-prompt-ready" upstart signal.
-  virtual void EmitLoginPromptReady() = 0;
 
   // Kicks off an attempt to emit the "login-prompt-visible" upstart signal.
   virtual void EmitLoginPromptVisible() = 0;

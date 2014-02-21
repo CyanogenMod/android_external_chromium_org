@@ -45,7 +45,7 @@ class CONTENT_EXPORT VaapiVideoDecodeAccelerator
     : public VideoDecodeAcceleratorImpl {
  public:
   VaapiVideoDecodeAccelerator(
-      Display* x_display, GLXContext glx_context,
+      Display* x_display,
       Client* client,
       const base::Callback<bool(void)>& make_context_current);
   virtual ~VaapiVideoDecodeAccelerator();
@@ -61,9 +61,6 @@ class CONTENT_EXPORT VaapiVideoDecodeAccelerator
   virtual void Destroy() OVERRIDE;
 
 private:
-  // Notify the client that |output_id| is ready for displaying.
-  void NotifyPictureReady(int32 input_id, int32 output_id);
-
   // Notify the client that an error has occurred and decoding cannot continue.
   void NotifyError(Error error);
 
@@ -153,7 +150,6 @@ private:
 
   // Client-provided X/GLX state.
   Display* x_display_;
-  GLXContext glx_context_;
   base::Callback<bool(void)> make_context_current_;
   GLXFBConfig fb_config_;
 
@@ -238,6 +234,9 @@ private:
   // decoder thread to the ChildThread should use |weak_this_|.
   base::WeakPtr<VaapiVideoDecodeAccelerator> weak_this_;
 
+  // Callback used when creating VASurface objects.
+  VASurface::ReleaseCB va_surface_release_cb_;
+
   // To expose client callbacks from VideoDecodeAccelerator.
   // NOTE: all calls to these objects *MUST* be executed on message_loop_.
   base::WeakPtrFactory<Client> client_ptr_factory_;
@@ -249,6 +248,10 @@ private:
   // vaapi_wrapper_ is destroyed.
   scoped_ptr<VaapiH264Decoder> decoder_;
   base::Thread decoder_thread_;
+  // Use this to post tasks to |decoder_thread_| instead of
+  // |decoder_thread_.message_loop()| because the latter will be NULL once
+  // |decoder_thread_.Stop()| returns.
+  scoped_refptr<base::MessageLoopProxy> decoder_thread_proxy_;
 
   int num_frames_at_client_;
   int num_stream_bufs_at_decoder_;

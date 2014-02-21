@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/android/media_codec_bridge.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/buffers.h"
 
 namespace media {
@@ -20,14 +20,15 @@ namespace media {
 static const int kMediaCodecTimeoutInMilliseconds = 250;
 
 MediaDecoderJob::MediaDecoderJob(
-    const scoped_refptr<base::MessageLoopProxy>& decoder_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& decoder_task_runner,
     MediaCodecBridge* media_codec_bridge,
     const base::Closure& request_data_cb)
-    : ui_loop_(base::MessageLoopProxy::current()),
-      decoder_loop_(decoder_loop),
+    : ui_task_runner_(base::MessageLoopProxy::current()),
+      decoder_task_runner_(decoder_task_runner),
       media_codec_bridge_(media_codec_bridge),
       needs_flush_(false),
       input_eos_encountered_(false),
+      output_eos_encountered_(false),
       skip_eos_enqueue_(true),
       prerolling_(true),
       weak_this_(this),
@@ -42,7 +43,7 @@ MediaDecoderJob::~MediaDecoderJob() {}
 
 void MediaDecoderJob::OnDataReceived(const DemuxerData& data) {
   DVLOG(1) << __FUNCTION__ << ": " << data.access_units.size() << " units";
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(!on_data_received_cb_.is_null());
 
   TRACE_EVENT_ASYNC_END2(
@@ -63,13 +64,13 @@ void MediaDecoderJob::OnDataReceived(const DemuxerData& data) {
 }
 
 void MediaDecoderJob::Prefetch(const base::Closure& prefetch_cb) {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(on_data_received_cb_.is_null());
   DCHECK(decode_cb_.is_null());
 
   if (HasData()) {
     DVLOG(1) << __FUNCTION__ << " : using previously received data";
-    ui_loop_->PostTask(FROM_HERE, prefetch_cb);
+    ui_task_runner_->PostTask(FROM_HERE, prefetch_cb);
     return;
   }
 
@@ -83,7 +84,7 @@ bool MediaDecoderJob::Decode(
     const DecoderCallback& callback) {
   DCHECK(decode_cb_.is_null());
   DCHECK(on_data_received_cb_.is_null());
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
   decode_cb_ = callback;
 
@@ -109,7 +110,7 @@ bool MediaDecoderJob::Decode(
 }
 
 void MediaDecoderJob::StopDecode() {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(is_decoding());
   stop_decode_pending_ = true;
 }
@@ -128,7 +129,7 @@ void MediaDecoderJob::Flush() {
 void MediaDecoderJob::BeginPrerolling(
     const base::TimeDelta& preroll_timestamp) {
   DVLOG(1) << __FUNCTION__ << "(" << preroll_timestamp.InSecondsF() << ")";
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(!is_decoding());
 
   preroll_timestamp_ = preroll_timestamp;
@@ -136,7 +137,7 @@ void MediaDecoderJob::BeginPrerolling(
 }
 
 void MediaDecoderJob::Release() {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__;
 
   // If the decoder job is not waiting for data, and is still decoding, we
@@ -157,7 +158,7 @@ void MediaDecoderJob::Release() {
 
 MediaCodecStatus MediaDecoderJob::QueueInputBuffer(const AccessUnit& unit) {
   DVLOG(1) << __FUNCTION__;
-  DCHECK(decoder_loop_->BelongsToCurrentThread());
+  DCHECK(decoder_task_runner_->BelongsToCurrentThread());
   TRACE_EVENT0("media", __FUNCTION__);
 
   int input_buf_index = input_buf_index_;
@@ -206,7 +207,7 @@ MediaCodecStatus MediaDecoderJob::QueueInputBuffer(const AccessUnit& unit) {
 }
 
 bool MediaDecoderJob::HasData() const {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   // When |input_eos_encountered_| is set, |access_units| must not be empty and
   // |access_unit_index_| must be pointing to an EOS unit. We'll reuse this
   // unit to flush the decoder until we hit output EOS.
@@ -221,7 +222,7 @@ bool MediaDecoderJob::HasData() const {
 
 void MediaDecoderJob::RequestData(const base::Closure& done_cb) {
   DVLOG(1) << __FUNCTION__;
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(on_data_received_cb_.is_null());
   DCHECK(!input_eos_encountered_);
 
@@ -237,27 +238,27 @@ void MediaDecoderJob::RequestData(const base::Closure& done_cb) {
 void MediaDecoderJob::DecodeNextAccessUnit(
     const base::TimeTicks& start_time_ticks,
     const base::TimeDelta& start_presentation_timestamp) {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(!decode_cb_.is_null());
 
   // If the first access unit is a config change, request the player to dequeue
   // the input buffer again so that it can request config data.
   if (received_data_.access_units[access_unit_index_].status ==
       DemuxerStream::kConfigChanged) {
-    ui_loop_->PostTask(FROM_HERE,
-                       base::Bind(&MediaDecoderJob::OnDecodeCompleted,
-                                  base::Unretained(this),
-                                  MEDIA_CODEC_DEQUEUE_INPUT_AGAIN_LATER,
-                                  kNoTimestamp(),
-                                  0));
+    ui_task_runner_->PostTask(FROM_HERE,
+                              base::Bind(&MediaDecoderJob::OnDecodeCompleted,
+                                         base::Unretained(this),
+                                         MEDIA_CODEC_DEQUEUE_INPUT_AGAIN_LATER,
+                                         kNoTimestamp(),
+                                         0));
     return;
   }
 
-  decoder_loop_->PostTask(FROM_HERE, base::Bind(
+  decoder_task_runner_->PostTask(FROM_HERE, base::Bind(
       &MediaDecoderJob::DecodeInternal, base::Unretained(this),
       received_data_.access_units[access_unit_index_],
       start_time_ticks, start_presentation_timestamp, needs_flush_,
-      media::BindToLoop(ui_loop_, base::Bind(
+      media::BindToCurrentLoop(base::Bind(
           &MediaDecoderJob::OnDecodeCompleted, base::Unretained(this)))));
   needs_flush_ = false;
 }
@@ -269,18 +270,24 @@ void MediaDecoderJob::DecodeInternal(
     bool needs_flush,
     const MediaDecoderJob::DecoderCallback& callback) {
   DVLOG(1) << __FUNCTION__;
-  DCHECK(decoder_loop_->BelongsToCurrentThread());
+  DCHECK(decoder_task_runner_->BelongsToCurrentThread());
   TRACE_EVENT0("media", __FUNCTION__);
 
   if (needs_flush) {
     DVLOG(1) << "DecodeInternal needs flush.";
     input_eos_encountered_ = false;
+    output_eos_encountered_ = false;
     MediaCodecStatus reset_status = media_codec_bridge_->Reset();
     if (MEDIA_CODEC_OK != reset_status) {
       callback.Run(reset_status, kNoTimestamp(), 0);
       return;
     }
   }
+
+  // Once output EOS has occurred, we should not be asked to decode again.
+  // MediaCodec has undefined behavior if similarly asked to decode after output
+  // EOS.
+  DCHECK(!output_eos_encountered_);
 
   // For aborted access unit, just skip it and inform the player.
   if (unit.status == DemuxerStream::kAborted) {
@@ -292,13 +299,13 @@ void MediaDecoderJob::DecodeInternal(
   if (skip_eos_enqueue_) {
     if (unit.end_of_stream || unit.data.empty()) {
       input_eos_encountered_ = true;
+      output_eos_encountered_ = true;
       callback.Run(MEDIA_CODEC_OUTPUT_END_OF_STREAM, kNoTimestamp(), 0);
       return;
     }
 
     skip_eos_enqueue_ = false;
   }
-
 
   MediaCodecStatus input_status = MEDIA_CODEC_INPUT_END_OF_STREAM;
   if (!input_eos_encountered_) {
@@ -315,7 +322,6 @@ void MediaDecoderJob::DecodeInternal(
   size_t offset = 0;
   size_t size = 0;
   base::TimeDelta presentation_timestamp;
-  bool output_eos_encountered = false;
 
   base::TimeDelta timeout = base::TimeDelta::FromMilliseconds(
       kMediaCodecTimeoutInMilliseconds);
@@ -326,7 +332,7 @@ void MediaDecoderJob::DecodeInternal(
                                                &offset,
                                                &size,
                                                &presentation_timestamp,
-                                               &output_eos_encountered,
+                                               &output_eos_encountered_,
                                                NULL);
 
   if (status != MEDIA_CODEC_OK) {
@@ -339,19 +345,12 @@ void MediaDecoderJob::DecodeInternal(
   }
 
   // TODO(xhwang/qinmin): This logic is correct but strange. Clean it up.
-  if (output_eos_encountered)
+  if (output_eos_encountered_)
     status = MEDIA_CODEC_OUTPUT_END_OF_STREAM;
   else if (input_status == MEDIA_CODEC_INPUT_END_OF_STREAM)
     status = MEDIA_CODEC_INPUT_END_OF_STREAM;
 
-  // Check whether we need to render the output.
-  // TODO(qinmin): comparing most recently queued input's |unit.timestamp| with
-  // |preroll_timestamp_| is not accurate due to data reordering and possible
-  // input queueing without immediate dequeue when |input_status| !=
-  // |MEDIA_CODEC_OK|. Need to use the |presentation_timestamp| for video, and
-  // use |size| to calculate the timestamp for audio. See
-  // http://crbug.com/310823 and http://b/11356652.
-  bool render_output  = unit.timestamp >= preroll_timestamp_ &&
+  bool render_output  = presentation_timestamp >= preroll_timestamp_ &&
       (status != MEDIA_CODEC_OUTPUT_END_OF_STREAM || size != 0u);
   base::TimeDelta time_to_render;
   DCHECK(!start_time_ticks.is_null());
@@ -361,7 +360,7 @@ void MediaDecoderJob::DecodeInternal(
   }
 
   if (time_to_render > base::TimeDelta()) {
-    decoder_loop_->PostDelayedTask(
+    decoder_task_runner_->PostDelayedTask(
         FROM_HERE,
         base::Bind(&MediaDecoderJob::ReleaseOutputBuffer,
                    weak_this_.GetWeakPtr(), buffer_index, size, render_output,
@@ -391,7 +390,7 @@ void MediaDecoderJob::DecodeInternal(
 void MediaDecoderJob::OnDecodeCompleted(
     MediaCodecStatus status, const base::TimeDelta& presentation_timestamp,
     size_t audio_output_bytes) {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
   if (destroy_pending_) {
     DVLOG(1) << __FUNCTION__ << " : completing pending deletion";

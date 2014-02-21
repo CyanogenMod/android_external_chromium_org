@@ -1,11 +1,9 @@
 # Copyright (c) 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import sys
-
-from telemetry import test
 
 from measurements import page_cycler
+from telemetry import test
 
 
 class PageCyclerBloat(test.Test):
@@ -17,13 +15,6 @@ class PageCyclerBloat(test.Test):
 class PageCyclerDhtml(test.Test):
   test = page_cycler.PageCycler
   page_set = 'page_sets/page_cycler/dhtml.json'
-  options = {'pageset_repeat_iters': 10}
-
-
-class PageCyclerIndexeddb(test.Test):
-  tag = 'indexed_db'
-  test = page_cycler.PageCycler
-  page_set = 'page_sets/page_cycler/indexed_db/basic_insert.json'
   options = {'pageset_repeat_iters': 10}
 
 
@@ -45,6 +36,7 @@ class PageCyclerIntlHiRu(test.Test):
   options = {'pageset_repeat_iters': 10}
 
 
+@test.Disabled('win')  # crbug.com/330909
 class PageCyclerIntlJaZh(test.Test):
   test = page_cycler.PageCycler
   page_set = 'page_sets/intl_ja_zh.json'
@@ -91,10 +83,14 @@ class PageCyclerNetsimTop10(test.Test):
 
 
 class PageCyclerTop10Mobile(test.Test):
-  enabled = False  # Fails on Android.
-
   test = page_cycler.PageCycler
   page_set = 'page_sets/top_10_mobile.json'
+  options = {'pageset_repeat_iters': 10}
+
+
+class PageCyclerKeyMobileSites(test.Test):
+  test = page_cycler.PageCycler
+  page_set = 'page_sets/key_mobile_sites.json'
   options = {'pageset_repeat_iters': 10}
 
 
@@ -104,9 +100,10 @@ class PageCyclerToughLayoutCases(test.Test):
   options = {'pageset_repeat_iters': 10}
 
 
+# crbug.com/273986: This test is really flakey on xp.
+# cabug.com/341843: This test is always timing out on Android.
+@test.Disabled('android', 'win')
 class PageCyclerTypical25(test.Test):
-  # crbug.com/273986: This test is really flakey on xp.
-  enabled = not sys.platform.startswith('win')
   test = page_cycler.PageCycler
   page_set = 'page_sets/typical_25.json'
   options = {'pageset_repeat_iters': 10}

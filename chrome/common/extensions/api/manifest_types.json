@@ -32,7 +32,7 @@
             "items": {"type": "string"}
           },
           "accepts_tls_channel_id": {
-            "description": "If <code>true</code>, messages sent via $ref:runtime.connect or $ref:runtime.sendMessage will set $ref:runtime.MessageSender.tlsChannelId if those methods request it to be. If <code>false</code>, $ref:runtime.MessageSender.tlsChannelId will never be set under any circumstance.",
+            "description": "If <code>true</code>, messages sent via $(ref:runtime.connect) or $(ref:runtime.sendMessage) will set $(ref:runtime.MessageSender.tlsChannelId) if those methods request it to be. If <code>false</code>, $(ref:runtime.MessageSender.tlsChannelId) will never be set under any circumstance.",
             "optional": true,
             "type": "boolean"
           }
@@ -43,6 +43,29 @@
         "type": "object",
         "description": "Chrome settings which can be overriden by an extension.",
         "properties": {
+          "bookmarks_ui": {
+            "type": "object",
+            "description": "Settings to permit bookmarks user interface customization by extensions.",
+            "optional": true,
+            "properties": {
+              "remove_button": {
+                "type": "boolean",
+                "description": "If <code>true</code>, the built-in bookmark button will be removed from the user interface.",
+                "optional": true
+              },
+              "remove_bookmark_shortcut": {
+                "type": "boolean",
+                "description": "If <code>true</code>, the built-in \"Bookmark this page...\" shortcut key is removed and the extension is permitted to override the shortcut by binding it in the commands section of the manifest.",
+                "optional": true
+              },
+              // TODO(wittman): Remove for M36.
+              "hide_bookmark_button": {
+                "type": "boolean",
+                "description": "Deprecated. Use remove_button instead.",
+                "optional": true
+              }
+            }
+          },
           "homepage": {
             "description": "New value for the homepage.",
             "optional": true,
@@ -185,6 +208,22 @@
                 "optional": true,
                 "$ref": "SocketHostPatterns"
               }
+            }
+          }
+        }
+      },
+      {
+        "id": "bluetooth",
+        "type": "object",
+        "description": "The <code>bluetooth</code> manifest property give permission to an app to use the $ref:bluetooth API. A list of profile IDs can be optionally specified to enable communication with specific device types",
+        "properties": {
+          "profiles": {
+            "description": "The <code>profiles</code> manifest property declares the list of profiles an app can register.",
+            "optional": true,
+            "type": "array",
+            "items": {
+              "description": "<p>The list of profiles specified as UUID strings.</p>",
+              "type": "string"
             }
           }
         }

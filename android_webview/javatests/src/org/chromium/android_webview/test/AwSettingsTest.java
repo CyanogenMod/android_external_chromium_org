@@ -7,7 +7,6 @@ package org.chromium.android_webview.test;
 import android.content.Context;
 import android.graphics.Point;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.SystemClock;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -31,13 +30,12 @@ import org.chromium.base.test.util.TestFileUtil;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.CallbackHelper;
-import org.chromium.content.browser.test.util.Criteria;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.HistoryUtils;
 import org.chromium.net.test.util.TestWebServer;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.io.File;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,9 +46,6 @@ import java.util.regex.Pattern;
  * application
  */
 public class AwSettingsTest extends AwTestBase {
-    private static final long TEST_TIMEOUT = 20000L;
-    private static final int CHECK_INTERVAL = 100;
-
     private static final boolean ENABLED = true;
     private static final boolean DISABLED = false;
 
@@ -102,7 +97,7 @@ public class AwSettingsTest extends AwTestBase {
 
         protected abstract void doEnsureSettingHasValue(T value) throws Throwable;
 
-        protected String getTitleOnUiThread() throws Throwable {
+        protected String getTitleOnUiThread() throws Exception {
             return AwSettingsTest.this.getTitleOnUiThread(mAwContents);
         }
 
@@ -130,7 +125,7 @@ public class AwSettingsTest extends AwTestBase {
                 url);
         }
 
-        protected String executeJavaScriptAndWaitForResult(String script) throws Throwable {
+        protected String executeJavaScriptAndWaitForResult(String script) throws Exception {
             return AwSettingsTest.this.executeJavaScriptAndWaitForResult(
                     mAwContents, mContentViewClient, script);
         }
@@ -929,20 +924,14 @@ public class AwSettingsTest extends AwTestBase {
                 executeJavaScriptAndWaitForResult("setTitleToActualFontSize()");
             } else {
                 final float oldFontSize = mOldFontSize;
-                assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
-                        @Override
-                        public boolean isSatisfied() {
-                            try {
-                                executeJavaScriptAndWaitForResult("setTitleToActualFontSize()");
-                                float newFontSize = Float.parseFloat(getTitleOnUiThread());
-                                return newFontSize != oldFontSize;
-                            } catch (Throwable t) {
-                                t.printStackTrace();
-                                fail("Failed to getTitleOnUiThread: " + t.toString());
-                                return false;
-                            }
-                        }
-                    }, TEST_TIMEOUT, CHECK_INTERVAL));
+                poll(new Callable<Boolean>() {
+                    @Override
+                    public Boolean call() throws Exception {
+                        executeJavaScriptAndWaitForResult("setTitleToActualFontSize()");
+                        float newFontSize = Float.parseFloat(getTitleOnUiThread());
+                        return newFontSize != oldFontSize;
+                    }
+                });
                 mNeedToWaitForFontSizeChange = false;
             }
             return Float.parseFloat(getTitleOnUiThread());
@@ -1150,20 +1139,14 @@ public class AwSettingsTest extends AwTestBase {
         protected void doEnsureSettingHasValue(Boolean value) throws Throwable {
             loadDataSync(getData());
             final boolean expectPopupEnabled = value;
-            assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            poll(new Callable<Boolean>() {
                 @Override
-                public boolean isSatisfied() {
-                    try {
-                        String title = getTitleOnUiThread();
-                        return expectPopupEnabled ? POPUP_ENABLED.equals(title) :
-                                POPUP_BLOCKED.equals(title);
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                        fail("Failed to getTitleOnUiThread: " + t.toString());
-                        return false;
-                    }
+                public Boolean call() throws Exception {
+                    String title = getTitleOnUiThread();
+                    return expectPopupEnabled ? POPUP_ENABLED.equals(title) :
+                            POPUP_BLOCKED.equals(title);
                 }
-            }, TEST_TIMEOUT, CHECK_INTERVAL));
+            });
             assertEquals(value ? POPUP_ENABLED : POPUP_BLOCKED, getTitleOnUiThread());
         }
 
@@ -1446,19 +1429,13 @@ public class AwSettingsTest extends AwTestBase {
         assertEquals(ImagePageGenerator.IMAGE_NOT_LOADED_STRING,
                 getTitleOnUiThread(awContents));
         settings.setLoadsImagesAutomatically(true);
-        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+        poll(new Callable<Boolean>() {
             @Override
-            public boolean isSatisfied() {
-                try {
-                    return !ImagePageGenerator.IMAGE_NOT_LOADED_STRING.equals(
-                            getTitleOnUiThread(awContents));
-                } catch (Throwable t) {
-                    t.printStackTrace();
-                    fail("Failed to getTitleOnUiThread: " + t.toString());
-                    return false;
-                }
+            public Boolean call() throws Exception {
+                return !ImagePageGenerator.IMAGE_NOT_LOADED_STRING.equals(
+                        getTitleOnUiThread(awContents));
             }
-        }, TEST_TIMEOUT, CHECK_INTERVAL));
+        });
         assertEquals(ImagePageGenerator.IMAGE_LOADED_STRING, getTitleOnUiThread(awContents));
     }
 
@@ -1828,19 +1805,13 @@ public class AwSettingsTest extends AwTestBase {
                     getTitleOnUiThread(awContents));
 
             settings.setImagesEnabled(true);
-            assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            poll(new Callable<Boolean>() {
                 @Override
-                public boolean isSatisfied() {
-                    try {
-                        return ImagePageGenerator.IMAGE_LOADED_STRING.equals(
-                            getTitleOnUiThread(awContents));
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                        fail("Failed to getTitleOnUIThread: " + t.toString());
-                        return false;
-                    }
+                public Boolean call() throws Exception {
+                    return ImagePageGenerator.IMAGE_LOADED_STRING.equals(
+                        getTitleOnUiThread(awContents));
                 }
-            }, TEST_TIMEOUT, CHECK_INTERVAL));
+            });
         } finally {
             if (webServer != null) webServer.shutdown();
         }
@@ -1922,7 +1893,7 @@ public class AwSettingsTest extends AwTestBase {
         }
     }
 
-    public static class AudioEvent {
+    private static class AudioEvent {
         private CallbackHelper mCallback;
         public AudioEvent(CallbackHelper callback) {
             mCallback = callback;
@@ -2240,23 +2211,22 @@ public class AwSettingsTest extends AwTestBase {
             return mManifestPath;
         }
 
-        int waitUntilHtmlIsRequested(final int initialRequestCount) throws InterruptedException {
+        int waitUntilHtmlIsRequested(final int initialRequestCount) throws Exception {
             return waitUntilResourceIsRequested(mHtmlPath, initialRequestCount);
         }
 
-        int waitUntilManifestIsRequested(final int initialRequestCount)
-                throws InterruptedException {
+        int waitUntilManifestIsRequested(final int initialRequestCount) throws Exception {
             return waitUntilResourceIsRequested(mManifestPath, initialRequestCount);
         }
 
         private int waitUntilResourceIsRequested(
-                final String path, final int initialRequestCount) throws InterruptedException {
-            assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+                final String path, final int initialRequestCount) throws Exception {
+            poll(new Callable<Boolean>() {
                 @Override
-                public boolean isSatisfied() {
+                public Boolean call() throws Exception {
                     return mWebServer.getRequestCount(path) > initialRequestCount;
                 }
-            }, TEST_TIMEOUT, CHECK_INTERVAL));
+            });
             return mWebServer.getRequestCount(path);
         }
     }
@@ -2644,36 +2614,6 @@ public class AwSettingsTest extends AwTestBase {
         }
     }
 
-    @SmallTest
-    @Feature({"AndroidWebView", "Preferences"})
-    // background shorthand property must not override background-size when
-    // it's already set.
-    public void testUseLegacyBackgroundSizeShorthandBehavior() throws Throwable {
-        final TestAwContentsClient contentClient = new TestAwContentsClient();
-        final AwTestContainerView testContainerView =
-                createAwTestContainerViewOnMainSync(contentClient);
-        final AwContents awContents = testContainerView.getAwContents();
-        AwSettings settings = getAwSettingsOnUiThread(awContents);
-        CallbackHelper onPageFinishedHelper = contentClient.getOnPageFinishedHelper();
-        final String expectedBackgroundSize = "cover";
-        final String page = "<html><head>" +
-                "<script>" +
-                "function getBackgroundSize() {" +
-                "  var e = document.getElementById('test'); " +
-                "  e.style.backgroundSize = '" + expectedBackgroundSize + "';" +
-                "  e.style.background = 'center red url(dummy://test.png) no-repeat border-box'; " +
-                "  return e.style.backgroundSize; " +
-                "}" +
-                "</script></head>" +
-                "<body onload='document.title=getBackgroundSize()'>" +
-                "  <div id='test'> </div>" +
-                "</body></html>";
-        settings.setJavaScriptEnabled(true);
-        loadDataSync(awContents, onPageFinishedHelper, page, "text/html", false);
-        String actualBackgroundSize = getTitleOnUiThread(awContents);
-        assertEquals(expectedBackgroundSize, actualBackgroundSize);
-    }
-
     static class ViewPair {
         private final AwContents contents0;
         private final TestAwContentsClient client0;
@@ -2809,7 +2749,7 @@ public class AwSettingsTest extends AwTestBase {
             @Override
             public void run() {
                 awContents.getContentViewCore().sendDoubleTapForTest(
-                        SystemClock.uptimeMillis(), x, y, new Bundle());
+                        SystemClock.uptimeMillis(), x, y);
             }
         });
     }

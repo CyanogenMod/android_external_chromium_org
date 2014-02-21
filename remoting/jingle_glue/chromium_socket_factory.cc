@@ -13,7 +13,7 @@
 #include "net/base/net_errors.h"
 #include "net/udp/udp_server_socket.h"
 #include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
-#include "third_party/libjingle/source/talk/base/asyncresolverinterface.h"
+#include "third_party/libjingle/source/talk/base/nethelpers.h"
 
 namespace remoting {
 
@@ -35,29 +35,6 @@ bool IsTransientError(int error) {
       error == net::ERR_ADDRESS_INVALID;
 }
 
-// TODO(lambroslambrou): Move STUN/relay address resolution from
-// PepperPortAllocator to this class.
-class DummyAsyncResolver : public talk_base::AsyncResolverInterface {
- public:
-  DummyAsyncResolver() {}
-  virtual ~DummyAsyncResolver() {}
-  virtual void Start(const talk_base::SocketAddress& addr) OVERRIDE {}
-  virtual bool GetResolvedAddress(
-      int family,
-      talk_base::SocketAddress* addr) const OVERRIDE {
-    return false;
-  }
-  virtual int GetError() const OVERRIDE {
-    return 0;
-  }
-  virtual void Destroy(bool wait) OVERRIDE {
-    delete this;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DummyAsyncResolver);
-};
-
 class UdpPacketSocket : public talk_base::AsyncPacketSocket {
  public:
   UdpPacketSocket();
@@ -70,10 +47,10 @@ class UdpPacketSocket : public talk_base::AsyncPacketSocket {
   virtual talk_base::SocketAddress GetLocalAddress() const OVERRIDE;
   virtual talk_base::SocketAddress GetRemoteAddress() const OVERRIDE;
   virtual int Send(const void* data, size_t data_size,
-                   talk_base::DiffServCodePoint dscp) OVERRIDE;
+                   const talk_base::PacketOptions& options) OVERRIDE;
   virtual int SendTo(const void* data, size_t data_size,
                      const talk_base::SocketAddress& address,
-                     talk_base::DiffServCodePoint dscp) OVERRIDE;
+                     const talk_base::PacketOptions& options) OVERRIDE;
   virtual int Close() OVERRIDE;
   virtual State GetState() const OVERRIDE;
   virtual int GetOption(talk_base::Socket::Option option, int* value) OVERRIDE;
@@ -186,7 +163,7 @@ talk_base::SocketAddress UdpPacketSocket::GetRemoteAddress() const {
 }
 
 int UdpPacketSocket::Send(const void* data, size_t data_size,
-                          talk_base::DiffServCodePoint dscp) {
+                          const talk_base::PacketOptions& options) {
   // UDP sockets are not connected - this method should never be called.
   NOTREACHED();
   return EWOULDBLOCK;
@@ -194,7 +171,7 @@ int UdpPacketSocket::Send(const void* data, size_t data_size,
 
 int UdpPacketSocket::SendTo(const void* data, size_t data_size,
                             const talk_base::SocketAddress& address,
-                            talk_base::DiffServCodePoint dscp) {
+                            const talk_base::PacketOptions& options) {
   if (state_ != STATE_BOUND) {
     NOTREACHED();
     return EINVAL;
@@ -267,6 +244,10 @@ int UdpPacketSocket::SetOption(talk_base::Socket::Option option, int value) {
       return -1;
 
     case talk_base::Socket::OPT_DSCP:
+      NOTIMPLEMENTED();
+      return -1;
+
+    case talk_base::Socket::OPT_RTP_SENDTIME_EXTN_ID:
       NOTIMPLEMENTED();
       return -1;
   }
@@ -350,7 +331,8 @@ void UdpPacketSocket::HandleReadResult(int result) {
       LOG(ERROR) << "Failed to convert address received from RecvFrom().";
       return;
     }
-    SignalReadPacket(this, receive_buffer_->data(), result, address);
+    SignalReadPacket(this, receive_buffer_->data(), result, address,
+                     talk_base::CreatePacketTime(0));
   } else {
     LOG(ERROR) << "Received error when reading from UDP socket: " << result;
   }
@@ -397,7 +379,7 @@ ChromiumPacketSocketFactory::CreateClientTcpSocket(
 
 talk_base::AsyncResolverInterface*
 ChromiumPacketSocketFactory::CreateAsyncResolver() {
-  return new DummyAsyncResolver();
+  return new talk_base::AsyncResolver();
 }
 
 }  // namespace remoting

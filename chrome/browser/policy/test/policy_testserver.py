@@ -235,7 +235,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     if data:
       settings.download_url = urlparse.urljoin(
           self.server.GetBaseURL(), 'externalpolicydata?key=%s' % policy_key)
-      settings.secure_hash = hashlib.sha1(data).digest()
+      settings.secure_hash = hashlib.sha256(data).digest()
     return settings.SerializeToString()
 
   def CheckGoogleLogin(self):
@@ -364,11 +364,13 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     for request in msg.request:
       fetch_response = response.policy_response.response.add()
       if (request.policy_type in
-             ('google/chrome/user',
-              'google/chromeos/user',
+             ('google/android/user',
+              'google/chrome/extension',
               'google/chromeos/device',
               'google/chromeos/publicaccount',
-              'google/chrome/extension')):
+              'google/chromeos/user',
+              'google/chrome/user',
+              'google/ios/user')):
         if request_type != 'policy':
           fetch_response.error_code = 400
           fetch_response.error_message = 'Invalid request type'
@@ -543,9 +545,11 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     if msg.settings_entity_id:
       policy_key += '/' + msg.settings_entity_id
     if msg.policy_type in token_info['allowed_policy_types']:
-      if (msg.policy_type == 'google/chromeos/user' or
-          msg.policy_type == 'google/chrome/user' or
-          msg.policy_type == 'google/chromeos/publicaccount'):
+      if msg.policy_type in ('google/android/user',
+                             'google/chromeos/publicaccount',
+                             'google/chromeos/user',
+                             'google/chrome/user',
+                             'google/ios/user'):
         settings = cp.CloudPolicySettings()
         payload = self.server.ReadPolicyFromDataDir(policy_key, settings)
         if payload is None:
@@ -733,7 +737,7 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
     if self.client_state_file is not None:
       try:
         file_contents = open(self.client_state_file).read()
-        self._registered_tokens = json.loads(file_contents)
+        self._registered_tokens = json.loads(file_contents, strict=False)
       except IOError:
         pass
 
@@ -746,7 +750,7 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       print 'No JSON module, cannot parse policy information'
     else :
       try:
-        policy = json.loads(open(self.policy_path).read())
+        policy = json.loads(open(self.policy_path).read(), strict=False)
       except IOError:
         print 'Failed to load policy from %s' % self.policy_path
     return policy
@@ -776,6 +780,12 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       dm.DeviceRegisterRequest.DEVICE: [
           'google/chromeos/device',
           'google/chromeos/publicaccount'
+      ],
+      dm.DeviceRegisterRequest.ANDROID_BROWSER: [
+          'google/android/user'
+      ],
+      dm.DeviceRegisterRequest.IOS_BROWSER: [
+          'google/ios/user'
       ],
       dm.DeviceRegisterRequest.TT: ['google/chromeos/user',
                                     'google/chrome/user'],

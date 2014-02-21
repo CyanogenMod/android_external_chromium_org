@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #import "chrome/browser/mac/keystone_glue.h"
+#include "chrome/browser/mac/obsolete_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -57,8 +58,9 @@ VersionUpdater* VersionUpdater::Create() {
   return new VersionUpdaterMac;
 }
 
-VersionUpdaterMac::VersionUpdaterMac() {
-  keystone_observer_.reset([[KeystoneObserver alloc] initWithUpdater:this]);
+VersionUpdaterMac::VersionUpdaterMac()
+    : show_promote_button_(false),
+      keystone_observer_([[KeystoneObserver alloc] initWithUpdater:this]) {
 }
 
 VersionUpdaterMac::~VersionUpdaterMac() {
@@ -222,6 +224,13 @@ void VersionUpdaterMac::UpdateStatus(NSDictionary* dictionary) {
 }
 
 void VersionUpdaterMac::UpdateShowPromoteButton() {
+  if (ObsoleteSystemMac::Has32BitOnlyCPU() &&
+      ObsoleteSystemMac::Is32BitEndOfTheLine()) {
+    // Promotion is moot upon reaching the end of the line.
+    show_promote_button_ = false;
+    return;
+  }
+
   KeystoneGlue* keystone_glue = [KeystoneGlue defaultKeystoneGlue];
   AutoupdateStatus recent_status = [keystone_glue recentStatus];
   if (recent_status == kAutoupdateRegistering ||

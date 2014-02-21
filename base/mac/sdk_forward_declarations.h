@@ -15,13 +15,14 @@
 
 #if !defined(MAC_OS_X_VERSION_10_7) || \
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+
 enum {
   NSEventPhaseNone        = 0, // event not associated with a phase.
   NSEventPhaseBegan       = 0x1 << 0,
   NSEventPhaseStationary  = 0x1 << 1,
   NSEventPhaseChanged     = 0x1 << 2,
   NSEventPhaseEnded       = 0x1 << 3,
-  NSEventPhaseCancelled   = 0x1 << 4,
+  NSEventPhaseCancelled   = 0x1 << 4
 };
 typedef NSUInteger NSEventPhase;
 
@@ -43,6 +44,7 @@ typedef NSInteger NSWindowAnimationBehavior;
 @interface NSEvent (LionSDK)
 + (BOOL)isSwipeTrackingFromScrollEventsEnabled;
 
+- (NSEventPhase)momentumPhase;
 - (NSEventPhase)phase;
 - (CGFloat)scrollingDeltaX;
 - (CGFloat)scrollingDeltaY;
@@ -73,6 +75,19 @@ typedef NSInteger NSWindowAnimationBehavior;
 - (NSWindowAnimationBehavior)animationBehavior;
 - (void)setAnimationBehavior:(NSWindowAnimationBehavior)newAnimationBehavior;
 @end
+
+@interface NSAnimationContext (LionSDK)
++ (void)runAnimationGroup:(void (^)(NSAnimationContext *context))changes
+        completionHandler:(void (^)(void))completionHandler;
+@end
+
 #endif  // MAC_OS_X_VERSION_10_7
+
+#if !defined(MAC_OS_X_VERSION_10_8) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_8
+enum {
+  NSEventPhaseMayBegin    = 0x1 << 5
+};
+#endif  // MAC_OS_X_VERSION_10_8
 
 #endif  // BASE_MAC_SDK_FORWARD_DECLARATIONS_H_

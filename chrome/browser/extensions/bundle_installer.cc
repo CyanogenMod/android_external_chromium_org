@@ -19,15 +19,12 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-using content::NavigationController;
 
 namespace extensions {
 
@@ -44,7 +41,7 @@ AutoApproveForTest g_auto_approve_for_test = DO_NOT_SKIP;
 // Creates a dummy extension and sets the manifest's name to the item's
 // localized name.
 scoped_refptr<Extension> CreateDummyExtension(const BundleInstaller::Item& item,
-                                              DictionaryValue* manifest) {
+                                              base::DictionaryValue* manifest) {
   // We require localized names so we can have nice error messages when we can't
   // parse an extension manifest.
   CHECK(!item.localized_name.empty());
@@ -96,8 +93,8 @@ void BundleInstaller::SetAutoApproveForTesting(bool auto_approve) {
 
 BundleInstaller::Item::Item() : state(STATE_PENDING) {}
 
-string16 BundleInstaller::Item::GetNameForDisplay() {
-  base::string16 name = UTF8ToUTF16(localized_name);
+base::string16 BundleInstaller::Item::GetNameForDisplay() {
+  base::string16 name = base::UTF8ToUTF16(localized_name);
   base::i18n::AdjustStringForLocaleDirection(&name);
   return l10n_util::GetStringFUTF16(IDS_EXTENSION_PERMISSION_LINE, name);
 }
@@ -136,7 +133,7 @@ void BundleInstaller::PromptForApproval(Delegate* delegate) {
   ParseManifests();
 }
 
-void BundleInstaller::CompleteInstall(NavigationController* controller,
+void BundleInstaller::CompleteInstall(content::WebContents* web_contents,
                                       Delegate* delegate) {
   CHECK(approved_);
 
@@ -168,7 +165,7 @@ void BundleInstaller::CompleteInstall(NavigationController* controller,
     scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
         profile_,
         this,
-        controller,
+        web_contents,
         i->first,
         approval.Pass(),
         WebstoreInstaller::INSTALL_SOURCE_OTHER);
@@ -176,7 +173,7 @@ void BundleInstaller::CompleteInstall(NavigationController* controller,
   }
 }
 
-string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
+base::string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
   // For STATE_FAILED, we can't tell if the items were apps or extensions
   // so we always show the same message.
   if (state == Item::STATE_FAILED) {
@@ -297,9 +294,9 @@ void BundleInstaller::ShowInstalledBubbleIfDone() {
 void BundleInstaller::OnWebstoreParseSuccess(
     const std::string& id,
     const SkBitmap& icon,
-    DictionaryValue* manifest) {
+    base::DictionaryValue* manifest) {
   dummy_extensions_.push_back(CreateDummyExtension(items_[id], manifest));
-  parsed_manifests_[id] = linked_ptr<DictionaryValue>(manifest);
+  parsed_manifests_[id] = linked_ptr<base::DictionaryValue>(manifest);
 
   ShowPromptIfDoneParsing();
 }

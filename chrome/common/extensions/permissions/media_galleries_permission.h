@@ -14,7 +14,8 @@ namespace extensions {
 
 // Media Galleries permissions are as follows:
 //   <media-galleries-permission-pattern>
-//             := <access> | <access> 'allAutoDetected' | 'allAutoDetected'
+//             := <access> | <access> 'allAutoDetected' | 'allAutoDetected' |
+//                <access> 'scan' | 'scan'
 //   <access>  := 'read' | 'read' <access> | 'read' <secondary-access>
 //   <secondary-access>
 //             := 'delete' | 'delete' <secondary-access> |
@@ -37,13 +38,14 @@ class MediaGalleriesPermission
   // SetDisjunctionPermission overrides.
   // MediaGalleriesPermission does additional checks to make sure the
   // permissions do not contain unknown values.
-  virtual bool FromValue(const base::Value* value) OVERRIDE;
+  virtual bool FromValue(const base::Value* value, std::string* error) OVERRIDE;
 
   // APIPermission overrides.
   virtual PermissionMessages GetMessages() const OVERRIDE;
 
   // Permission strings.
   static const char kAllAutoDetectedPermission[];
+  static const char kScanPermission[];
   static const char kReadPermission[];
   static const char kCopyToPermission[];
   static const char kDeletePermission[];

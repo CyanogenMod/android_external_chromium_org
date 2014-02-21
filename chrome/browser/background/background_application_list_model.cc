@@ -17,9 +17,7 @@
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -27,8 +25,12 @@
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "ui/base/l10n/l10n_util_collator.h"
@@ -38,6 +40,8 @@
 using extensions::APIPermission;
 using extensions::Extension;
 using extensions::ExtensionList;
+using extensions::ExtensionRegistry;
+using extensions::ExtensionSet;
 using extensions::PermissionSet;
 using extensions::UnloadedExtensionInfo;
 using extensions::UpdatedExtensionPermissionsInfo;
@@ -59,8 +63,8 @@ ExtensionNameComparator::ExtensionNameComparator(icu::Collator* collator)
 bool ExtensionNameComparator::operator()(
     const scoped_refptr<const Extension>& x,
     const scoped_refptr<const Extension>& y) {
-  return l10n_util::StringComparator<string16>(collator_)(
-      UTF8ToUTF16(x->name()), UTF8ToUTF16(y->name()));
+  return l10n_util::StringComparator<base::string16>(collator_)(
+      base::UTF8ToUTF16(x->name()), base::UTF8ToUTF16(y->name()));
 }
 
 // Background application representation, private to the
@@ -88,10 +92,11 @@ class BackgroundApplicationListModel::Application
 namespace {
 void GetServiceApplications(ExtensionService* service,
                             ExtensionList* applications_result) {
-  const ExtensionSet* extensions = service->extensions();
+  ExtensionRegistry* registry = ExtensionRegistry::Get(service->profile());
+  const ExtensionSet& enabled_extensions = registry->enabled_extensions();
 
-  for (ExtensionSet::const_iterator cursor = extensions->begin();
-       cursor != extensions->end();
+  for (ExtensionSet::const_iterator cursor = enabled_extensions.begin();
+       cursor != enabled_extensions.end();
        ++cursor) {
     const Extension* extension = cursor->get();
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension,
@@ -102,9 +107,9 @@ void GetServiceApplications(ExtensionService* service,
 
   // Walk the list of terminated extensions also (just because an extension
   // crashed doesn't mean we should ignore it).
-  extensions = service->terminated_extensions();
-  for (ExtensionSet::const_iterator cursor = extensions->begin();
-       cursor != extensions->end();
+  const ExtensionSet& terminated_extensions = registry->terminated_extensions();
+  for (ExtensionSet::const_iterator cursor = terminated_extensions.begin();
+       cursor != terminated_extensions.end();
        ++cursor) {
     const Extension* extension = cursor->get();
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension,
@@ -316,7 +321,7 @@ bool BackgroundApplicationListModel::IsBackgroundApp(
 
   BackgroundContentsService* service =
       BackgroundContentsServiceFactory::GetForProfile(profile);
-  base::string16 app_id = ASCIIToUTF16(extension.id());
+  base::string16 app_id = base::ASCIIToUTF16(extension.id());
   // If we have an active or registered background contents for this app, then
   // it's a background app. This covers the cases where the app has created its
   // background contents, but it hasn't navigated yet, or the background

@@ -26,7 +26,7 @@ namespace drive {
 class DriveAppRegistry;
 class DriveServiceInterface;
 class FileSystemInterface;
-class ResourceEntry;
+
 
 namespace util {
 
@@ -59,8 +59,8 @@ const base::FilePath& GetDriveGrandRootPath();
 // Returns the path of the directory representing "My Drive".
 const base::FilePath& GetDriveMyDriveRootPath();
 
-// Returns the Drive mount point path, which looks like "/special/drive".
-const base::FilePath& GetDriveMountPointPath();
+// Returns the Drive mount point path, which looks like "/special/drive-<hash>".
+base::FilePath GetDriveMountPointPath(Profile* profile);
 
 // Returns the FileSystem for the |profile|. If not available (not mounted
 // or disabled), returns NULL.
@@ -84,16 +84,6 @@ DriveAppRegistry* GetDriveAppRegistryByProfile(Profile* profile);
 // or disabled), returns NULL.
 DriveServiceInterface* GetDriveServiceByProfile(Profile* profile);
 
-// Checks if the resource ID is a special one, which is effective only in our
-// implementation and is not supposed to be sent to the server.
-bool IsSpecialResourceId(const std::string& resource_id);
-
-// Returns a ResourceEntry for "/drive/root" directory.
-ResourceEntry CreateMyDriveRootEntry(const std::string& root_resource_id);
-
-// Returns the Drive mount path as string.
-const std::string& GetDriveMountPointPathAsString();
-
 // Returns the gdata file resource url formatted as "drive:<path>"
 GURL FilePathToDriveURL(const base::FilePath& path);
 
@@ -106,19 +96,15 @@ void MaybeSetDriveURL(Profile* profile, const base::FilePath& path, GURL* url);
 // Returns true if the given path is under the Drive mount point.
 bool IsUnderDriveMountPoint(const base::FilePath& path);
 
-// Returns true if the given path is under the Drive mount point and needs to be
-// migrated to the new namespace. http://crbug.com/174233.
-bool NeedsNamespaceMigration(const base::FilePath& path);
-
-// Returns new FilePath with a namespace "root" inserted at the 3rd component.
-// e.g. "/special/drive/root/dir" for "/special/drive/dir".
-// NeedsNamespaceMigration(path) should be true (after the TODOs are resolved).
-base::FilePath ConvertToMyDriveNamespace(const base::FilePath& path);
-
 // Extracts the Drive path from the given path located under the Drive mount
 // point. Returns an empty path if |path| is not under the Drive mount point.
-// Examples: ExtractDrivePath("/special/drive/foo.txt") => "drive/foo.txt"
+// Examples: ExtractDrivePath("/special/drive-xxx/foo.txt") => "drive/foo.txt"
 base::FilePath ExtractDrivePath(const base::FilePath& path);
+
+// Extracts |profile| from the given paths located under
+// GetDriveMountPointPath(profile). Returns NULL if it does not correspond to
+// a valid mount point path. Must be called from UI thread.
+Profile* ExtractProfileFromPath(const base::FilePath& path);
 
 // Extracts the Drive path (e.g., "drive/foo.txt") from the filesystem URL.
 // Returns an empty path if |url| does not point under Drive mount point.
@@ -156,6 +142,12 @@ typedef base::Callback<void (FileError, const base::FilePath& path)>
 void PrepareWritableFileAndRun(Profile* profile,
                                const base::FilePath& path,
                                const PrepareWritableFileCallback& callback);
+
+// Checks whether a directory exists at the given Drive path |directory|.
+// Must be called from UI thread. The result will be called back to |callback|.
+void CheckDirectoryExists(Profile* profile,
+                          const base::FilePath& directory,
+                          const FileOperationCallback& callback);
 
 // Ensures the existence of |directory| of '/special/drive/foo'.  This will
 // create |directory| and its ancestors if they don't exist.  |callback| is

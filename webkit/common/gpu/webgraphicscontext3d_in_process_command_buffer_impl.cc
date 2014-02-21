@@ -24,7 +24,7 @@
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/skia_bindings/gl_bindings_skia_cmd_buffer.h"
 #include "ui/gfx/size.h"
-#include "ui/gl/gl_surface.h"
+#include "ui/gl/gl_implementation.h"
 
 using gpu::gles2::GLES2Implementation;
 using gpu::GLInProcessContext;
@@ -74,12 +74,9 @@ scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
 WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
     const blink::WebGraphicsContext3D::Attributes& attributes,
     gfx::AcceleratedWidget window) {
-  scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context;
-  if (gfx::GLSurface::InitializeOneOff()) {
-    context.reset(new WebGraphicsContext3DInProcessCommandBufferImpl(
+  DCHECK_NE(gfx::GetGLImplementation(), gfx::kGLImplementationNone);
+  return make_scoped_ptr(new WebGraphicsContext3DInProcessCommandBufferImpl(
       scoped_ptr< ::gpu::GLInProcessContext>(), attributes, false, window));
-  }
-  return context.Pass();
 }
 
 // static
@@ -87,24 +84,21 @@ scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
 WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
   return make_scoped_ptr(new WebGraphicsContext3DInProcessCommandBufferImpl(
-                             scoped_ptr< ::gpu::GLInProcessContext>(),
-                             attributes,
-                             true,
-                             gfx::kNullAcceleratedWidget))
-      .Pass();
+      scoped_ptr< ::gpu::GLInProcessContext>(),
+      attributes,
+      true,
+      gfx::kNullAcceleratedWidget));
 }
 
 scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
 WebGraphicsContext3DInProcessCommandBufferImpl::WrapContext(
     scoped_ptr< ::gpu::GLInProcessContext> context,
     const blink::WebGraphicsContext3D::Attributes& attributes) {
-  return make_scoped_ptr(
-      new WebGraphicsContext3DInProcessCommandBufferImpl(
-          context.Pass(),
-          attributes,
-          true /* is_offscreen. Not used. */,
-          gfx::kNullAcceleratedWidget /* window. Not used. */))
-      .Pass();
+  return make_scoped_ptr(new WebGraphicsContext3DInProcessCommandBufferImpl(
+      context.Pass(),
+      attributes,
+      true /* is_offscreen. Not used. */,
+      gfx::kNullAcceleratedWidget /* window. Not used. */));
 }
 
 WebGraphicsContext3DInProcessCommandBufferImpl::
@@ -398,23 +392,8 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::discardFramebufferEXT(
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::
-    discardBackbufferCHROMIUM() {
-}
-
-void WebGraphicsContext3DInProcessCommandBufferImpl::
-    ensureBackbufferCHROMIUM() {
-}
-
-void WebGraphicsContext3DInProcessCommandBufferImpl::
     copyTextureToParentTextureCHROMIUM(WebGLId texture, WebGLId parentTexture) {
   NOTIMPLEMENTED();
-}
-
-void WebGraphicsContext3DInProcessCommandBufferImpl::
-    rateLimitOffscreenContextCHROMIUM() {
-  // TODO(gmam): See if we can comment this in.
-  // ClearContext();
-  gl_->RateLimitOffscreenContextCHROMIUM();
 }
 
 blink::WebString WebGraphicsContext3DInProcessCommandBufferImpl::
@@ -1108,11 +1087,6 @@ DELEGATE_TO_GL_2(bindTexImage2DCHROMIUM, BindTexImage2DCHROMIUM,
 DELEGATE_TO_GL_2(releaseTexImage2DCHROMIUM, ReleaseTexImage2DCHROMIUM,
                  WGC3Denum, WGC3Dint)
 
-DELEGATE_TO_GL_1R(createStreamTextureCHROMIUM, CreateStreamTextureCHROMIUM,
-                  WebGLId, WebGLId)
-DELEGATE_TO_GL_1(destroyStreamTextureCHROMIUM, DestroyStreamTextureCHROMIUM,
-                 WebGLId)
-
 void* WebGraphicsContext3DInProcessCommandBufferImpl::mapBufferCHROMIUM(
     WGC3Denum target, WGC3Denum access) {
   ClearContext();
@@ -1160,6 +1134,14 @@ DELEGATE_TO_GL_2R(mapImageCHROMIUM, MapImageCHROMIUM,
                   WGC3Duint, WGC3Denum, void*);
 
 DELEGATE_TO_GL_1(unmapImageCHROMIUM, UnmapImageCHROMIUM, WGC3Duint);
+
+DELEGATE_TO_GL_6(framebufferTexture2DMultisampleEXT,
+                 FramebufferTexture2DMultisampleEXT,
+                 WGC3Denum, WGC3Denum, WGC3Denum, WebGLId, WGC3Dint, WGC3Dsizei)
+
+DELEGATE_TO_GL_5(renderbufferStorageMultisampleEXT,
+                 RenderbufferStorageMultisampleEXT, WGC3Denum, WGC3Dsizei,
+                 WGC3Denum, WGC3Dsizei, WGC3Dsizei)
 
 DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
                  WebGLId, WGC3Dint, const WGC3Dchar*)

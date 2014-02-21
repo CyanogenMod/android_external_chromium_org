@@ -12,7 +12,7 @@ namespace ash {
 namespace shell {
 
 WindowWatcherShelfItemDelegate::WindowWatcherShelfItemDelegate(
-    LauncherID id,
+    ShelfID id,
     WindowWatcher* watcher)
     : id_(id), watcher_(watcher) {
   DCHECK_GT(id_, 0);
@@ -24,7 +24,7 @@ WindowWatcherShelfItemDelegate::~WindowWatcherShelfItemDelegate() {
 
 bool WindowWatcherShelfItemDelegate::ItemSelected(const ui::Event& event) {
   aura::Window* window = watcher_->GetWindowByID(id_);
-  if (window->type() == aura::client::WINDOW_TYPE_PANEL)
+  if (window->type() == ui::wm::WINDOW_TYPE_PANEL)
     wm::MoveWindowToEventRoot(window, event);
   window->Show();
   wm::ActivateWindow(window);
@@ -51,6 +51,9 @@ bool WindowWatcherShelfItemDelegate::IsDraggable() {
 
 bool WindowWatcherShelfItemDelegate::ShouldShowTooltip() {
   return true;
+}
+
+void WindowWatcherShelfItemDelegate::Close() {
 }
 
 }  // namespace shell

@@ -42,7 +42,8 @@ const char kCpuArch_Help[] =
     "Possible initial values set by GN:\n"
     "  - \"x86\"\n"
     "  - \"x64\"\n"
-    "  - \"arm\"\n";
+    "  - \"arm\"\n"
+    "  - \"mipsel\"\n";
 
 const char kCurrentToolchain[] = "current_toolchain";
 const char kCurrentToolchain_HelpShort[] =
@@ -154,7 +155,7 @@ const char kRootGenDir_Help[] =
     "\n"
     "  This is primarily useful for setting up include paths for generated\n"
     "  files. If you are passing this to a script, you will want to pass it\n"
-    "  through to_build_path() (see \"gn help to_build_path\") to convert it\n"
+    "  through rebase_path() (see \"gn help rebase_path\") to convert it\n"
     "  to be relative to the build directory.\n"
     "\n"
     "  See also \"target_gen_dir\" which is usually a better location for\n"
@@ -172,7 +173,7 @@ const char kRootOutDir_Help[] =
     "\n"
     "  This is primarily useful for setting up script calls. If you are\n"
     "  passing this to a script, you will want to pass it through\n"
-    "  to_build_path() (see \"gn help to_build_path\") to convert it\n"
+    "  rebase_path() (see \"gn help rebase_path\") to convert it\n"
     "  to be relative to the build directory.\n"
     "\n"
     "  See also \"target_out_dir\" which is usually a better location for\n"
@@ -182,7 +183,7 @@ const char kRootOutDir_Help[] =
     "\n"
     "  custom(\"myscript\") {\n"
     "    # Pass the output dir to the script.\n"
-    "    args = [ \"-o\", to_build_path(root_out_dir) ]\n"
+    "    args = [ \"-o\", rebase_path(root_out_dir, \".\", root_build_dir) ]\n"
     "  }\n";
 
 const char kTargetGenDir[] = "target_gen_dir";
@@ -198,7 +199,7 @@ const char kTargetGenDir_Help[] =
     "\n"
     "  This is primarily useful for setting up include paths for generated\n"
     "  files. If you are passing this to a script, you will want to pass it\n"
-    "  through to_build_path() (see \"gn help to_build_path\") to convert it\n"
+    "  through rebase_path() (see \"gn help rebase_path\") to convert it\n"
     "  to be relative to the build directory.\n"
     "\n"
     "  See also \"gn help root_gen_dir\".\n"
@@ -207,7 +208,8 @@ const char kTargetGenDir_Help[] =
     "\n"
     "  custom(\"myscript\") {\n"
     "    # Pass the generated output dir to the script.\n"
-    "    args = [ \"-o\", to_build_path(target_gen_dir) ]\n"
+    "    args = [ \"-o\", rebase_path(target_gen_dir, \".\", root_build_dir) ]"
+    "\n"
     "  }\n";
 
 const char kTargetOutDir[] = "target_out_dir";
@@ -223,7 +225,7 @@ const char kTargetOutDir_Help[] =
     "\n"
     "  This is primarily useful for setting up arguments for calling\n"
     "  scripts. If you are passing this to a script, you will want to pass it\n"
-    "  through to_build_path() (see \"gn help to_build_path\") to convert it\n"
+    "  through rebase_path() (see \"gn help rebase_path\") to convert it\n"
     "  to be relative to the build directory.\n"
     "\n"
     "  See also \"gn help root_out_dir\".\n"
@@ -232,7 +234,8 @@ const char kTargetOutDir_Help[] =
     "\n"
     "  custom(\"myscript\") {\n"
     "    # Pass the output dir to the script.\n"
-    "    args = [ \"-o\", to_build_path(target_out_dir) ]\n"
+    "    args = [ \"-o\", rebase_path(target_out_dir, \".\", root_build_dir) ]"
+    "\n"
     "  }\n";
 
 // Target variables ------------------------------------------------------------
@@ -532,6 +535,19 @@ const char kGypFile_Help[] =
     "  GYP file, just put gyp_file = \"foo\" at the top of the file and\n"
     "  the variable will be in scope for all targets.\n";
 
+const char kGypHeader[] = "gyp_header";
+const char kGypHeader_HelpShort[] =
+    "gyp_header: [string] Extra stuff to prepend to GYP files.";
+const char kGypHeader_Help[] =
+    "gyp_header: Extra stuff to prepend to GYP files.\n"
+    "\n"
+    "  A Python dictionary string. This will be inserted after the initial\n"
+    "  \"{\" in the GYP file. It is expected this is used to define the\n"
+    "  make_global_settings.\n"
+    "\n"
+    "  This string should end in a comma to keep the python dictionary syntax\n"
+    "  valid when everything is concatenated.\n";
+
 const char kHardDep[] = "hard_dep";
 const char kHardDep_HelpShort[] =
     "hard_dep: [boolean] Indicates a target should be built before dependees.";
@@ -728,7 +744,7 @@ const char kSourcePrereqs_Help[] =
     "  listed in the \"outputs\" section of another target. There is no\n"
     "  reason to declare static source files as source prerequisites since\n"
     "  the normal include file dependency management will handle them more\n"
-    "  efficiently anwyay.\n"
+    "  efficiently anyway.\n"
     "\n"
     "  For custom script targets that don't generate \".d\" files, the\n"
     "  \"source_prereqs\" section is how you can list known compile-time\n"
@@ -812,6 +828,7 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(External)
     INSERT_VARIABLE(ForwardDependentConfigsFrom)
     INSERT_VARIABLE(GypFile)
+    INSERT_VARIABLE(GypHeader)
     INSERT_VARIABLE(HardDep)
     INSERT_VARIABLE(IncludeDirs)
     INSERT_VARIABLE(Ldflags)

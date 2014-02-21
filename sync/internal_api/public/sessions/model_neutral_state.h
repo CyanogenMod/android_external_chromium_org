@@ -7,9 +7,9 @@
 
 #include "base/basictypes.h"
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/syncer_error.h"
 #include "sync/protocol/sync.pb.h"
-#include "sync/protocol/sync_protocol_error.h"
 
 namespace syncer {
 namespace sessions {
@@ -35,10 +35,6 @@ struct SYNC_EXPORT ModelNeutralState {
   int num_tombstone_updates_downloaded_total;
   int num_reflected_updates_downloaded_total;
 
-  // If the syncer encountered a MIGRATION_DONE code, these are the types that
-  // the client must now "migrate", by purging and re-downloading all updates.
-  ModelTypeSet types_needing_local_migration;
-
   // Update application and conflicts.
   int num_updates_applied;
   int num_encryption_conflicts;
@@ -48,9 +44,6 @@ struct SYNC_EXPORT ModelNeutralState {
   // Overwrites due to conflict resolution counters.
   int num_local_overwrites;
   int num_server_overwrites;
-
-  // Any protocol errors that we received during this sync session.
-  SyncProtocolError sync_protocol_error;
 
   // Records the most recent results of GetKey, PostCommit and GetUpdates
   // commands.

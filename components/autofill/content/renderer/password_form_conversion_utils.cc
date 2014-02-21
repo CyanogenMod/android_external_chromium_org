@@ -32,6 +32,8 @@ scoped_ptr<PasswordForm> InitPasswordFormFromWebPasswordForm(
       web_password_form.possibleUserNames.size());
   password_form->password_element = web_password_form.passwordElement;
   password_form->password_value = web_password_form.passwordValue;
+  password_form->password_autocomplete_set =
+      web_password_form.passwordShouldAutocomplete;
   password_form->old_password_element = web_password_form.oldPasswordElement;
   password_form->old_password_value = web_password_form.oldPasswordValue;
   password_form->scheme = PasswordForm::SCHEME_HTML;
@@ -39,6 +41,7 @@ scoped_ptr<PasswordForm> InitPasswordFormFromWebPasswordForm(
   password_form->preferred = false;
   password_form->blacklisted_by_user = false;
   password_form->type = PasswordForm::TYPE_MANUAL;
+  password_form->use_additional_authentication = false;
   WebFormElementToFormData(web_form,
                            blink::WebFormControlElement(),
                            REQUIRE_NONE,

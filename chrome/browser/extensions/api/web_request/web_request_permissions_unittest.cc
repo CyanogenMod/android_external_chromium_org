@@ -11,6 +11,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/browser/info_map.h"
+#include "ipc/ipc_message.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -84,7 +85,10 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest, TestHideRequestForURL) {
       "https://clients2.google.com/service/update2/crx",
       "http://www.gstatic.com/chrome/extensions/blacklist",
       "https://www.gstatic.com/chrome/extensions/blacklist",
-      "notregisteredscheme://www.foobar.com"
+      "notregisteredscheme://www.foobar.com",
+      "https://chrome.google.com/webstore/",
+      "https://chrome.google.com/webstore/"
+          "inlineinstall/detail/kcnhkahnjcbndmmehfkdnkjomaanaooo"
   };
   const char* non_sensitive_urls[] = {
       "http://www.google.com/"
@@ -123,12 +127,12 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest, TestHideRequestForURL) {
   {
     int process_id = 42;
     int site_instance_id = 23;
-    int frame_id = 17;
+    int view_id = 17;
     net::TestURLRequest sensitive_request(
         non_sensitive_url, net::DEFAULT_PRIORITY, NULL, &context);
     ResourceRequestInfo::AllocateForTesting(
         &sensitive_request, ResourceType::SCRIPT, NULL,
-        process_id, frame_id, false);
+        process_id, view_id, MSG_ROUTING_NONE, false);
     extension_info_map_->RegisterExtensionProcess(
         extension_misc::kWebStoreAppId, process_id, site_instance_id);
     EXPECT_TRUE(WebRequestPermissions::HideRequest(extension_info_map_.get(),
@@ -137,12 +141,12 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest, TestHideRequestForURL) {
   // If the process is the signin process, it becomes protected.
   {
     int process_id = kSigninProcessId;
-    int frame_id = 19;
+    int view_id = 19;
     net::TestURLRequest sensitive_request(
         non_sensitive_url, net::DEFAULT_PRIORITY, NULL, &context);
     ResourceRequestInfo::AllocateForTesting(
         &sensitive_request, ResourceType::SCRIPT, NULL,
-        process_id, frame_id, false);
+        process_id, view_id, MSG_ROUTING_NONE, false);
     EXPECT_TRUE(WebRequestPermissions::HideRequest(extension_info_map_.get(),
                                                    &sensitive_request));
   }

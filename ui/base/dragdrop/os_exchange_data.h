@@ -21,7 +21,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/dragdrop/download_file_interface.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 class GURL;
 class Pickle;
@@ -47,7 +47,7 @@ namespace ui {
 // TabContentsViewGtk uses a different class to handle drag support that does
 // not use OSExchangeData. As such, file contents and html support is only
 // compiled on windows.
-class UI_EXPORT OSExchangeData {
+class UI_BASE_EXPORT OSExchangeData {
  public:
   // CustomFormats are used for non-standard data types. For example, bookmark
   // nodes are written using a CustomFormat.
@@ -68,8 +68,12 @@ class UI_EXPORT OSExchangeData {
 #endif
   };
 
+  // Controls whether or not filenames should be converted to file: URLs when
+  // getting a URL.
+  enum FilenameToURLPolicy { CONVERT_FILENAMES, DO_NOT_CONVERT_FILENAMES, };
+
   // Encapsulates the info about a file to be downloaded.
-  struct UI_EXPORT DownloadFileInfo {
+  struct UI_BASE_EXPORT DownloadFileInfo {
     DownloadFileInfo(const base::FilePath& filename,
                      DownloadFileProvider* downloader);
     ~DownloadFileInfo();
@@ -79,7 +83,7 @@ class UI_EXPORT OSExchangeData {
   };
 
   // Encapsulates the info about a file.
-  struct UI_EXPORT FileInfo {
+  struct UI_BASE_EXPORT FileInfo {
     FileInfo(const base::FilePath& path, const base::FilePath& display_name);
     ~FileInfo();
 
@@ -91,7 +95,7 @@ class UI_EXPORT OSExchangeData {
 
   // Provider defines the platform specific part of OSExchangeData that
   // interacts with the native system.
-  class UI_EXPORT Provider {
+  class UI_BASE_EXPORT Provider {
    public:
     Provider() {}
     virtual ~Provider() {}
@@ -107,7 +111,9 @@ class UI_EXPORT OSExchangeData {
                                 const Pickle& data) = 0;
 
     virtual bool GetString(base::string16* data) const = 0;
-    virtual bool GetURLAndTitle(GURL* url, base::string16* title) const = 0;
+    virtual bool GetURLAndTitle(FilenameToURLPolicy policy,
+                                GURL* url,
+                                base::string16* title) const = 0;
     virtual bool GetFilename(base::FilePath* path) const = 0;
     virtual bool GetFilenames(
         std::vector<FileInfo>* file_names) const = 0;
@@ -183,7 +189,9 @@ class UI_EXPORT OSExchangeData {
   // not exist, the out parameter is not touched. The out parameter cannot be
   // NULL.
   bool GetString(base::string16* data) const;
-  bool GetURLAndTitle(GURL* url, base::string16* title) const;
+  bool GetURLAndTitle(FilenameToURLPolicy policy,
+                      GURL* url,
+                      base::string16* title) const;
   // Return the path of a file, if available.
   bool GetFilename(base::FilePath* path) const;
   bool GetFilenames(

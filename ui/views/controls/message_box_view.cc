@@ -36,7 +36,7 @@ const int kDefaultMessageWidth = 320;
 // 001C..001E    ; B # Cc   [3] <control-001C>..<control-001E>
 // 0085          ; B # Cc       <control-0085>
 // 2029          ; B # Zp       PARAGRAPH SEPARATOR
-bool IsParagraphSeparator(char16 c) {
+bool IsParagraphSeparator(base::char16 c) {
   return ( c == 0x000A || c == 0x000D || c == 0x001C || c == 0x001D ||
            c == 0x001E || c == 0x0085 || c == 0x2029);
 }
@@ -44,8 +44,8 @@ bool IsParagraphSeparator(char16 c) {
 // Splits |text| into a vector of paragraphs.
 // Given an example "\nabc\ndef\n\n\nhij\n", the split results should be:
 // "", "abc", "def", "", "", "hij", and "".
-void SplitStringIntoParagraphs(const string16& text,
-                               std::vector<string16>* paragraphs) {
+void SplitStringIntoParagraphs(const base::string16& text,
+                               std::vector<base::string16>* paragraphs) {
   paragraphs->clear();
 
   size_t start = 0;
@@ -65,7 +65,7 @@ namespace views {
 ///////////////////////////////////////////////////////////////////////////////
 // MessageBoxView, public:
 
-MessageBoxView::InitParams::InitParams(const string16& message)
+MessageBoxView::InitParams::InitParams(const base::string16& message)
     : options(NO_OPTIONS),
       message(message),
       message_width(kDefaultMessageWidth),
@@ -85,8 +85,8 @@ MessageBoxView::MessageBoxView(const InitParams& params)
 
 MessageBoxView::~MessageBoxView() {}
 
-string16 MessageBoxView::GetInputText() {
-  return prompt_field_ ? prompt_field_->text() : string16();
+base::string16 MessageBoxView::GetInputText() {
+  return prompt_field_ ? prompt_field_->text() : base::string16();
 }
 
 bool MessageBoxView::IsCheckBoxSelected() {
@@ -101,7 +101,7 @@ void MessageBoxView::SetIcon(const gfx::ImageSkia& icon) {
   ResetLayoutManager();
 }
 
-void MessageBoxView::SetCheckBoxLabel(const string16& label) {
+void MessageBoxView::SetCheckBoxLabel(const base::string16& label) {
   if (!checkbox_)
     checkbox_ = new Checkbox(label);
   else
@@ -115,7 +115,8 @@ void MessageBoxView::SetCheckBoxSelected(bool selected) {
   checkbox_->SetChecked(selected);
 }
 
-void MessageBoxView::SetLink(const string16& text, LinkListener* listener) {
+void MessageBoxView::SetLink(const base::string16& text,
+                             LinkListener* listener) {
   if (text.empty()) {
     DCHECK(!listener);
     delete link_;
@@ -162,7 +163,7 @@ bool MessageBoxView::AcceleratorPressed(const ui::Accelerator& accelerator) {
     return false;
 
   ui::ScopedClipboardWriter scw(clipboard, ui::CLIPBOARD_TYPE_COPY_PASTE);
-  string16 text = message_labels_[0]->text();
+  base::string16 text = message_labels_[0]->text();
   for (size_t i = 1; i < message_labels_.size(); ++i)
     text += message_labels_[i]->text();
   scw.WriteText(text);
@@ -174,7 +175,7 @@ bool MessageBoxView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 
 void MessageBoxView::Init(const InitParams& params) {
   if (params.options & DETECT_DIRECTIONALITY) {
-    std::vector<string16> texts;
+    std::vector<base::string16> texts;
     SplitStringIntoParagraphs(params.message, &texts);
     // If the text originates from a web page, its alignment is based on its
     // first character with strong directionality.

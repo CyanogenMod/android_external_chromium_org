@@ -9,13 +9,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_strings.h"
-#include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
@@ -25,7 +25,6 @@
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/view.h"
@@ -43,7 +42,7 @@
 #include "ui/events/gestures/gesture_recognizer.h"
 #endif
 
-using ::testing::_;
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -232,6 +231,8 @@ class TestView : public View {
     views::View::Blur();
   }
 
+  bool focusable() const { return View::focusable(); }
+
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
@@ -412,7 +413,7 @@ TEST_F(ViewTest, MouseEvent) {
 
   gfx::Point p1(110, 120);
   ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, p1, p1,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(pressed);
   EXPECT_EQ(v2->last_mouse_event_type_, ui::ET_MOUSE_PRESSED);
   EXPECT_EQ(v2->location_.x(), 10);
@@ -425,7 +426,7 @@ TEST_F(ViewTest, MouseEvent) {
   v2->Reset();
   gfx::Point p2(50, 40);
   ui::MouseEvent dragged(ui::ET_MOUSE_DRAGGED, p2, p2,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, 0);
   root->OnMouseDragged(dragged);
   EXPECT_EQ(v2->last_mouse_event_type_, ui::ET_MOUSE_DRAGGED);
   EXPECT_EQ(v2->location_.x(), -50);
@@ -436,7 +437,8 @@ TEST_F(ViewTest, MouseEvent) {
   // Releasted event out of bounds. Should still go to v2
   v1->Reset();
   v2->Reset();
-  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0);
+  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0,
+                          0);
   root->OnMouseDragged(released);
   EXPECT_EQ(v2->last_mouse_event_type_, ui::ET_MOUSE_RELEASED);
   EXPECT_EQ(v2->location_.x(), -100);
@@ -471,7 +473,7 @@ TEST_F(ViewTest, DeleteOnPressed) {
   v2->delete_on_pressed_ = true;
   gfx::Point point(110, 120);
   ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, point, point,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(pressed);
   EXPECT_EQ(0, v1->child_count());
 
@@ -1058,6 +1060,9 @@ TEST_F(ViewTest, HitTestMasks) {
   widget->CloseNow();
 }
 
+// Tests the correctness of the rect-based targeting algorithm implemented in
+// View::GetEventHandlerForRect(). See http://goo.gl/3Jp2BD for a description
+// of rect-based targeting.
 TEST_F(ViewTest, GetEventHandlerForRect) {
   Widget* widget = new Widget;
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
@@ -1075,6 +1080,8 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   // v4 (300, 200, 100, 100)
   //     v41 (310, 210, 80, 80)
   //         v411 (370, 275, 10, 5)
+  // v5 (450, 197, 30, 36)
+  //     v51 (450, 200, 30, 30)
 
   // The coordinates used for SetBounds are in parent coordinates.
 
@@ -1110,6 +1117,14 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   v411->SetBounds(60, 65, 10, 5);
   v41->AddChildView(v411);
 
+  TestView* v5 = new TestView;
+  v5->SetBounds(450, 197, 30, 36);
+  root_view->AddChildView(v5);
+
+  TestView* v51 = new TestView;
+  v51->SetBounds(0, 3, 30, 30);
+  v5->AddChildView(v51);
+
   // |touch_rect| does not intersect any descendant view of |root_view|.
   gfx::Rect touch_rect(105, 105, 30, 45);
   View* result_view = root_view->GetEventHandlerForRect(touch_rect);
@@ -1143,14 +1158,14 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   result_view = NULL;
 
   // Covers both |v1| and |v2| by at least 60%, but the center point
-  // of |touch_rect| is closer to the center line of |v2|.
+  // of |touch_rect| is closer to the center point of |v2|.
   touch_rect.SetRect(20, 20, 400, 100);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
   EXPECT_EQ(v2, result_view);
   result_view = NULL;
 
   // Covers both |v1| and |v2| by at least 60%, but the center point
-  // of |touch_rect| is closer to the center line (point) of |v1|.
+  // of |touch_rect| is closer to the center point of |v1|.
   touch_rect.SetRect(-700, -15, 1050, 110);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
   EXPECT_EQ(v1, result_view);
@@ -1163,15 +1178,8 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   result_view = NULL;
 
   // Intersects |v3| and |v31| by at least 60% and the center point
-  // of |touch_rect| is closer to the center line of |v3|.
+  // of |touch_rect| is closer to the center point of |v31|.
   touch_rect.SetRect(0, 200, 110, 100);
-  result_view = root_view->GetEventHandlerForRect(touch_rect);
-  EXPECT_EQ(v3, result_view);
-  result_view = NULL;
-
-  // Intersects |v3| and |v31| by at least 60% and the center point
-  // of |touch_rect| is equally close to the center lines of both.
-  touch_rect.SetRect(-60, 140, 200, 200);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
   EXPECT_EQ(v31, result_view);
   result_view = NULL;
@@ -1184,16 +1192,16 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   result_view = NULL;
 
   // Covers |v3|, |v31|, and |v32| all by at least 60%, and the
-  // center point of |touch_rect| is closest to the center line
-  // of |v3|.
+  // center point of |touch_rect| is closest to the center point
+  // of |v32|.
   touch_rect.SetRect(0, 200, 200, 100);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
-  EXPECT_EQ(v3, result_view);
+  EXPECT_EQ(v32, result_view);
   result_view = NULL;
 
   // Intersects all of |v3|, |v31|, and |v32|, but only covers
   // |v31| and |v32| by at least 60%. The center point of
-  // |touch_rect| is closest to the center line of |v32|.
+  // |touch_rect| is closest to the center point of |v32|.
   touch_rect.SetRect(30, 225, 180, 115);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
   EXPECT_EQ(v32, result_view);
@@ -1279,7 +1287,7 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
 
   // Covers |v3|, |v4|, and all of their descendants by at
   // least 60%. The center point of |touch_rect| is closest
-  // to the center line of |v32|.
+  // to the center point of |v32|.
   touch_rect.SetRect(0, 200, 400, 100);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
   EXPECT_EQ(v32, result_view);
@@ -1294,11 +1302,71 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   EXPECT_EQ(root_view, result_view);
   result_view = NULL;
 
-  // Covers all views by at least 60%. The center point of
-  // |touch_rect| is closest to the center line of |v2|.
+  // Covers all views (except |v5| and |v51|) by at least 60%. The
+  // center point of |touch_rect| is equally close to the center
+  // points of |v2| and |v32|. One is not a descendant of the other,
+  // so in this case the view selected is arbitrary (i.e.,
+  // it depends only on the ordering of nodes in the views
+  // hierarchy).
   touch_rect.SetRect(0, 0, 400, 300);
   result_view = root_view->GetEventHandlerForRect(touch_rect);
-  EXPECT_EQ(v2, result_view);
+  EXPECT_EQ(v32, result_view);
+  result_view = NULL;
+
+  // Covers |v5| and |v51| by at least 60%, and the center point of
+  // the touch is located within both views. Since both views share
+  // the same center point, the child view should be selected.
+  touch_rect.SetRect(440, 190, 40, 40);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v51, result_view);
+  result_view = NULL;
+
+  // Covers |v5| and |v51| by at least 60%, but the center point of
+  // the touch is not located within either view. Since both views
+  // share the same center point, the child view should be selected.
+  touch_rect.SetRect(455, 187, 60, 60);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v51, result_view);
+  result_view = NULL;
+
+  // Covers neither |v5| nor |v51| by at least 60%, but the center
+  // of the touch is located within |v51|.
+  touch_rect.SetRect(450, 197, 10, 10);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v51, result_view);
+  result_view = NULL;
+
+  // Covers neither |v5| nor |v51| by at least 60% but intersects both.
+  // The center point is located outside of both views.
+  touch_rect.SetRect(433, 180, 24, 24);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+
+  // Only intersects |v5| but does not cover it by at least 60%. The
+  // center point of the touch region is located within |v5|.
+  touch_rect.SetRect(449, 196, 3, 3);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v5, result_view);
+  result_view = NULL;
+
+  // A mouse click within |v5| (but not |v51|) should target |v5|.
+  touch_rect.SetRect(462, 199, 1, 1);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v5, result_view);
+  result_view = NULL;
+
+  // A mouse click |v5| and |v51| should target the child view.
+  touch_rect.SetRect(452, 226, 1, 1);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v51, result_view);
+  result_view = NULL;
+
+  // A mouse click on the center of |v5| and |v51| should target
+  // the child view.
+  touch_rect.SetRect(465, 215, 1, 1);
+  result_view = root_view->GetEventHandlerForRect(touch_rect);
+  EXPECT_EQ(v51, result_view);
   result_view = NULL;
 
   widget->CloseNow();
@@ -1359,7 +1427,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Move the mouse in v111.
   gfx::Point p1(6, 6);
-  ui::MouseEvent move1(ui::ET_MOUSE_MOVED, p1, p1, 0);
+  ui::MouseEvent move1(ui::ET_MOUSE_MOVED, p1, p1, 0, 0);
   root_view->OnMouseMoved(move1);
   EXPECT_TRUE(v111->received_mouse_enter_);
   EXPECT_FALSE(v11->last_mouse_event_type_);
@@ -1370,7 +1438,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Now, move into v121.
   gfx::Point p2(65, 21);
-  ui::MouseEvent move2(ui::ET_MOUSE_MOVED, p2, p2, 0);
+  ui::MouseEvent move2(ui::ET_MOUSE_MOVED, p2, p2, 0, 0);
   root_view->OnMouseMoved(move2);
   EXPECT_TRUE(v111->received_mouse_exit_);
   EXPECT_TRUE(v121->received_mouse_enter_);
@@ -1381,7 +1449,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Now, move into v11.
   gfx::Point p3(1, 1);
-  ui::MouseEvent move3(ui::ET_MOUSE_MOVED, p3, p3, 0);
+  ui::MouseEvent move3(ui::ET_MOUSE_MOVED, p3, p3, 0, 0);
   root_view->OnMouseMoved(move3);
   EXPECT_TRUE(v121->received_mouse_exit_);
   EXPECT_TRUE(v11->received_mouse_enter_);
@@ -1392,7 +1460,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Move to v21.
   gfx::Point p4(121, 15);
-  ui::MouseEvent move4(ui::ET_MOUSE_MOVED, p4, p4, 0);
+  ui::MouseEvent move4(ui::ET_MOUSE_MOVED, p4, p4, 0, 0);
   root_view->OnMouseMoved(move4);
   EXPECT_TRUE(v21->received_mouse_enter_);
   EXPECT_FALSE(v2->last_mouse_event_type_);
@@ -1405,7 +1473,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Move to v1.
   gfx::Point p5(21, 0);
-  ui::MouseEvent move5(ui::ET_MOUSE_MOVED, p5, p5, 0);
+  ui::MouseEvent move5(ui::ET_MOUSE_MOVED, p5, p5, 0, 0);
   root_view->OnMouseMoved(move5);
   EXPECT_TRUE(v21->received_mouse_exit_);
   EXPECT_TRUE(v1->received_mouse_enter_);
@@ -1415,7 +1483,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Now, move into v11.
   gfx::Point p6(15, 15);
-  ui::MouseEvent mouse6(ui::ET_MOUSE_MOVED, p6, p6, 0);
+  ui::MouseEvent mouse6(ui::ET_MOUSE_MOVED, p6, p6, 0, 0);
   root_view->OnMouseMoved(mouse6);
   EXPECT_TRUE(v11->received_mouse_enter_);
   EXPECT_FALSE(v1->last_mouse_event_type_);
@@ -1427,7 +1495,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
   // and the mouse remains inside |v1| the whole time, it receives another ENTER
   // when the mouse leaves v11.
   gfx::Point p7(21, 0);
-  ui::MouseEvent mouse7(ui::ET_MOUSE_MOVED, p7, p7, 0);
+  ui::MouseEvent mouse7(ui::ET_MOUSE_MOVED, p7, p7, 0, 0);
   root_view->OnMouseMoved(mouse7);
   EXPECT_TRUE(v11->received_mouse_exit_);
   EXPECT_FALSE(v1->received_mouse_enter_);
@@ -1436,10 +1504,10 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 }
 
 TEST_F(ViewTest, Textfield) {
-  const string16 kText = ASCIIToUTF16("Reality is that which, when you stop "
-                                      "believing it, doesn't go away.");
-  const string16 kExtraText = ASCIIToUTF16("Pretty deep, Philip!");
-  const string16 kEmptyString;
+  const base::string16 kText = ASCIIToUTF16(
+      "Reality is that which, when you stop believing it, doesn't go away.");
+  const base::string16 kExtraText = ASCIIToUTF16("Pretty deep, Philip!");
+  const base::string16 kEmptyString;
 
   Widget* widget = new Widget;
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
@@ -1455,7 +1523,7 @@ TEST_F(ViewTest, Textfield) {
   EXPECT_EQ(kText, textfield->text());
   textfield->AppendText(kExtraText);
   EXPECT_EQ(kText + kExtraText, textfield->text());
-  textfield->SetText(string16());
+  textfield->SetText(base::string16());
   EXPECT_EQ(kEmptyString, textfield->text());
 
   // Test selection related methods.
@@ -1471,9 +1539,10 @@ TEST_F(ViewTest, Textfield) {
 
 // Tests that the Textfield view respond appropiately to cut/copy/paste.
 TEST_F(ViewTest, TextfieldCutCopyPaste) {
-  const string16 kNormalText = ASCIIToUTF16("Normal");
-  const string16 kReadOnlyText = ASCIIToUTF16("Read only");
-  const string16 kPasswordText = ASCIIToUTF16("Password! ** Secret stuff **");
+  const base::string16 kNormalText = ASCIIToUTF16("Normal");
+  const base::string16 kReadOnlyText = ASCIIToUTF16("Read only");
+  const base::string16 kPasswordText =
+      ASCIIToUTF16("Password! ** Secret stuff **");
 
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
 
@@ -1486,7 +1555,8 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   Textfield* normal = new Textfield();
   Textfield* read_only = new Textfield();
   read_only->SetReadOnly(true);
-  Textfield* password = new Textfield(Textfield::STYLE_OBSCURED);
+  Textfield* password = new Textfield();
+  password->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
 
   root_view->AddChildView(normal);
   root_view->AddChildView(read_only);
@@ -1502,7 +1572,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
 
   normal->SelectAll(false);
   normal->ExecuteCommand(IDS_APP_CUT);
-  string16 result;
+  base::string16 result;
   clipboard->ReadText(ui::CLIPBOARD_TYPE_COPY_PASTE, &result);
   EXPECT_EQ(kNormalText, result);
   normal->SetText(kNormalText);  // Let's revert to the original content.
@@ -1783,16 +1853,6 @@ TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
                 WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(250, 250));
   EXPECT_EQ(20, scroll_view->GetVisibleRect().y());
 
-  // Then the text-field.
-  ::SendMessage(view_with_controls->text_field_->GetTestingHandle(),
-                WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(250, 250));
-  EXPECT_EQ(80, scroll_view->GetVisibleRect().y());
-
-  // Ensure we don't scroll when the mouse is not over that window.
-  ::SendMessage(view_with_controls->text_field_->GetTestingHandle(),
-                WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(50, 50));
-  EXPECT_EQ(80, scroll_view->GetVisibleRect().y());
-
   window1->CloseNow();
   window2->CloseNow();
 }
@@ -1964,14 +2024,15 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point p1(110, 210);
   ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, p1, p1,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(pressed);
   EXPECT_EQ(0, v1->last_mouse_event_type_);
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v2->last_mouse_event_type_);
   EXPECT_EQ(190, v2->location_.x());
   EXPECT_EQ(10, v2->location_.y());
 
-  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0);
+  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0,
+                          0);
   root->OnMouseReleased(released);
 
   // Now rotate |v2| inside |v1| clockwise.
@@ -1988,7 +2049,7 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point point2(110, 320);
   ui::MouseEvent p2(ui::ET_MOUSE_PRESSED, point2, point2,
-                    ui::EF_LEFT_MOUSE_BUTTON);
+                    ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(p2);
   EXPECT_EQ(0, v1->last_mouse_event_type_);
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v2->last_mouse_event_type_);
@@ -2024,7 +2085,7 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point point(112, 110);
   ui::MouseEvent p3(ui::ET_MOUSE_PRESSED, point, point,
-                    ui::EF_LEFT_MOUSE_BUTTON);
+                    ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(p3);
 
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v3->last_mouse_event_type_);
@@ -2063,7 +2124,7 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point point3(124, 125);
   ui::MouseEvent p4(ui::ET_MOUSE_PRESSED, point3, point3,
-                    ui::EF_LEFT_MOUSE_BUTTON);
+                    ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(p4);
 
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v3->last_mouse_event_type_);
@@ -2231,6 +2292,39 @@ TEST_F(ViewTest, SetBoundsSameBoundsDoesntSchedulePaint) {
   view.scheduled_paint_rects_.clear();
   view.SetBoundsRect(gfx::Rect(0, 0, 100, 100));
   EXPECT_TRUE(view.scheduled_paint_rects_.empty());
+}
+
+// Verifies AddChildView() and RemoveChildView() schedule appropriate paints.
+TEST_F(ViewTest, AddAndRemoveSchedulePaints) {
+  gfx::Rect viewport_bounds(0, 0, 100, 100);
+
+  // We have to put the View hierarchy into a Widget or no paints will be
+  // scheduled.
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = viewport_bounds;
+  widget->Init(params);
+  widget->GetRootView()->SetBoundsRect(viewport_bounds);
+
+  TestView* parent_view = new TestView;
+  widget->SetContentsView(parent_view);
+  parent_view->SetBoundsRect(viewport_bounds);
+  parent_view->scheduled_paint_rects_.clear();
+
+  View* child_view = new View;
+  child_view->SetBoundsRect(gfx::Rect(0, 0, 20, 20));
+  parent_view->AddChildView(child_view);
+  ASSERT_EQ(1U, parent_view->scheduled_paint_rects_.size());
+  EXPECT_EQ(child_view->bounds(), parent_view->scheduled_paint_rects_.front());
+
+  parent_view->scheduled_paint_rects_.clear();
+  parent_view->RemoveChildView(child_view);
+  scoped_ptr<View> child_deleter(child_view);
+  ASSERT_EQ(1U, parent_view->scheduled_paint_rects_.size());
+  EXPECT_EQ(child_view->bounds(), parent_view->scheduled_paint_rects_.front());
+
+  widget->CloseNow();
 }
 
 // Tests conversion methods with a transform.
@@ -2796,9 +2890,9 @@ TEST_F(ViewTest, ReorderChildren) {
   child->AddChildView(foo2);
   View* foo3 = new View();
   child->AddChildView(foo3);
-  foo1->set_focusable(true);
-  foo2->set_focusable(true);
-  foo3->set_focusable(true);
+  foo1->SetFocusable(true);
+  foo2->SetFocusable(true);
+  foo3->SetFocusable(true);
 
   ASSERT_EQ(0, child->GetIndexOf(foo1));
   ASSERT_EQ(1, child->GetIndexOf(foo2));
@@ -3513,5 +3607,21 @@ TEST_F(ViewLayerTest, RecreateLayerZOrderWidgetParent) {
 }
 
 #endif  // USE_AURA
+
+TEST_F(ViewTest, FocusableAssertions) {
+  // View subclasses may change insets based on whether they are focusable,
+  // which effects the preferred size. To avoid preferred size changing around
+  // these Views need to key off the last value set to SetFocusable(), not
+  // whether the View is focusable right now. For this reason it's important
+  // that focusable() return the last value passed to SetFocusable and not
+  // whether the View is focusable right now.
+  TestView view;
+  view.SetFocusable(true);
+  EXPECT_TRUE(view.focusable());
+  view.SetEnabled(false);
+  EXPECT_TRUE(view.focusable());
+  view.SetFocusable(false);
+  EXPECT_FALSE(view.focusable());
+}
 
 }  // namespace views

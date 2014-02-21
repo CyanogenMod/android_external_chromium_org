@@ -48,6 +48,8 @@ class BrowserFinderOptions(optparse.Values):
     self.page_label_filter = None
     self.page_label_filter_exclude = None
 
+    self.report_root_metrics = False
+
     self.repeat_options = repeat_options.RepeatOptions()
     self.browser_options = BrowserOptions()
     self.output_file = None
@@ -143,6 +145,9 @@ class BrowserFinderOptions(optparse.Values):
         'test is executed at maximum CPU speed in order to minimize noise '
         '(specially important for dashboards / continuous builds). '
         'This option prevents Telemetry from tweaking such platform settings.')
+    group.add_option(
+      '--report-root-metrics', action='store_true',dest='report_root_metrics',
+      help='Enable metrics that require root access to record.')
     group.add_option('--android-rndis', dest='android_rndis', default=False,
         action='store_true', help='Use RNDIS forwarding on Android.')
     group.add_option('--no-android-rndis', dest='android_rndis',
@@ -207,6 +212,8 @@ class BrowserOptions(object):
     self.browser_type = None
     self.show_stdout = False
 
+    self.warn_if_no_flash = True
+
     # When set to True, the browser will use the default profile.  Telemetry
     # will not provide an alternate profile directory.
     self.dont_override_profile = False
@@ -263,6 +270,18 @@ class BrowserOptions(object):
         help='Ignored argument for compatibility with runtest.py harness')
     parser.add_option_group(group)
 
+    group = optparse.OptionGroup(parser, 'Synthetic gesture options')
+    synthetic_gesture_source_type_choices = [ 'default', 'mouse', 'touch' ]
+    group.add_option('--synthetic-gesture-source-type',
+        dest='synthetic_gesture_source_type',
+        default='default', type='choice',
+        choices=synthetic_gesture_source_type_choices,
+        help='Specify the source type for synthetic gestures. Note that some ' +
+             'actions only support a specific source type. ' +
+             'Supported values: ' +
+             ', '.join(synthetic_gesture_source_type_choices))
+    parser.add_option_group(group)
+
 
   def UpdateFromParseResults(self, finder_options):
     """Copies our options from finder_options"""
@@ -273,6 +292,7 @@ class BrowserOptions(object):
         'profile_dir',
         'profile_type',
         'show_stdout',
+        'synthetic_gesture_source_type',
         ]
     for o in browser_options_list:
       a = getattr(finder_options, o, None)

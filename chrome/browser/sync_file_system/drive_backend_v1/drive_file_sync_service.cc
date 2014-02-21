@@ -19,8 +19,8 @@
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_metadata_store.h"
@@ -33,6 +33,9 @@
 #include "chrome/browser/sync_file_system/sync_file_type.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -102,7 +105,8 @@ void DriveFileSyncService::AppendDependsOnFactories(
   DCHECK(factories);
   factories->insert(drive::DriveNotificationManagerFactory::GetInstance());
   factories->insert(ProfileOAuth2TokenServiceFactory::GetInstance());
-  factories->insert(extensions::ExtensionSystemFactory::GetInstance());
+  factories->insert(
+      extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 scoped_ptr<DriveFileSyncService> DriveFileSyncService::CreateForTesting(
@@ -294,6 +298,9 @@ void DriveFileSyncService::DownloadRemoteVersion(
       base::Bind(&EmptyStatusCallback));
 }
 
+void DriveFileSyncService::PromoteDemotedChanges() {
+}
+
 void DriveFileSyncService::ApplyLocalChange(
     const FileChange& local_file_change,
     const base::FilePath& local_file_path,
@@ -312,7 +319,7 @@ void DriveFileSyncService::ApplyLocalChange(
 void DriveFileSyncService::OnAuthenticated() {
   if (state_ == REMOTE_SERVICE_OK)
     return;
-  util::Log(logging::LOG_INFO, FROM_HERE, "OnAuthenticated");
+  util::Log(logging::LOG_VERBOSE, FROM_HERE, "OnAuthenticated");
 
   UpdateServiceState(REMOTE_SERVICE_OK, "Authenticated");
 
@@ -323,7 +330,7 @@ void DriveFileSyncService::OnAuthenticated() {
 void DriveFileSyncService::OnNetworkConnected() {
   if (state_ == REMOTE_SERVICE_OK)
     return;
-  util::Log(logging::LOG_INFO, FROM_HERE, "OnNetworkConnected");
+  util::Log(logging::LOG_VERBOSE, FROM_HERE, "OnNetworkConnected");
 
   UpdateServiceState(REMOTE_SERVICE_OK, "Network connected");
 
@@ -442,7 +449,8 @@ void DriveFileSyncService::UpdateServiceStateFromLastOperationStatus(
     case SYNC_STATUS_OK:
       // If the last Drive-related operation was successful we can
       // change the service state to OK.
-      if (GDataErrorCodeToSyncStatusCode(gdata_error) == SYNC_STATUS_OK)
+      if (drive_backend::GDataErrorCodeToSyncStatusCode(gdata_error) ==
+          SYNC_STATUS_OK)
         UpdateServiceState(REMOTE_SERVICE_OK, std::string());
       break;
 
@@ -488,7 +496,7 @@ void DriveFileSyncService::UpdateServiceState(RemoteServiceState state,
 
   // Notify remote sync service state if the state has been changed.
   if (old_state != GetCurrentState()) {
-    util::Log(logging::LOG_INFO, FROM_HERE,
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
               "Service state changed: %d->%d: %s",
               old_state, GetCurrentState(), description.c_str());
     FOR_EACH_OBSERVER(
@@ -1144,7 +1152,7 @@ void DriveFileSyncService::NotifyConflict(
 SyncStatusCode DriveFileSyncService::GDataErrorCodeToSyncStatusCodeWrapper(
     google_apis::GDataErrorCode error) {
   last_gdata_error_ = error;
-  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  SyncStatusCode status = drive_backend::GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK && !api_util_->IsAuthenticated())
     return SYNC_STATUS_AUTHENTICATION_FAILED;
   return status;

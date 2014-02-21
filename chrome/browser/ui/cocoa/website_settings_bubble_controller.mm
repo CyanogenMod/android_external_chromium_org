@@ -27,7 +27,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "ui/base/cocoa/controls/hyperlink_button_cell.h"
 #import "ui/base/cocoa/flipped_view.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -386,7 +386,7 @@ NSColor* IdentityVerifiedTextColor() {
       kFramePadding + info_bubble::kBubbleArrowHeight);
 
   // Create a text field (empty for now) to show the site identity.
-  identityField_ = [self addText:string16()
+  identityField_ = [self addText:base::string16()
                         withSize:[NSFont systemFontSize]
                             bold:YES
                           toView:contentView_
@@ -395,7 +395,7 @@ NSColor* IdentityVerifiedTextColor() {
       NSHeight([identityField_ frame]) + kConnectionHeadlineSpacing;
 
   // Create a text field to identity status (e.g. verified, not verified).
-  identityStatusField_ = [self addText:string16()
+  identityStatusField_ = [self addText:base::string16()
                               withSize:[NSFont smallSystemFontSize]
                                   bold:NO
                                 toView:contentView_
@@ -506,7 +506,7 @@ NSColor* IdentityVerifiedTextColor() {
 - (void)showCookiesAndSiteData:(id)sender {
   DCHECK(webContents_);
   content::RecordAction(
-      content::UserMetricsAction("WebsiteSettings_CookiesDialogOpened"));
+      base::UserMetricsAction("WebsiteSettings_CookiesDialogOpened"));
   chrome::ShowCollectedCookiesDialog(webContents_);
 }
 
@@ -543,7 +543,7 @@ NSColor* IdentityVerifiedTextColor() {
                                         toView:contentView
                                        atPoint:imagePosition];
   identityStatusDescriptionField_ =
-      [self addText:string16()
+      [self addText:base::string16()
            withSize:[NSFont smallSystemFontSize]
                bold:NO
              toView:contentView.get()
@@ -556,7 +556,7 @@ NSColor* IdentityVerifiedTextColor() {
                                           toView:contentView
                                          atPoint:imagePosition];
   connectionStatusDescriptionField_ =
-      [self addText:string16()
+      [self addText:base::string16()
            withSize:[NSFont smallSystemFontSize]
                bold:NO
              toView:contentView.get()
@@ -575,7 +575,7 @@ NSColor* IdentityVerifiedTextColor() {
              toView:contentView.get()
             atPoint:textPosition];
   firstVisitDescriptionField_ =
-      [self addText:string16()
+      [self addText:base::string16()
            withSize:[NSFont smallSystemFontSize]
                bold:NO
              toView:contentView.get()
@@ -964,7 +964,7 @@ NSColor* IdentityVerifiedTextColor() {
 
   base::string16 labelText =
       WebsiteSettingsUI::PermissionTypeToUIString(permissionInfo.type) +
-      ASCIIToUTF16(":");
+      base::ASCIIToUTF16(":");
 
   NSTextField* label = [self addText:labelText
                             withSize:[NSFont smallSystemFontSize]
@@ -1029,7 +1029,7 @@ NSColor* IdentityVerifiedTextColor() {
 
   base::string16 labelText = l10n_util::GetStringFUTF16(
       IDS_WEBSITE_SETTINGS_SITE_DATA_STATS_LINE,
-      UTF8ToUTF16(cookieInfo.cookie_source),
+      base::UTF8ToUTF16(cookieInfo.cookie_source),
       base::IntToString16(cookieInfo.allowed),
       base::IntToString16(cookieInfo.blocked));
 

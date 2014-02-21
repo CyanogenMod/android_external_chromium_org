@@ -107,11 +107,25 @@
           'conditions': [
             ['OS=="linux"', {
               'dependencies': ['../../build/linux/system.gyp:gtk'],
+              'conditions': [
+                [ 'clang==1', {
+                  'cflags': [
+                    '-Wno-array-bounds',
+                    '-Wno-implicit-function-declaration',
+                    '-Wno-incompatible-pointer-types',
+                    '-Wno-parentheses-equality',
+                    '-Wno-pointer-sign',
+                    '-Wno-return-type',
+                    '-Wno-sizeof-pointer-memaccess',
+                    '-Wno-tautological-compare'
+                  ]
+                }]
+              ],
             }],
             ['OS=="win"', {
               'dependencies': [
-                '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
-                '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libEGL',
+                '<(angle_path)/src/build_angle.gyp:libGLESv2',
+                '<(angle_path)/src/build_angle.gyp:libEGL',
               ],
               'defines': [
                 'EGLAPI=',
@@ -194,8 +208,8 @@
             'gles2_conform_test_embedded_data',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/third_party/expat/expat.gyp:expat',
-            '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
-            '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libEGL',
+            '<(angle_path)/src/build_angle.gyp:libGLESv2',
+            '<(angle_path)/src/build_angle.gyp:libEGL',
             '<(DEPTH)/gpu/gles2_conform_support/gles2_conform_support.gyp:egl_main_native',
           ],
           'defines': [

@@ -11,13 +11,13 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_runtime.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "url/gurl.h"
 
@@ -47,6 +47,7 @@ void DispatchOnLaunchedEventImpl(const std::string& extension_id,
   scoped_ptr<Event> event(new Event(app_runtime::OnLaunched::kEventName,
                                     args.Pass()));
   event->restrict_to_browser_context = profile;
+  event->can_load_ephemeral_apps = true;
   system->event_router()->DispatchEventWithLazyListener(extension_id,
                                                         event.Pass());
   system->extension_service()->extension_prefs()->SetLastLaunchTime(
@@ -69,6 +70,7 @@ void AppEventRouter::DispatchOnRestartedEvent(Profile* profile,
   scoped_ptr<Event> event(new Event(app_runtime::OnRestarted::kEventName,
                                     arguments.Pass()));
   event->restrict_to_browser_context = profile;
+  event->can_load_ephemeral_apps = true;
   extensions::ExtensionSystem::Get(profile)->event_router()->
       DispatchEventToExtension(extension->id(), event.Pass());
 }

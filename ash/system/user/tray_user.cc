@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/multi_profile_uma.h"
 #include "ash/popup_message.h"
 #include "ash/root_window_controller.h"
@@ -88,7 +89,7 @@ const SkColor kBorderColor = 0xffdcdcdc;
 
 // The invisible word joiner character, used as a marker to indicate the start
 // and end of the user's display name in the public account user card's text.
-const char16 kDisplayNameMark[] = { 0x2060, 0 };
+const base::char16 kDisplayNameMark[] = { 0x2060, 0 };
 
 const int kPublicAccountLogoutButtonBorderImagesNormal[] = {
     IDR_AURA_TRAY_POPUP_PUBLIC_ACCOUNT_LOGOUT_BUTTON_BORDER,
@@ -472,9 +473,10 @@ PublicAccountUserDetails::PublicAccountUserDetails(SystemTrayItem* owner,
   const int inner_padding =
       kTrayPopupPaddingHorizontal - kTrayPopupPaddingBetweenItems;
   const bool rtl = base::i18n::IsRTL();
-  set_border(views::Border::CreateEmptyBorder(
-      kUserDetailsVerticalPadding, rtl ? 0 : inner_padding,
-      kUserDetailsVerticalPadding, rtl ? inner_padding : 0));
+  SetBorder(views::Border::CreateEmptyBorder(kUserDetailsVerticalPadding,
+                                             rtl ? 0 : inner_padding,
+                                             kUserDetailsVerticalPadding,
+                                             rtl ? inner_padding : 0));
 
   // Retrieve the user's display name and wrap it with markers.
   // Note that since this is a public account it always has to be the primary
@@ -484,7 +486,7 @@ PublicAccountUserDetails::PublicAccountUserDetails(SystemTrayItem* owner,
   base::RemoveChars(display_name, kDisplayNameMark, &display_name);
   display_name = kDisplayNameMark[0] + display_name + kDisplayNameMark[0];
   // Retrieve the domain managing the device and wrap it with markers.
-  base::string16 domain = UTF8ToUTF16(
+  base::string16 domain = base::UTF8ToUTF16(
       Shell::GetInstance()->system_tray_delegate()->GetEnterpriseDomain());
   base::RemoveChars(domain, kDisplayNameMark, &domain);
   base::i18n::WrapStringWithLTRFormatting(&domain);
@@ -552,7 +554,8 @@ void PublicAccountUserDetails::Layout() {
   // Position the link after the label text, separated by a space. If it does
   // not fit onto the last line of the text, wrap the link onto its own line.
   const gfx::Size last_line_size = lines_.back()->GetStringSize();
-  const int space_width = gfx::GetStringWidth(ASCIIToUTF16(" "), font_list);
+  const int space_width =
+      gfx::GetStringWidth(base::ASCIIToUTF16(" "), font_list);
   const gfx::Size link_size = learn_more_->GetPreferredSize();
   if (contents_area.width() - last_line_size.width() >=
       space_width + link_size.width()) {
@@ -591,7 +594,8 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
                                                       int used_width) {
   const gfx::FontList font_list;
   const gfx::Size link_size = learn_more_->GetPreferredSize();
-  const int space_width = gfx::GetStringWidth(ASCIIToUTF16(" "), font_list);
+  const int space_width =
+      gfx::GetStringWidth(base::ASCIIToUTF16(" "), font_list);
   const gfx::Insets insets = GetInsets();
   views::TrayBubbleView* bubble_view =
       owner->system_tray()->GetSystemBubble()->bubble_view();
@@ -680,8 +684,8 @@ void UserCard::OnMouseExited(const ui::MouseEvent& event) {
 
 void UserCard::ShowActive() {
   int width = button_hovered_ || show_border_ ? 1 : 0;
-  set_border(views::Border::CreateSolidSidedBorder(width, width, width, 1,
-                                                   kBorderColor));
+  SetBorder(views::Border::CreateSolidSidedBorder(
+      width, width, width, 1, kBorderColor));
   SchedulePaint();
 }
 
@@ -799,6 +803,8 @@ void UserView::Layout() {
 
 void UserView::ButtonPressed(views::Button* sender, const ui::Event& event) {
   if (sender == logout_button_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_SIGN_OUT);
     Shell::GetInstance()->system_tray_delegate()->SignOut();
   } else if (sender == user_card_view_ && SupportsMultiProfile()) {
     if (!multiprofile_index_) {
@@ -827,8 +833,8 @@ void UserView::AddLogoutButton(user::LoginStatus login) {
   logout_button_ = logout_button;
   // In public account mode, the logout button border has a custom color.
   if (login == user::LOGGED_IN_PUBLIC) {
-    TrayPopupLabelButtonBorder* border =
-        static_cast<TrayPopupLabelButtonBorder*>(logout_button_->border());
+    scoped_ptr<TrayPopupLabelButtonBorder> border(
+        new TrayPopupLabelButtonBorder());
     border->SetPainter(false, views::Button::STATE_NORMAL,
                        views::Painter::CreateImageGridPainter(
                            kPublicAccountLogoutButtonBorderImagesNormal));
@@ -838,15 +844,17 @@ void UserView::AddLogoutButton(user::LoginStatus login) {
     border->SetPainter(false, views::Button::STATE_PRESSED,
                        views::Painter::CreateImageGridPainter(
                            kPublicAccountLogoutButtonBorderImagesHovered));
+    logout_button_->SetBorder(border.PassAs<views::Border>());
   }
   AddChildView(logout_button_);
 }
 
 void UserView::AddUserCard(SystemTrayItem* owner, user::LoginStatus login) {
   // Add padding around the panel.
-  set_border(views::Border::CreateEmptyBorder(
-      kUserCardVerticalPadding, kTrayPopupPaddingHorizontal,
-      kUserCardVerticalPadding, kTrayPopupPaddingHorizontal));
+  SetBorder(views::Border::CreateEmptyBorder(kUserCardVerticalPadding,
+                                             kTrayPopupPaddingHorizontal,
+                                             kUserCardVerticalPadding,
+                                             kTrayPopupPaddingHorizontal));
 
   if (SupportsMultiProfile() && login != user::LOGGED_IN_RETAIL_MODE) {
     user_card_view_ = new UserCard(this, multiprofile_index_ == 0);
@@ -880,9 +888,9 @@ void UserView::AddUserCard(SystemTrayItem* owner, user::LoginStatus login) {
   // To allow the border to start before the icon, reduce the size before and
   // add an inset to the icon to get the spacing.
   if (multiprofile_index_ == 0 && SupportsMultiProfile()) {
-    icon->set_border(views::Border::CreateEmptyBorder(
+    icon->SetBorder(views::Border::CreateEmptyBorder(
         0, kTrayUserTileHoverBorderInset, 0, 0));
-    set_border(views::Border::CreateEmptyBorder(
+    SetBorder(views::Border::CreateEmptyBorder(
         kUserCardVerticalPadding,
         kTrayPopupPaddingHorizontal - kTrayUserTileHoverBorderInset,
         kUserCardVerticalPadding,
@@ -909,7 +917,7 @@ void UserView::AddUserCard(SystemTrayItem* owner, user::LoginStatus login) {
         login == user::LOGGED_IN_LOCALLY_MANAGED ?
             bundle.GetLocalizedString(
                 IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL) :
-            UTF8ToUTF16(delegate->GetUserEmail(multiprofile_index_));
+            base::UTF8ToUTF16(delegate->GetUserEmail(multiprofile_index_));
     if (!user_email_string.empty()) {
       additional = new views::Label(user_email_string);
       additional->SetFontList(
@@ -966,7 +974,7 @@ void UserView::AddLoggedInRetailModeUserCardContent() {
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   details->SetText(
       bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_KIOSK_LABEL));
-  details->set_border(views::Border::CreateEmptyBorder(0, 4, 0, 1));
+  details->SetBorder(views::Border::CreateEmptyBorder(0, 4, 0, 1));
   details->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   user_card_view_->AddChildView(details);
 }
@@ -1047,7 +1055,7 @@ bool UserView::SupportsMultiProfile() {
 }
 
 AddUserView::AddUserView(UserCard* owner, views::ButtonListener* listener)
-    : CustomButton(listener_),
+    : CustomButton(listener),
       add_user_(NULL),
       listener_(listener),
       owner_(owner),
@@ -1092,14 +1100,14 @@ void AddUserView::AddContent() {
   set_background(views::Background::CreateSolidBackground(kBackgroundColor));
 
   // Add padding around the panel.
-  set_border(views::Border::CreateSolidBorder(1, kBorderColor));
+  SetBorder(views::Border::CreateSolidBorder(1, kBorderColor));
 
   add_user_ = new UserCard(this, enable);
-  add_user_->set_border(views::Border::CreateEmptyBorder(
+  add_user_->SetBorder(views::Border::CreateEmptyBorder(
       kUserCardVerticalPadding,
-      kTrayPopupPaddingHorizontal- kTrayUserTileHoverBorderInset,
+      kTrayPopupPaddingHorizontal - kTrayUserTileHoverBorderInset,
       kUserCardVerticalPadding,
-      kTrayPopupPaddingHorizontal- kTrayUserTileHoverBorderInset));
+      kTrayPopupPaddingHorizontal - kTrayUserTileHoverBorderInset));
 
   add_user_->SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kHorizontal, 0, 0 , kTrayPopupPaddingBetweenItems));
@@ -1168,10 +1176,6 @@ gfx::Rect TrayUser::GetUserPanelBoundsInScreenForTest() const {
 
 views::View* TrayUser::CreateTrayView(user::LoginStatus status) {
   CHECK(layout_view_ == NULL);
-  // When the full multi profile mode is used, only the active user will be
-  // shown in the system tray, otherwise all users which are logged in.
-  if (GetTrayIndex() && switches::UseFullMultiProfileMode())
-    return NULL;
 
   layout_view_ = new views::View();
   layout_view_->SetLayoutManager(
@@ -1285,7 +1289,7 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   if (avatar_ && switches::UseAlternateShelfLayout()) {
     int corner_radius = GetTrayItemRadius();
     avatar_->SetCornerRadii(0, corner_radius, corner_radius, 0);
-    avatar_->set_border(NULL);
+    avatar_->SetBorder(views::Border::NullBorder());
   }
   UpdateAvatarImage(status);
 
@@ -1303,22 +1307,26 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
     if (avatar_) {
       if (switches::UseAlternateShelfLayout()) {
         if (multiprofile_index_) {
-          avatar_->set_border(
+          avatar_->SetBorder(
               views::Border::CreateEmptyBorder(0, kTrayLabelSpacing, 0, 0));
         } else {
-          avatar_->set_border(NULL);
+          avatar_->SetBorder(views::Border::NullBorder());
         }
         avatar_->SetCornerRadii(0, corner_radius, corner_radius, 0);
       } else {
-        avatar_->set_border(views::Border::CreateEmptyBorder(
-            0, kTrayImageItemHorizontalPaddingBottomAlignment + 2,
-            0, kTrayImageItemHorizontalPaddingBottomAlignment));
+        avatar_->SetBorder(views::Border::CreateEmptyBorder(
+            0,
+            kTrayImageItemHorizontalPaddingBottomAlignment + 2,
+            0,
+            kTrayImageItemHorizontalPaddingBottomAlignment));
       }
     }
     if (label_) {
-      label_->set_border(views::Border::CreateEmptyBorder(
-          0, kTrayLabelItemHorizontalPaddingBottomAlignment,
-          0, kTrayLabelItemHorizontalPaddingBottomAlignment));
+      label_->SetBorder(views::Border::CreateEmptyBorder(
+          0,
+          kTrayLabelItemHorizontalPaddingBottomAlignment,
+          0,
+          kTrayLabelItemHorizontalPaddingBottomAlignment));
     }
     layout_view_->SetLayoutManager(
         new views::BoxLayout(views::BoxLayout::kHorizontal,
@@ -1327,10 +1335,10 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
     if (avatar_) {
       if (switches::UseAlternateShelfLayout()) {
         if (multiprofile_index_) {
-          avatar_->set_border(
+          avatar_->SetBorder(
               views::Border::CreateEmptyBorder(kTrayLabelSpacing, 0, 0, 0));
         } else {
-          avatar_->set_border(NULL);
+          avatar_->SetBorder(views::Border::NullBorder());
         }
         avatar_->SetCornerRadii(0, 0, corner_radius, corner_radius);
       } else {
@@ -1338,7 +1346,7 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
       }
     }
     if (label_) {
-      label_->set_border(views::Border::CreateEmptyBorder(
+      label_->SetBorder(views::Border::CreateEmptyBorder(
           kTrayLabelItemVerticalPaddingVerticalAlignment,
           kTrayLabelItemHorizontalPaddingBottomAlignment,
           kTrayLabelItemVerticalPaddingVerticalAlignment,

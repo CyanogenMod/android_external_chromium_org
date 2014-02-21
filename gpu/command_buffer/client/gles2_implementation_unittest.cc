@@ -2355,9 +2355,9 @@ TEST_F(GLES2ImplementationTest, SubImageUnpack) {
 
         const void* commands = GetPut();
         gl_->PixelStorei(GL_UNPACK_ALIGNMENT, alignment);
-        gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, kSrcWidth);
-        gl_->PixelStorei(GL_UNPACK_SKIP_PIXELS, kSrcSubImageX0);
-        gl_->PixelStorei(GL_UNPACK_SKIP_ROWS, kSrcSubImageY0);
+        gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, kSrcWidth);
+        gl_->PixelStorei(GL_UNPACK_SKIP_PIXELS_EXT, kSrcSubImageX0);
+        gl_->PixelStorei(GL_UNPACK_SKIP_ROWS_EXT, kSrcSubImageY0);
         gl_->PixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
         if (sub) {
           gl_->TexImage2D(
@@ -2442,34 +2442,6 @@ TEST_F(GLES2ImplementationStrictSharedTest, BindsNotCached) {
     gl_->GetIntegerv(pv.pname, &v);
     EXPECT_EQ(pv.expected, v);
   }
-}
-
-TEST_F(GLES2ImplementationTest, CreateStreamTextureCHROMIUM) {
-  const GLuint kTextureId = 123;
-  const GLuint kResult = 456;
-
-  struct Cmds {
-    cmds::CreateStreamTextureCHROMIUM create_stream;
-  };
-
-  ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(
-          sizeof(cmds::CreateStreamTextureCHROMIUM::Result));
-  ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
-
-  Cmds expected;
-  expected.create_stream.Init(kTextureId, result1.id, result1.offset);
-
-  EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, kResult))
-      .WillOnce(SetMemory(result2.ptr, GLuint(GL_NO_ERROR)))
-      .RetiresOnSaturation();
-
-  GLuint handle = gl_->CreateStreamTextureCHROMIUM(kTextureId);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-  EXPECT_EQ(handle, kResult);
-  EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), gl_->GetError());
 }
 
 TEST_F(GLES2ImplementationTest, GetString) {
@@ -2873,6 +2845,31 @@ TEST_F(GLES2ImplementationTest, Enable) {
   EXPECT_TRUE(NoCommandsWritten());
 }
 
+TEST_F(GLES2ImplementationTest, ConsumeTextureCHROMIUM) {
+  struct Cmds {
+    cmds::ConsumeTextureCHROMIUMImmediate cmd;
+    GLbyte data[64];
+  };
+
+  Mailbox mailbox = Mailbox::Generate();
+  Cmds expected;
+  expected.cmd.Init(GL_TEXTURE_2D, mailbox.name);
+  gl_->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, ProduceTextureCHROMIUM) {
+  struct Cmds {
+    cmds::ProduceTextureCHROMIUMImmediate cmd;
+    GLbyte data[64];
+  };
+
+  Mailbox mailbox = Mailbox::Generate();
+  Cmds expected;
+  expected.cmd.Init(GL_TEXTURE_2D, mailbox.name);
+  gl_->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
 
 #include "gpu/command_buffer/client/gles2_implementation_unittest_autogen.h"
 

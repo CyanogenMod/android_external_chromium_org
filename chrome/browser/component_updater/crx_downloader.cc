@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,15 @@
 using content::BrowserThread;
 
 namespace component_updater {
+
+CrxDownloader::Result::Result() : error(0) {}
+
+CrxDownloader::DownloadMetrics::DownloadMetrics()
+    : downloader(kNone),
+      error(0),
+      bytes_downloaded(-1),
+      bytes_total(-1),
+      download_time_ms(0) {}
 
 // On Windows, the first downloader in the chain is a background downloader,
 // which uses the BITS service.
@@ -49,17 +58,38 @@ CrxDownloader::CrxDownloader(
 CrxDownloader::~CrxDownloader() {
 }
 
-bool CrxDownloader::StartDownloadFromUrl(const GURL& url) {
-  std::vector<GURL> urls;
-  urls.push_back(url);
-  return StartDownload(urls);
+GURL CrxDownloader::url() const {
+  return current_url_ != urls_.end() ? *current_url_ : GURL();
 }
 
-bool CrxDownloader::StartDownload(const std::vector<GURL>& urls) {
+const std::vector<CrxDownloader::DownloadMetrics>
+CrxDownloader::download_metrics() const {
+  if (!successor_)
+    return download_metrics_;
+
+  std::vector<DownloadMetrics> retval(successor_->download_metrics());
+  retval.insert(retval.begin(),
+                download_metrics_.begin(),
+                download_metrics_.end());
+  return retval;
+}
+
+void CrxDownloader::StartDownloadFromUrl(const GURL& url) {
+  std::vector<GURL> urls;
+  urls.push_back(url);
+  StartDownload(urls);
+}
+
+void CrxDownloader::StartDownload(const std::vector<GURL>& urls) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (urls.empty())
-    return false;
+  if (urls.empty()) {
+    // Make a result and complete the download with a generic error for now.
+    Result result;
+    result.error = -1;
+    download_callback_.Run(result);
+    return;
+  }
 
   // If the urls are mutated while this downloader is active, then the
   // behavior is undefined in the sense that the outcome of the download could
@@ -69,11 +99,15 @@ bool CrxDownloader::StartDownload(const std::vector<GURL>& urls) {
   current_url_ = urls_.begin();
 
   DoStartDownload(*current_url_);
-  return true;
 }
 
-void CrxDownloader::OnDownloadComplete(bool is_handled, const Result& result) {
+void CrxDownloader::OnDownloadComplete(
+    bool is_handled,
+    const Result& result,
+    const DownloadMetrics& download_metrics) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  download_metrics_.push_back(download_metrics);
 
   if (result.error) {
     // If an error has occured, in general try the next url if there is any,
@@ -98,8 +132,10 @@ void CrxDownloader::OnDownloadComplete(bool is_handled, const Result& result) {
     // the request over to it so that the successor can try the pruned list
     // of urls. Otherwise, the request ends here since the current downloader
     // has tried all urls and it can't fall back on any other downloader.
-    if (successor_ && successor_->StartDownload(urls_))
+    if (successor_ && !urls_.empty()) {
+      successor_->StartDownload(urls_);
       return;
+    }
   }
 
   download_callback_.Run(result);

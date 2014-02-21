@@ -24,8 +24,8 @@
 #include "native_client/src/trusted/weak_ref/weak_ref.h"
 
 #include "ppapi/cpp/completion_callback.h"
-
 #include "ppapi/native_client/src/trusted/plugin/utility.h"
+#include "ppapi/utility/completion_callback_factory.h"
 
 struct NaClFileInfo;
 
@@ -49,7 +49,6 @@ class ServiceRuntime;
 // creation templates aren't overwhelmed with too many parameters.
 struct SelLdrStartParams {
   SelLdrStartParams(const nacl::string& url,
-                    ErrorInfo* error_info,
                     bool uses_irt,
                     bool uses_ppapi,
                     bool enable_dev_interfaces,
@@ -57,7 +56,6 @@ struct SelLdrStartParams {
                     bool enable_exception_handling,
                     bool enable_crash_throttling)
       : url(url),
-        error_info(error_info),
         uses_irt(uses_irt),
         uses_ppapi(uses_ppapi),
         enable_dev_interfaces(enable_dev_interfaces),
@@ -66,7 +64,6 @@ struct SelLdrStartParams {
         enable_crash_throttling(enable_crash_throttling) {
   }
   nacl::string url;
-  ErrorInfo* error_info;
   bool uses_irt;
   bool uses_ppapi;
   bool enable_dev_interfaces;
@@ -76,14 +73,6 @@ struct SelLdrStartParams {
 };
 
 // Callback resources are essentially our continuation state.
-
-struct LogToJavaScriptConsoleResource {
- public:
-  explicit LogToJavaScriptConsoleResource(std::string msg)
-      : message(msg) {}
-  std::string message;
-};
-
 struct PostMessageResource {
  public:
   explicit PostMessageResource(std::string msg)
@@ -160,8 +149,6 @@ class PluginReverseInterface: public nacl::ReverseInterface {
 
   void ShutDown();
 
-  virtual void Log(nacl::string message);
-
   virtual void DoPostMessage(nacl::string message);
 
   virtual void StartupInitializationComplete();
@@ -186,9 +173,6 @@ class PluginReverseInterface: public nacl::ReverseInterface {
   void AddTempQuotaManagedFile(const nacl::string& file_id);
 
  protected:
-  virtual void Log_MainThreadContinuation(LogToJavaScriptConsoleResource* p,
-                                          int32_t err);
-
   virtual void PostMessage_MainThreadContinuation(PostMessageResource* p,
                                                   int32_t err);
 
@@ -232,10 +216,9 @@ class ServiceRuntime {
   // The destructor terminates the sel_ldr process.
   ~ServiceRuntime();
 
-  // Spawn the sel_ldr instance. On success, returns true.
-  // On failure, returns false and |error_string| is set to something
-  // describing the error.
-  bool StartSelLdr(const SelLdrStartParams& params);
+  // Spawn the sel_ldr instance.
+  void StartSelLdr(const SelLdrStartParams& params,
+                   pp::CompletionCallback callback);
 
   // If starting sel_ldr from a background thread, wait for sel_ldr to
   // actually start.
@@ -248,10 +231,8 @@ class ServiceRuntime {
 
   // Establish an SrpcClient to the sel_ldr instance and load the nexe.
   // The nexe to be started is passed through |nacl_file_desc|.
-  // On success, returns true. On failure, returns false and |error_string|
-  // is set to something describing the error.
+  // On success, returns true. On failure, returns false.
   bool LoadNexeAndStart(nacl::DescWrapper* nacl_file_desc,
-                        ErrorInfo* error_info,
                         const pp::CompletionCallback& crash_cb);
 
   // Starts the application channel to the nexe.
@@ -276,7 +257,11 @@ class ServiceRuntime {
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ServiceRuntime);
-  bool InitCommunication(nacl::DescWrapper* shm, ErrorInfo* error_info);
+  bool LoadModule(nacl::DescWrapper* shm, ErrorInfo* error_info);
+  bool InitReverseService(ErrorInfo* error_info);
+  bool StartModule(ErrorInfo* error_info);
+  void StartSelLdrContinuation(int32_t pp_error,
+                               pp::CompletionCallback callback);
 
   NaClSrpcChannel command_channel_;
   Plugin* plugin_;
@@ -295,6 +280,9 @@ class ServiceRuntime {
   NaClCondVar cond_;
   int exit_status_;
   bool start_sel_ldr_done_;
+
+  PP_Var start_sel_ldr_error_message_;
+  pp::CompletionCallbackFactory<ServiceRuntime> callback_factory_;
 };
 
 }  // namespace plugin

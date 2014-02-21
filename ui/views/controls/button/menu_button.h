@@ -9,7 +9,6 @@
 
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "ui/gfx/font.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/text_button.h"
 
@@ -34,7 +33,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
 
   // Create a Button.
   MenuButton(ButtonListener* listener,
-             const string16& text,
+             const base::string16& text,
              MenuButtonListener* menu_button_listener,
              bool show_menu_marker);
   virtual ~MenuButton();

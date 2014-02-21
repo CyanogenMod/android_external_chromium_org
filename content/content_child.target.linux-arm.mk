@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	content/child/appcache/appcache_dispatcher.cc \
 	content/child/appcache/appcache_frontend_impl.cc \
 	content/child/appcache/web_application_cache_host_impl.cc \
+	content/child/blink_glue.cc \
 	content/child/child_histogram_message_filter.cc \
 	content/child/child_message_filter.cc \
 	content/child/child_process.cc \
@@ -50,9 +51,9 @@ LOCAL_SRC_FILES := \
 	content/child/indexed_db/indexed_db_dispatcher.cc \
 	content/child/indexed_db/indexed_db_key_builders.cc \
 	content/child/indexed_db/indexed_db_message_filter.cc \
-	content/child/indexed_db/proxy_webidbcursor_impl.cc \
-	content/child/indexed_db/proxy_webidbdatabase_impl.cc \
-	content/child/indexed_db/proxy_webidbfactory_impl.cc \
+	content/child/indexed_db/webidbcursor_impl.cc \
+	content/child/indexed_db/webidbdatabase_impl.cc \
+	content/child/indexed_db/webidbfactory_impl.cc \
 	content/child/npapi/np_channel_base.cc \
 	content/child/npapi/npobject_proxy.cc \
 	content/child/npapi/npobject_stub.cc \
@@ -71,15 +72,22 @@ LOCAL_SRC_FILES := \
 	content/child/service_worker/service_worker_message_filter.cc \
 	content/child/service_worker/web_service_worker_impl.cc \
 	content/child/service_worker/web_service_worker_provider_impl.cc \
+	content/child/shared_worker_devtools_agent.cc \
+	content/child/simple_webmimeregistry_impl.cc \
 	content/child/site_isolation_policy.cc \
 	content/child/socket_stream_dispatcher.cc \
 	content/child/thread_safe_sender.cc \
 	content/child/web_database_observer_impl.cc \
+	content/child/web_discardable_memory_impl.cc \
 	content/child/webblobregistry_impl.cc \
+	content/child/webfileutilities_impl.cc \
+	content/child/webkitplatformsupport_child_impl.cc \
 	content/child/webkitplatformsupport_impl.cc \
 	content/child/webmessageportchannel_impl.cc \
 	content/child/websocket_bridge.cc \
 	content/child/websocket_dispatcher.cc \
+	content/child/webfallbackthemeengine_impl.cc \
+	content/child/webthemeengine_impl_android.cc \
 	content/child/worker_thread_task_runner.cc
 
 
@@ -110,15 +118,16 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -129,7 +138,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -140,8 +148,9 @@ MY_DEFS_Debug := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -149,6 +158,7 @@ MY_DEFS_Debug := \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -209,7 +219,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -241,15 +250,16 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -260,7 +270,6 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -271,8 +280,9 @@ MY_DEFS_Release := \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -280,6 +290,7 @@ MY_DEFS_Release := \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
 	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -341,7 +352,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

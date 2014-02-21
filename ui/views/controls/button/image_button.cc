@@ -60,14 +60,6 @@ void ImageButton::SetBackground(SkColor color,
      *image, *mask);
 }
 
-void ImageButton::SetOverlayImage(const gfx::ImageSkia* image) {
-  if (!image) {
-    overlay_image_ = gfx::ImageSkia();
-    return;
-  }
-  overlay_image_ = *image;
-}
-
 void ImageButton::SetImageAlignment(HorizontalAlignment h_align,
                                     VerticalAlignment v_align) {
   h_alignment_ = h_align;
@@ -116,9 +108,6 @@ void ImageButton::OnPaint(gfx::Canvas* canvas) {
       canvas->DrawImageInt(background_image_, position.x(), position.y());
 
     canvas->DrawImageInt(img, position.x(), position.y());
-
-    if (!overlay_image_.isNull())
-      canvas->DrawImageInt(overlay_image_, position.x(), position.y());
   }
 
   Painter::PaintFocusPainter(this, canvas, focus_painter());
@@ -220,7 +209,7 @@ void ToggleImageButton::SetToggledImage(ButtonState state,
   }
 }
 
-void ToggleImageButton::SetToggledTooltipText(const string16& tooltip) {
+void ToggleImageButton::SetToggledTooltipText(const base::string16& tooltip) {
   toggled_tooltip_text_ = tooltip;
 }
 
@@ -249,7 +238,7 @@ void ToggleImageButton::SetImage(ButtonState state,
 // ToggleImageButton, View overrides:
 
 bool ToggleImageButton::GetTooltipText(const gfx::Point& p,
-                                       string16* tooltip) const {
+                                       base::string16* tooltip) const {
   if (!toggled_ || toggled_tooltip_text_.empty())
     return Button::GetTooltipText(p, tooltip);
 

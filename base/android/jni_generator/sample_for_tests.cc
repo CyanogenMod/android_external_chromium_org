@@ -51,8 +51,15 @@ void CPPClass::IterateAndDoSomethingWithStructB(JNIEnv* env, jobject obj) {
   map_.clear();
 }
 
+base::android::ScopedJavaLocalRef<jstring> CPPClass::ReturnAString(
+    JNIEnv* env, jobject obj) {
+  base::android::ScopedJavaLocalRef<jstring> ret = ConvertUTF8ToJavaString(
+      env, "test");
+  return ret;
+}
+
 // Static free functions declared and called directly from java.
-static jint Init(JNIEnv* env, jobject obj, jstring param) {
+static jlong Init(JNIEnv* env, jobject obj, jstring param) {
   return 0;
 }
 

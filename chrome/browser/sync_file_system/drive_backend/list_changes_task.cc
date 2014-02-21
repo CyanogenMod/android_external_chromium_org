@@ -5,9 +5,11 @@
 #include "chrome/browser/sync_file_system/drive_backend/list_changes_task.h"
 
 #include "base/bind.h"
+#include "base/format_macros.h"
 #include "base/location.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
@@ -44,8 +46,11 @@ ListChangesTask::~ListChangesTask() {
 }
 
 void ListChangesTask::Run(const SyncStatusCallback& callback) {
+  util::Log(logging::LOG_VERBOSE, FROM_HERE, "[Changes] Start.");
+
   if (!IsContextReady()) {
-    util::Log(logging::LOG_ERROR, FROM_HERE, "Failed to get required sercive.");
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Changes] Failed to get required sercive.");
     RunSoon(FROM_HERE, base::Bind(callback, SYNC_STATUS_FAILED));
     return;
   }
@@ -60,9 +65,19 @@ void ListChangesTask::DidListChanges(
     const SyncStatusCallback& callback,
     google_apis::GDataErrorCode error,
     scoped_ptr<google_apis::ResourceList> resource_list) {
-  if (error != google_apis::HTTP_SUCCESS) {
-    util::Log(logging::LOG_ERROR, FROM_HERE, "Failed to fetch change list.");
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Changes] Failed to fetch change list.");
     callback.Run(SYNC_STATUS_NETWORK_ERROR);
+    return;
+  }
+
+  if (!resource_list) {
+    NOTREACHED();
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Changes] Got invalid change list.");
+    callback.Run(SYNC_STATUS_FAILED);
     return;
   }
 
@@ -87,10 +102,14 @@ void ListChangesTask::DidListChanges(
   }
 
   if (change_list_.empty()) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE, "[Changes] Got no change.");
     callback.Run(SYNC_STATUS_NO_CHANGE_TO_SYNC);
     return;
   }
 
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Changes] Got %" PRIuS " changes, updating MetadataDatabase.",
+            change_list_.size());
   metadata_database()->UpdateByChangeList(
       resource_list->largest_changestamp(),
       change_list_.Pass(), callback);

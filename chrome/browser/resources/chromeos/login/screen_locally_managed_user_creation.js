@@ -524,6 +524,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
 
       imageGrid.previewElement = previewElement;
       imageGrid.selectionType = 'default';
+      imageGrid.flipPhotoElement = this.getScreenElement('flip-photo');
 
       imageGrid.addEventListener('activate',
                                  this.handleActivate_.bind(this));
@@ -990,11 +991,15 @@ login.createScreen('LocallyManagedUserCreationScreen',
         this.setButtonDisabledStatus('import', !passwordOk);
         return passwordOk;
       }
+      var imageGrid = this.getScreenElement('image-grid');
+      var imageChosen = !(imageGrid.selectionType == 'camera' &&
+                          imageGrid.cameraLive);
       var canProceed =
           passwordOk &&
           (userName.length > 0) &&
-           this.lastVerifiedName_ &&
-           (userName == this.lastVerifiedName_);
+          this.lastVerifiedName_ &&
+          (userName == this.lastVerifiedName_) &&
+          imageChosen;
 
       this.setButtonDisabledStatus('next', !canProceed);
       return canProceed;
@@ -1053,9 +1058,9 @@ login.createScreen('LocallyManagedUserCreationScreen',
 
       var pagesWithCancel = ['intro', 'manager', 'username', 'import-password',
           'error', 'import'];
-      var cancelButton = $('cancel-add-user-button');
-      cancelButton.hidden = pagesWithCancel.indexOf(visiblePage) < 0;
-      cancelButton.disabled = false;
+      $('login-header-bar').allowCancel =
+          pagesWithCancel.indexOf(visiblePage) > 0;
+      $('cancel-add-user-button').disabled = false;
 
       this.getScreenElement('import-link').hidden = true;
       this.getScreenElement('create-link').hidden = true;
@@ -1405,7 +1410,16 @@ login.createScreen('LocallyManagedUserCreationScreen',
      */
     handleSelect_: function(e) {
       var imageGrid = this.getScreenElement('image-grid');
-      if (!(imageGrid.selectionType == 'camera' && imageGrid.cameraLive)) {
+      this.updateNextButtonForUser_();
+
+      $('managed-user-creation-flip-photo').tabIndex =
+          (imageGrid.selectionType == 'camera') ? 0 : -1;
+      if (imageGrid.cameraLive || imageGrid.selectionType != 'camera')
+        imageGrid.previewElement.classList.remove('phototaken');
+      else
+        imageGrid.previewElement.classList.add('phototaken');
+
+      if (!imageGrid.cameraLive || imageGrid.selectionType != 'camera') {
         this.context_.selectedImageUrl = imageGrid.selectedItemUrl;
         chrome.send('supervisedUserSelectImage',
                     [imageGrid.selectedItemUrl, imageGrid.selectionType]);
@@ -1419,9 +1433,13 @@ login.createScreen('LocallyManagedUserCreationScreen',
           imageGrid.startCamera(
               function() {
                 // Start capture if camera is still the selected item.
+                $('managed-user-creation-image-preview-img').classList.toggle(
+                    'animated-transform', true);
                 return imageGrid.selectedItem == imageGrid.cameraImage;
               });
         } else {
+          $('managed-user-creation-image-preview-img').classList.toggle(
+              'animated-transform', false);
           imageGrid.stopCamera();
         }
       }

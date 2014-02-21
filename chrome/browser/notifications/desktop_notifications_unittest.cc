@@ -27,6 +27,10 @@
 #include "ui/compositor/test/context_factories_for_test.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/views/corewm/wm_state.h"
+#endif
+
 
 using content::BrowserThread;
 
@@ -103,6 +107,9 @@ DesktopNotificationsTest::~DesktopNotificationsTest() {
 
 void DesktopNotificationsTest::SetUp() {
   ui::InitializeInputMethodForTesting();
+#if defined(USE_AURA)
+  wm_state_.reset(new views::corewm::WMState);
+#endif
 #if defined(USE_ASH)
   ui::ScopedAnimationDurationScaleMode normal_duration_mode(
       ui::ScopedAnimationDurationScaleMode::ZERO_DURATION);
@@ -116,7 +123,6 @@ void DesktopNotificationsTest::SetUp() {
   // So it is necessary to make sure the desktop gets created first.
   ash::Shell::CreateInstance(new ash::test::TestShellDelegate);
 #endif
-
   chrome::RegisterLocalState(local_state_.registry());
   profile_.reset(new TestingProfile());
   ui_manager_.reset(new BalloonNotificationUIManager(&local_state_));
@@ -138,6 +144,9 @@ void DesktopNotificationsTest::TearDown() {
   aura::Env::DeleteInstance();
   ui::TerminateContextFactoryForTests();
 #endif
+#if defined(USE_AURA)
+  wm_state_.reset();
+#endif
   ui::ShutdownInputMethodForTesting();
 }
 
@@ -147,8 +156,8 @@ DesktopNotificationsTest::StandardTestNotification() {
   params.notification_id = 0;
   params.origin = GURL("http://www.google.com");
   params.icon_url = GURL("/icon.png");
-  params.title = ASCIIToUTF16("Title");
-  params.body = ASCIIToUTF16("Text");
+  params.title = base::ASCIIToUTF16("Title");
+  params.body = base::ASCIIToUTF16("Text");
   params.direction = blink::WebTextDirectionDefault;
   return params;
 }
@@ -167,7 +176,7 @@ TEST_F(DesktopNotificationsTest, TestShow) {
       StandardTestNotification();
   params2.notification_id = 2;
   params2.origin = GURL("http://www.google.com");
-  params2.body = ASCIIToUTF16("Text");
+  params2.body = base::ASCIIToUTF16("Text");
 
   EXPECT_TRUE(service_->ShowDesktopNotification(
       params2, 0, 0, DesktopNotificationService::PageNotification));
@@ -255,11 +264,11 @@ TEST_F(DesktopNotificationsTest, TestVariableSize) {
   content::ShowDesktopNotificationHostMsgParams params;
   params.origin = GURL("http://long.google.com");
   params.icon_url = GURL("/icon.png");
-  params.title = ASCIIToUTF16("Really Really Really Really Really Really "
-                              "Really Really Really Really Really Really "
-                              "Really Really Really Really Really Really "
-                              "Really Long Title"),
-  params.body = ASCIIToUTF16("Text");
+  params.title = base::ASCIIToUTF16("Really Really Really Really Really Really "
+                                    "Really Really Really Really Really Really "
+                                    "Really Really Really Really Really Really "
+                                    "Really Long Title"),
+  params.body = base::ASCIIToUTF16("Text");
   params.notification_id = 0;
 
   std::string expected_log;
@@ -270,7 +279,7 @@ TEST_F(DesktopNotificationsTest, TestVariableSize) {
   expected_log.append("notification displayed\n");
 
   params.origin = GURL("http://short.google.com");
-  params.title = ASCIIToUTF16("Short title");
+  params.title = base::ASCIIToUTF16("Short title");
   params.notification_id = 1;
   EXPECT_TRUE(service_->ShowDesktopNotification(
       params, 0, 0, DesktopNotificationService::PageNotification));
@@ -448,8 +457,8 @@ TEST_F(DesktopNotificationsTest, TestUserInputEscaping) {
   // data:// URL that's produced for the balloon.
   content::ShowDesktopNotificationHostMsgParams params =
       StandardTestNotification();
-  params.title = ASCIIToUTF16("<script>window.alert('uh oh');</script>");
-  params.body = ASCIIToUTF16("<i>this text is in italics</i>");
+  params.title = base::ASCIIToUTF16("<script>window.alert('uh oh');</script>");
+  params.body = base::ASCIIToUTF16("<i>this text is in italics</i>");
   params.notification_id = 1;
   EXPECT_TRUE(service_->ShowDesktopNotification(
       params, 0, 0, DesktopNotificationService::PageNotification));

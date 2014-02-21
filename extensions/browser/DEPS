@@ -1,4 +1,6 @@
 include_rules = [
+  "+components/browser_context_keyed_service",
+  "+components/user_prefs",
   "+content/public/browser",
   "+sync",
 
@@ -9,17 +11,16 @@ include_rules = [
   #
   # TODO(jamescook): Remove these. http://crbug.com/162530
   "+chrome/browser/chrome_notification_types.h",
+  "+chrome/browser/extensions/api/content_settings/content_settings_store.h",
+  "+chrome/browser/extensions/api/preference/preference_api.h",
   "+chrome/browser/extensions/api/runtime/runtime_api.h",
   "+chrome/browser/extensions/extension_function_dispatcher.h",
   "+chrome/browser/extensions/extension_function_histogram_value.h",
   "+chrome/browser/extensions/extension_host.h",
-  "+chrome/browser/extensions/extension_prefs.h",
   "+chrome/browser/extensions/extension_service.h",
-  "+chrome/browser/extensions/extension_system.h",
-  "+chrome/browser/extensions/extension_util.h",
   "+chrome/browser/renderer_host/chrome_render_message_filter.h",
   "+chrome/common/extensions/extension_messages.h",
-  "+chrome/common/extensions/extension_set.h",
+  "+chrome/common/extensions/features/feature_channel.h",
   "+grit/generated_resources.h",
 ]
 

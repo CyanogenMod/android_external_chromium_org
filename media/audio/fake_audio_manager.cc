@@ -33,8 +33,7 @@ AudioOutputStream* FakeAudioManager::MakeLinearOutputStream(
 
 AudioOutputStream* FakeAudioManager::MakeLowLatencyOutputStream(
     const AudioParameters& params,
-    const std::string& device_id,
-    const std::string& input_device_id) {
+    const std::string& device_id) {
   return FakeAudioOutputStream::MakeFakeStream(this, params);
 }
 
@@ -70,7 +69,7 @@ AudioParameters FakeAudioManager::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 AudioParameters FakeAudioManager::GetInputStreamParameters(

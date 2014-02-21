@@ -13,6 +13,7 @@
 #include "content/port/browser/event_with_latency_info.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/gfx/geometry/point_f.h"
 
 namespace content {
 
@@ -35,9 +36,31 @@ class CONTENT_EXPORT TouchEventQueueClient {
 // A queue for throttling and coalescing touch-events.
 class CONTENT_EXPORT TouchEventQueue {
  public:
+  // Different ways of dealing with touch events during scrolling.
+  // TODO(rbyers): Remove (or otherwise update) this once results of
+  // experiments are complete.  http://crbug.com/328503
+  enum TouchScrollingMode {
+    // Send a touchcancel on scroll start and no further touch events for the
+    // duration of the scroll.  Chrome Android's traditional behavior.
+    TOUCH_SCROLLING_MODE_TOUCHCANCEL,
+    // Send touchmove events throughout a scroll, blocking on each ACK and
+    // using the disposition to determine whether a scroll update should be
+    // sent.  Mobile Safari's default overflow scroll behavior.
+    TOUCH_SCROLLING_MODE_SYNC_TOUCHMOVE,
+    // Like sync, except that consumed scroll events cause subsequent touchmove
+    // events to be suppressed.  Unconsumed scroll events return touchmove
+    // events to being dispatched synchronously (so scrolling may be hijacked
+    // when a scroll limit is reached, and later resumed).
+    TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE,
+    TOUCH_SCROLLING_MODE_DEFAULT = TOUCH_SCROLLING_MODE_TOUCHCANCEL
+  };
 
-  // The |client| must outlive the TouchEventQueue.
-  explicit TouchEventQueue(TouchEventQueueClient* client);
+  // The |client| must outlive the TouchEventQueue. If
+  // |touchmove_suppression_length_dips| <= 0, touch move suppression is
+  // disabled.
+  TouchEventQueue(TouchEventQueueClient* client,
+                  TouchScrollingMode mode,
+                  double touchmove_suppression_length_dips);
   ~TouchEventQueue();
 
   // Adds an event to the queue. The event may be coalesced with previously
@@ -58,9 +81,12 @@ class CONTENT_EXPORT TouchEventQueue {
   // resume the normal flow of sending touch events to the renderer.
   void OnGestureScrollEvent(const GestureEventWithLatencyInfo& gesture_event);
 
-  // Empties the queue of touch events. This may result in any number of gesture
-  // events being sent to the renderer.
-  void FlushQueue();
+  void OnGestureEventAck(
+      const GestureEventWithLatencyInfo& event,
+      InputEventAckState ack_result);
+
+  // Notifies the queue whether the renderer has at least one touch handler.
+  void OnHasTouchEventHandlers(bool has_handlers);
 
   // Returns whether the currently pending touch event (waiting ACK) is for
   // a touch start event.
@@ -82,14 +108,23 @@ class CONTENT_EXPORT TouchEventQueue {
     return ack_timeout_enabled_;
   }
 
+  bool has_handlers() const {
+    return touch_filtering_state_ != DROP_ALL_TOUCHES;
+  }
+
  private:
   class TouchTimeoutHandler;
+  class TouchMoveSlopSuppressor;
   friend class TouchTimeoutHandler;
   friend class TouchEventQueueTest;
 
   bool HasTimeoutEvent() const;
   bool IsTimeoutRunningForTesting() const;
   const TouchEventWithLatencyInfo& GetLatestEventForTesting() const;
+
+  // Empties the queue of touch events. This may result in any number of gesture
+  // events being sent to the renderer.
+  void FlushQueue();
 
   // Walks the queue, checking each event for |ShouldForwardToRenderer()|.
   // If true, forwards the touch event and stops processing further events.
@@ -101,7 +136,14 @@ class CONTENT_EXPORT TouchEventQueue {
   void PopTouchEventToClient(InputEventAckState ack_result,
                              const ui::LatencyInfo& renderer_latency_info);
 
-  bool ShouldForwardToRenderer(const blink::WebTouchEvent& event) const;
+  enum PreFilterResult {
+    ACK_WITH_NO_CONSUMER_EXISTS,
+    ACK_WITH_NOT_CONSUMED,
+    FORWARD_TO_RENDERER,
+  };
+  // Filter touches prior to forwarding to the renderer, e.g., if the renderer
+  // has no touch handler.
+  PreFilterResult FilterBeforeForwarding(const blink::WebTouchEvent& event);
   void ForwardToRenderer(const TouchEventWithLatencyInfo& event);
   void UpdateTouchAckStates(const blink::WebTouchEvent& event,
                             InputEventAckState ack_result);
@@ -126,16 +168,35 @@ class CONTENT_EXPORT TouchEventQueue {
   // ack after forwarding a touch event to the client.
   bool dispatching_touch_;
 
-  // Don't send touch events to the renderer while scrolling.
-  bool no_touch_to_renderer_;
-
-  // Whether an event in the current (multi)touch sequence was consumed by the
-  // renderer.  The touch timeout will never be activated when this is true.
-  bool renderer_is_consuming_touch_gesture_;
+  enum TouchFilteringState {
+    FORWARD_ALL_TOUCHES,           // Don't filter at all - the default.
+    FORWARD_TOUCHES_UNTIL_TIMEOUT, // Don't filter unless we get an ACK timeout.
+    DROP_TOUCHES_IN_SEQUENCE,      // Filter all events until a new touch
+                                   // sequence is received.
+    DROP_ALL_TOUCHES,              // Filter all events, e.g., no touch handler.
+    TOUCH_FILTERING_STATE_DEFAULT = FORWARD_ALL_TOUCHES,
+  };
+  TouchFilteringState touch_filtering_state_;
 
   // Optional handler for timed-out touch event acks, disabled by default.
   bool ack_timeout_enabled_;
   scoped_ptr<TouchTimeoutHandler> timeout_handler_;
+
+  // Suppression of TouchMove's within a slop region when a sequence has not yet
+  // been preventDefaulted.
+  scoped_ptr<TouchMoveSlopSuppressor> touchmove_slop_suppressor_;
+
+  // Whether touchmove events should be dropped due to the
+  // TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE mode.  Note that we can't use
+  // touch_filtering_state_ for this (without adding a few new states and
+  // complicating the code significantly) because it can occur with and without
+  // timeout, and shouldn't cause touchend to be dropped.
+  bool absorbing_touch_moves_;
+
+  // How touch events are handled during scrolling.  For now this is a global
+  // setting for experimentation, but we may evolve it into an app-controlled
+  // mode.
+  const TouchScrollingMode touch_scrolling_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEventQueue);
 };

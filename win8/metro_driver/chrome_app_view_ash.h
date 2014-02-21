@@ -15,6 +15,7 @@
 #include "base/strings/string16.h"
 #include "ui/events/event_constants.h"
 #include "win8/metro_driver/direct3d_helper.h"
+#include "win8/metro_driver/ime/ime_popup_observer.h"
 #include "win8/metro_driver/ime/input_source_observer.h"
 #include "win8/metro_driver/ime/text_service_delegate.h"
 
@@ -46,6 +47,7 @@ struct MetroViewerHostMsg_SaveAsDialogParams;
 
 class ChromeAppViewAsh
     : public mswr::RuntimeClass<winapp::Core::IFrameworkView>,
+      public metro_driver::ImePopupObserver,
       public metro_driver::InputSourceObserver,
       public metro_driver::TextServiceDelegate {
  public:
@@ -64,15 +66,16 @@ class ChromeAppViewAsh
   static HRESULT Unsnap();
 
   void OnActivateDesktop(const base::FilePath& file_path, bool ash_exit);
-  void OnOpenURLOnDesktop(const base::FilePath& shortcut, const string16& url);
+  void OnOpenURLOnDesktop(const base::FilePath& shortcut,
+                          const base::string16& url);
   void OnSetCursor(HCURSOR cursor);
-  void OnDisplayFileOpenDialog(const string16& title,
-                               const string16& filter,
+  void OnDisplayFileOpenDialog(const base::string16& title,
+                               const base::string16& filter,
                                const base::FilePath& default_path,
                                bool allow_multiple_files);
   void OnDisplayFileSaveAsDialog(
       const MetroViewerHostMsg_SaveAsDialogParams& params);
-  void OnDisplayFolderPicker(const string16& title);
+  void OnDisplayFolderPicker(const base::string16& title);
   void OnSetCursorPos(int x, int y);
 
   // This function is invoked when the open file operation completes. The
@@ -105,16 +108,39 @@ class ChromeAppViewAsh
 
 
  private:
+  class PointerInfoHandler;
+
+  // ImePopupObserver overrides.
+  virtual void OnImePopupChanged(ImePopupObserver::EventType event) OVERRIDE;
+
   // InputSourceObserver overrides.
   virtual void OnInputSourceChanged() OVERRIDE;
 
   // TextServiceDelegate overrides.
   virtual void OnCompositionChanged(
-      const string16& text,
+      const base::string16& text,
       int32 selection_start,
       int32 selection_end,
       const std::vector<metro_viewer::UnderlineInfo>& underlines) OVERRIDE;
-  virtual void OnTextCommitted(const string16& text) OVERRIDE;
+  virtual void OnTextCommitted(const base::string16& text) OVERRIDE;
+
+  // Convenience for sending a MetroViewerHostMsg_MouseButton with the specified
+  // parameters.
+  void SendMouseButton(int x,
+                       int y,
+                       int extra,
+                       ui::EventType event_type,
+                       uint32 flags,
+                       ui::EventFlags changed_button,
+                       bool is_horizontal_wheel);
+
+  // Win8 only generates a mouse press for the initial button that goes down and
+  // a release when the last button is released. Any intermediary presses (or
+  // releases) do not result in a new press/release event. Instead a move is
+  // generated with the winui::Input::PointerUpdateKind identifying what
+  // changed. This function generates the necessary intermediary events (as
+  // necessary).
+  void GenerateMouseEventFromMoveIfNecessary(const PointerInfoHandler& pointer);
 
   HRESULT OnActivate(winapp::Core::ICoreApplicationView* view,
                      winapp::Activation::IActivatedEventArgs* args);
@@ -157,8 +183,8 @@ class ChromeAppViewAsh
 
   // Tasks posted to the UI thread to initiate the search/url navigation
   // requests.
-  void OnSearchRequest(const string16& search_string);
-  void OnNavigateToUrl(const string16& url);
+  void OnSearchRequest(const base::string16& search_string);
+  void OnNavigateToUrl(const base::string16& url);
 
   HRESULT OnSizeChanged(winui::Core::ICoreWindow* sender,
                         winui::Core::IWindowSizeChangedEventArgs* args);
@@ -180,8 +206,9 @@ class ChromeAppViewAsh
   EventRegistrationToken edgeevent_token_;
 
   // Keep state about which button is currently down, if any, as PointerMoved
-  // events do not contain that state, but Ash's MouseEvents need it.
-  ui::EventFlags mouse_down_flags_;
+  // events do not contain that state, but Ash's MouseEvents need it. Value is
+  // as a bitmask of ui::EventFlags.
+  uint32 mouse_down_flags_;
 
   // Set the D3D swap chain and nothing else.
   metro_driver::Direct3DHelper direct3d_helper_;
@@ -193,7 +220,7 @@ class ChromeAppViewAsh
   HWND core_window_hwnd_;
 
   // UI message loop to allow message passing into this thread.
-  base::MessageLoop ui_loop_;
+  base::MessageLoopForUI ui_loop_;
 
   // For IME support.
   scoped_ptr<metro_driver::InputSource> input_source_;

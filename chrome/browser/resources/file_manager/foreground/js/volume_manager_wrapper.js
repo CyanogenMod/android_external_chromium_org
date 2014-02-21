@@ -213,30 +213,17 @@ VolumeManagerWrapper.prototype.getDriveConnectionState = function() {
 };
 
 /**
- * @param {string} mountPath The path to mount location of the volume.
- * @return {VolumeInfo} The VolumeInfo instance for the volume mounted at
- *     mountPath, or null if no volume is found
+ * Obtains a volume info containing the passed entry.
+ * @param {Entry} entry Entry on the volume to be returned.
+ * @return {VolumeInfo} The VolumeInfo instance or null if not found.
  */
-VolumeManagerWrapper.prototype.getVolumeInfo = function(mountPath) {
+VolumeManagerWrapper.prototype.getVolumeInfo = function(entry) {
   return this.filterDisabledDriveVolume_(
-      this.volumeManager_ && this.volumeManager_.getVolumeInfo(mountPath));
+      this.volumeManager_ && this.volumeManager_.getVolumeInfo(entry));
 };
 
 /**
- * Obtains a volume information from a file entry URL.
- * TODO(hirono): Check a file system to find a volume.
- *
- * @param {string} url URL of entry.
- * @return {VolumeInfo} Volume info.
- */
-VolumeManagerWrapper.prototype.getVolumeInfoByURL = function(url) {
-  return this.filterDisabledDriveVolume_(
-      this.volumeManager_ && this.volumeManager_.getVolumeInfoByURL(url));
-};
-
-/**
- * Obtains a volume infomration of the current profile.
- *
+ * Obtains a volume information of the current profile.
  * @param {util.VolumeType} volumeType Volume type.
  * @return {VolumeInfo} Found volume info.
  */
@@ -248,19 +235,43 @@ VolumeManagerWrapper.prototype.getCurrentProfileVolumeInfo =
 };
 
 /**
+ * Obtains the default display root entry.
+ * @param {function(Entry)} callback Callback passed the default display root.
+ */
+VolumeManagerWrapper.prototype.getDefaultDisplayRoot =
+    function(callback) {
+  this.ensureInitialized(function() {
+    var defaultVolume = this.getCurrentProfileVolumeInfo(
+        util.VolumeType.DOWNLOADS);
+    defaultVolume.resolveDisplayRoot(callback, function() {
+      // defaultVolume is DOWNLOADS and resolveDisplayRoot should succeed.
+      throw new Error(
+          'Unexpectedly failed to obtain the default display root.');
+    });
+  }.bind(this));
+};
+
+/**
  * Obtains location information from an entry.
  *
  * @param {Entry} entry File or directory entry.
  * @return {EntryLocation} Location information.
  */
 VolumeManagerWrapper.prototype.getLocationInfo = function(entry) {
-  return this.volumeManager_ && this.volumeManager_.getLocationInfo(entry);
+  var locationInfo =
+      this.volumeManager_ && this.volumeManager_.getLocationInfo(entry);
+  if (!locationInfo)
+    return null;
+  if (!this.filterDisabledDriveVolume_(locationInfo.volumeInfo))
+    return null;
+  return locationInfo;
 };
 
 /**
  * Requests to mount the archive file.
  * @param {string} fileUrl The path to the archive file to be mounted.
- * @param {function(string)} successCallback Called with mount path on success.
+ * @param {function(VolumeInfo)} successCallback Called with the VolumeInfo
+ *     instance.
  * @param {function(util.VolumeError)} errorCallback Called when an error
  *     occurs.
  */
@@ -276,47 +287,21 @@ VolumeManagerWrapper.prototype.mountArchive = function(
 };
 
 /**
- * Requests unmount the volume at mountPath.
- * @param {string} mountPath The path to the mount location of the volume.
- * @param {function(string)} successCallback Called with the mount path
- *     on success.
+ * Requests unmount the specified volume.
+ * @param {!VolumeInfo} volumeInfo Volume to be unmounted.
+ * @param {function()} successCallback Called on success.
  * @param {function(util.VolumeError)} errorCallback Called when an error
  *     occurs.
  */
 VolumeManagerWrapper.prototype.unmount = function(
-    mountPath, successCallback, errorCallback) {
+    volumeInfo, successCallback, errorCallback) {
   if (this.pendingTasks_) {
     this.pendingTasks_.push(
-        this.unmount.bind(this, mountPath, successCallback, errorCallback));
+        this.unmount.bind(this, volumeInfo, successCallback, errorCallback));
     return;
   }
 
-  this.volumeManager_.unmount(mountPath, successCallback, errorCallback);
-};
-
-/**
- * Resolves the absolute path to an entry instance.
- * @param {string} path The path to be resolved.
- * @param {function(Entry)} successCallback Called with the resolved entry
- *     on success.
- * @param {function(FileError)} errorCallback Called with the error on error.
- */
-VolumeManagerWrapper.prototype.resolveAbsolutePath = function(
-    path, successCallback, errorCallback) {
-  if (this.pendingTasks_) {
-    this.pendingTasks_.push(this.resolveAbsolutePath.bind(
-        this, path, successCallback, errorCallback));
-    return;
-  }
-
-  // If the drive is disabled, any resolving the path under drive should be
-  // failed.
-  if (!this.driveEnabled_ && PathUtil.isDriveBasedPath(path)) {
-    errorCallback(util.createFileError(FileError.NOT_FOUND_ERR));
-    return;
-  }
-
-  this.volumeManager_.resolveAbsolutePath(path, successCallback, errorCallback);
+  this.volumeManager_.unmount(volumeInfo, successCallback, errorCallback);
 };
 
 /**

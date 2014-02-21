@@ -22,10 +22,9 @@
         'cast_receiver_impl.h',
       ], # source
       'dependencies': [
-        '<(DEPTH)/crypto/crypto.gyp:crypto',
+        '<(DEPTH)/media/cast/transport/cast_transport.gyp:cast_transport',
         'cast_audio_receiver',
         'cast_video_receiver',
-        'pacing/paced_sender.gyp:cast_paced_sender',
         'rtp_receiver/rtp_receiver.gyp:cast_rtp_receiver',
       ],
     },

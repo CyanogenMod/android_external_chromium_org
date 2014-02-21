@@ -14,13 +14,9 @@ class WebContents;
 // Windows specific implementation of the render view context menu.
 class RenderViewContextMenuWin : public RenderViewContextMenuViews {
  public:
-  RenderViewContextMenuWin(content::WebContents* web_contents,
+  RenderViewContextMenuWin(content::RenderFrameHost* render_frame_host,
                            const content::ContextMenuParams& params);
   virtual ~RenderViewContextMenuWin();
-
-  // Set this menu to show for an external tab contents. This
-  // only has an effect before Init() is called.
-  void SetExternal();
 
   // SimpleMenuModel::Delegate implementation.
   virtual bool IsCommandIdVisible(int command_id) const OVERRIDE;

@@ -6,13 +6,27 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/process/kill.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/first_run/upgrade_util.h"
+#include "chrome/browser/first_run/upgrade_util_win.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/metro_viewer/chrome_metro_viewer_process_host_aurawin.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_service.h"
+
+#include "ui/aura/remote_window_tree_host_win.h"
 
 BrowserProcessPlatformPart::BrowserProcessPlatformPart() {
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    // Tell metro viewer to close when we are shutting down.
+    registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
+                   content::NotificationService::AllSources());
+  }
 }
 
 BrowserProcessPlatformPart::~BrowserProcessPlatformPart() {
@@ -44,23 +58,26 @@ void BrowserProcessPlatformPart::PlatformSpecificCommandLineProcessing(
   }
 }
 
-void BrowserProcessPlatformPart::AttemptExit() {
-  // On WinAura, the regular exit path is fine except on Win8+, where Ash might
-  // be active in Metro and won't go away even if all browsers are closed. The
-  // viewer process, whose host holds a reference to g_browser_process, needs to
-  // be killed as well.
-  BrowserProcessPlatformPartBase::AttemptExit();
+void BrowserProcessPlatformPart::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
 
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-      metro_viewer_process_host_) {
-    base::ProcessId viewer_id =
-        metro_viewer_process_host_->GetViewerProcessId();
-    if (viewer_id == base::kNullProcessId)
-      return;
-    // The viewer doesn't hold any state so it is fine to kill it before it
-    // cleanly exits. This will trigger MetroViewerProcessHost::OnChannelError()
-    // which will cleanup references to g_browser_process.
-    bool success = base::KillProcessById(viewer_id, 0, true);
-    DCHECK(success);
+  DCHECK(type == chrome::NOTIFICATION_APP_TERMINATING);
+  PrefService* pref_service = g_browser_process->local_state();
+  bool is_relaunch = pref_service->GetBoolean(prefs::kWasRestarted);
+  if (is_relaunch) {
+    upgrade_util::RelaunchMode mode =
+        upgrade_util::RelaunchModeStringToEnum(
+            pref_service->GetString(prefs::kRelaunchMode));
+    if (metro_viewer_process_host_.get()) {
+      if (mode == upgrade_util::RELAUNCH_MODE_DESKTOP) {
+        // Metro -> Desktop
+        chrome::ActivateDesktopHelper(chrome::ASH_TERMINATE);
+      } else {
+        // Metro -> Metro
+        aura::HandleMetroExit();
+      }
+    }
   }
 }

@@ -8,6 +8,7 @@
 
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -35,7 +36,8 @@ static MagnificationManager* g_magnification_manager = NULL;
 }
 
 class MagnificationManagerImpl : public MagnificationManager,
-                                 public content::NotificationObserver {
+                                 public content::NotificationObserver,
+                                 public ash::SessionStateObserver {
  public:
   MagnificationManagerImpl()
       : first_time_update_(true),
@@ -103,6 +105,11 @@ class MagnificationManagerImpl : public MagnificationManager,
 
   virtual void SetProfileForTest(Profile* profile) OVERRIDE {
     SetProfile(profile);
+  }
+
+  // SessionStateObserver overrides:
+  virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE {
+    SetProfile(ProfileManager::GetActiveUserProfile());
   }
 
  private:
@@ -192,6 +199,13 @@ class MagnificationManagerImpl : public MagnificationManager,
         chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
         content::NotificationService::AllSources(),
         content::Details<AccessibilityStatusEventDetails>(&details));
+
+#if defined(OS_CHROMEOS)
+    if (ash::Shell::GetInstance() && AccessibilityManager::Get()) {
+      ash::Shell::GetInstance()->SetCursorCompositingEnabled(
+          AccessibilityManager::Get()->ShouldEnableCursorCompositing());
+    }
+#endif
   }
 
   // content::NotificationObserver implementation:
@@ -201,14 +215,19 @@ class MagnificationManagerImpl : public MagnificationManager,
     switch (type) {
       case chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE: {
         // Update |profile_| when entering the login screen.
-        Profile* profile = ProfileManager::GetDefaultProfile();
+        Profile* profile = ProfileManager::GetActiveUserProfile();
         if (ProfileHelper::IsSigninProfile(profile))
           SetProfile(profile);
         break;
       }
       case chrome::NOTIFICATION_SESSION_STARTED:
         // Update |profile_| when entering a session.
-        SetProfile(ProfileManager::GetDefaultProfile());
+        SetProfile(ProfileManager::GetActiveUserProfile());
+
+        // Add a session state observer to be able to monitor session changes.
+        if (!session_state_observer_.get() && ash::Shell::HasInstance())
+          session_state_observer_.reset(
+              new ash::ScopedSessionStateObserver(this));
         break;
       case chrome::NOTIFICATION_PROFILE_DESTROYED: {
         // Update |profile_| when exiting a session or shutting down.
@@ -229,8 +248,10 @@ class MagnificationManagerImpl : public MagnificationManager,
 
   ash::MagnifierType type_;
   bool enabled_;
+
   content::NotificationRegistrar registrar_;
   scoped_ptr<PrefChangeRegistrar> pref_change_registrar_;
+  scoped_ptr<ash::ScopedSessionStateObserver> session_state_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(MagnificationManagerImpl);
 };

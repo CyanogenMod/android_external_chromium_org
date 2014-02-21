@@ -22,7 +22,8 @@
 #include "native_client/src/trusted/validator/nacl_file_info.h"
 
 #include "ppapi/c/private/ppb_nacl_private.h"
-#include "ppapi/cpp/private/instance_private.h"
+#include "ppapi/cpp/instance.h"
+#include "ppapi/cpp/private/uma_private.h"
 #include "ppapi/cpp/url_loader.h"
 #include "ppapi/cpp/var.h"
 #include "ppapi/cpp/view.h"
@@ -51,10 +52,8 @@ namespace plugin {
 
 class ErrorInfo;
 class Manifest;
-class ProgressEvent;
-class ScriptablePlugin;
 
-class Plugin : public pp::InstancePrivate {
+class Plugin : public pp::Instance {
  public:
   // Factory method for creation.
   static Plugin* New(PP_Instance instance);
@@ -68,10 +67,6 @@ class Plugin : public pp::InstancePrivate {
 
   // Handles document load, when the plugin is a MIME type handler.
   virtual bool HandleDocumentLoad(const pp::URLLoader& url_loader);
-
-  // Returns a scriptable reference to this plugin element.
-  // Called by JavaScript document.getElementById(plugin_id).
-  virtual pp::Var GetInstanceObject();
 
   // ----- Plugin interface support.
 
@@ -93,7 +88,7 @@ class Plugin : public pp::InstancePrivate {
   // mechanism(s) take over.
   //
   // Updates nacl_module_origin() and nacl_module_url().
-  bool LoadNaClModule(nacl::DescWrapper* wrapper, ErrorInfo* error_info,
+  void LoadNaClModule(nacl::DescWrapper* wrapper,
                       bool enable_dyncode_syscalls,
                       bool enable_exception_handling,
                       bool enable_crash_throttling,
@@ -122,8 +117,7 @@ class Plugin : public pp::InstancePrivate {
                                        ErrorInfo* error_info);
 
   // Returns the argument value for the specified key, or NULL if not found.
-  // The callee retains ownership of the result.
-  char* LookupArgument(const char* key);
+  std::string LookupArgument(const std::string& key) const;
 
   enum LengthComputable {
     LENGTH_IS_NOT_COMPUTABLE = 0,
@@ -169,13 +163,6 @@ class Plugin : public pp::InstancePrivate {
   nacl::string manifest_base_url() const { return manifest_base_url_; }
   void set_manifest_base_url(const nacl::string& url) {
     manifest_base_url_ = url;
-  }
-
-  // The URL of the manifest file as set by the "src" attribute.
-  // It is not the fully resolved URL if it was set as relative.
-  const nacl::string& manifest_url() const { return manifest_url_; }
-  void set_manifest_url(const nacl::string& manifest_url) {
-    manifest_url_ = manifest_url;
   }
 
   // The state of readiness of the plugin.
@@ -253,6 +240,7 @@ class Plugin : public pp::InstancePrivate {
   void set_exit_status(int exit_status);
 
   const PPB_NaCl_Private* nacl_interface() const { return nacl_interface_; }
+  pp::UMAPrivate& uma_interface() { return uma_interface_; }
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(Plugin);
@@ -268,33 +256,53 @@ class Plugin : public pp::InstancePrivate {
   // in this order, for the main nacl subprocess.
   void ShutDownSubprocesses();
 
-  ScriptablePlugin* scriptable_plugin() const { return scriptable_plugin_; }
-  void set_scriptable_plugin(ScriptablePlugin* scriptable_plugin) {
-    scriptable_plugin_ = scriptable_plugin;
-  }
-
   // Access the service runtime for the main NaCl subprocess.
   ServiceRuntime* main_service_runtime() const {
     return main_subprocess_.service_runtime();
   }
 
-  // Help load a nacl module, from the file specified in wrapper.
+  // Histogram helper functions, internal to Plugin so they can use
+  // uma_interface_ normally.
+  void HistogramTimeSmall(const std::string& name, int64_t ms);
+  void HistogramTimeMedium(const std::string& name, int64_t ms);
+  void HistogramTimeLarge(const std::string& name, int64_t ms);
+  void HistogramSizeKB(const std::string& name, int32_t sample);
+  void HistogramEnumerate(const std::string& name,
+                          int sample,
+                          int maximum,
+                          int out_of_range_replacement);
+  void HistogramEnumerateOsArch(const std::string& sandbox_isa);
+  void HistogramEnumerateLoadStatus(PluginErrorCode error_code,
+                                    bool is_installed);
+  void HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code,
+                                          bool is_installed);
+  void HistogramEnumerateManifestIsDataURI(bool is_data_uri);
+  void HistogramHTTPStatusCode(const std::string& name, int status);
+
+  // Load a nacl module from the file specified in wrapper.
+  // Only to be used from a background (non-main) thread.
   // This will fully initialize the |subprocess| if the load was successful.
-  bool LoadNaClModuleCommon(nacl::DescWrapper* wrapper,
-                            NaClSubprocess* subprocess,
-                            const Manifest* manifest,
-                            bool should_report_uma,
-                            const SelLdrStartParams& params,
-                            const pp::CompletionCallback& init_done_cb,
-                            const pp::CompletionCallback& crash_cb);
+  bool LoadNaClModuleFromBackgroundThread(nacl::DescWrapper* wrapper,
+                                          NaClSubprocess* subprocess,
+                                          const Manifest* manifest,
+                                          const SelLdrStartParams& params);
 
   // Start sel_ldr from the main thread, given the start params.
-  // Sets |success| to true on success.
   // |pp_error| is set by CallOnMainThread (should be PP_OK).
   void StartSelLdrOnMainThread(int32_t pp_error,
                                ServiceRuntime* service_runtime,
                                const SelLdrStartParams& params,
-                               bool* success);
+                               pp::CompletionCallback callback);
+
+  // Signals that StartSelLdr has finished.
+  void SignalStartSelLdrDone(int32_t pp_error,
+                             bool* started,
+                             ServiceRuntime* service_runtime);
+
+  void LoadNexeAndStart(int32_t pp_error,
+                        nacl::DescWrapper* wrapper,
+                        ServiceRuntime* service_runtime,
+                        const pp::CompletionCallback& crash_cb);
 
   // Callback used when getting the URL for the .nexe file.  If the URL loading
   // is successful, the file descriptor is opened and can be passed to sel_ldr
@@ -372,11 +380,7 @@ class Plugin : public pp::InstancePrivate {
 
   void SetExitStatusOnMainThread(int32_t pp_error, int exit_status);
 
-  ScriptablePlugin* scriptable_plugin_;
-
-  int argc_;
-  char** argn_;
-  char** argv_;
+  std::map<std::string, std::string> args_;
 
   // Keep track of the NaCl module subprocess that was spun up in the plugin.
   NaClSubprocess main_subprocess_;
@@ -435,10 +439,7 @@ class Plugin : public pp::InstancePrivate {
   std::set<FileDownloader*> url_downloaders_;
   // Keep track of file descriptors opened by StreamAsFile().
   // These are owned by the browser.
-  std::map<nacl::string, struct NaClFileInfo> url_file_info_map_;
-
-  // Pending progress events.
-  std::queue<ProgressEvent*> progress_events_;
+  std::map<nacl::string, NaClFileInfoAutoCloser*> url_file_info_map_;
 
   // Used for NexeFileDidOpenContinuation
   int64_t load_start_;
@@ -465,6 +466,7 @@ class Plugin : public pp::InstancePrivate {
   int exit_status_;
 
   const PPB_NaCl_Private* nacl_interface_;
+  pp::UMAPrivate uma_interface_;
 };
 
 }  // namespace plugin

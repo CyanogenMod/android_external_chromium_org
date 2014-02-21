@@ -51,11 +51,11 @@ class ProgramManagerTest : public testing::Test {
  protected:
   virtual void SetUp() {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
   }
 
   virtual void TearDown() {
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
     gl_.reset();
   }
 
@@ -229,7 +229,7 @@ class ProgramManagerWithShaderTest : public testing::Test {
 
   virtual void SetUp() {
     gl_.reset(new StrictMock<gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
 
     SetupDefaultShaderExpectations();
 
@@ -250,7 +250,8 @@ class ProgramManagerWithShaderTest : public testing::Test {
 
     program_->AttachShader(&shader_manager_, vertex_shader);
     program_->AttachShader(&shader_manager_, fragment_shader);
-    program_->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+    program_->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                   base::Bind(&ShaderCacheCb));
   }
 
   void SetupShader(AttribInfo* attribs, size_t num_attribs,
@@ -272,7 +273,7 @@ class ProgramManagerWithShaderTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
   }
 
   // Return true if link status matches expected_link_status
@@ -283,7 +284,8 @@ class ProgramManagerWithShaderTest : public testing::Test {
       SetupShader(kAttribs, kNumAttribs, kUniforms, kNumUniforms,
                   service_id);
     }
-    program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+    program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                  base::Bind(&ShaderCacheCb));
     GLint link_status;
     program->GetProgramiv(GL_LINK_STATUS, &link_status);
     return (static_cast<bool>(link_status) == expected_link_status);
@@ -720,7 +722,8 @@ TEST_F(ProgramManagerWithShaderTest, GLDriverReturnsGLUnderscoreUniform) {
   ASSERT_TRUE(program != NULL);
   EXPECT_TRUE(program->AttachShader(&shader_manager_, vshader));
   EXPECT_TRUE(program->AttachShader(&shader_manager_, fshader));
-  program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+  program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                base::Bind(&ShaderCacheCb));
   GLint value = 0;
   program->GetProgramiv(GL_ACTIVE_ATTRIBUTES, &value);
   EXPECT_EQ(3, value);
@@ -788,7 +791,8 @@ TEST_F(ProgramManagerWithShaderTest, SimilarArrayNames) {
   ASSERT_TRUE(program != NULL);
   EXPECT_TRUE(program->AttachShader(&shader_manager_, vshader));
   EXPECT_TRUE(program->AttachShader(&shader_manager_, fshader));
-  program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+  program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                base::Bind(&ShaderCacheCb));
 
   // Check that we get the correct locations.
   EXPECT_EQ(kUniform2FakeLocation,
@@ -889,7 +893,8 @@ TEST_F(ProgramManagerWithShaderTest, GLDriverReturnsWrongTypeInfo) {
   ASSERT_TRUE(program!= NULL);
   EXPECT_TRUE(program->AttachShader(&shader_manager_, vshader));
   EXPECT_TRUE(program->AttachShader(&shader_manager_, fshader));
-  program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+  program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                base::Bind(&ShaderCacheCb));
   // Check that we got the good type, not the bad.
   // Check Attribs
   for (unsigned index = 0; index < kNumAttribs; ++index) {
@@ -1255,7 +1260,10 @@ TEST_F(ProgramManagerWithShaderTest, UniformsPrecisionMismatch) {
   EXPECT_TRUE(program->AttachShader(&shader_manager_, vshader));
   EXPECT_TRUE(program->AttachShader(&shader_manager_, fshader));
 
-  EXPECT_TRUE(program->DetectUniformsMismatch());
+  std::string conflicting_name;
+
+  EXPECT_TRUE(program->DetectUniformsMismatch(&conflicting_name));
+  EXPECT_EQ("a", conflicting_name);
   EXPECT_TRUE(LinkAsExpected(program, false));
 }
 
@@ -1269,7 +1277,10 @@ TEST_F(ProgramManagerWithShaderTest, VaryingTypeMismatch) {
   Program* program = SetupShaderVariableTest(
       &kVertexVarying, 1, &kFragmentVarying, 1);
 
-  EXPECT_TRUE(program->DetectVaryingsMismatch());
+  std::string conflicting_name;
+
+  EXPECT_TRUE(program->DetectVaryingsMismatch(&conflicting_name));
+  EXPECT_EQ("a", conflicting_name);
   EXPECT_TRUE(LinkAsExpected(program, false));
 }
 
@@ -1283,7 +1294,10 @@ TEST_F(ProgramManagerWithShaderTest, VaryingArraySizeMismatch) {
   Program* program = SetupShaderVariableTest(
       &kVertexVarying, 1, &kFragmentVarying, 1);
 
-  EXPECT_TRUE(program->DetectVaryingsMismatch());
+  std::string conflicting_name;
+
+  EXPECT_TRUE(program->DetectVaryingsMismatch(&conflicting_name));
+  EXPECT_EQ("a", conflicting_name);
   EXPECT_TRUE(LinkAsExpected(program, false));
 }
 
@@ -1297,7 +1311,10 @@ TEST_F(ProgramManagerWithShaderTest, VaryingPrecisionMismatch) {
   Program* program = SetupShaderVariableTest(
       &kVertexVarying, 1, &kFragmentVarying, 1);
 
-  EXPECT_FALSE(program->DetectVaryingsMismatch());
+  std::string conflicting_name;
+
+  EXPECT_FALSE(program->DetectVaryingsMismatch(&conflicting_name));
+  EXPECT_TRUE(conflicting_name.empty());
   EXPECT_TRUE(LinkAsExpected(program, true));
 }
 
@@ -1309,7 +1326,10 @@ TEST_F(ProgramManagerWithShaderTest, VaryingMissing) {
   Program* program = SetupShaderVariableTest(
       NULL, 0, &kFragmentVarying, 1);
 
-  EXPECT_TRUE(program->DetectVaryingsMismatch());
+  std::string conflicting_name;
+
+  EXPECT_TRUE(program->DetectVaryingsMismatch(&conflicting_name));
+  EXPECT_EQ("a", conflicting_name);
   EXPECT_TRUE(LinkAsExpected(program, false));
 }
 
@@ -1322,7 +1342,10 @@ TEST_F(ProgramManagerWithShaderTest, InactiveVarying) {
   Program* program = SetupShaderVariableTest(
       NULL, 0, &kFragmentVarying, 1);
 
-  EXPECT_FALSE(program->DetectVaryingsMismatch());
+  std::string conflicting_name;
+
+  EXPECT_FALSE(program->DetectVaryingsMismatch(&conflicting_name));
+  EXPECT_TRUE(conflicting_name.empty());
   EXPECT_TRUE(LinkAsExpected(program, true));
 }
 
@@ -1337,7 +1360,10 @@ TEST_F(ProgramManagerWithShaderTest, AttribUniformNameConflict) {
   Program* program = SetupShaderVariableTest(
       &kVertexAttribute, 1, &kFragmentUniform, 1);
 
-  EXPECT_TRUE(program->DetectGlobalNameConflicts());
+  std::string conflicting_name;
+
+  EXPECT_TRUE(program->DetectGlobalNameConflicts(&conflicting_name));
+  EXPECT_EQ("a", conflicting_name);
   EXPECT_TRUE(LinkAsExpected(program, false));
 }
 
@@ -1354,7 +1380,8 @@ TEST_F(ProgramManagerWithShaderTest, TooManyVaryings) {
   Program* program = SetupShaderVariableTest(
       kVertexVaryings, 2, kFragmentVaryings, 2);
 
-  EXPECT_FALSE(program->CheckVaryingsPacking());
+  EXPECT_FALSE(
+      program->CheckVaryingsPacking(Program::kCountOnlyStaticallyUsed));
   EXPECT_TRUE(LinkAsExpected(program, false));
 }
 
@@ -1371,8 +1398,26 @@ TEST_F(ProgramManagerWithShaderTest, TooManyInactiveVaryings) {
   Program* program = SetupShaderVariableTest(
       kVertexVaryings, 2, kFragmentVaryings, 2);
 
-  EXPECT_TRUE(program->CheckVaryingsPacking());
+  EXPECT_TRUE(
+      program->CheckVaryingsPacking(Program::kCountOnlyStaticallyUsed));
   EXPECT_TRUE(LinkAsExpected(program, true));
+}
+
+// Varyings go over 8 rows but some are inactive.
+// However, we still fail the check if kCountAll option is used.
+TEST_F(ProgramManagerWithShaderTest, CountAllVaryingsInPacking) {
+  const VarInfo kVertexVaryings[] = {
+      { SH_FLOAT_VEC4, 4, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying },
+      { SH_FLOAT_VEC4, 5, SH_PRECISION_MEDIUMP, 1, "b", kVarVarying }
+  };
+  const VarInfo kFragmentVaryings[] = {
+      { SH_FLOAT_VEC4, 4, SH_PRECISION_MEDIUMP, 0, "a", kVarVarying },
+      { SH_FLOAT_VEC4, 5, SH_PRECISION_MEDIUMP, 1, "b", kVarVarying }
+  };
+  Program* program = SetupShaderVariableTest(
+      kVertexVaryings, 2, kFragmentVaryings, 2);
+
+  EXPECT_FALSE(program->CheckVaryingsPacking(Program::kCountAll));
 }
 
 TEST_F(ProgramManagerWithShaderTest, ClearWithSamplerTypes) {
@@ -1440,7 +1485,8 @@ TEST_F(ProgramManagerWithShaderTest, ClearWithSamplerTypes) {
     const size_t kNumUniforms = arraysize(kUniforms);
     SetupShader(kAttribs, kNumAttribs, kUniforms, kNumUniforms,
                 kServiceProgramId);
-    program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+    program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                  base::Bind(&ShaderCacheCb));
     SetupExpectationsForClearingUniforms(kUniforms, kNumUniforms);
     manager_.ClearUniforms(program);
   }
@@ -1512,7 +1558,8 @@ TEST_F(ProgramManagerWithShaderTest, BindUniformLocation) {
   const size_t kNumUniforms = arraysize(kUniforms);
   SetupShader(kAttribs, kNumAttribs, kUniforms, kNumUniforms,
               kServiceProgramId);
-  program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+  program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                base::Bind(&ShaderCacheCb));
 
   EXPECT_EQ(kUniform1DesiredLocation,
             program->GetUniformFakeLocation(kUniform1Name));
@@ -1546,7 +1593,7 @@ class ProgramManagerWithCacheTest : public testing::Test {
  protected:
   virtual void SetUp() {
     gl_.reset(new StrictMock<gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
 
     vertex_shader_ = shader_manager_.CreateShader(
        kVertexShaderClientId, kVertexShaderServiceId, GL_VERTEX_SHADER);
@@ -1566,7 +1613,7 @@ class ProgramManagerWithCacheTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
   }
 
   void SetShadersCompiled() {
@@ -1735,8 +1782,8 @@ TEST_F(ProgramManagerWithCacheTest, CacheProgramOnSuccessfulLink) {
   SetShadersCompiled();
   SetExpectationsForProgramLink();
   SetExpectationsForProgramCached();
-  EXPECT_TRUE(program_->Link(NULL, NULL, NULL, NULL,
-                             base::Bind(&ShaderCacheCb)));
+  EXPECT_TRUE(program_->Link(NULL, NULL, NULL,
+      Program::kCountOnlyStaticallyUsed, base::Bind(&ShaderCacheCb)));
 }
 
 TEST_F(ProgramManagerWithCacheTest, LoadProgramOnProgramCacheHit) {
@@ -1749,8 +1796,8 @@ TEST_F(ProgramManagerWithCacheTest, LoadProgramOnProgramCacheHit) {
   SetExpectationsForNotCachingProgram();
   SetExpectationsForProgramLoadSuccess();
 
-  EXPECT_TRUE(program_->Link(NULL, NULL, NULL, NULL,
-                             base::Bind(&ShaderCacheCb)));
+  EXPECT_TRUE(program_->Link(NULL, NULL, NULL,
+      Program::kCountOnlyStaticallyUsed, base::Bind(&ShaderCacheCb)));
 }
 
 }  // namespace gles2

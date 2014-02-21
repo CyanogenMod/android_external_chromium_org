@@ -13,6 +13,7 @@
 #include "base/test/scoped_path_override.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/updater/extension_cache_fake.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
@@ -59,6 +60,8 @@ class ExternalProviderImplTest : public ExtensionServiceTestBase {
         base::Bind(&ExternalProviderImplTest::HandleRequest,
                    base::Unretained(this)));
 
+    test_extension_cache_.reset(new ExtensionCacheFake());
+
     CommandLine* cmdline = CommandLine::ForCurrentProcess();
     cmdline->AppendSwitchASCII(switches::kAppsGalleryUpdateURL,
                                test_server_->GetURL(kManifestPath).spec());
@@ -100,6 +103,7 @@ class ExternalProviderImplTest : public ExtensionServiceTestBase {
   }
 
   scoped_ptr<EmbeddedTestServer> test_server_;
+  scoped_ptr<ExtensionCacheFake> test_extension_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalProviderImplTest);
 };
@@ -109,11 +113,13 @@ class ExternalProviderImplTest : public ExtensionServiceTestBase {
 TEST_F(ExternalProviderImplTest, InAppPayments) {
   InitServiceWithExternalProviders();
 
-  service_->CheckForExternalUpdates();
-  content::WindowedNotificationObserver(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
-      content::NotificationService::AllSources()).Wait();
+  scoped_refptr<content::MessageLoopRunner> runner =
+      new content::MessageLoopRunner;
+  service_->set_external_updates_finished_callback_for_test(
+      runner->QuitClosure());
 
+  service_->CheckForExternalUpdates();
+  runner->Run();
 
   EXPECT_TRUE(service_->GetInstalledExtension(
       extension_misc::kInAppPaymentsSupportAppId));

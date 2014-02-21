@@ -5,9 +5,9 @@
 #include "chrome/browser/extensions/api/runtime/runtime_api_factory.h"
 
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/profiles/incognito_helpers.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
@@ -27,7 +27,7 @@ RuntimeAPIFactory::RuntimeAPIFactory()
     : BrowserContextKeyedServiceFactory(
         "RuntimeAPI",
         BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 RuntimeAPIFactory::~RuntimeAPIFactory() {
@@ -41,7 +41,7 @@ BrowserContextKeyedService* RuntimeAPIFactory::BuildServiceInstanceFor(
 content::BrowserContext* RuntimeAPIFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
   // Instance is shared between incognito and regular profiles.
-  return chrome::GetBrowserContextRedirectedInIncognito(context);
+  return ExtensionsBrowserClient::Get()->GetOriginalContext(context);
 }
 
 bool RuntimeAPIFactory::ServiceIsCreatedWithBrowserContext() const {

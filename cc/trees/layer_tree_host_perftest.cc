@@ -246,7 +246,7 @@ TEST_F(ScrollingLayerTreePerfTest, LongScrollablePageThreadedImplSide) {
   RunTestWithImplSidePainting();
 }
 
-static void EmptyReleaseCallback(unsigned sync_point, bool lost_resource) {}
+static void EmptyReleaseCallback(uint32 sync_point, bool lost_resource) {}
 
 // Simulates main-thread scrolling on each frame.
 class BrowserCompositorInvalidateLayerTreePerfTest
@@ -274,7 +274,7 @@ class BrowserCompositorInvalidateLayerTreePerfTest
         reinterpret_cast<const int8*>(name_stream.str().c_str()));
     scoped_ptr<SingleReleaseCallback> callback = SingleReleaseCallback::Create(
         base::Bind(&EmptyReleaseCallback));
-    TextureMailbox mailbox(gpu_mailbox, next_sync_point_);
+    TextureMailbox mailbox(gpu_mailbox, GL_TEXTURE_2D, next_sync_point_);
     next_sync_point_++;
 
     tab_contents_->SetTextureMailbox(mailbox, callback.Pass());
@@ -324,71 +324,6 @@ TEST_F(LayerTreeHostPerfTestJsonReader, HeavyPageThreadedImplSide) {
   animation_driven_drawing_ = true;
   measure_commit_cost_ = true;
   SetTestName("heavy_page");
-  ReadTestFile("heavy_layer_tree");
-  RunTestWithImplSidePainting();
-}
-
-class PageScaleImplSidePaintingPerfTest
-    : public LayerTreeHostPerfTestJsonReader {
- public:
-  PageScaleImplSidePaintingPerfTest()
-      : max_scale_(16.f), min_scale_(1.f / max_scale_) {}
-
-  virtual void SetupTree() OVERRIDE {
-    layer_tree_host()->SetPageScaleFactorAndLimits(1.f, min_scale_, max_scale_);
-  }
-
-  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
-                                   float scale_delta) OVERRIDE {
-    float page_scale_factor = layer_tree_host()->page_scale_factor();
-    page_scale_factor *= scale_delta;
-    layer_tree_host()->SetPageScaleFactorAndLimits(
-        page_scale_factor, min_scale_, max_scale_);
-  }
-
-  virtual void AnimateLayers(LayerTreeHostImpl* host_impl,
-                             base::TimeTicks monotonic_time) OVERRIDE {
-    if (!host_impl->pinch_gesture_active()) {
-      host_impl->PinchGestureBegin();
-      start_time_ = monotonic_time;
-    }
-    gfx::Point anchor(200, 200);
-
-    float seconds = (monotonic_time - start_time_).InSecondsF();
-
-    // Every half second, zoom from min scale to max scale.
-    float interval = 0.5f;
-
-    // Start time in the middle of the interval when zoom = 1.
-    seconds += interval / 2.f;
-
-    // Stack two ranges together to go up from min to max and down from
-    // max to min in the next so as not to have a zoom discrepancy.
-    float time_in_two_intervals = fmod(seconds, 2.f * interval) / interval;
-
-    // Map everything to go from min to max between 0 and 1.
-    float time_in_one_interval =
-        time_in_two_intervals > 1.f ? 2.f - time_in_two_intervals
-                                    : time_in_two_intervals;
-    // Normalize time to -1..1.
-    float normalized = 2.f * time_in_one_interval - 1.f;
-    float scale_factor = std::abs(normalized) * (max_scale_ - 1.f) + 1.f;
-    float total_scale = normalized < 0.f ? 1.f / scale_factor : scale_factor;
-
-    float desired_delta =
-        total_scale / host_impl->active_tree()->total_page_scale_factor();
-    host_impl->PinchGestureUpdate(desired_delta, anchor);
-  }
-
- private:
-  float max_scale_;
-  float min_scale_;
-  base::TimeTicks start_time_;
-};
-
-TEST_F(PageScaleImplSidePaintingPerfTest, HeavyPage) {
-  measure_commit_cost_ = true;
-  SetTestName("heavy_page_page_scale");
   ReadTestFile("heavy_layer_tree");
   RunTestWithImplSidePainting();
 }

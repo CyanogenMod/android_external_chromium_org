@@ -52,8 +52,13 @@ User* MockUserManager::GetUserByProfile(Profile* profile) const {
   return user_list_.empty() ? NULL : user_list_.front();
 }
 
-UserImageManager* MockUserManager::GetUserImageManager() {
-  return user_image_manager_.get();
+MultiProfileUserController* MockUserManager::GetMultiProfileUserController() {
+  return NULL;
+}
+
+UserImageManager* MockUserManager::GetUserImageManager(
+    const std::string& user_id) {
+  return NULL;
 }
 
 SupervisedUserManager* MockUserManager::GetSupervisedUserManager() {

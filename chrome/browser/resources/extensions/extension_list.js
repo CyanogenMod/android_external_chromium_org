@@ -117,6 +117,9 @@ cr.define('options', function() {
       var locationText = node.querySelector('.location-text');
       locationText.textContent = extension.locationText;
 
+      var blacklistText = node.querySelector('.blacklist-text');
+      blacklistText.textContent = extension.blacklistText;
+
       var description = node.querySelector('.extension-description span');
       description.textContent = extension.description;
 
@@ -319,13 +322,13 @@ cr.define('options', function() {
         var panel = node.querySelector('.manifest-errors');
         panel.hidden = false;
         panel.appendChild(new extensions.ExtensionErrorList(
-            extension.manifestErrors, 'extensionErrorsManifestErrors'));
+            extension.manifestErrors));
       }
       if (extension.runtimeErrors) {
         var panel = node.querySelector('.runtime-errors');
         panel.hidden = false;
         panel.appendChild(new extensions.ExtensionErrorList(
-            extension.runtimeErrors, 'extensionErrorsRuntimeErrors'));
+            extension.runtimeErrors));
       }
       if (extension.installWarnings) {
         var panel = node.querySelector('.install-warnings');

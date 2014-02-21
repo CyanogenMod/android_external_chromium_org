@@ -12,9 +12,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "components/webdata/encryptor/ie7_password_win.h"
+#include "content/public/browser/browser_thread.h"
 
 using autofill::PasswordForm;
 using content::BrowserThread;
@@ -89,7 +89,8 @@ void PasswordStoreWin::DBHandler::GetIE7Login(
     const PasswordStoreWin::ConsumerCallbackRunner& callback_runner) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   IE7PasswordInfo info;
-  info.url_hash = ie7_password::GetUrlHash(UTF8ToWide(form.origin.spec()));
+  info.url_hash =
+      ie7_password::GetUrlHash(base::UTF8ToWide(form.origin.spec()));
   WebDataService::Handle handle = web_data_service_->GetIE7Login(info, this);
   pending_requests_[handle] =
       RequestInfo(new PasswordForm(form), callback_runner);
@@ -111,17 +112,20 @@ std::vector<PasswordForm*> PasswordStoreWin::DBHandler::GetIE7Results(
     // table.
     web_data_service_->RemoveIE7Login(info);
     std::vector<ie7_password::DecryptedCredentials> credentials;
-    std::wstring url = ASCIIToWide(form.origin.spec());
+    std::wstring url = base::ASCIIToWide(form.origin.spec());
     if (ie7_password::DecryptPasswords(url,
                                        info.encrypted_data,
                                        &credentials)) {
       for (size_t i = 0; i < credentials.size(); ++i) {
-        PasswordForm* autofill = new PasswordForm(form);
+        PasswordForm* autofill = new PasswordForm();
         autofill->username_value = credentials[i].username;
         autofill->password_value = credentials[i].password;
+        autofill->signon_realm = form.signon_realm;
+        autofill->origin = form.origin;
         autofill->preferred = true;
         autofill->ssl_valid = form.origin.SchemeIsSecure();
         autofill->date_created = info.date_created;
+
         matching_forms.push_back(autofill);
         // Add this PasswordForm to the saved password table. We're on the DB
         // thread already, so we use AddLoginImpl.
@@ -159,10 +163,14 @@ void PasswordStoreWin::DBHandler::OnWebDataServiceRequestDone(
   callback_runner.Run(matched_forms);
 }
 
-PasswordStoreWin::PasswordStoreWin(LoginDatabase* login_database,
-                                   Profile* profile,
-                                   WebDataService* web_data_service)
-    : PasswordStoreDefault(login_database, profile) {
+PasswordStoreWin::PasswordStoreWin(
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+    LoginDatabase* login_database,
+    WebDataService* web_data_service)
+    : PasswordStoreDefault(main_thread_runner,
+                           db_thread_runner,
+                           login_database) {
   db_handler_.reset(new DBHandler(web_data_service, this));
 }
 
@@ -174,11 +182,11 @@ void PasswordStoreWin::ShutdownOnDBThread() {
   db_handler_.reset();
 }
 
-void PasswordStoreWin::ShutdownOnUIThread() {
+void PasswordStoreWin::Shutdown() {
   BrowserThread::PostTask(
       BrowserThread::DB, FROM_HERE,
       base::Bind(&PasswordStoreWin::ShutdownOnDBThread, this));
-  PasswordStoreDefault::ShutdownOnUIThread();
+  PasswordStoreDefault::Shutdown();
 }
 
 void PasswordStoreWin::GetIE7LoginIfNecessary(
@@ -196,9 +204,10 @@ void PasswordStoreWin::GetIE7LoginIfNecessary(
 
 void PasswordStoreWin::GetLoginsImpl(
     const PasswordForm& form,
+    AuthorizationPromptPolicy prompt_policy,
     const ConsumerCallbackRunner& callback_runner) {
   ConsumerCallbackRunner get_ie7_login =
       base::Bind(&PasswordStoreWin::GetIE7LoginIfNecessary,
                  this, form, callback_runner);
-  PasswordStoreDefault::GetLoginsImpl(form, get_ie7_login);
+  PasswordStoreDefault::GetLoginsImpl(form, prompt_policy, get_ie7_login);
 }

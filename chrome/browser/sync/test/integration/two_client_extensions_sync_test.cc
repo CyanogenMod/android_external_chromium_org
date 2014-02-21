@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/extensions_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
 using extensions_helper::AllProfilesHaveSameExtensionsAsVerifier;
@@ -248,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest, DisableExtensions) {
   InstallExtension(GetProfile(0), 1);
   InstallExtension(verifier(), 1);
   ASSERT_TRUE(
-      GetClient(0)->AwaitFullSyncCompletion("Installed an extension."));
+      GetClient(0)->AwaitCommitActivityCompletion());
   ASSERT_FALSE(AllProfilesHaveSameExtensionsAsVerifier());
 
   ASSERT_TRUE(GetClient(1)->EnableSyncForDatatype(syncer::EXTENSIONS));
@@ -268,7 +268,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest, DisableSync) {
   InstallExtension(GetProfile(0), 0);
   InstallExtension(verifier(), 0);
   ASSERT_TRUE(
-      GetClient(0)->AwaitFullSyncCompletion("Installed an extension."));
+      GetClient(0)->AwaitCommitActivityCompletion());
   ASSERT_TRUE(HasSameExtensionsAsVerifier(0));
   ASSERT_FALSE(HasSameExtensionsAsVerifier(1));
 

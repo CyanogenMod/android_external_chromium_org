@@ -186,8 +186,8 @@ Label LoaderImpl::GetDefaultToolchain() const {
   return default_toolchain_label_;
 }
 
-const Settings* LoaderImpl::GetToolchainSettings(const Label& label) {
-  ToolchainRecordMap::iterator found_toolchain;
+const Settings* LoaderImpl::GetToolchainSettings(const Label& label) const {
+  ToolchainRecordMap::const_iterator found_toolchain;
   if (label.is_null()) {
     if (default_toolchain_label_.is_null())
       return NULL;
@@ -292,6 +292,9 @@ void LoaderImpl::BackgroundLoadBuildConfig(
   root_block->ExecuteBlockInScope(base_config, &err);
 
   trace.Done();
+
+  if (err.has_error())
+    g_scheduler->FailWithError(err);
 
   base_config->ClearProcessingBuildConfig();
   if (settings->is_default()) {

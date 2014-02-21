@@ -9,8 +9,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/url_constants.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/password_generator.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_generation_util.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_view_host.h"
@@ -68,9 +68,7 @@ TextfieldWrapper::TextfieldWrapper(views::Textfield* textfield,
                                    views::ImageButton* image_button)
     : textfield_(textfield),
       image_button_(image_button) {
-  textfield_->RemoveBorder();
-  set_border(views::Border::CreateSolidBorder(kWrapperBorderSize,
-                                              SK_ColorGRAY));
+  SetBorder(views::Border::CreateSolidBorder(kWrapperBorderSize, SK_ColorGRAY));
 
   AddChildView(textfield_);
   AddChildView(image_button);
@@ -152,7 +150,7 @@ void PasswordGenerationBubbleView::Init() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   title_label_ = new views::Label(
       l10n_util::GetStringUTF16(IDS_PASSWORD_GENERATION_BUBBLE_TITLE),
-      rb.GetFont(ui::ResourceBundle::MediumFont));
+      rb.GetFontList(ui::ResourceBundle::MediumFont));
   AddChildView(title_label_);
 
   regenerate_button_ = new views::ImageButton(this);
@@ -168,8 +166,8 @@ void PasswordGenerationBubbleView::Init() {
 
   textfield_ = new views::Textfield();
   textfield_->set_default_width_in_chars(kDefaultTextFieldChars);
-  textfield_->SetText(ASCIIToUTF16(password_generator_->Generate()));
-  textfield_->SetController(this);
+  textfield_->SetText(base::ASCIIToUTF16(password_generator_->Generate()));
+  textfield_->set_controller(this);
 
   textfield_wrapper_ = new TextfieldWrapper(textfield_,
                                             regenerate_button_);
@@ -178,7 +176,7 @@ void PasswordGenerationBubbleView::Init() {
   accept_button_ = new views::LabelButton(
       this,
       l10n_util::GetStringUTF16(IDS_PASSWORD_GENERATION_BUTTON_TEXT));
-  accept_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  accept_button_->SetStyle(views::Button::STYLE_BUTTON);
   AddChildView(accept_button_);
 }
 
@@ -226,7 +224,7 @@ void PasswordGenerationBubbleView::ButtonPressed(views::Button* sender,
   }
   if (sender == regenerate_button_) {
     textfield_->SetText(
-        ASCIIToUTF16(password_generator_->Generate()));
+        base::ASCIIToUTF16(password_generator_->Generate()));
     actions_.password_regenerated = true;
   }
 }

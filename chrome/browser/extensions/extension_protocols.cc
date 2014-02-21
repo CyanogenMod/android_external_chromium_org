@@ -30,8 +30,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/web_accessible_resources_handler.h"
-#include "chrome/common/extensions/webview_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_request_info.h"
@@ -44,6 +42,8 @@
 #include "extensions/common/manifest_handlers/csp_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/manifest_handlers/shared_module_info.h"
+#include "extensions/common/manifest_handlers/web_accessible_resources_info.h"
+#include "extensions/common/manifest_handlers/webview_info.h"
 #include "grit/component_extension_resources_map.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
@@ -230,7 +230,7 @@ class GeneratedBackgroundPageJob : public net::URLRequestSimpleJob {
 
 base::Time GetFileLastModifiedTime(const base::FilePath& filename) {
   if (base::PathExists(filename)) {
-    base::PlatformFileInfo info;
+    base::File::Info info;
     if (base::GetFileInfo(filename, &info))
       return info.last_modified;
   }
@@ -239,7 +239,7 @@ base::Time GetFileLastModifiedTime(const base::FilePath& filename) {
 
 base::Time GetFileCreationTime(const base::FilePath& filename) {
   if (base::PathExists(filename)) {
-    base::PlatformFileInfo info;
+    base::File::Info info;
     if (base::GetFileInfo(filename, &info))
       return info.creation_time;
   }
@@ -283,7 +283,8 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
                          const base::FilePath& directory_path,
                          const base::FilePath& relative_path,
                          const std::string& content_security_policy,
-                         bool send_cors_header)
+                         bool send_cors_header,
+                         bool follow_symlinks_anywhere)
     : net::URLRequestFileJob(
           request, network_delegate, base::FilePath(),
           BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
@@ -295,6 +296,9 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
       content_security_policy_(content_security_policy),
       send_cors_header_(send_cors_header),
       weak_factory_(this) {
+    if (follow_symlinks_anywhere) {
+      resource_.set_follow_symlinks_anywhere();
+    }
   }
 
   virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE {
@@ -396,6 +400,12 @@ bool AllowExtensionResourceLoad(net::URLRequest* request,
     return true;
   }
 
+  // Check workers so that importScripts works from extension workers.
+  if (extension_info_map->worker_process_map().Contains(
+      request->url().host(), info->GetChildID())) {
+    return true;
+  }
+
   // Extensions with webview: allow loading certain resources by guest renderers
   // with privileged partition IDs as specified in the manifest file.
   ExtensionRendererState* renderer_state =
@@ -405,9 +415,8 @@ bool AllowExtensionResourceLoad(net::URLRequest* request,
                                                  info->GetRouteID(),
                                                  &webview_info);
   std::string resource_path = request->url().path();
-  if (is_guest && webview_info.allow_chrome_extension_urls &&
-      extensions::WebviewInfo::IsResourceWebviewAccessible(
-            extension, webview_info.partition_id, resource_path)) {
+  if (is_guest && extensions::WebviewInfo::IsResourceWebviewAccessible(
+                      extension, webview_info.partition_id, resource_path)) {
     return true;
   }
 
@@ -525,6 +534,7 @@ ExtensionProtocolHandler::MaybeCreateJob(
 
   std::string content_security_policy;
   bool send_cors_header = false;
+  bool follow_symlinks_anywhere = false;
   if (extension) {
     std::string resource_path = request->url().path();
     content_security_policy =
@@ -536,6 +546,10 @@ ExtensionProtocolHandler::MaybeCreateJob(
         extensions::WebAccessibleResourcesInfo::IsResourceWebAccessible(
             extension, resource_path))
       send_cors_header = true;
+
+    follow_symlinks_anywhere =
+        (extension->creation_flags() & Extension::FOLLOW_SYMLINKS_ANYWHERE)
+        != 0;
   }
 
   std::string path = request->url().path();
@@ -617,7 +631,8 @@ ExtensionProtocolHandler::MaybeCreateJob(
                                     directory_path,
                                     relative_path,
                                     content_security_policy,
-                                    send_cors_header);
+                                    send_cors_header,
+                                    follow_symlinks_anywhere);
 }
 
 }  // namespace

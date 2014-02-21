@@ -4,6 +4,7 @@
 
 // Message definition file, included multiple times, hence no include guard.
 
+#include <utility>
 #include <vector>
 
 #include "content/common/indexed_db/indexed_db_key.h"
@@ -15,15 +16,24 @@
 #include "third_party/WebKit/public/platform/WebIDBCursor.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START IndexedDBMsgStart
 
 // Argument structures used in messages
 
-IPC_ENUM_TRAITS(blink::WebIDBCursor::Direction)
-IPC_ENUM_TRAITS(blink::WebIDBDatabase::PutMode)
-IPC_ENUM_TRAITS(blink::WebIDBDatabase::TaskType)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBCursor::Direction,
+                          blink::WebIDBCursor::DirectionLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDatabase::PutMode,
+                          blink::WebIDBDatabase::PutModeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDatabase::TaskType,
+                          blink::WebIDBDatabase::TaskTypeLast)
+IPC_ENUM_TRAITS(blink::WebIDBDatabase::TransactionMode)
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDataLoss, blink::WebIDBDataLossTotal)
+
+// An index id, and corresponding set of keys to insert.
+typedef std::pair<int64, std::vector<content::IndexedDBKey> > IndexKeys;
 
 // Used to enumerate indexed databases.
 IPC_STRUCT_BEGIN(IndexedDBHostMsg_FactoryGetDatabaseNames_Params)
@@ -74,7 +84,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseCreateTransaction_Params)
   // The scope of the transaction.
   IPC_STRUCT_MEMBER(std::vector<int64>, object_store_ids)
   // The transaction mode.
-  IPC_STRUCT_MEMBER(int32, mode)
+  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::TransactionMode, mode)
 IPC_STRUCT_END()
 
 // Used to create an object store.
@@ -130,12 +140,8 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabasePut_Params)
   IPC_STRUCT_MEMBER(content::IndexedDBKey, key)
   // Whether this is an add or a put.
   IPC_STRUCT_MEMBER(blink::WebIDBDatabase::PutMode, put_mode)
-  // The names of the indexes used below.
-  IPC_STRUCT_MEMBER(std::vector<int64>, index_ids)
-  // The keys for each index, such that each inner vector corresponds
-  // to each index named in index_names, respectively.
-  IPC_STRUCT_MEMBER(std::vector<std::vector<content::IndexedDBKey> >,
-                    index_keys)
+  // The index ids and the list of keys for each index.
+  IPC_STRUCT_MEMBER(std::vector<IndexKeys>, index_keys)
 IPC_STRUCT_END()
 
 // Used to open both cursors and object cursors in IndexedDB.
@@ -154,7 +160,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseOpenCursor_Params)
   // The serialized key range.
   IPC_STRUCT_MEMBER(content::IndexedDBKeyRange, key_range)
   // The direction of this cursor.
-  IPC_STRUCT_MEMBER(int32, direction)
+  IPC_STRUCT_MEMBER(blink::WebIDBCursor::Direction, direction)
   // If this is just retrieving the key
   IPC_STRUCT_MEMBER(bool, key_only)
   // The priority of this cursor.
@@ -201,11 +207,8 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseSetIndexKeys_Params)
   IPC_STRUCT_MEMBER(int64, object_store_id)
   // The object store key that we're setting index keys for.
   IPC_STRUCT_MEMBER(content::IndexedDBKey, primary_key)
-  // The indexes that we're setting keys on.
-  IPC_STRUCT_MEMBER(std::vector<int64>, index_ids)
-  // A list of index keys for each index.
-  IPC_STRUCT_MEMBER(std::vector<std::vector<content::IndexedDBKey> >,
-                    index_keys)
+  // The index ids and the list of keys for each index.
+  IPC_STRUCT_MEMBER(std::vector<IndexKeys>, index_keys)
 IPC_STRUCT_END()
 
 // Used to create an index.
@@ -504,4 +507,3 @@ IPC_MESSAGE_CONTROL2(IndexedDBHostMsg_DatabaseCommit,
 // WebIDBDatabase::~WebIDBCursor() message.
 IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_CursorDestroyed,
                      int32 /* ipc_cursor_id */)
-

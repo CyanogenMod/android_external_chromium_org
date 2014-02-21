@@ -58,7 +58,9 @@ var PreviewPanel = function(element,
    * @type {PreviewPanel.Thumbnails}
    */
   this.thumbnails = new PreviewPanel.Thumbnails(
-      element.querySelector('.preview-thumbnails'), metadataCache);
+      element.querySelector('.preview-thumbnails'),
+      metadataCache,
+      volumeManager);
 
   /**
    * @type {HTMLElement}
@@ -95,7 +97,7 @@ var PreviewPanel = function(element,
   this.sequence_ = 0;
 
   /**
-   * @type {VolumeManager}
+   * @type {VolumeManagerWrapper}
    * @private
    */
   this.volumeManager_ = volumeManager;
@@ -157,6 +159,9 @@ PreviewPanel.prototype = {
   set visibilityType(visibilityType) {
     this.visibilityType_ = visibilityType;
     this.updateVisibility_();
+    // Also update the preview area contents, because the update is surpressed
+    // while the visibility is hiding or hidden.
+    this.updatePreviewArea_();
   },
 
   get visible() {
@@ -180,8 +185,10 @@ PreviewPanel.prototype = {
 PreviewPanel.prototype.initialize = function() {
   this.element_.addEventListener('webkitTransitionEnd',
                                  this.onTransitionEnd_.bind(this));
-  this.updatePreviewArea_();
   this.updateVisibility_();
+  // Also update the preview area contents, because the update is surpressed
+  // while the visibility is hiding or hidden.
+  this.updatePreviewArea_();
 };
 
 /**
@@ -192,9 +199,7 @@ PreviewPanel.prototype.setSelection = function(selection) {
   this.sequence_++;
   this.selection_ = selection;
   this.updateVisibility_();
-  // If the previw panel is hiding, does not update the current view.
-  if (this.visible)
-    this.updatePreviewArea_();
+  this.updatePreviewArea_();
 };
 
 /**
@@ -246,6 +251,9 @@ PreviewPanel.prototype.updateVisibility_ = function() {
  * @private
  */
 PreviewPanel.prototype.updatePreviewArea_ = function(breadCrumbsVisible) {
+  // If the previw panel is hiding, does not update the current view.
+  if (!this.visible)
+    return;
   var selection = this.selection_;
 
   // Update thumbnails.
@@ -375,11 +383,13 @@ PreviewPanel.CalculatingSizeLabel.prototype.onStep_ = function() {
  *
  * @param {HTMLElement} element DOM Element of thumbnail container.
  * @param {MetadataCache} metadataCache MetadataCache.
+ * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
  * @constructor
  */
-PreviewPanel.Thumbnails = function(element, metadataCache) {
+PreviewPanel.Thumbnails = function(element, metadataCache, volumeManager) {
   this.element_ = element;
   this.metadataCache_ = metadataCache;
+  this.volumeManager_ = volumeManager;
   this.sequence_ = 0;
   Object.seal(this);
 };
@@ -437,6 +447,7 @@ PreviewPanel.Thumbnails.prototype.loadThumbnails_ = function(selection) {
       FileGrid.decorateThumbnailBox(box,
                                     entries[i],
                                     this.metadataCache_,
+                                    this.volumeManager_,
                                     ThumbnailLoader.FillMode.FILL,
                                     FileGrid.ThumbnailQuality.LOW,
                                     i == 0 && length == 1 &&

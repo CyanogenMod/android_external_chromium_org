@@ -14,10 +14,10 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_metadata_store.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
@@ -28,6 +28,8 @@
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
+#include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 
 #define FPL(path) FILE_PATH_LITERAL(path)
@@ -53,9 +55,11 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     // TODO(tzik): Set up TestExtensionSystem to support simulated relaunch.
+    in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
     RegisterSyncableFileSystem();
-    local_sync_service_.reset(new LocalFileSyncService(&profile_));
+    local_sync_service_ = LocalFileSyncService::CreateForTesting(
+        &profile_, in_memory_env_.get());
 
     fake_drive_service_ = new drive::FakeDriveService();
     fake_drive_service_->Initialize("test_user@gmail.com");
@@ -68,7 +72,8 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
         fake_drive_service_, base::MessageLoopProxy::current().get());
 
     fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_, drive_uploader_));
+        fake_drive_service_, drive_uploader_,
+        APIUtil::GetSyncRootDirectoryName()));
 
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     bool created = false;
@@ -119,12 +124,13 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
     if (!ContainsKey(file_systems_, origin)) {
       CannedSyncableFileSystem* file_system = new CannedSyncableFileSystem(
           origin,
+          in_memory_env_.get(),
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
               .get());
 
       SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-      file_system->SetUp();
+      file_system->SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
       local_sync_service_->MaybeInitializeFileSystemContext(
           origin, file_system->file_system_context(),
           CreateResultReceiver(&status));
@@ -134,7 +140,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
       file_system->backend()->sync_context()->
           set_mock_notify_changes_duration_in_sec(0);
 
-      EXPECT_EQ(base::PLATFORM_FILE_OK, file_system->OpenFileSystem());
+      EXPECT_EQ(base::File::FILE_OK, file_system->OpenFileSystem());
       file_systems_[origin] = file_system;
     }
 
@@ -150,7 +156,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
                             const std::string& content) {
     fileapi::FileSystemURL url(CreateSyncableFileSystemURL(origin, path));
     ASSERT_TRUE(ContainsKey(file_systems_, origin));
-    EXPECT_EQ(base::PLATFORM_FILE_OK, file_systems_[origin]->CreateFile(url));
+    EXPECT_EQ(base::File::FILE_OK, file_systems_[origin]->CreateFile(url));
     int64 bytes_written = file_systems_[origin]->WriteString(url, content);
     EXPECT_EQ(static_cast<int64>(content.size()), bytes_written);
     FlushMessageLoop();
@@ -168,7 +174,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
 
   void RemoveLocal(const GURL& origin, const base::FilePath& path) {
     ASSERT_TRUE(ContainsKey(file_systems_, origin));
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_systems_[origin]->Remove(
                   CreateSyncableFileSystemURL(origin, path),
                   true /* recursive */));
@@ -299,7 +305,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
 
     fileapi::FileSystemURL url(CreateSyncableFileSystemURL(origin, path));
     CannedSyncableFileSystem::FileEntryList local_entries;
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_system->ReadDirectory(url, &local_entries));
     for (CannedSyncableFileSystem::FileEntryList::iterator itr =
              local_entries.begin();
@@ -336,7 +342,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
     std::string file_content;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->ReadFile(file_id, &file_content));
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_system->VerifyFile(url, file_content));
   }
 
@@ -356,6 +362,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
 
   content::TestBrowserThreadBundle thread_bundle_;
 
+  scoped_ptr<leveldb::Env> in_memory_env_;
   TestingProfile profile_;
 
   drive::FakeDriveService* fake_drive_service_;
@@ -500,7 +507,7 @@ void DriveFileSyncServiceSyncTest::TestRemoteFileDeletion() {
   VerifyConsistencyForOrigin(kOrigin);
 
   EXPECT_EQ(google_apis::HTTP_SUCCESS,
-            fake_drive_helper_->RemoveResource(remote_file_id));
+            fake_drive_helper_->TrashResource(remote_file_id));
 
   EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
   VerifyConsistency();

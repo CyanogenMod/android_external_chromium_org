@@ -15,7 +15,7 @@ using std::string;
 
 namespace net {
 
-size_t GetPacketHeaderSize(QuicPacketHeader header) {
+size_t GetPacketHeaderSize(const QuicPacketHeader& header) {
   return GetPacketHeaderSize(header.public_header.guid_length,
                              header.public_header.version_flag,
                              header.public_header.sequence_number_length,
@@ -29,11 +29,6 @@ size_t GetPacketHeaderSize(QuicGuidLength guid_length,
   return kPublicFlagsSize + guid_length +
       (include_version ? kQuicVersionSize : 0) + sequence_number_length +
       kPrivateFlagsSize + (is_in_fec_group == IN_FEC_GROUP ? kFecGroupSize : 0);
-}
-
-size_t GetPublicResetPacketSize() {
-  return kPublicFlagsSize + PACKET_8BYTE_GUID + kPublicResetNonceSize +
-      PACKET_6BYTE_SEQUENCE_NUMBER;
 }
 
 size_t GetStartOfFecProtectedData(
@@ -93,7 +88,21 @@ QuicPacketHeader::QuicPacketHeader(const QuicPacketPublicHeader& header)
       fec_group(0) {
 }
 
-QuicStreamFrame::QuicStreamFrame() {}
+QuicPublicResetPacket::QuicPublicResetPacket()
+    : nonce_proof(0),
+      rejected_sequence_number(0) {}
+
+QuicPublicResetPacket::QuicPublicResetPacket(
+    const QuicPacketPublicHeader& header)
+    : public_header(header),
+      nonce_proof(0),
+      rejected_sequence_number(0) {}
+
+QuicStreamFrame::QuicStreamFrame()
+    : stream_id(0),
+      fin(false),
+      offset(0),
+      notifier(NULL) {}
 
 QuicStreamFrame::QuicStreamFrame(const QuicStreamFrame& frame)
     : stream_id(frame.stream_id),
@@ -144,6 +153,12 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
   switch (version) {
     case QUIC_VERSION_12:
       return MakeQuicTag('Q', '0', '1', '2');
+    case QUIC_VERSION_13:
+      return MakeQuicTag('Q', '0', '1', '3');
+    case QUIC_VERSION_14:
+      return MakeQuicTag('Q', '0', '1', '4');
+    case QUIC_VERSION_15:
+      return MakeQuicTag('Q', '0', '1', '5');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -160,7 +175,7 @@ QuicVersion QuicTagToQuicVersion(const QuicTag version_tag) {
   }
   // Reading from the client so this should not be considered an ERROR.
   DVLOG(1) << "Unsupported QuicTag version: "
-             << QuicUtils::TagToString(version_tag);
+           << QuicUtils::TagToString(version_tag);
   return QUIC_VERSION_UNSUPPORTED;
 }
 
@@ -171,6 +186,9 @@ return #x
 string QuicVersionToString(const QuicVersion version) {
   switch (version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_12);
+    RETURN_STRING_LITERAL(QUIC_VERSION_13);
+    RETURN_STRING_LITERAL(QUIC_VERSION_14);
+    RETURN_STRING_LITERAL(QUIC_VERSION_15);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
@@ -210,10 +228,10 @@ ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
 }
 
 ReceivedPacketInfo::ReceivedPacketInfo()
-    : largest_observed(0),
+    : entropy_hash(0),
+      largest_observed(0),
       delta_time_largest_observed(QuicTime::Delta::Infinite()),
-      is_truncated(false) {
-}
+      is_truncated(false) {}
 
 ReceivedPacketInfo::~ReceivedPacketInfo() {}
 
@@ -231,11 +249,15 @@ void InsertMissingPacketsBetween(ReceivedPacketInfo* received_info,
   }
 }
 
-SentPacketInfo::SentPacketInfo() {}
+SentPacketInfo::SentPacketInfo()
+    : entropy_hash(0),
+      least_unacked(0) {
+}
 
 SentPacketInfo::~SentPacketInfo() {}
 
-// Testing convenience method.
+QuicAckFrame::QuicAckFrame() {}
+
 QuicAckFrame::QuicAckFrame(QuicPacketSequenceNumber largest_observed,
                            QuicTime largest_observed_receive_time,
                            QuicPacketSequenceNumber least_unacked) {
@@ -244,6 +266,87 @@ QuicAckFrame::QuicAckFrame(QuicPacketSequenceNumber largest_observed,
   sent_info.least_unacked = least_unacked;
   sent_info.entropy_hash = 0;
 }
+
+CongestionFeedbackMessageTCP::CongestionFeedbackMessageTCP()
+    : receive_window(0) {
+}
+
+CongestionFeedbackMessageInterArrival::CongestionFeedbackMessageInterArrival() {
+}
+
+CongestionFeedbackMessageInterArrival::
+    ~CongestionFeedbackMessageInterArrival() {}
+
+QuicCongestionFeedbackFrame::QuicCongestionFeedbackFrame() : type(kTCP) {}
+
+QuicCongestionFeedbackFrame::~QuicCongestionFeedbackFrame() {}
+
+QuicRstStreamFrame::QuicRstStreamFrame()
+    : stream_id(0),
+      error_code(QUIC_STREAM_NO_ERROR) {
+}
+
+QuicRstStreamFrame::QuicRstStreamFrame(QuicStreamId stream_id,
+                                       QuicRstStreamErrorCode error_code,
+                                       QuicStreamOffset bytes_written)
+    : stream_id(stream_id),
+      error_code(error_code),
+      byte_offset(bytes_written) {
+  DCHECK_LE(error_code, numeric_limits<uint8>::max());
+}
+
+QuicConnectionCloseFrame::QuicConnectionCloseFrame()
+    : error_code(QUIC_NO_ERROR) {
+}
+
+QuicFrame::QuicFrame() {}
+
+QuicFrame::QuicFrame(QuicPaddingFrame* padding_frame)
+    : type(PADDING_FRAME),
+      padding_frame(padding_frame) {
+}
+
+QuicFrame::QuicFrame(QuicStreamFrame* stream_frame)
+    : type(STREAM_FRAME),
+      stream_frame(stream_frame) {
+}
+
+QuicFrame::QuicFrame(QuicAckFrame* frame)
+    : type(ACK_FRAME),
+      ack_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicCongestionFeedbackFrame* frame)
+    : type(CONGESTION_FEEDBACK_FRAME),
+      congestion_feedback_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicRstStreamFrame* frame)
+    : type(RST_STREAM_FRAME),
+      rst_stream_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicConnectionCloseFrame* frame)
+    : type(CONNECTION_CLOSE_FRAME),
+      connection_close_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicGoAwayFrame* frame)
+    : type(GOAWAY_FRAME),
+      goaway_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicWindowUpdateFrame* frame)
+    : type(WINDOW_UPDATE_FRAME),
+      window_update_frame(frame) {
+}
+
+QuicFrame::QuicFrame(QuicBlockedFrame* frame)
+    : type(BLOCKED_FRAME),
+      blocked_frame(frame) {
+}
+
+QuicFecData::QuicFecData() : fec_group(0) {}
 
 ostream& operator<<(ostream& os, const SentPacketInfo& sent_info) {
   os << "entropy_hash: " << static_cast<int>(sent_info.entropy_hash)
@@ -260,14 +363,111 @@ ostream& operator<<(ostream& os, const ReceivedPacketInfo& received_info) {
        it != received_info.missing_packets.end(); ++it) {
     os << *it << " ";
   }
+  os << " ] revived_packets: [ ";
+  for (SequenceNumberSet::const_iterator it =
+           received_info.revived_packets.begin();
+       it != received_info.revived_packets.end(); ++it) {
+    os << *it << " ";
+  }
   os << " ] ";
   return os;
 }
 
-QuicCongestionFeedbackFrame::QuicCongestionFeedbackFrame() {
+ostream& operator<<(ostream& os, const QuicFrame& frame) {
+  switch (frame.type) {
+  case PADDING_FRAME: {
+      os << "type { PADDING_FRAME } ";
+      break;
+    }
+    case RST_STREAM_FRAME: {
+      os << "type { " << RST_STREAM_FRAME << " } " << *(frame.rst_stream_frame);
+      break;
+    }
+    case CONNECTION_CLOSE_FRAME: {
+      os << "type { CONNECTION_CLOSE_FRAME } "
+         << *(frame.connection_close_frame);
+      break;
+    }
+    case GOAWAY_FRAME: {
+      os << "type { GOAWAY_FRAME } " << *(frame.goaway_frame);
+      break;
+    }
+    case WINDOW_UPDATE_FRAME: {
+      os << "type { WINDOW_UPDATE_FRAME } " << *(frame.window_update_frame);
+      break;
+    }
+    case BLOCKED_FRAME: {
+      os << "type { BLOCKED_FRAME } " << *(frame.blocked_frame);
+      break;
+    }
+    case STREAM_FRAME: {
+      os << "type { STREAM_FRAME } " << *(frame.stream_frame);
+      break;
+    }
+    case ACK_FRAME: {
+      os << "type { ACK_FRAME } " << *(frame.ack_frame);
+      break;
+    }
+    case CONGESTION_FEEDBACK_FRAME: {
+      os << "type { CONGESTION_FEEDBACK_FRAME } "
+         << *(frame.congestion_feedback_frame);
+      break;
+    }
+    default: {
+      LOG(ERROR) << "Unknown frame type: " << frame.type;
+      break;
+    }
+  }
+  return os;
 }
 
-QuicCongestionFeedbackFrame::~QuicCongestionFeedbackFrame() {
+ostream& operator<<(ostream& os, const QuicRstStreamFrame& rst_frame) {
+  os << "stream_id { " << rst_frame.stream_id << " } "
+     << "error_code { " << rst_frame.error_code << " } "
+     << "error_details { " << rst_frame.error_details << " }\n";
+  return os;
+}
+
+ostream& operator<<(ostream& os,
+                    const QuicConnectionCloseFrame& connection_close_frame) {
+  os << "error_code { " << connection_close_frame.error_code << " } "
+     << "error_details { " << connection_close_frame.error_details << " }\n";
+  return os;
+}
+
+ostream& operator<<(ostream& os, const QuicGoAwayFrame& goaway_frame) {
+  os << "error_code { " << goaway_frame.error_code << " } "
+     << "last_good_stream_id { " << goaway_frame.last_good_stream_id << " } "
+     << "reason_phrase { " << goaway_frame.reason_phrase << " }\n";
+  return os;
+}
+
+ostream& operator<<(ostream& os,
+                    const QuicWindowUpdateFrame& window_update_frame) {
+  os << "stream_id { " << window_update_frame.stream_id << " } "
+     << "byte_offset { " << window_update_frame.byte_offset << " }\n";
+  return os;
+}
+
+ostream& operator<<(ostream& os, const QuicBlockedFrame& blocked_frame) {
+  os << "stream_id { " << blocked_frame.stream_id << " }\n";
+  return os;
+}
+
+ostream& operator<<(ostream& os, const QuicStreamFrame& stream_frame) {
+  os << "stream_id { " << stream_frame.stream_id << " } "
+     << "fin { " << stream_frame.fin << " } "
+     << "offset { " << stream_frame.offset << " } "
+     << "data { "
+     << QuicUtils::StringToHexASCIIDump(*(stream_frame.GetDataAsString()))
+     << " }\n";
+  return os;
+}
+
+ostream& operator<<(ostream& os, const QuicAckFrame& ack_frame) {
+  os << "sent info { " << ack_frame.sent_info << " } "
+     << "received info { " << ack_frame.received_info << " }\n";
+  return os;
 }
 
 ostream& operator<<(ostream& os,
@@ -277,8 +477,6 @@ ostream& operator<<(ostream& os,
     case kInterArrival: {
       const CongestionFeedbackMessageInterArrival& inter_arrival =
           congestion_frame.inter_arrival;
-      os << " accumulated_number_of_lost_packets: "
-         << inter_arrival.accumulated_number_of_lost_packets;
       os << " received packets: [ ";
       for (TimeMap::const_iterator it =
                inter_arrival.received_packet_times.begin();
@@ -295,8 +493,6 @@ ostream& operator<<(ostream& os,
     }
     case kTCP: {
       const CongestionFeedbackMessageTCP& tcp = congestion_frame.tcp;
-      os << " accumulated_number_of_lost_packets: "
-         << congestion_frame.tcp.accumulated_number_of_lost_packets;
       os << " receive_window: " << tcp.receive_window;
       break;
     }
@@ -304,21 +500,14 @@ ostream& operator<<(ostream& os,
   return os;
 }
 
-ostream& operator<<(ostream& os, const QuicAckFrame& ack_frame) {
-  os << "sent info { " << ack_frame.sent_info << " } "
-     << "received info { " << ack_frame.received_info << " }\n";
-  return os;
-}
-
 CongestionFeedbackMessageFixRate::CongestionFeedbackMessageFixRate()
     : bitrate(QuicBandwidth::Zero()) {
 }
 
-CongestionFeedbackMessageInterArrival::
-CongestionFeedbackMessageInterArrival() {}
-
-CongestionFeedbackMessageInterArrival::
-~CongestionFeedbackMessageInterArrival() {}
+QuicGoAwayFrame::QuicGoAwayFrame()
+    : error_code(QUIC_NO_ERROR),
+      last_good_stream_id(0) {
+}
 
 QuicGoAwayFrame::QuicGoAwayFrame(QuicErrorCode error_code,
                                  QuicStreamId last_good_stream_id,
@@ -329,12 +518,59 @@ QuicGoAwayFrame::QuicGoAwayFrame(QuicErrorCode error_code,
   DCHECK_LE(error_code, numeric_limits<uint8>::max());
 }
 
-QuicFecData::QuicFecData() {}
+QuicData::QuicData(const char* buffer,
+                   size_t length)
+    : buffer_(buffer),
+      length_(length),
+      owns_buffer_(false) {
+}
+
+QuicData::QuicData(char* buffer,
+                   size_t length,
+                   bool owns_buffer)
+    : buffer_(buffer),
+      length_(length),
+      owns_buffer_(owns_buffer) {
+}
 
 QuicData::~QuicData() {
   if (owns_buffer_) {
     delete [] const_cast<char*>(buffer_);
   }
+}
+
+QuicWindowUpdateFrame::QuicWindowUpdateFrame(QuicStreamId stream_id,
+                                             QuicStreamOffset byte_offset)
+    : stream_id(stream_id),
+      byte_offset(byte_offset) {}
+
+QuicBlockedFrame::QuicBlockedFrame(QuicStreamId stream_id)
+    : stream_id(stream_id) {}
+
+QuicPacket::QuicPacket(char* buffer,
+                       size_t length,
+                       bool owns_buffer,
+                       QuicGuidLength guid_length,
+                       bool includes_version,
+                       QuicSequenceNumberLength sequence_number_length,
+                       bool is_fec_packet)
+    : QuicData(buffer, length, owns_buffer),
+      buffer_(buffer),
+      is_fec_packet_(is_fec_packet),
+      guid_length_(guid_length),
+      includes_version_(includes_version),
+      sequence_number_length_(sequence_number_length) {
+}
+
+QuicEncryptedPacket::QuicEncryptedPacket(const char* buffer,
+                                         size_t length)
+    : QuicData(buffer, length) {
+}
+
+QuicEncryptedPacket::QuicEncryptedPacket(char* buffer,
+                                         size_t length,
+                                         bool owns_buffer)
+      : QuicData(buffer, length, owns_buffer) {
 }
 
 StringPiece QuicPacket::FecProtectedData() const {
@@ -393,6 +629,12 @@ RetransmittableFrames::~RetransmittableFrames() {
       case GOAWAY_FRAME:
         delete it->goaway_frame;
         break;
+      case WINDOW_UPDATE_FRAME:
+        delete it->window_update_frame;
+        break;
+      case BLOCKED_FRAME:
+        delete it->blocked_frame;
+        break;
       case NUM_FRAME_TYPES:
         DCHECK(false) << "Cannot delete type: " << it->type;
     }
@@ -417,6 +659,16 @@ const QuicFrame& RetransmittableFrames::AddNonStreamFrame(
   DCHECK_NE(frame.type, STREAM_FRAME);
   frames_.push_back(frame);
   return frames_.back();
+}
+
+IsHandshake RetransmittableFrames::HasCryptoHandshake() const {
+  for (size_t i = 0; i < frames().size(); ++i) {
+    if (frames()[i].type == STREAM_FRAME &&
+        frames()[i].stream_frame->stream_id == kCryptoStreamId) {
+      return IS_HANDSHAKE;
+    }
+  }
+  return NOT_HANDSHAKE;
 }
 
 void RetransmittableFrames::set_encryption_level(EncryptionLevel level) {
@@ -449,10 +701,22 @@ ostream& operator<<(ostream& os, const QuicEncryptedPacket& s) {
   return os;
 }
 
+QuicConsumedData::QuicConsumedData(size_t bytes_consumed,
+                                   bool fin_consumed)
+      : bytes_consumed(bytes_consumed),
+        fin_consumed(fin_consumed) {
+}
+
 ostream& operator<<(ostream& os, const QuicConsumedData& s) {
   os << "bytes_consumed: " << s.bytes_consumed
      << " fin_consumed: " << s.fin_consumed;
   return os;
+}
+
+WriteResult::WriteResult(WriteStatus status,
+                         int bytes_written_or_error_code)
+    : status(status),
+      bytes_written(bytes_written_or_error_code) {
 }
 
 }  // namespace net

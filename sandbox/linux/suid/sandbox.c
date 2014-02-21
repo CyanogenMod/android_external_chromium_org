@@ -58,6 +58,15 @@ static void FatalError(const char *msg, ...) {
   _exit(1);
 }
 
+static void ExitWithErrorSignalHandler(int signal) {
+  const char msg[] = "\nThe setuid sandbox got signaled, exiting.\n";
+  if (-1 == write(2, msg, sizeof(msg) - 1)) {
+    // Do nothing.
+  }
+
+  _exit(1);
+}
+
 // We will chroot() to the helper's /proc/self directory. Anything there will
 // not exist anymore if we make sure to wait() for the helper.
 //
@@ -195,6 +204,15 @@ static void WaitForChildAndExit(pid_t child_pid) {
   int exit_code = -1;
   siginfo_t reaped_child_info;
 
+  // Don't "Core" on SIGABRT. SIGABRT is sent by the Chrome OS session manager
+  // when things are hanging.
+  // Here, the current process is going to waitid() and _exit(), so there is no
+  // point in generating a crash report. The child process is the one
+  // blocking us.
+  if (signal(SIGABRT, ExitWithErrorSignalHandler) == SIG_ERR) {
+    FatalError("Failed to change signal handler");
+  }
+
   int wait_ret =
     HANDLE_EINTR(waitid(P_PID, child_pid, &reaped_child_info, WEXITED));
 
@@ -227,6 +245,7 @@ static bool MoveToNewNamespaces() {
        i < sizeof(kCloneExtraFlags) / sizeof(kCloneExtraFlags[0]);
        i++) {
     pid_t pid = syscall(__NR_clone, SIGCHLD | kCloneExtraFlags[i], 0, 0, 0);
+    const int clone_errno = errno;
 
     if (pid > 0) {
       if (!DropRoot()) {
@@ -278,8 +297,19 @@ static bool MoveToNewNamespaces() {
       break;
     }
 
+    // If EINVAL then the system doesn't support the requested flags, so
+    // continue to try a different set.
+    // On any other errno value the system *does* support these flags but
+    // something went wrong, hence we bail with an error message rather then
+    // provide less security.
     if (errno != EINVAL) {
-      perror("Failed to move to new PID namespace");
+      if (kCloneExtraFlags[i] & CLONE_NEWPID) {
+        fprintf(stderr, " PID namespaces supported");
+      }
+      if (kCloneExtraFlags[i] & CLONE_NEWNET) {
+        fprintf(stderr, " Network namespace supported");
+      }
+      fprintf(stderr, "but failed: errno = %s\n", strerror(clone_errno));
       return false;
     }
   }

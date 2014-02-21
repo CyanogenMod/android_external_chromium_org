@@ -23,7 +23,8 @@ PointerHandler::PointerHandler()
 PointerHandler::~PointerHandler() {
 }
 
-void PointerHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
+void PointerHandler::GetLocalizedValues(
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
@@ -48,7 +49,7 @@ void PointerHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
   localized_strings->SetString("naturalScroll",
       l10n_util::GetStringFUTF16(
           IDS_OPTIONS_SETTINGS_NATURAL_SCROLL_DESCRIPTION,
-          ASCIIToUTF16(chrome::kNaturalScrollHelpURL)));
+          base::ASCIIToUTF16(chrome::kNaturalScrollHelpURL)));
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
 }

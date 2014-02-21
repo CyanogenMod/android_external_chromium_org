@@ -9,7 +9,6 @@ from data_source import DataSource
 from extensions_paths import PRIVATE_TEMPLATES
 import features_utility as features
 from future import Gettable, Future
-from third_party.json_schema_compiler.json_parse import Parse
 
 
 def _ListifyPermissions(permissions):
@@ -64,8 +63,8 @@ class PermissionsDataSource(DataSource):
         if not 'anchor' in permission:
           permission['anchor'] = permission['name']
         if 'partial' in permission:
-          permission['description'] = self._template_cache.GetFromFile('%s/%s' %
-              (PRIVATE_TEMPLATES, permission['partial'])).Get()
+          permission['description'] = self._template_cache.GetFromFile(
+              PRIVATE_TEMPLATES + permission['partial']).Get()
           del permission['partial']
 
       def filter_for_platform(permissions, platform):

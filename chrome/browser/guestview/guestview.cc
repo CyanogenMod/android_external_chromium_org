@@ -32,7 +32,7 @@ static base::LazyInstance<WebContentsGuestViewMap> webcontents_guestview_map =
 }  // namespace
 
 GuestView::Event::Event(const std::string& name,
-                        scoped_ptr<DictionaryValue> args)
+                        scoped_ptr<base::DictionaryValue> args)
     : name_(name),
       args_(args.Pass()) {
 }
@@ -40,7 +40,7 @@ GuestView::Event::Event(const std::string& name,
 GuestView::Event::~Event() {
 }
 
-scoped_ptr<DictionaryValue> GuestView::Event::GetArguments() {
+scoped_ptr<base::DictionaryValue> GuestView::Event::GetArguments() {
   return args_.Pass();
 }
 
@@ -52,7 +52,8 @@ GuestView::GuestView(WebContents* guest_web_contents,
       embedder_render_process_id_(0),
       browser_context_(guest_web_contents->GetBrowserContext()),
       guest_instance_id_(guest_web_contents->GetEmbeddedInstanceID()),
-      view_instance_id_(guestview::kInstanceIDNone) {
+      view_instance_id_(guestview::kInstanceIDNone),
+      weak_ptr_factory_(this) {
   webcontents_guestview_map.Get().insert(
       std::make_pair(guest_web_contents, this));
 }
@@ -157,7 +158,7 @@ void GuestView::Attach(content::WebContents* embedder_web_contents,
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&GuestView::SendQueuedEvents,
-                  base::Unretained(this)));
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 GuestView::Type GuestView::GetViewType() const {
@@ -195,7 +196,7 @@ void GuestView::DispatchEvent(Event* event) {
   extensions::EventFilteringInfo info;
   info.SetURL(GURL());
   info.SetInstanceID(guest_instance_id_);
-  scoped_ptr<ListValue> args(new ListValue());
+  scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(event->GetArguments().release());
 
   extensions::EventRouter::DispatchEvent(

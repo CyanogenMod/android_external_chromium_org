@@ -22,8 +22,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/synchronization/lock.h"
+#include "mojo/system/embedder/platform_handle.h"
 #include "mojo/system/message_in_transit.h"
-#include "mojo/system/platform_channel_handle.h"
 
 namespace mojo {
 namespace system {
@@ -35,7 +35,7 @@ const size_t kReadSize = 4096;
 class RawChannelPosix : public RawChannel,
                         public base::MessageLoopForIO::Watcher {
  public:
-  RawChannelPosix(const PlatformChannelHandle& handle,
+  RawChannelPosix(embedder::ScopedPlatformHandle handle,
                   Delegate* delegate,
                   base::MessageLoop* message_loop);
   virtual ~RawChannelPosix();
@@ -64,15 +64,15 @@ class RawChannelPosix : public RawChannel,
   bool WriteFrontMessageNoLock();
 
   // Cancels all pending writes and destroys the contents of
-  // |write_message_queue_|. Should only be called if |is_dead_| is false; sets
-  // |is_dead_| to true. Must be called under |write_lock_|.
+  // |write_message_queue_|. Should only be called if |write_stopped_| is false;
+  // sets |write_stopped_| to true. Must be called under |write_lock_|.
   void CancelPendingWritesNoLock();
 
   base::MessageLoopForIO* message_loop_for_io() {
     return static_cast<base::MessageLoopForIO*>(message_loop());
   }
 
-  int fd_;
+  embedder::ScopedPlatformHandle fd_;
 
   // Only used on the I/O thread:
   scoped_ptr<base::MessageLoopForIO::FileDescriptorWatcher> read_watcher_;
@@ -86,7 +86,7 @@ class RawChannelPosix : public RawChannel,
   size_t read_buffer_num_valid_bytes_;
 
   base::Lock write_lock_;  // Protects the following members.
-  bool is_dead_;
+  bool write_stopped_;
   std::deque<MessageInTransit*> write_message_queue_;
   size_t write_message_offset_;
   // This is used for posting tasks from write threads to the I/O thread. It
@@ -97,22 +97,22 @@ class RawChannelPosix : public RawChannel,
   DISALLOW_COPY_AND_ASSIGN(RawChannelPosix);
 };
 
-RawChannelPosix::RawChannelPosix(const PlatformChannelHandle& handle,
+RawChannelPosix::RawChannelPosix(embedder::ScopedPlatformHandle handle,
                                  Delegate* delegate,
                                  base::MessageLoop* message_loop)
     : RawChannel(delegate, message_loop),
-      fd_(handle.fd),
+      fd_(handle.Pass()),
       read_buffer_num_valid_bytes_(0),
-      is_dead_(false),
+      write_stopped_(false),
       write_message_offset_(0),
       weak_ptr_factory_(this) {
   CHECK_EQ(RawChannel::message_loop()->type(), base::MessageLoop::TYPE_IO);
-  DCHECK_NE(fd_, -1);
+  DCHECK(fd_.is_valid());
 }
 
 RawChannelPosix::~RawChannelPosix() {
-  DCHECK(is_dead_);
-  DCHECK_EQ(fd_, -1);
+  DCHECK(write_stopped_);
+  DCHECK(!fd_.is_valid());
 
   // No need to take the |write_lock_| here -- if there are still weak pointers
   // outstanding, then we're hosed anyway (since we wouldn't be able to
@@ -135,7 +135,7 @@ bool RawChannelPosix::Init() {
   // No need to take the lock. No one should be using us yet.
   DCHECK(write_message_queue_.empty());
 
-  if (!message_loop_for_io()->WatchFileDescriptor(fd_, true,
+  if (!message_loop_for_io()->WatchFileDescriptor(fd_.get().fd, true,
           base::MessageLoopForIO::WATCH_READ, read_watcher_.get(), this)) {
     // TODO(vtl): I'm not sure |WatchFileDescriptor()| actually fails cleanly
     // (in the sense of returning the message loop's state to what it was before
@@ -152,25 +152,22 @@ void RawChannelPosix::Shutdown() {
   DCHECK_EQ(base::MessageLoop::current(), message_loop());
 
   base::AutoLock locker(write_lock_);
-  if (!is_dead_)
+  if (!write_stopped_)
     CancelPendingWritesNoLock();
-
-  DCHECK_NE(fd_, -1);
-  if (close(fd_) != 0)
-    PLOG(ERROR) << "close";
-  fd_ = -1;
-
-  weak_ptr_factory_.InvalidateWeakPtrs();
 
   read_watcher_.reset();  // This will stop watching (if necessary).
   write_watcher_.reset();  // This will stop watching (if necessary).
+
+  DCHECK(fd_.is_valid());
+  fd_.reset();
+
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-// Reminder: This must be thread-safe, and takes ownership of |message| on
-// success.
+// Reminder: This must be thread-safe, and takes ownership of |message|.
 bool RawChannelPosix::WriteMessage(MessageInTransit* message) {
   base::AutoLock locker(write_lock_);
-  if (is_dead_) {
+  if (write_stopped_) {
     message->Destroy();
     return false;
   }
@@ -208,7 +205,7 @@ bool RawChannelPosix::WriteMessage(MessageInTransit* message) {
 }
 
 void RawChannelPosix::OnFileCanReadWithoutBlocking(int fd) {
-  DCHECK_EQ(fd, fd_);
+  DCHECK_EQ(fd, fd_.get().fd);
   DCHECK_EQ(base::MessageLoop::current(), message_loop());
 
   bool did_dispatch_message = false;
@@ -233,16 +230,17 @@ void RawChannelPosix::OnFileCanReadWithoutBlocking(int fd) {
     }
 
     ssize_t bytes_read = HANDLE_EINTR(
-        read(fd_,
+        read(fd_.get().fd,
              &read_buffer_[read_buffer_start + read_buffer_num_valid_bytes_],
              kReadSize));
     if (bytes_read < 0) {
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
         PLOG(ERROR) << "read";
-        {
-          base::AutoLock locker(write_lock_);
-          CancelPendingWritesNoLock();
-        }
+
+        // Make sure that |OnFileCanReadWithoutBlocking()| won't be called
+        // again.
+        read_watcher_.reset();
+
         CallOnFatalError(Delegate::FATAL_ERROR_FAILED_READ);
         return;
       }
@@ -296,29 +294,37 @@ void RawChannelPosix::OnFileCanReadWithoutBlocking(int fd) {
 
   // Move data back to start.
   if (read_buffer_start > 0) {
-    memmove(&read_buffer_[0], &read_buffer_[read_buffer_start],
-            read_buffer_num_valid_bytes_);
+    if (read_buffer_num_valid_bytes_ > 0) {
+      memmove(&read_buffer_[0], &read_buffer_[read_buffer_start],
+              read_buffer_num_valid_bytes_);
+    }
     read_buffer_start = 0;
   }
 }
 
 void RawChannelPosix::OnFileCanWriteWithoutBlocking(int fd) {
-  DCHECK_EQ(fd, fd_);
+  DCHECK_EQ(fd, fd_.get().fd);
   DCHECK_EQ(base::MessageLoop::current(), message_loop());
 
   bool did_fail = false;
   {
     base::AutoLock locker(write_lock_);
-    DCHECK(!is_dead_);
-    DCHECK(!write_message_queue_.empty());
+    DCHECK_EQ(write_stopped_, write_message_queue_.empty());
+
+    if (write_stopped_) {
+      write_watcher_.reset();
+      return;
+    }
 
     bool result = WriteFrontMessageNoLock();
     DCHECK(result || write_message_queue_.empty());
 
-    if (!result)
+    if (!result) {
       did_fail = true;
-    else if (!write_message_queue_.empty())
+      write_watcher_.reset();
+    } else if (!write_message_queue_.empty()) {
       WaitToWrite();
+    }
   }
   if (did_fail)
     CallOnFatalError(Delegate::FATAL_ERROR_FAILED_WRITE);
@@ -329,8 +335,8 @@ void RawChannelPosix::WaitToWrite() {
 
   DCHECK(write_watcher_.get());
   bool result = message_loop_for_io()->WatchFileDescriptor(
-      fd_, false, base::MessageLoopForIO::WATCH_WRITE, write_watcher_.get(),
-      this);
+      fd_.get().fd, false, base::MessageLoopForIO::WATCH_WRITE,
+      write_watcher_.get(), this);
   DCHECK(result);
 }
 
@@ -343,7 +349,7 @@ void RawChannelPosix::CallOnFatalError(Delegate::FatalError fatal_error) {
 bool RawChannelPosix::WriteFrontMessageNoLock() {
   write_lock_.AssertAcquired();
 
-  DCHECK(!is_dead_);
+  DCHECK(!write_stopped_);
   DCHECK(!write_message_queue_.empty());
 
   MessageInTransit* message = write_message_queue_.front();
@@ -351,7 +357,7 @@ bool RawChannelPosix::WriteFrontMessageNoLock() {
   size_t bytes_to_write =
       message->size_with_header_and_padding() - write_message_offset_;
   ssize_t bytes_written = HANDLE_EINTR(
-      write(fd_,
+      write(fd_.get().fd,
             reinterpret_cast<char*>(message) + write_message_offset_,
             bytes_to_write));
   if (bytes_written < 0) {
@@ -383,9 +389,9 @@ bool RawChannelPosix::WriteFrontMessageNoLock() {
 
 void RawChannelPosix::CancelPendingWritesNoLock() {
   write_lock_.AssertAcquired();
-  DCHECK(!is_dead_);
+  DCHECK(!write_stopped_);
 
-  is_dead_ = true;
+  write_stopped_ = true;
   for (std::deque<MessageInTransit*>::iterator it =
            write_message_queue_.begin(); it != write_message_queue_.end();
        ++it) {
@@ -400,10 +406,10 @@ void RawChannelPosix::CancelPendingWritesNoLock() {
 
 // Static factory method declared in raw_channel.h.
 // static
-RawChannel* RawChannel::Create(const PlatformChannelHandle& handle,
+RawChannel* RawChannel::Create(embedder::ScopedPlatformHandle handle,
                                Delegate* delegate,
                                base::MessageLoop* message_loop) {
-  return new RawChannelPosix(handle, delegate, message_loop);
+  return new RawChannelPosix(handle.Pass(), delegate, message_loop);
 }
 
 }  // namespace system

@@ -18,6 +18,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -644,12 +645,12 @@ GdkPoint MakeBidiGdkPoint(gint x, gint y, gint width, bool ltr) {
   return point;
 }
 
-std::string BuildTooltipTitleFor(string16 title, const GURL& url) {
+std::string BuildTooltipTitleFor(base::string16 title, const GURL& url) {
   const std::string& url_str = url.possibly_invalid_spec();
-  const std::string& title_str = UTF16ToUTF8(title);
+  const std::string& title_str = base::UTF16ToUTF8(title);
 
-  std::string truncated_url = UTF16ToUTF8(gfx::TruncateString(
-      UTF8ToUTF16(url_str), kMaxTooltipURLLength));
+  std::string truncated_url = base::UTF16ToUTF8(gfx::TruncateString(
+      base::UTF8ToUTF16(url_str), kMaxTooltipURLLength));
   gchar* escaped_url_cstr = g_markup_escape_text(truncated_url.c_str(),
                                                  truncated_url.size());
   std::string escaped_url(escaped_url_cstr);
@@ -658,7 +659,7 @@ std::string BuildTooltipTitleFor(string16 title, const GURL& url) {
   if (url_str == title_str || title.empty()) {
     return escaped_url;
   } else {
-    std::string truncated_title = UTF16ToUTF8(gfx::TruncateString(
+    std::string truncated_title = base::UTF16ToUTF8(gfx::TruncateString(
         title, kMaxTooltipTitleLength));
     gchar* escaped_title_cstr = g_markup_escape_text(truncated_title.c_str(),
                                                      truncated_title.size());
@@ -713,7 +714,7 @@ void SetLayoutText(PangoLayout* layout, const base::string16& text) {
   // spiral that can corrupt the screen. Assume that we'll never have more than
   // 2000 characters, which should be a safe assumption until we all get robot
   // eyes. http://crbug.com/66576
-  std::string text_utf8 = UTF16ToUTF8(text);
+  std::string text_utf8 = base::UTF16ToUTF8(text);
   if (text_utf8.length() > 2000)
     text_utf8 = text_utf8.substr(0, 2000);
 
@@ -860,7 +861,8 @@ bool URLFromPrimarySelection(Profile* profile, GURL* url) {
   // a search query if necessary.
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(profile)->Classify(
-      UTF8ToUTF16(selection_text), false, false, &match, NULL);
+      base::UTF8ToUTF16(selection_text), false, false,
+      AutocompleteInput::INVALID_SPEC, &match, NULL);
   g_free(selection_text);
   if (!match.destination_url.is_valid())
     return false;
@@ -942,12 +944,13 @@ gfx::Rect GetDialogBounds(GtkWidget* dialog) {
   return gfx::Rect(x, y, width, height);
 }
 
-string16 GetStockPreferencesMenuLabel() {
+base::string16 GetStockPreferencesMenuLabel() {
   GtkStockItem stock_item;
   base::string16 preferences;
   if (gtk_stock_lookup(GTK_STOCK_PREFERENCES, &stock_item)) {
-    const char16 kUnderscore[] = { '_', 0 };
-    base::RemoveChars(UTF8ToUTF16(stock_item.label), kUnderscore, &preferences);
+    const base::char16 kUnderscore[] = { '_', 0 };
+    base::RemoveChars(base::UTF8ToUTF16(stock_item.label),
+                      kUnderscore, &preferences);
   }
   return preferences;
 }

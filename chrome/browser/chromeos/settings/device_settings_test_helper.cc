@@ -107,8 +107,6 @@ bool DeviceSettingsTestHelper::HasObserver(Observer* observer) {
   return false;
 }
 
-void DeviceSettingsTestHelper::EmitLoginPromptReady() {}
-
 void DeviceSettingsTestHelper::EmitLoginPromptVisible() {}
 
 void DeviceSettingsTestHelper::RestartJob(int pid,
@@ -196,8 +194,7 @@ ScopedDeviceSettingsTestHelper::~ScopedDeviceSettingsTestHelper() {
 }
 
 DeviceSettingsTestBase::DeviceSettingsTestBase()
-    : loop_(base::MessageLoop::TYPE_UI),
-      ui_thread_(content::BrowserThread::UI, &loop_),
+    : ui_thread_(content::BrowserThread::UI, &loop_),
       file_thread_(content::BrowserThread::FILE, &loop_),
       owner_key_util_(new MockOwnerKeyUtil()) {}
 

@@ -7,7 +7,6 @@
 var binding = require('binding').Binding.create('permissions');
 
 var Event = require('event_bindings').Event;
-var sendRequest = require('sendRequest').sendRequest;
 
 // These custom binding are only necessary because it is not currently
 // possible to have a union of types as the type of the items in an array.
@@ -89,7 +88,7 @@ binding.registerCustomHook(function(api) {
     for (var i = 0; i < args[0].permissions.length; i += 1) {
       args[0].permissions[i] = maybeConvertToObject(args[0].permissions[i]);
     }
-    Event.prototype.dispatchToListener(callback, args);
+    $Function.call(Event.prototype.dispatchToListener, this, callback, args);
   };
   permissions.onRemoved.dispatchToListener =
       permissions.onAdded.dispatchToListener;

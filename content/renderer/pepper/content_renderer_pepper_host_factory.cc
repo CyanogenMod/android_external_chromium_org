@@ -13,6 +13,7 @@
 #include "content/renderer/pepper/pepper_file_ref_renderer_host.h"
 #include "content/renderer/pepper/pepper_file_system_host.h"
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_truetype_font_host.h"
 #include "content/renderer/pepper/pepper_url_loader_host.h"
 #include "content/renderer/pepper/pepper_video_capture_host.h"
@@ -40,7 +41,6 @@ namespace content {
 #if defined(ENABLE_WEBRTC)
 namespace {
 
-#if defined(ENABLE_WEBRTC)
 bool CanUseMediaStreamAPI(const RendererPpapiHost* host,
                           PP_Instance instance) {
   blink::WebPluginContainer* container =
@@ -53,7 +53,6 @@ bool CanUseMediaStreamAPI(const RendererPpapiHost* host,
       GetContentClient()->renderer();
   return content_renderer_client->AllowPepperMediaStreamAPI(document_url);
 }
-#endif  // defined(ENABLE_WEBRTC)
 
 }  // namespace
 #endif  // defined(ENABLE_WEBRTC)
@@ -75,6 +74,11 @@ scoped_ptr<ResourceHost> ContentRendererPepperHostFactory::CreateResourceHost(
 
   // Make sure the plugin is giving us a valid instance for this resource.
   if (!host_->IsValidInstance(instance))
+    return scoped_ptr<ResourceHost>();
+
+  PepperPluginInstanceImpl* instance_impl =
+      host_->GetPluginInstanceImpl(instance);
+  if (!instance_impl->render_frame())
     return scoped_ptr<ResourceHost>();
 
   // Public interfaces.

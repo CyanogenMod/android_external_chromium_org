@@ -13,6 +13,7 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/prefs/pref_filter.h"
 #include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
@@ -151,12 +152,14 @@ scoped_refptr<base::SequencedTaskRunner> JsonPrefStore::GetTaskRunnerForFile(
 }
 
 JsonPrefStore::JsonPrefStore(const base::FilePath& filename,
-                             base::SequencedTaskRunner* sequenced_task_runner)
+                             base::SequencedTaskRunner* sequenced_task_runner,
+                             scoped_ptr<PrefFilter> pref_filter)
     : path_(filename),
       sequenced_task_runner_(sequenced_task_runner),
       prefs_(new base::DictionaryValue()),
       read_only_(false),
       writer_(filename, sequenced_task_runner),
+      pref_filter_(pref_filter.Pass()),
       initialized_(false),
       read_error_(PREF_READ_ERROR_OTHER) {}
 
@@ -264,7 +267,11 @@ void JsonPrefStore::CommitPendingWrite() {
 }
 
 void JsonPrefStore::ReportValueChanged(const std::string& key) {
+  if (pref_filter_)
+    pref_filter_->FilterUpdate(key);
+
   FOR_EACH_OBSERVER(PrefStore::Observer, observers_, OnPrefValueChanged(key));
+
   if (!read_only_)
     writer_.ScheduleWrite(this);
 }
@@ -307,6 +314,9 @@ void JsonPrefStore::OnFileRead(base::Value* value_owned,
       NOTREACHED() << "Unknown error: " << error;
   }
 
+  if (pref_filter_)
+    pref_filter_->FilterOnLoad(prefs_.get());
+
   if (error_delegate_.get() && error != PREF_READ_ERROR_NONE)
     error_delegate_->OnError(error);
 
@@ -320,6 +330,9 @@ JsonPrefStore::~JsonPrefStore() {
 }
 
 bool JsonPrefStore::SerializeData(std::string* output) {
+  if (pref_filter_)
+    pref_filter_->FilterSerializeData(prefs_.get());
+
   JSONStringValueSerializer serializer(output);
   serializer.set_pretty_print(true);
   return serializer.Serialize(*prefs_);

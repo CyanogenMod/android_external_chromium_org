@@ -12,11 +12,10 @@
 
 using content::BrowserThread;
 
-namespace extensions {
+namespace {
 
-// static
-void FeedbackService::PopulateSystemInfo(
-    SystemInformationList* sys_info_list,
+void PopulateSystemInfo(
+    extensions::SystemInformationList* sys_info_list,
     const std::string& key,
     const std::string& value) {
   base::DictionaryValue sys_info_value;
@@ -28,6 +27,10 @@ void FeedbackService::PopulateSystemInfo(
 
   sys_info_list->push_back(sys_info);
 }
+
+}  // namespace
+
+namespace extensions {
 
 FeedbackService::FeedbackService() {
 }
@@ -63,7 +66,8 @@ void FeedbackService::SendFeedback(
   CompleteSendFeedback();
 }
 
-void FeedbackService::AttachedFileCallback(scoped_ptr<std::string> data) {
+void FeedbackService::AttachedFileCallback(scoped_ptr<std::string> data,
+                                           int64 /* total_blob_length */) {
   if (!data.get())
     feedback_data_->set_attached_file_uuid(std::string());
   else
@@ -72,13 +76,40 @@ void FeedbackService::AttachedFileCallback(scoped_ptr<std::string> data) {
   CompleteSendFeedback();
 }
 
-void FeedbackService::ScreenshotCallback(scoped_ptr<std::string> data) {
+void FeedbackService::ScreenshotCallback(scoped_ptr<std::string> data,
+                                         int64 /* total_blob_length */) {
   if (!data.get())
     feedback_data_->set_screenshot_uuid(std::string());
   else
     feedback_data_->set_image(data.Pass());
 
   CompleteSendFeedback();
+}
+
+void FeedbackService::GetSystemInformation(
+    const GetSystemInformationCallback& callback) {
+  system_information_callback_ = callback;
+
+  system_logs::ScrubbedSystemLogsFetcher* fetcher =
+      new system_logs::ScrubbedSystemLogsFetcher();
+  fetcher->Fetch(base::Bind(&FeedbackService::OnSystemLogsFetchComplete,
+                            GetWeakPtr()));
+}
+
+
+void FeedbackService::OnSystemLogsFetchComplete(
+    scoped_ptr<system_logs::SystemLogsResponse> sys_info_map) {
+  SystemInformationList sys_info_list;
+  if (!sys_info_map.get()) {
+    system_information_callback_.Run(sys_info_list);
+    return;
+  }
+
+  for (system_logs::SystemLogsResponse::iterator it = sys_info_map->begin();
+       it != sys_info_map->end(); ++it)
+    PopulateSystemInfo(&sys_info_list, it->first, it->second);
+
+  system_information_callback_.Run(sys_info_list);
 }
 
 void FeedbackService::CompleteSendFeedback() {

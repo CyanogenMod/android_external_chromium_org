@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/login/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
@@ -25,7 +26,7 @@ const char kJsScreenPath[] = "login.GaiaSigninScreen";
 
 // Updates params dictionary passed to the auth extension with related
 // preferences from CrosSettings.
-void UpdateAuthParamsFromSettings(DictionaryValue* params,
+void UpdateAuthParamsFromSettings(base::DictionaryValue* params,
                                   const CrosSettings* cros_settings) {
   bool allow_new_user = true;
   cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
@@ -36,7 +37,7 @@ void UpdateAuthParamsFromSettings(DictionaryValue* params,
   params->SetBoolean("guestSignin", allow_guest);
 }
 
-void UpdateAuthParams(DictionaryValue* params, bool has_users) {
+void UpdateAuthParams(base::DictionaryValue* params, bool has_users) {
   UpdateAuthParamsFromSettings(params, CrosSettings::Get());
 
   // Allow locally managed user creation only if:
@@ -67,6 +68,14 @@ void UpdateAuthParams(DictionaryValue* params, bool has_users) {
     params->SetString("managedUsersRestrictionReason",
                       l10n_util::GetStringUTF16(message_id));
   }
+
+  // Now check whether we're in multi-profiles user adding scenario and
+  // disable GAIA right panel features if that's the case.
+  if (UserAddingScreen::Get()->IsRunning()) {
+    params->SetBoolean("createAccount", false);
+    params->SetBoolean("guestSignin", false);
+    params->SetBoolean("managedUsersEnabled", false);
+  }
 }
 
 }  // namespace
@@ -94,7 +103,7 @@ GaiaScreenHandler::~GaiaScreenHandler() {}
 void GaiaScreenHandler::LoadGaia(const GaiaContext& context) {
   LOG(WARNING) << "LoadGaia() call.";
 
-  DictionaryValue params;
+  base::DictionaryValue params;
 
   params.SetBoolean("forceReload", context.force_reload);
   params.SetBoolean("isLocal", context.is_local);
@@ -141,7 +150,7 @@ void GaiaScreenHandler::LoadGaia(const GaiaContext& context) {
 }
 
 void GaiaScreenHandler::UpdateGaia(const GaiaContext& context) {
-  DictionaryValue params;
+  base::DictionaryValue params;
   UpdateAuthParams(&params, context.has_users);
   CallJS("updateAuthExtension", params);
 }
@@ -174,10 +183,8 @@ void GaiaScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_FEATURE_NAME);
 
   // Strings used by no password warning dialog.
-  builder->Add("noPasswordWarningTitle", IDS_LOGIN_NO_PASSWORD_WARNING_TITLE);
-  builder->Add("noPasswordWarningBody", IDS_LOGIN_NO_PASSWORD_WARNING);
-  builder->Add("noPasswordWarningOkButton",
-               IDS_LOGIN_NO_PASSWORD_WARNING_DISMISS_BUTTON);
+  builder->Add("fatalErrorMessage", IDS_LOGIN_FATAL_ERROR_MESSAGE);
+  builder->Add("fatalErrorDismissButton", IDS_OK);
 }
 
 void GaiaScreenHandler::Initialize() {}
@@ -195,7 +202,7 @@ void GaiaScreenHandler::HandleFrameLoadingCompleted(int status) {
   }
   frame_error_ = frame_error;
   if (frame_error == net::OK) {
-    LOG(INFO) << "Gaia is loaded";
+    VLOG(1) << "Gaia is loaded";
     frame_state_ = FRAME_STATE_LOADED;
   } else {
     LOG(WARNING) << "Gaia frame error: " << frame_error_;

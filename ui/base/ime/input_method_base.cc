@@ -80,6 +80,10 @@ bool InputMethodBase::CanComposeInline() const {
   return client ? client->CanComposeInline() : true;
 }
 
+void InputMethodBase::ShowImeIfNeeded() {
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnShowImeIfNeeded());
+}
+
 void InputMethodBase::AddObserver(InputMethodObserver* observer) {
   observer_list_.AddObserver(observer);
 }
@@ -107,11 +111,7 @@ bool InputMethodBase::DispatchKeyEventPostIME(
   if (!delegate_)
     return false;
 
-  if (!event.HasNativeEvent())
-    return delegate_->DispatchFabricatedKeyEventPostIME(
-        event.type(), event.key_code(), event.flags());
-
-  return delegate_->DispatchKeyEventPostIME(event.native_event());
+  return delegate_->DispatchKeyEventPostIME(event);
 }
 
 void InputMethodBase::NotifyTextInputStateChanged(

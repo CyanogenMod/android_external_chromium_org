@@ -436,7 +436,7 @@ void ShowMobileSetup(const std::string& service_path) {
             kNetworkActivateNotificationId,
             l10n_util::GetStringUTF16(IDS_NETWORK_ACTIVATION_ERROR_TITLE),
             l10n_util::GetStringFUTF16(IDS_NETWORK_ACTIVATION_NEEDS_CONNECTION,
-                                       UTF8ToUTF16(cellular->name())),
+                                       base::UTF8ToUTF16(cellular->name())),
             ui::ResourceBundle::GetSharedInstance().GetImageNamed(
                 IDR_AURA_UBER_TRAY_CELLULAR_NETWORK_FAILED),
             ash::system_notifier::kNotifierNetwork,
@@ -486,10 +486,10 @@ void CreateConfigurationAndConnect(base::DictionaryValue* properties,
       base::Bind(&OnConfigureFailed));
 }
 
-string16 ErrorString(const std::string& error,
+base::string16 ErrorString(const std::string& error,
                      const std::string& service_path) {
   if (error.empty())
-    return string16();
+    return base::string16();
   if (error == shill::kErrorOutOfRange)
     return l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_OUT_OF_RANGE);
   if (error == shill::kErrorPinMissing)
@@ -565,7 +565,7 @@ string16 ErrorString(const std::string& error,
     return l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_UNKNOWN);
   }
   return l10n_util::GetStringFUTF16(IDS_NETWORK_UNRECOGNIZED_ERROR,
-                                    UTF8ToUTF16(error));
+                                    base::UTF8ToUTF16(error));
 }
 
 void ShowNetworkSettings(const std::string& service_path) {

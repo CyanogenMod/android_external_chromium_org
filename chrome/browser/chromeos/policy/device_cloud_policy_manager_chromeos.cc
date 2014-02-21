@@ -251,6 +251,7 @@ scoped_ptr<CloudPolicyClient> DeviceCloudPolicyManagerChromeOS::CreateClient() {
 
   return make_scoped_ptr(
       new CloudPolicyClient(GetMachineID(), GetMachineModel(),
+                            kPolicyVerificationKeyHash,
                             USER_AFFILIATION_NONE,
                             device_status_provider_.get(),
                             device_management_service_,
@@ -280,7 +281,7 @@ void DeviceCloudPolicyManagerChromeOS::StartIfManaged() {
   if (device_management_service_ &&
       local_state_ &&
       store()->is_initialized() &&
-      store()->is_managed() &&
+      store()->has_policy() &&
       !service()) {
     core()->Connect(CreateClient());
     core()->StartRefreshScheduler();

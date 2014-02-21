@@ -5,16 +5,23 @@
 #ifndef CHROME_BROWSER_CHROMEOS_ACCESSIBILITY_ACCESSIBILITY_MANAGER_H_
 #define CHROME_BROWSER_CHROMEOS_ACCESSIBILITY_ACCESSIBILITY_MANAGER_H_
 
+#include <set>
+
 #include "ash/accessibility_delegate.h"
+#include "ash/session_state_observer.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/extensions/api/braille_display_private/braille_controller.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
+namespace content {
+class RenderViewHost;
+}
 class Profile;
 
 namespace chromeos {
@@ -38,8 +45,8 @@ struct AccessibilityStatusEventDetails {
 // watching profile notifications and pref-changes.
 // TODO(yoshiki): merge MagnificationManager with AccessibilityManager.
 class AccessibilityManager : public content::NotificationObserver,
-    public extensions::EventRouter::Observer,
-    extensions::api::braille_display_private::BrailleObserver {
+    extensions::api::braille_display_private::BrailleObserver,
+    public ash::SessionStateObserver {
  public:
   // Creates an instance of AccessibilityManager, this should be called once,
   // because only one instance should exist at the same time.
@@ -65,6 +72,12 @@ class AccessibilityManager : public content::NotificationObserver,
    private:
     const char* pref_path_;
   };
+
+  // Returns true when the accessibility menu should be shown.
+  bool ShouldShowAccessibilityMenu();
+
+  // Returns true when cursor compositing should be enabled.
+  bool ShouldEnableCursorCompositing();
 
   // Enables or disables the large cursor.
   void EnableLargeCursor(bool enabled);
@@ -109,10 +122,27 @@ class AccessibilityManager : public content::NotificationObserver,
   // Returns the autoclick delay in milliseconds.
   int GetAutoclickDelay() const;
 
+  // Enables or disables the virtual keyboard.
+  void EnableVirtualKeyboard(bool enabled);
+  // Returns true if the virtual keyboard is enabled, otherwise false.
+  bool IsVirtualKeyboardEnabled();
+
+  // SessionStateObserver overrides:
+  virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE;
+
   void SetProfileForTest(Profile* profile);
 
   static void SetBrailleControllerForTest(
       extensions::api::braille_display_private::BrailleController* controller);
+
+  // Enables/disables system sounds.
+  void EnableSystemSounds(bool system_sounds_enabled);
+
+  // Initiates play of shutdown sound and returns it's duration.
+  base::TimeDelta PlayShutdownSound();
+
+  // Injects ChromeVox scripts into given |render_view_host|.
+  void InjectChromeVox(content::RenderViewHost* render_view_host);
 
  protected:
   AccessibilityManager();
@@ -124,8 +154,8 @@ class AccessibilityManager : public content::NotificationObserver,
   void LoadChromeVoxToLockScreen();
   void UnloadChromeVox();
   void UnloadChromeVoxFromLockScreen();
-  void SetUpPreLoadChromeVox(Profile* profile);
-  void TearDownPostUnloadChromeVox(Profile* profile);
+  void PostLoadChromeVox(Profile* profile);
+  void PostUnloadChromeVox(Profile* profile);
 
   void UpdateLargeCursorFromPref();
   void UpdateStickyKeysFromPref();
@@ -133,6 +163,7 @@ class AccessibilityManager : public content::NotificationObserver,
   void UpdateHighContrastFromPref();
   void UpdateAutoclickFromPref();
   void UpdateAutoclickDelayFromPref();
+  void UpdateVirtualKeyboardFromPref();
   void LocalePrefChanged();
 
   void CheckBrailleState();
@@ -155,12 +186,6 @@ class AccessibilityManager : public content::NotificationObserver,
       const extensions::api::braille_display_private::DisplayState&
           display_state) OVERRIDE;
 
-  // EventRouter::Observer implementation.
-  virtual void OnListenerAdded(
-      const extensions::EventListenerInfo& details) OVERRIDE;
-  virtual void OnListenerRemoved(
-      const extensions::EventListenerInfo& details) OVERRIDE;
-
   // Profile which has the current a11y context.
   Profile* profile_;
 
@@ -172,12 +197,14 @@ class AccessibilityManager : public content::NotificationObserver,
   content::NotificationRegistrar notification_registrar_;
   scoped_ptr<PrefChangeRegistrar> pref_change_registrar_;
   scoped_ptr<PrefChangeRegistrar> local_state_pref_change_registrar_;
+  scoped_ptr<ash::ScopedSessionStateObserver> session_state_observer_;
 
   PrefHandler large_cursor_pref_handler_;
   PrefHandler spoken_feedback_pref_handler_;
   PrefHandler high_contrast_pref_handler_;
   PrefHandler autoclick_pref_handler_;
   PrefHandler autoclick_delay_pref_handler_;
+  PrefHandler virtual_keyboard_pref_handler_;
 
   bool large_cursor_enabled_;
   bool sticky_keys_enabled_;
@@ -185,12 +212,15 @@ class AccessibilityManager : public content::NotificationObserver,
   bool high_contrast_enabled_;
   bool autoclick_enabled_;
   int autoclick_delay_ms_;
+  bool virtual_keyboard_enabled_;
 
   ash::AccessibilityNotificationVisibility spoken_feedback_notification_;
 
   base::WeakPtrFactory<AccessibilityManager> weak_ptr_factory_;
 
   bool should_speak_chrome_vox_announcements_on_user_screen_;
+
+  bool system_sounds_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(AccessibilityManager);
 };

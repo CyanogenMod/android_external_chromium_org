@@ -109,7 +109,7 @@ OSExchangeData::Provider* OSExchangeDataProviderAuraX11::Clone() const {
 }
 
 void OSExchangeDataProviderAuraX11::SetString(const base::string16& text_data) {
-  std::string utf8 = UTF16ToUTF8(text_data);
+  std::string utf8 = base::UTF16ToUTF8(text_data);
   scoped_refptr<base::RefCountedMemory> mem(
       base::RefCountedString::TakeString(&utf8));
 
@@ -123,11 +123,11 @@ void OSExchangeDataProviderAuraX11::SetURL(const GURL& url,
                                            const base::string16& title) {
   // Mozilla's URL format: (UTF16: URL, newline, title)
   if (url.is_valid()) {
-    string16 spec = UTF8ToUTF16(url.spec());
+    base::string16 spec = base::UTF8ToUTF16(url.spec());
 
     std::vector<unsigned char> data;
     ui::AddString16ToVector(spec, &data);
-    ui::AddString16ToVector(ASCIIToUTF16("\n"), &data);
+    ui::AddString16ToVector(base::ASCIIToUTF16("\n"), &data);
     ui::AddString16ToVector(title, &data);
     scoped_refptr<base::RefCountedMemory> mem(
         base::RefCountedBytes::TakeVector(&data));
@@ -139,12 +139,25 @@ void OSExchangeDataProviderAuraX11::SetURL(const GURL& url,
 }
 
 void OSExchangeDataProviderAuraX11::SetFilename(const base::FilePath& path) {
-  NOTIMPLEMENTED();
+  std::vector<OSExchangeData::FileInfo> data;
+  data.push_back(OSExchangeData::FileInfo(path, base::FilePath()));
+  SetFilenames(data);
 }
 
 void OSExchangeDataProviderAuraX11::SetFilenames(
     const std::vector<OSExchangeData::FileInfo>& filenames) {
-  NOTIMPLEMENTED();
+  std::vector<std::string> paths;
+  for (std::vector<OSExchangeData::FileInfo>::const_iterator it =
+           filenames.begin(); it != filenames.end(); ++it) {
+    std::string url_spec = net::FilePathToFileURL(it->path).spec();
+    if (!url_spec.empty())
+      paths.push_back(url_spec);
+  }
+
+  std::string joined_data = JoinString(paths, '\n');
+  scoped_refptr<base::RefCountedMemory> mem(
+      base::RefCountedString::TakeString(&joined_data));
+  format_map_.Insert(atom_cache_.GetAtom(Clipboard::kMimeTypeURIList), mem);
 }
 
 void OSExchangeDataProviderAuraX11::SetPickledData(
@@ -162,6 +175,13 @@ void OSExchangeDataProviderAuraX11::SetPickledData(
 }
 
 bool OSExchangeDataProviderAuraX11::GetString(base::string16* result) const {
+  if (HasFile()) {
+    // Various Linux file managers both pass a list of file:// URIs and set the
+    // string representation to the URI. We explicitly don't want to return use
+    // this representation.
+    return false;
+  }
+
   std::vector< ::Atom> text_atoms = ui::GetTextAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(text_atoms, GetTargets(), &requested_types);
@@ -169,7 +189,7 @@ bool OSExchangeDataProviderAuraX11::GetString(base::string16* result) const {
   ui::SelectionData data(format_map_.GetFirstOf(requested_types));
   if (data.IsValid()) {
     std::string text = data.GetText();
-    *result = UTF8ToUTF16(text);
+    *result = base::UTF8ToUTF16(text);
     return true;
   }
 
@@ -177,6 +197,7 @@ bool OSExchangeDataProviderAuraX11::GetString(base::string16* result) const {
 }
 
 bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
+    OSExchangeData::FilenameToURLPolicy policy,
     GURL* url,
     base::string16* title) const {
   std::vector< ::Atom> url_atoms = ui::GetURLAtomsFrom(&atom_cache_);
@@ -195,33 +216,29 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
       data.AssignTo(&unparsed);
 
       std::vector<base::string16> tokens;
-      size_t num_tokens = Tokenize(unparsed, ASCIIToUTF16("\n"), &tokens);
+      size_t num_tokens = Tokenize(unparsed, base::ASCIIToUTF16("\n"), &tokens);
       if (num_tokens > 0) {
         if (num_tokens > 1)
           *title = tokens[1];
         else
-          *title = string16();
+          *title = base::string16();
 
         *url = GURL(tokens[0]);
         return true;
       }
     } else if (data.GetType() == atom_cache_.GetAtom(
                    Clipboard::kMimeTypeURIList)) {
-      // uri-lists are newline separated file lists in URL encoding.
-      std::string unparsed;
-      data.AssignTo(&unparsed);
-
-      std::vector<std::string> tokens;
-      size_t num_tokens = Tokenize(unparsed, "\n", &tokens);
-      if (!num_tokens) {
-        NOTREACHED() << "Empty URI list";
-        return false;
+      std::vector<std::string> tokens = ui::ParseURIList(data);
+      for (std::vector<std::string>::const_iterator it = tokens.begin();
+           it != tokens.end(); ++it) {
+        GURL test_url(*it);
+        if (!test_url.SchemeIsFile() ||
+            policy == OSExchangeData::CONVERT_FILENAMES) {
+          *url = test_url;
+          *title = base::string16();
+          return true;
+        }
       }
-
-      *url = GURL(tokens[0]);
-      *title = base::string16();
-
-      return true;
     }
   }
 
@@ -229,14 +246,37 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
 }
 
 bool OSExchangeDataProviderAuraX11::GetFilename(base::FilePath* path) const {
-  // On X11, files are passed by URL and aren't separate.
+  std::vector<OSExchangeData::FileInfo> filenames;
+  if (GetFilenames(&filenames)) {
+    *path = filenames.front().path;
+    return true;
+  }
+
   return false;
 }
 
 bool OSExchangeDataProviderAuraX11::GetFilenames(
     std::vector<OSExchangeData::FileInfo>* filenames) const {
-  // On X11, files are passed by URL and aren't separate.
-  return false;
+  std::vector< ::Atom> url_atoms = ui::GetURIListAtomsFrom(&atom_cache_);
+  std::vector< ::Atom> requested_types;
+  ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
+
+  filenames->clear();
+  ui::SelectionData data(format_map_.GetFirstOf(requested_types));
+  if (data.IsValid()) {
+    std::vector<std::string> tokens = ui::ParseURIList(data);
+    for (std::vector<std::string>::const_iterator it = tokens.begin();
+         it != tokens.end(); ++it) {
+      GURL url(*it);
+      base::FilePath file_path;
+      if (url.SchemeIsFile() && net::FileURLToFilePath(url, &file_path)) {
+        filenames->push_back(OSExchangeData::FileInfo(file_path,
+                                                      base::FilePath()));
+      }
+    }
+  }
+
+  return !filenames->empty();
 }
 
 bool OSExchangeDataProviderAuraX11::GetPickledData(
@@ -261,18 +301,63 @@ bool OSExchangeDataProviderAuraX11::HasString() const {
   std::vector< ::Atom> text_atoms = ui::GetTextAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(text_atoms, GetTargets(), &requested_types);
-  return !requested_types.empty();
+  return !requested_types.empty() && !HasFile();
 }
 
 bool OSExchangeDataProviderAuraX11::HasURL() const {
   std::vector< ::Atom> url_atoms = ui::GetURLAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
-  return !requested_types.empty();
+
+  if (requested_types.empty())
+    return false;
+
+  // The Linux desktop doesn't differentiate between files and URLs like
+  // Windows does and stuffs all the data into one mime type.
+  ui::SelectionData data(format_map_.GetFirstOf(requested_types));
+  if (data.IsValid()) {
+    if (data.GetType() == atom_cache_.GetAtom(kMimeTypeMozillaURL)) {
+      // File managers shouldn't be using this type, so this is a URL.
+      return true;
+    } else if (data.GetType() == atom_cache_.GetAtom(
+        ui::Clipboard::kMimeTypeURIList)) {
+      std::vector<std::string> tokens = ui::ParseURIList(data);
+      for (std::vector<std::string>::const_iterator it = tokens.begin();
+           it != tokens.end(); ++it) {
+        if (!GURL(*it).SchemeIsFile())
+          return true;
+      }
+
+      return false;
+    }
+  }
+
+  return false;
 }
 
 bool OSExchangeDataProviderAuraX11::HasFile() const {
-  // On X11, files are passed by URL and aren't separate.
+  std::vector< ::Atom> url_atoms = ui::GetURIListAtomsFrom(&atom_cache_);
+  std::vector< ::Atom> requested_types;
+  ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
+
+  if (requested_types.empty())
+    return false;
+
+  // To actually answer whether we have a file, we need to look through the
+  // contents of the kMimeTypeURIList type, and see if any of them are file://
+  // URIs.
+  ui::SelectionData data(format_map_.GetFirstOf(requested_types));
+  if (data.IsValid()) {
+    std::vector<std::string> tokens = ui::ParseURIList(data);
+    for (std::vector<std::string>::const_iterator it = tokens.begin();
+         it != tokens.end(); ++it) {
+      GURL url(*it);
+      base::FilePath file_path;
+      if (url.SchemeIsFile() && net::FileURLToFilePath(url, &file_path))
+        return true;
+    }
+  }
+
   return false;
 }
 
@@ -341,7 +426,8 @@ const gfx::Vector2d& OSExchangeDataProviderAuraX11::GetDragImageOffset() const {
   return drag_image_offset_;
 }
 
-bool OSExchangeDataProviderAuraX11::Dispatch(const base::NativeEvent& event) {
+uint32_t OSExchangeDataProviderAuraX11::Dispatch(
+    const base::NativeEvent& event) {
   XEvent* xev = event;
   switch (xev->type) {
     case SelectionRequest:
@@ -351,11 +437,11 @@ bool OSExchangeDataProviderAuraX11::Dispatch(const base::NativeEvent& event) {
       NOTIMPLEMENTED();
   }
 
-  return true;
+  return POST_DISPATCH_NONE;
 }
 
 bool OSExchangeDataProviderAuraX11::GetPlainTextURL(GURL* url) const {
-  string16 text;
+  base::string16 text;
   if (GetString(&text)) {
     GURL test_url(text);
     if (test_url.is_valid()) {

@@ -13,7 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/app_list/app_list_item_model.h"
+#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/test/app_list_test_model.h"
@@ -155,11 +155,11 @@ class AppsGridViewTest : public views::ViewsTestBase {
         to - view->bounds().origin());
 
     ui::MouseEvent pressed_event(ui::ET_MOUSE_PRESSED,
-                                 translated_from, from, 0);
+                                 translated_from, from, 0, 0);
     apps_grid_view_->InitiateDrag(view, pointer, pressed_event);
 
     ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED,
-                              translated_to, to, 0);
+                              translated_to, to, 0, 0);
     apps_grid_view_->UpdateDragFromItem(pointer, drag_event);
   }
 
@@ -218,7 +218,7 @@ TEST_F(AppsGridViewTest, RemoveSelectedLastApp) {
 
   AppListItemView* last_view = GetItemViewAt(kLastItemIndex);
   apps_grid_view_->SetSelectedView(last_view);
-  model_->item_list()->DeleteItem(model_->GetItemName(kLastItemIndex));
+  model_->DeleteItem(model_->GetItemName(kLastItemIndex));
 
   EXPECT_FALSE(apps_grid_view_->IsSelectedView(last_view));
 
@@ -253,7 +253,7 @@ TEST_F(AppsGridViewTest, MouseDrag) {
 
   // Deleting an item keeps remaining intact.
   SimulateDrag(AppsGridView::MOUSE, from, to);
-  model_->item_list()->DeleteItem(model_->GetItemName(0));
+  model_->DeleteItem(model_->GetItemName(0));
   apps_grid_view_->EndDrag(false);
   EXPECT_EQ(std::string("Item 1,Item 2,Item 3"),
             model_->GetModelContent());
@@ -435,14 +435,14 @@ TEST_F(AppsGridViewTest, ItemLabelShortNameOverride) {
   std::string expected_tooltip("tooltip");
   model_->CreateAndAddItem(expected_text, expected_tooltip);
 
-  string16 actual_tooltip;
+  base::string16 actual_tooltip;
   AppListItemView* item_view = GetItemViewAt(0);
   ASSERT_TRUE(item_view);
   const views::Label* title_label = item_view->title();
   EXPECT_TRUE(title_label->GetTooltipText(
       title_label->bounds().CenterPoint(), &actual_tooltip));
-  EXPECT_EQ(expected_tooltip, UTF16ToUTF8(actual_tooltip));
-  EXPECT_EQ(expected_text, UTF16ToUTF8(title_label->text()));
+  EXPECT_EQ(expected_tooltip, base::UTF16ToUTF8(actual_tooltip));
+  EXPECT_EQ(expected_text, base::UTF16ToUTF8(title_label->text()));
 }
 
 TEST_F(AppsGridViewTest, ItemLabelNoShortName) {
@@ -451,13 +451,13 @@ TEST_F(AppsGridViewTest, ItemLabelNoShortName) {
   std::string title("a");
   model_->CreateAndAddItem(title, title);
 
-  string16 actual_tooltip;
+  base::string16 actual_tooltip;
   AppListItemView* item_view = GetItemViewAt(0);
   ASSERT_TRUE(item_view);
   const views::Label* title_label = item_view->title();
   EXPECT_FALSE(title_label->GetTooltipText(
       title_label->bounds().CenterPoint(), &actual_tooltip));
-  EXPECT_EQ(title, UTF16ToUTF8(title_label->text()));
+  EXPECT_EQ(title, base::UTF16ToUTF8(title_label->text()));
 }
 
 }  // namespace test

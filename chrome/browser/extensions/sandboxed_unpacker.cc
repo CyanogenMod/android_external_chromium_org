@@ -15,8 +15,8 @@
 #include "base/memory/scoped_handle.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
-#include "base/safe_numerics.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -41,6 +41,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/png_codec.h"
 
+using base::ASCIIToUTF16;
 using content::BrowserThread;
 using content::UtilityProcessHost;
 
@@ -336,7 +337,9 @@ void SandboxedUnpacker::OnProcessCrashed(int exit_code) {
      UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL,
      l10n_util::GetStringFUTF16(
          IDS_EXTENSION_PACKAGE_INSTALL_ERROR,
-         ASCIIToUTF16("UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL")));
+         ASCIIToUTF16("UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL")) +
+       ASCIIToUTF16(". ") +
+       l10n_util::GetStringUTF16(IDS_EXTENSION_INSTALL_PROCESS_CRASHED));
 }
 
 void SandboxedUnpacker::StartProcessOnIOThread(
@@ -352,11 +355,12 @@ void SandboxedUnpacker::StartProcessOnIOThread(
 }
 
 void SandboxedUnpacker::OnUnpackExtensionSucceeded(
-    const DictionaryValue& manifest) {
+    const base::DictionaryValue& manifest) {
   CHECK(unpacker_io_task_runner_->RunsTasksOnCurrentThread());
   got_response_ = true;
 
-  scoped_ptr<DictionaryValue> final_manifest(RewriteManifestFile(manifest));
+  scoped_ptr<base::DictionaryValue> final_manifest(
+      RewriteManifestFile(manifest));
   if (!final_manifest)
     return;
 
@@ -377,7 +381,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
         COULD_NOT_LOCALIZE_EXTENSION,
         l10n_util::GetStringFUTF16(
             IDS_EXTENSION_PACKAGE_ERROR_MESSAGE,
-            UTF8ToUTF16(utf8_error)));
+            base::UTF8ToUTF16(utf8_error)));
     return;
   }
 
@@ -587,7 +591,7 @@ void SandboxedUnpacker::ReportFailure(FailureReason reason,
 }
 
 void SandboxedUnpacker::ReportSuccess(
-    const DictionaryValue& original_manifest,
+    const base::DictionaryValue& original_manifest,
     const SkBitmap& install_icon) {
   UMA_HISTOGRAM_COUNTS("Extensions.SandboxUnpackSuccess", 1);
 
@@ -601,12 +605,12 @@ void SandboxedUnpacker::ReportSuccess(
   extension_ = NULL;
 }
 
-DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
-    const DictionaryValue& manifest) {
+base::DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
+    const base::DictionaryValue& manifest) {
   // Add the public key extracted earlier to the parsed manifest and overwrite
   // the original manifest. We do this to ensure the manifest doesn't contain an
   // exploitable bug that could be used to compromise the browser.
-  scoped_ptr<DictionaryValue> final_manifest(manifest.DeepCopy());
+  scoped_ptr<base::DictionaryValue> final_manifest(manifest.DeepCopy());
   final_manifest->SetString(manifest_keys::kPublicKey, public_key_);
 
   std::string manifest_json;
@@ -624,7 +628,7 @@ DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
 
   base::FilePath manifest_path =
       extension_root_.Append(kManifestFilename);
-  int size = base::checked_numeric_cast<int>(manifest_json.size());
+  int size = base::checked_cast<int>(manifest_json.size());
   if (file_util::WriteFile(manifest_path, manifest_json.data(), size) != size) {
     // Error saving manifest.json.
     ReportFailure(
@@ -737,7 +741,7 @@ bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
     // Note: we're overwriting existing files that the utility process wrote,
     // so we can be sure the directory exists.
     const char* image_data_ptr = reinterpret_cast<const char*>(&image_data[0]);
-    int size = base::checked_numeric_cast<int>(image_data.size());
+    int size = base::checked_cast<int>(image_data.size());
     if (file_util::WriteFile(path, image_data_ptr, size) != size) {
       // Error saving theme image.
       ReportFailure(
@@ -753,7 +757,7 @@ bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
 }
 
 bool SandboxedUnpacker::RewriteCatalogFiles() {
-  DictionaryValue catalogs;
+  base::DictionaryValue catalogs;
   if (!ReadMessageCatalogsFromFile(temp_dir_.path(), &catalogs)) {
     // Could not read catalog data from disk.
     ReportFailure(
@@ -765,8 +769,9 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
   }
 
   // Write our parsed catalogs back to disk.
-  for (DictionaryValue::Iterator it(catalogs); !it.IsAtEnd(); it.Advance()) {
-    const DictionaryValue* catalog = NULL;
+  for (base::DictionaryValue::Iterator it(catalogs);
+       !it.IsAtEnd(); it.Advance()) {
+    const base::DictionaryValue* catalog = NULL;
     if (!it.value().GetAsDictionary(&catalog)) {
       // Invalid catalog data.
       ReportFailure(
@@ -805,7 +810,7 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
 
     // Note: we're overwriting existing files that the utility process read,
     // so we can be sure the directory exists.
-    int size = base::checked_numeric_cast<int>(catalog_json.size());
+    int size = base::checked_cast<int>(catalog_json.size());
     if (file_util::WriteFile(path, catalog_json.c_str(), size) != size) {
       // Error saving catalog.
       ReportFailure(

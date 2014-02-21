@@ -6,10 +6,10 @@
 
 #include "base/command_line.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "content/public/browser/browser_context.h"
@@ -185,9 +185,6 @@ bool AutofillDriverImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_FORWARD(AutofillHostMsg_QueryFormFieldAutofill,
                         autofill_manager_.get(),
                         AutofillManager::OnQueryFormFieldAutofill)
-    IPC_MESSAGE_FORWARD(AutofillHostMsg_ShowAutofillDialog,
-                        autofill_manager_.get(),
-                        AutofillManager::OnShowAutofillDialog)
     IPC_MESSAGE_FORWARD(AutofillHostMsg_FillAutofillFormData,
                         autofill_manager_.get(),
                         AutofillManager::OnFillAutofillFormData)

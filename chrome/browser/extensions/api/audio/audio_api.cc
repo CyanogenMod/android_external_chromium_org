@@ -6,9 +6,9 @@
 
 #include "base/lazy_instance.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/common/extensions/api/audio.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -19,7 +19,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<AudioAPI>* AudioAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 AudioAPI::AudioAPI(Profile* profile)

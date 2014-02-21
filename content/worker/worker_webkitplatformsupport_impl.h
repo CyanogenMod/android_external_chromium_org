@@ -98,7 +98,7 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
-      blink::WebStorageQuotaCallbacks*) OVERRIDE;
+      blink::WebStorageQuotaCallbacks) OVERRIDE;
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
@@ -115,6 +115,8 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
   scoped_ptr<WebDatabaseObserverImpl> web_database_observer_impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(WorkerWebKitPlatformSupportImpl);
 };
 
 }  // namespace content

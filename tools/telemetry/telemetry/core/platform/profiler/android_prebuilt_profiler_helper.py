@@ -11,6 +11,7 @@ more detailed information.
 
 import os
 
+from telemetry import decorators
 from telemetry.core import util
 from telemetry.page import cloud_storage
 
@@ -28,12 +29,12 @@ def GetHostPath(profiler_binary):
 
 
 def GetIfChanged(profiler_binary):
-  cloud_storage.GetIfChanged(cloud_storage.PUBLIC_BUCKET,
-                             GetHostPath(profiler_binary))
+  cloud_storage.GetIfChanged(GetHostPath(profiler_binary),
+                             cloud_storage.PUBLIC_BUCKET)
 
 
+@decorators.Cache
 def InstallOnDevice(adb, profiler_binary):
   GetIfChanged(profiler_binary)
-  adb.Adb().PushIfNeeded(GetHostPath(profiler_binary),
-                         GetDevicePath(profiler_binary))
-  adb.Adb().RunShellCommand('chmod 777 ' + GetDevicePath(profiler_binary))
+  adb.PushIfNeeded(GetHostPath(profiler_binary), GetDevicePath(profiler_binary))
+  adb.RunShellCommand('chmod 777 ' + GetDevicePath(profiler_binary))

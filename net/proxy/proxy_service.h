@@ -148,13 +148,15 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
                                 const BoundNetLog& net_log);
 
   // Explicitly trigger proxy fallback for the given |results| by updating our
-  // list of bad proxies to include the first entry of |results|. Will retry
-  // after |retry_delay| if positive, and will use the default proxy retry
-  // duration otherwise. Returns true if there will be at least one proxy
-  // remaining in the list after fallback and false otherwise.
-  bool MarkProxyAsBad(const ProxyInfo& results,
-                      base::TimeDelta retry_delay,
-                      const BoundNetLog& net_log);
+  // list of bad proxies to include the first entry of |results|, and,
+  // optionally, another bad proxy. Will retry after |retry_delay| if positive,
+  // and will use the default proxy retry duration otherwise. Returns true if
+  // there will be at least one proxy remaining in the list after fallback and
+  // false otherwise.
+  bool MarkProxiesAsBad(const ProxyInfo& results,
+                        base::TimeDelta retry_delay,
+                        const ProxyServer& another_bad_proxy,
+                        const BoundNetLog& net_log);
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
@@ -261,6 +263,12 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // of the default internal PacPollPolicy used by ProxyService.
   static scoped_ptr<PacPollPolicy> CreateDefaultPacPollPolicy();
 
+  void set_quick_check_enabled(bool value) {
+    quick_check_enabled_ = value;
+  }
+
+  bool quick_check_enabled() const { return quick_check_enabled_; }
+
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
   // Values of the UMA DataReductionProxy.BypassInfo{Primary|Fallback}
   // histograms. This enum must remain synchronized with the enum of the same
@@ -277,6 +285,9 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
     // Bypass the proxy because of any other error.
     ERROR_BYPASS,
+
+    // Bypass the proxy because responses appear not to be coming via it.
+    MISSING_VIA_HEADER,
 
     // This must always be last.
     BYPASS_EVENT_TYPE_MAX
@@ -432,6 +443,9 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
   // The amount of time to stall requests following IP address changes.
   base::TimeDelta stall_proxy_auto_config_delay_;
+
+  // Whether child ProxyScriptDeciders should use QuickCheck
+  bool quick_check_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyService);
 };

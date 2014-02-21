@@ -5,23 +5,29 @@
 #include "ui/events/ozone/event_factory_ozone.h"
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop/message_pump_ozone.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "ui/events/event.h"
 #include "ui/events/event_switches.h"
 
 namespace ui {
+
+namespace {
+
+void DispatchEventTask(scoped_ptr<ui::Event> key) {
+  TRACE_EVENT1("ozone", "DispatchEventTask", "type", key->type());
+  base::MessagePumpOzone::Current()->Dispatch(key.get());
+}
+
+}  // namespace
 
 // static
 EventFactoryOzone* EventFactoryOzone::impl_ = NULL;
 
 EventFactoryOzone::EventFactoryOzone() {}
 
-EventFactoryOzone::~EventFactoryOzone() {
-  // Always delete watchers before converters to prevent a possible race.
-  STLDeleteValues<std::map<int, FDWatcher> >(&watchers_);
-  STLDeleteValues<std::map<int, Converter> >(&converters_);
-}
+EventFactoryOzone::~EventFactoryOzone() {}
 
 EventFactoryOzone* EventFactoryOzone::GetInstance() {
   CHECK(impl_) << "No EventFactoryOzone implementation set.";
@@ -32,30 +38,13 @@ void EventFactoryOzone::SetInstance(EventFactoryOzone* impl) { impl_ = impl; }
 
 void EventFactoryOzone::StartProcessingEvents() {}
 
-void EventFactoryOzone::AddEventConverter(
-    int fd,
-    scoped_ptr<EventConverterOzone> converter) {
-  CHECK(watchers_.count(fd) == 0 && converters_.count(fd) == 0);
+void EventFactoryOzone::SetFileTaskRunner(
+    scoped_refptr<base::TaskRunner> task_runner) {}
 
-  FDWatcher watcher = new base::MessagePumpLibevent::FileDescriptorWatcher();
-
-  base::MessagePumpOzone::Current()->WatchFileDescriptor(
-      fd,
-      true,
-      base::MessagePumpLibevent::WATCH_READ,
-      watcher,
-      converter.get());
-
-  converters_[fd] = converter.release();
-  watchers_[fd] = watcher;
-}
-
-void EventFactoryOzone::RemoveEventConverter(int fd) {
-  // Always delete watchers before converters to prevent a possible race.
-  delete watchers_[fd];
-  delete converters_[fd];
-  watchers_.erase(fd);
-  converters_.erase(fd);
+// static
+void EventFactoryOzone::DispatchEvent(scoped_ptr<ui::Event> event) {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&DispatchEventTask, base::Passed(&event)));
 }
 
 }  // namespace ui

@@ -4,8 +4,8 @@
 
 #include "chrome/browser/extensions/extension_tab_util.h"
 
-#include "apps/shell_window.h"
-#include "apps/shell_window_registry.h"
+#include "apps/app_window.h"
+#include "apps/app_window_registry.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/window_controller.h"
@@ -32,7 +32,7 @@
 #include "extensions/common/permissions/permissions_data.h"
 #include "url/gurl.h"
 
-using apps::ShellWindow;
+using apps::AppWindow;
 using content::NavigationEntry;
 using content::WebContents;
 
@@ -42,18 +42,17 @@ namespace {
 
 namespace keys = tabs_constants;
 
-WindowController* GetShellWindowController(const WebContents* contents) {
+WindowController* GetAppWindowController(const WebContents* contents) {
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
-  apps::ShellWindowRegistry* registry =
-      apps::ShellWindowRegistry::Get(profile);
+  apps::AppWindowRegistry* registry = apps::AppWindowRegistry::Get(profile);
   if (!registry)
     return NULL;
-  ShellWindow* shell_window =
-      registry->GetShellWindowForRenderViewHost(contents->GetRenderViewHost());
-  if (!shell_window)
+  AppWindow* app_window =
+      registry->GetAppWindowForRenderViewHost(contents->GetRenderViewHost());
+  if (!app_window)
     return NULL;
-  return WindowControllerList::GetInstance()->
-      FindWindowById(shell_window->session_id().id());
+  return WindowControllerList::GetInstance()->FindWindowById(
+      app_window->session_id().id());
 }
 
 }  // namespace
@@ -83,19 +82,20 @@ int ExtensionTabUtil::GetWindowIdOfTab(const WebContents* web_contents) {
   return SessionID::IdForWindowContainingTab(web_contents);
 }
 
-DictionaryValue* ExtensionTabUtil::CreateTabValue(
+base::DictionaryValue* ExtensionTabUtil::CreateTabValue(
     const WebContents* contents,
     TabStripModel* tab_strip,
     int tab_index,
     const Extension* extension) {
-  // If we have a matching ShellWindow with a controller, get the tab value
+  // If we have a matching AppWindow with a controller, get the tab value
   // from its controller instead.
-  WindowController* controller = GetShellWindowController(contents);
+  WindowController* controller = GetAppWindowController(contents);
   if (controller &&
       (!extension || controller->IsVisibleToExtension(extension))) {
     return controller->CreateTabValue(extension, tab_index);
   }
-  DictionaryValue *result = CreateTabValue(contents, tab_strip, tab_index);
+  base::DictionaryValue* result =
+      CreateTabValue(contents, tab_strip, tab_index);
   ScrubTabValueForExtension(contents, extension, result);
   return result;
 }
@@ -115,20 +115,20 @@ base::ListValue* ExtensionTabUtil::CreateTabList(
   return tab_list;
 }
 
-DictionaryValue* ExtensionTabUtil::CreateTabValue(
+base::DictionaryValue* ExtensionTabUtil::CreateTabValue(
     const WebContents* contents,
     TabStripModel* tab_strip,
     int tab_index) {
-  // If we have a matching ShellWindow with a controller, get the tab value
+  // If we have a matching AppWindow with a controller, get the tab value
   // from its controller instead.
-  WindowController* controller = GetShellWindowController(contents);
+  WindowController* controller = GetAppWindowController(contents);
   if (controller)
     return controller->CreateTabValue(NULL, tab_index);
 
   if (!tab_strip)
     ExtensionTabUtil::GetTabStripModel(contents, &tab_strip, &tab_index);
 
-  DictionaryValue* result = new DictionaryValue();
+  base::DictionaryValue* result = new base::DictionaryValue();
   bool is_loading = contents->IsLoading();
   result->SetInteger(keys::kIdKey, GetTabId(contents));
   result->SetInteger(keys::kIndexKey, tab_index);
@@ -168,9 +168,10 @@ DictionaryValue* ExtensionTabUtil::CreateTabValue(
   return result;
 }
 
-void ExtensionTabUtil::ScrubTabValueForExtension(const WebContents* contents,
-                                                 const Extension* extension,
-                                                 DictionaryValue* tab_info) {
+void ExtensionTabUtil::ScrubTabValueForExtension(
+    const WebContents* contents,
+    const Extension* extension,
+    base::DictionaryValue* tab_info) {
   bool has_permission =
       extension &&
       PermissionsData::HasAPIPermissionForTab(
@@ -278,7 +279,7 @@ bool ExtensionTabUtil::IsCrashURL(const GURL& url) {
   // Check a fixed-up URL, to normalize the scheme and parse hosts correctly.
   GURL fixed_url =
       URLFixerUpper::FixupURL(url.possibly_invalid_spec(), std::string());
-  return (fixed_url.SchemeIs(chrome::kChromeUIScheme) &&
+  return (fixed_url.SchemeIs(content::kChromeUIScheme) &&
           (fixed_url.host() == content::kChromeUIBrowserCrashHost ||
            fixed_url.host() == chrome::kChromeUICrashHost));
 }

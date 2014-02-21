@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
 
+#include "base/command_line.h"
 #include "base/run_loop.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/sessions/session_service.h"
@@ -14,15 +15,20 @@
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/glue/synced_session.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
+#include "chrome/browser/sync/sessions2/sessions_sync_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/recent_tabs_builder_test_helper.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/menu_model_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/sessions/serialized_navigation_entry_test_helper.h"
+#include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
+#include "sync/api/fake_sync_change_processor.h"
+#include "sync/api/sync_error_factory_mock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -35,8 +41,8 @@ class TestRecentTabsSubMenuModel : public RecentTabsSubMenuModel {
  public:
   TestRecentTabsSubMenuModel(ui::AcceleratorProvider* provider,
                              Browser* browser,
-                             browser_sync::SessionModelAssociator* associator)
-      : RecentTabsSubMenuModel(provider, browser, associator),
+                             browser_sync::OpenTabsUIDelegate* delegate)
+      : RecentTabsSubMenuModel(provider, browser, delegate),
         execute_count_(0),
         enable_count_(0) {
   }
@@ -93,14 +99,42 @@ class TestRecentTabsMenuModelDelegate : public ui::MenuModelDelegate {
   DISALLOW_COPY_AND_ASSIGN(TestRecentTabsMenuModelDelegate);
 };
 
+class DummyRouter : public browser_sync::LocalSessionEventRouter {
+ public:
+  virtual ~DummyRouter() {}
+  virtual void StartRoutingTo(
+      browser_sync::LocalSessionEventHandler* handler) OVERRIDE {}
+  virtual void Stop() OVERRIDE {}
+};
+
 }  // namespace
 
-class RecentTabsSubMenuModelTest : public BrowserWithTestWindowTest {
+class RecentTabsSubMenuModelTest
+    : public BrowserWithTestWindowTest,
+      public browser_sync::SessionsSyncManager::SyncInternalApiDelegate {
  public:
    RecentTabsSubMenuModelTest()
-       : sync_service_(&testing_profile_),
-         associator_(&sync_service_, true) {
-    associator_.SetCurrentMachineTagForTesting("RecentTabsSubMenuModelTest");
+       : sync_service_(&testing_profile_) {
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDisableSyncSessionsV2)) {
+      manager_.reset(new browser_sync::SessionsSyncManager(
+          &testing_profile_,
+          this,
+          scoped_ptr<browser_sync::LocalSessionEventRouter>(
+              new DummyRouter())));
+      manager_->MergeDataAndStartSyncing(
+          syncer::SESSIONS,
+          syncer::SyncDataList(),
+          scoped_ptr<syncer::SyncChangeProcessor>(
+            new syncer::FakeSyncChangeProcessor),
+          scoped_ptr<syncer::SyncErrorFactory>(
+              new syncer::SyncErrorFactoryMock));
+    } else {
+      associator_.reset(new browser_sync::SessionModelAssociator(
+          &sync_service_, true));
+      associator_->SetCurrentMachineTagForTesting(
+          GetLocalSyncCacheGUID());
+    }
   }
 
   void WaitForLoadFromLastSession() {
@@ -116,12 +150,46 @@ class RecentTabsSubMenuModelTest : public BrowserWithTestWindowTest {
         Profile::FromBrowserContext(browser_context), NULL);;
   }
 
+
+  browser_sync::OpenTabsUIDelegate* GetOpenTabsDelegate() {
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDisableSyncSessionsV2)) {
+      return manager_.get();
+    } else {
+      return associator_.get();
+    }
+  }
+
+  void RegisterRecentTabs(RecentTabsBuilderTestHelper* helper) {
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDisableSyncSessionsV2)) {
+      helper->ExportToSessionsSyncManager(manager_.get());
+    } else {
+      helper->ExportToSessionModelAssociator(associator_.get());
+    }
+  }
+
+  virtual scoped_ptr<browser_sync::DeviceInfo> GetLocalDeviceInfo()
+      const OVERRIDE {
+    return scoped_ptr<browser_sync::DeviceInfo>(
+        new browser_sync::DeviceInfo(GetLocalSyncCacheGUID(),
+                       "Test Machine",
+                       "Chromium 10k",
+                       "Chrome 10k",
+                       sync_pb::SyncEnums_DeviceType_TYPE_LINUX));
+  }
+
+  virtual std::string GetLocalSyncCacheGUID() const OVERRIDE {
+    return "RecentTabsSubMenuModelTest";
+  }
+
  private:
   TestingProfile testing_profile_;
   testing::NiceMock<ProfileSyncServiceMock> sync_service_;
 
- protected:
-  browser_sync::SessionModelAssociator associator_;
+  // TODO(tim): Remove associator_ when sessions V2 is the default, bug 98892.
+  scoped_ptr<browser_sync::SessionModelAssociator> associator_;
+  scoped_ptr<browser_sync::SessionsSyncManager> manager_;
 };
 
 // Test disabled "Recently closed" header with no foreign tabs.
@@ -141,9 +209,9 @@ TEST_F(RecentTabsSubMenuModelTest, NoTabs) {
   EXPECT_FALSE(model.IsEnabledAt(2));
   EXPECT_EQ(0, model.enable_count());
 
-  EXPECT_EQ(NULL, model.GetLabelFontAt(0));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(1));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(2));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(0));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(1));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(2));
 
   std::string url;
   base::string16 title;
@@ -182,11 +250,11 @@ TEST_F(RecentTabsSubMenuModelTest, RecentlyClosedTabsFromCurrentSession) {
   EXPECT_EQ(2, model.enable_count());
   EXPECT_EQ(2, model.execute_count());
 
-  EXPECT_TRUE(model.GetLabelFontAt(0) != NULL);
-  EXPECT_EQ(NULL, model.GetLabelFontAt(1));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(2));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(3));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(4));
+  EXPECT_TRUE(model.GetLabelFontListAt(0) != NULL);
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(1));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(2));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(3));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(4));
 
   std::string url;
   base::string16 title;
@@ -292,12 +360,12 @@ TEST_F(RecentTabsSubMenuModelTest,
   EXPECT_EQ(3, model.enable_count());
   EXPECT_EQ(3, model.execute_count());
 
-  EXPECT_TRUE(model.GetLabelFontAt(0) != NULL);
-  EXPECT_EQ(NULL, model.GetLabelFontAt(1));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(2));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(3));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(4));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(5));
+  EXPECT_TRUE(model.GetLabelFontListAt(0) != NULL);
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(1));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(2));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(3));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(4));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(5));
 
   std::string url;
   base::string16 title;
@@ -337,7 +405,7 @@ TEST_F(RecentTabsSubMenuModelTest, OtherDevices) {
   timestamp -= time_delta;
   recent_tabs_builder.AddTabWithInfo(1, 1, timestamp, base::string16());
 
-  recent_tabs_builder.RegisterRecentTabs(&associator_);
+  RegisterRecentTabs(&recent_tabs_builder);
 
   // Verify that data is populated correctly in RecentTabsSubMenuModel.
   // Expected menu:
@@ -355,7 +423,7 @@ TEST_F(RecentTabsSubMenuModelTest, OtherDevices) {
   // 11          <separator>
   // 12          More...
 
-  TestRecentTabsSubMenuModel model(NULL, browser(), &associator_);
+  TestRecentTabsSubMenuModel model(NULL, browser(), GetOpenTabsDelegate());
   int num_items = model.GetItemCount();
   EXPECT_EQ(13, num_items);
   model.ActivatedAt(0);
@@ -376,19 +444,19 @@ TEST_F(RecentTabsSubMenuModelTest, OtherDevices) {
   EXPECT_EQ(7, model.enable_count());
   EXPECT_EQ(7, model.execute_count());
 
-  EXPECT_EQ(NULL, model.GetLabelFontAt(0));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(1));
-  EXPECT_TRUE(model.GetLabelFontAt(2) != NULL);
-  EXPECT_EQ(NULL, model.GetLabelFontAt(3));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(4));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(5));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(6));
-  EXPECT_TRUE(model.GetLabelFontAt(7) != NULL);
-  EXPECT_EQ(NULL, model.GetLabelFontAt(8));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(9));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(10));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(11));
-  EXPECT_EQ(NULL, model.GetLabelFontAt(12));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(0));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(1));
+  EXPECT_TRUE(model.GetLabelFontListAt(2) != NULL);
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(3));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(4));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(5));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(6));
+  EXPECT_TRUE(model.GetLabelFontListAt(7) != NULL);
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(8));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(9));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(10));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(11));
+  EXPECT_EQ(NULL, model.GetLabelFontListAt(12));
 
   std::string url;
   base::string16 title;
@@ -415,7 +483,7 @@ TEST_F(RecentTabsSubMenuModelTest, MaxSessionsAndRecency) {
     recent_tabs_builder.AddWindow(s);
     recent_tabs_builder.AddTab(s, 0);
   }
-  recent_tabs_builder.RegisterRecentTabs(&associator_);
+  RegisterRecentTabs(&recent_tabs_builder);
 
   // Verify that data is populated correctly in RecentTabsSubMenuModel.
   // Expected menu:
@@ -435,11 +503,11 @@ TEST_F(RecentTabsSubMenuModelTest, MaxSessionsAndRecency) {
   // 10          <separator>
   // 11          More...
 
-  TestRecentTabsSubMenuModel model(NULL, browser(), &associator_);
+  TestRecentTabsSubMenuModel model(NULL, browser(), GetOpenTabsDelegate());
   int num_items = model.GetItemCount();
   EXPECT_EQ(12, num_items);
 
-  std::vector<string16> tab_titles =
+  std::vector<base::string16> tab_titles =
       recent_tabs_builder.GetTabTitlesSortedByRecency();
   EXPECT_EQ(tab_titles[0], model.GetLabelAt(3));
   EXPECT_EQ(tab_titles[1], model.GetLabelAt(6));
@@ -455,7 +523,7 @@ TEST_F(RecentTabsSubMenuModelTest, MaxTabsPerSessionAndRecency) {
     for (int t = 0; t < 5; ++t)
       recent_tabs_builder.AddTab(0, w);
   }
-  recent_tabs_builder.RegisterRecentTabs(&associator_);
+  RegisterRecentTabs(&recent_tabs_builder);
 
   // Verify that data is populated correctly in RecentTabsSubMenuModel.
   // Expected menu:
@@ -470,11 +538,11 @@ TEST_F(RecentTabsSubMenuModelTest, MaxTabsPerSessionAndRecency) {
   // 7           <separator>
   // 8           More...
 
-  TestRecentTabsSubMenuModel model(NULL, browser(), &associator_);
+  TestRecentTabsSubMenuModel model(NULL, browser(), GetOpenTabsDelegate());
   int num_items = model.GetItemCount();
   EXPECT_EQ(9, num_items);
 
-  std::vector<string16> tab_titles =
+  std::vector<base::string16> tab_titles =
       recent_tabs_builder.GetTabTitlesSortedByRecency();
   for (int i = 0; i < 4; ++i)
     EXPECT_EQ(tab_titles[i], model.GetLabelAt(i + 3));
@@ -486,7 +554,7 @@ TEST_F(RecentTabsSubMenuModelTest, MaxWidth) {
   recent_tabs_builder.AddSession();
   recent_tabs_builder.AddWindow(0);
   recent_tabs_builder.AddTab(0, 0);
-  recent_tabs_builder.RegisterRecentTabs(&associator_);
+  RegisterRecentTabs(&recent_tabs_builder);
 
   // Menu index  Menu items
   // ----------------------------------------------------------
@@ -497,7 +565,7 @@ TEST_F(RecentTabsSubMenuModelTest, MaxWidth) {
   // 4           <separator>
   // 5           More...
 
-  TestRecentTabsSubMenuModel model(NULL, browser(), &associator_);
+  TestRecentTabsSubMenuModel model(NULL, browser(), GetOpenTabsDelegate());
   EXPECT_EQ(6, model.GetItemCount());
   EXPECT_EQ(-1, model.GetMaxWidthForItemAtIndex(0));
   EXPECT_NE(-1, model.GetMaxWidthForItemAtIndex(1));

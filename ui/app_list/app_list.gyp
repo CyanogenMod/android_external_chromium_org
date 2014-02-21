@@ -18,6 +18,7 @@
         '../base/strings/ui_strings.gyp:ui_strings',
         '../compositor/compositor.gyp:compositor',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
         '../ui.gyp:ui',
       ],
@@ -30,12 +31,12 @@
         'app_list_export.h',
         'app_list_folder_item.cc',
         'app_list_folder_item.h',
+        'app_list_item.cc',
+        'app_list_item.h',
+        'app_list_item_observer.h',
         'app_list_item_list.cc',
         'app_list_item_list.h',
         'app_list_item_list_observer.h',
-        'app_list_item_model.cc',
-        'app_list_item_model.h',
-        'app_list_item_model_observer.h',
         'app_list_menu.cc',
         'app_list_menu.h',
         'app_list_model.cc',
@@ -106,6 +107,8 @@
         'views/cached_label.h',
         'views/contents_view.cc',
         'views/contents_view.h',
+        'views/folder_background_view.cc',
+        'views/folder_background_view.h',
         'views/folder_header_view.cc',
         'views/folder_header_view.h',
         'views/folder_header_view_delegate.h',
@@ -130,6 +133,8 @@
         'views/signin_view.h',
         'views/speech_view.cc',
         'views/speech_view.h',
+        'views/top_icon_animation_view.cc',
+        'views/top_icon_animation_view.h',
       ],
       'conditions': [
         ['use_aura==1', {
@@ -139,11 +144,11 @@
         }],
         ['toolkit_views==1', {
           'dependencies': [
-            '../../content/content.gyp:content',
             '../../content/content.gyp:content_browser',
             '../events/events.gyp:events',
             '../views/controls/webview/webview.gyp:webview',
             '../views/views.gyp:views',
+            '../wm/wm.gyp:wm_public',
           ],
         }, {  # toolkit_views==0
           'sources/': [
@@ -152,10 +157,7 @@
         }],
         ['OS=="mac"', {
           'dependencies': [
-            '../ui.gyp:ui_cocoa_third_party_toolkits',
-          ],
-          'include_dirs': [
-            '../../third_party/GTM',
+            '../../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac',
           ],
           'link_settings': {
             'libraries': [
@@ -177,6 +179,7 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         'app_list',
       ],
       'sources': [
@@ -192,14 +195,12 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
-        # TODO: Remove this dependency. See comment for views_unittests.
-        '../../chrome/chrome_resources.gyp:packed_resources',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
         '../compositor/compositor.gyp:compositor',
         '../resources/ui_resources.gyp:ui_resources',
+        '../resources/ui_resources.gyp:ui_test_pak',
         '../ui.gyp:ui',
-        '../ui_unittests.gyp:run_ui_unittests',
         'app_list',
         'app_list_test_support',
       ],
@@ -215,8 +216,11 @@
         'cocoa/signin_view_controller_unittest.mm',
         'cocoa/test/apps_grid_controller_test_helper.h',
         'cocoa/test/apps_grid_controller_test_helper.mm',
+        'test/run_all_unittests.cc',
         'views/app_list_main_view_unittest.cc',
         'views/apps_grid_view_unittest.cc',
+        'views/search_box_view_unittest.cc',
+        'views/search_result_list_view_unittest.cc',
         'views/test/apps_grid_view_test_api.cc',
         'views/test/apps_grid_view_test_api.h',
       ],
@@ -235,7 +239,8 @@
         }],
         ['OS=="mac"', {
           'dependencies': [
-            '../ui_unittests.gyp:ui_test_support',
+            '../events/events.gyp:events_test_support',
+            '../gfx/gfx.gyp:gfx_test_support',
           ],
           'conditions': [
             ['component=="static_library"', {
@@ -261,7 +266,6 @@
             # symbol HeapProfilerStart in Linux component builds.
             # They probably can be removed after http://crbug.com/263316
             '../../webkit/child/webkit_child.gyp:webkit_child',
-            '../../webkit/glue/webkit_glue.gyp:glue',
           ],
         }],
         ['OS=="win" and win_use_allocator_shim==1', {

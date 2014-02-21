@@ -163,8 +163,11 @@ Status ExecuteInitSession(
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
   Status status = InitSessionHelper(bound_params, session, params, value);
-  if (status.IsError())
+  if (status.IsError()) {
     session->quit = true;
+    if (session->chrome != NULL)
+      session->chrome->Quit();
+  }
   return status;
 }
 
@@ -197,8 +200,30 @@ Status ExecuteGetCurrentWindowHandle(
   if (status.IsError())
     return status;
 
-  value->reset(new StringValue(WebViewIdToWindowHandle(web_view->GetId())));
+  value->reset(
+      new base::StringValue(WebViewIdToWindowHandle(web_view->GetId())));
   return Status(kOk);
+}
+
+Status ExecuteLaunchApp(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  std::string id;
+  if (!params.GetString("id", &id))
+    return Status(kUnknownError, "'id' must be a string");
+
+  if (!session->chrome->GetAsDesktop())
+    return Status(kUnknownError,
+                  "apps can only be launched on desktop platforms");
+
+  AutomationExtension* extension = NULL;
+  Status status =
+      session->chrome->GetAsDesktop()->GetAutomationExtension(&extension);
+  if (status.IsError())
+    return status;
+
+  return extension->LaunchApp(id);
 }
 
 Status ExecuteClose(
@@ -604,5 +629,24 @@ Status ExecuteUploadFile(
     return Status(kUnknownError, "unable to unzip 'file'", status);
 
   value->reset(new base::StringValue(upload.value()));
+  return Status(kOk);
+}
+
+Status ExecuteIsAutoReporting(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  value->reset(new base::FundamentalValue(session->auto_reporting_enabled));
+  return Status(kOk);
+}
+
+Status ExecuteSetAutoReporting(
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  bool enabled;
+  if (!params.GetBoolean("enabled", &enabled))
+    return Status(kUnknownError, "missing parameter 'enabled'");
+  session->auto_reporting_enabled = enabled;
   return Status(kOk);
 }

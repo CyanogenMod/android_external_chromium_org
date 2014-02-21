@@ -45,6 +45,15 @@ function updateConnectionStatus(connStatus) {
 }
 
 /**
+ * Updates the Path Configurations section.
+ * @param {Array} paths List of dictionaries describing paths.
+ */
+function updatePathConfigurations(paths) {
+  var ul = $('path-configurations');
+  updateKeyValueList(ul, paths);
+}
+
+/**
  * Updates the GCache Contents section.
  * @param {Array} gcacheContents List of dictionaries describing metadata
  * of files and directories under the GCache directory.
@@ -253,11 +262,11 @@ function updateKeyValueList(ul, list) {
 }
 
 /**
- * Updates the text next to the 'reload' button to update the status.
- * @param {boolean} success whether or not reloading has succeeded.
+ * Updates the text next to the 'reset' button to update the status.
+ * @param {boolean} success whether or not resetting has succeeded.
  */
-function updateReloadStatus(success) {
-  $('reload-status-text').textContent = (success ? 'success' : 'failed');
+function updateResetStatus(success) {
+  $('reset-status-text').textContent = (success ? 'success' : 'failed');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -283,9 +292,9 @@ document.addEventListener('DOMContentLoaded', function() {
     chrome.send('clearRefreshToken');
   });
 
-  $('button-reload-drive-filesystem').addEventListener('click', function() {
-    $('reload-status-text').textContent = 'reloading...';
-    chrome.send('reloadDriveFileSystem');
+  $('button-reset-drive-filesystem').addEventListener('click', function() {
+    $('reset-status-text').textContent = 'resetting...';
+    chrome.send('resetDriveFileSystem');
   });
 
   $('button-show-file-entries').addEventListener('click', function() {

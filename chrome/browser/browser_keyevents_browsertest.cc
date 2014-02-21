@@ -210,7 +210,7 @@ class BrowserKeyEventsTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetWebContentsAt(tab_index),
         kGetFocusedElementJS,
         &actual));
-    ASSERT_EQ(WideToUTF8(focused), actual);
+    ASSERT_EQ(base::WideToUTF8(focused), actual);
   }
 
   void SetFocusedElement(int tab_index, const wchar_t* focused) {
@@ -231,7 +231,7 @@ class BrowserKeyEventsTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetWebContentsAt(tab_index),
         base::StringPrintf(kGetTextBoxValueJS, id),
         &actual));
-    ASSERT_EQ(WideToUTF8(value), actual);
+    ASSERT_EQ(base::WideToUTF8(value), actual);
   }
 
   void SetTextBoxValue(int tab_index, const wchar_t* id,
@@ -242,7 +242,7 @@ class BrowserKeyEventsTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetWebContentsAt(tab_index),
         base::StringPrintf(kSetTextBoxValueJS, id, value),
         &actual));
-    ASSERT_EQ(WideToUTF8(value), actual);
+    ASSERT_EQ(base::WideToUTF8(value), actual);
   }
 
   void StartTest(int tab_index, int result_length) {
@@ -395,9 +395,9 @@ IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, DISABLED_NormalKeyEvents) {
 
 #if defined(OS_WIN) || defined(OS_LINUX)
 
-#if defined(OS_LINUX) || (defined(OS_WIN) && defined(USE_AURA))
+#if defined(OS_LINUX) || defined(OS_WIN)
 // Linux: http://crbug.com/129235
-// Win Aura: crbug.com/269564
+// Win: crbug.com/269564
 #define MAYBE_CtrlKeyEvents DISABLED_CtrlKeyEvents
 #else
 #define MAYBE_CtrlKeyEvents CtrlKeyEvents
@@ -666,7 +666,7 @@ IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, DISABLED_AccessKeys) {
 }
 
 // Flaky, http://crbug.com/69475.
-#if defined(OS_LINUX) || (defined(OS_WIN) && defined(USE_AURA))
+#if defined(OS_LINUX) || defined(OS_WIN)
 #define MAYBE_ReservedAccelerators DISABLED_ReservedAccelerators
 #else
 #define MAYBE_ReservedAccelerators ReservedAccelerators

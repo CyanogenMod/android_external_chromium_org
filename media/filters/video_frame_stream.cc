@@ -9,25 +9,24 @@
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "media/base/bind_to_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder_config.h"
 #include "media/filters/decrypting_demuxer_stream.h"
-#include "media/filters/video_decoder_selector.h"
 
 namespace media {
 
 VideoFrameStream::VideoFrameStream(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     ScopedVector<VideoDecoder> decoders,
     const SetDecryptorReadyCB& set_decryptor_ready_cb)
-    : message_loop_(message_loop),
+    : task_runner_(task_runner),
       weak_factory_(this),
       state_(STATE_UNINITIALIZED),
       stream_(NULL),
-      decoder_selector_(new VideoDecoderSelector(message_loop,
+      decoder_selector_(new VideoDecoderSelector(task_runner,
                                                  decoders.Pass(),
                                                  set_decryptor_ready_cb)) {
 }
@@ -40,7 +39,7 @@ void VideoFrameStream::Initialize(DemuxerStream* stream,
                                   const StatisticsCB& statistics_cb,
                                   const InitCB& init_cb) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_UNINITIALIZED) << state_;
   DCHECK(init_cb_.is_null());
   DCHECK(!init_cb.is_null());
@@ -51,15 +50,16 @@ void VideoFrameStream::Initialize(DemuxerStream* stream,
 
   state_ = STATE_INITIALIZING;
   // TODO(xhwang): VideoDecoderSelector only needs a config to select a decoder.
-  decoder_selector_->SelectVideoDecoder(
+  decoder_selector_->SelectDecoder(
       stream,
+      StatisticsCB(),
       base::Bind(&VideoFrameStream::OnDecoderSelected,
                  weak_factory_.GetWeakPtr()));
 }
 
 void VideoFrameStream::Read(const ReadCB& read_cb) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER ||
          state_ == STATE_ERROR) << state_;
   // No two reads in the flight at any time.
@@ -69,7 +69,7 @@ void VideoFrameStream::Read(const ReadCB& read_cb) {
   DCHECK(stop_cb_.is_null());
 
   if (state_ == STATE_ERROR) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
+    task_runner_->PostTask(FROM_HERE, base::Bind(
         read_cb, DECODE_ERROR, scoped_refptr<VideoFrame>()));
     return;
   }
@@ -86,7 +86,7 @@ void VideoFrameStream::Read(const ReadCB& read_cb) {
 
 void VideoFrameStream::Reset(const base::Closure& closure) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ != STATE_UNINITIALIZED && state_ != STATE_STOPPED) << state_;
   DCHECK(reset_cb_.is_null());
   DCHECK(stop_cb_.is_null());
@@ -121,7 +121,7 @@ void VideoFrameStream::Reset(const base::Closure& closure) {
 
 void VideoFrameStream::Stop(const base::Closure& closure) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_NE(state_, STATE_STOPPED) << state_;
   DCHECK(stop_cb_.is_null());
 
@@ -139,13 +139,13 @@ void VideoFrameStream::Stop(const base::Closure& closure) {
 
   // Post callbacks to prevent reentrance into this object.
   if (!read_cb_.is_null())
-    message_loop_->PostTask(FROM_HERE, base::Bind(
+    task_runner_->PostTask(FROM_HERE, base::Bind(
         base::ResetAndReturn(&read_cb_), ABORTED, scoped_refptr<VideoFrame>()));
   if (!reset_cb_.is_null())
-    message_loop_->PostTask(FROM_HERE, base::ResetAndReturn(&reset_cb_));
+    task_runner_->PostTask(FROM_HERE, base::ResetAndReturn(&reset_cb_));
 
   if (decrypting_demuxer_stream_) {
-    decrypting_demuxer_stream_->Reset(base::Bind(
+    decrypting_demuxer_stream_->Stop(base::Bind(
         &VideoFrameStream::StopDecoder, weak_factory_.GetWeakPtr()));
     return;
   }
@@ -160,11 +160,11 @@ void VideoFrameStream::Stop(const base::Closure& closure) {
   stream_ = NULL;
   decoder_.reset();
   decrypting_demuxer_stream_.reset();
-  message_loop_->PostTask(FROM_HERE, base::ResetAndReturn(&stop_cb_));
+  task_runner_->PostTask(FROM_HERE, base::ResetAndReturn(&stop_cb_));
 }
 
 bool VideoFrameStream::CanReadWithoutStalling() const {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   return decoder_->CanReadWithoutStalling();
 }
 
@@ -172,7 +172,7 @@ void VideoFrameStream::OnDecoderSelected(
     scoped_ptr<VideoDecoder> selected_decoder,
     scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_INITIALIZING) << state_;
   DCHECK(!init_cb_.is_null());
   DCHECK(read_cb_.is_null());
@@ -245,18 +245,17 @@ void VideoFrameStream::OnFrameReady(int buffer_size,
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER) << state_;
   DCHECK(!read_cb_.is_null());
   DCHECK(stop_cb_.is_null());
+  DCHECK_EQ(status == VideoDecoder::kOk, frame != NULL);
 
   TRACE_EVENT_ASYNC_END0("media", "VideoFrameStream::Decode", this);
 
   if (status == VideoDecoder::kDecodeError) {
-    DCHECK(!frame.get());
     state_ = STATE_ERROR;
     SatisfyRead(DECODE_ERROR, NULL);
     return;
   }
 
   if (status == VideoDecoder::kDecryptError) {
-    DCHECK(!frame.get());
     state_ = STATE_ERROR;
     SatisfyRead(DECRYPT_ERROR, NULL);
     return;
@@ -310,7 +309,7 @@ void VideoFrameStream::OnBufferReady(
     DemuxerStream::Status status,
     const scoped_refptr<DecoderBuffer>& buffer) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_PENDING_DEMUXER_READ) << state_;
   DCHECK_EQ(buffer.get() != NULL, status == DemuxerStream::kOk) << status;
   DCHECK(!read_cb_.is_null());
@@ -353,7 +352,7 @@ void VideoFrameStream::OnBufferReady(
 
 void VideoFrameStream::ReinitializeDecoder() {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_FLUSHING_DECODER) << state_;
 
   DCHECK(stream_->video_decoder_config().IsValidConfig());
@@ -365,7 +364,7 @@ void VideoFrameStream::ReinitializeDecoder() {
 
 void VideoFrameStream::OnDecoderReinitialized(PipelineStatus status) {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_REINITIALIZING_DECODER) << state_;
   DCHECK(stop_cb_.is_null());
 
@@ -396,7 +395,7 @@ void VideoFrameStream::OnDecoderReinitialized(PipelineStatus status) {
 
 void VideoFrameStream::ResetDecoder() {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER ||
          state_ == STATE_ERROR) << state_;
   DCHECK(!reset_cb_.is_null());
@@ -407,7 +406,7 @@ void VideoFrameStream::ResetDecoder() {
 
 void VideoFrameStream::OnDecoderReset() {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER ||
          state_ == STATE_ERROR) << state_;
   // If Reset() was called during pending read, read callback should be fired
@@ -427,7 +426,7 @@ void VideoFrameStream::OnDecoderReset() {
 
 void VideoFrameStream::StopDecoder() {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ != STATE_UNINITIALIZED && state_ != STATE_STOPPED) << state_;
   DCHECK(!stop_cb_.is_null());
 
@@ -437,7 +436,7 @@ void VideoFrameStream::StopDecoder() {
 
 void VideoFrameStream::OnDecoderStopped() {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ != STATE_UNINITIALIZED && state_ != STATE_STOPPED) << state_;
   // If Stop() was called during pending read/reset, read/reset callback should
   // be fired before the stop callback is fired.

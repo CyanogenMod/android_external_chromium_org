@@ -1378,7 +1378,7 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
 IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
                        NonExtensionDomainPanelsCloseOnUninstall) {
   // Create a test extension.
-  DictionaryValue empty_value;
+  base::DictionaryValue empty_value;
   scoped_refptr<extensions::Extension> extension =
       CreateExtension(FILE_PATH_LITERAL("TestExtension"),
                       extensions::Manifest::INTERNAL, empty_value);
@@ -1440,8 +1440,9 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, OnBeforeUnloadOnClose) {
   PanelManager* panel_manager = PanelManager::GetInstance();
   EXPECT_EQ(0, panel_manager->num_panels()); // No panels initially.
 
-  const base::string16 title_first_close = UTF8ToUTF16("TitleFirstClose");
-  const base::string16 title_second_close = UTF8ToUTF16("TitleSecondClose");
+  const base::string16 title_first_close = base::UTF8ToUTF16("TitleFirstClose");
+  const base::string16 title_second_close =
+      base::UTF8ToUTF16("TitleSecondClose");
 
   // Create a test panel with web contents loaded.
   CreatePanelParams params("PanelTest1", gfx::Rect(0, 0, 300, 300),

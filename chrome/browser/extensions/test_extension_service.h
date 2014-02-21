@@ -23,14 +23,14 @@ class TestExtensionService : public ExtensionServiceInterface {
   virtual ~TestExtensionService();
 
   // ExtensionServiceInterface implementation.
-  virtual const ExtensionSet* extensions() const OVERRIDE;
-  virtual const ExtensionSet* disabled_extensions() const OVERRIDE;
+  virtual const extensions::ExtensionSet* extensions() const OVERRIDE;
   virtual extensions::PendingExtensionManager*
       pending_extension_manager() OVERRIDE;
 
   virtual bool UpdateExtension(
       const std::string& id,
       const base::FilePath& path,
+      bool file_ownership_passed,
       const GURL& download_url,
       extensions::CrxInstaller** out_crx_installer) OVERRIDE;
   virtual const extensions::Extension* GetExtensionById(

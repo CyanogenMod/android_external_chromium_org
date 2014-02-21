@@ -5,6 +5,7 @@
 #ifndef NET_QUIC_QUIC_CRYPTO_STREAM_H_
 #define NET_QUIC_QUIC_CRYPTO_STREAM_H_
 
+#include "base/basictypes.h"
 #include "net/quic/crypto/crypto_framer.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/quic_config.h"
@@ -38,7 +39,8 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
       const CryptoHandshakeMessage& message) OVERRIDE;
 
   // ReliableQuicStream implementation
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
+  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
+  virtual QuicPriority EffectivePriority() const OVERRIDE;
 
   // Sends |message| to the peer.
   // TODO(wtc): return a success/failure status.

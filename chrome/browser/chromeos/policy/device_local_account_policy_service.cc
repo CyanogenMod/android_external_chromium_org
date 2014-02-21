@@ -65,6 +65,7 @@ scoped_ptr<CloudPolicyClient> CreateClient(
 
   scoped_ptr<CloudPolicyClient> client(
       new CloudPolicyClient(std::string(), std::string(),
+                            kPolicyVerificationKeyHash,
                             USER_AFFILIATION_MANAGED,
                             NULL, device_management_service, request_context));
   client->SetupRegistration(policy_data->request_token(),
@@ -166,7 +167,7 @@ void DeviceLocalAccountPolicyBroker::ConnectIfPossible(
 
 void DeviceLocalAccountPolicyBroker::UpdateRefreshDelay() {
   if (core_.refresh_scheduler()) {
-    const Value* policy_value =
+    const base::Value* policy_value =
         store_->policy_map().GetValue(key::kPolicyRefreshRate);
     int delay = 0;
     if (policy_value && policy_value->GetAsInteger(&delay))

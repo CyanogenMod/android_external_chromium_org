@@ -11,8 +11,8 @@
 #include <queue>
 #include <set>
 #include <limits>
-#include <stdio.h>
-#include <string.h>
+#include <sstream>
+#include <string>
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
 #include "gpu/command_buffer/client/buffer_tracker.h"
@@ -110,7 +110,6 @@ GLES2Implementation::GLES2Implementation(
       error_bits_(0),
       debug_(false),
       use_count_(0),
-      current_query_(NULL),
       error_message_callback_(NULL),
       gpu_control_(gpu_control),
       surface_visible_(true),
@@ -121,9 +120,9 @@ GLES2Implementation::GLES2Implementation(
   DCHECK(transfer_buffer);
   DCHECK(gpu_control);
 
-  char temp[128];
-  sprintf(temp, "%p", static_cast<void*>(this));
-  this_in_hex_ = std::string(temp);
+  std::stringstream ss;
+  ss << std::hex << this;
+  this_in_hex_ = ss.str();
 
   GPU_CLIENT_LOG_CODE_BLOCK({
     debug_ = CommandLine::ForCurrentProcess()->HasSwitch(
@@ -869,6 +868,7 @@ void GLES2Implementation::Finish() {
 
 void GLES2Implementation::ShallowFinishCHROMIUM() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
+  TRACE_EVENT0("gpu", "GLES2::ShallowFinishCHROMIUM");
   // Flush our command buffer (tell the service to execute up to the flush cmd
   // and don't return until it completes).
   helper_->CommandBufferHelper::Finish();
@@ -1228,13 +1228,13 @@ void GLES2Implementation::PixelStorei(GLenum pname, GLint param) {
     case GL_UNPACK_ALIGNMENT:
         unpack_alignment_ = param;
         break;
-    case GL_UNPACK_ROW_LENGTH:
+    case GL_UNPACK_ROW_LENGTH_EXT:
         unpack_row_length_ = param;
         return;
-    case GL_UNPACK_SKIP_ROWS:
+    case GL_UNPACK_SKIP_ROWS_EXT:
         unpack_skip_rows_ = param;
         return;
-    case GL_UNPACK_SKIP_PIXELS:
+    case GL_UNPACK_SKIP_PIXELS_EXT:
         unpack_skip_pixels_ = param;
         return;
     case GL_UNPACK_FLIP_Y_CHROMIUM:
@@ -2782,7 +2782,7 @@ void GLES2Implementation::Swap() {
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
-void GLES2Implementation::PartialSwapBuffers(gfx::Rect sub_buffer) {
+void GLES2Implementation::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
   PostSubBufferCHROMIUM(sub_buffer.x(),
                         sub_buffer.y(),
                         sub_buffer.width(),
@@ -3208,29 +3208,8 @@ GLuint GLES2Implementation::CreateStreamTextureCHROMIUM(GLuint texture) {
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] CreateStreamTextureCHROMIUM("
       << texture << ")");
   TRACE_EVENT0("gpu", "GLES2::CreateStreamTextureCHROMIUM");
-  typedef cmds::CreateStreamTextureCHROMIUM::Result Result;
-  Result* result = GetResultAs<Result*>();
-  if (!result) {
-    return GL_ZERO;
-  }
-  *result = GL_ZERO;
-
-  helper_->CreateStreamTextureCHROMIUM(texture,
-                                       GetResultShmId(),
-                                       GetResultShmOffset());
-  WaitForCmd();
-  GLuint result_value = *result;
-  CheckGLError();
-  return result_value;
-}
-
-void GLES2Implementation::DestroyStreamTextureCHROMIUM(GLuint texture) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] DestroyStreamTextureCHROMIUM("
-      << texture << ")");
-  TRACE_EVENT0("gpu", "GLES2::DestroyStreamTextureCHROMIUM");
-  helper_->DestroyStreamTextureCHROMIUM(texture);
-  CheckGLError();
+  helper_->CommandBufferHelper::Flush();
+  return gpu_control_->CreateStreamTexture(texture);
 }
 
 void GLES2Implementation::PostSubBufferCHROMIUM(
@@ -3290,7 +3269,8 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
                  << ", " << id << ")");
 
   // if any outstanding queries INV_OP
-  if (current_query_) {
+  QueryMap::iterator it = current_queries_.find(target);
+  if (it != current_queries_.end()) {
     SetGLError(
         GL_INVALID_OPERATION, "glBeginQueryEXT", "query already in progress");
     return;
@@ -3318,7 +3298,7 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
     return;
   }
 
-  current_query_ = query;
+  current_queries_[target] = query;
 
   query->Begin(this);
   CheckGLError();
@@ -3333,19 +3313,15 @@ void GLES2Implementation::EndQueryEXT(GLenum target) {
     return;
   }
 
-  if (!current_query_) {
+  QueryMap::iterator it = current_queries_.find(target);
+  if (it == current_queries_.end()) {
     SetGLError(GL_INVALID_OPERATION, "glEndQueryEXT", "no active query");
     return;
   }
 
-  if (current_query_->target() != target) {
-    SetGLError(GL_INVALID_OPERATION,
-               "glEndQueryEXT", "target does not match active query");
-    return;
-  }
-
-  current_query_->End(this);
-  current_query_ = NULL;
+  QueryTracker::Query* query = it->second;
+  query->End(this);
+  current_queries_.erase(it);
   CheckGLError();
 }
 
@@ -3361,8 +3337,13 @@ void GLES2Implementation::GetQueryivEXT(
     SetGLErrorInvalidEnum("glGetQueryivEXT", pname, "pname");
     return;
   }
-  *params = (current_query_ && current_query_->target() == target) ?
-      current_query_->id() : 0;
+  QueryMap::iterator it = current_queries_.find(target);
+  if (it != current_queries_.end()) {
+    QueryTracker::Query* query = it->second;
+    *params = query->id();
+  } else {
+    *params = 0;
+  }
   GPU_CLIENT_LOG("  " << *params);
   CheckGLError();
 }
@@ -3380,7 +3361,8 @@ void GLES2Implementation::GetQueryObjectuivEXT(
     return;
   }
 
-  if (query == current_query_) {
+  QueryMap::iterator it = current_queries_.find(query->target());
+  if (it != current_queries_.end()) {
     SetGLError(
         GL_INVALID_OPERATION,
         "glQueryObjectuivEXT", "query active. Did you to call glEndQueryEXT?");
@@ -3490,12 +3472,34 @@ void GLES2Implementation::GenMailboxCHROMIUM(
       << static_cast<const void*>(mailbox) << ")");
   TRACE_EVENT0("gpu", "GLES2::GenMailboxCHROMIUM");
 
-  std::vector<gpu::Mailbox> names;
-  if (!gpu_control_->GenerateMailboxNames(1, &names)) {
-    SetGLError(GL_OUT_OF_MEMORY, "glGenMailboxCHROMIUM", "Generate failed.");
-    return;
-  }
-  memcpy(mailbox, names[0].name, GL_MAILBOX_SIZE_CHROMIUM);
+  gpu::Mailbox result = gpu::Mailbox::Generate();
+  memcpy(mailbox, result.name, sizeof(result.name));
+}
+
+void GLES2Implementation::ProduceTextureCHROMIUM(GLenum target,
+                                                 const GLbyte* data) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glProduceTextureCHROMIUM("
+                     << static_cast<const void*>(data) << ")");
+  const Mailbox& mailbox = *reinterpret_cast<const Mailbox*>(data);
+  DCHECK(mailbox.Verify()) << "ProduceTextureCHROMIUM was passed a "
+                              "mailbox that was not generated by "
+                              "GenMailboxCHROMIUM.";
+  helper_->ProduceTextureCHROMIUMImmediate(target, data);
+  CheckGLError();
+}
+
+void GLES2Implementation::ConsumeTextureCHROMIUM(GLenum target,
+                                                 const GLbyte* data) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glConsumeTextureCHROMIUM("
+                     << static_cast<const void*>(data) << ")");
+  const Mailbox& mailbox = *reinterpret_cast<const Mailbox*>(data);
+  DCHECK(mailbox.Verify()) << "ConsumeTextureCHROMIUM was passed a "
+                              "mailbox that was not generated by "
+                              "GenMailboxCHROMIUM.";
+  helper_->ConsumeTextureCHROMIUMImmediate(target, data);
+  CheckGLError();
 }
 
 void GLES2Implementation::PushGroupMarkerEXT(

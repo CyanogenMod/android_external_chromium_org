@@ -13,11 +13,11 @@
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client_factory.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "components/onc/onc_constants.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 using extensions::NetworkingPrivateServiceClient;
 using extensions::NetworkingPrivateServiceClientFactory;
@@ -449,4 +449,34 @@ void NetworkingPrivateVerifyAndEncryptDataFunction::ErrorCallback(
     const std::string& error_name, const std::string& error) {
   error_ = error_name;
   SendResponse(false);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateSetWifiTDLSEnabledStateFunction
+
+NetworkingPrivateSetWifiTDLSEnabledStateFunction::
+  ~NetworkingPrivateSetWifiTDLSEnabledStateFunction() {
+}
+
+bool NetworkingPrivateSetWifiTDLSEnabledStateFunction::RunImpl() {
+  scoped_ptr<api::SetWifiTDLSEnabledState::Params> params =
+      api::SetWifiTDLSEnabledState::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+  SetError("not-implemented");
+  return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateGetWifiTDLSStatusFunction
+
+NetworkingPrivateGetWifiTDLSStatusFunction::
+  ~NetworkingPrivateGetWifiTDLSStatusFunction() {
+}
+
+bool NetworkingPrivateGetWifiTDLSStatusFunction::RunImpl() {
+  scoped_ptr<api::GetWifiTDLSStatus::Params> params =
+      api::GetWifiTDLSStatus::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+  SetError("not-implemented");
+  return false;
 }

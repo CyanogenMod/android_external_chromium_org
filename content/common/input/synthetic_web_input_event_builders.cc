@@ -61,6 +61,10 @@ WebMouseWheelEvent SyntheticWebMouseWheelEventBuilder::Build(float dx,
   result.type = WebInputEvent::MouseWheel;
   result.deltaX = dx;
   result.deltaY = dy;
+  if (dx)
+    result.wheelTicksX = dx > 0.0f ? 1.0f : -1.0f;
+  if (dy)
+    result.wheelTicksY = dy > 0.0f ? 1.0f : -1.0f;
   result.modifiers = modifiers;
   result.hasPreciseScrollingDeltas = precise;
   return result;
@@ -82,6 +86,16 @@ WebGestureEvent SyntheticWebGestureEventBuilder::Build(
   WebGestureEvent result;
   result.type = type;
   result.sourceDevice = source_device;
+  return result;
+}
+
+WebGestureEvent SyntheticWebGestureEventBuilder::BuildScrollBegin(
+    float dx_hint,
+    float dy_hint) {
+  WebGestureEvent result = Build(WebInputEvent::GestureScrollBegin,
+                                 WebGestureEvent::Touchscreen);
+  result.data.scrollBegin.deltaXHint = dx_hint;
+  result.data.scrollBegin.deltaYHint = dy_hint;
   return result;
 }
 

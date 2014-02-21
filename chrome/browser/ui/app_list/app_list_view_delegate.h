@@ -18,13 +18,13 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/app_list/app_list_view_delegate.h"
-#include "ui/app_list/speech_ui_model.h"
 
 class AppListControllerDelegate;
 class Profile;
 
 namespace app_list {
 class SearchController;
+class SpeechUIModel;
 }
 
 namespace base {
@@ -71,10 +71,14 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void StartSearch() OVERRIDE;
   virtual void StopSearch() OVERRIDE;
   virtual void OpenSearchResult(app_list::SearchResult* result,
+                                bool auto_launch,
                                 int event_flags) OVERRIDE;
   virtual void InvokeSearchResultAction(app_list::SearchResult* result,
                                         int action_index,
                                         int event_flags) OVERRIDE;
+  virtual base::TimeDelta GetAutoLaunchTimeout() OVERRIDE;
+  virtual void AutoLaunchCanceled() OVERRIDE;
+  virtual void ViewInitialized() OVERRIDE;
   virtual void Dismiss() OVERRIDE;
   virtual void ViewClosing() OVERRIDE;
   virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
@@ -85,6 +89,7 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE;
   virtual content::WebContents* GetStartPageContents() OVERRIDE;
+  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
   virtual void AddObserver(
       app_list::AppListViewDelegateObserver* observer) OVERRIDE;
@@ -121,7 +126,9 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // if |profile_| changes.
   app_list::AppListModel* model_;
 
-  app_list::SpeechUIModel speech_ui_;
+  scoped_ptr<app_list::SpeechUIModel> speech_ui_;
+
+  base::TimeDelta auto_launch_timeout_;
 
   Users users_;
 

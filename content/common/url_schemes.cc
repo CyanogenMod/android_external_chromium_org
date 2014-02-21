@@ -33,10 +33,8 @@ void RegisterContentSchemes(bool lock_standard_schemes) {
   GetContentClient()->AddAdditionalSchemes(&additional_standard_schemes,
                                            &additional_savable_schemes);
 
-  // Don't need "chrome-internal" which was used in old versions of Chrome for
-  // the new tab page.
-  url_util::AddStandardScheme(chrome::kChromeDevToolsScheme);
-  url_util::AddStandardScheme(chrome::kChromeUIScheme);
+  url_util::AddStandardScheme(kChromeDevToolsScheme);
+  url_util::AddStandardScheme(kChromeUIScheme);
   url_util::AddStandardScheme(kGuestScheme);
   url_util::AddStandardScheme(kMetadataScheme);
   std::for_each(additional_standard_schemes.begin(),

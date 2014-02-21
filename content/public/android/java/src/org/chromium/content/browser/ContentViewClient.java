@@ -179,4 +179,5 @@ public class ContentViewClient {
     public boolean shouldBlockMediaRequest(String url) {
         return false;
     }
+
 }

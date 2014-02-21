@@ -84,6 +84,8 @@ enum ModelType {
   HISTORY_DELETE_DIRECTIVES,
   // Synced push notifications.
   SYNCED_NOTIFICATIONS,
+  // Synced Notification app info.
+  SYNCED_NOTIFICATION_APP_INFO,
   // Custom spelling dictionary.
   DICTIONARY,
   // Favicon images.
@@ -99,8 +101,13 @@ enum ModelType {
   // by this user and can have restrictions applied. MANAGED_USERS and
   // MANAGED_USER_SETTINGS can not be encrypted.
   MANAGED_USERS,
+  // Managed user shared settings. Shared settings can be modified both by the
+  // manager and the supervised user.
+  MANAGED_USER_SHARED_SETTINGS,
   // Distilled articles.
   ARTICLES,
+  // App List items
+  APP_LIST,
 
   // ---- Proxy types ----
   // Proxy types are excluded from the sync protocol, but are still considered
@@ -130,10 +137,10 @@ enum ModelType {
 
   // If you are adding a new sync datatype that is exposed to the user via the
   // sync preferences UI, be sure to update the list in
-  // chrome/browser/sync/user_selectable_sync_type.h so that the UMA histograms
-  // for sync include your new type.
-  // In this case, be sure to also update the UserSelectableTypes() definition
-  // in sync/syncable/model_type.cc.
+  // components/sync_driver/user_selectable_sync_type.h so that the UMA
+  // histograms for sync include your new type.  In this case, be sure to also
+  // update the UserSelectableTypes() definition in
+  // sync/syncable/model_type.cc.
 
   MODEL_TYPE_COUNT,
 };

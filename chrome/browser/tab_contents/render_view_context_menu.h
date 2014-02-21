@@ -28,6 +28,7 @@ class SpellingMenuObserver;
 class SpellCheckerSubMenuObserver;
 
 namespace content {
+class RenderFrameHost;
 class RenderViewHost;
 class WebContents;
 }
@@ -72,7 +73,7 @@ struct WebPluginAction;
 //                                     const std::string& data) {
 //       bool enabled = response == 200;
 //       const char* text = enabled ? "OK" : "ERROR";
-//       proxy_->UpdateMenuItem(id_, enabled, ASCIIToUTF16(text));
+//       proxy_->UpdateMenuItem(id_, enabled, base::ASCIIToUTF16(text));
 //     }
 //     void Start(const GURL* url, net::URLRequestContextGetter* context) {
 //       fetcher_.reset(new URLFetcher(url, URLFetcher::GET, this));
@@ -130,7 +131,7 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
  public:
   static const size_t kMaxSelectionTextLength;
 
-  RenderViewContextMenu(content::WebContents* web_contents,
+  RenderViewContextMenu(content::RenderFrameHost* render_frame_host,
                         const content::ContextMenuParams& params);
 
   virtual ~RenderViewContextMenu();
@@ -141,7 +142,6 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   // Programmatically closes the context menu.
   void Cancel();
 
-  // Provide access to the menu model for ExternalTabContainer.
   const ui::MenuModel& menu_model() const { return menu_model_; }
 
   // SimpleMenuModel::Delegate implementation.
@@ -181,13 +181,13 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
 
   content::ContextMenuParams params_;
   content::WebContents* source_web_contents_;
+  // The RenderFrameHost's IDs.
+  int render_process_id_;
+  int render_frame_id_;
   Profile* profile_;
 
   ui::SimpleMenuModel menu_model_;
   extensions::ContextMenuMatcher extension_items_;
-
-  // True if we are showing for an external tab contents. The default is false.
-  bool external_;
 
  private:
   friend class RenderViewContextMenuTest;

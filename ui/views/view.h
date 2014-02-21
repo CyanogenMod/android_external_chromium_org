@@ -513,12 +513,12 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   Background* background() { return background_.get(); }
 
   // The border object is owned by this object and may be NULL.
-  void set_border(Border* b);
+  void SetBorder(scoped_ptr<Border> b);
   const Border* border() const { return border_.get(); }
   Border* border() { return border_.get(); }
 
   // Get the theme provider from the parent widget.
-  virtual ui::ThemeProvider* GetThemeProvider() const;
+  ui::ThemeProvider* GetThemeProvider() const;
 
   // Returns the NativeTheme to use for this View. This calls through to
   // GetNativeTheme() on the Widget this View is in. If this View is not in a
@@ -577,6 +577,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // closest visible descendant having at least kRectTargetOverlap of
   // its area covered by |rect|. If no such descendant exists, return the
   // deepest visible descendant that contains the center point of |rect|.
+  // See http://goo.gl/3Jp2BD for more information about rect-based targeting.
   virtual View* GetEventHandlerForRect(const gfx::Rect& rect);
 
   // Returns the deepest visible descendant that contains the specified point
@@ -770,10 +771,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Sets whether this view is capable of taking focus.
   // Note that this is false by default so that a view used as a container does
   // not get the focus.
-  void set_focusable(bool focusable) { focusable_ = focusable; }
-
-  // Returns true if this view is capable of taking focus.
-  bool focusable() const { return focusable_ && enabled_ && visible_; }
+  void SetFocusable(bool focusable);
 
   // Returns true if this view is |focusable_|, |enabled_| and drawn.
   virtual bool IsFocusable() const;
@@ -785,9 +783,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Set whether this view can be made focusable if the user requires
   // full keyboard access, even though it's not normally focusable.
   // Note that this is false by default.
-  void set_accessibility_focusable(bool accessibility_focusable) {
-    accessibility_focusable_ = accessibility_focusable;
-  }
+  void SetAccessibilityFocusable(bool accessibility_focusable);
 
   // Convenience method to retrieve the FocusManager associated with the
   // Widget that contains this view.  This can return NULL if this view is not
@@ -834,7 +830,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Any time the tooltip text that a View is displaying changes, it must
   // invoke TooltipTextChanged.
   // |p| provides the coordinates of the mouse (relative to this view).
-  virtual bool GetTooltipText(const gfx::Point& p, string16* tooltip) const;
+  virtual bool GetTooltipText(const gfx::Point& p,
+                              base::string16* tooltip) const;
 
   // Returns the location (relative to this View) for the text on the tooltip
   // to display. If false is returned (the default), the tooltip is placed at
@@ -1141,6 +1138,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual DragInfo* GetDragInfo();
 
   // Focus ---------------------------------------------------------------------
+
+  // Returns last value passed to SetFocusable(). Use IsFocusable() to determine
+  // if a view can take focus right now.
+  bool focusable() const { return focusable_; }
 
   // Override to be notified when focus has changed either to or from this View.
   virtual void OnFocus();

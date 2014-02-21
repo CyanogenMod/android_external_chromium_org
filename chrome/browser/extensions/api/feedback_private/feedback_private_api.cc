@@ -11,9 +11,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/feedback_private/feedback_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/feedback/tracing_manager.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
@@ -47,7 +47,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<FeedbackPrivateAPI> >
 // static
 ProfileKeyedAPIFactory<FeedbackPrivateAPI>*
     FeedbackPrivateAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 FeedbackPrivateAPI::FeedbackPrivateAPI(Profile* profile)
@@ -86,6 +86,8 @@ void FeedbackPrivateAPI::RequestFeedback(
 
     scoped_ptr<Event> event(new Event(
         feedback_private::OnFeedbackRequested::kEventName, args.Pass()));
+    event->restrict_to_browser_context = profile_;
+
     // TODO(rkc): Remove logging once crbug.com/284662 is closed.
     LOG(WARNING) << "FEEDBACK_DEBUG: Dispatching onFeedbackRequested event.";
     ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
@@ -98,7 +100,7 @@ void FeedbackPrivateAPI::RequestFeedback(
 base::Closure* FeedbackPrivateGetStringsFunction::test_callback_ = NULL;
 
 bool FeedbackPrivateGetStringsFunction::RunImpl() {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   SetResult(dict);
 
 #define SET_STRING(id, idr) \
@@ -107,8 +109,12 @@ bool FeedbackPrivateGetStringsFunction::RunImpl() {
   SET_STRING("page-url", IDS_FEEDBACK_REPORT_URL_LABEL);
   SET_STRING("screenshot", IDS_FEEDBACK_SCREENSHOT_LABEL);
   SET_STRING("user-email", IDS_FEEDBACK_USER_EMAIL_LABEL);
+#if defined(OS_CHROMEOS)
   SET_STRING("sys-info",
              IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_AND_METRICS_CHKBOX);
+#else
+  SET_STRING("sys-info", IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX);
+#endif
   SET_STRING("attach-file-label", IDS_FEEDBACK_ATTACH_FILE_LABEL);
   SET_STRING("attach-file-note", IDS_FEEDBACK_ATTACH_FILE_NOTE);
   SET_STRING("attach-file-to-big", IDS_FEEDBACK_ATTACH_FILE_TO_BIG);

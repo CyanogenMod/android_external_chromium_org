@@ -5,6 +5,7 @@
 #include "ui/events/event.h"
 
 #if defined(USE_X11)
+#include <X11/extensions/XInput2.h>
 #include <X11/Xlib.h>
 #endif
 
@@ -73,6 +74,7 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_GESTURE_SCROLL_END);
     CASE_TYPE(ET_GESTURE_SCROLL_UPDATE);
     CASE_TYPE(ET_GESTURE_SHOW_PRESS);
+    CASE_TYPE(ET_GESTURE_WIN8_EDGE_SWIPE);
     CASE_TYPE(ET_GESTURE_TAP);
     CASE_TYPE(ET_GESTURE_TAP_DOWN);
     CASE_TYPE(ET_GESTURE_TAP_CANCEL);
@@ -175,13 +177,13 @@ Event::Event(const base::NativeEvent& native_event,
   if (type_ < ET_LAST)
     name_ = EventTypeName(type_);
   UMA_HISTOGRAM_CUSTOM_COUNTS("Event.Latency.Browser",
-                              delta.InMicroseconds(), 0, 1000000, 100);
+                              delta.InMicroseconds(), 1, 1000000, 100);
   std::string name_for_event =
       base::StringPrintf("Event.Latency.Browser.%s", name_.c_str());
   base::HistogramBase* counter_for_type =
       base::Histogram::FactoryGet(
           name_for_event,
-          0,
+          1,
           1000000,
           100,
           base::HistogramBase::kUmaTargetedHistogramFlag);
@@ -224,17 +226,6 @@ void Event::InitWithNativeEvent(const base::NativeEvent& native_event) {
   native_event_ = native_event;
 }
 
-void Event::InitLatencyInfo() {
-  latency_.AddLatencyNumberWithTimestamp(INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
-                                         0,
-                                         0,
-                                         base::TimeTicks::FromInternalValue(
-                                             time_stamp_.ToInternalValue()),
-                                         1,
-                                         true);
-  latency_.AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // CancelModeEvent
 
@@ -261,8 +252,8 @@ LocatedEvent::LocatedEvent(const base::NativeEvent& native_event)
 }
 
 LocatedEvent::LocatedEvent(EventType type,
-                           const gfx::Point& location,
-                           const gfx::Point& root_location,
+                           const gfx::PointF& location,
+                           const gfx::PointF& root_location,
                            base::TimeDelta time_stamp,
                            int flags)
     : Event(type, time_stamp, flags),
@@ -275,7 +266,8 @@ void LocatedEvent::UpdateForRootTransform(
   // Transform has to be done at root level.
   gfx::Point3F p(location_);
   reversed_root_transform.TransformPoint(&p);
-  root_location_ = location_ = gfx::ToFlooredPoint(p.AsPointF());
+  location_ = p.AsPointF();
+  root_location_ = location_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -290,11 +282,12 @@ MouseEvent::MouseEvent(const base::NativeEvent& native_event)
 }
 
 MouseEvent::MouseEvent(EventType type,
-                       const gfx::Point& location,
-                       const gfx::Point& root_location,
-                       int flags)
+                       const gfx::PointF& location,
+                       const gfx::PointF& root_location,
+                       int flags,
+                       int changed_button_flags)
     : LocatedEvent(type, location, root_location, EventTimeForNow(), flags),
-      changed_button_flags_(0) {
+      changed_button_flags_(changed_button_flags) {
   if (this->type() == ET_MOUSE_MOVED && IsAnyButton())
     SetType(ET_MOUSE_DRAGGED);
 }
@@ -447,12 +440,25 @@ TouchEvent::TouchEvent(const base::NativeEvent& native_event)
       radius_x_(GetTouchRadiusX(native_event)),
       radius_y_(GetTouchRadiusY(native_event)),
       rotation_angle_(GetTouchAngle(native_event)),
-      force_(GetTouchForce(native_event)) {
-  InitLatencyInfo();
+      force_(GetTouchForce(native_event)),
+      source_device_id_(-1) {
+  latency()->AddLatencyNumberWithTimestamp(
+      INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+      0,
+      0,
+      base::TimeTicks::FromInternalValue(time_stamp().ToInternalValue()),
+      1);
+
+#if defined(USE_X11)
+  XIDeviceEvent* xiev = static_cast<XIDeviceEvent*>(native_event->xcookie.data);
+  source_device_id_ = xiev->deviceid;
+#endif
+
+  latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 TouchEvent::TouchEvent(EventType type,
-                       const gfx::Point& location,
+                       const gfx::PointF& location,
                        int touch_id,
                        base::TimeDelta time_stamp)
     : LocatedEvent(type, location, location, time_stamp, 0),
@@ -460,12 +466,13 @@ TouchEvent::TouchEvent(EventType type,
       radius_x_(0.0f),
       radius_y_(0.0f),
       rotation_angle_(0.0f),
-      force_(0.0f) {
-  InitLatencyInfo();
+      force_(0.0f),
+      source_device_id_(-1) {
+  latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 TouchEvent::TouchEvent(EventType type,
-                       const gfx::Point& location,
+                       const gfx::PointF& location,
                        int flags,
                        int touch_id,
                        base::TimeDelta time_stamp,
@@ -478,8 +485,9 @@ TouchEvent::TouchEvent(EventType type,
       radius_x_(radius_x),
       radius_y_(radius_y),
       rotation_angle_(angle),
-      force_(force) {
-  InitLatencyInfo();
+      force_(force),
+      source_device_id_(-1) {
+  latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 TouchEvent::~TouchEvent() {
@@ -632,6 +640,13 @@ TranslatedKeyEvent::TranslatedKeyEvent(bool is_press,
                false) {
 }
 
+TranslatedKeyEvent::TranslatedKeyEvent(const KeyEvent& key_event)
+    : KeyEvent(key_event) {
+  SetType(type() == ET_KEY_PRESSED ?
+          ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE);
+  set_is_char(false);
+}
+
 void TranslatedKeyEvent::ConvertToKeyEvent() {
   SetType(type() == ET_TRANSLATED_KEY_PRESS ?
           ET_KEY_PRESSED : ET_KEY_RELEASED);
@@ -660,7 +675,7 @@ ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
 }
 
 ScrollEvent::ScrollEvent(EventType type,
-                         const gfx::Point& location,
+                         const gfx::PointF& location,
                          base::TimeDelta time_stamp,
                          int flags,
                          float x_offset,
@@ -668,7 +683,7 @@ ScrollEvent::ScrollEvent(EventType type,
                          float x_offset_ordinal,
                          float y_offset_ordinal,
                          int finger_count)
-    : MouseEvent(type, location, location, flags),
+    : MouseEvent(type, location, location, flags, 0),
       x_offset_(x_offset),
       y_offset_(y_offset),
       x_offset_ordinal_(x_offset_ordinal),
@@ -689,15 +704,15 @@ void ScrollEvent::Scale(const float factor) {
 // GestureEvent
 
 GestureEvent::GestureEvent(EventType type,
-                           int x,
-                           int y,
+                           float x,
+                           float y,
                            int flags,
                            base::TimeDelta time_stamp,
                            const GestureEventDetails& details,
                            unsigned int touch_ids_bitfield)
     : LocatedEvent(type,
-                   gfx::Point(x, y),
-                   gfx::Point(x, y),
+                   gfx::PointF(x, y),
+                   gfx::PointF(x, y),
                    time_stamp,
                    flags | EF_FROM_TOUCH),
       details_(details),

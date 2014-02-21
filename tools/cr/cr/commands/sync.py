@@ -37,19 +37,21 @@ class SyncCommand(cr.Command):
     return parser
 
   def Run(self, context):
+    self.Sync(context, context.remains)
+
+  @staticmethod
+  def Sync(context, args):
     # TODO(iancottrell): we should probably run the python directly,
     # rather than the shell wrapper
     # TODO(iancottrell): try to help out when the local state is not a good
     # one to do a sync in
-    cr.Host.Execute(context, '{GCLIENT_BINARY}', 'sync', *context.remains)
+    cr.Host.Execute(context, '{GCLIENT_BINARY}', 'sync', *args)
 
 
-def _AutoDetectGClient():
-  """Attempts to detect gclient and it's parent repository."""
-  gclient_binaries = cr.Host.SearchPath('gclient')
-  if gclient_binaries:
-    SyncCommand.DETECTED.Set(GCLIENT_BINARY=gclient_binaries[0])
-    SyncCommand.DETECTED.Set(DEPOT_TOOLS=os.path.dirname(gclient_binaries[0]))
-
-# Invoke the auto detection
-_AutoDetectGClient()
+  @classmethod
+  def ClassInit(cls):
+    # Attempt to detect gclient and it's parent repository.
+    gclient_binaries = cr.Host.SearchPath('gclient')
+    if gclient_binaries:
+      cls.DETECTED.Set(GCLIENT_BINARY=gclient_binaries[0])
+      cls.DETECTED.Set(DEPOT_TOOLS=os.path.dirname(gclient_binaries[0]))

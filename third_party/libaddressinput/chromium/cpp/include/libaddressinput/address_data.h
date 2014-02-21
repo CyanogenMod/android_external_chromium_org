@@ -19,6 +19,8 @@
 #ifndef I18N_ADDRESSINPUT_ADDRESS_DATA_H_
 #define I18N_ADDRESSINPUT_ADDRESS_DATA_H_
 
+#include <libaddressinput/address_field.h>
+
 #include <string>
 #include <vector>
 
@@ -27,18 +29,34 @@ namespace addressinput {
 
 // Stores an address. Sample usage:
 //    AddressData address;
-//    address.country_code = "US";
+//    address.recipient = "Chen-Kang Yang";
+//    address.organization = "Google";
 //    address.address_lines.push_back("1098 Alta Ave");
 //    address.administrative_area = "CA";
 //    address.locality = "Mountain View";
-//    address.dependent_locality = "";
 //    address.postal_code = "94043";
-//    address.sorting_code = "";
-//    address.organization = "Google";
-//    address.recipient = "Chen-Kang Yang";
+//    address.country_code = "US";
 //    address.language_code = "en";
 //    Process(address);
 struct AddressData {
+  // Clears |lines| and populates it with the lines of the address as they
+  // should appear on an envelope for |country_code|. The |lines| parameter
+  // should not be NULL.
+  //
+  // If there're no address formatting rules for |country_code|, then the
+  // default rules are used:
+  // https://i18napis.appspot.com/ssl-address/data/ZZ
+  void FormatForDisplay(std::vector<std::string>* lines) const;
+
+  // Returns the value of the |field|. The parameter should not be
+  // STREET_ADDRESS, which comprises multiple fields.
+  const std::string& GetFieldValue(AddressField field) const;
+
+  // Guesses the BCP 47 languge code to be used for formatting the address for
+  // display. For example, guesses "en" if the |country_code| is "US". Can
+  // return an empty string.
+  const std::string& GuessLanguageCode() const;
+
   // The BCP 47 language code used to guide how the address is formatted for
   // display. The same address may have different representations in different
   // languages.

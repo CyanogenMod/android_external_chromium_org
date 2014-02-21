@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_GLUE_DATA_TYPE_MANAGER_IMPL_H__
 #define CHROME_BROWSER_SYNC_GLUE_DATA_TYPE_MANAGER_IMPL_H__
 
-#include "chrome/browser/sync/glue/data_type_manager.h"
+#include "components/sync_driver/data_type_manager.h"
 
 #include <map>
 #include <queue>
@@ -15,8 +15,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "chrome/browser/sync/glue/backend_data_type_configurer.h"
-#include "chrome/browser/sync/glue/model_association_manager.h"
+#include "components/sync_driver/backend_data_type_configurer.h"
+#include "components/sync_driver/model_association_manager.h"
 
 namespace syncer {
 struct DataTypeConfigurationStats;
@@ -66,7 +66,6 @@ class DataTypeManagerImpl : public DataTypeManager,
       const syncer::DataTypeAssociationStats& association_stats) OVERRIDE;
   virtual void OnModelAssociationDone(
       const DataTypeManager::ConfigureResult& result) OVERRIDE;
-  virtual void OnTypesLoaded() OVERRIDE;
 
   // Used by unit tests. TODO(sync) : This would go away if we made
   // this class be able to do Dependency injection. crbug.com/129212.

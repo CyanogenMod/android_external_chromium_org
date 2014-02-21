@@ -43,7 +43,7 @@ class ManagedUserService : public BrowserContextKeyedService,
                            public content::NotificationObserver,
                            public chrome::BrowserListObserver {
  public:
-  typedef std::vector<string16> CategoryList;
+  typedef std::vector<base::string16> CategoryList;
   typedef base::Callback<void(content::WebContents*)> NavigationBlockedCallback;
   typedef base::Callback<void(const GoogleServiceAuthError&)> AuthErrorCallback;
 
@@ -153,10 +153,7 @@ class ManagedUserService : public BrowserContextKeyedService,
  private:
   friend class ManagedUserServiceExtensionTestBase;
   friend class ManagedUserServiceFactory;
-  FRIEND_TEST_ALL_PREFIXES(ManagedUserServiceTest,
-                           ExtensionManagementPolicyProviderUnmanaged);
-  FRIEND_TEST_ALL_PREFIXES(ManagedUserServiceTest,
-                           ExtensionManagementPolicyProviderManaged);
+  FRIEND_TEST_ALL_PREFIXES(ManagedUserServiceTest, ClearOmitOnRegistration);
 
   // A bridge from ManagedMode (which lives on the UI thread) to the
   // ManagedModeURLFilters, one of which lives on the IO thread. This class

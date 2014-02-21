@@ -8,7 +8,7 @@
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/resolution_notification_controller.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -34,9 +34,9 @@ const char kOffsetKey[] = "offset";
 
 class DisplayPreferencesTest : public ash::test::AshTestBase {
  protected:
-  DisplayPreferencesTest() : ash::test::AshTestBase(),
-                             mock_user_manager_(new MockUserManager),
-                             user_manager_enabler_(mock_user_manager_) {
+  DisplayPreferencesTest()
+      : mock_user_manager_(new MockUserManager),
+        user_manager_enabler_(mock_user_manager_) {
   }
 
   virtual ~DisplayPreferencesTest() {}
@@ -150,7 +150,7 @@ class DisplayPreferencesTest : public ash::test::AshTestBase {
 TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
   UpdateDisplay("100x100,200x200");
   int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
-  int64 id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
+  int64 id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
   int64 dummy_id = id2 + 1;
   ASSERT_NE(id1, dummy_id);
 
@@ -186,7 +186,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   UpdateDisplay("200x200*2, 400x300#400x400|300x200");
   int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
   gfx::Display::SetInternalDisplayId(id1);
-  int64 id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
+  int64 id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
   int64 dummy_id = id2 + 1;
   ASSERT_NE(id1, dummy_id);
 
@@ -197,7 +197,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
       id1, dummy_id, ash::DisplayLayout(ash::DisplayLayout::LEFT, 20));
   // Can't switch to a display that does not exist.
   display_controller->SetPrimaryDisplayId(dummy_id);
-  EXPECT_NE(dummy_id, display_controller->GetPrimaryDisplay().id());
+  EXPECT_NE(dummy_id, ash::Shell::GetScreen()->GetPrimaryDisplay().id());
 
   display_controller->SetOverscanInsets(id1, gfx::Insets(10, 11, 12, 13));
   display_manager->SetDisplayRotation(id1, gfx::Display::ROTATE_90);
@@ -231,7 +231,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_EQ(1, rotation);
   EXPECT_EQ(1250, ui_scale);
 
-  // Internal display never registere the resolution.
+  // Internal display never registered the resolution.
   int width = 0, height = 0;
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
@@ -271,11 +271,11 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id1), &property));
   width = 0;
   height = 0;
-  // Internal dispaly shouldn't store its resolution.
+  // Internal display shouldn't store its resolution.
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
 
-  // External dispaly's resolution must be stored this time because
+  // External display's resolution must be stored this time because
   // it's not best.
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
@@ -320,7 +320,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
 
-  // External dispaly's selected resolution must not change
+  // External display's selected resolution must not change
   // by mirroring.
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
@@ -329,16 +329,13 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_EQ(200, height);
 
   // Set new display's selected resolution.
-  display_manager->RegisterDisplayProperty(id2 + 1,
-                                           gfx::Display::ROTATE_0,
-                                           1.0f,
-                                           NULL,
-                                           gfx::Size(500, 400));
+  display_manager->RegisterDisplayProperty(
+      id2 + 1, gfx::Display::ROTATE_0, 1.0f, NULL, gfx::Size(500, 400));
 
   UpdateDisplay("200x200*2, 600x500#600x500|500x400");
 
   // Update key as the 2nd display gets new id.
-  id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
+  id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
   key = base::Int64ToString(id1) + "," + base::Int64ToString(id2);
   EXPECT_TRUE(displays->GetDictionary(key, &layout_value));
   EXPECT_TRUE(layout_value->GetString(kPositionKey, &position));
@@ -351,7 +348,32 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_TRUE(layout_value->GetString(kPrimaryIdKey, &primary_id_str));
   EXPECT_EQ(base::Int64ToString(id1), primary_id_str);
 
-  // External dispaly's selected resolution must be updated.
+  // Best resolution should not be saved.
+  EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
+  EXPECT_FALSE(property->GetInteger("width", &width));
+  EXPECT_FALSE(property->GetInteger("height", &height));
+
+  // Set yet another new display's selected resolution.
+  display_manager->RegisterDisplayProperty(
+      id2 + 1, gfx::Display::ROTATE_0, 1.0f, NULL, gfx::Size(500, 400));
+  // Disconnect 2nd display first to generate new id for external display.
+  UpdateDisplay("200x200*2");
+  UpdateDisplay("200x200*2, 500x400#600x500|500x400%60.0f");
+  // Update key as the 2nd display gets new id.
+  id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
+  key = base::Int64ToString(id1) + "," + base::Int64ToString(id2);
+  EXPECT_TRUE(displays->GetDictionary(key, &layout_value));
+  EXPECT_TRUE(layout_value->GetString(kPositionKey, &position));
+  EXPECT_EQ("right", position);
+  EXPECT_TRUE(layout_value->GetInteger(kOffsetKey, &offset));
+  EXPECT_EQ(0, offset);
+  mirrored = true;
+  EXPECT_TRUE(layout_value->GetBoolean(kMirroredKey, &mirrored));
+  EXPECT_FALSE(mirrored);
+  EXPECT_TRUE(layout_value->GetString(kPrimaryIdKey, &primary_id_str));
+  EXPECT_EQ(base::Int64ToString(id1), primary_id_str);
+
+  // External display's selected resolution must be updated.
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
   EXPECT_TRUE(property->GetInteger("height", &height));
@@ -403,12 +425,12 @@ TEST_F(DisplayPreferencesTest, PreventStore) {
 TEST_F(DisplayPreferencesTest, StoreForSwappedDisplay) {
   UpdateDisplay("100x100,200x200");
   int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
-  int64 id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
+  int64 id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
 
   ash::DisplayController* display_controller =
       ash::Shell::GetInstance()->display_controller();
   display_controller->SwapPrimaryDisplay();
-  ASSERT_EQ(id1, ash::ScreenAsh::GetSecondaryDisplay().id());
+  ASSERT_EQ(id1, ash::ScreenUtil::GetSecondaryDisplay().id());
 
   LoggedInAsUser();
   ash::DisplayLayout layout(ash::DisplayLayout::TOP, 10);
@@ -444,15 +466,14 @@ TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   UpdateDisplay("200x200*2,200x200");
 
   LoggedInAsGuest();
-  int64 id1 = ash::ScreenAsh::GetNativeScreen()->GetPrimaryDisplay().id();
+  int64 id1 = ash::Shell::GetScreen()->GetPrimaryDisplay().id();
   gfx::Display::SetInternalDisplayId(id1);
-  int64 id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
+  int64 id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
   ash::DisplayLayout layout(ash::DisplayLayout::TOP, 10);
   SetCurrentDisplayLayout(layout);
   display_manager->SetDisplayUIScale(id1, 1.25f);
   display_controller->SetPrimaryDisplayId(id2);
-  int64 new_primary =
-      ash::ScreenAsh::GetNativeScreen()->GetPrimaryDisplay().id();
+  int64 new_primary = ash::Shell::GetScreen()->GetPrimaryDisplay().id();
   display_controller->SetOverscanInsets(
       new_primary,
       gfx::Insets(10, 11, 12, 13));

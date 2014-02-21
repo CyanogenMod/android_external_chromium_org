@@ -43,6 +43,8 @@ IPC_STRUCT_TRAITS_BEGIN(nacl::PnaclCacheInfo)
   IPC_STRUCT_TRAITS_MEMBER(last_modified)
   IPC_STRUCT_TRAITS_MEMBER(etag)
   IPC_STRUCT_TRAITS_MEMBER(has_no_store_header)
+  IPC_STRUCT_TRAITS_MEMBER(sandbox_isa)
+  IPC_STRUCT_TRAITS_MEMBER(extra_flags)
 IPC_STRUCT_TRAITS_END()
 
 // A renderer sends this to the browser process when it wants to start
@@ -99,3 +101,6 @@ IPC_SYNC_MESSAGE_CONTROL2_3(NaClHostMsg_OpenNaClExecutable,
                             IPC::PlatformFileForTransit /* output file */,
                             uint64 /* file_token_lo */,
                             uint64 /* file_token_hi */)
+
+IPC_SYNC_MESSAGE_CONTROL0_1(NaClHostMsg_NaClGetNumProcessors,
+                            int /* Number of processors */)

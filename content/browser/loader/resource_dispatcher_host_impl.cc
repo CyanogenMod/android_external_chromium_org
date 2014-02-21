@@ -6,6 +6,7 @@
 
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 
+#include <algorithm>
 #include <set>
 #include <vector>
 
@@ -50,6 +51,7 @@
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/worker_host/worker_service_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/resource_messages.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
@@ -156,12 +158,15 @@ void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
     filter->Send(sync_result);
   } else {
     // Tell the renderer that this request was disallowed.
+    ResourceMsg_RequestCompleteData request_complete_data;
+    request_complete_data.error_code = net::ERR_ABORTED;
+    request_complete_data.was_ignored_by_handler = false;
+    request_complete_data.exists_in_cache = false;
+    // No security info needed, connection not established.
+    request_complete_data.completion_time = base::TimeTicks();
+    request_complete_data.encoded_data_length = 0;
     filter->Send(new ResourceMsg_RequestComplete(
-        request_id,
-        net::ERR_ABORTED,
-        false,
-        std::string(),   // No security info needed, connection not established.
-        base::TimeTicks()));
+        request_id, request_complete_data));
   }
 }
 
@@ -253,16 +258,18 @@ void RemoveDownloadFileFromChildSecurityPolicy(int child_id,
 #pragma warning(default: 4748)
 #endif
 
-net::Error CallbackAndReturn(
+DownloadInterruptReason CallbackAndReturn(
     const DownloadUrlParameters::OnStartedCallback& started_cb,
-    net::Error net_error) {
+    DownloadInterruptReason interrupt_reason) {
   if (started_cb.is_null())
-    return net_error;
+    return interrupt_reason;
   BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(started_cb, static_cast<DownloadItem*>(NULL), net_error));
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(
+          started_cb, static_cast<DownloadItem*>(NULL), interrupt_reason));
 
-  return net_error;
+  return interrupt_reason;
 }
 
 int GetCertID(net::URLRequest* request, int child_id) {
@@ -274,27 +281,33 @@ int GetCertID(net::URLRequest* request, int child_id) {
 }
 
 void NotifyRedirectOnUI(int render_process_id,
-                        int render_view_id,
+                        int render_frame_host,
                         scoped_ptr<ResourceRedirectDetails> details) {
-  RenderViewHostImpl* host =
-      RenderViewHostImpl::FromID(render_process_id, render_view_id);
-  if (!host)
+  RenderFrameHostImpl* host =
+      RenderFrameHostImpl::FromID(render_process_id, render_frame_host);
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(host));
+  if (!web_contents)
     return;
-
-  RenderViewHostDelegate* delegate = host->GetDelegate();
-  delegate->DidGetRedirectForResourceRequest(*details.get());
+  web_contents->DidGetRedirectForResourceRequest(
+      host->render_view_host(), *details.get());
 }
 
 void NotifyResponseOnUI(int render_process_id,
-                        int render_view_id,
+                        int render_frame_host,
                         scoped_ptr<ResourceRequestDetails> details) {
-  RenderViewHostImpl* host =
-      RenderViewHostImpl::FromID(render_process_id, render_view_id);
-  if (!host)
+  RenderFrameHostImpl* host =
+      RenderFrameHostImpl::FromID(render_process_id, render_frame_host);
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(host));
+  if (!web_contents)
     return;
+  web_contents->DidGetResourceResponseStart(*details.get());
+}
 
-  RenderViewHostDelegate* delegate = host->GetDelegate();
-  delegate->DidGetResourceResponseStart(*details.get());
+bool IsValidatedSCT(
+    const net::SignedCertificateTimestampAndStatus& sct_status) {
+  return sct_status.status == net::ct::SCT_STATUS_OK;
 }
 
 }  // namespace
@@ -457,7 +470,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
   }
 }
 
-net::Error ResourceDispatcherHostImpl::BeginDownload(
+DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
     scoped_ptr<net::URLRequest> request,
     const Referrer& referrer,
     bool is_content_initiated,
@@ -469,7 +482,8 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
     uint32 download_id,
     const DownloadStartedCallback& started_callback) {
   if (is_shutdown_)
-    return CallbackAndReturn(started_callback, net::ERR_INSUFFICIENT_RESOURCES);
+    return CallbackAndReturn(started_callback,
+                             DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN);
 
   const GURL& url = request->original_url();
 
@@ -507,7 +521,8 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
           CanRequestURL(child_id, url)) {
     VLOG(1) << "Denied unauthorized download request for "
             << url.possibly_invalid_spec();
-    return CallbackAndReturn(started_callback, net::ERR_ACCESS_DENIED);
+    return CallbackAndReturn(started_callback,
+                             DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST);
   }
 
   request_id_--;
@@ -516,7 +531,8 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
   if (!request_context->job_factory()->IsHandledURL(url)) {
     VLOG(1) << "Download request for unsupported protocol: "
             << url.possibly_invalid_spec();
-    return CallbackAndReturn(started_callback, net::ERR_ACCESS_DENIED);
+    return CallbackAndReturn(started_callback,
+                             DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST);
   }
 
   ResourceRequestInfoImpl* extra_info =
@@ -540,7 +556,7 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
 
   BeginRequestInternal(request.Pass(), handler.Pass());
 
-  return net::OK;
+  return DOWNLOAD_INTERRUPT_REASON_NONE;
 }
 
 void ResourceDispatcherHostImpl::ClearLoginDelegateForRequest(
@@ -645,26 +661,6 @@ ResourceDispatcherHostImpl::CreateLoginDelegate(
   return delegate_->CreateLoginDelegate(auth_info, loader->request());
 }
 
-bool ResourceDispatcherHostImpl::AcceptAuthRequest(
-    ResourceLoader* loader,
-    net::AuthChallengeInfo* auth_info) {
-  if (delegate_ && !delegate_->AcceptAuthRequest(loader->request(), auth_info))
-    return false;
-
-  return true;
-}
-
-bool ResourceDispatcherHostImpl::AcceptSSLClientCertificateRequest(
-    ResourceLoader* loader,
-    net::SSLCertRequestInfo* cert_info) {
-  if (delegate_ && !delegate_->AcceptSSLClientCertificateRequest(
-          loader->request(), cert_info)) {
-    return false;
-  }
-
-  return true;
-}
-
 bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
                                                         const GURL& url) {
   if (!delegate_)
@@ -697,8 +693,8 @@ void ResourceDispatcherHostImpl::DidReceiveRedirect(ResourceLoader* loader,
                                                     const GURL& new_url) {
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
 
-  int render_process_id, render_view_id;
-  if (!info->GetAssociatedRenderView(&render_process_id, &render_view_id))
+  int render_process_id, render_frame_host;
+  if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_host))
     return;
 
   // Notify the observers on the UI thread.
@@ -710,11 +706,18 @@ void ResourceDispatcherHostImpl::DidReceiveRedirect(ResourceLoader* loader,
       BrowserThread::UI, FROM_HERE,
       base::Bind(
           &NotifyRedirectOnUI,
-          render_process_id, render_view_id, base::Passed(&detail)));
+          render_process_id, render_frame_host, base::Passed(&detail)));
 }
 
 void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
+
+  if (loader->request()->was_fetched_via_proxy() &&
+      loader->request()->was_fetched_via_spdy() &&
+      loader->request()->url().SchemeIs("http")) {
+    scheduler_->OnReceivedSpdyProxiedHttpResponse(
+        info->GetChildID(), info->GetRouteID());
+  }
 
   // There should be an entry in the map created when we dispatched the
   // request unless it's been detached and the renderer has died.
@@ -731,8 +734,8 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
            info->detachable_handler()->is_detached());
   }
 
-  int render_process_id, render_view_id;
-  if (!info->GetAssociatedRenderView(&render_process_id, &render_view_id))
+  int render_process_id, render_frame_host;
+  if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_host))
     return;
 
   // Notify the observers on the UI thread.
@@ -743,7 +746,7 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
       BrowserThread::UI, FROM_HERE,
       base::Bind(
           &NotifyResponseOnUI,
-          render_process_id, render_view_id, base::Passed(&detail)));
+          render_process_id, render_frame_host, base::Passed(&detail)));
 }
 
 void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
@@ -757,11 +760,18 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
         "Net.ErrorCodesForMainFrame3",
         -loader->request()->status().error());
 
-    if (loader->request()->url().SchemeIsSecure() &&
-        loader->request()->url().host() == "www.google.com") {
-      UMA_HISTOGRAM_SPARSE_SLOWLY(
-          "Net.ErrorCodesForHTTPSGoogleMainFrame2",
-          -loader->request()->status().error());
+    if (loader->request()->url().SchemeIsSecure()) {
+      if (loader->request()->url().host() == "www.google.com") {
+        UMA_HISTOGRAM_SPARSE_SLOWLY("Net.ErrorCodesForHTTPSGoogleMainFrame2",
+                                    -loader->request()->status().error());
+      }
+
+      int num_valid_scts = std::count_if(
+          loader->request()->ssl_info().signed_certificate_timestamps.begin(),
+          loader->request()->ssl_info().signed_certificate_timestamps.end(),
+          IsValidatedSCT);
+      UMA_HISTOGRAM_COUNTS_100(
+          "Net.CertificateTransparency.MainFrameValidSCTCount", num_valid_scts);
     }
   } else {
     if (info->GetResourceType() == ResourceType::IMAGE) {
@@ -775,24 +785,11 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
         -loader->request()->status().error());
   }
 
+  if (delegate_)
+    delegate_->RequestComplete(loader->request());
+
   // Destroy the ResourceLoader.
   RemovePendingRequest(info->GetChildID(), info->GetRequestID());
-}
-
-// static
-bool ResourceDispatcherHostImpl::RenderViewForRequest(
-    const net::URLRequest* request,
-    int* render_process_id,
-    int* render_view_id) {
-  const ResourceRequestInfoImpl* info =
-      ResourceRequestInfoImpl::ForRequest(request);
-  if (!info) {
-    *render_process_id = -1;
-    *render_view_id = -1;
-    return false;
-  }
-
-  return info->GetAssociatedRenderView(render_process_id, render_view_id);
 }
 
 void ResourceDispatcherHostImpl::OnInit() {
@@ -954,15 +951,10 @@ void ResourceDispatcherHostImpl::UpdateRequestForTransfer(
     }
   }
 
-  // Notify the delegate to allow it to update state as well.
-  if (delegate_) {
-    delegate_->WillTransferRequestToNewProcess(old_routing_id.child_id,
-                                               old_routing_id.route_id,
-                                               old_request_id.request_id,
-                                               child_id,
-                                               route_id,
-                                               request_id);
-  }
+  appcache::AppCacheInterceptor::CompleteCrossSiteTransfer(
+      loader->request(),
+      child_id,
+      request_data.appcache_host_id);
 
   // We should have a CrossSiteResourceHandler to finish the transfer.
   DCHECK(info->cross_site_handler());
@@ -979,7 +971,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   // Reject invalid priority.
   if (request_data.priority < net::MINIMUM_PRIORITY ||
       request_data.priority > net::MAXIMUM_PRIORITY) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_RDH"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_RDH"));
     filter_->BadMessageReceived();
     return;
   }
@@ -1007,7 +999,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
         deferred_loader->CompleteTransfer();
       } else {
-        RecordAction(UserMetricsAction("BadMessageTerminate_RDH"));
+        RecordAction(base::UserMetricsAction("BadMessageTerminate_RDH"));
         filter_->BadMessageReceived();
       }
       return;
@@ -1113,6 +1105,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
           allow_download,
           request_data.has_user_gesture,
           request_data.referrer_policy,
+          request_data.visiblity_state,
           resource_context,
           filter_->GetWeakPtr(),
           !is_sync_load);
@@ -1172,10 +1165,16 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
   // Install a CrossSiteResourceHandler for all main frame requests.  This will
   // let us check whether a transfer is required and pause for the unload
   // handler either if so or if a cross-process navigation is already under way.
- if (request_data.resource_type == ResourceType::MAIN_FRAME &&
-     process_type == PROCESS_TYPE_RENDERER) {
-    handler.reset(new CrossSiteResourceHandler(handler.Pass(), request));
+  bool is_swappable_navigation =
+      request_data.resource_type == ResourceType::MAIN_FRAME;
+  // If we are using --site-per-process, install it for subframes as well.
+  if (!is_swappable_navigation &&
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+    is_swappable_navigation =
+        request_data.resource_type == ResourceType::SUB_FRAME;
   }
+  if (is_swappable_navigation && process_type == PROCESS_TYPE_RENDERER)
+    handler.reset(new CrossSiteResourceHandler(handler.Pass(), request));
 
   // Insert a buffered event handler before the actual one.
   handler.reset(
@@ -1257,8 +1256,26 @@ void ResourceDispatcherHostImpl::OnUploadProgressACK(int request_id) {
     loader->OnUploadProgressACK();
 }
 
+// Note that this cancel is subtly different from the other
+// CancelRequest methods in this file, which also tear down the loader.
 void ResourceDispatcherHostImpl::OnCancelRequest(int request_id) {
-  CancelRequest(filter_->child_id(), request_id, true);
+  int child_id = filter_->child_id();
+
+  // When the old renderer dies, it sends a message to us to cancel its
+  // requests.
+  if (IsTransferredNavigation(GlobalRequestID(child_id, request_id)))
+    return;
+
+  ResourceLoader* loader = GetLoader(child_id, request_id);
+  if (!loader) {
+    // We probably want to remove this warning eventually, but I wanted to be
+    // able to notice when this happens during initial development since it
+    // should be rare and may indicate a bug.
+    DVLOG(1) << "Canceling a request that wasn't found";
+    return;
+  }
+
+  loader->CancelRequest(true);
 }
 
 ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
@@ -1285,6 +1302,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       download,  // allow_download
       false,     // has_user_gesture
       blink::WebReferrerPolicyDefault,
+      blink::WebPageVisibilityStateVisible,
       context,
       base::WeakPtr<ResourceMessageFilter>(),  // filter
       true);     // is_async
@@ -1361,8 +1379,15 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
 }
 
 void ResourceDispatcherHostImpl::MarkAsTransferredNavigation(
-    const GlobalRequestID& id, const GURL& target_url) {
-  GetLoader(id)->MarkAsTransferring(target_url);
+    const GlobalRequestID& id) {
+  GetLoader(id)->MarkAsTransferring();
+}
+
+void ResourceDispatcherHostImpl::CancelTransferringNavigation(
+    const GlobalRequestID& id) {
+  // Request should still exist and be in the middle of a transfer.
+  DCHECK(IsTransferredNavigation(id));
+  RemovePendingRequest(id.child_id, id.request_id);
 }
 
 void ResourceDispatcherHostImpl::ResumeDeferredNavigation(
@@ -1512,15 +1537,7 @@ void ResourceDispatcherHostImpl::RemovePendingLoader(
 }
 
 void ResourceDispatcherHostImpl::CancelRequest(int child_id,
-                                               int request_id,
-                                               bool from_renderer) {
-  if (from_renderer) {
-    // When the old renderer dies, it sends a message to us to cancel its
-    // requests.
-    if (IsTransferredNavigation(GlobalRequestID(child_id, request_id)))
-      return;
-  }
-
+                                               int request_id) {
   ResourceLoader* loader = GetLoader(child_id, request_id);
   if (!loader) {
     // We probably want to remove this warning eventually, but I wanted to be
@@ -1530,7 +1547,7 @@ void ResourceDispatcherHostImpl::CancelRequest(int child_id,
     return;
   }
 
-  loader->CancelRequest(from_renderer);
+  RemovePendingRequest(child_id, request_id);
 }
 
 ResourceDispatcherHostImpl::OustandingRequestsStats
@@ -1867,7 +1884,7 @@ ResourceDispatcherHostImpl::HttpAuthRelationTypeOf(
 
   if (net::registry_controlled_domains::SameDomainOrHost(
           first_party, request_url,
-          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES))
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES))
     return HTTP_AUTH_RELATION_SAME_DOMAIN;
 
   if (allow_cross_origin_auth_prompt())

@@ -99,9 +99,6 @@ class OffTheRecordProfileIOData : public ProfileIOData {
  private:
   friend class base::RefCountedThreadSafe<OffTheRecordProfileIOData>;
 
-  typedef base::hash_map<std::string, net::HttpTransactionFactory* >
-      HttpTransactionFactoryMap;
-
   OffTheRecordProfileIOData();
   virtual ~OffTheRecordProfileIOData();
 
@@ -133,9 +130,6 @@ class OffTheRecordProfileIOData : public ProfileIOData {
           ChromeURLRequestContext* app_context,
           const StoragePartitionDescriptor& partition_descriptor)
               const OVERRIDE;
-
-  virtual chrome_browser_net::LoadTimeStats* GetLoadTimeStats(
-      IOThread::Globals* io_thread_globals) const OVERRIDE;
 
   mutable scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
   mutable scoped_ptr<net::FtpTransactionFactory> ftp_factory_;

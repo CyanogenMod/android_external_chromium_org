@@ -3,12 +3,9 @@
 // found in the LICENSE file.
 
 // This module contains the necessary code to register the Breakpad exception
-// handler. This implementation is based on Chrome/Chrome Frame crash reporting
-// code. See:
+// handler. This implementation is based on Chrome crash reporting code. See:
 //   - src/components/breakpad/app/breakpad_win.cc
-//   - src/chrome_frame/crash_server_init.cc
 //   - src/chrome/installer/setup/setup_main.cc
-//   - src/chrome_frame/crash_reporting/crash_report.cc
 
 #include "remoting/base/breakpad.h"
 
@@ -153,7 +150,8 @@ google_breakpad::CustomClientInfo* BreakpadWin::GetCustomInfo() {
 
   static wchar_t version[64];
   if (version_info.get()) {
-    wcscpy_s(version, UTF16ToWide(version_info->product_version()).c_str());
+    wcscpy_s(version,
+             base::UTF16ToWide(version_info->product_version()).c_str());
   } else {
     wcscpy_s(version, kBreakpadVersionDefault);
   }

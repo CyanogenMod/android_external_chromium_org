@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "chrome/common/prerender_messages.h"
+#include "chrome/common/prerender_types.h"
 #include "chrome/renderer/prerender/prerender_extra_data.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/render_thread.h"
@@ -59,6 +60,20 @@ void PrerenderDispatcher::OnPrerenderStopLoading(int prerender_id) {
   prerender.didSendLoadForPrerender();
 }
 
+void PrerenderDispatcher::OnPrerenderDomContentLoaded(int prerender_id) {
+  std::map<int, WebPrerender>::iterator it = prerenders_.find(prerender_id);
+  if (it == prerenders_.end())
+    return;
+
+  WebPrerender& prerender = it->second;
+  DCHECK(!prerender.isNull())
+      << "OnPrerenderDomContentLoaded shouldn't be called from a unit test,"
+      << " the only context in which a WebPrerender in the dispatcher can be"
+      << " null.";
+
+  prerender.didSendDOMContentLoadedForPrerender();
+}
+
 void PrerenderDispatcher::OnPrerenderAddAlias(const GURL& alias) {
   running_prerender_urls_.insert(alias);
 }
@@ -97,6 +112,8 @@ bool PrerenderDispatcher::OnControlMessageReceived(
     IPC_MESSAGE_HANDLER(PrerenderMsg_OnPrerenderStart, OnPrerenderStart)
     IPC_MESSAGE_HANDLER(PrerenderMsg_OnPrerenderStopLoading,
                         OnPrerenderStopLoading)
+    IPC_MESSAGE_HANDLER(PrerenderMsg_OnPrerenderDomContentLoaded,
+                        OnPrerenderDomContentLoaded)
     IPC_MESSAGE_HANDLER(PrerenderMsg_OnPrerenderAddAlias, OnPrerenderAddAlias)
     IPC_MESSAGE_HANDLER(PrerenderMsg_OnPrerenderRemoveAliases,
                         OnPrerenderRemoveAliases)
@@ -117,8 +134,12 @@ void PrerenderDispatcher::add(const WebPrerender& prerender) {
 
   prerenders_[extra_data.prerender_id()] = prerender;
 
+  PrerenderAttributes attributes;
+  attributes.url = GURL(prerender.url());
+  attributes.rel_types = prerender.relTypes();
+
   content::RenderThread::Get()->Send(new PrerenderHostMsg_AddLinkRelPrerender(
-      extra_data.prerender_id(), GURL(prerender.url()),
+      extra_data.prerender_id(), attributes,
       content::Referrer(GURL(prerender.referrer()),
                         prerender.referrerPolicy()),
       extra_data.size(), extra_data.render_view_route_id()));

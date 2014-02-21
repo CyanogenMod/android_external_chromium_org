@@ -17,25 +17,25 @@
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/android_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/google_auto_login_helper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profile_management_switches.h"
 #include "jni/SigninManager_jni.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_android.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
+#include "net/url_request/url_request_context_getter.h"
 #endif
 
 namespace {
@@ -74,9 +74,7 @@ SigninManagerAndroid::SigninManagerAndroid(JNIEnv* env, jobject obj)
     : profile_(NULL),
       weak_factory_(this) {
   java_signin_manager_.Reset(env, obj);
-  DCHECK(g_browser_process);
-  DCHECK(g_browser_process->profile_manager());
-  profile_ = g_browser_process->profile_manager()->GetDefaultProfile();
+  profile_ = ProfileManager::GetActiveUserProfile();
   DCHECK(profile_);
 }
 
@@ -112,6 +110,7 @@ void SigninManagerAndroid::FetchPolicyBeforeSignIn(JNIEnv* env, jobject obj) {
         username_,
         dm_token_,
         client_id_,
+        profile_->GetRequestContext(),
         base::Bind(&SigninManagerAndroid::OnPolicyFetchDone,
                    weak_factory_.GetWeakPtr()));
     dm_token_.clear();
@@ -170,7 +169,7 @@ void SigninManagerAndroid::OnPolicyRegisterDone(
     const std::string& dm_token,
     const std::string& client_id) {
   dm_token_ = dm_token;
-  client_id_ = client_id_;
+  client_id_ = client_id;
 
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jstring> domain;
@@ -208,26 +207,38 @@ void SigninManagerAndroid::OnBrowsingDataRemoverDone() {
                                         java_signin_manager_.obj());
 }
 
+void SigninManagerAndroid::MergeSessionCompleted(
+    const std::string& account_id,
+    const GoogleServiceAuthError& error) {
+  merge_session_helper_->RemoveObserver(this);
+  merge_session_helper_.reset();
+}
+
 void SigninManagerAndroid::LogInSignedInUser(JNIEnv* env, jobject obj) {
-  if (profiles::IsNewProfileManagementEnabled()) {
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile_);
+  if (switches::IsNewProfileManagement()) {
     // New Mirror code path that just fires the events and let the
     // Account Reconcilor handles everything.
     AndroidProfileOAuth2TokenService* token_service =
         ProfileOAuth2TokenServiceFactory::GetPlatformSpecificForProfile(
             profile_);
-    const std::string& primary_acct = token_service->GetPrimaryAccountId();
+    const std::string& primary_acct =
+        signin_manager->GetAuthenticatedAccountId();
     const std::vector<std::string>& ids = token_service->GetAccounts();
     token_service->ValidateAccounts(primary_acct, ids);
 
   } else {
     DVLOG(1) << "SigninManagerAndroid::LogInSignedInUser "
-        " Manually calling GoogleAutoLoginHelper";
+        " Manually calling MergeSessionHelper";
     // Old code path that doesn't depend on the new Account Reconcilor.
     // We manually login.
 
-    // AutoLogin deletes itself.
-    GoogleAutoLoginHelper* autoLogin = new GoogleAutoLoginHelper(profile_);
-    autoLogin->LogIn();
+    ProfileOAuth2TokenService* token_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+    merge_session_helper_.reset(new MergeSessionHelper(
+        token_service, profile_->GetRequestContext(), this));
+    merge_session_helper_->LogIn(signin_manager->GetAuthenticatedAccountId());
   }
 }
 

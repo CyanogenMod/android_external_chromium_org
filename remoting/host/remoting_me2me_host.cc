@@ -91,13 +91,19 @@
 
 #if defined(OS_WIN)
 #include <commctrl.h>
+#include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
+#include "remoting/host/pairing_registry_delegate_win.h"
 #include "remoting/host/win/session_desktop_environment.h"
 #endif  // defined(OS_WIN)
 
 #if defined(TOOLKIT_GTK)
 #include "ui/gfx/gtk_util.h"
 #endif  // defined(TOOLKIT_GTK)
+
+using remoting::protocol::PairingRegistry;
+
+namespace {
 
 // This is used for tagging system event logs.
 const char kApplicationName[] = "chromoting";
@@ -115,6 +121,8 @@ const char kSignalParentSwitchName[] = "signal-parent";
 // Value used for --host-config option to indicate that the path must be read
 // from stdin.
 const char kStdinConfigPath[] = "-";
+
+}  // namespace
 
 namespace remoting {
 
@@ -142,6 +150,11 @@ class HostProcess
 
   // HostChangeNotificationListener::Listener overrides.
   virtual void OnHostDeleted() OVERRIDE;
+
+  // Initializes the pairing registry on Windows.
+  void OnInitializePairingRegistry(
+      IPC::PlatformFileForTransit privileged_key,
+      IPC::PlatformFileForTransit unprivileged_key);
 
  private:
   enum HostState {
@@ -211,8 +224,10 @@ class HostProcess
   bool OnNatPolicyUpdate(bool nat_traversal_enabled);
   void OnCurtainPolicyUpdate(bool curtain_required);
   bool OnHostTalkGadgetPrefixPolicyUpdate(const std::string& talkgadget_prefix);
-  bool OnHostTokenUrlPolicyUpdate(const GURL& token_url,
-                                  const GURL& token_validation_url);
+  bool OnHostTokenUrlPolicyUpdate(
+      const GURL& token_url,
+      const GURL& token_validation_url,
+      const std::string& token_validation_cert_issuer);
   bool OnPairingPolicyUpdate(bool pairing_enabled);
 
   void StartHost();
@@ -270,9 +285,9 @@ class HostProcess
   bool allow_pairing_;
 
   bool curtain_required_;
-  GURL token_url_;
-  GURL token_validation_url_;
+  ThirdPartyAuthConfig third_party_auth_config_;
 
+  scoped_ptr<OAuthTokenGetter> oauth_token_getter_;
   scoped_ptr<XmppSignalStrategy> signal_strategy_;
   scoped_ptr<SignalingConnector> signaling_connector_;
   scoped_ptr<HeartbeatSender> heartbeat_sender_;
@@ -292,6 +307,8 @@ class HostProcess
 
   int* exit_code_out_;
   bool signal_parent_;
+
+  scoped_ptr<PairingRegistry::Delegate> pairing_registry_delegate_;
 };
 
 HostProcess::HostProcess(scoped_ptr<ChromotingHostContext> context,
@@ -507,25 +524,31 @@ void HostProcess::CreateAuthenticatorFactory() {
     return;
   }
 
-  scoped_refptr<protocol::PairingRegistry> pairing_registry = NULL;
+  scoped_refptr<PairingRegistry> pairing_registry = NULL;
   if (allow_pairing_) {
-    pairing_registry = CreatePairingRegistry(context_->file_task_runner());
+    if (!pairing_registry_delegate_)
+      pairing_registry_delegate_ = CreatePairingRegistryDelegate();
+
+    if (pairing_registry_delegate_) {
+      pairing_registry = new PairingRegistry(context_->file_task_runner(),
+                                             pairing_registry_delegate_.Pass());
+    }
   }
 
   scoped_ptr<protocol::AuthenticatorFactory> factory;
 
-  if (token_url_.is_empty() && token_validation_url_.is_empty()) {
+  if (third_party_auth_config_.is_empty()) {
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
-        host_owner_, local_certificate, key_pair_, host_secret_hash_,
-        pairing_registry);
+        use_service_account_, host_owner_, local_certificate, key_pair_,
+        host_secret_hash_, pairing_registry);
 
-  } else if (token_url_.is_valid() && token_validation_url_.is_valid()) {
+  } else if (third_party_auth_config_.is_valid()) {
     scoped_ptr<protocol::ThirdPartyHostAuthenticator::TokenValidatorFactory>
         token_validator_factory(new TokenValidatorFactoryImpl(
-            token_url_, token_validation_url_, key_pair_,
-            context_->url_request_context_getter()));
+            third_party_auth_config_,
+            key_pair_, context_->url_request_context_getter()));
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithThirdPartyAuth(
-        host_owner_, local_certificate, key_pair_,
+        use_service_account_, host_owner_, local_certificate, key_pair_,
         token_validator_factory.Pass());
 
   } else {
@@ -534,8 +557,9 @@ void HostProcess::CreateAuthenticatorFactory() {
     // Having it show up as online and then reject all clients is misleading.
     LOG(ERROR) << "One of the third-party token URLs is empty or invalid. "
                << "Host will reject all clients until policies are corrected. "
-               << "TokenUrl: " << token_url_ << ", "
-               << "TokenValidationUrl: " << token_validation_url_;
+               << "TokenUrl: " << third_party_auth_config_.token_url << ", "
+               << "TokenValidationUrl: "
+               << third_party_auth_config_.token_validation_url;
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateRejecting();
   }
 
@@ -558,6 +582,8 @@ bool HostProcess::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromotingDaemonMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(ChromotingDaemonNetworkMsg_Configuration,
                         OnConfigUpdated)
+    IPC_MESSAGE_HANDLER(ChromotingDaemonNetworkMsg_InitializePairingRegistry,
+                        OnInitializePairingRegistry)
     IPC_MESSAGE_FORWARD(
         ChromotingDaemonNetworkMsg_DesktopAttached,
         desktop_session_connector_,
@@ -674,6 +700,29 @@ void HostProcess::OnHostDeleted() {
   ShutdownHost(kInvalidHostIdExitCode);
 }
 
+void HostProcess::OnInitializePairingRegistry(
+    IPC::PlatformFileForTransit privileged_key,
+    IPC::PlatformFileForTransit unprivileged_key) {
+  DCHECK(!pairing_registry_delegate_);
+
+#if defined(OS_WIN)
+  // Initialize the pairing registry delegate.
+  scoped_ptr<PairingRegistryDelegateWin> delegate(
+      new PairingRegistryDelegateWin());
+  bool result = delegate->SetRootKeys(
+      reinterpret_cast<HKEY>(
+          IPC::PlatformFileForTransitToPlatformFile(privileged_key)),
+      reinterpret_cast<HKEY>(
+          IPC::PlatformFileForTransitToPlatformFile(unprivileged_key)));
+  if (!result)
+    return;
+
+  pairing_registry_delegate_ = delegate.PassAs<PairingRegistry::Delegate>();
+#else  // !defined(OS_WIN)
+  NOTREACHED();
+#endif  // !defined(OS_WIN)
+}
+
 // Applies the host config, returning true if successful.
 bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
@@ -779,14 +828,19 @@ void HostProcess::OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies) {
     restart_required |= OnHostTalkGadgetPrefixPolicyUpdate(string_value);
   }
   std::string token_url_string, token_validation_url_string;
+  std::string token_validation_cert_issuer;
   if (policies->GetString(
           policy_hack::PolicyWatcher::kHostTokenUrlPolicyName,
           &token_url_string) &&
       policies->GetString(
           policy_hack::PolicyWatcher::kHostTokenValidationUrlPolicyName,
-          &token_validation_url_string)) {
+          &token_validation_url_string) &&
+      policies->GetString(
+          policy_hack::PolicyWatcher::kHostTokenValidationCertIssuerPolicyName,
+          &token_validation_cert_issuer)) {
     restart_required |= OnHostTokenUrlPolicyUpdate(
-        GURL(token_url_string), GURL(token_validation_url_string));
+        GURL(token_url_string), GURL(token_validation_url_string),
+        token_validation_cert_issuer);
   }
   if (policies->GetBoolean(
           policy_hack::PolicyWatcher::kHostAllowClientPairing,
@@ -920,18 +974,24 @@ bool HostProcess::OnHostTalkGadgetPrefixPolicyUpdate(
 
 bool HostProcess::OnHostTokenUrlPolicyUpdate(
     const GURL& token_url,
-    const GURL& token_validation_url) {
+    const GURL& token_validation_url,
+    const std::string& token_validation_cert_issuer) {
   // Returns true if the host has to be restarted after this policy update.
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
-  if (token_url_ != token_url ||
-      token_validation_url_ != token_validation_url) {
+  if (third_party_auth_config_.token_url != token_url ||
+      third_party_auth_config_.token_validation_url != token_validation_url ||
+      third_party_auth_config_.token_validation_cert_issuer !=
+      token_validation_cert_issuer) {
     HOST_LOG << "Policy sets third-party token URLs: "
-              << "TokenUrl: " << token_url << ", "
-              << "TokenValidationUrl: " << token_validation_url;
-
-    token_url_ = token_url;
-    token_validation_url_ = token_validation_url;
+             << "TokenUrl: " << token_url << ", "
+             << "TokenValidationUrl: " << token_validation_url
+             << "TokenValidationCertificateIssuer: "
+             << token_validation_cert_issuer;
+    third_party_auth_config_.token_url = token_url;
+    third_party_auth_config_.token_validation_url = token_validation_url;
+    third_party_auth_config_.token_validation_cert_issuer =
+        token_validation_cert_issuer;
     return true;
   }
 
@@ -974,16 +1034,20 @@ void HostProcess::StartHost() {
 
   signaling_connector_.reset(new SignalingConnector(
       signal_strategy_.get(),
-      context_->url_request_context_getter(),
       dns_blackhole_checker.Pass(),
       base::Bind(&HostProcess::OnAuthFailed, this)));
 
   if (!oauth_refresh_token_.empty()) {
-    scoped_ptr<SignalingConnector::OAuthCredentials> oauth_credentials(
-        new SignalingConnector::OAuthCredentials(
+    scoped_ptr<OAuthTokenGetter::OAuthCredentials> oauth_credentials;
+    oauth_credentials.reset(
+        new OAuthTokenGetter::OAuthCredentials(
             xmpp_server_config_.username, oauth_refresh_token_,
             use_service_account_));
-    signaling_connector_->EnableOAuth(oauth_credentials.Pass());
+
+    oauth_token_getter_.reset(new OAuthTokenGetter(
+        oauth_credentials.Pass(), context_->url_request_context_getter()));
+
+    signaling_connector_->EnableOAuth(oauth_token_getter_.get());
   }
 
   NetworkSettings network_settings(
@@ -998,7 +1062,7 @@ void HostProcess::StartHost() {
   host_.reset(new ChromotingHost(
       signal_strategy_.get(),
       desktop_environment_factory_.get(),
-      CreateHostSessionManager(network_settings,
+      CreateHostSessionManager(signal_strategy_.get(), network_settings,
                                context_->url_request_context_getter()),
       context_->audio_task_runner(),
       context_->input_task_runner(),
@@ -1101,6 +1165,7 @@ void HostProcess::ShutdownOnNetworkThread() {
   host_status_sender_.reset();
   host_change_notification_listener_.reset();
   signaling_connector_.reset();
+  oauth_token_getter_.reset();
   signal_strategy_.reset();
   network_change_notifier_.reset();
 
@@ -1157,7 +1222,7 @@ int HostProcessMain() {
   media::InitializeCPUSpecificMediaFeatures();
 
   // Create the main message loop and start helper threads.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI message_loop;
   scoped_ptr<ChromotingHostContext> context =
       ChromotingHostContext::Create(new AutoThreadTaskRunner(
           message_loop.message_loop_proxy(), base::MessageLoop::QuitClosure()));

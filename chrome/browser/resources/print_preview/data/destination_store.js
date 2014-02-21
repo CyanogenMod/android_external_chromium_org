@@ -11,10 +11,11 @@ cr.define('print_preview', function() {
    * @param {!print_preview.NativeLayer} nativeLayer Used to fetch local print
    *     destinations.
    * @param {!print_preview.AppState} appState Application state.
+   * @param {!print_preview.Metrics} metrics Metrics.
    * @constructor
    * @extends {cr.EventTarget}
    */
-  function DestinationStore(nativeLayer, appState) {
+  function DestinationStore(nativeLayer, appState, metrics) {
     cr.EventTarget.call(this);
 
     /**
@@ -30,6 +31,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.appState_ = appState;
+
+    /**
+     * Used to track metrics.
+     * @type {!print_preview.AppState}
+     * @private
+     */
+    this.metrics_ = metrics;
 
     /**
      * Internal backing store for the data store.
@@ -138,6 +146,21 @@ cr.define('print_preview', function() {
      */
     this.hasLoadedAllPrivetDestinations_ = false;
 
+    /**
+     * ID of a timeout after the start of a privet search to end that privet
+     * search.
+     * @type {?number}
+     * @private
+     */
+    this.privetSearchTimeout_ = null;
+
+    /**
+     * MDNS service name of destination that we are waiting to register.
+     * @type {?string}
+     * @private
+     */
+    this.waitForRegisterDestination_ = null;
+
     this.addEventListeners_();
     this.reset_();
   };
@@ -169,6 +192,14 @@ cr.define('print_preview', function() {
    * @private
    */
   DestinationStore.AUTO_SELECT_TIMEOUT_ = 15000;
+
+  /**
+   * Amount of time spent searching for privet destination, in milliseconds.
+   * @type {number}
+   * @const
+   * @private
+   */
+  DestinationStore.PRIVET_SEARCH_DURATION_ = 2000;
 
   /**
    * Creates a local PDF print destination.
@@ -361,6 +392,23 @@ cr.define('print_preview', function() {
                                                              true);
       }
       this.appState_.persistSelectedDestination(this.selectedDestination_);
+
+      if (destination.cloudID &&
+          this.destinations.some(function(otherDestination) {
+            return otherDestination.cloudID == destination.cloudID &&
+                otherDestination != destination;
+            })) {
+        if (destination.isPrivet) {
+          this.metrics_.incrementDestinationSearchBucket(
+              print_preview.Metrics.DestinationSearchBucket.
+                  PRIVET_DUPLICATE_SELECTED);
+        } else {
+          this.metrics_.incrementDestinationSearchBucket(
+              print_preview.Metrics.DestinationSearchBucket.
+                  CLOUD_DUPLICATE_SELECTED);
+        }
+      }
+
       cr.dispatchSimpleEvent(
           this, DestinationStore.EventType.DESTINATION_SELECT);
       if (destination.capabilities == null) {
@@ -440,6 +488,7 @@ cr.define('print_preview', function() {
      *     updated or {@code null} if it was the new destination.
      */
     updateDestination: function(destination) {
+      assert(destination.constructor !== Array, 'Single printer expected');
       var key = this.getDestinationKey_(destination.origin, destination.id);
       var existingDestination = this.destinationMap_[key];
       if (existingDestination != null) {
@@ -477,6 +526,9 @@ cr.define('print_preview', function() {
         this.nativeLayer_.startGetPrivetDestinations();
         cr.dispatchSimpleEvent(
             this, DestinationStore.EventType.DESTINATION_SEARCH_STARTED);
+        this.privetSearchTimeout_ = setTimeout(
+            this.endPrivetPrinterSearch_.bind(this),
+            DestinationStore.PRIVET_SEARCH_DURATION_);
       }
     },
 
@@ -492,6 +544,26 @@ cr.define('print_preview', function() {
         cr.dispatchSimpleEvent(
             this, DestinationStore.EventType.DESTINATION_SEARCH_STARTED);
       }
+    },
+
+    /**
+     * Wait for a privet device to be registered.
+     */
+    waitForRegister: function(id) {
+      this.nativeLayer_.startGetPrivetDestinations();
+      this.waitForRegisterDestination_ = id;
+    },
+
+    /**
+     * Called when the search for Privet printers is done.
+     * @private
+     */
+    endPrivetPrinterSearch_: function() {
+      this.nativeLayer_.stopGetPrivetDestinations();
+      this.isPrivetDestinationSearchInProgress_ = false;
+      this.hasLoadedAllPrivetDestinations_ = true;
+      cr.dispatchSimpleEvent(
+          this, DestinationStore.EventType.DESTINATION_SEARCH_DONE);
     },
 
     /**
@@ -543,10 +615,6 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PRIVET_PRINTER_CHANGED,
           this.onPrivetPrinterAdded_.bind(this));
-      this.tracker_.add(
-          this.nativeLayer_,
-          print_preview.NativeLayer.EventType.PRIVET_PRINTER_SEARCH_DONE,
-          this.onPrivetPrinterSearchDone_.bind(this));
       this.tracker_.add(
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PRIVET_CAPABILITIES_SET,
@@ -705,8 +773,14 @@ cr.define('print_preview', function() {
      * @private
      */
     onPrivetPrinterAdded_: function(event) {
+      if (event.printer.serviceName == this.waitForRegisterDestination_ &&
+          !event.printer.isUnregistered) {
+        this.waitForRegisterDestination_ = null;
+        this.onDestinationsReload_();
+      } else {
         this.insertDestinations(
             print_preview.PrivetDestinationParser.parse(event.printer));
+      }
     },
 
     /**
@@ -716,21 +790,12 @@ cr.define('print_preview', function() {
      */
     onPrivetCapabilitiesSet_: function(event) {
       var destinationId = event.printerId;
-      var dest = print_preview.PrivetDestinationParser.parse(event.printer);
-      dest.capabilities = event.capabilities;
-
-      this.updateDestination(dest);
-    },
-
-    /**
-     * Called when the search for Privet printers is done.
-     * @private
-     */
-    onPrivetPrinterSearchDone_: function() {
-      this.isPrivetDestinationSearchInProgress_ = false;
-      this.hasLoadedAllPrivetDestinations_ = true;
-      cr.dispatchSimpleEvent(
-        this, DestinationStore.EventType.DESTINATION_SEARCH_DONE);
+      var destinations =
+          print_preview.PrivetDestinationParser.parse(event.printer);
+      destinations.forEach(function(dest) {
+        dest.capabilities = event.capabilities;
+        this.updateDestination(dest);
+      }, this);
     },
 
     /**

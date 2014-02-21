@@ -295,7 +295,7 @@ NotifierSettingsView::NotifierButton::NotifierButton(
       notifier_(notifier),
       icon_view_(new views::ImageView()),
       name_view_(new views::Label(notifier_->name)),
-      checkbox_(new views::Checkbox(string16())),
+      checkbox_(new views::Checkbox(base::string16())),
       learn_more_(NULL) {
   DCHECK(provider);
   DCHECK(notifier);
@@ -306,7 +306,7 @@ NotifierSettingsView::NotifierButton::NotifierButton(
 
   checkbox_->SetChecked(notifier_->enabled);
   checkbox_->set_listener(this);
-  checkbox_->set_focusable(false);
+  checkbox_->SetFocusable(false);
   checkbox_->SetAccessibleName(notifier_->name);
 
   if (ShouldHaveLearnMoreButton()) {
@@ -314,7 +314,7 @@ NotifierSettingsView::NotifierButton::NotifierButton(
     learn_more_ = new views::ImageButton(this);
     learn_more_->SetFocusPainter(CreateFocusPainter());
     learn_more_->set_request_focus_on_press(false);
-    learn_more_->set_focusable(true);
+    learn_more_->SetFocusable(true);
 
     ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     learn_more_->SetImage(
@@ -333,7 +333,7 @@ NotifierSettingsView::NotifierButton::NotifierButton(
         (settings::kLearnMoreTargetHeight - settings::kLearnMoreSize) / 2;
     // The image itself is quite small, this large invisible border creates a
     // much bigger click target.
-    learn_more_->set_border(
+    learn_more_->SetBorder(
         views::Border::CreateEmptyBorder(learn_more_border_height,
                                          learn_more_border_width,
                                          learn_more_border_height,
@@ -384,7 +384,8 @@ void NotifierSettingsView::NotifierButton::SendLearnMorePressedForTest() {
     return;
   gfx::Point point(110, 120);
   ui::MouseEvent pressed(
-      ui::ET_MOUSE_PRESSED, point, point, ui::EF_LEFT_MOUSE_BUTTON);
+      ui::ET_MOUSE_PRESSED, point, point, ui::EF_LEFT_MOUSE_BUTTON,
+      ui::EF_LEFT_MOUSE_BUTTON);
   ButtonPressed(learn_more_, pressed);
 }
 
@@ -483,20 +484,19 @@ NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
   if (provider_)
     provider_->AddObserver(this);
 
-  set_focusable(true);
+  SetFocusable(true);
   set_background(
       views::Background::CreateSolidBackground(kMessageCenterBackgroundColor));
   if (get_use_acceleration_when_possible())
     SetPaintToLayer(true);
 
-  gfx::Font title_font =
-      ResourceBundle::GetSharedInstance().GetFont(ResourceBundle::MediumFont);
   title_label_ = new views::Label(
       l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL),
-      title_font);
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::MediumFont));
   title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label_->SetMultiLine(true);
-  title_label_->set_border(
+  title_label_->SetBorder(
       views::Border::CreateEmptyBorder(kComputedTitleTopMargin,
                                        settings::kTitleMargin,
                                        kComputedTitleBottomMargin,
@@ -571,7 +571,7 @@ void NotifierSettingsView::UpdateContentsView(
 
   top_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   top_label->SetMultiLine(true);
-  top_label->set_border(views::Border::CreateEmptyBorder(
+  top_label->SetBorder(views::Border::CreateEmptyBorder(
       0,
       settings::kTitleMargin + kMenuButtonInnateMargin,
       0,
@@ -580,7 +580,7 @@ void NotifierSettingsView::UpdateContentsView(
 
   if (need_account_switcher) {
     const NotifierGroup& active_group = provider_->GetActiveNotifierGroup();
-    string16 notifier_group_text = active_group.login_info.empty() ?
+    base::string16 notifier_group_text = active_group.login_info.empty() ?
         active_group.name : active_group.login_info;
     notifier_group_selector_ =
         new views::MenuButton(NULL, notifier_group_text, this, true);
@@ -598,10 +598,11 @@ void NotifierSettingsView::UpdateContentsView(
     selector_border->SetInsets(gfx::Insets(
         kMenuButtonVerticalPadding, kMenuButtonLeftPadding,
         kMenuButtonVerticalPadding, kMenuButtonRightPadding));
-    notifier_group_selector_->set_border(selector_border.release());
+    notifier_group_selector_->SetBorder(
+        selector_border.PassAs<views::Border>());
     notifier_group_selector_->SetFocusPainter(scoped_ptr<views::Painter>());
     notifier_group_selector_->set_animate_on_state_change(false);
-    notifier_group_selector_->set_focusable(true);
+    notifier_group_selector_->SetFocusable(true);
     contents_title_view->AddChildView(notifier_group_selector_);
   }
 
@@ -616,18 +617,18 @@ void NotifierSettingsView::UpdateContentsView(
     // border on the last notifier, as the spec leaves a space for it.
     scoped_ptr<views::Border> entry_border;
     if (i == notifier_count - 1) {
-      entry_border.reset(views::Border::CreateEmptyBorder(
-          0, 0, settings::kEntrySeparatorHeight, 0));
+      entry_border = views::Border::CreateEmptyBorder(
+          0, 0, settings::kEntrySeparatorHeight, 0);
     } else {
-      entry_border.reset(views::Border::CreateSolidSidedBorder(
-          0,
-          0,
-          settings::kEntrySeparatorHeight,
-          0,
-          settings::kEntrySeparatorColor));
+      entry_border =
+          views::Border::CreateSolidSidedBorder(0,
+                                                0,
+                                                settings::kEntrySeparatorHeight,
+                                                0,
+                                                settings::kEntrySeparatorColor);
     }
-    entry->set_border(entry_border.release());
-    entry->set_focusable(true);
+    entry->SetBorder(entry_border.Pass());
+    entry->SetFocusable(true);
     contents_view->AddChildView(entry);
     buttons_.insert(button);
   }

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <string>
+
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
@@ -12,6 +14,7 @@
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/importer/importer_list.h"
+#include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -20,7 +23,9 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/test_launcher.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -160,7 +165,7 @@ extern const char kImportDefault[] =
 typedef FirstRunMasterPrefsBrowserTestT<kImportDefault>
     FirstRunMasterPrefsImportDefault;
 // http://crbug.com/314221
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD) && (defined(OS_MACOSX) || defined(OS_LINUX))
 #define MAYBE_ImportDefault DISABLED_ImportDefault
 #else
 #define MAYBE_ImportDefault ImportDefault
@@ -183,7 +188,7 @@ extern const char kImportBookmarksFile[] =
 typedef FirstRunMasterPrefsBrowserTestT<kImportBookmarksFile>
     FirstRunMasterPrefsImportBookmarksFile;
 // http://crbug.com/314221
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD) && (defined(OS_MACOSX) || defined(OS_LINUX))
 #define MAYBE_ImportBookmarksFile DISABLED_ImportBookmarksFile
 #else
 #define MAYBE_ImportBookmarksFile ImportBookmarksFile
@@ -213,7 +218,7 @@ extern const char kImportNothing[] =
 typedef FirstRunMasterPrefsBrowserTestT<kImportNothing>
     FirstRunMasterPrefsImportNothing;
 // http://crbug.com/314221
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD) && (defined(OS_MACOSX) || defined(OS_LINUX))
 #define MAYBE_ImportNothingAndShowNewTabPage \
     DISABLED_ImportNothingAndShowNewTabPage
 #else
@@ -228,5 +233,62 @@ IN_PROC_BROWSER_TEST_F(FirstRunMasterPrefsImportNothing,
   content::WebContents* tab = browser()->tab_strip_model()->GetWebContentsAt(0);
   EXPECT_EQ(1, tab->GetMaxPageID());
 }
+
+// Test first run with some tracked preferences.
+extern const char kWithTrackedPrefs[] =
+    "{\n"
+    "  \"homepage\": \"example.com\",\n"
+    "  \"homepage_is_newtabpage\": false\n"
+    "}\n";
+// A test fixture that will run in a first run scenario with master_preferences
+// set to kWithTrackedPrefs. Parameterizable on the SettingsEnforcement
+// experiment to be forced.
+class FirstRunMasterPrefsWithTrackedPreferences
+    : public FirstRunMasterPrefsBrowserTestT<kWithTrackedPrefs>,
+      public testing::WithParamInterface<std::string> {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    FirstRunMasterPrefsBrowserTestT::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(
+        switches::kForceFieldTrials,
+        std::string(chrome_prefs::internals::kSettingsEnforcementTrialName) +
+            "/" + GetParam() + "/");
+  }
+};
+
+// http://crbug.com/314221
+#if defined(GOOGLE_CHROME_BUILD) && (defined(OS_MACOSX) || defined(OS_LINUX))
+#define MAYBE_TrackedPreferencesSurviveFirstRun \
+    DISABLED_TrackedPreferencesSurviveFirstRun
+#else
+#define MAYBE_TrackedPreferencesSurviveFirstRun \
+    TrackedPreferencesSurviveFirstRun
+#endif
+IN_PROC_BROWSER_TEST_P(FirstRunMasterPrefsWithTrackedPreferences,
+                       MAYBE_TrackedPreferencesSurviveFirstRun) {
+  const PrefService* user_prefs = browser()->profile()->GetPrefs();
+  EXPECT_EQ("example.com", user_prefs->GetString(prefs::kHomePage));
+  EXPECT_FALSE(user_prefs->GetBoolean(prefs::kHomePageIsNewTabPage));
+
+  // The test for kHomePageIsNewTabPage above relies on the fact that true is
+  // the default (hence false must be the user's pref); ensure this fact remains
+  // true.
+  const base::Value* default_homepage_is_ntp_value =
+      user_prefs->GetDefaultPrefValue(prefs::kHomePageIsNewTabPage);
+  ASSERT_TRUE(default_homepage_is_ntp_value != NULL);
+  bool default_homepage_is_ntp = false;
+  EXPECT_TRUE(
+      default_homepage_is_ntp_value->GetAsBoolean(&default_homepage_is_ntp));
+  EXPECT_TRUE(default_homepage_is_ntp);
+}
+
+INSTANTIATE_TEST_CASE_P(
+    FirstRunMasterPrefsWithTrackedPreferencesInstance,
+    FirstRunMasterPrefsWithTrackedPreferences,
+    testing::Values(
+        chrome_prefs::internals::kSettingsEnforcementGroupNoEnforcement,
+        chrome_prefs::internals::kSettingsEnforcementGroupEnforceOnload,
+        chrome_prefs::internals::kSettingsEnforcementGroupEnforceAlways));
+
 
 #endif  // !defined(OS_CHROMEOS)

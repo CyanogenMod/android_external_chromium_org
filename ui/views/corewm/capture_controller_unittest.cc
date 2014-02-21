@@ -36,9 +36,9 @@ class CaptureControllerTest : public aura::test::AuraTestBase {
 
     second_root_.reset(new aura::RootWindow(
         aura::RootWindow::CreateParams(gfx::Rect(0, 0, 800, 600))));
-    second_root_->Init();
+    second_root_->host()->InitHost();
     second_root_->window()->Show();
-    second_root_->SetHostSize(gfx::Size(800, 600));
+    second_root_->host()->SetBounds(gfx::Rect(800, 600));
     second_capture_controller_.reset(
         new corewm::ScopedCaptureClient(second_root_->window()));
 
@@ -102,9 +102,8 @@ TEST_F(CaptureControllerTest, ResetMouseEventHandlerOnCapture) {
   // Make a synthesized mouse down event. Ensure that the RootWindow will
   // dispatch further mouse events to |w1|.
   ui::MouseEvent mouse_pressed_event(ui::ET_MOUSE_PRESSED, gfx::Point(5, 5),
-                                     gfx::Point(5, 5), 0);
-  dispatcher()->AsRootWindowHostDelegate()->OnHostMouseEvent(
-      &mouse_pressed_event);
+                                     gfx::Point(5, 5), 0, 0);
+  DispatchEventUsingWindowDispatcher(&mouse_pressed_event);
   EXPECT_EQ(w1.get(), dispatcher()->mouse_pressed_handler());
 
   // Build a window in the second RootWindow.

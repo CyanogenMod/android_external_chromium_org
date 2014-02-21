@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "media/cast/cast_config.h"
 #include "third_party/libvpx/source/libvpx/vpx/vpx_encoder.h"
 
@@ -24,14 +25,17 @@ const int kNumberOfVp8VideoBuffers = 3;
 
 class Vp8Encoder {
  public:
-  Vp8Encoder(const VideoSenderConfig& video_config,
-             uint8 max_unacked_frames);
+  Vp8Encoder(const VideoSenderConfig& video_config, uint8 max_unacked_frames);
 
   ~Vp8Encoder();
 
+  // Initialize the encoder before Encode() can be called. This method
+  // must be called on the thread that Encode() is called.
+  void Initialize();
+
   // Encode a raw image (as a part of a video stream).
   bool Encode(const scoped_refptr<media::VideoFrame>& video_frame,
-              EncodedVideoFrame* encoded_image);
+              transport::EncodedVideoFrame* encoded_image);
 
   // Update the encoder with a new target bit rate.
   void UpdateRates(uint32 new_bitrate);
@@ -73,7 +77,7 @@ class Vp8Encoder {
 
   // VP8 internal objects.
   scoped_ptr<vpx_codec_enc_cfg_t> config_;
-  vpx_enc_ctx_t* encoder_;
+  scoped_ptr<vpx_enc_ctx_t> encoder_;
   vpx_image_t* raw_image_;
 
   bool key_frame_requested_;
@@ -83,6 +87,11 @@ class Vp8Encoder {
   bool acked_frame_buffers_[kNumberOfVp8VideoBuffers];
   Vp8Buffers last_used_vp8_buffer_;
   int number_of_repeated_buffers_;
+
+  // This is bound to the thread where Initialize() is called.
+  base::ThreadChecker thread_checker_;
+
+  DISALLOW_COPY_AND_ASSIGN(Vp8Encoder);
 };
 
 }  // namespace cast

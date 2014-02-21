@@ -10,7 +10,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
@@ -23,17 +23,16 @@ void ShellLoginDialog::PlatformCreateDialog(const base::string16& message) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   int render_process_id;
-  int render_view_id;
-  if (!ResourceRequestInfo::ForRequest(request_)->GetAssociatedRenderView(
-          &render_process_id,  &render_view_id)) {
+  int render_frame_id;
+  if (!ResourceRequestInfo::ForRequest(request_)->GetAssociatedRenderFrame(
+          &render_process_id,  &render_frame_id)) {
     NOTREACHED();
   }
 
   WebContents* web_contents = NULL;
-  RenderViewHost* render_view_host =
-      RenderViewHost::FromID(render_process_id, render_view_id);
-  if (render_view_host)
-    web_contents = WebContents::FromRenderViewHost(render_view_host);
+  RenderFrameHost* render_frame_host =
+      RenderFrameHost::FromID(render_process_id, render_frame_id);
+  web_contents = WebContents::FromRenderFrameHost(render_frame_host);
   DCHECK(web_contents);
 
   gfx::NativeWindow parent_window =
@@ -46,7 +45,7 @@ void ShellLoginDialog::PlatformCreateDialog(const base::string16& message) {
                                  "Please log in.");
 
   GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(root_));
-  GtkWidget* label = gtk_label_new(UTF16ToUTF8(message).c_str());
+  GtkWidget* label = gtk_label_new(base::UTF16ToUTF8(message).c_str());
   gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
   gtk_box_pack_start(GTK_BOX(content_area), label, FALSE, FALSE, 0);
 
@@ -94,8 +93,8 @@ void ShellLoginDialog::OnResponse(GtkWidget* sender, int response_id) {
   switch (response_id) {
     case GTK_RESPONSE_OK:
       UserAcceptedAuth(
-          UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(username_entry_))),
-          UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(password_entry_))));
+          base::UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(username_entry_))),
+          base::UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(password_entry_))));
       break;
     case GTK_RESPONSE_CANCEL:
     case GTK_RESPONSE_DELETE_EVENT:

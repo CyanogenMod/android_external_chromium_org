@@ -176,8 +176,8 @@ bool NotificationOptionsMenuModel::IsItemForCommandIdDynamic(int command_id)
          command_id == kToggleExtensionCommand;
 }
 
-string16 NotificationOptionsMenuModel::GetLabelForCommandId(int command_id)
-    const {
+base::string16 NotificationOptionsMenuModel::GetLabelForCommandId(
+    int command_id) const {
   // TODO(tfarina,johnnyg): Remove this code if we decide to close notifications
   // after permissions are revoked.
   if (command_id == kTogglePermissionCommand ||
@@ -266,7 +266,7 @@ void NotificationOptionsMenuModel::ExecuteCommand(int command_id,
           balloon_->profile(), active_desktop);
       if (!browser) {
         // It is possible that there is no browser window (e.g. when there are
-        // background pages, or for a chrome frame process on windows).
+        // background pages).
         browser = new Browser(Browser::CreateParams(balloon_->profile(),
                                                     active_desktop));
       }

@@ -4,19 +4,21 @@
 
 #include "chrome/browser/ui/views/apps/native_app_window_views.h"
 
-#include "apps/shell_window.h"
-#include "apps/ui/views/shell_window_frame_view.h"
+#include "apps/app_window.h"
+#include "apps/ui/views/app_window_frame_view.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
-#include "base/path_service.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_context_menu.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/views/apps/shaped_app_window_targeter.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
+#include "chrome/browser/ui/views/frame/taskbar_decorator.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
@@ -33,14 +35,6 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
 
-#if defined(OS_WIN)
-#include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
-#include "chrome/browser/web_applications/web_app_win.h"
-#include "ui/base/win/shell.h"
-#include "ui/views/win/hwnd_util.h"
-#endif
-
 #if defined(OS_LINUX)
 #include "chrome/browser/shell_integration_linux.h"
 #endif
@@ -48,7 +42,7 @@
 #if defined(USE_ASH)
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wm/custom_frame_view_ash.h"
 #include "ash/wm/immersive_fullscreen_controller.h"
@@ -67,7 +61,7 @@
 #include "ui/aura/window.h"
 #endif
 
-using apps::ShellWindow;
+using apps::AppWindow;
 
 namespace {
 
@@ -83,57 +77,57 @@ struct AcceleratorMapping {
   int modifiers;
   int command_id;
 };
+
 const AcceleratorMapping kAppWindowAcceleratorMap[] = {
   { ui::VKEY_W, ui::EF_CONTROL_DOWN, IDC_CLOSE_WINDOW },
   { ui::VKEY_W, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_CLOSE_WINDOW },
   { ui::VKEY_F4, ui::EF_ALT_DOWN, IDC_CLOSE_WINDOW },
 };
 
+// These accelerators will only be available in kiosk mode. These allow the
+// user to manually zoom app windows. This is only necessary in kiosk mode
+// (in normal mode, the user can zoom via the screen magnifier).
+// TODO(xiyuan): Write a test for kiosk accelerators.
+const AcceleratorMapping kAppWindowKioskAppModeAcceleratorMap[] = {
+  { ui::VKEY_OEM_MINUS, ui::EF_CONTROL_DOWN, IDC_ZOOM_MINUS },
+  { ui::VKEY_OEM_MINUS, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
+    IDC_ZOOM_MINUS },
+  { ui::VKEY_SUBTRACT, ui::EF_CONTROL_DOWN, IDC_ZOOM_MINUS },
+  { ui::VKEY_OEM_PLUS, ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
+  { ui::VKEY_OEM_PLUS, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
+  { ui::VKEY_ADD, ui::EF_CONTROL_DOWN, IDC_ZOOM_PLUS },
+  { ui::VKEY_0, ui::EF_CONTROL_DOWN, IDC_ZOOM_NORMAL },
+  { ui::VKEY_NUMPAD0, ui::EF_CONTROL_DOWN, IDC_ZOOM_NORMAL },
+};
+
+void AddAcceleratorsFromMapping(const AcceleratorMapping mapping[],
+                                size_t mapping_length,
+                                std::map<ui::Accelerator, int>* accelerators) {
+  for (size_t i = 0; i < mapping_length; ++i) {
+    ui::Accelerator accelerator(mapping[i].keycode, mapping[i].modifiers);
+    (*accelerators)[accelerator] = mapping[i].command_id;
+  }
+}
+
 const std::map<ui::Accelerator, int>& GetAcceleratorTable() {
   typedef std::map<ui::Accelerator, int> AcceleratorMap;
   CR_DEFINE_STATIC_LOCAL(AcceleratorMap, accelerators, ());
   if (accelerators.empty()) {
-    for (size_t i = 0; i < arraysize(kAppWindowAcceleratorMap); ++i) {
-      ui::Accelerator accelerator(kAppWindowAcceleratorMap[i].keycode,
-                                  kAppWindowAcceleratorMap[i].modifiers);
-      accelerators[accelerator] = kAppWindowAcceleratorMap[i].command_id;
+    AddAcceleratorsFromMapping(
+        kAppWindowAcceleratorMap,
+        arraysize(kAppWindowAcceleratorMap),
+        &accelerators);
+
+    // Add accelerators for kiosk mode.
+    if (chrome::IsRunningInForcedAppMode()) {
+      AddAcceleratorsFromMapping(
+          kAppWindowKioskAppModeAcceleratorMap,
+          arraysize(kAppWindowKioskAppModeAcceleratorMap),
+          &accelerators);
     }
   }
   return accelerators;
 }
-
-#if defined(OS_WIN)
-void CreateIconAndSetRelaunchDetails(
-    const base::FilePath web_app_path,
-    const base::FilePath icon_file,
-    const ShellIntegration::ShortcutInfo& shortcut_info,
-    const HWND hwnd) {
-  DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
-
-  // Set the relaunch data so "Pin this program to taskbar" has the app's
-  // information.
-  CommandLine command_line = ShellIntegration::CommandLineArgsForLauncher(
-      shortcut_info.url,
-      shortcut_info.extension_id,
-      shortcut_info.profile_path);
-
-  base::FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return;
-  }
-  command_line.SetProgram(chrome_exe);
-  ui::win::SetRelaunchDetailsForWindow(command_line.GetCommandLineString(),
-      shortcut_info.title, hwnd);
-
-  if (!base::PathExists(web_app_path) &&
-      !base::CreateDirectory(web_app_path))
-    return;
-
-  ui::win::SetAppIconForWindow(icon_file.value(), hwnd);
-  web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info.favicon);
-}
-#endif
 
 #if defined(USE_ASH)
 // This class handles a user's fullscreen request (Shift+F4/F4).
@@ -141,13 +135,13 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
                                      public ash::wm::WindowStateObserver,
                                      public aura::WindowObserver {
  public:
-  NativeAppWindowStateDelegate(ShellWindow* shell_window,
+  NativeAppWindowStateDelegate(AppWindow* app_window,
                                apps::NativeAppWindow* native_app_window)
-      : shell_window_(shell_window),
+      : app_window_(app_window),
         window_state_(
             ash::wm::GetWindowState(native_app_window->GetNativeWindow())) {
     // Add a window state observer to exit fullscreen properly in case
-    // fullscreen is exited without going through ShellWindow::Restore(). This
+    // fullscreen is exited without going through AppWindow::Restore(). This
     // is the case when exiting immersive fullscreen via the "Restore" window
     // control.
     // TODO(pkotwicz): This is a hack. Remove ASAP. http://crbug.com/319048
@@ -167,25 +161,24 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
     // Windows which cannot be maximized should not be fullscreened.
     DCHECK(window_state->IsFullscreen() || window_state->CanMaximize());
     if (window_state->IsFullscreen())
-      shell_window_->Restore();
+      app_window_->Restore();
     else if (window_state->CanMaximize())
-      shell_window_->OSFullscreen();
+      app_window_->OSFullscreen();
     return true;
   }
 
   // Overridden from ash::wm::WindowStateObserver:
-  virtual void OnWindowShowTypeChanged(
+  virtual void OnPostWindowShowTypeChange(
       ash::wm::WindowState* window_state,
       ash::wm::WindowShowType old_type) OVERRIDE {
-    if (!window_state->IsFullscreen() &&
-        !window_state->IsMinimized() &&
-        shell_window_->GetBaseWindow()->IsFullscreenOrPending()) {
-      shell_window_->Restore();
+    if (!window_state->IsFullscreen() && !window_state->IsMinimized() &&
+        app_window_->GetBaseWindow()->IsFullscreenOrPending()) {
+      app_window_->Restore();
       // Usually OnNativeWindowChanged() is called when the window bounds are
       // changed as a result of a show type change. Because the change in show
       // type has already occurred, we need to call OnNativeWindowChanged()
       // explicitly.
-      shell_window_->OnNativeWindowChanged();
+      app_window_->OnNativeWindowChanged();
     }
   }
 
@@ -197,7 +190,7 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
   }
 
   // Not owned.
-  ShellWindow* shell_window_;
+  AppWindow* app_window_;
   ash::wm::WindowState* window_state_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeAppWindowStateDelegate);
@@ -206,32 +199,33 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
 
 }  // namespace
 
-NativeAppWindowViews::NativeAppWindowViews(
-    ShellWindow* shell_window,
-    const ShellWindow::CreateParams& create_params)
-    : shell_window_(shell_window),
-      web_view_(NULL),
+NativeAppWindowViews::NativeAppWindowViews()
+    : web_view_(NULL),
       window_(NULL),
       is_fullscreen_(false),
-      frameless_(create_params.frame == ShellWindow::FRAME_NONE),
-      transparent_background_(create_params.transparent_background),
-      resizable_(create_params.resizable),
       weak_ptr_factory_(this) {
+}
+
+void NativeAppWindowViews::Init(apps::AppWindow* app_window,
+                                const AppWindow::CreateParams& create_params) {
+  app_window_ = app_window;
+  frameless_ = create_params.frame == AppWindow::FRAME_NONE;
+  transparent_background_ = create_params.transparent_background;
+  resizable_ = create_params.resizable;
   Observe(web_contents());
 
   window_ = new views::Widget;
-  if (create_params.window_type == ShellWindow::WINDOW_TYPE_PANEL ||
-      create_params.window_type == ShellWindow::WINDOW_TYPE_V1_PANEL) {
+  if (create_params.window_type == AppWindow::WINDOW_TYPE_PANEL ||
+      create_params.window_type == AppWindow::WINDOW_TYPE_V1_PANEL) {
     InitializePanelWindow(create_params);
   } else {
     InitializeDefaultWindow(create_params);
   }
-  extension_keybinding_registry_.reset(
-      new ExtensionKeybindingRegistryViews(
-          profile(),
-          window_->GetFocusManager(),
-          extensions::ExtensionKeybindingRegistry::PLATFORM_APPS_ONLY,
-          shell_window_));
+  extension_keybinding_registry_.reset(new ExtensionKeybindingRegistryViews(
+      Profile::FromBrowserContext(browser_context()),
+      window_->GetFocusManager(),
+      extensions::ExtensionKeybindingRegistry::PLATFORM_APPS_ONLY,
+      app_window_));
 
   OnViewWasResized();
   window_->AddObserver(this);
@@ -246,13 +240,19 @@ void NativeAppWindowViews::OnBeforeWidgetInit(
     views::Widget* widget) {}
 
 void NativeAppWindowViews::InitializeDefaultWindow(
-    const ShellWindow::CreateParams& create_params) {
+    const AppWindow::CreateParams& create_params) {
   std::string app_name =
       web_app::GenerateApplicationNameFromExtensionId(extension()->id());
 
   views::Widget::InitParams init_params(views::Widget::InitParams::TYPE_WINDOW);
   init_params.delegate = this;
   init_params.remove_standard_frame = ShouldUseChromeStyleFrame();
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // On Linux, remove the standard frame. Instead, we will use CustomFrameView
+  // to draw a native-like frame.
+  // TODO(mgiuca): Remove this during fix for http://crbug.com/322256.
+  init_params.remove_standard_frame = true;
+#endif
   init_params.use_system_default_icon = true;
   // TODO(erg): Conceptually, these are toplevel windows, but we theoretically
   // could plumb context through to here in some cases.
@@ -291,55 +291,31 @@ void NativeAppWindowViews::InitializeDefaultWindow(
   views::FocusManager* focus_manager = GetFocusManager();
   const std::map<ui::Accelerator, int>& accelerator_table =
       GetAcceleratorTable();
+  const bool is_kiosk_app_mode = chrome::IsRunningInForcedAppMode();
+
+  // Ensures that kiosk mode accelerators are enabled when in kiosk mode (to be
+  // future proof). This is needed because GetAcceleratorTable() uses a static
+  // to store data and only checks kiosk mode once. If a platform app is
+  // launched before kiosk mode starts, the kiosk accelerators will not be
+  // registered. This DCHECK catches the case.
+  DCHECK(!is_kiosk_app_mode ||
+         accelerator_table.size() ==
+             arraysize(kAppWindowAcceleratorMap) +
+                 arraysize(kAppWindowKioskAppModeAcceleratorMap));
+
   for (std::map<ui::Accelerator, int>::const_iterator iter =
            accelerator_table.begin();
        iter != accelerator_table.end(); ++iter) {
+    if (is_kiosk_app_mode && !chrome::IsCommandAllowedInAppMode(iter->second))
+      continue;
+
     focus_manager->RegisterAccelerator(
         iter->first, ui::AcceleratorManager::kNormalPriority, this);
   }
-
-#if defined(OS_WIN)
-  base::string16 app_name_wide = UTF8ToWide(app_name);
-  HWND hwnd = GetNativeAppWindowHWND();
-  ui::win::SetAppIdForWindow(ShellIntegration::GetAppModelIdForProfile(
-      app_name_wide, profile()->GetPath()), hwnd);
-
-  web_app::UpdateShortcutInfoAndIconForApp(
-      *extension(), profile(),
-      base::Bind(&NativeAppWindowViews::OnShortcutInfoLoaded,
-                 weak_ptr_factory_.GetWeakPtr()));
-#endif
 }
-
-#if defined(OS_WIN)
-void NativeAppWindowViews::OnShortcutInfoLoaded(
-    const ShellIntegration::ShortcutInfo& shortcut_info) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  HWND hwnd = GetNativeAppWindowHWND();
-
-  // Set window's icon to the one we're about to create/update in the web app
-  // path. The icon cache will refresh on icon creation.
-  base::FilePath web_app_path = web_app::GetWebAppDataDirectory(
-      shortcut_info.profile_path, shortcut_info.extension_id,
-      shortcut_info.url);
-  base::FilePath icon_file = web_app_path
-      .Append(web_app::internals::GetSanitizedFileName(shortcut_info.title))
-      .ReplaceExtension(FILE_PATH_LITERAL(".ico"));
-
-  content::BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(&CreateIconAndSetRelaunchDetails,
-                 web_app_path, icon_file, shortcut_info, hwnd));
-}
-
-HWND NativeAppWindowViews::GetNativeAppWindowHWND() const {
-  return views::HWNDForWidget(window_->GetTopLevelWidget());
-}
-#endif
 
 void NativeAppWindowViews::InitializePanelWindow(
-    const ShellWindow::CreateParams& create_params) {
+    const AppWindow::CreateParams& create_params) {
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_PANEL);
   params.delegate = this;
 
@@ -358,7 +334,7 @@ void NativeAppWindowViews::InitializePanelWindow(
   if (ash::Shell::HasInstance()) {
     // Open a new panel on the target root.
     aura::Window* target = ash::Shell::GetTargetRootWindow();
-    params.bounds = ash::ScreenAsh::ConvertRectToScreen(
+    params.bounds = ash::ScreenUtil::ConvertRectToScreen(
         target, gfx::Rect(preferred_size_));
   } else {
     params.bounds = gfx::Rect(preferred_size_);
@@ -392,11 +368,19 @@ void NativeAppWindowViews::InitializePanelWindow(
 }
 
 bool NativeAppWindowViews::ShouldUseChromeStyleFrame() const {
+  if (frameless_)
+    return true;
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Linux always uses native style frames.
+  return false;
+#endif
+
   return !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAppsUseNativeFrame) || frameless_;
+      switches::kAppsUseNativeFrame);
 }
 
-apps::ShellWindowFrameView* NativeAppWindowViews::CreateShellWindowFrameView() {
+apps::AppWindowFrameView* NativeAppWindowViews::CreateAppWindowFrameView() {
   // By default the user can resize the window from slightly inside the bounds.
   int resize_inside_bounds_size = kResizeInsideBoundsSize;
   int resize_outside_bounds_size = 0;
@@ -412,7 +396,7 @@ apps::ShellWindowFrameView* NativeAppWindowViews::CreateShellWindowFrameView() {
     resize_area_corner_size = ash::kResizeAreaCornerSize;
   }
 #endif
-  apps::ShellWindowFrameView* frame_view = new apps::ShellWindowFrameView(this);
+  apps::AppWindowFrameView* frame_view = new apps::AppWindowFrameView(this);
   frame_view->Init(window_,
                    resize_inside_bounds_size,
                    resize_outside_bounds_size,
@@ -542,7 +526,7 @@ void NativeAppWindowViews::FlashFrame(bool flash) {
 }
 
 bool NativeAppWindowViews::IsAlwaysOnTop() const {
-  if (shell_window_->window_type_is_panel()) {
+  if (app_window_->window_type_is_panel()) {
 #if defined(USE_ASH)
     return ash::wm::GetWindowState(window_->GetNativeWindow())->
         panel_attached();
@@ -562,9 +546,9 @@ void NativeAppWindowViews::ShowContextMenuForView(
     views::View* source,
     const gfx::Point& p,
     ui::MenuSourceType source_type) {
-#if defined(USE_ASH)
-  scoped_ptr<ui::MenuModel> model = CreateMultiUserContextMenu(
-      shell_window_->GetNativeWindow());
+#if defined(USE_ASH) & defined(OS_CHROMEOS)
+  scoped_ptr<ui::MenuModel> model =
+      CreateMultiUserContextMenu(app_window_->GetNativeWindow());
   if (!model.get())
     return;
 
@@ -591,9 +575,9 @@ gfx::NativeView NativeAppWindowViews::GetHostView() const {
 }
 
 gfx::Point NativeAppWindowViews::GetDialogPosition(const gfx::Size& size) {
-  gfx::Size shell_window_size = window_->GetWindowBoundsInScreen().size();
-  return gfx::Point(shell_window_size.width() / 2 - size.width() / 2,
-                    shell_window_size.height() / 2 - size.height() / 2);
+  gfx::Size app_window_size = window_->GetWindowBoundsInScreen().size();
+  return gfx::Point(app_window_size.width() / 2 - size.width() / 2,
+                    app_window_size.height() / 2 - size.height() / 2);
 }
 
 gfx::Size NativeAppWindowViews::GetMaximumDialogSize() {
@@ -612,59 +596,6 @@ void NativeAppWindowViews::RemoveObserver(
 // Private method. TODO(stevenjb): Move this below InitializePanelWindow()
 // to match declaration order.
 void NativeAppWindowViews::OnViewWasResized() {
-  // TODO(jeremya): this doesn't seem like a terribly elegant way to keep the
-  // window shape in sync.
-#if defined(OS_WIN) && !defined(USE_AURA)
-  DCHECK(window_);
-  DCHECK(web_view_);
-  gfx::Size sz = web_view_->size();
-  int height = sz.height(), width = sz.width();
-  if (ShouldUseChromeStyleFrame()) {
-    // Set the window shape of the RWHV.
-    const int kCornerRadius = 1;
-    gfx::Path path;
-    if (window_->IsMaximized() || window_->IsFullscreen()) {
-      // Don't round the corners when the window is maximized or fullscreen.
-      path.addRect(0, 0, width, height);
-    } else {
-      if (frameless_) {
-        path.moveTo(0, kCornerRadius);
-        path.lineTo(kCornerRadius, 0);
-        path.lineTo(width - kCornerRadius, 0);
-        path.lineTo(width, kCornerRadius);
-      } else {
-        // Don't round the top corners in chrome-style frame mode.
-        path.moveTo(0, 0);
-        path.lineTo(width, 0);
-      }
-      path.lineTo(width, height - kCornerRadius - 1);
-      path.lineTo(width - kCornerRadius - 1, height);
-      path.lineTo(kCornerRadius + 1, height);
-      path.lineTo(0, height - kCornerRadius - 1);
-      path.close();
-    }
-    SetWindowRgn(web_contents()->GetView()->GetNativeView(),
-                 path.CreateNativeRegion(), 1);
-  }
-
-  SkRegion* rgn = new SkRegion;
-  if (!window_->IsFullscreen()) {
-    if (draggable_region_)
-      rgn->op(*draggable_region_, SkRegion::kUnion_Op);
-    if (!window_->IsMaximized()) {
-      if (frameless_)
-        rgn->op(0, 0, width, kResizeInsideBoundsSize, SkRegion::kUnion_Op);
-      rgn->op(0, 0, kResizeInsideBoundsSize, height, SkRegion::kUnion_Op);
-      rgn->op(width - kResizeInsideBoundsSize, 0, width, height,
-          SkRegion::kUnion_Op);
-      rgn->op(0, height - kResizeInsideBoundsSize, width, height,
-          SkRegion::kUnion_Op);
-    }
-  }
-  if (web_contents()->GetRenderViewHost()->GetView())
-    web_contents()->GetRenderViewHost()->GetView()->SetClickthroughRegion(rgn);
-#endif
-
   FOR_EACH_OBSERVER(web_modal::ModalDialogHostObserver,
                     observer_list_,
                     OnPositionRequiresUpdate());
@@ -673,7 +604,7 @@ void NativeAppWindowViews::OnViewWasResized() {
 // WidgetDelegate implementation.
 
 void NativeAppWindowViews::OnWidgetMove() {
-  shell_window_->OnNativeWindowChanged();
+  app_window_->OnNativeWindowChanged();
 }
 
 views::View* NativeAppWindowViews::GetInitiallyFocusedView() {
@@ -681,24 +612,24 @@ views::View* NativeAppWindowViews::GetInitiallyFocusedView() {
 }
 
 bool NativeAppWindowViews::CanResize() const {
-  return resizable_ && !shell_window_->size_constraints().HasFixedSize();
+  return resizable_ && !app_window_->size_constraints().HasFixedSize();
 }
 
 bool NativeAppWindowViews::CanMaximize() const {
-  return resizable_ && !shell_window_->size_constraints().HasMaximumSize() &&
-      !shell_window_->window_type_is_panel();
+  return resizable_ && !app_window_->size_constraints().HasMaximumSize() &&
+         !app_window_->window_type_is_panel();
 }
 
-string16 NativeAppWindowViews::GetWindowTitle() const {
-  return shell_window_->GetTitle();
+base::string16 NativeAppWindowViews::GetWindowTitle() const {
+  return app_window_->GetTitle();
 }
 
 bool NativeAppWindowViews::ShouldShowWindowTitle() const {
-  return shell_window_->window_type() == ShellWindow::WINDOW_TYPE_V1_PANEL;
+  return app_window_->window_type() == AppWindow::WINDOW_TYPE_V1_PANEL;
 }
 
 gfx::ImageSkia NativeAppWindowViews::GetWindowAppIcon() {
-  gfx::Image app_icon = shell_window_->app_icon();
+  gfx::Image app_icon = app_window_->app_icon();
   if (app_icon.IsEmpty())
     return GetWindowIcon();
   else
@@ -706,7 +637,7 @@ gfx::ImageSkia NativeAppWindowViews::GetWindowAppIcon() {
 }
 
 gfx::ImageSkia NativeAppWindowViews::GetWindowIcon() {
-  content::WebContents* web_contents = shell_window_->web_contents();
+  content::WebContents* web_contents = app_window_->web_contents();
   if (web_contents) {
     FaviconTabHelper* favicon_tab_helper =
         FaviconTabHelper::FromWebContents(web_contents);
@@ -718,18 +649,18 @@ gfx::ImageSkia NativeAppWindowViews::GetWindowIcon() {
 }
 
 bool NativeAppWindowViews::ShouldShowWindowIcon() const {
-  return shell_window_->window_type() == ShellWindow::WINDOW_TYPE_V1_PANEL;
+  return app_window_->window_type() == AppWindow::WINDOW_TYPE_V1_PANEL;
 }
 
 void NativeAppWindowViews::SaveWindowPlacement(const gfx::Rect& bounds,
                                                ui::WindowShowState show_state) {
   views::WidgetDelegate::SaveWindowPlacement(bounds, show_state);
-  shell_window_->OnNativeWindowChanged();
+  app_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowViews::DeleteDelegate() {
   window_->RemoveObserver(this);
-  shell_window_->OnNativeClose();
+  app_window_->OnNativeClose();
 }
 
 views::Widget* NativeAppWindowViews::GetWidget() {
@@ -752,9 +683,9 @@ views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
     // WindowStateDelegate if one is not already set.
     ash::wm::GetWindowState(GetNativeWindow())->SetDelegate(
         scoped_ptr<ash::wm::WindowStateDelegate>(
-            new NativeAppWindowStateDelegate(shell_window_, this)).Pass());
+            new NativeAppWindowStateDelegate(app_window_, this)).Pass());
 
-    if (shell_window_->window_type_is_panel()) {
+    if (app_window_->window_type_is_panel()) {
       ash::PanelFrameView::FrameType frame_type = frameless_ ?
           ash::PanelFrameView::FRAME_NONE : ash::PanelFrameView::FRAME_ASH;
       views::NonClientFrameView* frame_view =
@@ -770,8 +701,7 @@ views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
       // Non-frameless app windows can be put into immersive fullscreen.
       // TODO(pkotwicz): Investigate if immersive fullscreen can be enabled for
       // Windows Ash.
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              ash::switches::kAshEnableImmersiveFullscreenForAllWindows)) {
+      if (ash::switches::UseImmersiveFullscreenForAllWindows()) {
         immersive_fullscreen_controller_.reset(
             new ash::ImmersiveFullscreenController());
         custom_frame_view->InitImmersiveFullscreenControllerForView(
@@ -784,7 +714,7 @@ views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
   }
 #endif
   if (ShouldUseChromeStyleFrame())
-    return CreateShellWindowFrameView();
+    return CreateAppWindowFrameView();
   return views::WidgetDelegateView::CreateNonClientFrameView(widget);
 }
 
@@ -801,7 +731,7 @@ bool NativeAppWindowViews::ShouldDescendIntoChildForEventHandling(
     const gfx::Point& location) {
 #if defined(USE_AURA)
   if (child->Contains(web_view_->web_contents()->GetView()->GetNativeView())) {
-    // Shell window should claim mouse events that fall within the draggable
+    // App window should claim mouse events that fall within the draggable
     // region.
     return !draggable_region_.get() ||
            !draggable_region_->contains(location.x(), location.y());
@@ -815,14 +745,14 @@ bool NativeAppWindowViews::ShouldDescendIntoChildForEventHandling(
 
 void NativeAppWindowViews::OnWidgetVisibilityChanged(views::Widget* widget,
                                                      bool visible) {
-  shell_window_->OnNativeWindowChanged();
+  app_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowViews::OnWidgetActivationChanged(views::Widget* widget,
                                                      bool active) {
-  shell_window_->OnNativeWindowChanged();
+  app_window_->OnNativeWindowChanged();
   if (active)
-    shell_window_->OnNativeWindowActivated();
+    app_window_->OnNativeWindowActivated();
 }
 
 // WebContentsObserver implementation.
@@ -872,11 +802,11 @@ gfx::Size NativeAppWindowViews::GetPreferredSize() {
 }
 
 gfx::Size NativeAppWindowViews::GetMinimumSize() {
-  return shell_window_->size_constraints().GetMinimumSize();
+  return app_window_->size_constraints().GetMinimumSize();
 }
 
 gfx::Size NativeAppWindowViews::GetMaximumSize() {
-  return shell_window_->size_constraints().GetMaximumSize();
+  return app_window_->size_constraints().GetMaximumSize();
 }
 
 void NativeAppWindowViews::OnFocus() {
@@ -895,6 +825,18 @@ bool NativeAppWindowViews::AcceleratorPressed(
     case IDC_CLOSE_WINDOW:
       Close();
       return true;
+    case IDC_ZOOM_MINUS:
+      chrome_page_zoom::Zoom(web_view_->GetWebContents(),
+                             content::PAGE_ZOOM_OUT);
+      return true;
+    case IDC_ZOOM_NORMAL:
+      chrome_page_zoom::Zoom(web_view_->GetWebContents(),
+                             content::PAGE_ZOOM_RESET);
+      return true;
+    case IDC_ZOOM_PLUS:
+      chrome_page_zoom::Zoom(web_view_->GetWebContents(),
+                             content::PAGE_ZOOM_IN);
+      return true;
     default:
       NOTREACHED() << "Unknown accelerator sent to app window.";
   }
@@ -905,9 +847,9 @@ bool NativeAppWindowViews::AcceleratorPressed(
 
 void NativeAppWindowViews::SetFullscreen(int fullscreen_types) {
   // Fullscreen not supported by panels.
-  if (shell_window_->window_type_is_panel())
+  if (app_window_->window_type_is_panel())
     return;
-  is_fullscreen_ = (fullscreen_types != ShellWindow::FULLSCREEN_TYPE_NONE);
+  is_fullscreen_ = (fullscreen_types != AppWindow::FULLSCREEN_TYPE_NONE);
   window_->SetFullscreen(is_fullscreen_);
 
 #if defined(USE_ASH)
@@ -915,13 +857,14 @@ void NativeAppWindowViews::SetFullscreen(int fullscreen_types) {
     // |immersive_fullscreen_controller_| should only be set if immersive
     // fullscreen is the fullscreen type used by the OS.
     immersive_fullscreen_controller_->SetEnabled(
-        (fullscreen_types & ShellWindow::FULLSCREEN_TYPE_OS) != 0);
+        ash::ImmersiveFullscreenController::WINDOW_TYPE_PACKAGED_APP,
+        (fullscreen_types & AppWindow::FULLSCREEN_TYPE_OS) != 0);
     // Autohide the shelf instead of hiding the shelf completely when only in
     // OS fullscreen.
     ash::wm::WindowState* window_state =
         ash::wm::GetWindowState(window_->GetNativeWindow());
-    window_state->set_hide_shelf_when_fullscreen(
-        fullscreen_types != ShellWindow::FULLSCREEN_TYPE_OS);
+    window_state->set_hide_shelf_when_fullscreen(fullscreen_types !=
+                                                 AppWindow::FULLSCREEN_TYPE_OS);
     DCHECK(ash::Shell::HasInstance());
     ash::Shell::GetInstance()->UpdateShelfVisibility();
   }
@@ -937,7 +880,7 @@ bool NativeAppWindowViews::IsFullscreenOrPending() const {
 }
 
 bool NativeAppWindowViews::IsDetached() const {
-  if (!shell_window_->window_type_is_panel())
+  if (!app_window_->window_type_is_panel())
     return false;
 #if defined(USE_ASH)
   return !ash::wm::GetWindowState(window_->GetNativeWindow())->panel_attached();
@@ -954,13 +897,29 @@ void NativeAppWindowViews::UpdateWindowTitle() {
   window_->UpdateWindowTitle();
 }
 
+void NativeAppWindowViews::UpdateBadgeIcon() {
+  const gfx::Image* icon = NULL;
+  if (!app_window_->badge_icon().IsEmpty()) {
+    icon = &app_window_->badge_icon();
+    // chrome::DrawTaskbarDecoration can do interesting things with non-square
+    // bitmaps.
+    // TODO(benwells): Refactor chrome::DrawTaskbarDecoration to not be avatar
+    // specific, and lift this restriction.
+    if (icon->Width() != icon->Height()) {
+      LOG(ERROR) << "Attempt to set a non-square badge; request ignored.";
+      return;
+    }
+  }
+  chrome::DrawTaskbarDecoration(GetNativeWindow(), icon);
+}
+
 void NativeAppWindowViews::UpdateDraggableRegions(
     const std::vector<extensions::DraggableRegion>& regions) {
   // Draggable region is not supported for non-frameless window.
   if (!frameless_)
     return;
 
-  draggable_region_.reset(ShellWindow::RawDraggableRegionsToSkRegion(regions));
+  draggable_region_.reset(AppWindow::RawDraggableRegionsToSkRegion(regions));
   OnViewWasResized();
 }
 
@@ -969,14 +928,21 @@ SkRegion* NativeAppWindowViews::GetDraggableRegion() {
 }
 
 void NativeAppWindowViews::UpdateShape(scoped_ptr<SkRegion> region) {
+  bool had_shape = shape_;
   shape_ = region.Pass();
 
-#if defined(USE_AURA)
-  if (shape_)
+  aura::Window* native_window = window_->GetNativeWindow();
+  if (shape_) {
     window_->SetShape(new SkRegion(*shape_));
-  else
+    if (!had_shape) {
+      native_window->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
+          new ShapedAppWindowTargeter(native_window, this)));
+    }
+  } else {
     window_->SetShape(NULL);
-#endif // defined(USE_AURA)
+    if (had_shape)
+      native_window->SetEventTargeter(scoped_ptr<ui::EventTargeter>());
+  }
 }
 
 void NativeAppWindowViews::HandleKeyboardEvent(

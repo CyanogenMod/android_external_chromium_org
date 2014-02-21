@@ -4,6 +4,7 @@
 
 #include "cloud_print/gcp20/prototype/printer.h"
 
+#include <algorithm>
 #include <limits.h>
 #include <stdio.h>
 #include <string>
@@ -37,7 +38,7 @@ const uint32 kTtlDefault = 60*60;  // in seconds
 
 const char kServiceType[] = "_privet._tcp.local";
 const char kSecondaryServiceType[] = "_printer._sub._privet._tcp.local";
-const char kServiceNamePrefixDefault[] = "first_gcp20_device";
+const char kServiceNamePrefixDefault[] = "gcp20_device_";
 const char kServiceDomainNameFormatDefault[] = "my-privet-device%d.local";
 
 const char kPrinterName[] = "Google GCP2.0 Prototype";
@@ -111,7 +112,8 @@ const char kCdd[] =
 net::IPAddressNumber GetLocalIp(const std::string& interface_name,
                                 bool return_ipv6_number) {
   net::NetworkInterfaceList interfaces;
-  bool success = net::GetNetworkList(&interfaces);
+  bool success = net::GetNetworkList(
+      &interfaces, net::INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES);
   DCHECK(success);
 
   size_t expected_address_size = return_ipv6_number ? net::kIPv6AddressSize
@@ -841,8 +843,10 @@ bool Printer::StartDnsServer() {
   uint16 port = command_line_reader::ReadHttpPort(kHttpPortDefault);
 
   std::string service_name_prefix =
-      command_line_reader::ReadServiceNamePrefix(net::IPAddressToString(ip) +
-                                                 kServiceNamePrefixDefault);
+      command_line_reader::ReadServiceNamePrefix(kServiceNamePrefixDefault +
+                                                 net::IPAddressToString(ip));
+  std::replace(service_name_prefix .begin(), service_name_prefix .end(),
+               '.', '_');
 
   std::string service_domain_name =
       command_line_reader::ReadDomainName(
@@ -850,8 +854,8 @@ bool Printer::StartDnsServer() {
                              base::RandInt(0, INT_MAX)));
 
   ServiceParameters params(kServiceType, kSecondaryServiceType,
-                           service_name_prefix,
-                           service_domain_name, ip, port);
+                           service_name_prefix, service_domain_name,
+                           ip, GetLocalIp("", true), port);
 
   return dns_server_.Start(params,
                            command_line_reader::ReadTtl(kTtlDefault),

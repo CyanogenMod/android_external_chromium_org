@@ -19,12 +19,13 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
-#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/session_change_processor.h"
 #include "chrome/browser/sync/glue/session_data_type_controller.h"
@@ -115,6 +116,11 @@ bool CompareMemoryToString(
   return true;
 }
 
+ACTION_P(ReturnSyncBackendHost, callback) {
+  return new browser_sync::SyncBackendHostForProfileSyncTest(
+      arg1, arg2, callback);
+}
+
 }  // namespace
 
 class ProfileSyncServiceSessionTest
@@ -130,8 +136,9 @@ class ProfileSyncServiceSessionTest
  protected:
   virtual TestingProfile* CreateProfile() OVERRIDE {
     TestingProfile::Builder builder;
-    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeOAuth2TokenService::BuildTokenService);
+    builder.AddTestingFactory(
+        ProfileOAuth2TokenServiceFactory::GetInstance(),
+        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
     // Don't want the profile to create a real ProfileSyncService.
     builder.AddTestingFactory(ProfileSyncServiceFactory::GetInstance(), NULL);
     scoped_ptr<TestingProfile> profile(builder.Build());
@@ -199,7 +206,8 @@ class ProfileSyncServiceSessionTest
         signin,
         oauth2_token_service,
         ProfileSyncService::AUTO_START));
-    sync_service_->set_backend_init_callback(callback);
+    EXPECT_CALL(*factory, CreateSyncBackendHost(_,_,_)).
+        WillOnce(ReturnSyncBackendHost(callback));
 
     // Register the session data type.
     SessionDataTypeController *dtc = new SessionDataTypeController(factory,

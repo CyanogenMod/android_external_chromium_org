@@ -225,11 +225,11 @@ typedef uint64 EGLuint64CHROMIUM;
 namespace gfx {
 
 struct GL_EXPORT DriverGL {
-  void Initialize();
-  void InitializeExtensions(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeCustomDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
+  void InitializeNullDrawBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsGL fn;
   ProcsGL orig_fn;
@@ -237,16 +237,14 @@ struct GL_EXPORT DriverGL {
   ExtensionsGL ext;
 
  private:
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeDynamicBindings(GLContext* context);
 };
 
 struct GL_EXPORT DriverOSMESA {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsOSMESA fn;
   ProcsOSMESA debug_fn;
@@ -255,11 +253,10 @@ struct GL_EXPORT DriverOSMESA {
 
 #if defined(OS_WIN)
 struct GL_EXPORT DriverWGL {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsWGL fn;
   ProcsWGL debug_fn;
@@ -269,11 +266,10 @@ struct GL_EXPORT DriverWGL {
 
 #if defined(OS_WIN) || defined(USE_X11) || defined(OS_ANDROID) || defined(USE_OZONE)
 struct GL_EXPORT DriverEGL {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsEGL fn;
   ProcsEGL debug_fn;
@@ -283,11 +279,10 @@ struct GL_EXPORT DriverEGL {
 
 #if defined(USE_X11)
 struct GL_EXPORT DriverGLX {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsGLX fn;
   ProcsGLX debug_fn;
@@ -328,9 +323,6 @@ GL_EXPORT extern EGLApi* g_current_egl_context;
 GL_EXPORT extern DriverEGL g_driver_egl;
 
 #endif
-
-// Find an entry point to the mock GL implementation.
-void* GL_BINDING_CALL GetMockGLProcAddress(const char* name);
 
 }  // namespace gfx
 

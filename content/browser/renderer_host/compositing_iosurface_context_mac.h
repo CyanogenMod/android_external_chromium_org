@@ -14,8 +14,16 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/renderer_host/display_link_mac.h"
+#include "ui/gl/scoped_cgl.h"
 
 namespace content {
+
+enum CoreAnimationStatus {
+  CORE_ANIMATION_DISABLED,
+  CORE_ANIMATION_ENABLED,
+};
+CoreAnimationStatus GetCoreAnimationStatus();
 
 class CompositingIOSurfaceShaderPrograms;
 
@@ -38,12 +46,14 @@ class CompositingIOSurfaceContext
   CompositingIOSurfaceShaderPrograms* shader_program_cache() const {
     return shader_program_cache_.get();
   }
-  NSOpenGLContext* nsgl_context() const { return nsgl_context_; }
+  NSOpenGLContext* nsgl_context() const;
   CGLContextObj cgl_context() const { return cgl_context_; }
   bool is_vsync_disabled() const { return is_vsync_disabled_; }
   int window_number() const { return window_number_; }
 
   bool IsVendorIntel();
+
+  DisplayLinkMac* display_link() { return display_link_; }
 
  private:
   friend class base::RefCounted<CompositingIOSurfaceContext>;
@@ -51,14 +61,19 @@ class CompositingIOSurfaceContext
   CompositingIOSurfaceContext(
       int window_number,
       NSOpenGLContext* nsgl_context,
+      base::ScopedTypeRef<CGLContextObj> clg_context_strong,
       CGLContextObj clg_context,
       bool is_vsync_disabled_,
+      scoped_refptr<DisplayLinkMac> display_link,
       scoped_ptr<CompositingIOSurfaceShaderPrograms> shader_program_cache);
   ~CompositingIOSurfaceContext();
 
   int window_number_;
   base::scoped_nsobject<NSOpenGLContext> nsgl_context_;
-  CGLContextObj cgl_context_; // weak, backed by |nsgl_context_|
+  base::ScopedTypeRef<CGLContextObj> cgl_context_strong_;
+  // Weak, backed by |nsgl_context_| or |cgl_context_strong_|.
+  CGLContextObj cgl_context_;
+
   bool is_vsync_disabled_;
   scoped_ptr<CompositingIOSurfaceShaderPrograms> shader_program_cache_;
   bool can_be_shared_;
@@ -66,6 +81,9 @@ class CompositingIOSurfaceContext
   bool initialized_is_intel_;
   bool is_intel_;
   GLint screen_;
+
+  // Display link for getting vsync info.
+  scoped_refptr<DisplayLinkMac> display_link_;
 
   // The global map from window number and window ordering to
   // context data.

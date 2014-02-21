@@ -35,12 +35,8 @@
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_pref_store.h"
-#include "chrome/browser/extensions/extension_pref_value_map.h"
-#include "chrome/browser/extensions/extension_pref_value_map_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/history/shortcuts_backend.h"
@@ -93,31 +89,35 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
+#include "extensions/browser/extension_pref_store.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_ANDROID)
+#include "chrome/browser/media/protected_media_identifier_permission_context.h"
+#include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
+#endif  // defined(OS_ANDROID)
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/schema_registry_service.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #endif
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_user_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
-#endif
-
-#if defined(OS_WIN)
-#include "chrome/browser/profiles/file_path_verifier_win.h"
-#include "chrome/installer/util/install_util.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -129,10 +129,10 @@
 
 using base::Time;
 using base::TimeDelta;
+using base::UserMetricsAction;
 using content::BrowserThread;
 using content::DownloadManagerDelegate;
 using content::HostZoomMap;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -244,17 +244,6 @@ std::string ExitTypeToSessionTypePrefValue(Profile::ExitType type) {
   }
   NOTREACHED();
   return std::string();
-}
-
-void SchedulePrefsFileVerification(const base::FilePath& prefs_file) {
-#if defined(OS_WIN)
-  // Only do prefs file verification on Windows.
-  const int kVerifyPrefsFileDelaySeconds = 60;
-  BrowserThread::GetBlockingPool()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&VerifyPreferencesFile, prefs_file),
-        base::TimeDelta::FromSeconds(kVerifyPrefsFileDelaySeconds));
-#endif
 }
 
 }  // namespace
@@ -456,7 +445,7 @@ ProfileImpl::ProfileImpl(
     startup_metric_utils::ScopedSlowStartupUMA
         scoped_timer("Startup.SlowStartupPreferenceLoading");
     prefs_ = chrome_prefs::CreateProfilePrefs(
-        GetPrefFilePath(),
+        path_,
         sequenced_task_runner,
         profile_policy_connector_->policy_service(),
         managed_user_settings,
@@ -575,9 +564,12 @@ void ProfileImpl::DoFinalInit() {
       StartupBrowserCreator::GetSessionStartupPref(
           *CommandLine::ForCurrentProcess(), this).type;
 #endif
-  bool restore_old_session_cookies =
-      (GetLastSessionExitType() == Profile::EXIT_CRASHED ||
-       startup_pref_type == SessionStartupPref::LAST);
+  content::CookieStoreConfig::SessionCookieMode session_cookie_mode =
+      content::CookieStoreConfig::PERSISTANT_SESSION_COOKIES;
+  if (GetLastSessionExitType() == Profile::EXIT_CRASHED ||
+      startup_pref_type == SessionStartupPref::LAST) {
+    session_cookie_mode = content::CookieStoreConfig::RESTORED_SESSION_COOKIES;
+  }
 
   InitHostZoomMap();
 
@@ -588,7 +580,7 @@ void ProfileImpl::DoFinalInit() {
                 cache_max_size, media_cache_path, media_cache_max_size,
                 extensions_cookie_path, GetPath(), infinite_cache_path,
                 predictor_,
-                restore_old_session_cookies,
+                session_cookie_mode,
                 GetSpecialStoragePolicy());
 
 #if defined(ENABLE_PLUGINS)
@@ -634,11 +626,11 @@ void ProfileImpl::InitHostZoomMap() {
   host_zoom_map->SetDefaultZoomLevel(
       prefs_->GetDouble(prefs::kDefaultZoomLevel));
 
-  const DictionaryValue* host_zoom_dictionary =
+  const base::DictionaryValue* host_zoom_dictionary =
       prefs_->GetDictionary(prefs::kPerHostZoomLevels);
   // Careful: The returned value could be NULL if the pref has never been set.
   if (host_zoom_dictionary != NULL) {
-    for (DictionaryValue::Iterator i(*host_zoom_dictionary); !i.IsAtEnd();
+    for (base::DictionaryValue::Iterator i(*host_zoom_dictionary); !i.IsAtEnd();
          i.Advance()) {
       const std::string& host(i.key());
       double zoom_level = 0;
@@ -813,7 +805,7 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
         predictor_));
   }
 
-  SchedulePrefsFileVerification(GetPrefFilePath());
+  chrome_prefs::SchedulePrefsFilePathVerification(path_);
 
   ChromeVersionService::OnProfileLoaded(prefs_.get(), IsNewProfile());
   DoFinalInit();
@@ -842,7 +834,7 @@ void ProfileImpl::SetExitType(ExitType exit_type) {
                       ExitTypeToSessionTypePrefValue(exit_type));
 
     // NOTE: If you change what thread this writes on, be sure and update
-    // ChromeFrame::EndSession().
+    // chrome::SessionEnding().
     prefs_->CommitPendingWrite();
   }
 }
@@ -869,12 +861,6 @@ PrefService* ProfileImpl::GetOffTheRecordPrefs() {
             ExtensionPrefValueMapFactory::GetForBrowserContext(this), true)));
   }
   return otr_prefs_.get();
-}
-
-base::FilePath ProfileImpl::GetPrefFilePath() {
-  base::FilePath pref_file_path = path_;
-  pref_file_path = pref_file_path.Append(chrome::kPreferencesFilename);
-  return pref_file_path;
 }
 
 net::URLRequestContextGetter* ProfileImpl::CreateRequestContext(
@@ -920,30 +906,63 @@ ProfileImpl::GetMediaRequestContextForStoragePartition(
       .GetIsolatedMediaRequestContextGetter(partition_path, in_memory).get();
 }
 
-void ProfileImpl::RequestMIDISysExPermission(
+void ProfileImpl::RequestMidiSysExPermission(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
-      const MIDISysExPermissionCallback& callback) {
-  ChromeMIDIPermissionContext* context =
-      ChromeMIDIPermissionContextFactory::GetForProfile(this);
-  context->RequestMIDISysExPermission(render_process_id,
+      const MidiSysExPermissionCallback& callback) {
+  ChromeMidiPermissionContext* context =
+      ChromeMidiPermissionContextFactory::GetForProfile(this);
+  context->RequestMidiSysExPermission(render_process_id,
                                       render_view_id,
                                       bridge_id,
                                       requesting_frame,
                                       callback);
 }
 
-void ProfileImpl::CancelMIDISysExPermissionRequest(
+void ProfileImpl::CancelMidiSysExPermissionRequest(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame) {
-  ChromeMIDIPermissionContext* context =
-      ChromeMIDIPermissionContextFactory::GetForProfile(this);
-  context->CancelMIDISysExPermissionRequest(
+  ChromeMidiPermissionContext* context =
+      ChromeMidiPermissionContextFactory::GetForProfile(this);
+  context->CancelMidiSysExPermissionRequest(
       render_process_id, render_view_id, bridge_id, requesting_frame);
+}
+
+void ProfileImpl::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+#if defined(OS_ANDROID)
+  ProtectedMediaIdentifierPermissionContext* context =
+      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
+  context->RequestProtectedMediaIdentifierPermission(render_process_id,
+                                                     render_view_id,
+                                                     bridge_id,
+                                                     group_id,
+                                                     requesting_frame,
+                                                     callback);
+#else
+  NOTIMPLEMENTED();
+  callback.Run(false);
+#endif  // defined(OS_ANDROID)
+}
+
+void ProfileImpl::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
+#if defined(OS_ANDROID)
+  ProtectedMediaIdentifierPermissionContext* context =
+      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
+  context->CancelProtectedMediaIdentifierPermissionRequests(group_id);
+#else
+  NOTIMPLEMENTED();
+#endif  // defined(OS_ANDROID)
 }
 
 content::ResourceContext* ProfileImpl::GetResourceContext() {
@@ -1031,12 +1050,12 @@ void ProfileImpl::OnZoomLevelChanged(
   HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
   double level = change.zoom_level;
   DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
-  DictionaryValue* host_zoom_dictionary = update.Get();
+  base::DictionaryValue* host_zoom_dictionary = update.Get();
   if (level == host_zoom_map->GetDefaultZoomLevel()) {
     host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
   } else {
     host_zoom_dictionary->SetWithoutPathExpansion(
-        change.host, Value::CreateDoubleValue(level));
+        change.host, base::Value::CreateDoubleValue(level));
   }
 }
 
@@ -1124,7 +1143,8 @@ void ProfileImpl::ChangeAppLocale(
     GetPrefs()->SetString(prefs::kApplicationLocale, new_locale);
   local_state->SetString(prefs::kApplicationLocale, new_locale);
 
-  if (chromeos::UserManager::Get()->IsCurrentUserOwner())
+  if (chromeos::UserManager::Get()->GetOwnerEmail() ==
+      chromeos::UserManager::Get()->GetUserByProfile(this)->email())
     local_state->SetString(prefs::kOwnerLocale, new_locale);
 }
 
@@ -1136,10 +1156,9 @@ void ProfileImpl::OnLogin() {
 
 void ProfileImpl::InitChromeOSPreferences() {
   chromeos_preferences_.reset(new chromeos::Preferences());
-  bool is_primary_user = chromeos::UserManager::Get()->GetPrimaryUser() ==
-      chromeos::UserManager::Get()->GetUserByProfile(this);
-  chromeos_preferences_->Init(PrefServiceSyncable::FromProfile(this),
-                              is_primary_user);
+  chromeos_preferences_->Init(
+      PrefServiceSyncable::FromProfile(this),
+      chromeos::UserManager::Get()->GetUserByProfile(this));
 }
 
 #endif  // defined(OS_CHROMEOS)
@@ -1193,7 +1212,7 @@ void ProfileImpl::UpdateProfileUserNameCache() {
   if (index != std::string::npos) {
     std::string user_name =
         GetPrefs()->GetString(prefs::kGoogleServicesUsername);
-    cache.SetUserNameOfProfileAtIndex(index, UTF8ToUTF16(user_name));
+    cache.SetUserNameOfProfileAtIndex(index, base::UTF8ToUTF16(user_name));
     ProfileMetrics::UpdateReportedProfilesStatistics(profile_manager);
   }
 }
@@ -1205,7 +1224,7 @@ void ProfileImpl::UpdateProfileNameCache() {
   if (index != std::string::npos) {
     std::string profile_name =
         GetPrefs()->GetString(prefs::kProfileName);
-    cache.SetNameOfProfileAtIndex(index, UTF8ToUTF16(profile_name));
+    cache.SetNameOfProfileAtIndex(index, base::UTF8ToUTF16(profile_name));
   }
 }
 

@@ -17,7 +17,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/canvas.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/layout/grid_layout.h"
@@ -33,14 +33,13 @@ namespace {
 void UpdateBiggestWidth(const autofill::PasswordForm& password_form,
                         bool username,
                         int* biggest_width) {
-  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-  gfx::FontList font_list(rb->GetFontList(ui::ResourceBundle::BaseFont));
+  const gfx::FontList font_list;
   base::string16 display_string(username ?
       password_form.username_value :
       ManagePasswordItemView::GetPasswordDisplayString(
           password_form.password_value));
-  *biggest_width = std::max(
-      gfx::Canvas::GetStringWidth(display_string, font_list), *biggest_width);
+  *biggest_width = std::max(gfx::GetStringWidth(display_string, font_list),
+                            *biggest_width);
 }
 
 }  // namespace
@@ -163,9 +162,8 @@ void ManagePasswordsBubbleView::Init() {
   // bubble. We do not need to clamp the password field width because
   // ManagePasswordItemView::GetPasswordFisplayString() does this.
 
-  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
   const int predefined_username_field_max_width =
-      rb->GetFont(ui::ResourceBundle::BaseFont).GetAverageCharacterWidth() * 22;
+      gfx::FontList().GetExpectedTextWidth(22);
   const int max_username_or_password_width =
       std::min(GetMaximumUsernameOrPasswordWidth(true),
                predefined_username_field_max_width);
@@ -185,6 +183,7 @@ void ManagePasswordsBubbleView::Init() {
                         GridLayout::USE_PREF, 0, 0);
   column_set->AddPaddingColumn(0, views::kPanelHorizMargin);
 
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
   views::Label* title_label =
       new views::Label(manage_passwords_bubble_model_->title());
   title_label->SetMultiLine(true);
@@ -210,8 +209,12 @@ void ManagePasswordsBubbleView::Init() {
         manage_passwords_bubble_model_,
         manage_passwords_bubble_model_->pending_credentials(),
         first_field_width, second_field_width);
-    item->set_border(views::Border::CreateSolidSidedBorder(
-        1, 0, 1, 0, GetNativeTheme()->GetSystemColor(
+    item->SetBorder(views::Border::CreateSolidSidedBorder(
+        1,
+        0,
+        1,
+        0,
+        GetNativeTheme()->GetSystemColor(
             ui::NativeTheme::kColorId_EnabledMenuButtonBorderColor)));
     layout->AddView(item);
 
@@ -228,7 +231,7 @@ void ManagePasswordsBubbleView::Init() {
 
     cancel_button_ = new views::LabelButton(
         this, l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_CANCEL_BUTTON));
-    cancel_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+    cancel_button_->SetStyle(views::Button::STYLE_BUTTON);
     save_button_ = new views::BlueButton(
         this, l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SAVE_BUTTON));
 
@@ -267,12 +270,20 @@ void ManagePasswordsBubbleView::Init() {
             manage_passwords_bubble_model_, *i->second, first_field_width,
             second_field_width);
         if (i == manage_passwords_bubble_model_->best_matches().begin()) {
-          item->set_border(views::Border::CreateSolidSidedBorder(
-              1, 0, 1, 0, GetNativeTheme()->GetSystemColor(
+          item->SetBorder(views::Border::CreateSolidSidedBorder(
+              1,
+              0,
+              1,
+              0,
+              GetNativeTheme()->GetSystemColor(
                   ui::NativeTheme::kColorId_EnabledMenuButtonBorderColor)));
         } else {
-          item->set_border(views::Border::CreateSolidSidedBorder(
-              0, 0, 1, 0, GetNativeTheme()->GetSystemColor(
+          item->SetBorder(views::Border::CreateSolidSidedBorder(
+              0,
+              0,
+              1,
+              0,
+              GetNativeTheme()->GetSystemColor(
                   ui::NativeTheme::kColorId_EnabledMenuButtonBorderColor)));
         }
         layout->AddView(item);
@@ -292,11 +303,19 @@ void ManagePasswordsBubbleView::Init() {
           manage_passwords_bubble_model_->pending_credentials(),
           first_field_width, second_field_width);
       if (manage_passwords_bubble_model_->best_matches().empty()) {
-        item->set_border(views::Border::CreateSolidSidedBorder(1, 0, 1, 0,
+        item->SetBorder(views::Border::CreateSolidSidedBorder(
+            1,
+            0,
+            1,
+            0,
             GetNativeTheme()->GetSystemColor(
                 ui::NativeTheme::kColorId_EnabledMenuButtonBorderColor)));
       } else {
-        item->set_border(views::Border::CreateSolidSidedBorder(0, 0, 1, 0,
+        item->SetBorder(views::Border::CreateSolidSidedBorder(
+            0,
+            0,
+            1,
+            0,
             GetNativeTheme()->GetSystemColor(
                 ui::NativeTheme::kColorId_EnabledMenuButtonBorderColor)));
       }
@@ -312,7 +331,7 @@ void ManagePasswordsBubbleView::Init() {
 
     done_button_ =
         new views::LabelButton(this, l10n_util::GetStringUTF16(IDS_DONE));
-    done_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+    done_button_->SetStyle(views::Button::STYLE_BUTTON);
     layout->AddView(done_button_);
   }
 }

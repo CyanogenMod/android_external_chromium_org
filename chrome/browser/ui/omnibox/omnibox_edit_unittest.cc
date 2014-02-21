@@ -12,6 +12,8 @@
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
 using content::WebContents;
 
 namespace {
@@ -28,6 +30,7 @@ class TestingOmniboxView : public OmniboxView {
   virtual void OpenMatch(const AutocompleteMatch& match,
                          WindowOpenDisposition disposition,
                          const GURL& alternate_nav_url,
+                         const base::string16& pasted_text,
                          size_t selected_line) OVERRIDE {}
   virtual base::string16 GetText() const OVERRIDE { return text_; }
   virtual void SetUserText(const base::string16& text,
@@ -78,16 +81,9 @@ class TestingOmniboxView : public OmniboxView {
   virtual base::string16 GetGrayTextAutocompletion() const OVERRIDE {
     return base::string16();
   }
-  virtual int TextWidth() const OVERRIDE { return 0; }
+  virtual int GetTextWidth() const OVERRIDE { return 0; }
+  virtual int GetWidth() const OVERRIDE { return 0; }
   virtual bool IsImeComposing() const OVERRIDE { return false; }
-#if defined(TOOLKIT_VIEWS)
-  virtual int GetMaxEditWidth(int entry_width) const OVERRIDE {
-    return entry_width;
-  }
-  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE {
-    return 0;
-  }
-#endif
   virtual int GetOmniboxTextLength() const OVERRIDE { return 0; }
   virtual void EmphasizeURLComponents() OVERRIDE { }
 
@@ -196,9 +192,9 @@ TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
   // NOTE: The TemplateURLService must be created before the
   // AutocompleteClassifier so that the SearchProvider gets a non-NULL
   // TemplateURLService at construction time.
-  TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+  TemplateURLServiceFactory::GetInstance()->SetTestingFactory(
       &profile, &TemplateURLServiceFactory::BuildInstanceFor);
-  AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
+  AutocompleteClassifierFactory::GetInstance()->SetTestingFactory(
       &profile, &AutocompleteClassifierFactory::BuildInstanceFor);
   OmniboxEditModel model(&view, &controller, &profile);
 
@@ -221,18 +217,16 @@ TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
   }
 }
 
-// This test causes resource leak.  Disabled until it's fixed.
-// TODO(yukishiino): Fix the leak.
-TEST_F(AutocompleteEditTest, DISABLED_InlineAutocompleteText) {
+TEST_F(AutocompleteEditTest, InlineAutocompleteText) {
   TestingOmniboxEditController controller(toolbar_model());
   TestingOmniboxView view(&controller);
   TestingProfile profile;
   // NOTE: The TemplateURLService must be created before the
   // AutocompleteClassifier so that the SearchProvider gets a non-NULL
   // TemplateURLService at construction time.
-  TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+  TemplateURLServiceFactory::GetInstance()->SetTestingFactory(
       &profile, &TemplateURLServiceFactory::BuildInstanceFor);
-  AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
+  AutocompleteClassifierFactory::GetInstance()->SetTestingFactory(
       &profile, &AutocompleteClassifierFactory::BuildInstanceFor);
   OmniboxEditModel model(&view, &controller, &profile);
 

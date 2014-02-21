@@ -97,8 +97,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // flags into the renderer process command line.
   void AppendRendererCommandLine(CommandLine* command_line) const;
 
-  // Insert switches into gpu process command line: kUseGL,
-  // kDisableGLMultisampling.
+  // Insert switches into gpu process command line: kUseGL, etc.
   void AppendGpuCommandLine(CommandLine* command_line) const;
 
   // Insert switches into plugin process command line:
@@ -132,12 +131,6 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   // Called when switching gpu.
   void HandleGpuSwitch();
-
-#if defined(OS_WIN)
-  // Is the GPU process using the accelerated surface to present, instead of
-  // presenting by itself.
-  bool IsUsingAcceleratedSurface() const;
-#endif
 
   // Maintenance of domains requiring explicit user permission before
   // using client-facing 3D APIs (WebGL, Pepper 3D), either because

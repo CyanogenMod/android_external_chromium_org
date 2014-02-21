@@ -65,7 +65,7 @@ base::string16 Address::GetRawInfo(ServerFieldType type) const {
       return sorting_code_;
 
     case ADDRESS_HOME_COUNTRY:
-      return ASCIIToUTF16(country_code_);
+      return base::ASCIIToUTF16(country_code_);
 
     case ADDRESS_HOME_STREET_ADDRESS:
       return JoinString(street_address_, '\n');
@@ -120,7 +120,7 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
       break;
 
     case ADDRESS_HOME_STREET_ADDRESS:
-      base::SplitString(value, char16('\n'), &street_address_);
+      base::SplitString(value, base::char16('\n'), &street_address_);
       break;
 
     default:
@@ -131,7 +131,7 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
 base::string16 Address::GetInfo(const AutofillType& type,
                                 const std::string& app_locale) const {
   if (type.html_type() == HTML_TYPE_COUNTRY_CODE)
-    return ASCIIToUTF16(country_code_);
+    return base::ASCIIToUTF16(country_code_);
 
   ServerFieldType storable_type = type.GetStorableType();
   if (storable_type == ADDRESS_HOME_COUNTRY && !country_code_.empty())
@@ -164,7 +164,7 @@ bool Address::SetInfo(const AutofillType& type,
   // format, so the code would have to rely on iffy heuristics at best.
   // Instead, just give up when importing addresses like this.
   if (storable_type == ADDRESS_HOME_STREET_ADDRESS && !value.empty() &&
-      value.find(char16('\n')) == base::string16::npos) {
+      value.find(base::char16('\n')) == base::string16::npos) {
     street_address_.clear();
     return false;
   }

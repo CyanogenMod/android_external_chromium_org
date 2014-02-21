@@ -95,8 +95,8 @@ void AutofillDialogCocoa::UpdateSection(DialogSection section) {
 }
 
 void AutofillDialogCocoa::FillSection(DialogSection section,
-                                      const DetailInput& originating_input) {
-  [sheet_delegate_ fillSection:section forInput:originating_input];
+                                      ServerFieldType originating_type) {
+  [sheet_delegate_ fillSection:section forType:originating_type];
 }
 
 void AutofillDialogCocoa::GetUserInput(DialogSection section,
@@ -108,7 +108,7 @@ base::string16 AutofillDialogCocoa::GetCvc() {
   return base::SysNSStringToUTF16([sheet_delegate_ getCvc]);
 }
 
-bool AutofillDialogCocoa::HitTestInput(const DetailInput& input,
+bool AutofillDialogCocoa::HitTestInput(ServerFieldType type,
                                        const gfx::Point& screen_point) {
   // TODO(dbeam): implement.
   return false;
@@ -134,67 +134,13 @@ void AutofillDialogCocoa::UpdateErrorBubble() {
   [sheet_delegate_ updateErrorBubble];
 }
 
-TestableAutofillDialogView* AutofillDialogCocoa::GetTestableView() {
-  return this;
-}
-
 void AutofillDialogCocoa::OnSignInResize(const gfx::Size& pref_size) {
   [sheet_delegate_ onSignInResize:
       NSMakeSize(pref_size.width(), pref_size.height())];
 }
 
-void AutofillDialogCocoa::SubmitForTesting() {
-  [sheet_delegate_ accept:nil];
-}
-
-void AutofillDialogCocoa::CancelForTesting() {
-  [sheet_delegate_ cancel:nil];
-}
-
-base::string16 AutofillDialogCocoa::GetTextContentsOfInput(
-    const DetailInput& input) {
-  for (size_t i = SECTION_MIN; i <= SECTION_MAX; ++i) {
-    DialogSection section = static_cast<DialogSection>(i);
-    FieldValueMap contents;
-    [sheet_delegate_ getInputs:&contents forSection:section];
-    FieldValueMap::const_iterator it = contents.find(input.type);
-    if (it != contents.end())
-      return it->second;
-  }
-
-  NOTREACHED();
-  return base::string16();
-}
-
-void AutofillDialogCocoa::SetTextContentsOfInput(
-    const DetailInput& input,
-    const base::string16& contents) {
-  [sheet_delegate_ setTextContents:base::SysUTF16ToNSString(contents)
-                          forInput:input];
-}
-
-void AutofillDialogCocoa::SetTextContentsOfSuggestionInput(
-    DialogSection section,
-    const base::string16& text) {
-  [sheet_delegate_ setTextContents:base::SysUTF16ToNSString(text)
-            ofSuggestionForSection:section];
-}
-
-void AutofillDialogCocoa::ActivateInput(const DetailInput& input) {
-  [sheet_delegate_ activateFieldForInput:input];
-}
-
-gfx::Size AutofillDialogCocoa::GetSize() const {
-  return gfx::Size(NSSizeToCGSize([[sheet_delegate_ window] frame].size));
-}
-
-content::WebContents* AutofillDialogCocoa::GetSignInWebContents() {
-  return [sheet_delegate_ getSignInWebContents];
-}
-
-
-bool AutofillDialogCocoa::IsShowingOverlay() const {
-  return [sheet_delegate_ isShowingOverlay];
+void AutofillDialogCocoa::ValidateSection(DialogSection section) {
+  [sheet_delegate_ validateSection:section];
 }
 
 void AutofillDialogCocoa::OnConstrainedWindowClosed(

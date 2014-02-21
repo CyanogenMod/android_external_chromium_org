@@ -15,6 +15,7 @@ class PrefRegistrySimple;
 
 namespace chromeos {
 
+class MultiProfileUserController;
 class RemoveUserDelegate;
 class UserImageManager;
 class SupervisedUserManager;
@@ -78,6 +79,10 @@ class UserManager {
   // Username for stub login when not running on ChromeOS.
   static const char kStubUser[];
 
+  // Username for the login screen. It is only used to identify login screen
+  // tries to set default wallpaper. It is not a real user.
+  static const char kSignInUser[];
+
   // Magic e-mail addresses are bad. They exist here because some code already
   // depends on them and it is hard to figure out what. Any user types added in
   // the future should be identified by a new |UserType|, not a new magic e-mail
@@ -122,7 +127,8 @@ class UserManager {
 
   virtual ~UserManager();
 
-  virtual UserImageManager* GetUserImageManager() = 0;
+  virtual MultiProfileUserController* GetMultiProfileUserController() = 0;
+  virtual UserImageManager* GetUserImageManager(const std::string& user_id) = 0;
   virtual SupervisedUserManager* GetSupervisedUserManager() = 0;
 
   // Returns a list of users who have logged into this device previously. This
@@ -141,6 +147,11 @@ class UserManager {
   virtual const UserList& GetLRULoggedInUsers() = 0;
 
   // Returns a list of users who can unlock the device.
+  // This list is based on policy and whether user is able to do unlock.
+  // Policy:
+  // * If user has primary-only policy then it is the only user in unlock users.
+  // * Otherwise all users with unrestricted policy are added to this list.
+  // All users that are unable to perform unlock are excluded from this list.
   virtual UserList GetUnlockUsers() const = 0;
 
   // Returns the email of the owner user. Returns an empty string if there is
@@ -217,13 +228,18 @@ class UserManager {
   // Returns NULL if User is not created.
   virtual User* GetUserByProfile(Profile* profile) const = 0;
 
-  /// Returns NULL if profile for user was not found.
+  /// Returns NULL if profile for user is not found or is not fully loaded.
   virtual Profile* GetProfileByUser(const User* user) const = 0;
 
   // Saves user's oauth token status in local state preferences.
   virtual void SaveUserOAuthStatus(
       const std::string& user_id,
       User::OAuthTokenStatus oauth_token_status) = 0;
+
+  // Saves a flag indicating whether online authentication against GAIA should
+  // be enforced during the user's next sign-in.
+  virtual void SaveForceOnlineSignin(const std::string& user_id,
+                                     bool force_online_signin) = 0;
 
   // Saves user's displayed name in local state preferences.
   // Ignored If there is no such user.

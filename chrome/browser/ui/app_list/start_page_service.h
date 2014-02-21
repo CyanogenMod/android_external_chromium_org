@@ -41,16 +41,20 @@ class StartPageService : public BrowserContextKeyedService {
 
   void ToggleSpeechRecognition();
 
-  content::WebContents* contents() { return contents_.get(); }
+  // They return essentially the same web contents but might return NULL when
+  // some flag disables the feature.
+  content::WebContents* GetStartPageContents();
+  content::WebContents* GetSpeechRecognitionContents();
+
   RecommendedApps* recommended_apps() { return recommended_apps_.get(); }
   Profile* profile() { return profile_; }
+  SpeechRecognitionState state() { return state_; }
   void OnSpeechResult(const base::string16& query, bool is_final);
   void OnSpeechSoundLevelChanged(int16 level);
   void OnSpeechRecognitionStateChanged(SpeechRecognitionState new_state);
 
  private:
-  // A BrowserContextKeyedServiceFactory for this service.
-  class Factory;
+  friend class StartPageServiceFactory;
 
   // ProfileDestroyObserver to shutdown the service on exiting. WebContents
   // depends on the profile and needs to be closed before the profile and its
@@ -72,7 +76,10 @@ class StartPageService : public BrowserContextKeyedService {
   scoped_ptr<StartPageWebContentsDelegate> contents_delegate_;
   scoped_ptr<ProfileDestroyObserver> profile_destroy_observer_;
   scoped_ptr<RecommendedApps> recommended_apps_;
+  SpeechRecognitionState state_;
   ObserverList<StartPageObserver> observers_;
+  bool speech_button_toggled_manually_;
+  bool speech_result_obtained_;
 
   DISALLOW_COPY_AND_ASSIGN(StartPageService);
 };

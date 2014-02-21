@@ -83,12 +83,12 @@ const BookmarkInfo kIESortedBookmarks[] = {
   {false, 0, {}, L"c", "http://www.google.com/3"},
 };
 
-const char16 kIEIdentifyUrl[] =
+const base::char16 kIEIdentifyUrl[] =
     L"http://A79029D6-753E-4e27-B807-3D46AB1545DF.com:8080/path?key=value";
-const char16 kIEIdentifyTitle[] =
+const base::char16 kIEIdentifyTitle[] =
     L"Unittest GUID";
 
-const char16 kFaviconStreamSuffix[] = L"url:favicon:$DATA";
+const base::char16 kFaviconStreamSuffix[] = L"url:favicon:$DATA";
 const char kDummyFaviconImageData[] =
     "\x42\x4D"          // Magic signature 'BM'
     "\x1E\x00\x00\x00"  // File size
@@ -101,8 +101,8 @@ const char kDummyFaviconImageData[] =
     "\x00\xFF\x00\x00"; // The pixel
 
 struct FaviconGroup {
-  const char16* favicon_url;
-  const char16* site_url[2];
+  const base::char16* favicon_url;
+  const base::char16* site_url[2];
 };
 
 const FaviconGroup kIEFaviconGroup[2] = {
@@ -116,7 +116,7 @@ const FaviconGroup kIEFaviconGroup[2] = {
 
 bool CreateOrderBlob(const base::FilePath& favorites_folder,
                      const base::string16& path,
-                     const std::vector<string16>& entries) {
+                     const std::vector<base::string16>& entries) {
   if (entries.size() > 255)
     return false;
 
@@ -216,7 +216,7 @@ void ClearPStoreType(IPStore* pstore, const GUID* type, const GUID* subtype) {
   base::win::ScopedComPtr<IEnumPStoreItems, NULL> item;
   HRESULT result = pstore->EnumItems(0, type, subtype, 0, item.Receive());
   if (result == PST_E_OK) {
-    char16* item_name;
+    base::char16* item_name;
     while (SUCCEEDED(item->Next(1, &item_name, 0))) {
       pstore->DeleteItem(0, type, subtype, item_name, NULL, 0);
       CoTaskMemFree(item_name);
@@ -228,7 +228,7 @@ void ClearPStoreType(IPStore* pstore, const GUID* type, const GUID* subtype) {
 
 void WritePStore(IPStore* pstore, const GUID* type, const GUID* subtype) {
   struct PStoreItem {
-    char16* name;
+    base::char16* name;
     int data_size;
     char* data;
   } items[] = {
@@ -501,7 +501,7 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
   file_util::WriteFile(path.AppendASCII("InvalidUrlFile.url"), "x", 1);
   file_util::WriteFile(path.AppendASCII("PlainTextFile.txt"), "x", 1);
 
-  const char16* root_links[] = {
+  const base::char16* root_links[] = {
     L"Links",
     L"Google Home Page.url",
     L"TheLink.url",
@@ -512,7 +512,8 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
   };
   ASSERT_TRUE(CreateOrderBlob(
       base::FilePath(path), L"",
-      std::vector<string16>(root_links, root_links + arraysize(root_links))));
+      std::vector<base::string16>(root_links,
+                                  root_links + arraysize(root_links))));
 
   HRESULT res;
 

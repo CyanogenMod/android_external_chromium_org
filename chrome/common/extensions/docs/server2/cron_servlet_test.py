@@ -7,11 +7,13 @@ import unittest
 
 from appengine_wrappers import GetAppVersion
 from app_yaml_helper import AppYamlHelper
+from content_providers import IgnoreMissingContentProviders
 from cron_servlet import CronServlet
 from empty_dir_file_system import EmptyDirFileSystem
 from extensions_paths import (
     APP_YAML, CONTENT_PROVIDERS, EXTENSIONS, PUBLIC_TEMPLATES, SERVER2,
     STATIC_DOCS)
+from gcs_file_system_provider import CloudStorageFileSystemProvider
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
 from local_file_system import LocalFileSystem
@@ -49,6 +51,9 @@ class _TestDelegate(CronServlet.Delegate):
   def CreateGithubFileSystemProvider(self, object_store_creator):
     return GithubFileSystemProvider.ForEmpty()
 
+  def CreateGCSFileSystemProvider(self, object_store_creator):
+    return CloudStorageFileSystemProvider.ForEmpty()
+
   def GetAppVersion(self):
     return self._app_version
 
@@ -85,6 +90,7 @@ class CronServletTest(unittest.TestCase):
           read_count=0,
           stat_count=first_run_file_systems[i].GetStatCount()))
 
+  @IgnoreMissingContentProviders
   def testSafeRevision(self):
     test_data = {
       'api': {
@@ -115,12 +121,12 @@ class CronServletTest(unittest.TestCase):
             },
           },
           'json': {
+            'chrome_sidenav.json': '{}',
             'content_providers.json': ReadFile(CONTENT_PROVIDERS),
             'manifest.json': '{}',
             'permissions.json': '{}',
             'strings.json': '{}',
-            'apps_sidenav.json': '{}',
-            'extensions_sidenav.json': '{}',
+            'whats_new.json': '{}',
           },
         }
       }
@@ -141,8 +147,8 @@ class CronServletTest(unittest.TestCase):
         'static.txt': update
       })
 
-    storage_html_path = '%s/apps/storage.html' % PUBLIC_TEMPLATES
-    static_txt_path = '%s/static.txt' % STATIC_DOCS
+    storage_html_path = PUBLIC_TEMPLATES + 'apps/storage.html'
+    static_txt_path = STATIC_DOCS + 'static.txt'
 
     def create_file_system(revision=None):
       '''Creates a MockFileSystem at |revision| by applying that many |updates|
@@ -233,6 +239,7 @@ class CronServletTest(unittest.TestCase):
                      file_systems[-1].ReadSingle(storage_html_path).Get())
     self.assertEqual('important content!',
                      file_systems[-1].ReadSingle(static_txt_path).Get())
+
 
 if __name__ == '__main__':
   unittest.main()

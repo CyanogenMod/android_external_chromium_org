@@ -8,17 +8,15 @@
 
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
+#include "base/metrics/user_metrics.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/recommended_apps.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
+#include "chrome/browser/ui/app_list/start_page_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -26,48 +24,24 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
+#include "ui/app_list/app_list_switches.h"
+
+using base::RecordAction;
+using base::UserMetricsAction;
 
 namespace app_list {
 
-class StartPageService::Factory : public BrowserContextKeyedServiceFactory {
- public:
-  static StartPageService* GetForProfile(Profile* profile) {
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kShowAppListStartPage)) {
-      return NULL;
-    }
+namespace {
 
-    return static_cast<StartPageService*>(
-        GetInstance()->GetServiceForBrowserContext(profile, true));
-  }
+bool InSpeechRecognition(SpeechRecognitionState state) {
+  return state == SPEECH_RECOGNITION_RECOGNIZING ||
+      state == SPEECH_RECOGNITION_IN_SPEECH;
+}
 
-  static Factory* GetInstance() {
-    return Singleton<Factory>::get();
-  }
-
- private:
-  friend struct DefaultSingletonTraits<Factory>;
-
-  Factory()
-      : BrowserContextKeyedServiceFactory(
-            "AppListStartPageService",
-            BrowserContextDependencyManager::GetInstance()) {
-    DependsOn(extensions::ExtensionSystemFactory::GetInstance());
-    DependsOn(extensions::InstallTrackerFactory::GetInstance());
-  }
-
-  virtual ~Factory() {}
-
-  // BrowserContextKeyedServiceFactory overrides:
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE {
-     Profile* profile = static_cast<Profile*>(context);
-     return new StartPageService(profile);
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(Factory);
-};
+}
 
 class StartPageService::ProfileDestroyObserver
     : public content::NotificationObserver {
@@ -86,7 +60,7 @@ class StartPageService::ProfileDestroyObserver
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
-    DCHECK_EQ(service_->profile(), content::Details<Profile>(details).ptr());
+    DCHECK_EQ(service_->profile(), content::Source<Profile>(source).ptr());
     service_->Shutdown();
   }
 
@@ -116,13 +90,24 @@ class StartPageService::StartPageWebContentsDelegate
 
 // static
 StartPageService* StartPageService::Get(Profile* profile) {
-  return Factory::GetForProfile(profile);
+  return StartPageServiceFactory::GetForProfile(profile);
 }
 
 StartPageService::StartPageService(Profile* profile)
     : profile_(profile),
       profile_destroy_observer_(new ProfileDestroyObserver(this)),
-      recommended_apps_(new RecommendedApps(profile)) {
+      recommended_apps_(new RecommendedApps(profile)),
+      state_(app_list::SPEECH_RECOGNITION_OFF),
+      speech_button_toggled_manually_(false),
+      speech_result_obtained_(false) {
+#if defined(OS_CHROMEOS)
+  // Updates the default state to hotword listening, because this is
+  // the default behavior. This will be updated when the page is loaded and
+  // the nacl module is loaded.
+  if (app_list::switches::IsVoiceSearchEnabled())
+    state_ = app_list::SPEECH_RECOGNITION_HOTWORD_LISTENING;
+#endif
+
   contents_.reset(content::WebContents::Create(
       content::WebContents::CreateParams(profile_)));
   contents_delegate_.reset(new StartPageWebContentsDelegate());
@@ -130,9 +115,9 @@ StartPageService::StartPageService(Profile* profile)
 
   GURL url(chrome::kChromeUIAppListStartPageURL);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kAppListStartPageURL)) {
+  if (command_line->HasSwitch(::switches::kAppListStartPageURL)) {
     url = GURL(
-        command_line->GetSwitchValueASCII(switches::kAppListStartPageURL));
+        command_line->GetSwitchValueASCII(::switches::kAppListStartPageURL));
   }
 
   contents_->GetController().LoadURL(
@@ -153,12 +138,26 @@ void StartPageService::RemoveObserver(StartPageObserver* observer) {
 }
 
 void StartPageService::ToggleSpeechRecognition() {
+  speech_button_toggled_manually_ = true;
   contents_->GetWebUI()->CallJavascriptFunction(
       "appList.startPage.toggleSpeechRecognition");
 }
 
+content::WebContents* StartPageService::GetStartPageContents() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kShowAppListStartPage) ? contents_.get() : NULL;
+}
+
+content::WebContents* StartPageService::GetSpeechRecognitionContents() {
+  return app_list::switches::IsVoiceSearchEnabled() ? contents_.get() : NULL;
+}
+
 void StartPageService::OnSpeechResult(
     const base::string16& query, bool is_final) {
+  if (is_final) {
+    speech_result_obtained_ = true;
+    RecordAction(UserMetricsAction("AppList_SearchedBySpeech"));
+  }
   FOR_EACH_OBSERVER(StartPageObserver,
                     observers_,
                     OnSpeechResult(query, is_final));
@@ -172,6 +171,20 @@ void StartPageService::OnSpeechSoundLevelChanged(int16 level) {
 
 void StartPageService::OnSpeechRecognitionStateChanged(
     SpeechRecognitionState new_state) {
+  if (!InSpeechRecognition(state_) && InSpeechRecognition(new_state)) {
+    if (!speech_button_toggled_manually_ &&
+        state_ == SPEECH_RECOGNITION_HOTWORD_LISTENING) {
+      RecordAction(UserMetricsAction("AppList_HotwordRecognized"));
+    } else {
+      RecordAction(UserMetricsAction("AppList_VoiceSearchStartedManually"));
+    }
+  } else if (InSpeechRecognition(state_) && !InSpeechRecognition(new_state) &&
+             !speech_result_obtained_) {
+    RecordAction(UserMetricsAction("AppList_VoiceSearchCanceled"));
+  }
+  speech_button_toggled_manually_ = false;
+  speech_result_obtained_ = false;
+  state_ = new_state;
   FOR_EACH_OBSERVER(StartPageObserver,
                     observers_,
                     OnSpeechRecognitionStateChanged(new_state));

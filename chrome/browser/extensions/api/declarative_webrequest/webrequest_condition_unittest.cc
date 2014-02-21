@@ -10,20 +10,20 @@
 #include "base/test/values_test_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
+#include "components/url_matcher/url_matcher_constants.h"
 #include "content/public/browser/resource_request_info.h"
-#include "extensions/common/matcher/url_matcher_constants.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace extensions {
+using url_matcher::URLMatcher;
+using url_matcher::URLMatcherConditionSet;
 
-namespace keys = declarative_webrequest_constants;
-namespace keys2 = url_matcher_constants;
+namespace extensions {
 
 TEST(WebRequestConditionTest, CreateCondition) {
   // Necessary for TestURLRequest.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
   URLMatcher matcher;
 
   std::string error;
@@ -84,7 +84,7 @@ TEST(WebRequestConditionTest, CreateCondition) {
   request_data.url_match_ids = matcher.MatchURL(http_url);
   EXPECT_EQ(1u, request_data.url_match_ids.size());
   content::ResourceRequestInfo::AllocateForTesting(
-      &match_request, ResourceType::MAIN_FRAME, NULL, -1, -1, false);
+      &match_request, ResourceType::MAIN_FRAME, NULL, -1, -1, -1, false);
   EXPECT_TRUE(result->IsFulfilled(request_data));
 
   const GURL https_url("https://www.example.com");
@@ -95,13 +95,13 @@ TEST(WebRequestConditionTest, CreateCondition) {
   // Make sure IsFulfilled does not fail because of URL matching.
   EXPECT_EQ(1u, request_data.url_match_ids.size());
   content::ResourceRequestInfo::AllocateForTesting(
-      &wrong_resource_type, ResourceType::SUB_FRAME, NULL, -1, -1, false);
+      &wrong_resource_type, ResourceType::SUB_FRAME, NULL, -1, -1, -1, false);
   EXPECT_FALSE(result->IsFulfilled(request_data));
 }
 
 TEST(WebRequestConditionTest, CreateConditionFirstPartyForCookies) {
   // Necessary for TestURLRequest.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
   URLMatcher matcher;
 
   std::string error;
@@ -135,7 +135,7 @@ TEST(WebRequestConditionTest, CreateConditionFirstPartyForCookies) {
   request_data.first_party_url_match_ids = matcher.MatchURL(first_party_url);
   EXPECT_EQ(1u, request_data.first_party_url_match_ids.size());
   content::ResourceRequestInfo::AllocateForTesting(
-      &match_request, ResourceType::MAIN_FRAME, NULL, -1, -1, false);
+      &match_request, ResourceType::MAIN_FRAME, NULL, -1, -1, -1, false);
   EXPECT_TRUE(result->IsFulfilled(request_data));
 }
 
@@ -147,7 +147,7 @@ TEST(WebRequestConditionTest, CreateConditionFirstPartyForCookies) {
 //      always fulfilled.
 TEST(WebRequestConditionTest, NoUrlAttributes) {
   // Necessary for TestURLRequest.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
   URLMatcher matcher;
   std::string error;
 
@@ -220,7 +220,7 @@ TEST(WebRequestConditionTest, NoUrlAttributes) {
 
 TEST(WebRequestConditionTest, CreateConditionSet) {
   // Necessary for TestURLRequest.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
   URLMatcher matcher;
 
   WebRequestConditionSet::AnyVector conditions;
@@ -289,7 +289,7 @@ TEST(WebRequestConditionTest, CreateConditionSet) {
 
 TEST(WebRequestConditionTest, TestPortFilter) {
   // Necessary for TestURLRequest.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
   URLMatcher matcher;
 
   WebRequestConditionSet::AnyVector conditions;
@@ -349,7 +349,7 @@ TEST(WebRequestConditionTest, TestPortFilter) {
 // impossible that both conditions are fulfilled at the same time.
 TEST(WebRequestConditionTest, ConditionsWithConflictingStages) {
   // Necessary for TestURLRequest.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
   URLMatcher matcher;
 
   std::string error;

@@ -7,13 +7,10 @@ import logging
 from urlparse import urlparse
 
 from appengine_url_fetcher import AppEngineUrlFetcher
-from caching_file_system import CachingFileSystem
 from caching_rietveld_patcher import CachingRietveldPatcher
 from chained_compiled_file_system import ChainedCompiledFileSystem
-from compiled_file_system import  CompiledFileSystem
 from environment import IsDevServer
 from extensions_paths import CONTENT_PROVIDERS
-from host_file_system_provider import HostFileSystemProvider
 from instance_servlet import InstanceServlet
 from render_servlet import RenderServlet
 from rietveld_patcher import RietveldPatcher, RietveldPatcherError
@@ -22,6 +19,7 @@ from patched_file_system import PatchedFileSystem
 from server_instance import ServerInstance
 from servlet import Request, Response, Servlet
 import url_constants
+from gcs_file_system_provider import CloudStorageFileSystemProvider
 
 
 class _PatchServletDelegate(RenderServlet.Delegate):
@@ -66,6 +64,7 @@ class _PatchServletDelegate(RenderServlet.Delegate):
         branch_utility,
         patched_host_file_system_provider,
         self._delegate.CreateGithubFileSystemProvider(object_store_creator),
+        CloudStorageFileSystemProvider(object_store_creator),
         base_path='/_patch/%s/' % self._issue)
 
     # HACK: if content_providers.json changes in this patch then the cron needs

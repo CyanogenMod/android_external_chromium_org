@@ -10,7 +10,6 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
-#include "chrome/browser/ui/autofill/testable_autofill_dialog_view.h"
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 #include "ui/gfx/size.h"
 
@@ -20,6 +19,7 @@ class NavigationController;
 
 namespace autofill {
 class AutofillDialogViewDelegate;
+class AutofillDialogViewTesterCocoa;
 }
 
 @class AutofillDialogWindowController;
@@ -27,7 +27,6 @@ class AutofillDialogViewDelegate;
 namespace autofill {
 
 class AutofillDialogCocoa : public AutofillDialogView,
-                            public TestableAutofillDialogView,
                             public ConstrainedWindowMacDelegate {
  public:
   explicit AutofillDialogCocoa(AutofillDialogViewDelegate* delegate);
@@ -47,35 +46,18 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual void UpdateSection(DialogSection section) OVERRIDE;
   virtual void UpdateErrorBubble() OVERRIDE;
   virtual void FillSection(DialogSection section,
-                           const DetailInput& originating_input) OVERRIDE;
+                           ServerFieldType originating_type) OVERRIDE;
   virtual void GetUserInput(DialogSection section,
                             FieldValueMap* output) OVERRIDE;
   virtual base::string16 GetCvc() OVERRIDE;
-  virtual bool HitTestInput(const DetailInput& input,
+  virtual bool HitTestInput(ServerFieldType type,
                             const gfx::Point& screen_point) OVERRIDE;
   virtual bool SaveDetailsLocally() OVERRIDE;
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
   virtual void ModelChanged() OVERRIDE;
-  virtual TestableAutofillDialogView* GetTestableView() OVERRIDE;
   virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
-
-  // TestableAutofillDialogView implementation:
-  // TODO(groby): Create a separate class to implement the testable interface:
-  // http://crbug.com/256864
-  virtual void SubmitForTesting() OVERRIDE;
-  virtual void CancelForTesting() OVERRIDE;
-  virtual base::string16 GetTextContentsOfInput(
-      const DetailInput& input) OVERRIDE;
-  virtual void SetTextContentsOfInput(const DetailInput& input,
-                                      const base::string16& contents) OVERRIDE;
-  virtual void SetTextContentsOfSuggestionInput(
-      DialogSection section,
-      const base::string16& text) OVERRIDE;
-  virtual void ActivateInput(const DetailInput& input) OVERRIDE;
-  virtual gfx::Size GetSize() const OVERRIDE;
-  virtual content::WebContents* GetSignInWebContents() OVERRIDE;
-  virtual bool IsShowingOverlay() const OVERRIDE;
+  virtual void ValidateSection(DialogSection section) OVERRIDE;
 
   // ConstrainedWindowMacDelegate implementation:
   virtual void OnConstrainedWindowClosed(
@@ -87,6 +69,8 @@ class AutofillDialogCocoa : public AutofillDialogView,
   void PerformClose();
 
  private:
+  friend class AutofillDialogViewTesterCocoa;
+
   // Closes the sheet and ends the modal loop. Triggers cleanup sequence.
   void CloseNow();
 

@@ -10,10 +10,14 @@
 #include <pk11pub.h>
 #include <secmod.h>
 
+#include "base/bind.h"
+#include "base/callback.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/singleton.h"
 #include "base/observer_list_threadsafe.h"
+#include "base/task_runner.h"
+#include "base/threading/worker_pool.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
 #include "crypto/scoped_nss_types.h"
@@ -35,6 +39,13 @@ namespace psm = mozilla_security_manager;
 
 namespace net {
 
+namespace {
+
+base::LazyInstance<NSSCertDatabase>::Leaky
+    g_nss_cert_database = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
 NSSCertDatabase::ImportCertFailure::ImportCertFailure(
     const scoped_refptr<X509Certificate>& cert,
     int err)
@@ -44,30 +55,40 @@ NSSCertDatabase::ImportCertFailure::~ImportCertFailure() {}
 
 // static
 NSSCertDatabase* NSSCertDatabase::GetInstance() {
-  return Singleton<NSSCertDatabase,
-                   LeakySingletonTraits<NSSCertDatabase> >::get();
+  // TODO(mattm): Remove this ifdef guard once the linux impl of
+  // GetNSSCertDatabaseForResourceContext does not call GetInstance.
+#if defined(OS_CHROMEOS)
+  LOG(ERROR) << "NSSCertDatabase::GetInstance() is deprecated."
+             << "See http://crbug.com/329735.";
+#endif
+  return &g_nss_cert_database.Get();
 }
 
 NSSCertDatabase::NSSCertDatabase()
     : observer_list_(new ObserverListThreadSafe<Observer>) {
-  crypto::EnsureNSSInit();
+  // This also makes sure that NSS has been initialized.
+  CertDatabase::GetInstance()->ObserveNSSCertDatabase(this);
+
   psm::EnsurePKCS12Init();
 }
 
 NSSCertDatabase::~NSSCertDatabase() {}
 
-void NSSCertDatabase::ListCerts(CertificateList* certs) {
-  certs->clear();
+void NSSCertDatabase::ListCertsSync(CertificateList* certs) {
+  ListCertsImpl(certs);
+}
 
-  CERTCertList* cert_list = PK11_ListCerts(PK11CertListUnique, NULL);
-  CERTCertListNode* node;
-  for (node = CERT_LIST_HEAD(cert_list);
-       !CERT_LIST_END(node, cert_list);
-       node = CERT_LIST_NEXT(node)) {
-    certs->push_back(X509Certificate::CreateFromHandle(
-        node->cert, X509Certificate::OSCertHandles()));
-  }
-  CERT_DestroyCertList(cert_list);
+void NSSCertDatabase::ListCerts(
+    const base::Callback<void(scoped_ptr<CertificateList> certs)>& callback) {
+  scoped_ptr<CertificateList> certs(new CertificateList());
+
+  // base::Pased will NULL out |certs|, so cache the underlying pointer here.
+  CertificateList* raw_certs = certs.get();
+  GetSlowTaskRunner()->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&NSSCertDatabase::ListCertsImpl,
+                 base::Unretained(raw_certs)),
+      base::Bind(callback, base::Passed(&certs)));
 }
 
 crypto::ScopedPK11Slot NSSCertDatabase::GetPublicSlot() const {
@@ -117,6 +138,9 @@ int NSSCertDatabase::ImportFromPKCS12(
     const base::string16& password,
     bool is_extractable,
     net::CertificateList* imported_certs) {
+  DVLOG(1) << __func__ << " "
+           << PK11_GetModuleID(module->os_module_handle()) << ":"
+           << PK11_GetSlotID(module->os_module_handle());
   int result = psm::nsPKCS12Blob_Import(module->os_module_handle(),
                                         data.data(), data.size(),
                                         password,
@@ -154,7 +178,7 @@ X509Certificate* NSSCertDatabase::FindRootInList(
                        &certn_1->os_cert_handle()->subject) == SECEqual)
     return certn_1;
 
-  VLOG(1) << "certificate list is not a hierarchy";
+  LOG(WARNING) << "certificate list is not a hierarchy";
   return cert0;
 }
 
@@ -330,6 +354,32 @@ void NSSCertDatabase::AddObserver(Observer* observer) {
 
 void NSSCertDatabase::RemoveObserver(Observer* observer) {
   observer_list_->RemoveObserver(observer);
+}
+
+void NSSCertDatabase::SetSlowTaskRunnerForTest(
+    const scoped_refptr<base::TaskRunner>& task_runner) {
+  slow_task_runner_for_test_ = task_runner;
+}
+
+// static
+void NSSCertDatabase::ListCertsImpl(CertificateList* certs) {
+  certs->clear();
+
+  CERTCertList* cert_list = PK11_ListCerts(PK11CertListUnique, NULL);
+  CERTCertListNode* node;
+  for (node = CERT_LIST_HEAD(cert_list);
+       !CERT_LIST_END(node, cert_list);
+       node = CERT_LIST_NEXT(node)) {
+    certs->push_back(X509Certificate::CreateFromHandle(
+        node->cert, X509Certificate::OSCertHandles()));
+  }
+  CERT_DestroyCertList(cert_list);
+}
+
+scoped_refptr<base::TaskRunner> NSSCertDatabase::GetSlowTaskRunner() const {
+  if (slow_task_runner_for_test_)
+    return slow_task_runner_for_test_;
+  return base::WorkerPool::GetTaskRunner(true /*task is slow*/);
 }
 
 void NSSCertDatabase::NotifyObserversOfCertAdded(const X509Certificate* cert) {

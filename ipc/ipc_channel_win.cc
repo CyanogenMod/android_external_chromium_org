@@ -183,7 +183,7 @@ bool Channel::ChannelImpl::DidEmptyInputBuffers() {
 }
 
 // static
-const string16 Channel::ChannelImpl::PipeName(
+const base::string16 Channel::ChannelImpl::PipeName(
     const std::string& channel_id, int32* secret) {
   std::string name("\\\\.\\pipe\\chrome.");
 
@@ -192,19 +192,19 @@ const string16 Channel::ChannelImpl::PipeName(
   if (index != std::string::npos) {
     if (secret)  // Retrieve the secret if asked for.
       base::StringToInt(channel_id.substr(index + 1), secret);
-    return ASCIIToWide(name.append(channel_id.substr(0, index - 1)));
+    return base::ASCIIToWide(name.append(channel_id.substr(0, index - 1)));
   }
 
   // This case is here to support predictable named pipes in tests.
   if (secret)
     *secret = 0;
-  return ASCIIToWide(name.append(channel_id));
+  return base::ASCIIToWide(name.append(channel_id));
 }
 
 bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
                                       Mode mode) {
   DCHECK_EQ(INVALID_HANDLE_VALUE, pipe_);
-  string16 pipe_name;
+  base::string16 pipe_name;
   // If we already have a valid pipe for channel just copy it.
   if (channel_handle.pipe.handle) {
     DCHECK(channel_handle.name.empty());
@@ -372,7 +372,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
       return false;
     }
     // Message was sent.
-    DCHECK(!output_queue_.empty());
+    CHECK(!output_queue_.empty());
     Message* m = output_queue_.front();
     output_queue_.pop();
     delete m;

@@ -15,7 +15,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "ipc/ipc_message_utils.h"
 #include "media/audio/audio_manager.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,6 +27,7 @@ using ::testing::NotNull;
 namespace {
 const int kRenderProcessId = 1;
 const int kRenderViewId = 4;
+const int kRenderFrameId = 5;
 const int kStreamId = 50;
 }  // namespace
 
@@ -198,7 +199,8 @@ class AudioRendererHostTest : public testing::Test {
           media::CHANNEL_LAYOUT_STEREO,
           2,
           media::AudioParameters::kAudioCDSampleRate, 16,
-          media::AudioParameters::kAudioCDSampleRate / 10);
+          media::AudioParameters::kAudioCDSampleRate / 10,
+          media::AudioParameters::NO_EFFECTS);
     } else {
       session_id = 0;
       params = media::AudioParameters(
@@ -207,7 +209,8 @@ class AudioRendererHostTest : public testing::Test {
           media::AudioParameters::kAudioCDSampleRate, 16,
           media::AudioParameters::kAudioCDSampleRate / 10);
     }
-    host_->OnCreateStream(kStreamId, kRenderViewId, session_id, params);
+    host_->OnCreateStream(kStreamId, kRenderViewId, kRenderFrameId, session_id,
+                          params);
 
     // At some point in the future, a corresponding RemoveDiverter() call must
     // be made.
@@ -264,7 +267,7 @@ class AudioRendererHostTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
 
     base::RunLoop run_loop;
-    audio_manager_->GetMessageLoop()->PostTask(
+    audio_manager_->GetTaskRunner()->PostTask(
         FROM_HERE, media::BindToCurrentLoop(run_loop.QuitClosure()));
     run_loop.Run();
   }

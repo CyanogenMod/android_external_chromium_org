@@ -38,7 +38,10 @@
   <div id="manage-profile-overlay-delete" hidden>
     <h1 i18n-content="deleteProfileTitle"></h1>
     <div class="content-area">
-      <div id="delete-profile-message"></div>
+      <div id="delete-profile-message">
+        <img id="delete-profile-icon" class="profile-icon">
+        <div id="delete-profile-text"></div>
+      </div>
       <div id="delete-managed-profile-addendum"
           i18n-values=".innerHTML:deleteManagedProfileAddendum" hidden>
       </div>
@@ -63,7 +66,6 @@
           <input id="create-profile-name" type="text" required>
         </label>
       </div>
-      <div id="create-profile-error-bubble" hidden></div>
     </div>
     <div id="create-profile-managed-content-area" class="content-area">
       <div id="create-shortcut-container" class="checkbox" hidden>
@@ -104,11 +106,12 @@
             class="bubble-button controlled-setting-indicator">
         </span>
       </div>
+      <div id="create-profile-error-bubble" hidden></div>
     </div>
     <div class="action-area">
       <div id="create-profile-throbber" class="throbber"></div>
       <button id="import-existing-managed-user-link" class="link-button"
-          i18n-content="importExistingManagedUserLink">
+          i18n-content="importExistingManagedUserLink" hidden>
       </button>
       <div class="button-strip">
         <button id="create-profile-cancel" i18n-content="cancel"></button>

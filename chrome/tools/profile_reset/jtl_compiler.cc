@@ -65,8 +65,9 @@ class InstructionSet {
                     jtl::STORE_NODE_BOOL, Arguments(String)));
     Add(Instruction("store_node_hash",
                     jtl::STORE_NODE_HASH, Arguments(String)));
-    Add(Instruction("store_node_effective_sld_hash",
-                    jtl::STORE_NODE_EFFECTIVE_SLD_HASH, Arguments(String)));
+    Add(Instruction("store_node_registerable_domain_hash",
+                    jtl::STORE_NODE_REGISTERABLE_DOMAIN_HASH,
+                    Arguments(String)));
     Add(Instruction("compare_bool", jtl::COMPARE_NODE_BOOL, Arguments(Bool)));
     Add(Instruction("compare_hashed",
                     jtl::COMPARE_NODE_HASH, Arguments(String)));
@@ -92,7 +93,7 @@ class InstructionSet {
 
   JtlCompiler::CompileError::ErrorCode TranscodeInstruction(
       const std::string& name,
-      const ListValue& arguments,
+      const base::ListValue& arguments,
       bool ends_sentence,
       const jtl::Hasher& hasher,
       ByteCodeWriter* target) const {
@@ -224,7 +225,7 @@ bool JtlCompiler::Compile(const std::string& source_code,
   JtlParser parser(compacted_source_code, newline_indices);
   while (!parser.HasFinished()) {
     std::string operation_name;
-    ListValue arguments;
+    base::ListValue arguments;
     bool ends_sentence = false;
     if (!parser.ParseNextOperation(
              &operation_name, &arguments, &ends_sentence)) {

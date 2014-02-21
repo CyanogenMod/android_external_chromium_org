@@ -22,13 +22,16 @@
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/message_center/message_center.h"
 #include "ui/views/corewm/capture_controller.h"
+#include "ui/views/corewm/wm_state.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "ui/keyboard/keyboard.h"
 #endif
 
 #if defined(USE_X11)
-#include "ui/aura/root_window_host_x11.h"
+#include "ui/aura/window_tree_host_x11.h"
 #endif
 
 namespace ash {
@@ -37,7 +40,8 @@ namespace test {
 AshTestHelper::AshTestHelper(base::MessageLoopForUI* message_loop)
     : message_loop_(message_loop),
       test_shell_delegate_(NULL),
-      test_screenshot_delegate_(NULL) {
+      test_screenshot_delegate_(NULL),
+      dbus_thread_manager_initialized_(false) {
   CHECK(message_loop_);
 #if defined(USE_X11)
   aura::test::SetUseOverrideRedirectWindowByDefault(true);
@@ -48,6 +52,8 @@ AshTestHelper::~AshTestHelper() {
 }
 
 void AshTestHelper::SetUp(bool start_session) {
+  wm_state_.reset(new views::corewm::WMState);
+
   // Disable animations during tests.
   zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
       ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
@@ -64,6 +70,11 @@ void AshTestHelper::SetUp(bool start_session) {
   message_center::MessageCenter::Initialize();
 
 #if defined(OS_CHROMEOS)
+  // Create DBusThreadManager for testing.
+  if (!chromeos::DBusThreadManager::IsInitialized()) {
+    chromeos::DBusThreadManager::InitializeWithStub();
+    dbus_thread_manager_initialized_ = true;
+  }
   // Create CrasAudioHandler for testing since g_browser_process is not
   // created in AshTestBase tests.
   chromeos::CrasAudioHandler::InitializeForTesting();
@@ -99,6 +110,11 @@ void AshTestHelper::TearDown() {
 
 #if defined(OS_CHROMEOS)
   chromeos::CrasAudioHandler::Shutdown();
+  if (dbus_thread_manager_initialized_) {
+    chromeos::DBusThreadManager::Shutdown();
+    dbus_thread_manager_initialized_ = false;
+  }
+  keyboard::ResetKeyboardForTesting();
 #endif
 
   aura::Env::DeleteInstance();
@@ -111,12 +127,14 @@ void AshTestHelper::TearDown() {
   zero_duration_mode_.reset();
 
   CHECK(!views::corewm::ScopedCaptureClient::IsActive());
+
+  wm_state_.reset();
 }
 
 void AshTestHelper::RunAllPendingInMessageLoop() {
   DCHECK(base::MessageLoopForUI::current() == message_loop_);
   aura::Env::CreateInstance();
-  base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
+  base::RunLoop run_loop;
   run_loop.RunUntilIdle();
 }
 

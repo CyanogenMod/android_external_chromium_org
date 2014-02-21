@@ -241,8 +241,6 @@ void ExtensionAPI::InitDefaultConfiguration() {
   RegisterSchemaResource("runtime", IDR_EXTENSION_API_JSON_RUNTIME);
   RegisterSchemaResource("fileBrowserHandler",
       IDR_EXTENSION_API_JSON_FILEBROWSERHANDLER);
-  RegisterSchemaResource("fileBrowserPrivate",
-      IDR_EXTENSION_API_JSON_FILEBROWSERPRIVATE);
   RegisterSchemaResource("inputMethodPrivate",
       IDR_EXTENSION_API_JSON_INPUTMETHODPRIVATE);
   RegisterSchemaResource("pageAction", IDR_EXTENSION_API_JSON_PAGEACTION);
@@ -251,8 +249,6 @@ void ExtensionAPI::InitDefaultConfiguration() {
   RegisterSchemaResource("processes", IDR_EXTENSION_API_JSON_PROCESSES);
   RegisterSchemaResource("proxy", IDR_EXTENSION_API_JSON_PROXY);
   RegisterSchemaResource("scriptBadge", IDR_EXTENSION_API_JSON_SCRIPTBADGE);
-  RegisterSchemaResource("streamsPrivate",
-      IDR_EXTENSION_API_JSON_STREAMSPRIVATE);
   RegisterSchemaResource("ttsEngine", IDR_EXTENSION_API_JSON_TTSENGINE);
   RegisterSchemaResource("tts", IDR_EXTENSION_API_JSON_TTS);
   RegisterSchemaResource("types", IDR_EXTENSION_API_JSON_TYPES);
@@ -278,26 +274,25 @@ void ExtensionAPI::RegisterDependencyProvider(const std::string& name,
   dependency_providers_[name] = provider;
 }
 
-bool ExtensionAPI::IsAnyFeatureAvailableToContext(const std::string& api_name,
+bool ExtensionAPI::IsAnyFeatureAvailableToContext(const Feature& api,
                                                   const Extension* extension,
                                                   Feature::Context context,
                                                   const GURL& url) {
   FeatureProviderMap::iterator provider = dependency_providers_.find("api");
   CHECK(provider != dependency_providers_.end());
-  const std::vector<std::string>& features =
-      provider->second->GetAllFeatureNames();
+  if (IsAvailable(api, extension, context, url).is_available())
+    return true;
 
   // Check to see if there are any parts of this API that are allowed in this
   // context.
-  for (std::vector<std::string>::const_iterator i = features.begin();
-       i != features.end(); ++i) {
-    const std::string& feature_name = *i;
-    if (feature_name != api_name && feature_name.find(api_name + ".") == 0) {
-      if (IsAvailable(feature_name, extension, context, url).is_available())
-        return true;
-    }
+  const std::vector<Feature*> features = provider->second->GetChildren(api);
+  for (std::vector<Feature*>::const_iterator feature = features.begin();
+       feature != features.end();
+       ++feature) {
+    if (IsAvailable(**feature, extension, context, url).is_available())
+      return true;
   }
-  return IsAvailable(api_name, extension, context, url).is_available();
+  return false;
 }
 
 Feature::Availability ExtensionAPI::IsAvailable(const std::string& full_name,
@@ -306,14 +301,20 @@ Feature::Availability ExtensionAPI::IsAvailable(const std::string& full_name,
                                                 const GURL& url) {
   Feature* feature = GetFeatureDependency(full_name);
   CHECK(feature) << full_name;
+  return IsAvailable(*feature, extension, context, url);
+}
 
+Feature::Availability ExtensionAPI::IsAvailable(const Feature& feature,
+                                                const Extension* extension,
+                                                Feature::Context context,
+                                                const GURL& url) {
   Feature::Availability availability =
-      feature->IsAvailableToContext(extension, context, url);
+      feature.IsAvailableToContext(extension, context, url);
   if (!availability.is_available())
     return availability;
 
-  for (std::set<std::string>::iterator iter = feature->dependencies().begin();
-       iter != feature->dependencies().end(); ++iter) {
+  for (std::set<std::string>::iterator iter = feature.dependencies().begin();
+       iter != feature.dependencies().end(); ++iter) {
     Feature::Availability dependency_availability =
         IsAvailable(*iter, extension, context, url);
     if (!dependency_availability.is_available())

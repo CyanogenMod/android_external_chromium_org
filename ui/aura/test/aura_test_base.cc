@@ -10,6 +10,7 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/base/ime/input_method_initializer.h"
+#include "ui/events/event_dispatcher.h"
 #include "ui/events/gestures/gesture_configuration.h"
 
 namespace aura {
@@ -69,7 +70,8 @@ void AuraTestBase::SetUp() {
   ui::GestureConfiguration::set_fling_velocity_cap(15000.0f);
 
   helper_.reset(new AuraTestHelper(&message_loop_));
-  helper_->SetUp();
+  bool allow_test_contexts = true;
+  helper_->SetUp(allow_test_contexts);
 }
 
 void AuraTestBase::TearDown() {
@@ -90,20 +92,10 @@ Window* AuraTestBase::CreateNormalWindow(int id, Window* parent,
       delegate ? delegate :
       test::TestWindowDelegate::CreateSelfDestroyingDelegate());
   window->set_id(id);
-  window->Init(ui::LAYER_TEXTURED);
+  window->Init(aura::WINDOW_LAYER_TEXTURED);
   parent->AddChild(window);
   window->SetBounds(gfx::Rect(0, 0, 100, 100));
   window->Show();
-  return window;
-}
-
-Window* AuraTestBase::CreateTransientChild(int id, Window* parent) {
-  Window* window = new Window(NULL);
-  window->set_id(id);
-  window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-  window->Init(ui::LAYER_TEXTURED);
-  aura::client::ParentWindowWithContext(window, root_window(), gfx::Rect());
-  parent->AddTransientChild(window);
   return window;
 }
 
@@ -113,6 +105,12 @@ void AuraTestBase::RunAllPendingInMessageLoop() {
 
 void AuraTestBase::ParentWindow(Window* window) {
   client::ParentWindowWithContext(window, root_window(), gfx::Rect());
+}
+
+bool AuraTestBase::DispatchEventUsingWindowDispatcher(ui::Event* event) {
+  ui::EventDispatchDetails details = dispatcher()->OnEventFromSource(event);
+  CHECK(!details.dispatcher_destroyed);
+  return event->handled();
 }
 
 }  // namespace test

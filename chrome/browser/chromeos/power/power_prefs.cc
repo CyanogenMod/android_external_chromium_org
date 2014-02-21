@@ -84,7 +84,7 @@ void PowerPrefs::Observe(int type,
     }
     case chrome::NOTIFICATION_SESSION_STARTED:
       // Update |profile_| when entering a session.
-      SetProfile(ProfileManager::GetDefaultProfile());
+      SetProfile(ProfileManager::GetPrimaryUserProfile());
       break;
     case chrome::NOTIFICATION_PROFILE_DESTROYED: {
       // Update |profile_| when exiting a session or shutting down.
@@ -139,8 +139,8 @@ void PowerPrefs::UpdatePowerPolicyFromPrefs() {
       prefs->GetBoolean(prefs::kPowerUseVideoActivity);
   values.allow_screen_wake_locks =
       prefs->GetBoolean(prefs::kPowerAllowScreenWakeLocks);
-  values.enable_screen_lock =
-      prefs->GetBoolean(prefs::kEnableScreenLock);
+  values.enable_auto_screen_lock =
+      prefs->GetBoolean(prefs::kEnableAutoScreenLock);
   values.presentation_screen_dim_delay_factor =
       prefs->GetDouble(prefs::kPowerPresentationScreenDimDelayFactor);
   values.user_activity_screen_dim_delay_factor =
@@ -211,7 +211,7 @@ void PowerPrefs::RegisterProfilePrefs(
       true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kEnableScreenLock,
+      prefs::kEnableAutoScreenLock,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterDoublePref(
@@ -229,13 +229,16 @@ void PowerPrefs::RegisterProfilePrefs(
 }
 
 void PowerPrefs::SetProfile(Profile* profile) {
+  // No need to reapply policy if profile hasn't changed, e.g. when adding a
+  // secondary user to an existing session.
+  if (profile == profile_)
+    return;
+
   profile_ = profile;
   pref_change_registrar_.reset();
 
-  if (!profile) {
-    power_policy_controller_->ClearPrefs();
+  if (!profile)
     return;
-  }
 
   base::Closure update_callback(base::Bind(
       &PowerPrefs::UpdatePowerPolicyFromPrefs,
@@ -265,7 +268,7 @@ void PowerPrefs::SetProfile(Profile* profile) {
   pref_change_registrar_->Add(prefs::kPowerUseVideoActivity, update_callback);
   pref_change_registrar_->Add(prefs::kPowerAllowScreenWakeLocks,
                               update_callback);
-  pref_change_registrar_->Add(prefs::kEnableScreenLock, update_callback);
+  pref_change_registrar_->Add(prefs::kEnableAutoScreenLock, update_callback);
   pref_change_registrar_->Add(prefs::kPowerPresentationScreenDimDelayFactor,
                               update_callback);
   pref_change_registrar_->Add(prefs::kPowerUserActivityScreenDimDelayFactor,

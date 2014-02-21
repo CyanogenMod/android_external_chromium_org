@@ -64,19 +64,21 @@ struct ScrollAndScaleSet;
 // Provides information on an Impl's rendering capabilities back to the
 // LayerTreeHost.
 struct CC_EXPORT RendererCapabilities {
+  RendererCapabilities(ResourceFormat best_texture_format,
+                       bool allow_partial_texture_updates,
+                       bool using_offscreen_context3d,
+                       int max_texture_size,
+                       bool using_shared_memory_resources);
+
   RendererCapabilities();
   ~RendererCapabilities();
 
+  // Duplicate any modification to this list to RendererCapabilitiesImpl.
   ResourceFormat best_texture_format;
-  bool using_partial_swap;
-  bool using_egl_image;
   bool allow_partial_texture_updates;
   bool using_offscreen_context3d;
   int max_texture_size;
-  bool avoid_pow2_textures;
-  bool using_map_image;
   bool using_shared_memory_resources;
-  bool using_discard_framebuffer;
 };
 
 class CC_EXPORT LayerTreeHost {
@@ -125,7 +127,8 @@ class CC_EXPORT LayerTreeHost {
     CreateFailedButTryAgain,
     CreateFailedAndGaveUp,
   };
-  CreateResult OnCreateAndInitializeOutputSurfaceAttempted(bool success);
+  virtual CreateResult OnCreateAndInitializeOutputSurfaceAttempted(
+      bool success);
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
@@ -146,7 +149,8 @@ class CC_EXPORT LayerTreeHost {
   // Composites and attempts to read back the result into the provided
   // buffer. If it wasn't possible, e.g. due to context lost, will return
   // false.
-  bool CompositeAndReadback(void* pixels, gfx::Rect rect_in_device_viewport);
+  bool CompositeAndReadback(void* pixels,
+                            const gfx::Rect& rect_in_device_viewport);
 
   void FinishAllRendering();
 
@@ -172,7 +176,7 @@ class CC_EXPORT LayerTreeHost {
   virtual void SetNeedsCommit();
   virtual void SetNeedsFullTreeSync();
   void SetNeedsRedraw();
-  void SetNeedsRedrawRect(gfx::Rect damage_rect);
+  void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
   bool CommitRequested() const;
   bool BeginMainFrameRequested() const;
 
@@ -191,13 +195,19 @@ class CC_EXPORT LayerTreeHost {
       scoped_refptr<Layer> page_scale_layer,
       scoped_refptr<Layer> inner_viewport_scroll_layer,
       scoped_refptr<Layer> outer_viewport_scroll_layer);
+  Layer* inner_viewport_scroll_layer() const {
+    return inner_viewport_scroll_layer_.get();
+  }
+  Layer* outer_viewport_scroll_layer() const {
+    return outer_viewport_scroll_layer_.get();
+  }
 
   const LayerTreeSettings& settings() const { return settings_; }
 
   void SetDebugState(const LayerTreeDebugState& debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
-  void SetViewportSize(gfx::Size device_viewport_size);
+  void SetViewportSize(const gfx::Size& device_viewport_size);
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
@@ -225,12 +235,14 @@ class CC_EXPORT LayerTreeHost {
   void SetVisible(bool visible);
   bool visible() const { return visible_; }
 
-  void StartPageScaleAnimation(gfx::Vector2d target_offset,
+  void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                bool use_anchor,
                                float scale,
                                base::TimeDelta duration);
 
   void ApplyScrollAndScale(const ScrollAndScaleSet& info);
+  gfx::Vector2d DistributeScrollOffsetToViewports(const gfx::Vector2d offset,
+                                                  Layer* layer);
 
   void SetImplTransform(const gfx::Transform& transform);
 
@@ -303,11 +315,11 @@ class CC_EXPORT LayerTreeHost {
   LayerTreeHost(LayerTreeHostClient* client,
                 SharedBitmapManager* manager,
                 const LayerTreeSettings& settings);
-  bool InitializeThreaded(
+  void InitializeThreaded(
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
-  bool InitializeSingleThreaded(
+  void InitializeSingleThreaded(
       LayerTreeHostSingleThreadClient* single_thread_client);
-  bool InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
+  void InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
   void SetOutputSurfaceLostForTesting(bool is_lost) {
     output_surface_lost_ = is_lost;
   }
@@ -315,7 +327,7 @@ class CC_EXPORT LayerTreeHost {
   MicroBenchmarkController micro_benchmark_controller_;
 
  private:
-  bool InitializeProxy(scoped_ptr<Proxy> proxy);
+  void InitializeProxy(scoped_ptr<Proxy> proxy);
 
   void PaintLayerContents(
       const RenderSurfaceLayerList& render_surface_layer_list,

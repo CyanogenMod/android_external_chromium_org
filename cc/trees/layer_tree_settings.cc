@@ -43,7 +43,6 @@ LayerTreeSettings::LayerTreeSettings()
       top_controls_hide_threshold(0.5f),
       refresh_rate(60.0),
       max_partial_texture_updates(std::numeric_limits<size_t>::max()),
-      num_raster_threads(1),
       default_tile_size(gfx::Size(256, 256)),
       max_untiled_layer_size(gfx::Size(512, 512)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
@@ -51,16 +50,17 @@ LayerTreeSettings::LayerTreeSettings()
       use_pinch_virtual_viewport(false),
       // At 256x256 tiles, 128 tiles cover an area of 2048x4096 pixels.
       max_tiles_for_interest_area(128),
+      skewport_target_time_in_seconds(1.0f),
+      skewport_extrapolation_limit_in_content_pixels(2000),
       max_unused_resource_memory_percentage(100),
+      max_memory_for_prepaint_percentage(100),
       highp_threshold_min(0),
       strict_layer_property_change_checking(false),
       use_map_image(false),
       ignore_root_layer_flings(false),
       use_rgba_4444_textures(false),
-      always_overscroll(false),
       touch_hit_testing(true),
-      texture_id_allocation_chunk_size(64) {
-}
+      texture_id_allocation_chunk_size(64) {}
 
 LayerTreeSettings::~LayerTreeSettings() {}
 

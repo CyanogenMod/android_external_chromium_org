@@ -81,17 +81,24 @@ class MockMediaStreamRequester : public MediaStreamRequester {
   virtual ~MockMediaStreamRequester() {}
 
   // MediaStreamRequester implementation.
-  MOCK_METHOD3(StreamGenerated,
-               void(const std::string& label,
+  MOCK_METHOD5(StreamGenerated,
+               void(int render_view_id,
+                    int page_request_id,
+                    const std::string& label,
                     const StreamDeviceInfoArray& audio_devices,
                     const StreamDeviceInfoArray& video_devices));
-  MOCK_METHOD1(StreamGenerationFailed, void(const std::string& label));
+  MOCK_METHOD2(StreamGenerationFailed, void(int render_view_id,
+                                            int page_request_id));
   MOCK_METHOD3(DeviceStopped, void(int render_view_id,
                                    const std::string& label,
                                    const StreamDeviceInfo& device));
-  MOCK_METHOD2(DevicesEnumerated, void(const std::string& label,
+  MOCK_METHOD4(DevicesEnumerated, void(int render_view_id,
+                                       int page_request_id,
+                                       const std::string& label,
                                        const StreamDeviceInfoArray& devices));
-  MOCK_METHOD2(DeviceOpened, void(const std::string& label,
+  MOCK_METHOD4(DeviceOpened, void(int render_view_id,
+                                  int page_request_id,
+                                  const std::string& label,
                                   const StreamDeviceInfo& device_info));
 
  private:
@@ -112,7 +119,9 @@ class MockVideoCaptureHost : public VideoCaptureHost {
   MOCK_METHOD2(OnBufferFreed,
                void(int device_id, int buffer_id));
   MOCK_METHOD4(OnBufferFilled,
-               void(int device_id, int buffer_id, base::Time timestamp,
+               void(int device_id,
+                    int buffer_id,
+                    base::TimeTicks timestamp,
                     const media::VideoCaptureFormat& format));
   MOCK_METHOD2(OnStateChanged, void(int device_id, VideoCaptureState state));
 
@@ -196,7 +205,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
 
   void OnBufferFilledDispatch(int device_id,
                               int buffer_id,
-                              base::Time timestamp,
+                              base::TimeTicks timestamp,
                               const media::VideoCaptureFormat& frame_format) {
     base::SharedMemory* dib = filled_dib_[buffer_id];
     ASSERT_TRUE(dib != NULL);
@@ -293,14 +302,17 @@ class VideoCaptureHostTest : public testing::Test {
           &stream_requester_,
           render_process_id,
           render_view_id,
-          browser_context_.GetResourceContext(),
+          browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
           security_origin);
-      EXPECT_CALL(stream_requester_, DevicesEnumerated(label, _))
+      EXPECT_CALL(stream_requester_, DevicesEnumerated(render_view_id,
+                                                       page_request_id,
+                                                       label,
+                                                       _))
           .Times(1).WillOnce(
               DoAll(ExitMessageLoop(message_loop_, run_loop.QuitClosure()),
-                    SaveArg<1>(&devices)));
+                    SaveArg<3>(&devices)));
       run_loop.Run();
       Mock::VerifyAndClearExpectations(&stream_requester_);
       media_stream_manager_->CancelRequest(label);
@@ -312,19 +324,23 @@ class VideoCaptureHostTest : public testing::Test {
     {
       base::RunLoop run_loop;
       StreamDeviceInfo opened_device;
-      opened_device_label_ = media_stream_manager_->OpenDevice(
+      media_stream_manager_->OpenDevice(
           &stream_requester_,
           render_process_id,
           render_view_id,
-          browser_context_.GetResourceContext(),
+          browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           devices[0].device.id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
           security_origin);
-      EXPECT_CALL(stream_requester_, DeviceOpened(opened_device_label_, _))
+      EXPECT_CALL(stream_requester_, DeviceOpened(render_view_id,
+                                                  page_request_id,
+                                                  _,
+                                                  _))
           .Times(1).WillOnce(
               DoAll(ExitMessageLoop(message_loop_, run_loop.QuitClosure()),
-                    SaveArg<1>(&opened_device)));
+                    SaveArg<2>(&opened_device_label_),
+                    SaveArg<3>(&opened_device)));
       run_loop.Run();
       Mock::VerifyAndClearExpectations(&stream_requester_);
       ASSERT_NE(StreamDeviceInfo::kNoId, opened_device.session_id);

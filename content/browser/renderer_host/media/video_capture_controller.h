@@ -104,6 +104,8 @@ class CONTENT_EXPORT VideoCaptureController {
                     VideoCaptureControllerEventHandler* event_handler,
                     int buffer_id);
 
+  const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
+
  private:
   class VideoCaptureDeviceClient;
 
@@ -115,7 +117,7 @@ class CONTENT_EXPORT VideoCaptureController {
       scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer,
       const gfx::Size& dimensions,
       int frame_rate,
-      base::Time timestamp);
+      base::TimeTicks timestamp);
   void DoErrorOnIOThread();
   void DoDeviceStoppedOnIOThread();
   void DoBufferDestroyedOnIOThread(int buffer_id_to_drop);
@@ -140,6 +142,8 @@ class CONTENT_EXPORT VideoCaptureController {
   // Takes on only the states 'STARTED' and 'ERROR'. 'ERROR' is an absorbing
   // state which stops the flow of data to clients.
   VideoCaptureState state_;
+
+  media::VideoCaptureFormat video_capture_format_;
 
   base::WeakPtrFactory<VideoCaptureController> weak_ptr_factory_;
 

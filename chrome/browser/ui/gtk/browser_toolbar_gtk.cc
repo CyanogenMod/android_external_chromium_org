@@ -62,8 +62,8 @@
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/skbitmap_operations.h"
 
+using base::UserMetricsAction;
 using content::HostZoomMap;
-using content::UserMetricsAction;
 using content::WebContents;
 
 namespace {
@@ -653,7 +653,7 @@ void BrowserToolbarGtk::OnDragDataReceived(GtkWidget* widget,
   if (!url.is_valid())
     return;
 
-  bool url_is_newtab = url.SchemeIs(chrome::kChromeUIScheme) &&
+  bool url_is_newtab = url.SchemeIs(content::kChromeUIScheme) &&
                        url.host() == chrome::kChromeUINewTabHost;
   home_page_is_new_tab_page_.SetValue(url_is_newtab);
   if (!url_is_newtab)

@@ -63,7 +63,7 @@ class BookmarkBarGtkUnittest : public testing::Test {
 };
 
 TEST_F(BookmarkBarGtkUnittest, DisplaysHelpMessageOnEmpty) {
-  bookmark_bar_->Loaded(model_, false);
+  bookmark_bar_->BookmarkModelLoaded(model_, false);
 
   // There are no bookmarks in the model by default. Expect that the
   // |instructions_label| is shown.
@@ -73,20 +73,20 @@ TEST_F(BookmarkBarGtkUnittest, DisplaysHelpMessageOnEmpty) {
 TEST_F(BookmarkBarGtkUnittest, HidesHelpMessageWithBookmark) {
   const BookmarkNode* parent = model_->bookmark_bar_node();
   model_->AddURL(parent, parent->child_count(),
-                 ASCIIToUTF16("title"), GURL("http://one.com"));
+                 base::ASCIIToUTF16("title"), GURL("http://one.com"));
 
-  bookmark_bar_->Loaded(model_, false);
+  bookmark_bar_->BookmarkModelLoaded(model_, false);
   EXPECT_FALSE(bookmark_bar_->show_instructions_);
 }
 
 TEST_F(BookmarkBarGtkUnittest, BuildsButtons) {
   const BookmarkNode* parent = model_->bookmark_bar_node();
   model_->AddURL(parent, parent->child_count(),
-                 ASCIIToUTF16("title"), GURL("http://one.com"));
+                 base::ASCIIToUTF16("title"), GURL("http://one.com"));
   model_->AddURL(parent, parent->child_count(),
-                 ASCIIToUTF16("other"), GURL("http://two.com"));
+                 base::ASCIIToUTF16("other"), GURL("http://two.com"));
 
-  bookmark_bar_->Loaded(model_, false);
+  bookmark_bar_->BookmarkModelLoaded(model_, false);
 
   // We should expect two children to the bookmark bar's toolbar.
   GList* children = gtk_container_get_children(

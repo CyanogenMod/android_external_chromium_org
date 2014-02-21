@@ -30,8 +30,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 
+namespace wrench_menu_controller {
+const CGFloat kWrenchBubblePointOffsetY = 6;
+}
+
+using base::UserMetricsAction;
 using content::HostZoomMap;
-using content::UserMetricsAction;
 
 @interface WrenchMenuController (Private)
 - (void)createModel;
@@ -155,10 +159,11 @@ class ZoomLevelObserver {
           [[menuItem representedObject] pointerValue]);
 
   // The section headers in the recent tabs submenu should be bold and black if
-  // a font is specified for the items (bold is already applied in the
-  // |MenuController| as the font returned by |GetLabelFontAt| is bold).
+  // a font list is specified for the items (bold is already applied in the
+  // |MenuController| as the font list returned by |GetLabelFontListAt| is
+  // bold).
   if (model && model == [self recentTabsMenuModel]) {
-    if (model->GetLabelFontAt([item tag])) {
+    if (model->GetLabelFontListAt([item tag])) {
       DCHECK([menuItem attributedTitle]);
       base::scoped_nsobject<NSMutableAttributedString> title(
           [[NSMutableAttributedString alloc]

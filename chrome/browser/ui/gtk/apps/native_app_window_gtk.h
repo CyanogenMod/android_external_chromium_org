@@ -7,7 +7,7 @@
 
 #include <gtk/gtk.h>
 
-#include "apps/shell_window.h"
+#include "apps/app_window.h"
 #include "apps/ui/native_app_window.h"
 #include "base/observer_list.h"
 #include "base/timer/timer.h"
@@ -20,7 +20,6 @@
 #include "ui/gfx/x/x11_atom_cache.h"
 
 class ExtensionKeybindingRegistryGtk;
-class Profile;
 
 namespace extensions {
 class Extension;
@@ -31,8 +30,8 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
                            public ui::ActiveWindowWatcherXObserver,
                            public content::WebContentsObserver {
  public:
-  NativeAppWindowGtk(apps::ShellWindow* shell_window,
-                     const apps::ShellWindow::CreateParams& params);
+  NativeAppWindowGtk(apps::AppWindow* app_window,
+                     const apps::AppWindow::CreateParams& params);
 
   // ui::BaseWindow implementation.
   virtual bool IsActive() const OVERRIDE;
@@ -72,6 +71,7 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
   virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
+  virtual void UpdateBadgeIcon() OVERRIDE;
   virtual void UpdateDraggableRegions(
       const std::vector<extensions::DraggableRegion>& regions) OVERRIDE;
   virtual SkRegion* GetDraggableRegion() OVERRIDE;
@@ -95,10 +95,10 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
       web_modal::ModalDialogHostObserver* observer) OVERRIDE;
 
   content::WebContents* web_contents() const {
-    return shell_window_->web_contents();
+    return app_window_->web_contents();
   }
   const extensions::Extension* extension() const {
-    return shell_window_->extension();
+    return app_window_->extension();
   }
 
   virtual ~NativeAppWindowGtk();
@@ -124,7 +124,7 @@ class NativeAppWindowGtk : public apps::NativeAppWindow,
 
   void OnConfigureDebounced();
 
-  apps::ShellWindow* shell_window_;  // weak - ShellWindow owns NativeAppWindow.
+  apps::AppWindow* app_window_;  // weak - AppWindow owns NativeAppWindow.
 
   GtkWindow* window_;
   GdkWindowState state_;

@@ -12,6 +12,7 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+#include "ui/message_center/views/message_center_controller.h"
 #include "ui/views/widget/widget_delegate.h"
 
 namespace gfx {
@@ -29,8 +30,12 @@ class MessagePopupCollection;
 class MessageView;
 class Notification;
 
-
+// The widget host for a popup. Also implements MessageCenterController
+// which delegates over to MessagePopupCollection, but takes care about
+// checking the weakref since MessagePopupCollection may disappear before
+// widget/views are closed/destructed.
 class ToastContentsView : public views::WidgetDelegateView,
+                          public MessageCenterController,
                           public gfx::AnimationDelegate {
  public:
   // Computes the size of a toast assuming it will host the given view.
@@ -70,6 +75,17 @@ class ToastContentsView : public views::WidgetDelegateView,
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
  private:
+  // Overridden from MessageCenterController:
+  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
+  virtual void RemoveNotification(const std::string& notification_id,
+                                  bool by_user) OVERRIDE;
+  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) OVERRIDE;
+  virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
+  virtual void ClickOnNotificationButton(const std::string& notification_id,
+                                         int button_index) OVERRIDE;
+
   // Overridden from gfx::AnimationDelegate:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;

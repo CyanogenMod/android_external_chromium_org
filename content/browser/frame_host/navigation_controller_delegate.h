@@ -16,6 +16,7 @@ struct LoadNotificationDetails;
 struct NativeWebKeyboardEvent;
 class InterstitialPage;
 class InterstitialPageImpl;
+class RenderFrameHost;
 class RenderViewHost;
 class SiteInstance;
 class WebContents;
@@ -35,7 +36,6 @@ class NavigationControllerDelegate {
   virtual const std::string& GetContentsMimeType() const = 0;
   virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
   virtual void Stop() = 0;
-  virtual SiteInstance* GetSiteInstance() const = 0;
   virtual SiteInstance* GetPendingSiteInstance() const = 0;
   virtual int32 GetMaxPageID() = 0;
   virtual int32 GetMaxPageIDForSiteInstance(SiteInstance* site_instance) = 0;
@@ -64,8 +64,8 @@ class NavigationControllerDelegate {
 
   // Methods needed by InterstitialPageImpl.
   virtual bool IsHidden() = 0;
-  virtual void RenderViewForInterstitialPageCreated(
-      RenderViewHost* render_view_host) = 0;
+  virtual void RenderFrameForInterstitialPageCreated(
+      RenderFrameHost* render_frame_host) = 0;
   virtual void AttachInterstitialPage(
       InterstitialPageImpl* interstitial_page) = 0;
   virtual void DetachInterstitialPage() = 0;

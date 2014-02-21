@@ -359,7 +359,7 @@ TEST_F(NetworkConfigurationHandlerTest, CreateConfiguration) {
   network_configuration_handler_->CreateConfiguration(
       value,
       base::Bind(&StringResultCallback, std::string("/service/2")),
-      base::Bind(&ErrorCallback, false, std::string("")));
+      base::Bind(&ErrorCallback, false, std::string()));
   message_loop_.RunUntilIdle();
 }
 
@@ -497,7 +497,7 @@ class NetworkConfigurationHandlerStubTest : public testing::Test {
   base::MessageLoopForUI message_loop_;
   std::string success_callback_name_;
   std::string get_properties_path_;
-  scoped_ptr<DictionaryValue> get_properties_;
+  scoped_ptr<base::DictionaryValue> get_properties_;
   std::string create_service_path_;
 };
 

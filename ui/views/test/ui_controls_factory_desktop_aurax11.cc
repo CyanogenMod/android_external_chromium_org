@@ -19,7 +19,7 @@
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 
 namespace views {
 namespace test {
@@ -158,30 +158,27 @@ class UIControlsDesktopX11 : public UIControlsAura {
     return true;
   }
 
-  // Simulate a mouse move. (x,y) are absolute screen coordinates.
-  virtual bool SendMouseMove(long x, long y) OVERRIDE {
-    return SendMouseMoveNotifyWhenDone(x, y, base::Closure());
+  virtual bool SendMouseMove(long screen_x, long screen_y) OVERRIDE {
+    return SendMouseMoveNotifyWhenDone(screen_x, screen_y, base::Closure());
   }
   virtual bool SendMouseMoveNotifyWhenDone(
-      long x,
-      long y,
+      long screen_x,
+      long screen_y,
       const base::Closure& closure) OVERRIDE {
-    gfx::Point screen_point(x, y);
-    gfx::Point window_point = screen_point;
+    gfx::Point screen_point(screen_x, screen_y);
+    gfx::Point root_point = screen_point;
     aura::Window* root_window = RootWindowForPoint(screen_point);
 
     aura::client::ScreenPositionClient* screen_position_client =
           aura::client::GetScreenPositionClient(root_window);
-    if (screen_position_client) {
-      screen_position_client->ConvertPointFromScreen(root_window,
-                                                     &window_point);
-    }
+    if (screen_position_client)
+      screen_position_client->ConvertPointFromScreen(root_window, &root_point);
 
     XEvent xevent = {0};
     XMotionEvent* xmotion = &xevent.xmotion;
     xmotion->type = MotionNotify;
-    xmotion->x = window_point.x();
-    xmotion->y = window_point.y();
+    xmotion->x = root_point.x();
+    xmotion->y = root_point.y();
     xmotion->state = button_down_mask;
     xmotion->same_screen = True;
     // RootWindow will take care of other necessary fields.
@@ -259,10 +256,10 @@ class UIControlsDesktopX11 : public UIControlsAura {
     // Most interactive_ui_tests run inside of the aura_test_helper
     // environment. This means that we can't rely on gfx::Screen and several
     // other things to work properly. Therefore we hack around this by
-    // iterating across the windows owned DesktopRootWindowHostX11 since this
+    // iterating across the windows owned DesktopWindowTreeHostX11 since this
     // doesn't rely on having a DesktopScreenX11.
     std::vector<aura::Window*> windows =
-        DesktopRootWindowHostX11::GetAllOpenWindows();
+        DesktopWindowTreeHostX11::GetAllOpenWindows();
     for (std::vector<aura::Window*>::const_iterator it = windows.begin();
          it != windows.end(); ++it) {
       if ((*it)->GetBoundsInScreen().Contains(point)) {

@@ -5,15 +5,15 @@
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
 static void BroadcastEvent(Profile* profile, const std::string& event_name) {
   if (profile && extensions::ExtensionSystem::Get(profile)->event_router()) {
-    scoped_ptr<ListValue> args(new ListValue());
+    scoped_ptr<base::ListValue> args(new base::ListValue());
     scoped_ptr<extensions::Event> event(new extensions::Event(
         event_name, args.Pass()));
     extensions::ExtensionSystem::Get(profile)->event_router()->

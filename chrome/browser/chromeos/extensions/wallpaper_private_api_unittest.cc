@@ -218,8 +218,8 @@ void WallpaperPrivateApiMultiUserUnittest::SetUp() {
 }
 
 void WallpaperPrivateApiMultiUserUnittest::TearDown() {
-  AshTestBase::TearDown();
   chrome::MultiUserWindowManager::DeleteInstance();
+  AshTestBase::TearDown();
 }
 
 void WallpaperPrivateApiMultiUserUnittest::SetUpMultiUserWindowManager(
@@ -229,6 +229,8 @@ void WallpaperPrivateApiMultiUserUnittest::SetUpMultiUserWindowManager(
       new chrome::MultiUserWindowManagerChromeOS(active_user_id);
   chrome::MultiUserWindowManager::SetInstanceForTest(
       multi_user_window_manager_, mode);
+  // We do not want animations while the test is going on.
+  multi_user_window_manager_->SetAnimationsForTest(true);
   EXPECT_TRUE(multi_user_window_manager_);
 }
 

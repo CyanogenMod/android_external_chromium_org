@@ -40,7 +40,6 @@ class RegularUser : public User {
   // Overridden from User:
   virtual UserType GetType() const OVERRIDE;
   virtual bool CanSyncImage() const OVERRIDE;
-  virtual bool can_lock() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RegularUser);
@@ -77,7 +76,6 @@ class LocallyManagedUser : public User {
 
   // Overridden from User:
   virtual UserType GetType() const OVERRIDE;
-  virtual bool can_lock() const OVERRIDE;
   virtual std::string display_email() const OVERRIDE;
 
  private:
@@ -108,7 +106,7 @@ class PublicAccountUser : public User {
   DISALLOW_COPY_AND_ASSIGN(PublicAccountUser);
 };
 
-UserContext::UserContext() : using_oauth(true) {
+UserContext::UserContext() : using_oauth(true), auth_flow(AUTH_FLOW_OFFLINE) {
 }
 
 UserContext::UserContext(const std::string& username,
@@ -117,7 +115,8 @@ UserContext::UserContext(const std::string& username,
     : username(username),
       password(password),
       auth_code(auth_code),
-      using_oauth(true) {
+      using_oauth(true),
+      auth_flow(AUTH_FLOW_OFFLINE) {
 }
 
 UserContext::UserContext(const std::string& username,
@@ -128,19 +127,22 @@ UserContext::UserContext(const std::string& username,
       password(password),
       auth_code(auth_code),
       username_hash(username_hash),
-      using_oauth(true) {
+      using_oauth(true),
+      auth_flow(AUTH_FLOW_OFFLINE) {
 }
 
 UserContext::UserContext(const std::string& username,
                          const std::string& password,
                          const std::string& auth_code,
                          const std::string& username_hash,
-                         bool using_oauth)
+                         bool using_oauth,
+                         AuthFlow auth_flow)
     :  username(username),
        password(password),
        auth_code(auth_code),
        username_hash(username_hash),
-       using_oauth(using_oauth) {
+       using_oauth(using_oauth),
+       auth_flow(auth_flow) {
 }
 
 UserContext::~UserContext() {
@@ -151,13 +153,14 @@ bool UserContext::operator==(const UserContext& context) const {
          context.password == password &&
          context.auth_code == auth_code &&
          context.username_hash == username_hash &&
-         context.using_oauth == using_oauth;
+         context.using_oauth == using_oauth &&
+         context.auth_flow == auth_flow;
 }
 
 base::string16 User::GetDisplayName() const {
   // Fallback to the email account name in case display name haven't been set.
   return display_name_.empty() ?
-      UTF8ToUTF16(GetAccountName(true)) :
+      base::UTF8ToUTF16(GetAccountName(true)) :
       display_name_;
 }
 
@@ -181,7 +184,7 @@ std::string User::display_email() const {
 }
 
 bool User::can_lock() const {
-  return false;
+  return can_lock_;
 }
 
 std::string User::username_hash() const {
@@ -223,9 +226,11 @@ User* User::CreatePublicAccountUser(const std::string& email) {
 User::User(const std::string& email)
     : email_(email),
       oauth_token_status_(OAUTH_TOKEN_STATUS_UNKNOWN),
+      force_online_signin_(false),
       image_index_(kInvalidImageIndex),
       image_is_stub_(false),
       image_is_loading_(false),
+      can_lock_(false),
       is_logged_in_(false),
       is_active_(false),
       profile_is_created_(false) {
@@ -259,6 +264,7 @@ void User::SetStubImage(int image_index, bool is_loading) {
 }
 
 RegularUser::RegularUser(const std::string& email) : User(email) {
+  set_can_lock(true);
   set_display_email(email);
 }
 
@@ -269,10 +275,6 @@ User::UserType RegularUser::GetType() const {
 }
 
 bool RegularUser::CanSyncImage() const {
-  return true;
-}
-
-bool RegularUser::can_lock() const {
   return true;
 }
 
@@ -288,7 +290,7 @@ User::UserType GuestUser::GetType() const {
 
 KioskAppUser::KioskAppUser(const std::string& kiosk_app_username)
     : User(kiosk_app_username) {
-  set_display_email(std::string());
+  set_display_email(kiosk_app_username);
 }
 
 KioskAppUser::~KioskAppUser() {}
@@ -299,6 +301,7 @@ User::UserType KioskAppUser::GetType() const {
 
 LocallyManagedUser::LocallyManagedUser(const std::string& username)
     : User(username) {
+  set_can_lock(true);
 }
 
 LocallyManagedUser::~LocallyManagedUser() {}
@@ -307,12 +310,8 @@ User::UserType LocallyManagedUser::GetType() const {
   return USER_TYPE_LOCALLY_MANAGED;
 }
 
-bool LocallyManagedUser::can_lock() const {
-  return true;
-}
-
 std::string LocallyManagedUser::display_email() const {
-  return UTF16ToUTF8(display_name());
+  return base::UTF16ToUTF8(display_name());
 }
 
 RetailModeUser::RetailModeUser() : User(UserManager::kRetailModeUserName) {

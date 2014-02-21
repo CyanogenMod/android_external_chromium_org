@@ -25,7 +25,6 @@
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_proxy_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
-#include "content/renderer/pepper/ppb_uma_private_impl.h"
 #include "content/renderer/pepper/ppb_var_deprecated_impl.h"
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
@@ -45,14 +44,12 @@
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
 #include "ppapi/c/dev/ppb_printing_dev.h"
-#include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
-#include "ppapi/c/dev/ppb_var_resource_dev.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
@@ -63,10 +60,12 @@
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppb_audio.h"
+#include "ppapi/c/ppb_audio_buffer.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
+#include "ppapi/c/ppb_file_mapping.h"
 #include "ppapi/c/ppb_file_ref.h"
 #include "ppapi/c/ppb_file_system.h"
 #include "ppapi/c/ppb_fullscreen.h"
@@ -75,6 +74,8 @@
 #include "ppapi/c/ppb_host_resolver.h"
 #include "ppapi/c/ppb_image_data.h"
 #include "ppapi/c/ppb_instance.h"
+#include "ppapi/c/ppb_media_stream_audio_track.h"
+#include "ppapi/c/ppb_media_stream_video_track.h"
 #include "ppapi/c/ppb_messaging.h"
 #include "ppapi/c/ppb_mouse_cursor.h"
 #include "ppapi/c/ppb_mouse_lock.h"
@@ -93,6 +94,7 @@
 #include "ppapi/c/ppb_var_array.h"
 #include "ppapi/c/ppb_var_array_buffer.h"
 #include "ppapi/c/ppb_var_dictionary.h"
+#include "ppapi/c/ppb_video_frame.h"
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
@@ -308,17 +310,18 @@ const void* InternalGetInterface(const char* name) {
     return custom_interface;
 
   // TODO(brettw) put these in a hash map for better performance.
-  #define UNPROXIED_IFACE(api_name, iface_str, iface_struct) \
+  #define UNPROXIED_IFACE(iface_str, iface_struct) \
       if (strcmp(name, iface_str) == 0) \
         return ppapi::thunk::Get##iface_struct##_Thunk();
-  #define PROXIED_IFACE(api_name, iface_str, iface_struct) \
-      UNPROXIED_IFACE(api_name, iface_str, iface_struct)
+  #define PROXIED_IFACE(iface_str, iface_struct) \
+      UNPROXIED_IFACE(iface_str, iface_struct)
 
-  #include "ppapi/thunk/interfaces_ppb_public_stable.h"
-  #include "ppapi/thunk/interfaces_ppb_public_dev.h"
   #include "ppapi/thunk/interfaces_ppb_private.h"
-  #include "ppapi/thunk/interfaces_ppb_private_no_permissions.h"
   #include "ppapi/thunk/interfaces_ppb_private_flash.h"
+  #include "ppapi/thunk/interfaces_ppb_private_no_permissions.h"
+  #include "ppapi/thunk/interfaces_ppb_public_dev.h"
+  #include "ppapi/thunk/interfaces_ppb_public_dev_channel.h"
+  #include "ppapi/thunk/interfaces_ppb_public_stable.h"
 
   #undef UNPROXIED_API
   #undef PROXIED_IFACE

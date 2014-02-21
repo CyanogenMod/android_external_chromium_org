@@ -54,7 +54,8 @@ AudioInputRendererHost::AudioInputRendererHost(
     MediaStreamManager* media_stream_manager,
     AudioMirroringManager* audio_mirroring_manager,
     media::UserInputMonitor* user_input_monitor)
-    : audio_manager_(audio_manager),
+    : BrowserMessageFilter(AudioMsgStart),
+      audio_manager_(audio_manager),
       media_stream_manager_(media_stream_manager),
       audio_mirroring_manager_(audio_mirroring_manager),
       user_input_monitor_(user_input_monitor),
@@ -176,6 +177,8 @@ void AudioInputRendererHost::DoSendRecordingMessage(
 void AudioInputRendererHost::DoHandleError(
     media::AudioInputController* controller) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  MediaStreamManager::SendMessageToNativeLog(
+      "The AudioInputController signalled an error.");
 
   AudioEntry* entry = LookupByController(controller);
   if (!entry)
@@ -273,12 +276,13 @@ void AudioInputRendererHost::OnCreateStream(
   entry->writer.reset(writer.release());
   if (WebContentsCaptureUtil::IsWebContentsDeviceId(device_id)) {
     entry->controller = media::AudioInputController::CreateForStream(
-        audio_manager_->GetMessageLoop(),
+        audio_manager_->GetTaskRunner(),
         this,
-        WebContentsAudioInputStream::Create(device_id,
-                                            audio_params,
-                                            audio_manager_->GetWorkerLoop(),
-                                            audio_mirroring_manager_),
+        WebContentsAudioInputStream::Create(
+            device_id,
+            audio_params,
+            audio_manager_->GetWorkerTaskRunner(),
+            audio_mirroring_manager_),
         entry->writer.get(),
         user_input_monitor_);
   } else {
@@ -309,7 +313,9 @@ void AudioInputRendererHost::OnCreateStream(
   entry->stream_id = stream_id;
   audio_entries_.insert(std::make_pair(stream_id, entry.release()));
 
-  audio_log_->OnCreated(stream_id, audio_params, device_id, std::string());
+  MediaStreamManager::SendMessageToNativeLog(
+      "Audio input stream created successfully.");
+  audio_log_->OnCreated(stream_id, audio_params, device_id);
 }
 
 void AudioInputRendererHost::OnRecordStream(int stream_id) {
@@ -348,6 +354,8 @@ void AudioInputRendererHost::OnSetVolume(int stream_id, double volume) {
 }
 
 void AudioInputRendererHost::SendErrorMessage(int stream_id) {
+  MediaStreamManager::SendMessageToNativeLog(
+      "An error occurred in AudioInputRendererHost.");
   Send(new AudioInputMsg_NotifyStreamStateChanged(
       stream_id, media::AudioInputIPCDelegate::kError));
 }

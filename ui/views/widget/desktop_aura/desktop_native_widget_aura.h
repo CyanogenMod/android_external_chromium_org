@@ -31,6 +31,7 @@ namespace views {
 namespace corewm {
 class CompoundEventFilter;
 class CursorManager;
+class FocusController;
 class InputMethodEventFilter;
 class ShadowController;
 class TooltipController;
@@ -41,7 +42,8 @@ class WindowModalityController;
 class DesktopCaptureClient;
 class DesktopDispatcherClient;
 class DesktopEventClient;
-class DesktopRootWindowHost;
+class DesktopNativeCursorManager;
+class DesktopWindowTreeHost;
 class DropHelper;
 class FocusManagerEventHandler;
 class TooltipManagerAura;
@@ -60,22 +62,26 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   explicit DesktopNativeWidgetAura(internal::NativeWidgetDelegate* delegate);
   virtual ~DesktopNativeWidgetAura();
 
-  // Maps from window to DesktopNativeWidgetAura.
+  // Maps from window to DesktopNativeWidgetAura. |window| must be a root
+  // window.
   static DesktopNativeWidgetAura* ForWindow(aura::Window* window);
 
-  // Called by our DesktopRootWindowHost after it has deleted native resources;
+  // Called by our DesktopWindowTreeHost after it has deleted native resources;
   // this is the signal that we should start our shutdown.
   virtual void OnHostClosed();
 
-  // Called from ~DesktopRootWindowHost. This takes the RootWindow as by the
+  // Called from ~DesktopWindowTreeHost. This takes the RootWindow as by the
   // time we get here |root_window_| is NULL.
-  virtual void OnDesktopRootWindowHostDestroyed(aura::RootWindow* root);
+  virtual void OnDesktopWindowTreeHostDestroyed(aura::RootWindow* root);
 
   corewm::InputMethodEventFilter* input_method_event_filter() {
     return input_method_event_filter_.get();
   }
   corewm::CompoundEventFilter* root_window_event_filter() {
     return root_window_event_filter_;
+  }
+  aura::RootWindow* root_window() {
+    return root_window_.get();
   }
 
   // Overridden from NativeWidget:
@@ -90,6 +96,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void InitNativeWidget(const Widget::InitParams& params) OVERRIDE;
   virtual NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
   virtual bool ShouldUseNativeFrame() const OVERRIDE;
+  virtual bool ShouldWindowContentsBeTransparent() const OVERRIDE;
   virtual void FrameTypeChanged() OVERRIDE;
   virtual Widget* GetWidget() OVERRIDE;
   virtual const Widget* GetWidget() const OVERRIDE;
@@ -113,7 +120,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
       ui::WindowShowState* maximized) const OVERRIDE;
-  virtual bool SetWindowTitle(const string16& title) OVERRIDE;
+  virtual bool SetWindowTitle(const base::string16& title) OVERRIDE;
   virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
@@ -218,10 +225,10 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
 
   // Overridden from aura::RootWindowObserver:
-  virtual void OnRootWindowHostCloseRequested(
+  virtual void OnWindowTreeHostCloseRequested(
       const aura::RootWindow* root) OVERRIDE;
-  virtual void OnRootWindowHostResized(const aura::RootWindow* root) OVERRIDE;
-  virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
+  virtual void OnWindowTreeHostResized(const aura::RootWindow* root) OVERRIDE;
+  virtual void OnWindowTreeHostMoved(const aura::RootWindow* root,
                                      const gfx::Point& new_origin) OVERRIDE;
 
  private:
@@ -240,7 +247,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<DesktopCaptureClient> capture_client_;
 
   // The NativeWidget owns the RootWindow. Required because the RootWindow owns
-  // its RootWindowHost, so DesktopRootWindowHost can't own it.
+  // its WindowTreeHost, so DesktopWindowTreeHost can't own it.
   scoped_ptr<aura::RootWindow> root_window_;
 
   // The following factory is used for calls to close the NativeWidgetAura
@@ -251,7 +258,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   bool can_activate_;
 
   // Ownership passed to RootWindow on Init.
-  DesktopRootWindowHost* desktop_root_window_host_;
+  DesktopWindowTreeHost* desktop_window_tree_host_;
 
   // Child of the root, contains |content_window_|.
   aura::Window* content_window_container_;
@@ -263,9 +270,8 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
 
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
-  scoped_ptr<aura::client::FocusClient> focus_client_;
+  scoped_ptr<corewm::FocusController> focus_client_;
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
-  scoped_ptr<views::corewm::CursorManager> cursor_client_;
   scoped_ptr<aura::client::ScreenPositionClient> position_client_;
   scoped_ptr<aura::client::DragDropClient> drag_drop_client_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
@@ -292,6 +298,15 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   bool restore_focus_on_activate_;
 
   gfx::NativeCursor cursor_;
+  // We must manually reference count the number of users of |cursor_manager_|
+  // because the cursors created by |cursor_manager_| are shared among the
+  // DNWAs. We can't just stuff this in a LazyInstance because we need to
+  // destroy this as the last DNWA happens; we can't put it off until
+  // (potentially) after we tear down the X11 connection because that's a
+  // crash.
+  static int cursor_reference_count_;
+  static views::corewm::CursorManager* cursor_manager_;
+  static views::DesktopNativeCursorManager* native_cursor_manager_;
 
   scoped_ptr<corewm::ShadowController> shadow_controller_;
 

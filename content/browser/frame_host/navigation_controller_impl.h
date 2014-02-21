@@ -16,7 +16,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
 
-struct ViewHostMsg_FrameNavigate_Params;
+struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
 class NavigationEntryImpl;
@@ -88,8 +88,8 @@ class CONTENT_EXPORT NavigationControllerImpl
                                  int index) OVERRIDE;
   virtual void CopyStateFrom(
       const NavigationController& source) OVERRIDE;
-  virtual void CopyStateFromAndPrune(
-      NavigationController* source) OVERRIDE;
+  virtual void CopyStateFromAndPrune(NavigationController* source,
+                                     bool replace_entry) OVERRIDE;
   virtual bool CanPruneAllButLastCommitted() OVERRIDE;
   virtual void PruneAllButLastCommitted() OVERRIDE;
   virtual void ClearAllScreenshots() OVERRIDE;
@@ -134,8 +134,12 @@ class CONTENT_EXPORT NavigationControllerImpl
   //
   // In the case that nothing has changed, the details structure is undefined
   // and it will return false.
-  bool RendererDidNavigate(const ViewHostMsg_FrameNavigate_Params& params,
-                           LoadCommittedDetails* details);
+  //
+  // TODO(creis): Change RenderViewHost to RenderFrameHost.
+  bool RendererDidNavigate(
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      LoadCommittedDetails* details);
 
   // Notifies us that we just became active. This is used by the WebContentsImpl
   // so that we know to load URLs that were pending as "lazy" loads.
@@ -231,7 +235,8 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
-      const ViewHostMsg_FrameNavigate_Params& params) const;
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
 
   // Causes the controller to load the specified entry. The function assumes
   // ownership of the pointer since it is put in the navigation list.
@@ -250,18 +255,28 @@ class CONTENT_EXPORT NavigationControllerImpl
   // The functions taking |did_replace_entry| will fill into the given variable
   // whether the last entry has been replaced or not.
   // See LoadCommittedDetails.did_replace_entry.
+  //
+  // TODO(creis): Change RenderViewHost to RenderFrameHost.
   void RendererDidNavigateToNewPage(
-      const ViewHostMsg_FrameNavigate_Params& params, bool replace_entry);
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool replace_entry);
   void RendererDidNavigateToExistingPage(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateToSamePage(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateInPage(
-      const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry);
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool* did_replace_entry);
   void RendererDidNavigateNewSubframe(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   bool RendererDidNavigateAutoSubframe(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderViewHost* rvh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
   // Helper function for code shared between Reload() and ReloadIgnoringCache().
   void ReloadInternal(bool check_for_repost, ReloadType reload_type);

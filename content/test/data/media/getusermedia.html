@@ -11,11 +11,25 @@
   setAllEventsOccuredHandler(function() {
     gLocalStream.stop();
     document.title = 'OK';
+    sendValueToTest(document.title);
   });
+
+  function sendValueToTest(value) {
+    window.domAutomationController.setAutomationId(0);
+    window.domAutomationController.send(value);
+  }
+
+  function getSources() {
+    MediaStreamTrack.getSources(function(devices) {
+      document.title = 'Sources Available';
+      sendValueToTest(JSON.stringify(devices));
+    });
+  }
 
   // Creates a MediaStream and renders it locally. When the video is detected to
   // be rolling, the title is changed and the stream should be stopped.
   function getUserMediaAndStop(constraints) {
+    document.title = 'Calling GetUserMedia';
     navigator.webkitGetUserMedia(
         constraints,
         function(stream) { displayAndDetectVideo(stream, stopVideoTrack); },
@@ -50,24 +64,61 @@
         createAndRenderClone, failedCallback);
   }
 
-  function failedCallback(error) {
-    document.title = 'GetUserMedia call failed with code ' + error.code;
+  // Creates two MediaStream and renders them locally. When the video of both
+  // streams are detected to be rolling, we stop the local stream. Since both
+  // streams have the same source, both video streams should stop. If they do,
+  // the test succeeds.
+  function twoGetUserMediaAndStop(constraints) {
+    document.title = 'Calling Two GetUserMedia';
+    navigator.webkitGetUserMedia(
+        constraints,
+        function(stream) { 
+          displayAndDetectVideo(stream, requestSecondGetUserMedia); 
+        },
+        failedCallback);
+    var requestSecondGetUserMedia = function() {
+      navigator.webkitGetUserMedia(
+          constraints,
+          function(stream) { 
+            displayIntoVideoElement(stream, 
+                stopStreamAndVerifyAllLocalViewsDontPlayVideo, 'local-view-2');
+          },
+          failedCallback);
+    };
+    
+    var stopStreamAndVerifyAllLocalViewsDontPlayVideo = function() {
+      gLocalStream.getVideoTracks()[0].stop();
+      
+      // Since local-view and local-view-2 are playing the video from the same
+      // source, both of them should stop.
+      waitForVideoToStop('local-view');
+      waitForVideoToStop('local-view-2');
+    };   
   }
 
-  function plugStreamIntoLocalView(stream) {
+  function failedCallback(error) {
+    document.title = 'GetUserMedia call failed with code ' + error.code;
+    sendValueToTest(document.title);
+  }
+
+  function plugStreamIntoVideoElement(stream, videoElement) {
     gLocalStream = stream;
-    var localStreamUrl = webkitURL.createObjectURL(stream);
-    $('local-view').src = localStreamUrl;
+    var localStreamUrl = URL.createObjectURL(stream);
+    $(videoElement).src = localStreamUrl;
+  }
+
+  function displayIntoVideoElement(stream, callback, videoElement) {
+    plugStreamIntoVideoElement(stream, videoElement);
+    document.title = 'Waiting for video...';
+    detectVideoPlaying(videoElement, callback);
   }
 
   function displayAndDetectVideo(stream, callback) {
-    plugStreamIntoLocalView(stream);
-    document.title = 'Waiting for video...';
-    detectVideoPlaying('local-view', callback);
+    displayIntoVideoElement(stream, callback, 'local-view');
   }
 
   function displayDetectAndAnalyzeVideo(stream) {
-    plugStreamIntoLocalView(stream);
+    plugStreamIntoVideoElement(stream, 'local-view');
     analyzeVideo();
   }
 
@@ -85,7 +136,7 @@
       expectEquals(new_stream.getAudioTracks().length, 0);
     }
 
-    var newStreamUrl = webkitURL.createObjectURL(new_stream);
+    var newStreamUrl = URL.createObjectURL(new_stream);
     $('local-view').src = newStreamUrl;
     waitForVideo('local-view');
   }
@@ -119,8 +170,17 @@
     <tr>
       <td><video width="320" height="240" id="local-view"
           autoplay="autoplay"></video></td>
-      <!-- Canvases are named after their corresponding video elements. -->
       <td><canvas width="320" height="240" id="local-view-canvas"
+          style="display:none"></canvas></td>
+    </tr>
+    <tr>
+      <td>Local Preview 2</td>
+    </tr>
+    <tr>
+      <td><video width="320" height="240" id="local-view-2"
+          autoplay="autoplay"></video></td>
+      <!-- Canvases are named after their corresponding video elements. -->
+      <td><canvas width="320" height="240" id="local-view-2-canvas"
           style="display:none"></canvas></td>
     </tr>
   </table>

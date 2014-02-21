@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Scopers help you manage ownership of a pointer, helping you easily manage the
-// a pointer within a scope, and automatically destroying the pointer at the
-// end of a scope.  There are two main classes you will use, which correspond
-// to the operators new/delete and new[]/delete[].
+// Scopers help you manage ownership of a pointer, helping you easily manage a
+// pointer within a scope, and automatically destroying the pointer at the end
+// of a scope.  There are two main classes you will use, which correspond to the
+// operators new/delete and new[]/delete[].
 //
 // Example usage (scoped_ptr<T>):
 //   {
@@ -227,7 +227,7 @@ class scoped_ptr_impl {
       abort();
 
     // Note that running data_.ptr = p can lead to undefined behavior if
-    // get_deleter()(get()) deletes this. In order to pevent this, reset()
+    // get_deleter()(get()) deletes this. In order to prevent this, reset()
     // should update the stored pointer before deleting its old value.
     //
     // However, changing reset() to use that behavior may cause current code to

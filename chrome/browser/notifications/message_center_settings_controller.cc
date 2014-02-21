@@ -8,12 +8,14 @@
 
 #include "base/command_line.h"
 #include "base/i18n/string_compare.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/app_icon_loader_impl.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_types.h"
@@ -24,13 +26,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/api/notifications.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/favicon/favicon_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -47,6 +49,7 @@ using message_center::Notifier;
 using message_center::NotifierId;
 
 namespace message_center {
+
 class ProfileNotifierGroup : public message_center::NotifierGroup {
  public:
   ProfileNotifierGroup(const gfx::Image& icon,
@@ -54,6 +57,11 @@ class ProfileNotifierGroup : public message_center::NotifierGroup {
                        const base::string16& login_info,
                        size_t index,
                        const base::FilePath& profile_path);
+  ProfileNotifierGroup(const gfx::Image& icon,
+                       const base::string16& display_name,
+                       const base::string16& login_info,
+                       size_t index,
+                       Profile* profile);
   virtual ~ProfileNotifierGroup() {}
 
   Profile* profile() const { return profile_; }
@@ -73,6 +81,16 @@ ProfileNotifierGroup::ProfileNotifierGroup(const gfx::Image& icon,
   profile_ =
       g_browser_process->profile_manager()->GetProfileByPath(profile_path);
 }
+
+ProfileNotifierGroup::ProfileNotifierGroup(const gfx::Image& icon,
+                                           const base::string16& display_name,
+                                           const base::string16& login_info,
+                                           size_t index,
+                                           Profile* profile)
+    : message_center::NotifierGroup(icon, display_name, login_info, index),
+      profile_(profile) {
+}
+
 }  // namespace message_center
 
 namespace {
@@ -97,7 +115,9 @@ bool SimpleCompareNotifiers(Notifier* n1, Notifier* n2) {
 
 MessageCenterSettingsController::MessageCenterSettingsController(
     ProfileInfoCache* profile_info_cache)
-    : current_notifier_group_(0), profile_info_cache_(profile_info_cache) {
+    : current_notifier_group_(0),
+      profile_info_cache_(profile_info_cache),
+      weak_factory_(this) {
   DCHECK(profile_info_cache_);
   // The following events all represent changes that may need to be reflected in
   // the profile selector context menu, so listen for them all.  We'll just
@@ -176,11 +196,11 @@ void MessageCenterSettingsController::SwitchToNotifierGroup(size_t index) {
 void MessageCenterSettingsController::GetNotifierList(
     std::vector<Notifier*>* notifiers) {
   DCHECK(notifiers);
+  if (notifier_groups_.size() <= current_notifier_group_)
+    return;
   // Temporarily use the last used profile to prevent chrome from crashing when
   // the default profile is not loaded.
-  Profile* profile = GetCurrentProfile();
-  if (!profile)
-    return;
+  Profile* profile = notifier_groups_[current_notifier_group_]->profile();
 
   DesktopNotificationService* notification_service =
       DesktopNotificationServiceFactory::GetForProfile(profile);
@@ -192,7 +212,8 @@ void MessageCenterSettingsController::GetNotifierList(
     comparator.reset(new NotifierComparator(collator.get()));
 
   ExtensionService* extension_service = profile->GetExtensionService();
-  const ExtensionSet* extension_set = extension_service->extensions();
+  const extensions::ExtensionSet* extension_set =
+      extension_service->extensions();
   // The extension icon size has to be 32x32 at least to load bigger icons if
   // the icon doesn't exist for the specified size, and in that case it falls
   // back to the default icon. The fetched icon will be resized in the settings
@@ -200,7 +221,7 @@ void MessageCenterSettingsController::GetNotifierList(
   // crbug.com/222931
   app_icon_loader_.reset(new extensions::AppIconLoaderImpl(
       profile, extension_misc::EXTENSION_ICON_SMALL, this));
-  for (ExtensionSet::const_iterator iter = extension_set->begin();
+  for (extensions::ExtensionSet::const_iterator iter = extension_set->begin();
        iter != extension_set->end();
        ++iter) {
     const extensions::Extension* extension = iter->get();
@@ -209,10 +230,16 @@ void MessageCenterSettingsController::GetNotifierList(
       continue;
     }
 
+    // Exclude cached ephemeral apps that are not currently running.
+    if (extension->is_ephemeral() &&
+        extensions::util::IsExtensionIdle(extension->id(), profile)) {
+      continue;
+    }
+
     NotifierId notifier_id(NotifierId::APPLICATION, extension->id());
     notifiers->push_back(new Notifier(
         notifier_id,
-        UTF8ToUTF16(extension->name()),
+        base::UTF8ToUTF16(extension->name()),
         notification_service->IsNotifierEnabled(notifier_id)));
     app_icon_loader_->FetchImage(extension->id());
   }
@@ -238,7 +265,7 @@ void MessageCenterSettingsController::GetNotifierList(
   notification_service->GetNotificationsSettings(&settings);
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
-  favicon_tracker_.reset(new CancelableTaskTracker());
+  favicon_tracker_.reset(new base::CancelableTaskTracker());
   patterns_.clear();
   for (ContentSettingsForOneType::const_iterator iter = settings.begin();
        iter != settings.end(); ++iter) {
@@ -249,7 +276,7 @@ void MessageCenterSettingsController::GetNotifierList(
     }
 
     std::string url_pattern = iter->primary_pattern.ToString();
-    base::string16 name = UTF8ToUTF16(url_pattern);
+    base::string16 name = base::UTF8ToUTF16(url_pattern);
     GURL url(url_pattern);
     NotifierId notifier_id(url);
     notifiers->push_back(new Notifier(
@@ -298,8 +325,8 @@ void MessageCenterSettingsController::GetNotifierList(
 void MessageCenterSettingsController::SetNotifierEnabled(
     const Notifier& notifier,
     bool enabled) {
-  Profile* profile = GetCurrentProfile();
-  DCHECK(profile);
+  DCHECK_LT(current_notifier_group_, notifier_groups_.size());
+  Profile* profile = notifier_groups_[current_notifier_group_]->profile();
 
   DesktopNotificationService* notification_service =
       DesktopNotificationServiceFactory::GetForProfile(profile);
@@ -325,7 +352,7 @@ void MessageCenterSettingsController::SetNotifierEnabled(
                    << notifier.notifier_id.url.spec();
       }
     } else {
-      std::map<string16, ContentSettingsPattern>::const_iterator iter =
+      std::map<base::string16, ContentSettingsPattern>::const_iterator iter =
           patterns_.find(notifier.name);
       if (iter != patterns_.end()) {
         notification_service->ClearSetting(iter->second);
@@ -361,9 +388,9 @@ bool MessageCenterSettingsController::NotifierHasAdvancedSettings(
 
   const std::string& extension_id = notifier_id.id;
 
-  Profile* profile = GetCurrentProfile();
-  if (!profile)
+  if (notifier_groups_.size() < current_notifier_group_)
     return false;
+  Profile* profile = notifier_groups_[current_notifier_group_]->profile();
 
   extensions::EventRouter* event_router =
       extensions::ExtensionSystem::Get(profile)->event_router();
@@ -382,9 +409,9 @@ void MessageCenterSettingsController::OnNotifierAdvancedSettingsRequested(
 
   const std::string& extension_id = notifier_id.id;
 
-  Profile* profile = GetCurrentProfile();
-  if (!profile)
+  if (notifier_groups_.size() < current_notifier_group_)
     return;
+  Profile* profile = notifier_groups_[current_notifier_group_]->profile();
 
   extensions::EventRouter* event_router =
       extensions::ExtensionSystem::Get(profile)->event_router();
@@ -423,23 +450,45 @@ void MessageCenterSettingsController::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
+  // GetOffTheRecordProfile() may create a new off-the-record profile, but that
+  // doesn't need to rebuild the groups.
+  if (type == chrome::NOTIFICATION_PROFILE_CREATED &&
+      content::Source<Profile>(source).ptr()->IsOffTheRecord()) {
+    return;
+  }
+
   RebuildNotifierGroups();
   FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
                     observers_,
                     NotifierGroupChanged());
 }
 
-Profile* MessageCenterSettingsController::GetCurrentProfile() const {
-  if (notifier_groups_.size() > current_notifier_group_)
-    return notifier_groups_[current_notifier_group_]->profile();
-
 #if defined(OS_CHROMEOS)
-  return ProfileManager::GetDefaultProfileOrOffTheRecord();
-#else
-  NOTREACHED();
-  return NULL;
-#endif
+void MessageCenterSettingsController::CreateNotifierGroupForGuestLogin() {
+  // Already created.
+  if (!notifier_groups_.empty())
+    return;
+
+  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+  // |notifier_groups_| can be empty in login screen too.
+  if (!user_manager->IsLoggedInAsGuest())
+    return;
+
+  chromeos::User* user = user_manager->GetActiveUser();
+  Profile* profile = user_manager->GetProfileByUser(user);
+  DCHECK(profile);
+  notifier_groups_.push_back(new message_center::ProfileNotifierGroup(
+      gfx::Image(user->image()),
+      user->GetDisplayName(),
+      user->GetDisplayName(),
+      0,
+      profile));
+
+  FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
+                    observers_,
+                    NotifierGroupChanged());
 }
+#endif
 
 void MessageCenterSettingsController::RebuildNotifierGroups() {
   notifier_groups_.clear();
@@ -477,4 +526,24 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
 #endif
     notifier_groups_.push_back(group.release());
   }
+
+#if defined(OS_CHROMEOS)
+  // ChromeOS guest login cannot get the profile from the for-loop above, so
+  // get the group here.
+  if (notifier_groups_.empty() && chromeos::UserManager::IsInitialized() &&
+      chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
+    // Do not invoke CreateNotifierGroupForGuestLogin() directly. In some tests,
+    // this method may be called before the primary profile is created, which
+    // means user_manager->GetProfileByUser() will create a new primary profile.
+    // But creating a primary profile causes an Observe() before registreing it
+    // as the primary one, which causes this method which causes another
+    // creating a primary profile, and causes an infinite loop.
+    // Thus, it would be better to delay creating group for guest login.
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &MessageCenterSettingsController::CreateNotifierGroupForGuestLogin,
+            weak_factory_.GetWeakPtr()));
+  }
+#endif
 }

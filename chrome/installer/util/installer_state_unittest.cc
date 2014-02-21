@@ -83,8 +83,6 @@ void BuildSingleChromeState(const base::FilePath& target_dir,
   installer_state->set_target_path(target_dir);
   EXPECT_TRUE(installer_state->FindProduct(BrowserDistribution::CHROME_BROWSER)
       != NULL);
-  EXPECT_TRUE(installer_state->FindProduct(BrowserDistribution::CHROME_FRAME)
-      == NULL);
 }
 
 wchar_t text_content_1[] = L"delete me";
@@ -276,9 +274,9 @@ TEST_F(InstallerStateTest, Basic) {
   EXPECT_FALSE(installer_dir.empty());
 
   base::FilePath new_version_dir(installer_state.target_path().Append(
-      UTF8ToWide(new_version.GetString())));
+      base::UTF8ToWide(new_version.GetString())));
   base::FilePath old_version_dir(installer_state.target_path().Append(
-      UTF8ToWide(old_version.GetString())));
+      base::UTF8ToWide(old_version.GetString())));
 
   EXPECT_FALSE(base::PathExists(new_version_dir));
   EXPECT_FALSE(base::PathExists(old_version_dir));
@@ -361,7 +359,8 @@ TEST_F(InstallerStateTest, WithProduct) {
     EXPECT_TRUE(chrome_key.Valid());
     if (chrome_key.Valid()) {
       chrome_key.WriteValue(google_update::kRegVersionField,
-                            UTF8ToWide(current_version.GetString()).c_str());
+                            base::UTF8ToWide(
+                                current_version.GetString()).c_str());
       machine_state.Initialize();
       // TODO(tommi): Also test for when there exists a new_chrome.exe.
       Version found_version(*installer_state.GetCurrentVersion(machine_state));
@@ -524,11 +523,12 @@ TEST_F(InstallerStateTest, RemoveOldVersionDirs) {
     installer_state.target_path().Append(L"1.2.3.4"),
     installer_state.target_path().Append(L"1.2.3.5"),
     installer_state.target_path().Append(L"1.2.3.6"),
-    installer_state.target_path().Append(ASCIIToWide(kOldVersion)),
-    installer_state.target_path().Append(ASCIIToWide(kOldChromeExeVersion)),
+    installer_state.target_path().Append(base::ASCIIToWide(kOldVersion)),
+    installer_state.target_path().Append(
+        base::ASCIIToWide(kOldChromeExeVersion)),
     installer_state.target_path().Append(L"2.1.1.0"),
-    installer_state.target_path().Append(ASCIIToWide(kChromeExeVersion)),
-    installer_state.target_path().Append(ASCIIToWide(kNewVersion)),
+    installer_state.target_path().Append(base::ASCIIToWide(kChromeExeVersion)),
+    installer_state.target_path().Append(base::ASCIIToWide(kNewVersion)),
     installer_state.target_path().Append(L"3.9.1.1"),
   };
 
@@ -630,13 +630,11 @@ TEST_F(InstallerStateTest, InitializeTwice) {
   EXPECT_EQ(installer_state.state_type(), BrowserDistribution::CHROME_BROWSER);
   EXPECT_TRUE(installer_state.multi_package_binaries_distribution());
   EXPECT_TRUE(installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER));
-  EXPECT_FALSE(installer_state.FindProduct(BrowserDistribution::CHROME_FRAME));
 
-  // Now initialize it to install system-level single Chrome Frame.
+  // Now initialize it to install system-level single Chrome.
   {
     CommandLine cmd_line(
-        CommandLine::FromString(L"setup.exe --system-level --chrome-frame "
-                                L"--verbose-logging"));
+        CommandLine::FromString(L"setup.exe --system-level --verbose-logging"));
     MasterPreferences prefs(cmd_line);
     installer_state.Initialize(cmd_line, prefs, machine_state);
   }
@@ -648,18 +646,14 @@ TEST_F(InstallerStateTest, InitializeTwice) {
             installer_state.operation());
   EXPECT_TRUE(wcsstr(installer_state.target_path().value().c_str(),
                      BrowserDistribution::GetSpecificDistribution(
-                         BrowserDistribution::CHROME_FRAME)->
+                         BrowserDistribution::CHROME_BROWSER)->
                          GetInstallSubDir().c_str()));
   EXPECT_TRUE(installer_state.verbose_logging());
-  // state_key and type are wrong in unittests since it is set based on the
-  // current process's BrowserDistribution.
-  // EXPECT_EQ(installer_state.state_key(),
-  //           BrowserDistribution::GetSpecificDistribution(
-  //               BrowserDistribution::CHROME_FRAME)->GetStateKey());
-  // EXPECT_EQ(installer_state.state_type(), BrowserDistribution::CHROME_FRAME);
-  EXPECT_FALSE(
-      installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER));
-  EXPECT_TRUE(installer_state.FindProduct(BrowserDistribution::CHROME_FRAME));
+  EXPECT_EQ(installer_state.state_key(),
+            BrowserDistribution::GetSpecificDistribution(
+                BrowserDistribution::CHROME_BROWSER)->GetStateKey());
+  EXPECT_EQ(installer_state.state_type(), BrowserDistribution::CHROME_BROWSER);
+  EXPECT_TRUE(installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER));
 }
 
 // A fixture for testing InstallerState::DetermineCriticalVersion.  Individual
@@ -694,7 +688,7 @@ class InstallerStateCriticalVersionTest : public ::testing::Test {
         CommandLine::FromString(L"setup.exe") :
         CommandLine::FromString(
             L"setup.exe --critical-update-version=" +
-            ASCIIToWide(version->GetString()));
+            base::ASCIIToWide(version->GetString()));
     prefs_.reset(new MasterPreferences(cmd_line_));
     machine_state_.Initialize();
     installer_state_.Initialize(cmd_line_, *prefs_, machine_state_);

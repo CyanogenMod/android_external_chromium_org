@@ -44,7 +44,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   virtual ResultCode SetJobLevel(JobLevel job_level,
                                  uint32 ui_exceptions) OVERRIDE;
   virtual ResultCode SetAlternateDesktop(bool alternate_winstation) OVERRIDE;
-  virtual string16 GetAlternateDesktop() const OVERRIDE;
+  virtual base::string16 GetAlternateDesktop() const OVERRIDE;
   virtual ResultCode CreateAlternateDesktop(bool alternate_winstation) OVERRIDE;
   virtual void DestroyAlternateDesktop() OVERRIDE;
   virtual ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) OVERRIDE;
@@ -63,8 +63,9 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   virtual ResultCode AddRule(SubSystem subsystem, Semantics semantics,
                              const wchar_t* pattern) OVERRIDE;
   virtual ResultCode AddDllToUnload(const wchar_t* dll_name);
-  virtual ResultCode AddKernelObjectToClose(const char16* handle_type,
-                                            const char16* handle_name) OVERRIDE;
+  virtual ResultCode AddKernelObjectToClose(
+      const base::char16* handle_type,
+      const base::char16* handle_name) OVERRIDE;
 
   // Dispatcher:
   virtual Dispatcher* OnMessageReady(IPCParams* ipc,
@@ -141,12 +142,12 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   // Memory structure that stores the low level policy.
   PolicyGlobal* policy_;
   // The list of dlls to unload in the target process.
-  std::vector<string16> blacklisted_dlls_;
+  std::vector<base::string16> blacklisted_dlls_;
   // This is a map of handle-types to names that we need to close in the
   // target process. A null set means we need to close all handles of the
   // given type.
   HandleCloser handle_closer_;
-  std::vector<string16> capabilities_;
+  std::vector<base::string16> capabilities_;
   scoped_ptr<AppContainerAttributes> appcontainer_list_;
 
   static HDESK alternate_desktop_handle_;

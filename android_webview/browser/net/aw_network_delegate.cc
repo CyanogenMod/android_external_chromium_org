@@ -67,7 +67,7 @@ void AwNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
 }
 
 void AwNetworkDelegate::OnPACScriptError(int line_number,
-                                         const string16& error) {
+                                         const base::string16& error) {
 }
 
 net::NetworkDelegate::AuthRequiredResponse AwNetworkDelegate::OnAuthRequired(
@@ -106,10 +106,6 @@ int AwNetworkDelegate::OnBeforeSocketStreamConnect(
     net::SocketStream* stream,
     const net::CompletionCallback& callback) {
   return net::OK;
-}
-
-void AwNetworkDelegate::OnRequestWaitStateChange(const net::URLRequest& request,
-                                                 RequestWaitState state) {
 }
 
 }  // namespace android_webview

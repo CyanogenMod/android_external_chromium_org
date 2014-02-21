@@ -11,6 +11,7 @@
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_list.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -55,7 +56,7 @@ void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
 
   text_label_ = new views::Label(text);
   text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  text_label_->SetFont(text_label_->font().DeriveFont(0, style));
+  text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
   if (text_default_color_)
     text_label_->SetEnabledColor(text_default_color_);
   AddChildView(text_label_);
@@ -75,10 +76,10 @@ views::Label* HoverHighlightView::AddLabel(const base::string16& text,
     right_margin = margin;
   else
     left_margin = margin;
-  text_label_->set_border(
+  text_label_->SetBorder(
       views::Border::CreateEmptyBorder(5, left_margin, 5, right_margin));
   text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  text_label_->SetFont(text_label_->font().DeriveFont(0, style));
+  text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
   // Do not set alpha value in disable color. It will have issue with elide
   // blending filter in disabled state for rendering label text color.
   text_label_->SetDisabledColor(SkColorSetARGB(255, 127, 127, 127));
@@ -110,7 +111,7 @@ views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
 
     text_label_ = new views::Label(text);
     text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    text_label_->SetFont(text_label_->font().DeriveFont(0, style));
+    text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
     text_label_->SetDisabledColor(SkColorSetARGB(127, 0, 0, 0));
     if (text_default_color_)
       text_label_->SetEnabledColor(text_default_color_);

@@ -8,14 +8,14 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/web_accessible_resources_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest_handlers/web_accessible_resources_info.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -79,7 +79,7 @@ bool ResourceRequestPolicy::CanRequestResource(
         page_url.GetOrigin() == extension->url();
     // - devtools (chrome-extension:// URLs are loaded into frames of devtools
     //     to support the devtools extension APIs)
-    bool is_dev_tools = page_url.SchemeIs(chrome::kChromeDevToolsScheme) &&
+    bool is_dev_tools = page_url.SchemeIs(content::kChromeDevToolsScheme) &&
                         !ManifestURL::GetDevToolsPage(extension).is_empty();
     bool transition_allowed =
         !content::PageTransitionIsWebTriggerable(transition_type);
@@ -108,7 +108,7 @@ bool ResourceRequestPolicy::CanRequestResource(
 bool ResourceRequestPolicy::CanRequestExtensionResourceScheme(
     const GURL& resource_url,
     blink::WebFrame* frame) {
-  CHECK(resource_url.SchemeIs(chrome::kExtensionResourceScheme));
+  CHECK(resource_url.SchemeIs(extensions::kExtensionResourceScheme));
 
   GURL frame_url = frame->document().url();
   if (!frame_url.is_empty() &&

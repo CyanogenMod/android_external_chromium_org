@@ -11,7 +11,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "components/translate/common/translate_switches.h"
+#include "components/translate/core/common/translate_switches.h"
 #include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -36,7 +36,7 @@ void ShowBadFlagsPrompt(Browser* browser) {
     switches::kEnableBrowserPluginForAllViewTypes,
     extensions::switches::kExtensionsOnChromeURLs,
     // This parameter should be used only for server side developments.
-    switches::kTranslateScriptURL,
+    translate::switches::kTranslateScriptURL,
     translate::switches::kTranslateSecurityOrigin,
   #if defined(ENABLE_WEBRTC)
     // This flag disables security of media packets in WebRTC.
@@ -51,7 +51,8 @@ void ShowBadFlagsPrompt(Browser* browser) {
           InfoBarService::FromWebContents(web_contents),
           InfoBarDelegate::kNoIconID,
           l10n_util::GetStringFUTF16(IDS_BAD_FLAGS_WARNING_MESSAGE,
-                                     UTF8ToUTF16(std::string("--") + *flag)),
+                                     base::UTF8ToUTF16(
+                                         std::string("--") + *flag)),
           false);
       return;
     }

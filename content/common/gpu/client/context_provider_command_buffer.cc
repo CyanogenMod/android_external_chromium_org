@@ -78,6 +78,20 @@ ContextProviderCommandBuffer::~ContextProviderCommandBuffer() {
   }
 }
 
+
+CommandBufferProxyImpl* ContextProviderCommandBuffer::GetCommandBufferProxy() {
+  return context3d_->GetCommandBufferProxy();
+}
+
+WebGraphicsContext3DCommandBufferImpl*
+ContextProviderCommandBuffer::WebContext3D() {
+  DCHECK(context3d_);
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return context3d_.get();
+}
+
 bool ContextProviderCommandBuffer::BindToCurrentThread() {
   // This is called on the thread the context will be used.
   DCHECK(context_thread_checker_.CalledOnValidThread());
@@ -99,14 +113,6 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
       base::Bind(&ContextProviderCommandBuffer::OnMemoryAllocationChanged,
                  base::Unretained(this)));
   return true;
-}
-
-WebGraphicsContext3DCommandBufferImpl*
-ContextProviderCommandBuffer::Context3d() {
-  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-
-  return context3d_.get();
 }
 
 gpu::gles2::GLES2Interface* ContextProviderCommandBuffer::ContextGL() {
@@ -131,14 +137,6 @@ class GrContext* ContextProviderCommandBuffer::GrContext() {
   gr_context_.reset(
       new webkit::gpu::GrContextForWebGraphicsContext3D(context3d_.get()));
   return gr_context_->get();
-}
-
-void ContextProviderCommandBuffer::MakeGrContextCurrent() {
-  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-  DCHECK(gr_context_);
-
-  context3d_->makeContextCurrent();
 }
 
 cc::ContextProvider::Capabilities
@@ -192,7 +190,8 @@ void ContextProviderCommandBuffer::OnMemoryAllocationChanged(
 }
 
 void ContextProviderCommandBuffer::InitializeCapabilities() {
-  Capabilities caps(context3d_->GetImplementation()->capabilities());
+  Capabilities caps;
+  caps.gpu = context3d_->GetImplementation()->capabilities();
 
   size_t mapped_memory_limit = context3d_->GetMappedMemoryLimit();
   caps.max_transfer_buffer_usage_bytes =

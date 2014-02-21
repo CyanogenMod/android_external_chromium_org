@@ -4,8 +4,8 @@
 
 """Top-level presubmit script for cc.
 
-See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts for
-details on the presubmit API built into gcl.
+See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
+for more details about the presubmit API built into depot_tools.
 """
 
 import re
@@ -116,13 +116,6 @@ def CheckPassByValue(input_api,
   # Well-defined simple classes containing only <= 4 ints, or <= 2 floats.
   pass_by_value_types = ['base::Time',
                          'base::TimeTicks',
-                         'gfx::Point',
-                         'gfx::PointF',
-                         'gfx::Rect',
-                         'gfx::Size',
-                         'gfx::SizeF',
-                         'gfx::Vector2d',
-                         'gfx::Vector2dF',
                          ]
 
   for f in input_api.AffectedSourceFiles(source_file_filter):
@@ -228,13 +221,14 @@ def CheckChangeOnUpload(input_api, output_api):
   results += CheckChangeLintsClean(input_api, output_api)
   results += CheckTodos(input_api, output_api)
   results += CheckNamespace(input_api, output_api)
+  results += input_api.canned_checks.CheckPatchFormatted(input_api, output_api)
   return results
 
 def GetPreferredTrySlaves(project, change):
   return [
     'linux_layout_rel',
-    'win_gpu',
     'linux_gpu',
     'mac_gpu',
     'mac_gpu_retina',
+    'win_gpu',
   ]

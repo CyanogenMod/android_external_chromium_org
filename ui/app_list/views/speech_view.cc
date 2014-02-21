@@ -16,6 +16,7 @@
 #include "ui/views/animation/bounds_animator.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/shadow_border.h"
@@ -27,19 +28,18 @@ namespace {
 const int kShadowOffset = 1;
 const int kShadowBlur = 4;
 const int kSpeechViewMaxHeight = 300;
-const int kTextSize = 20;
 const int kMicButtonMargin = 12;
 const int kTextMargin = 32;
+const int kLogoMarginLeft = 30;
+const int kLogoMarginTop = 28;
+const int kLogoWidth = 104;
+const int kLogoHeight = 36;
 const int kIndicatorRadiusMax = 100;
 const int kIndicatorAnimationDuration = 100;
 const SkColor kShadowColor = SkColorSetARGB(0.3 * 255, 0, 0, 0);
 const SkColor kHintTextColor = SkColorSetRGB(119, 119, 119);
 const SkColor kResultTextColor = SkColorSetRGB(178, 178, 178);
 const SkColor kSoundLevelIndicatorColor = SkColorSetRGB(219, 219, 219);
-
-// TODO(mukai): check with multiple devices to make sure these limits.
-const int16 kSoundLevelMin = 50;
-const int16 kSoundLevelMax = 210;
 
 class SoundLevelIndicator : public views::View {
  public:
@@ -97,12 +97,13 @@ bool MicButton::HitTestRect(const gfx::Rect& rect) const {
 // static
 
 SpeechView::SpeechView(AppListViewDelegate* delegate)
-    : delegate_(delegate) {
-  set_border(new views::ShadowBorder(
-      kShadowBlur,
-      kShadowColor,
-      kShadowOffset,  // Vertical offset.
-      0));
+    : delegate_(delegate),
+      logo_(NULL) {
+  SetBorder(scoped_ptr<views::Border>(
+      new views::ShadowBorder(kShadowBlur,
+                              kShadowColor,
+                              kShadowOffset,  // Vertical offset.
+                              0)));
 
   // To keep the painting order of the border and the background, this class
   // actually has a single child of 'container' which has white background and
@@ -111,7 +112,13 @@ SpeechView::SpeechView(AppListViewDelegate* delegate)
   container->set_background(
       views::Background::CreateSolidBackground(SK_ColorWHITE));
 
-  // TODO(mukai): add Google logo.
+  const gfx::ImageSkia& logo_image = delegate_->GetSpeechUI()->logo();
+  if (!logo_image.isNull()) {
+    logo_ = new views::ImageView();
+    logo_->SetImage(&logo_image);
+    container->AddChildView(logo_);
+  }
+
   indicator_ = new SoundLevelIndicator();
   indicator_->SetVisible(false);
   container->AddChildView(indicator_);
@@ -120,10 +127,11 @@ SpeechView::SpeechView(AppListViewDelegate* delegate)
   container->AddChildView(mic_button_);
 
   // TODO(mukai): use BoundedLabel to cap 2 lines.
-  speech_result_ = new views::Label();
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  speech_result_ = new views::Label(
+      base::string16(), bundle.GetFontList(ui::ResourceBundle::LargeFont));
   speech_result_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  const gfx::FontList& font_list = speech_result_->font_list();
-  speech_result_->SetFontList(font_list.DeriveFontListWithSize(kTextSize));
+
   speech_result_->SetMultiLine(true);
   container->AddChildView(speech_result_);
 
@@ -146,15 +154,14 @@ void SpeechView::Reset() {
   speech_result_->SetText(l10n_util::GetStringUTF16(
       IDS_APP_LIST_SPEECH_HINT_TEXT));
   speech_result_->SetEnabledColor(kHintTextColor);
-  mic_button_->SetImage(views::Button::STATE_NORMAL, bundle.GetImageSkiaNamed(
-      IDR_APP_LIST_SPEECH_MIC_ON));
+  mic_button_->SetImage(views::Button::STATE_NORMAL,
+                        bundle.GetImageSkiaNamed(IDR_APP_LIST_SPEECH_MIC_ON));
 }
 
-int SpeechView::GetIndicatorRadius(int16 level) {
-  level = std::min(std::max(level, kSoundLevelMin), kSoundLevelMax);
+int SpeechView::GetIndicatorRadius(uint8 level) {
   int radius_min = mic_button_->width() / 2;
-  return (level - kSoundLevelMin) * (kIndicatorRadiusMax - radius_min) /
-      (kSoundLevelMax - kSoundLevelMin) + radius_min;
+  int range = kIndicatorRadiusMax - radius_min;
+  return level * range / kuint8max + radius_min;
 }
 
 void SpeechView::Layout() {
@@ -162,8 +169,9 @@ void SpeechView::Layout() {
   container->SetBoundsRect(GetContentsBounds());
 
   // Because container is a pure View, this class should layout its children.
-  // TODO(mukai): arrange Google logo.
   const gfx::Rect contents_bounds = container->GetContentsBounds();
+  if (logo_)
+    logo_->SetBounds(kLogoMarginLeft, kLogoMarginTop, kLogoWidth, kLogoHeight);
   gfx::Size mic_size = mic_button_->GetPreferredSize();
   gfx::Point mic_origin(
       contents_bounds.right() - kMicButtonMargin - mic_size.width(),
@@ -188,7 +196,7 @@ void SpeechView::ButtonPressed(views::Button* sender, const ui::Event& event) {
   delegate_->ToggleSpeechRecognition();
 }
 
-void SpeechView::OnSpeechSoundLevelChanged(int16 level) {
+void SpeechView::OnSpeechSoundLevelChanged(uint8 level) {
   if (!visible())
     return;
 
@@ -214,14 +222,14 @@ void SpeechView::OnSpeechResult(const base::string16& result,
 void SpeechView::OnSpeechRecognitionStateChanged(
     SpeechRecognitionState new_state) {
   int resource_id = IDR_APP_LIST_SPEECH_MIC_OFF;
-  if (new_state == SPEECH_RECOGNITION_ON)
+  if (new_state == SPEECH_RECOGNITION_RECOGNIZING)
     resource_id = IDR_APP_LIST_SPEECH_MIC_ON;
   else if (new_state == SPEECH_RECOGNITION_IN_SPEECH)
     resource_id = IDR_APP_LIST_SPEECH_MIC_RECORDING;
 
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  mic_button_->SetImage(views::Button::STATE_NORMAL, bundle.GetImageSkiaNamed(
-      resource_id));
+  mic_button_->SetImage(views::Button::STATE_NORMAL,
+                        bundle.GetImageSkiaNamed(resource_id));
 }
 
 }  // namespace app_list

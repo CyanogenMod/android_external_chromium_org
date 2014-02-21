@@ -161,7 +161,7 @@ scoped_ptr<Action::ActionVector> FullStreamUIPolicy::DoReadFilteredData(
     where_str += where_next + "time BETWEEN ? AND ?";
   std::string query_str = base::StringPrintf(
       "SELECT extension_id,time,action_type,api_name,args,page_url,page_title,"
-      "arg_url,other FROM %s %s %s ORDER BY time DESC LIMIT 300",
+      "arg_url,other,rowid FROM %s %s %s ORDER BY time DESC LIMIT 300",
       kTableName,
       where_str.empty() ? "" : "WHERE",
       where_str.c_str());
@@ -191,14 +191,14 @@ scoped_ptr<Action::ActionVector> FullStreamUIPolicy::DoReadFilteredData(
         new Action(query.ColumnString(0),
                    base::Time::FromInternalValue(query.ColumnInt64(1)),
                    static_cast<Action::ActionType>(query.ColumnInt(2)),
-                   query.ColumnString(3));
+                   query.ColumnString(3), query.ColumnInt64(9));
 
     if (query.ColumnType(4) != sql::COLUMN_TYPE_NULL) {
-      scoped_ptr<Value> parsed_value(
+      scoped_ptr<base::Value> parsed_value(
           base::JSONReader::Read(query.ColumnString(4)));
-      if (parsed_value && parsed_value->IsType(Value::TYPE_LIST)) {
-        action->set_args(
-            make_scoped_ptr(static_cast<ListValue*>(parsed_value.release())));
+      if (parsed_value && parsed_value->IsType(base::Value::TYPE_LIST)) {
+        action->set_args(make_scoped_ptr(
+            static_cast<base::ListValue*>(parsed_value.release())));
       }
     }
 
@@ -207,17 +207,53 @@ scoped_ptr<Action::ActionVector> FullStreamUIPolicy::DoReadFilteredData(
     action->ParseArgUrl(query.ColumnString(7));
 
     if (query.ColumnType(8) != sql::COLUMN_TYPE_NULL) {
-      scoped_ptr<Value> parsed_value(
+      scoped_ptr<base::Value> parsed_value(
           base::JSONReader::Read(query.ColumnString(8)));
-      if (parsed_value && parsed_value->IsType(Value::TYPE_DICTIONARY)) {
+      if (parsed_value && parsed_value->IsType(base::Value::TYPE_DICTIONARY)) {
         action->set_other(make_scoped_ptr(
-            static_cast<DictionaryValue*>(parsed_value.release())));
+            static_cast<base::DictionaryValue*>(parsed_value.release())));
       }
     }
     actions->push_back(action);
   }
 
   return actions.Pass();
+}
+
+void FullStreamUIPolicy::DoRemoveActions(const std::vector<int64>& action_ids) {
+  if (action_ids.empty())
+    return;
+
+  sql::Connection* db = GetDatabaseConnection();
+  if (!db) {
+    LOG(ERROR) << "Unable to connect to database";
+    return;
+  }
+
+  // Flush data first so the activity removal affects queued-up data as well.
+  activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+
+  sql::Transaction transaction(db);
+  if (!transaction.Begin())
+    return;
+
+  std::string statement_str =
+      base::StringPrintf("DELETE FROM %s WHERE rowid = ?", kTableName);
+  sql::Statement statement(db->GetCachedStatement(
+      sql::StatementID(SQL_FROM_HERE), statement_str.c_str()));
+  for (size_t i = 0; i < action_ids.size(); i++) {
+    statement.Reset(true);
+    statement.BindInt64(0, action_ids[i]);
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing activities from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+  }
+
+  if (!transaction.Commit()) {
+    LOG(ERROR) << "Removing activities from database failed";
+  }
 }
 
 void FullStreamUIPolicy::DoRemoveURLs(const std::vector<GURL>& restrict_urls) {
@@ -372,6 +408,10 @@ void FullStreamUIPolicy::ReadFilteredData(
                  arg_url,
                  days_ago),
       callback);
+}
+
+void FullStreamUIPolicy::RemoveActions(const std::vector<int64>& action_ids) {
+  ScheduleAndForget(this, &FullStreamUIPolicy::DoRemoveActions, action_ids);
 }
 
 void FullStreamUIPolicy::RemoveURLs(const std::vector<GURL>& restrict_urls) {

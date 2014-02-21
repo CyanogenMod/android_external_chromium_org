@@ -23,6 +23,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/port/browser/render_widget_host_view_port.h"
@@ -162,7 +163,8 @@ InterstitialPageImpl::InterstitialPageImpl(
       // TODO(creis): We will also need to pass delegates for the RVHM as we
       // start to use it.
       frame_tree_(new InterstitialPageNavigatorImpl(this, controller_),
-                  NULL, NULL, NULL, NULL),
+                  this, this, this,
+                  static_cast<WebContentsImpl*>(web_contents)),
       original_child_id_(web_contents->GetRenderProcessHost()->GetID()),
       original_rvh_id_(web_contents->GetRenderViewHost()->GetRoutingID()),
       should_revert_web_contents_title_(false),
@@ -284,15 +286,15 @@ void InterstitialPageImpl::Hide() {
         controller_->delegate()->GetRenderViewHost()->GetView())->Focus();
   }
 
-  // Shutdown the RVH asynchronously, as we may have been called from a RVH
-  // delegate method, and we can't delete the RVH out from under itself.
+  // Delete this and call Shutdown on the RVH asynchronously, as we may have
+  // been called from a RVH delegate method, and we can't delete the RVH out
+  // from under itself.
   base::MessageLoop::current()->PostNonNestableTask(
       FROM_HERE,
       base::Bind(&InterstitialPageImpl::Shutdown,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 render_view_host_));
+                 weak_ptr_factory_.GetWeakPtr()));
   render_view_host_ = NULL;
-  frame_tree_.SwapMainFrame(NULL);
+  frame_tree_.ResetForMainFrameSwap();
   controller_->delegate()->DetachInterstitialPage();
   // Let's revert to the original title if necessary.
   NavigationEntry* entry = controller_->GetVisibleEntry();
@@ -365,6 +367,14 @@ void InterstitialPageImpl::WebContentsDestroyed(WebContents* web_contents) {
   OnNavigatingAwayOrTabClosing();
 }
 
+void InterstitialPageImpl::RenderFrameCreated(
+    RenderFrameHost* render_frame_host) {
+  // Note this is only for subframes in the interstitial, the notification for
+  // the main frame happens in RenderViewCreated.
+  controller_->delegate()->RenderFrameForInterstitialPageCreated(
+      render_frame_host);
+}
+
 RenderViewHostDelegateView* InterstitialPageImpl::GetDelegateView() {
   return rvh_delegate_view_.get();
 }
@@ -387,7 +397,7 @@ void InterstitialPageImpl::RenderViewTerminated(
 
 void InterstitialPageImpl::DidNavigate(
     RenderViewHost* render_view_host,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
   // A fast user could have navigated away from the page that triggered the
   // interstitial while the interstitial was loading, that would have disabled
   // us. In that case we can dismiss ourselves.
@@ -479,7 +489,8 @@ WebPreferences InterstitialPageImpl::GetWebkitPrefs() {
 
 void InterstitialPageImpl::RenderWidgetDeleted(
     RenderWidgetHostImpl* render_widget_host) {
-  delete this;
+  // TODO(creis): Remove this method once we verify the shutdown path is sane.
+  CHECK(!web_contents_);
 }
 
 bool InterstitialPageImpl::PreHandleKeyboardEvent(
@@ -497,7 +508,7 @@ void InterstitialPageImpl::HandleKeyboardEvent(
     render_widget_host_delegate_->HandleKeyboardEvent(event);
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 gfx::NativeViewAccessible
 InterstitialPageImpl::GetParentNativeViewAccessible() {
   return render_widget_host_delegate_->GetParentNativeViewAccessible();
@@ -524,14 +535,10 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   session_storage_namespace_ =
       new SessionStorageNamespaceImpl(dom_storage_context);
 
-  return RenderViewHostFactory::Create(site_instance.get(),
-                                       this,
-                                       this,
-                                       this,
-                                       MSG_ROUTING_NONE,
-                                       MSG_ROUTING_NONE,
-                                       false,
-                                       false);
+  // Use the RenderViewHost from our FrameTree.
+  frame_tree_.root()->render_manager()->Init(
+      browser_context, site_instance.get(), MSG_ROUTING_NONE, MSG_ROUTING_NONE);
+  return frame_tree_.root()->current_frame_host()->render_view_host();
 }
 
 WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
@@ -550,8 +557,8 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
   render_view_host_->CreateRenderView(base::string16(),
                                       MSG_ROUTING_NONE,
                                       max_page_id);
-  controller_->delegate()->RenderViewForInterstitialPageCreated(
-      render_view_host_);
+  controller_->delegate()->RenderFrameForInterstitialPageCreated(
+      frame_tree_.root()->current_frame_host());
   view->SetSize(web_contents_view->GetContainerSize());
   // Don't show the interstitial until we have navigated to it.
   view->Hide();
@@ -749,9 +756,8 @@ void InterstitialPageImpl::Disable() {
   enabled_ = false;
 }
 
-void InterstitialPageImpl::Shutdown(RenderViewHostImpl* render_view_host) {
-  render_view_host->Shutdown();
-  // We are deleted now.
+void InterstitialPageImpl::Shutdown() {
+  delete this;
 }
 
 void InterstitialPageImpl::OnNavigatingAwayOrTabClosing() {

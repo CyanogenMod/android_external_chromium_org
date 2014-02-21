@@ -8,7 +8,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "mojo/system/limits.h"
+#include "mojo/system/constants.h"
+#include "mojo/system/embedder/scoped_platform_handle.h"
 #include "mojo/system/system_impl_export.h"
 
 namespace base {
@@ -19,11 +20,6 @@ namespace mojo {
 namespace system {
 
 class MessageInTransit;
-
-// This simply wraps an |int| file descriptor on POSIX and a |HANDLE| on
-// Windows, but we don't want to impose, e.g., the inclusion of windows.h on
-// everyone.
-struct PlatformChannelHandle;
 
 // |RawChannel| is an interface to objects that wrap an OS "pipe". It presents
 // the following interface to users:
@@ -60,16 +56,22 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
 
     // Called when there's a fatal error, which leads to the channel no longer
     // being viable.
+    // For each raw channel, at most one |FATAL_ERROR_FAILED_READ| and one
+    // |FATAL_ERROR_FAILED_WRITE| notification will be issued. (And it is
+    // possible to get both.)
+    // After |OnFatalError(FATAL_ERROR_FAILED_READ)| there won't be further
+    // |OnReadMessage()| calls.
     virtual void OnFatalError(FatalError fatal_error) = 0;
 
    protected:
     virtual ~Delegate() {}
   };
 
-  // Static factory method. Takes ownership of |handle| (i.e., will close it).
-  // Does *not* take ownership of |delegate| and |message_loop|, which must
-  // remain alive while this object does.
-  static RawChannel* Create(const PlatformChannelHandle& handle,
+  // Static factory method. |handle| should be a handle to a
+  // (platform-appropriate) bidirectional communication channel (e.g., a socket
+  // on POSIX, a named pipe on Windows). Does *not* take ownership of |delegate|
+  // and |message_loop|, which must remain alive while this object does.
+  static RawChannel* Create(embedder::ScopedPlatformHandle handle,
                             Delegate* delegate,
                             base::MessageLoop* message_loop);
 

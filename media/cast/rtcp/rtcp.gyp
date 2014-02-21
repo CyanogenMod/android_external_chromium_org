@@ -11,6 +11,7 @@
         '<(DEPTH)/',
       ],
       'sources': [
+        'rtcp_defines.cc',
         'rtcp_defines.h',
         'rtcp.h',
         'rtcp.cc',
@@ -20,9 +21,14 @@
         'rtcp_sender.h',
         'rtcp_utility.cc',
         'rtcp_utility.h',
+        'sender_rtcp_event_subscriber.cc',
+        'sender_rtcp_event_subscriber.h',
+        'receiver_rtcp_event_subscriber.cc',
+        'receiver_rtcp_event_subscriber.cc',
       ], # source
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/media/cast/transport/cast_transport.gyp:cast_transport',
         '<(DEPTH)/net/net.gyp:net',
       ],
     },
@@ -38,6 +44,7 @@
       ], # source
       'dependencies': [
         'cast_rtcp',
+        '<(DEPTH)/media/cast/transport/cast_transport.gyp:cast_transport',
         '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
     },

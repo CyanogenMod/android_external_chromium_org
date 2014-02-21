@@ -9,8 +9,10 @@ examples/api/graphics_3d/*
 examples/api/input_event/*
 [win]examples/api/make.bat
 examples/api/Makefile
+examples/api/media_stream_video/*
 examples/api/mouse_cursor/*
 examples/api/mouse_lock/*
+examples/api/network_monitor/*
 examples/api/socket/*
 examples/api/url_loader/*
 examples/api/var_array_buffer/*
@@ -422,6 +424,7 @@ tools/irt_core_x86_64.nexe
 [win]tools/make.exe
 [linux,mac]tools/minidump_dump
 [linux,mac]tools/minidump_stackwalk
+tools/nacl_config.py
 tools/nacl_gcc.mk
 [linux]tools/nacl_helper_bootstrap_x86_32
 [linux]tools/nacl_helper_bootstrap_x86_64

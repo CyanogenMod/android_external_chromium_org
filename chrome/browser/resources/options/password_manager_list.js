@@ -56,6 +56,7 @@ cr.define('options.passwordManager', function() {
       var usernameLabel = this.ownerDocument.createElement('div');
       usernameLabel.className = 'name';
       usernameLabel.textContent = this.username;
+      usernameLabel.title = this.username;
       this.contentElement.appendChild(usernameLabel);
 
       // The stored password.
@@ -279,7 +280,12 @@ cr.define('options.passwordManager', function() {
 
     /** @override */
     createItem: function(entry) {
-      return new PasswordListItem(this.dataModel, entry, this.showPasswords_);
+      var showPasswords = this.showPasswords_;
+
+      if (loadTimeData.getBoolean('disableShowPasswords'))
+        showPasswords = false;
+
+      return new PasswordListItem(this.dataModel, entry, showPasswords);
     },
 
     /** @override */

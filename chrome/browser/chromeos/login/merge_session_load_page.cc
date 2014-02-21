@@ -16,7 +16,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/oauth2_login_manager_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
@@ -27,6 +26,7 @@
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -51,9 +51,10 @@ const int kTotalWaitTimeMS = 10000;
 
 namespace chromeos {
 
-MergeSessionLoadPage::MergeSessionLoadPage(WebContents* web_contents,
-                                           const GURL& url,
-                                           const CompletionCallback& callback)
+MergeSessionLoadPage::MergeSessionLoadPage(
+    WebContents* web_contents,
+    const GURL& url,
+    const MergeSessionThrottle::CompletionCallback& callback)
     : callback_(callback),
       proceeded_(false),
       web_contents_(web_contents),
@@ -76,7 +77,7 @@ void MergeSessionLoadPage::Show() {
 }
 
 std::string MergeSessionLoadPage::GetHTMLContents() {
-  DictionaryValue strings;
+  base::DictionaryValue strings;
   strings.SetString("title", web_contents_->GetTitle());
   // Set the timeout to show the page.
   strings.SetInteger("show_delay_time", kShowDelayTimeMS);

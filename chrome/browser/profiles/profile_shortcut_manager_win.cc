@@ -55,9 +55,9 @@ const char kProfileIconFileName[] = "Google Profile.ico";
 
 // Characters that are not allowed in Windows filenames. Taken from
 // http://msdn.microsoft.com/en-us/library/aa365247.aspx
-const char16 kReservedCharacters[] = L"<>:\"/\\|?*\x01\x02\x03\x04\x05\x06\x07"
-    L"\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19"
-    L"\x1A\x1B\x1C\x1D\x1E\x1F";
+const base::char16 kReservedCharacters[] = L"<>:\"/\\|?*\x01\x02\x03\x04\x05"
+    L"\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17"
+    L"\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
 
 // The maximum number of characters allowed in profile shortcuts' file names.
 // Warning: migration code will be needed if this is changed later, since
@@ -459,7 +459,7 @@ void CreateOrUpdateDesktopShortcutsAndIconForProfile(
   } else {
     // Set the arguments explicitly to the empty string to ensure that
     // |ShellUtil::CreateOrUpdateShortcut| updates that part of the shortcut.
-    properties.set_arguments(string16());
+    properties.set_arguments(base::string16());
   }
 
   properties.set_app_id(
@@ -554,7 +554,7 @@ void DeleteDesktopShortcuts(const base::FilePath& profile_path,
     ShellUtil::ShortcutProperties properties(ShellUtil::CURRENT_USER);
     product.AddDefaultShortcutProperties(chrome_exe, &properties);
     properties.set_shortcut_name(
-        profiles::internal::GetShortcutFilenameForProfile(string16(),
+        profiles::internal::GetShortcutFilenameForProfile(base::string16(),
                                                           distribution));
     ShellUtil::CreateOrUpdateShortcut(
         ShellUtil::SHORTCUT_LOCATION_DESKTOP, distribution, properties,
@@ -587,7 +587,8 @@ bool HasAnyProfileShortcuts(const base::FilePath& profile_path) {
 // TODO(macourteau): find a way to limit the total path's length to MAX_PATH
 // instead of limiting the profile's name to |kMaxProfileShortcutFileNameLength|
 // characters.
-string16 SanitizeShortcutProfileNameString(const base::string16& profile_name) {
+base::string16 SanitizeShortcutProfileNameString(
+    const base::string16& profile_name) {
   base::string16 sanitized = profile_name;
   size_t pos = sanitized.find_first_of(kReservedCharacters);
   while (pos != base::string16::npos) {
@@ -625,8 +626,9 @@ base::FilePath GetProfileIconPath(const base::FilePath& profile_path) {
   return profile_path.AppendASCII(kProfileIconFileName);
 }
 
-string16 GetShortcutFilenameForProfile(const base::string16& profile_name,
-                                       BrowserDistribution* distribution) {
+base::string16 GetShortcutFilenameForProfile(
+    const base::string16& profile_name,
+    BrowserDistribution* distribution) {
   base::string16 shortcut_name;
   if (!profile_name.empty()) {
     shortcut_name.append(SanitizeShortcutProfileNameString(profile_name));
@@ -639,9 +641,10 @@ string16 GetShortcutFilenameForProfile(const base::string16& profile_name,
   return shortcut_name + installer::kLnkExt;
 }
 
-string16 CreateProfileShortcutFlags(const base::FilePath& profile_path) {
+base::string16 CreateProfileShortcutFlags(const base::FilePath& profile_path) {
   return base::StringPrintf(L"--%ls=\"%ls\"",
-                            ASCIIToUTF16(switches::kProfileDirectory).c_str(),
+                            base::ASCIIToUTF16(
+                                switches::kProfileDirectory).c_str(),
                             profile_path.BaseName().value().c_str());
 }
 

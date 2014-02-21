@@ -84,7 +84,8 @@ void LoadDisplayLayouts() {
 
   const base::DictionaryValue* layouts = local_state->GetDictionary(
       prefs::kSecondaryDisplays);
-  for (DictionaryValue::Iterator it(*layouts); !it.IsAtEnd(); it.Advance()) {
+  for (base::DictionaryValue::Iterator it(*layouts);
+       !it.IsAtEnd(); it.Advance()) {
     ash::DisplayLayout layout;
     if (!ash::DisplayLayout::ConvertFromValue(it.value(), &layout)) {
       LOG(WARNING) << "Invalid preference value for " << it.key();
@@ -111,7 +112,8 @@ void LoadDisplayProperties() {
   PrefService* local_state = g_browser_process->local_state();
   const base::DictionaryValue* properties = local_state->GetDictionary(
       prefs::kDisplayProperties);
-  for (DictionaryValue::Iterator it(*properties); !it.IsAtEnd(); it.Advance()) {
+  for (base::DictionaryValue::Iterator it(*properties);
+       !it.IsAtEnd(); it.Advance()) {
     const base::DictionaryValue* dict_value = NULL;
     if (!it.value().GetAsDictionary(&dict_value) || dict_value == NULL)
       continue;
@@ -197,11 +199,12 @@ void StoreCurrentDisplayProperties() {
     property_value->SetInteger(
         "ui-scale",
         static_cast<int>(info.configured_ui_scale() * 1000));
-    gfx::Size resolution;
+    ash::internal::DisplayMode mode;
     if (!display.IsInternal() &&
-        display_manager->GetSelectedResolutionForDisplayId(id, &resolution)) {
-      property_value->SetInteger("width", resolution.width());
-      property_value->SetInteger("height", resolution.height());
+        display_manager->GetSelectedModeForDisplayId(id, &mode) &&
+        !mode.native) {
+      property_value->SetInteger("width", mode.size.width());
+      property_value->SetInteger("height", mode.size.height());
     }
 
     if (!info.overscan_insets_in_dip().empty())

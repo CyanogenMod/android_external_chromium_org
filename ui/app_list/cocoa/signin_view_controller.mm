@@ -8,8 +8,8 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "third_party/skia/include/core/SkColor.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/signin_delegate.h"
 #import "ui/base/cocoa/controls/blue_label_button.h"
@@ -131,10 +131,12 @@ const CGFloat kTextFieldPadding = 2;
   NSView* signinView = [self view];
   NSRect frame = [signinView frame];
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  gfx::Font baseFont = rb.GetFont(ui::ResourceBundle::BaseFont);
+  const gfx::FontList& baseFontList =
+      rb.GetFontList(ui::ResourceBundle::BaseFont);
 
   NSString* titleText = base::SysUTF16ToNSString(delegate_->GetSigninHeading());
-  NSFont* titleFont = baseFont.DeriveFont(kTitleFontSizeDelta).GetNativeFont();
+  NSFont* titleFont = baseFontList.DeriveWithSizeDelta(kTitleFontSizeDelta)
+      .GetPrimaryFont().GetNativeFont();
   NSRect rect = NSMakeRect(kLeftPadding, NSHeight(frame) - kTopPadding,
                            NSWidth(frame) - kLeftPadding - kRightPadding, 0);
   NSTextField* titleTextView = [self makeTextFieldWithText:titleText
@@ -145,7 +147,7 @@ const CGFloat kTextFieldPadding = 2;
   NSString* signinText = base::SysUTF16ToNSString(delegate_->GetSigninText());
   rect.origin.y = floor(
       NSMinY([titleTextView frame]) + [titleFont descender] - kHeadingPadding);
-  NSFont* signinTextFont = baseFont.GetNativeFont();
+  NSFont* signinTextFont = baseFontList.GetPrimaryFont().GetNativeFont();
   NSTextField* signinTextView = [self makeTextFieldWithText:signinText
                                                        font:signinTextFont
                                                       frame:rect];

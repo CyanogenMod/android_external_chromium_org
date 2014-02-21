@@ -21,6 +21,7 @@ import optparse
 import os
 import pipes
 import psutil
+import platform
 import signal
 import socket
 import subprocess
@@ -43,16 +44,18 @@ DEFAULT_SIZES = "1600x1200,3840x1600"
 
 SCRIPT_PATH = sys.path[0]
 
-DEFAULT_INSTALL_PATH = "/opt/google/chrome-remote-desktop"
-if SCRIPT_PATH == DEFAULT_INSTALL_PATH:
+IS_INSTALLED = (os.path.basename(sys.argv[0]) != 'me2me_virtual_host.py')
+
+if IS_INSTALLED:
   HOST_BINARY_NAME = "chrome-remote-desktop-host"
 else:
   HOST_BINARY_NAME = "remoting_me2me_host"
 
 CHROME_REMOTING_GROUP_NAME = "chrome-remote-desktop"
 
-CONFIG_DIR = os.path.expanduser("~/.config/chrome-remote-desktop")
 HOME_DIR = os.environ["HOME"]
+CONFIG_DIR = os.path.join(HOME_DIR, ".config/chrome-remote-desktop")
+SESSION_FILE_PATH = os.path.join(HOME_DIR, ".chrome-remote-desktop-session")
 
 X_LOCK_FILE_TEMPLATE = "/tmp/.X%d-lock"
 FIRST_X_DISPLAY_NUMBER = 20
@@ -73,6 +76,16 @@ MAX_LAUNCH_FAILURES = SHORT_BACKOFF_THRESHOLD + 10
 # Globals needed by the atexit cleanup() handler.
 g_desktops = []
 g_host_hash = hashlib.md5(socket.gethostname()).hexdigest()
+
+def is_supported_platform():
+  # Always assume that the system is supported if the config directory or
+  # session file exist.
+  if os.path.isdir(CONFIG_DIR) or os.path.isfile(SESSION_FILE_PATH):
+    return True
+
+  # The host has been tested only on Ubuntu.
+  distribution = platform.linux_distribution()
+  return (distribution[0]).lower() == 'ubuntu'
 
 class Config:
   def __init__(self, path):
@@ -501,7 +514,7 @@ def choose_x_session():
   # session instead of looking for custom .xsession files in the home directory.
   # So it's necessary to test for these files here.
   XSESSION_FILES = [
-    "~/.chrome-remote-desktop-session",
+    SESSION_FILE_PATH,
     "~/.xsession",
     "~/.Xsession" ]
   for startup_file in XSESSION_FILES:
@@ -544,10 +557,10 @@ def choose_x_session():
 
 
 def locate_executable(exe_name):
-  if SCRIPT_PATH == DEFAULT_INSTALL_PATH:
-    # If we are installed in the default path, then search the host binary
-    # only in the same directory.
-    paths_to_try = [ DEFAULT_INSTALL_PATH ]
+  if IS_INSTALLED:
+    # If the script is running from its installed location, search the host
+    # binary only in the same directory.
+    paths_to_try = [ SCRIPT_PATH ]
   else:
     paths_to_try = map(lambda p: os.path.join(SCRIPT_PATH, p),
                        [".", "../../out/Debug", "../../out/Release" ])
@@ -901,6 +914,9 @@ Web Store: https://chrome.google.com/remotedesktop"""
   parser.add_option("-k", "--stop", dest="stop", default=False,
                     action="store_true",
                     help="Stop the daemon currently running.")
+  parser.add_option("", "--get-status", dest="get_status", default=False,
+                    action="store_true",
+                    help="Prints host status")
   parser.add_option("", "--check-running", dest="check_running", default=False,
                     action="store_true",
                     help="Return 0 if the daemon is running, or 1 otherwise.")
@@ -922,6 +938,19 @@ Web Store: https://chrome.google.com/remotedesktop"""
     options.config = os.path.join(CONFIG_DIR, "host#%s.json" % g_host_hash)
 
   # Check for a modal command-line option (start, stop, etc.)
+
+  if options.get_status:
+    pid = get_daemon_pid()
+    if pid != 0:
+      print "STARTED"
+    elif is_supported_platform():
+      print "STOPPED"
+    else:
+      print "NOT_IMPLEMENTED"
+    return 0
+
+  # TODO(sergeyu): Remove --check-running once NPAPI plugin and NM host are
+  # updated to always use get-status flag instead.
   if options.check_running:
     pid = get_daemon_pid()
     return 0 if pid != 0 else 1

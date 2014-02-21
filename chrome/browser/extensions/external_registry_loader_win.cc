@@ -26,11 +26,14 @@ namespace {
 // The Registry subkey that contains information about external extensions.
 const char kRegistryExtensions[] = "Software\\Google\\Chrome\\Extensions";
 
-// Registry value of of that key that defines the path to the .crx file.
+// Registry value of the key that defines the path to the .crx file.
 const wchar_t kRegistryExtensionPath[] = L"path";
 
 // Registry value of that key that defines the current version of the .crx file.
 const wchar_t kRegistryExtensionVersion[] = L"version";
+
+// Registry value of the key that defines an external update URL.
+const wchar_t kRegistryExtensionUpdateUrl[] = L"update_url";
 
 bool CanOpenFileForReading(const base::FilePath& path) {
   ScopedStdioHandle file_handle(base::OpenFile(path, "rb"));
@@ -51,26 +54,26 @@ void ExternalRegistryLoader::StartLoading() {
 void ExternalRegistryLoader::LoadOnFileThread() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::TimeTicks start_time = base::TimeTicks::Now();
-  scoped_ptr<DictionaryValue> prefs(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> prefs(new base::DictionaryValue);
 
   // A map of IDs, to weed out duplicates between HKCU and HKLM.
-  std::set<string16> keys;
+  std::set<base::string16> keys;
   base::win::RegistryKeyIterator iterator_machine_key(
-      HKEY_LOCAL_MACHINE, ASCIIToWide(kRegistryExtensions).c_str());
+      HKEY_LOCAL_MACHINE, base::ASCIIToWide(kRegistryExtensions).c_str());
   for (; iterator_machine_key.Valid(); ++iterator_machine_key)
     keys.insert(iterator_machine_key.Name());
   base::win::RegistryKeyIterator iterator_user_key(
-      HKEY_CURRENT_USER, ASCIIToWide(kRegistryExtensions).c_str());
+      HKEY_CURRENT_USER, base::ASCIIToWide(kRegistryExtensions).c_str());
   for (; iterator_user_key.Valid(); ++iterator_user_key)
     keys.insert(iterator_user_key.Name());
 
   // Iterate over the keys found, first trying HKLM, then HKCU, as per Windows
   // policy conventions. We only fall back to HKCU if the HKLM key cannot be
   // opened, not if the data within the key is invalid, for example.
-  for (std::set<string16>::const_iterator it = keys.begin();
+  for (std::set<base::string16>::const_iterator it = keys.begin();
        it != keys.end(); ++it) {
     base::win::RegKey key;
-    base::string16 key_path = ASCIIToWide(kRegistryExtensions);
+    base::string16 key_path = base::ASCIIToWide(kRegistryExtensions);
     key_path.append(L"\\");
     key_path.append(*it);
     if (key.Open(HKEY_LOCAL_MACHINE,
@@ -81,6 +84,25 @@ void ExternalRegistryLoader::LoadOnFileThread() {
                    << key_path << ".";
         continue;
       }
+    }
+
+    std::string id = WideToASCII(*it);
+    StringToLowerASCII(&id);
+    if (!Extension::IdIsValid(id)) {
+      LOG(ERROR) << "Invalid id value " << id
+                 << " for key " << key_path << ".";
+      continue;
+    }
+
+    // If there is an update URL present, copy it to prefs and ignore
+    // path and version keys for this entry.
+    base::string16 extension_update_url;
+    if (key.ReadValue(kRegistryExtensionUpdateUrl, &extension_update_url)
+        == ERROR_SUCCESS) {
+      prefs->SetString(
+          id + "." + ExternalProviderImpl::kExternalUpdateUrl,
+          WideToASCII(extension_update_url));
+      continue;
     }
 
     base::string16 extension_path_str;
@@ -120,14 +142,6 @@ void ExternalRegistryLoader::LoadOnFileThread() {
         != ERROR_SUCCESS) {
       // TODO(erikkay): find a way to get this into about:extensions
       LOG(ERROR) << "Missing value " << kRegistryExtensionVersion
-                 << " for key " << key_path << ".";
-      continue;
-    }
-
-    std::string id = WideToASCII(*it);
-    StringToLowerASCII(&id);
-    if (!Extension::IdIsValid(id)) {
-      LOG(ERROR) << "Invalid id value " << id
                  << " for key " << key_path << ".";
       continue;
     }

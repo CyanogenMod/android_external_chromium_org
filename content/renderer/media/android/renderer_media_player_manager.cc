@@ -17,14 +17,14 @@
 // are somewhat arbitrary as the EME specification doesn't specify any limits.
 static const size_t kEmeWebSessionIdMaximum = 512;
 static const size_t kEmeMessageMaximum = 10240;  // 10 KB
-static const size_t kEmeDestinationUrlMaximum = 2048;  // 2 KB
 
 namespace content {
 
 RendererMediaPlayerManager::RendererMediaPlayerManager(RenderView* render_view)
     : RenderViewObserver(render_view),
       next_media_player_id_(0),
-      fullscreen_frame_(NULL) {}
+      fullscreen_frame_(NULL),
+      pending_fullscreen_frame_(NULL) {}
 
 RendererMediaPlayerManager::~RendererMediaPlayerManager() {
   std::map<int, WebMediaPlayerAndroid*>::iterator player_it;
@@ -104,6 +104,10 @@ void RendererMediaPlayerManager::Seek(
 
 void RendererMediaPlayerManager::SetVolume(int player_id, double volume) {
   Send(new MediaPlayerHostMsg_SetVolume(routing_id(), player_id, volume));
+}
+
+void RendererMediaPlayerManager::SetPoster(int player_id, const GURL& poster) {
+  Send(new MediaPlayerHostMsg_SetPoster(routing_id(), player_id, poster));
 }
 
 void RendererMediaPlayerManager::ReleaseResources(int player_id) {
@@ -223,11 +227,14 @@ void RendererMediaPlayerManager::OnRequestFullscreen(int player_id) {
     player->OnRequestFullscreen();
 }
 
-void RendererMediaPlayerManager::EnterFullscreen(int player_id) {
+void RendererMediaPlayerManager::EnterFullscreen(int player_id,
+                                                 blink::WebFrame* frame) {
+  pending_fullscreen_frame_ = frame;
   Send(new MediaPlayerHostMsg_EnterFullscreen(routing_id(), player_id));
 }
 
 void RendererMediaPlayerManager::ExitFullscreen(int player_id) {
+  pending_fullscreen_frame_ = NULL;
   Send(new MediaPlayerHostMsg_ExitFullscreen(routing_id(), player_id));
 }
 
@@ -243,7 +250,7 @@ void RendererMediaPlayerManager::InitializeCDM(int media_keys_id,
 void RendererMediaPlayerManager::CreateSession(
     int media_keys_id,
     uint32 session_id,
-    const std::string& type,
+    MediaKeysHostMsg_CreateSession_Type type,
     const std::vector<uint8>& init_data) {
   Send(new MediaKeysHostMsg_CreateSession(
       routing_id(), media_keys_id, session_id, type, init_data));
@@ -261,6 +268,12 @@ void RendererMediaPlayerManager::ReleaseSession(int media_keys_id,
                                                 uint32 session_id) {
   Send(new MediaKeysHostMsg_ReleaseSession(
       routing_id(), media_keys_id, session_id));
+}
+
+void RendererMediaPlayerManager::CancelAllPendingSessionCreations(
+    int media_keys_id) {
+  Send(new MediaKeysHostMsg_CancelAllPendingSessionCreations(
+      routing_id(), media_keys_id));
 }
 
 void RendererMediaPlayerManager::OnSessionCreated(
@@ -282,13 +295,8 @@ void RendererMediaPlayerManager::OnSessionMessage(
     int media_keys_id,
     uint32 session_id,
     const std::vector<uint8>& message,
-    const std::string& destination_url) {
+    const GURL& destination_url) {
   if (message.size() > kEmeMessageMaximum) {
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
-    return;
-  }
-  if (destination_url.length() > kEmeDestinationUrlMaximum) {
     OnSessionError(
         media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
     return;
@@ -296,7 +304,7 @@ void RendererMediaPlayerManager::OnSessionMessage(
 
   ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
   if (media_keys)
-    media_keys->OnSessionMessage(session_id, message, destination_url);
+    media_keys->OnSessionMessage(session_id, message, destination_url.spec());
 }
 
 void RendererMediaPlayerManager::OnSessionReady(int media_keys_id,
@@ -375,10 +383,12 @@ ProxyMediaKeys* RendererMediaPlayerManager::GetMediaKeys(int media_keys_id) {
 }
 
 bool RendererMediaPlayerManager::CanEnterFullscreen(blink::WebFrame* frame) {
-  return !fullscreen_frame_ || IsInFullscreen(frame);
+  return (!fullscreen_frame_ && !pending_fullscreen_frame_)
+      || ShouldEnterFullscreen(frame);
 }
 
 void RendererMediaPlayerManager::DidEnterFullscreen(blink::WebFrame* frame) {
+  pending_fullscreen_frame_ = NULL;
   fullscreen_frame_ = frame;
 }
 
@@ -390,7 +400,11 @@ bool RendererMediaPlayerManager::IsInFullscreen(blink::WebFrame* frame) {
   return fullscreen_frame_ == frame;
 }
 
-#if defined(GOOGLE_TV)
+bool RendererMediaPlayerManager::ShouldEnterFullscreen(blink::WebFrame* frame) {
+  return fullscreen_frame_ == frame || pending_fullscreen_frame_ == frame;
+}
+
+#if defined(VIDEO_HOLE)
 void RendererMediaPlayerManager::RequestExternalSurface(
     int player_id,
     const gfx::RectF& geometry) {
@@ -419,13 +433,11 @@ void RendererMediaPlayerManager::RetrieveGeometryChanges(
     WebMediaPlayerAndroid* player = player_it->second;
 
     if (player && player->hasVideo()) {
-      gfx::RectF rect;
-      if (player->RetrieveGeometryChange(&rect)) {
-        (*changes)[player_it->first] = rect;
-      }
+      if (player->UpdateBoundaryRectangle())
+        (*changes)[player_it->first] = player->GetBoundaryRectangle();
     }
   }
 }
-#endif
+#endif  // defined(VIDEO_HOLE)
 
 }  // namespace content

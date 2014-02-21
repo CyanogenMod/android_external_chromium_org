@@ -3,12 +3,14 @@
 # found in the LICENSE file.
 
 import os
+import posixpath
+
 from compiled_file_system import SingleFile
 from extensions_paths import PUBLIC_TEMPLATES
 
 
 class APICategorizer(object):
-  ''' This class get api' category from documented apis.
+  ''' This class gets api category from documented apis.
   '''
 
   def __init__(self, file_system, compiled_fs_factory):
@@ -18,14 +20,14 @@ class APICategorizer(object):
                                              APICategorizer)
 
   def _GenerateAPICategories(self, platform):
-    return self._cache.GetFromFileListing('%s/%s' % (PUBLIC_TEMPLATES,
-                                                     platform)).Get()
+    return self._cache.GetFromFileListing(
+        posixpath.join(PUBLIC_TEMPLATES, platform) + '/').Get()
+
   @SingleFile
   def _CollectDocumentedAPIs(self, base_dir, files):
     public_templates = []
     for root, _, files in self._file_system.Walk(base_dir):
-      public_templates.extend(
-          ('%s/%s' % (root, name)).lstrip('/') for name in files)
+      public_templates.extend(posixpath.join(root, name) for name in files)
     template_names = set(os.path.splitext(name)[0].replace('_', '.')
                          for name in public_templates)
     return template_names
@@ -42,3 +44,6 @@ class APICategorizer(object):
     if api_name.startswith('experimental.'):
       return 'experimental'
     return 'chrome'
+
+  def IsDocumented(self, platform, api_name):
+    return (api_name in self._GenerateAPICategories(platform))

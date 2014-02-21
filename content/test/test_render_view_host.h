@@ -26,7 +26,7 @@
 //
 // To use, derive your test base class from RenderViewHostImplTestHarness.
 
-struct ViewHostMsg_FrameNavigate_Params;
+struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace gfx {
 class Rect;
@@ -35,11 +35,12 @@ class Rect;
 namespace content {
 
 class SiteInstance;
+class TestRenderFrameHost;
 class TestWebContents;
 
 // Utility function to initialize ViewHostMsg_NavigateParams_Params
 // with given |page_id|, |url| and |transition_type|.
-void InitNavigateParams(ViewHostMsg_FrameNavigate_Params* params,
+void InitNavigateParams(FrameHostMsg_DidCommitProvisionalLoad_Params* params,
                         int page_id,
                         const GURL& url,
                         PageTransition transition_type);
@@ -113,7 +114,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& rects,
-      const ui::LatencyInfo& latency_info) OVERRIDE {}
+      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE {}
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) { }
@@ -126,7 +127,8 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      const SkBitmap::Config config) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -145,16 +147,12 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void AcceleratedSurfaceRelease() OVERRIDE {}
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
 #if defined(OS_MACOSX)
-  virtual void AboutToWaitForBackingStoreMsg() OVERRIDE;
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 #elif defined(OS_ANDROID)
   virtual void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,
       const SkBitmap& zoomed_bitmap) OVERRIDE {}
-  virtual void HasTouchEventHandlers(bool need_touch_events) OVERRIDE {}
-#elif defined(OS_WIN) && !defined(USE_AURA)
-  virtual void WillWmDestroy() OVERRIDE;
 #endif
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE {}
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
@@ -162,15 +160,10 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       bool has_horizontal_scrollbar) OVERRIDE { }
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE { }
-  virtual void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params) OVERRIDE {}
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
-#if defined(OS_WIN) && !defined(USE_AURA)
-  virtual void SetClickthroughRegion(SkRegion* region) OVERRIDE;
-#endif
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) OVERRIDE;
   virtual gfx::NativeViewId GetParentForWindowlessPlugin() const OVERRIDE;
@@ -234,7 +227,6 @@ class TestRenderViewHost
  public:
   TestRenderViewHost(SiteInstance* instance,
                      RenderViewHostDelegate* delegate,
-                     RenderFrameHostDelegate* frame_delegate,
                      RenderWidgetHostDelegate* widget_delegate,
                      int routing_id,
                      int main_frame_routing_id,
@@ -244,15 +236,18 @@ class TestRenderViewHost
   // RenderViewHostTester implementation.  Note that CreateRenderView
   // is not specified since it is synonymous with the one from
   // RenderViewHostImpl, see below.
-  virtual void SendNavigate(int page_id, const GURL& url) OVERRIDE;
-  virtual void SendFailedNavigate(int page_id, const GURL& url) OVERRIDE;
-  virtual void SendNavigateWithTransition(int page_id, const GURL& url,
-                                          PageTransition transition) OVERRIDE;
   virtual void SendShouldCloseACK(bool proceed) OVERRIDE;
   virtual void SetContentsMimeType(const std::string& mime_type) OVERRIDE;
   virtual void SimulateSwapOutACK() OVERRIDE;
   virtual void SimulateWasHidden() OVERRIDE;
   virtual void SimulateWasShown() OVERRIDE;
+
+  // NOTE: These methods are deprecated and the equivalents in
+  // TestRenderFrameHost should be used.
+  virtual void SendNavigate(int page_id, const GURL& url) OVERRIDE;
+  virtual void SendFailedNavigate(int page_id, const GURL& url) OVERRIDE;
+  virtual void SendNavigateWithTransition(int page_id, const GURL& url,
+                                          PageTransition transition) OVERRIDE;
 
   // Calls OnNavigate on the RenderViewHost with the given information,
   // including a custom original request URL.  Sets the rest of the
@@ -263,6 +258,9 @@ class TestRenderViewHost
 
   void SendNavigateWithFile(
       int page_id, const GURL& url, const base::FilePath& file_path);
+
+  void SendNavigateWithParams(
+      FrameHostMsg_DidCommitProvisionalLoad_Params* params);
 
   void TestOnUpdateStateWithFile(
       int process_id, const base::FilePath& file_path);
@@ -287,16 +285,10 @@ class TestRenderViewHost
     return is_waiting_for_beforeunload_ack_;
   }
 
-  // Returns whether the RenderViewHost is currently waiting to hear the result
-  // of an unload handler from the renderer.
-  bool is_waiting_for_unload_ack() const {
-    return is_waiting_for_unload_ack_;
-  }
-
   // Sets whether the RenderViewHost is currently swapped out, and thus
   // filtering messages from the renderer.
-  void set_is_swapped_out(bool is_swapped_out) {
-    is_swapped_out_ = is_swapped_out;
+  void set_rvh_state(RenderViewHostImplState rvh_state) {
+    rvh_state_ = rvh_state;
   }
 
   // If set, navigations will appear to have loaded through a proxy
@@ -305,12 +297,21 @@ class TestRenderViewHost
   void set_simulate_fetch_via_proxy(bool proxy);
 
   // If set, navigations will appear to have cleared the history list in the
-  // RenderView (ViewHostMsg_FrameNavigate_Params::history_list_was_cleared).
+  // RenderView
+  // (FrameHostMsg_DidCommitProvisionalLoad_Params::history_list_was_cleared).
   // False by default.
   void set_simulate_history_list_was_cleared(bool cleared);
 
   // The opener route id passed to CreateRenderView().
   int opener_route_id() const { return opener_route_id_; }
+
+  // TODO(creis): Remove the need for these methods.
+  TestRenderFrameHost* main_render_frame_host() const {
+    return main_render_frame_host_;
+  }
+  void set_main_render_frame_host(TestRenderFrameHost* rfh) {
+    main_render_frame_host_ = rfh;
+  }
 
   // RenderViewHost overrides --------------------------------------------------
 
@@ -356,6 +357,8 @@ class TestRenderViewHost
 
   // See opener_route_id() above.
   int opener_route_id_;
+
+  TestRenderFrameHost* main_render_frame_host_;
 
   DISALLOW_COPY_AND_ASSIGN(TestRenderViewHost);
 };

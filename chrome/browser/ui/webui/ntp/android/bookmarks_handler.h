@@ -6,12 +6,12 @@
 #define CHROME_BROWSER_UI_WEBUI_NTP_ANDROID_BOOKMARKS_HANDLER_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/values.h"
 #include "chrome/browser/android/bookmarks/managed_bookmarks_shim.h"
 #include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 // The handler for Javascript messages related to the bookmarks.
@@ -58,18 +58,19 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   virtual void RegisterMessages() OVERRIDE;
 
   // Callback for the "getBookmarks" message.
-  void HandleGetBookmarks(const ListValue* args);
+  void HandleGetBookmarks(const base::ListValue* args);
   // Callback for the "deleteBookmark" message.
-  void HandleDeleteBookmark(const ListValue* args);
+  void HandleDeleteBookmark(const base::ListValue* args);
   // Callback for the "editBookmark" message.
-  void HandleEditBookmark(const ListValue* args);
+  void HandleEditBookmark(const base::ListValue* args);
   // Callback for the "createHomeScreenBookmarkShortcut" message.  Used when
   // creating a shortcut on the home screen that should open the bookmark
   // specified in |args|.
   void HandleCreateHomeScreenBookmarkShortcut(const base::ListValue* args);
 
   // Override the methods of BookmarkModelObserver
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelChanged() OVERRIDE;
   virtual void ExtensiveBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE;
   virtual void ExtensiveBookmarkChangesEnded(BookmarkModel* model) OVERRIDE;
@@ -108,13 +109,13 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   bool extensive_changes_;
 
   // Used for loading bookmark node.
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   // Returns true iff bookmark model and partner bookmarks shim are loaded.
   bool AreModelsLoaded() const;
 
   // Notify the UI that a change occurred to the bookmark model.
-  void NotifyModelChanged(const DictionaryValue& status);
+  void NotifyModelChanged(const base::DictionaryValue& status);
 
   // Generates the string encoded ID to be used by the NTP.
   std::string GetBookmarkIdForNtp(const BookmarkNode* node);
@@ -122,16 +123,16 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   // Sets the necessary parent information in the response object to be sent
   // to the UI renderer.
   void SetParentInBookmarksResult(const BookmarkNode* parent,
-                                  DictionaryValue* result);
+                                  base::DictionaryValue* result);
 
   // Convert the given bookmark |node| into a dictionary format to be returned
   // to JavaScript.
-  void PopulateBookmark(const BookmarkNode* node, ListValue* result);
+  void PopulateBookmark(const BookmarkNode* node, base::ListValue* result);
 
   // Given a bookmark folder node, |folder|, populate the |result| with the
   // structured JavaScript-formatted data regarding the folder.
   void PopulateBookmarksInFolder(const BookmarkNode* folder,
-                                 DictionaryValue* result);
+                                 base::DictionaryValue* result);
 
   // Sends all bookmarks and sub folders in the given folder back to the NTP.
   void QueryBookmarkFolder(const BookmarkNode* node);
@@ -141,7 +142,7 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   void QueryInitialBookmarks();
 
   // Sends the result back to Javascript
-  void SendResult(const DictionaryValue& result);
+  void SendResult(const base::DictionaryValue& result);
 
   // Called once the favicon is loaded during creation of the bookmark shortcuts
   // and is available for use.

@@ -4,10 +4,11 @@
 
 #include "content/renderer/media/android/stream_texture_factory_android_impl.h"
 
+#include "cc/output/context_provider.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/renderer/gpu/stream_texture_host_android.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "ui/gfx/size.h"
 
 namespace content {
@@ -41,9 +42,7 @@ class StreamTextureProxyImpl : public StreamTextureProxy,
 };
 
 StreamTextureProxyImpl::StreamTextureProxyImpl(StreamTextureHost* host)
-    : host_(host), client_(NULL) {
-  host->SetListener(this);
-}
+    : host_(host), client_(NULL) {}
 
 StreamTextureProxyImpl::~StreamTextureProxyImpl() {}
 
@@ -62,7 +61,7 @@ void StreamTextureProxyImpl::SetClient(cc::VideoFrameProvider::Client* client) {
 
 void StreamTextureProxyImpl::BindToCurrentThread(int stream_id) {
   loop_ = base::MessageLoopProxy::current();
-  host_->Initialize(stream_id);
+  host_->BindToCurrentThread(stream_id, this);
 }
 
 void StreamTextureProxyImpl::OnFrameAvailable() {
@@ -80,11 +79,12 @@ void StreamTextureProxyImpl::OnMatrixChanged(const float matrix[16]) {
 }  // namespace
 
 StreamTextureFactoryImpl::StreamTextureFactoryImpl(
-    blink::WebGraphicsContext3D* context,
+    const scoped_refptr<cc::ContextProvider>& context_provider,
     GpuChannelHost* channel,
     int view_id)
-    : context_(context), channel_(channel), view_id_(view_id) {
-  DCHECK(context_);
+    : context_provider_(context_provider),
+      channel_(channel),
+      view_id_(view_id) {
   DCHECK(channel);
 }
 
@@ -99,7 +99,7 @@ StreamTextureProxy* StreamTextureFactoryImpl::CreateProxy() {
 void StreamTextureFactoryImpl::EstablishPeer(int32 stream_id, int player_id) {
   DCHECK(channel_.get());
   channel_->Send(
-      new GpuChannelMsg_EstablishStreamTexture(stream_id, view_id_, player_id));
+      new GpuStreamTextureMsg_EstablishPeer(stream_id, view_id_, player_id));
 }
 
 unsigned StreamTextureFactoryImpl::CreateStreamTexture(
@@ -107,38 +107,34 @@ unsigned StreamTextureFactoryImpl::CreateStreamTexture(
     unsigned* texture_id,
     gpu::Mailbox* texture_mailbox,
     unsigned* texture_mailbox_sync_point) {
-  unsigned stream_id = 0;
-  if (context_->makeContextCurrent()) {
-    *texture_id = context_->createTexture();
-    stream_id = context_->createStreamTextureCHROMIUM(*texture_id);
+  GLuint stream_id = 0;
+  gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
+  gl->GenTextures(1, texture_id);
 
-    context_->genMailboxCHROMIUM(texture_mailbox->name);
-    context_->bindTexture(texture_target, *texture_id);
-    context_->produceTextureCHROMIUM(texture_target, texture_mailbox->name);
+  stream_id = gl->CreateStreamTextureCHROMIUM(*texture_id);
 
-    context_->flush();
-    *texture_mailbox_sync_point = context_->insertSyncPoint();
-  }
+  gl->GenMailboxCHROMIUM(texture_mailbox->name);
+  gl->BindTexture(texture_target, *texture_id);
+  gl->ProduceTextureCHROMIUM(texture_target, texture_mailbox->name);
+
+  gl->Flush();
+  *texture_mailbox_sync_point = gl->InsertSyncPointCHROMIUM();
   return stream_id;
 }
 
 void StreamTextureFactoryImpl::DestroyStreamTexture(unsigned texture_id) {
-  if (context_->makeContextCurrent()) {
-    // TODO(sievers): Make the destroyStreamTexture implicit when the last
-    // texture referencing it is lost.
-    context_->destroyStreamTextureCHROMIUM(texture_id);
-    context_->deleteTexture(texture_id);
-    context_->flush();
-  }
+  gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
+  gl->DeleteTextures(1, &texture_id);
+  gl->Flush();
 }
 
 void StreamTextureFactoryImpl::SetStreamTextureSize(
     int32 stream_id, const gfx::Size& size) {
-  channel_->Send(new GpuChannelMsg_SetStreamTextureSize(stream_id, size));
+  channel_->Send(new GpuStreamTextureMsg_SetSize(stream_id, size));
 }
 
-blink::WebGraphicsContext3D* StreamTextureFactoryImpl::Context3d() {
-  return context_;
+gpu::gles2::GLES2Interface* StreamTextureFactoryImpl::ContextGL() {
+  return context_provider_->ContextGL();
 }
 
 }  // namespace content

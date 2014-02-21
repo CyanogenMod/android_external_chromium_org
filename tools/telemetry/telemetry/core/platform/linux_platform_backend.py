@@ -7,7 +7,9 @@ import os
 import subprocess
 import sys
 
+from telemetry import decorators
 from telemetry.core import util
+from telemetry.core.platform import platform_backend
 from telemetry.core.platform import posix_platform_backend
 from telemetry.core.platform import proc_supporting_platform_backend
 from telemetry.page import cloud_storage
@@ -34,6 +36,23 @@ class LinuxPlatformBackend(
 
   def GetOSName(self):
     return 'linux'
+
+  @decorators.Cache
+  def GetOSVersionName(self):
+    if not os.path.exists('/etc/lsb-release'):
+      raise NotImplementedError('Unknown Linux OS version')
+
+    codename = None
+    version = None
+    for line in open('/etc/lsb-release', 'r').readlines():
+      key, _, value = line.partition('=')
+      if key == 'DISTRIB_CODENAME':
+        codename = value.strip()
+      elif key == 'DISTRIB_RELEASE':
+        version = float(value)
+      if codename and version:
+        break
+    return platform_backend.OSVersion(codename, version)
 
   def CanFlushIndividualFilesFromSystemCache(self):
     return True
@@ -67,9 +86,9 @@ class LinuxPlatformBackend(
 
     try:
       changed = cloud_storage.GetIfChanged(
-          cloud_storage.INTERNAL_BUCKET, ipfw_bin)
+          ipfw_bin, cloud_storage.INTERNAL_BUCKET)
       changed |= cloud_storage.GetIfChanged(
-          cloud_storage.INTERNAL_BUCKET, ipfw_mod)
+          ipfw_mod, cloud_storage.INTERNAL_BUCKET)
     except cloud_storage.CloudStorageError, e:
       logging.error(e)
       logging.error('You may proceed by manually installing dummynet. See: '
@@ -90,7 +109,7 @@ class LinuxPlatformBackend(
     os.environ['PATH'] += os.pathsep + telemetry_bin_dir
 
     try:
-      cloud_storage.GetIfChanged(cloud_storage.INTERNAL_BUCKET, avconv_bin)
+      cloud_storage.GetIfChanged(avconv_bin, cloud_storage.INTERNAL_BUCKET)
     except cloud_storage.CloudStorageError, e:
       logging.error(e)
       logging.error('You may proceed by manually installing avconv via:\n'

@@ -7,17 +7,17 @@
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/storage_monitor/storage_info.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
-#include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/storage_monitor/storage_info.h"
+#include "components/storage_monitor/storage_monitor.h"
+#include "components/storage_monitor/test_storage_monitor.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "url/gurl.h"
 
@@ -77,7 +77,8 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
                       const std::string& js_command,
                       const std::string& ok_message) {
     ExtensionTestMessageListener listener(ok_message, false  /* no reply */);
-    host->ExecuteJavascriptInWebFrame(string16(), ASCIIToUTF16(js_command));
+    host->ExecuteJavascriptInWebFrame(base::string16(),
+                                      base::ASCIIToUTF16(js_command));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
   }
 
@@ -88,7 +89,7 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
 
   void Attach() {
     DCHECK(StorageMonitor::GetInstance()->IsInitialized());
-    StorageInfo info(device_id_, ASCIIToUTF16(kDeviceName), kDevicePath,
+    StorageInfo info(device_id_, base::ASCIIToUTF16(kDeviceName), kDevicePath,
                      base::string16(), base::string16(), base::string16(), 0);
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(info);
     content::RunAllPendingInMessageLoop();

@@ -26,14 +26,15 @@
 #include "url/gurl.h"
 
 class ExtensionServiceInterface;
-class ExtensionSet;
 class PrefService;
 class Profile;
 
 namespace extensions {
 
+class ExtensionCache;
 class ExtensionDownloader;
 class ExtensionPrefs;
+class ExtensionSet;
 class ExtensionUpdaterTest;
 
 // A class for doing auto-updates of installed Extensions. Used like this:
@@ -77,7 +78,8 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
                    ExtensionPrefs* extension_prefs,
                    PrefService* prefs,
                    Profile* profile,
-                   int frequency_seconds);
+                   int frequency_seconds,
+                   ExtensionCache* cache);
 
   virtual ~ExtensionUpdater();
 
@@ -123,12 +125,14 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
     FetchedCRXFile();
     FetchedCRXFile(const std::string& id,
                    const base::FilePath& path,
+                   bool file_ownership_passed,
                    const GURL& download_url,
                    const std::set<int>& request_ids);
     ~FetchedCRXFile();
 
     std::string extension_id;
     base::FilePath path;
+    bool file_ownership_passed;
     GURL download_url;
     std::set<int> request_ids;
   };
@@ -176,6 +180,7 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   virtual void OnExtensionDownloadFinished(
       const std::string& id,
       const base::FilePath& path,
+      bool file_ownership_passed,
       const GURL& download_url,
       const std::string& version,
       const PingResult& ping,
@@ -245,6 +250,8 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   FetchedCRXFile current_crx_file_;
 
   CheckParams default_params_;
+
+  ExtensionCache* extension_cache_;
 
   // Keeps track of when an extension tried to update itself, so we can throttle
   // checks to prevent too many requests from being made.

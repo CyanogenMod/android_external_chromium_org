@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 
 namespace base {
+class DictionaryValue;
 class FilePath;
 class SequencedTaskRunner;
 }
@@ -22,12 +23,23 @@ class PrefRegistrySyncable;
 }
 
 class ManagedUserSettingsService;
+class PrefHashStore;
 class PrefRegistry;
+class PrefRegistrySimple;
 class PrefService;
 class PrefServiceSyncable;
 class PrefStore;
 
 namespace chrome_prefs {
+
+namespace internals {
+
+extern const char kSettingsEnforcementTrialName[];
+extern const char kSettingsEnforcementGroupNoEnforcement[];
+extern const char kSettingsEnforcementGroupEnforceOnload[];
+extern const char kSettingsEnforcementGroupEnforceAlways[];
+
+}  // namespace internals
 
 // Factory methods that create and initialize a new instance of a
 // PrefService for Chrome with the applicable PrefStores. The
@@ -59,6 +71,32 @@ scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async);
+
+// Schedules verification of the path resolution of the preferences file under
+// |profile_path|.
+void SchedulePrefsFilePathVerification(const base::FilePath& profile_path);
+
+// Call before calling SchedulePrefHashStoresUpdateCheck to cause it to run with
+// zero delay. For testing only.
+void EnableZeroDelayPrefHashStoreUpdateForTesting();
+
+// Shedules an update check for all PrefHashStores, stores whose version doesn't
+// match the latest version will then be updated.
+void SchedulePrefHashStoresUpdateCheck(
+    const base::FilePath& initial_profile_path);
+
+// Resets the contents of the preference hash store for the profile at
+// |profile_path|.
+void ResetPrefHashStore(const base::FilePath& profile_path);
+
+// Initializes the preferences for the profile at |profile_path| with the
+// preference values in |master_prefs|. Returns true on success.
+bool InitializePrefsFromMasterPrefs(
+    const base::FilePath& profile_path,
+    const base::DictionaryValue& master_prefs);
+
+// Register local state prefs used by chrome preference system.
+void RegisterPrefs(PrefRegistrySimple* registry);
 
 }  // namespace chrome_prefs
 

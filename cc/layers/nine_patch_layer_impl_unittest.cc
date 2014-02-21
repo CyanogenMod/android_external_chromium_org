@@ -23,17 +23,17 @@
 namespace cc {
 namespace {
 
-gfx::Rect ToRoundedIntRect(gfx::RectF rect_f) {
+gfx::Rect ToRoundedIntRect(const gfx::RectF& rect_f) {
   return gfx::Rect(gfx::ToRoundedInt(rect_f.x()),
                    gfx::ToRoundedInt(rect_f.y()),
                    gfx::ToRoundedInt(rect_f.width()),
                    gfx::ToRoundedInt(rect_f.height()));
 }
 
-void NinePatchLayerLayoutTest(gfx::Size bitmap_size,
-                              gfx::Rect aperture_rect,
-                              gfx::Size layer_size,
-                              gfx::Rect border,
+void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
+                              const gfx::Rect& aperture_rect,
+                              const gfx::Size& layer_size,
+                              const gfx::Rect& border,
                               bool fill_center,
                               size_t expected_quad_size) {
   MockQuadCuller quad_culler;

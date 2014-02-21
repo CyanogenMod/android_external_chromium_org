@@ -16,13 +16,13 @@
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/views/padded_button.h"
-#include "ui/views/context_menu_controller.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
-#include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/controls/scroll_view.h"
+#include "ui/views/focus/focus_manager.h"
 #include "ui/views/painter.h"
 #include "ui/views/shadow_border.h"
-#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -32,145 +32,48 @@ const int kCloseIconRightPadding = 5;
 const int kShadowOffset = 1;
 const int kShadowBlur = 4;
 
-// Menu constants
-const int kTogglePermissionCommand = 0;
-const int kShowSettingsCommand = 1;
-
-// A dropdown menu for notifications.
-class MenuModel : public ui::SimpleMenuModel,
-                  public ui::SimpleMenuModel::Delegate {
- public:
-  MenuModel(message_center::MessageView* message_view,
-            const string16& display_source);
-  virtual ~MenuModel();
-
-  // Overridden from ui::SimpleMenuModel::Delegate:
-  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
-
- private:
-  message_center::MessageView* message_view_;  // Weak, owns us.
-  DISALLOW_COPY_AND_ASSIGN(MenuModel);
-};
-
-MenuModel::MenuModel(message_center::MessageView* message_view,
-                     const string16& display_source)
-    : ui::SimpleMenuModel(this),
-      message_view_(message_view) {
-  // Add 'disable notifications' menu item.
-  if (!display_source.empty()) {
-    AddItem(kTogglePermissionCommand,
-            l10n_util::GetStringFUTF16(IDS_MESSAGE_CENTER_NOTIFIER_DISABLE,
-                                       display_source));
-  }
-  // Add settings menu item.
-  AddItem(kShowSettingsCommand,
-          l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_SETTINGS));
-}
-
-MenuModel::~MenuModel() {
-}
-
-bool MenuModel::IsItemForCommandIdDynamic(int command_id) const {
-  return false;
-}
-
-bool MenuModel::IsCommandIdChecked(int command_id) const {
-  return false;
-}
-
-bool MenuModel::IsCommandIdEnabled(int command_id) const {
-  return true;
-}
-
-bool MenuModel::GetAcceleratorForCommandId(int command_id,
-                                           ui::Accelerator* accelerator) {
-  return false;
-}
-
-void MenuModel::ExecuteCommand(int command_id, int event_flags) {
-  switch (command_id) {
-    case kTogglePermissionCommand:
-      message_view_->DisableNotificationsFromThisSource();
-      break;
-    case kShowSettingsCommand:
-        message_view_->ShowNotifierSettingsBubble();
-      break;
-    default:
-      NOTREACHED();
-  }
-}
-
 }  // namespace
 
 namespace message_center {
 
-class MessageViewContextMenuController : public views::ContextMenuController {
- public:
-  MessageViewContextMenuController(MessageView* message_view,
-                                   const string16& display_source);
-  virtual ~MessageViewContextMenuController();
-
- protected:
-  // Overridden from views::ContextMenuController:
-  virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& point,
-                                      ui::MenuSourceType source_type) OVERRIDE;
-
-  MessageView* message_view_;  // Weak, owns us.
-  string16 display_source_;
-};
-
-MessageViewContextMenuController::MessageViewContextMenuController(
-    MessageView* message_view,
-    const string16& display_source)
-    : message_view_(message_view),
+MessageView::MessageView(MessageViewController* controller,
+                         const std::string& notification_id,
+                         const NotifierId& notifier_id,
+                         const gfx::ImageSkia& small_image,
+                         const base::string16& display_source)
+    : controller_(controller),
+      notification_id_(notification_id),
+      notifier_id_(notifier_id),
+      background_view_(NULL),
+      scroller_(NULL),
       display_source_(display_source) {
-}
+  SetFocusable(true);
 
-MessageViewContextMenuController::~MessageViewContextMenuController() {
-}
+  // Create the opaque background that's above the view's shadow.
+  background_view_ = new views::View();
+  background_view_->set_background(
+      views::Background::CreateSolidBackground(kNotificationBackgroundColor));
+  AddChildView(background_view_);
 
-void MessageViewContextMenuController::ShowContextMenuForView(
-    views::View* source,
-    const gfx::Point& point,
-    ui::MenuSourceType source_type) {
-  MenuModel menu_model(message_view_, display_source_);
-  if (menu_model.GetItemCount() == 0)
-    return;
-
-  views::MenuRunner menu_runner(&menu_model);
-
-  ignore_result(menu_runner.RunMenuAt(
-      source->GetWidget()->GetTopLevelWidget(),
-      NULL,
-      gfx::Rect(point, gfx::Size()),
-      views::MenuItemView::TOPRIGHT,
-      source_type,
-      views::MenuRunner::HAS_MNEMONICS));
-}
-
-MessageView::MessageView(const string16& display_source)
-    : context_menu_controller_(
-        new MessageViewContextMenuController(this, display_source)),
-      scroller_(NULL) {
-  set_focusable(true);
-  set_context_menu_controller(context_menu_controller_.get());
+  views::ImageView* small_image_view = new views::ImageView();
+  small_image_view->SetImage(small_image);
+  small_image_view->SetImageSize(gfx::Size(kSmallImageSize, kSmallImageSize));
+  // The small image view should be added to view hierarchy by the derived
+  // class. This ensures that it is on top of other views.
+  small_image_view->set_owned_by_client();
+  small_image_view_.reset(small_image_view);
 
   PaddedButton *close = new PaddedButton(this);
   close->SetPadding(-kCloseIconRightPadding, kCloseIconTopPadding);
   close->SetNormalImage(IDR_NOTIFICATION_CLOSE);
   close->SetHoveredImage(IDR_NOTIFICATION_CLOSE_HOVER);
   close->SetPressedImage(IDR_NOTIFICATION_CLOSE_PRESSED);
-  close->set_owned_by_client();
   close->set_animate_on_state_change(false);
   close->SetAccessibleName(l10n_util::GetStringUTF16(
       IDS_MESSAGE_CENTER_CLOSE_NOTIFICATION_BUTTON_ACCESSIBLE_NAME));
+  // The close button should be added to view hierarchy by the derived class.
+  // This ensures that it is on top of other views.
+  close->set_owned_by_client();
   close_button_.reset(close);
 
   focus_painter_ = views::Painter::CreateSolidFocusPainter(
@@ -190,10 +93,11 @@ gfx::Insets MessageView::GetShadowInsets() {
 }
 
 void MessageView::CreateShadowBorder() {
-  set_border(new views::ShadowBorder(kShadowBlur,
-                                     message_center::kShadowColor,
-                                     kShadowOffset,  // Vertical offset.
-                                     0));            // Horizontal offset.
+  SetBorder(scoped_ptr<views::Border>(
+      new views::ShadowBorder(kShadowBlur,
+                              message_center::kShadowColor,
+                              kShadowOffset,  // Vertical offset.
+                              0)));           // Horizontal offset.
 }
 
 bool MessageView::IsCloseButtonFocused() {
@@ -214,7 +118,7 @@ bool MessageView::OnMousePressed(const ui::MouseEvent& event) {
   if (!event.IsOnlyLeftMouseButton())
     return false;
 
-  ClickOnNotification();
+  controller_->ClickOnNotification(notification_id_);
   return true;
 }
 
@@ -223,11 +127,11 @@ bool MessageView::OnKeyPressed(const ui::KeyEvent& event) {
     return false;
 
   if (event.key_code() == ui::VKEY_RETURN) {
-    ClickOnNotification();
+    controller_->ClickOnNotification(notification_id_);
     return true;
   } else if ((event.key_code() == ui::VKEY_DELETE ||
               event.key_code() == ui::VKEY_BACK)) {
-    RemoveNotification(true);  // By user.
+    controller_->RemoveNotification(notification_id_, true);  // By user.
     return true;
   }
 
@@ -240,11 +144,13 @@ bool MessageView::OnKeyReleased(const ui::KeyEvent& event) {
   if (event.flags() != ui::EF_NONE || event.flags() != ui::VKEY_SPACE)
     return false;
 
-  ClickOnNotification();
+  controller_->ClickOnNotification(notification_id_);
   return true;
 }
 
 void MessageView::OnPaint(gfx::Canvas* canvas) {
+  DCHECK_EQ(this, close_button_->parent());
+  DCHECK_EQ(this, small_image_view_->parent());
   SlideOutView::OnPaint(canvas);
   views::Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
@@ -261,9 +167,32 @@ void MessageView::OnBlur() {
   SchedulePaint();
 }
 
+void MessageView::Layout() {
+  gfx::Rect content_bounds = GetContentsBounds();
+
+  // Background.
+  background_view_->SetBoundsRect(content_bounds);
+
+  // Close button.
+  gfx::Size close_size(close_button_->GetPreferredSize());
+  gfx::Rect close_rect(content_bounds.right() - close_size.width(),
+                       content_bounds.y(),
+                       close_size.width(),
+                       close_size.height());
+  close_button_->SetBoundsRect(close_rect);
+
+  gfx::Size small_image_size(small_image_view_->GetPreferredSize());
+  gfx::Rect small_image_rect(small_image_size);
+  small_image_rect.set_origin(gfx::Point(
+      content_bounds.right() - small_image_size.width() - kSmallImagePadding,
+      content_bounds.bottom() - small_image_size.height() -
+          kSmallImagePadding));
+  small_image_view_->SetBoundsRect(small_image_rect);
+}
+
 void MessageView::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_GESTURE_TAP) {
-    ClickOnNotification();
+    controller_->ClickOnNotification(notification_id_);
     event->SetHandled();
     return;
   }
@@ -284,12 +213,12 @@ void MessageView::OnGestureEvent(ui::GestureEvent* event) {
 void MessageView::ButtonPressed(views::Button* sender,
                                 const ui::Event& event) {
   if (sender == close_button()) {
-    RemoveNotification(true);  // By user.
+    controller_->RemoveNotification(notification_id_, true);  // By user.
   }
 }
 
 void MessageView::OnSlideOut() {
-  RemoveNotification(true);  // By user.
+  controller_->RemoveNotification(notification_id_, true);  // By user.
 }
 
 }  // namespace message_center

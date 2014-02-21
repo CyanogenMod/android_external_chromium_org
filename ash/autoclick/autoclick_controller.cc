@@ -122,7 +122,8 @@ void AutoclickControllerImpl::InitClickTimer() {
 }
 
 void AutoclickControllerImpl::OnMouseEvent(ui::MouseEvent* event) {
-  if (event->type() == ui::ET_MOUSE_MOVED) {
+  if (event->type() == ui::ET_MOUSE_MOVED &&
+      !(event->flags() & ui::EF_IS_SYNTHESIZED)) {
     mouse_event_flags_ = event->flags();
 
     gfx::Point mouse_location = event->root_location();
@@ -186,19 +187,25 @@ void AutoclickControllerImpl::DoAutoclick() {
   wm::ConvertPointFromScreen(root_window, &click_location);
 
   aura::WindowEventDispatcher* dispatcher = root_window->GetDispatcher();
-  dispatcher->ConvertPointToHost(&click_location);
+  dispatcher->host()->ConvertPointToHost(&click_location);
 
   ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED,
                              click_location,
                              click_location,
-                             mouse_event_flags_ | ui::EF_LEFT_MOUSE_BUTTON);
+                             mouse_event_flags_ | ui::EF_LEFT_MOUSE_BUTTON,
+                             ui::EF_LEFT_MOUSE_BUTTON);
   ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED,
                                click_location,
                                click_location,
-                               mouse_event_flags_ | ui::EF_LEFT_MOUSE_BUTTON);
+                               mouse_event_flags_ | ui::EF_LEFT_MOUSE_BUTTON,
+                               ui::EF_LEFT_MOUSE_BUTTON);
 
-  dispatcher->AsRootWindowHostDelegate()->OnHostMouseEvent(&press_event);
-  dispatcher->AsRootWindowHostDelegate()->OnHostMouseEvent(&release_event);
+  ui::EventDispatchDetails details =
+      dispatcher->OnEventFromSource(&press_event);
+  if (!details.dispatcher_destroyed)
+    details = dispatcher->OnEventFromSource(&release_event);
+  if (details.dispatcher_destroyed)
+    return;
 }
 
 // static.

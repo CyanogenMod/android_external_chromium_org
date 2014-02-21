@@ -110,26 +110,30 @@ class FakeSchedulerClient : public SchedulerClient {
     states_.push_back(scheduler_->StateAsValue().release());
     num_draws_++;
     bool did_readback = false;
+    DrawSwapReadbackResult::DrawResult result =
+        draw_will_happen_
+            ? DrawSwapReadbackResult::DRAW_SUCCESS
+            : DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
     return DrawSwapReadbackResult(
-        draw_will_happen_,
+        result,
         draw_will_happen_ && swap_will_happen_if_draw_happens_,
         did_readback);
   }
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE {
     actions_.push_back("ScheduledActionDrawAndSwapForced");
     states_.push_back(scheduler_->StateAsValue().release());
-    bool did_draw = true;
     bool did_swap = swap_will_happen_if_draw_happens_;
     bool did_readback = false;
-    return DrawSwapReadbackResult(did_draw, did_swap, did_readback);
+    return DrawSwapReadbackResult(
+        DrawSwapReadbackResult::DRAW_SUCCESS, did_swap, did_readback);
   }
   virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() OVERRIDE {
     actions_.push_back("ScheduledActionDrawAndReadback");
     states_.push_back(scheduler_->StateAsValue().release());
-    bool did_draw = true;
     bool did_swap = false;
     bool did_readback = true;
-    return DrawSwapReadbackResult(did_draw, did_swap, did_readback);
+    return DrawSwapReadbackResult(
+        DrawSwapReadbackResult::DRAW_SUCCESS, did_swap, did_readback);
   }
   virtual void ScheduledActionCommit() OVERRIDE {
     actions_.push_back("ScheduledActionCommit");
@@ -689,10 +693,10 @@ class SchedulerClientThatsetNeedsDrawInsideDraw : public FakeSchedulerClient {
 
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE {
     NOTREACHED();
-    bool did_draw = true;
     bool did_swap = true;
     bool did_readback = false;
-    return DrawSwapReadbackResult(did_draw, did_swap, did_readback);
+    return DrawSwapReadbackResult(
+        DrawSwapReadbackResult::DRAW_SUCCESS, did_swap, did_readback);
   }
 
   virtual void ScheduledActionCommit() OVERRIDE {}
@@ -805,10 +809,10 @@ class SchedulerClientThatSetNeedsCommitInsideDraw : public FakeSchedulerClient {
 
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE {
     NOTREACHED();
-    bool did_draw = true;
     bool did_swap = false;
     bool did_readback = false;
-    return DrawSwapReadbackResult(did_draw, did_swap, did_readback);
+    return DrawSwapReadbackResult(
+        DrawSwapReadbackResult::DRAW_SUCCESS, did_swap, did_readback);
   }
 
   virtual void ScheduledActionCommit() OVERRIDE {}
@@ -1094,7 +1098,7 @@ TEST(SchedulerTest, ManageTiles) {
 }
 
 // Test that ManageTiles only happens once per frame.  If an external caller
-// initiates it, then the state machine should not on that frame.
+// initiates it, then the state machine should not ManageTiles on that frame.
 TEST(SchedulerTest, ManageTilesOncePerFrame) {
   FakeSchedulerClient client;
   SchedulerSettings default_scheduler_settings;
@@ -1112,7 +1116,7 @@ TEST(SchedulerTest, ManageTilesOncePerFrame) {
   EXPECT_SINGLE_ACTION("PostBeginImplFrameDeadlineTask", client);
 
   EXPECT_TRUE(scheduler->ManageTilesPending());
-  scheduler->DidManageTiles();
+  scheduler->DidManageTiles();  // An explicit ManageTiles.
   EXPECT_FALSE(scheduler->ManageTilesPending());
 
   client.Reset();
@@ -1139,6 +1143,63 @@ TEST(SchedulerTest, ManageTilesOncePerFrame) {
             client.ActionIndex("ScheduledActionManageTiles"));
   EXPECT_FALSE(scheduler->RedrawPending());
   EXPECT_FALSE(scheduler->ManageTilesPending());
+  scheduler->DidManageTiles();  // Corresponds to ScheduledActionManageTiles
+
+  // If we get another DidManageTiles within the same frame, we should
+  // not ManageTiles on the next frame.
+  scheduler->DidManageTiles();  // An explicit ManageTiles.
+  scheduler->SetNeedsManageTiles();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+  scheduler->BeginImplFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("PostBeginImplFrameDeadlineTask", client);
+
+  EXPECT_TRUE(scheduler->ManageTilesPending());
+
+  client.Reset();
+  scheduler->OnBeginImplFrameDeadline();
+  EXPECT_EQ(1, client.num_draws());
+  EXPECT_TRUE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  EXPECT_FALSE(client.HasAction("ScheduledActionManageTiles"));
+  EXPECT_FALSE(scheduler->RedrawPending());
+
+  // If we get another DidManageTiles, we should not ManageTiles on the next
+  // frame. This verifies we don't alternate calling ManageTiles once and twice.
+  EXPECT_TRUE(scheduler->ManageTilesPending());
+  scheduler->DidManageTiles();  // An explicit ManageTiles.
+  EXPECT_FALSE(scheduler->ManageTilesPending());
+  scheduler->SetNeedsManageTiles();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+  scheduler->BeginImplFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("PostBeginImplFrameDeadlineTask", client);
+
+  EXPECT_TRUE(scheduler->ManageTilesPending());
+
+  client.Reset();
+  scheduler->OnBeginImplFrameDeadline();
+  EXPECT_EQ(1, client.num_draws());
+  EXPECT_TRUE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  EXPECT_FALSE(client.HasAction("ScheduledActionManageTiles"));
+  EXPECT_FALSE(scheduler->RedrawPending());
+
+  // Next frame without DidManageTiles should ManageTiles with draw.
+  scheduler->SetNeedsManageTiles();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+  scheduler->BeginImplFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("PostBeginImplFrameDeadlineTask", client);
+
+  client.Reset();
+  scheduler->OnBeginImplFrameDeadline();
+  EXPECT_EQ(1, client.num_draws());
+  EXPECT_TRUE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  EXPECT_TRUE(client.HasAction("ScheduledActionManageTiles"));
+  EXPECT_LT(client.ActionIndex("ScheduledActionDrawAndSwapIfPossible"),
+            client.ActionIndex("ScheduledActionManageTiles"));
+  EXPECT_FALSE(scheduler->RedrawPending());
+  EXPECT_FALSE(scheduler->ManageTilesPending());
+  scheduler->DidManageTiles();  // Corresponds to ScheduledActionManageTiles
 }
 
 class SchedulerClientWithFixedEstimates : public FakeSchedulerClient {

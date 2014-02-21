@@ -11,6 +11,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -42,6 +43,7 @@ class MockObserver : public SigninTracker::Observer {
 
   MOCK_METHOD1(SigninFailed, void(const GoogleServiceAuthError&));
   MOCK_METHOD0(SigninSuccess, void(void));
+  MOCK_METHOD1(MergeSessionComplete, void(const GoogleServiceAuthError&));
 };
 
 }  // namespace
@@ -52,7 +54,7 @@ class SigninTrackerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     TestingProfile::Builder builder;
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenService::Build);
+                              FakeProfileOAuth2TokenServiceWrapper::Build);
 
     profile_ = builder.Build();
 
@@ -60,10 +62,9 @@ class SigninTrackerTest : public testing::Test {
         static_cast<FakeProfileOAuth2TokenService*>(
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get()));
 
-    mock_signin_manager_ = static_cast<FakeSigninManagerBase*>(
+    mock_signin_manager_ = static_cast<FakeSigninManagerForTesting*>(
         SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
             profile_.get(), FakeSigninManagerBase::Build));
-    mock_signin_manager_->Initialize(profile_.get(), NULL);
 
     tracker_.reset(new SigninTracker(profile_.get(), &observer_));
   }
@@ -75,7 +76,7 @@ class SigninTrackerTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<SigninTracker> tracker_;
   scoped_ptr<TestingProfile> profile_;
-  FakeSigninManagerBase* mock_signin_manager_;
+  FakeSigninManagerForTesting* mock_signin_manager_;
   FakeProfileOAuth2TokenService* fake_oauth2_token_service_;
   MockObserver observer_;
 };

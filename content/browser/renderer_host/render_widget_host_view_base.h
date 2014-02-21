@@ -64,16 +64,18 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual void OnSetNeedsFlushInput() OVERRIDE;
   virtual void OnDidFlushInput() OVERRIDE;
-  virtual void GestureEventAck(int gesture_event_type,
+  virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void SetPopupType(blink::WebPopupType popup_type) OVERRIDE;
   virtual blink::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const OVERRIDE;
+  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       OVERRIDE;
+  virtual void FocusedNodeChanged(bool is_editable_node) OVERRIDE;
   virtual bool CanSubscribeFrame() const OVERRIDE;
   virtual void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
@@ -84,6 +86,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE {}
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) OVERRIDE;
+  virtual void DidStopFlinging() OVERRIDE {}
   virtual uint32 RendererFrameNumber() OVERRIDE;
   virtual void DidReceiveRendererFrame() OVERRIDE;
 
@@ -152,6 +155,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 protected:
   // The scale factor of the display the renderer is currently on.
   float current_device_scale_factor_;
+
+  // Whether pinch-to-zoom should be enabled and pinch events forwarded to the
+  // renderer.
+  bool pinch_zoom_enabled_;
 
  private:
   void FlushInput();

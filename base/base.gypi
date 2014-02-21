@@ -6,6 +6,7 @@
   'target_defaults': {
     'variables': {
       'base_target': 0,
+      'base_i18n_target': 0,
     },
     'target_conditions': [
       # This part is shared between the targets defined below.
@@ -60,6 +61,8 @@
           'android/jni_registrar.h',
           'android/jni_string.cc',
           'android/jni_string.h',
+          'android/library_loader/library_loader_hooks.cc',
+          'android/library_loader/library_loader_hooks.h',
           'android/memory_pressure_listener_android.cc',
           'android/memory_pressure_listener_android.h',
           'android/java_handler_thread.cc',
@@ -71,6 +74,8 @@
           'android/sys_utils.cc',
           'android/sys_utils.h',
           'android/thread_utils.h',
+          'android/trace_event_binding.cc',
+          'android/trace_event_binding.h',
           'at_exit.cc',
           'at_exit.h',
           'atomic_ref_count.h',
@@ -137,6 +142,10 @@
           'debug/debugger.h',
           'debug/debugger_posix.cc',
           'debug/debugger_win.cc',
+          'debug/dump_without_crashing.cc',
+          'debug/dump_without_crashing.h',
+          'debug/gdi_debug_util_win.cc',
+          'debug/gdi_debug_util_win.h',        
           # This file depends on files from the 'allocator' target,
           # but this target does not depend on 'allocator' (see
           # allocator.gyp for details).
@@ -149,7 +158,6 @@
           'debug/stack_trace.cc',
           'debug/stack_trace.h',
           'debug/stack_trace_android.cc',
-          'debug/stack_trace_ios.mm',
           'debug/stack_trace_posix.cc',
           'debug/stack_trace_win.cc',
           'debug/trace_event.h',
@@ -157,6 +165,8 @@
           'debug/trace_event_impl.cc',
           'debug/trace_event_impl.h',
           'debug/trace_event_impl_constants.cc',
+          'debug/trace_event_synthetic_delay.cc',
+          'debug/trace_event_synthetic_delay.h',
           'debug/trace_event_system_stats_monitor.cc',
           'debug/trace_event_memory.cc',
           'debug/trace_event_memory.h',
@@ -288,17 +298,28 @@
           'mac/scoped_nsobject.h',
           'mac/scoped_sending_event.h',
           'mac/scoped_sending_event.mm',
+          'mac/scoped_typeref.h',
           'mac/sdk_forward_declarations.h',
+          'macros.h',
+          'md5.cc',
+          'md5.h',
           'memory/aligned_memory.cc',
           'memory/aligned_memory.h',
+          'memory/discardable_memory.cc',
           'memory/discardable_memory.h',
-          'memory/discardable_memory_allocator_android.h',
           'memory/discardable_memory_allocator_android.cc',
+          'memory/discardable_memory_allocator_android.h',
           'memory/discardable_memory_android.cc',
+          'memory/discardable_memory_android.h',
           'memory/discardable_memory_emulated.cc',
+          'memory/discardable_memory_emulated.h',
+          'memory/discardable_memory_linux.cc',
           'memory/discardable_memory_mac.cc',
+          'memory/discardable_memory_malloc.cc',
+          'memory/discardable_memory_malloc.h',
           'memory/discardable_memory_provider.cc',
           'memory/discardable_memory_provider.h',
+          'memory/discardable_memory_win.cc',
           'memory/linked_ptr.h',
           'memory/manual_constructor.h',
           'memory/memory_pressure_listener.cc',
@@ -366,6 +387,9 @@
           'metrics/stats_counters.h',
           'metrics/stats_table.cc',
           'metrics/stats_table.h',
+          'metrics/user_metrics.cc',
+          'metrics/user_metrics.h',
+          'metrics/user_metrics_action.h',
           'move.h',
           'native_library.h',
           'native_library_mac.mm',
@@ -470,7 +494,8 @@
           'rand_util_win.cc',
           'run_loop.cc',
           'run_loop.h',
-          'safe_numerics.h',
+          'numerics/safe_conversions.h',
+          'numerics/safe_conversions_impl.h',
           'safe_strerror_posix.cc',
           'safe_strerror_posix.h',
           'scoped_native_library.cc',
@@ -553,6 +578,8 @@
           'sys_info_openbsd.cc',
           'sys_info_posix.cc',
           'sys_info_win.cc',
+          'task/cancelable_task_tracker.cc',
+          'task/cancelable_task_tracker.h',
           'task_runner.cc',
           'task_runner.h',
           'task_runner_util.h',
@@ -585,6 +612,7 @@
           'threading/thread_id_name_manager.h',
           'threading/thread_local.h',
           'threading/thread_local_posix.cc',
+          'threading/thread_local_storage.cc',
           'threading/thread_local_storage.h',
           'threading/thread_local_storage_posix.cc',
           'threading/thread_local_storage_win.cc',
@@ -674,8 +702,6 @@
           'win/shortcut.h',
           'win/startup_information.cc',
           'win/startup_information.h',
-          'win/text_services_message_filter.cc',
-          'win/text_services_message_filter.h',
           'win/win_util.cc',
           'win/win_util.h',
           'win/windows_version.cc',
@@ -692,12 +718,6 @@
               'x11/edid_parser_x11.cc',
               'x11/edid_parser_x11.h',
             ],
-          }],
-          ['google_tv==1', {
-           'sources': [
-             'android/context_types.cc',
-             'android/context_types.h',
-           ],
           }],
         ],
         'defines': [
@@ -765,8 +785,6 @@
                'third_party/dynamic_annotations/dynamic_annotations.c',
             ],
             'sources/': [
-              # Metrics won't work in the NaCl sandbox.
-              ['exclude', '^metrics/'],
               ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
           }],
@@ -849,11 +867,6 @@
               ['exclude', '(^|/)ios/'],
             ]
           }],
-          ['OS != "mac" or >(nacl_untrusted_build)==1', {
-              'sources!': [
-                'mac/scoped_aedesc.h'
-              ],
-          }],
           # For now, just test the *BSD platforms enough to exclude them.
           # Subsequent changes will include them further.
           ['OS != "freebsd" or >(nacl_untrusted_build)==1', {
@@ -862,22 +875,6 @@
           ],
           ['OS != "openbsd" or >(nacl_untrusted_build)==1', {
               'sources/': [ ['exclude', '_openbsd\\.cc$'] ],
-            },
-          ],
-          ['OS != "win" or >(nacl_untrusted_build)==1', {
-              'sources/': [ ['exclude', '^win/'] ],
-            },
-          ],
-          ['<(native_discardable_memory)==1', {
-              'sources!': [
-                'memory/discardable_memory_emulated.cc',
-                'memory/discardable_memory_provider.cc',
-                'memory/discardable_memory_provider.h',
-              ],
-            },
-          ],
-          ['OS != "android" or >(nacl_untrusted_build)==1', {
-              'sources/': [ ['exclude', '^android/'] ],
             },
           ],
           ['OS == "win" and >(nacl_untrusted_build)==0', {
@@ -928,20 +925,10 @@
               ['exclude', '^sys_info_linux\\.cc$'],
             ],
           }],
-          ['<(chromeos)!=1 or >(nacl_untrusted_build)==1', {
-            'sources/': [
-              ['exclude', '^chromeos/'],
-            ],
-          }],
           # Remove all unnecessary files for build_nexe.py to avoid exceeding
           # command-line-string limitation when building NaCl on Windows.
           ['OS == "win" and >(nacl_untrusted_build)==1', {
               'sources/': [ ['exclude', '\\.h$'] ],
-          }],
-          ['<(use_system_nspr)==1 and >(nacl_untrusted_build)==0', {
-            'sources/': [
-              ['exclude', '^third_party/nspr/'],
-            ],
           }],
           ['<(toolkit_uses_gtk) == 1', {
             'sources!': [
@@ -950,6 +937,48 @@
           }],
         ],
       }],
+      ['base_i18n_target==1', {
+        'defines': [
+          'BASE_I18N_IMPLEMENTATION',
+        ],
+        'sources': [
+          'i18n/base_i18n_export.h',
+          'i18n/bidi_line_iterator.cc',
+          'i18n/bidi_line_iterator.h',
+          'i18n/break_iterator.cc',
+          'i18n/break_iterator.h',
+          'i18n/case_conversion.cc',
+          'i18n/case_conversion.h',
+          'i18n/char_iterator.cc',
+          'i18n/char_iterator.h',
+          'i18n/file_util_icu.cc',
+          'i18n/file_util_icu.h',
+          'i18n/i18n_constants.cc',
+          'i18n/i18n_constants.h',
+          'i18n/icu_encoding_detection.cc',
+          'i18n/icu_encoding_detection.h',
+          'i18n/icu_string_conversions.cc',
+          'i18n/icu_string_conversions.h',
+          'i18n/icu_util.cc',
+          'i18n/icu_util.h',
+          'i18n/number_formatting.cc',
+          'i18n/number_formatting.h',
+          'i18n/rtl.cc',
+          'i18n/rtl.h',
+          'i18n/streaming_utf8_validator.cc',
+          'i18n/streaming_utf8_validator.h',
+          'i18n/string_compare.cc',
+          'i18n/string_compare.h',
+          'i18n/string_search.cc',
+          'i18n/string_search.h',
+          'i18n/time_formatting.cc',
+          'i18n/time_formatting.h',
+          'i18n/timezone.cc',
+          'i18n/timezone.h',
+          'i18n/utf8_validator_tables.cc',
+          'i18n/utf8_validator_tables.h',
+        ],
+      }]
     ],
   },
 }

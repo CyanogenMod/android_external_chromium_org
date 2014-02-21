@@ -5,6 +5,9 @@
 #ifndef EXTENSIONS_BROWSER_EXTENSIONS_BROWSER_CLIENT_H_
 #define EXTENSIONS_BROWSER_EXTENSIONS_BROWSER_CLIENT_H_
 
+#include <string>
+#include <vector>
+
 #include "base/memory/scoped_ptr.h"
 
 class CommandLine;
@@ -12,11 +15,18 @@ class PrefService;
 
 namespace content {
 class BrowserContext;
+class JavaScriptDialogManager;
+class WebContents;
 }
 
 namespace extensions {
 
+class ApiActivityMonitor;
 class AppSorting;
+class Extension;
+class ExtensionHost;
+class ExtensionSystem;
+class ExtensionSystemProvider;
 
 // Interface to allow the extensions module to make browser-process-specific
 // queries of the embedder. Should be Set() once in the browser process.
@@ -54,10 +64,24 @@ class ExtensionsBrowserClient {
   virtual content::BrowserContext* GetOffTheRecordContext(
       content::BrowserContext* context) = 0;
 
-  // Return the original "recording" context. This method returns |context| if
+  // Returns the original "recording" context. This method returns |context| if
   // |context| is not incognito.
   virtual content::BrowserContext* GetOriginalContext(
       content::BrowserContext* context) = 0;
+
+  // Returns true if |context| corresponds to a guest session.
+  virtual bool IsGuestSession(content::BrowserContext* context) = 0;
+
+  // Returns true if |extension_id| can run in an incognito window.
+  virtual bool IsExtensionIncognitoEnabled(
+      const std::string& extension_id,
+      content::BrowserContext* context) const = 0;
+
+  // Returns true if |extension| can see events and data from another
+  // sub-profile (incognito to original profile, or vice versa).
+  virtual bool CanExtensionCrossIncognito(
+      const extensions::Extension* extension,
+      content::BrowserContext* context) const = 0;
 
   // Returns the PrefService associated with |context|.
   virtual PrefService* GetPrefServiceForContext(
@@ -66,6 +90,16 @@ class ExtensionsBrowserClient {
   // Returns true if loading background pages should be deferred.
   virtual bool DeferLoadingBackgroundHosts(
       content::BrowserContext* context) const = 0;
+
+  virtual bool IsBackgroundPageAllowed(
+      content::BrowserContext* context) const = 0;
+
+  // Called after the hosting |web_contents| for an extension is created. The
+  // implementation may wish to add preference observers to |web_contents|.
+  virtual void OnExtensionHostCreated(content::WebContents* web_contents) = 0;
+
+  // Called after |host| creates a RenderView for an extension.
+  virtual void OnRenderViewCreatedForBackgroundPage(ExtensionHost* host) = 0;
 
   // Returns true if the client version has updated since the last run. Called
   // once each time the extensions system is loaded per browser_context. The
@@ -78,6 +112,19 @@ class ExtensionsBrowserClient {
 
   // Return true if the system is run in forced app mode.
   virtual bool IsRunningInForcedAppMode() = 0;
+
+  // Returns the embedder's JavaScriptDialogManager or NULL if the embedder
+  // does not support JavaScript dialogs.
+  virtual content::JavaScriptDialogManager* GetJavaScriptDialogManager() = 0;
+
+  // Returns the embedder's ApiActivityMonitor for |context|. Returns NULL if
+  // the embedder does not monitor extension API activity.
+  virtual ApiActivityMonitor* GetApiActivityMonitor(
+      content::BrowserContext* context) = 0;
+
+  // Returns the factory that provides an ExtensionSystem to be returned from
+  // ExtensionSystem::Get.
+  virtual ExtensionSystemProvider* GetExtensionSystemFactory() = 0;
 
   // Returns the single instance of |this|.
   static ExtensionsBrowserClient* Get();

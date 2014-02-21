@@ -7,7 +7,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
-#include "content/common/input/input_event.h"
 #include "content/common/input_messages.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event.h"
@@ -42,29 +41,35 @@ SyntheticGestureTargetBase::~SyntheticGestureTargetBase() {
 }
 
 void SyntheticGestureTargetBase::DispatchInputEventToPlatform(
-    const InputEvent& event) {
-  const WebInputEvent* web_event = event.web_event.get();
-  if (WebInputEvent::isTouchEventType(web_event->type)) {
+    const WebInputEvent& event) {
+  TRACE_EVENT1("benchmark",
+               "SyntheticGestureTarget::DispatchInputEventToPlatform",
+               "type", WebInputEventTraits::GetName(event.type));
+
+  ui::LatencyInfo latency_info;
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+
+  if (WebInputEvent::isTouchEventType(event.type)) {
     DCHECK(SupportsSyntheticGestureSourceType(
             SyntheticGestureParams::TOUCH_INPUT));
 
-    const WebTouchEvent* web_touch =
-        static_cast<const WebTouchEvent*>(web_event);
-    DispatchWebTouchEventToPlatform(*web_touch, event.latency_info);
-  } else if (web_event->type == WebInputEvent::MouseWheel) {
+    const WebTouchEvent& web_touch =
+        static_cast<const WebTouchEvent&>(event);
+    DispatchWebTouchEventToPlatform(web_touch, latency_info);
+  } else if (event.type == WebInputEvent::MouseWheel) {
     DCHECK(SupportsSyntheticGestureSourceType(
             SyntheticGestureParams::MOUSE_INPUT));
 
-    const WebMouseWheelEvent* web_wheel =
-        static_cast<const WebMouseWheelEvent*>(web_event);
-    DispatchWebMouseWheelEventToPlatform(*web_wheel, event.latency_info);
-  } else if (WebInputEvent::isMouseEventType(web_event->type)) {
+    const WebMouseWheelEvent& web_wheel =
+        static_cast<const WebMouseWheelEvent&>(event);
+    DispatchWebMouseWheelEventToPlatform(web_wheel, latency_info);
+  } else if (WebInputEvent::isMouseEventType(event.type)) {
     DCHECK(SupportsSyntheticGestureSourceType(
             SyntheticGestureParams::MOUSE_INPUT));
 
-    const WebMouseEvent* web_mouse =
-        static_cast<const WebMouseEvent*>(web_event);
-    DispatchWebMouseEventToPlatform(*web_mouse, event.latency_info);
+    const WebMouseEvent& web_mouse =
+        static_cast<const WebMouseEvent&>(event);
+    DispatchWebMouseEventToPlatform(web_mouse, latency_info);
   } else {
     NOTREACHED();
   }
@@ -79,15 +84,13 @@ void SyntheticGestureTargetBase::DispatchWebTouchEventToPlatform(
 void SyntheticGestureTargetBase::DispatchWebMouseWheelEventToPlatform(
       const blink::WebMouseWheelEvent& web_wheel,
       const ui::LatencyInfo& latency_info) {
-  host_->ForwardWheelEventWithLatencyInfo(
-      MouseWheelEventWithLatencyInfo(web_wheel, latency_info));
+  host_->ForwardWheelEventWithLatencyInfo(web_wheel, latency_info);
 }
 
 void SyntheticGestureTargetBase::DispatchWebMouseEventToPlatform(
       const blink::WebMouseEvent& web_mouse,
       const ui::LatencyInfo& latency_info) {
-  host_->ForwardMouseEventWithLatencyInfo(
-      MouseEventWithLatencyInfo(web_mouse, latency_info));
+  host_->ForwardMouseEventWithLatencyInfo(web_mouse, latency_info);
 }
 
 void SyntheticGestureTargetBase::OnSyntheticGestureCompleted(

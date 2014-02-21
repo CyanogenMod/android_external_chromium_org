@@ -2,16 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/basictypes.h"
 #include "base/strings/string_number_conversions.h"
 #include "crypto/secure_hash.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/crypto/quic_random.h"
+#include "net/quic/quic_socket_address_coder.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/delayed_verify_strike_register_client.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
+#include "net/quic/test_tools/quic_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::StringPiece;
@@ -20,13 +23,25 @@ using std::string;
 namespace net {
 namespace test {
 
+class QuicCryptoServerConfigPeer {
+ public:
+  explicit QuicCryptoServerConfigPeer(QuicCryptoServerConfig* server_config)
+      : server_config_(server_config) {}
+
+  base::Lock* GetStrikeRegisterClientLock() {
+    return &server_config_->strike_register_client_lock_;
+  }
+
+ private:
+  QuicCryptoServerConfig* server_config_;
+};
+
 class CryptoServerTest : public ::testing::Test {
  public:
   CryptoServerTest()
       : rand_(QuicRandom::GetInstance()),
-        config_(QuicCryptoServerConfig::TESTING, rand_),
-        addr_(ParseIPLiteralToNumber("192.0.2.33", &ip_) ?
-              ip_ : IPAddressNumber(), 1) {
+        client_address_(Loopback4(), 1234),
+        config_(QuicCryptoServerConfig::TESTING, rand_) {
     config_.SetProofSource(CryptoTestUtils::ProofSourceForTesting());
     supported_versions_ = QuicSupportedVersions();
   }
@@ -91,6 +106,15 @@ class CryptoServerTest : public ::testing::Test {
 
     virtual void RunImpl(const CryptoHandshakeMessage& client_hello,
                          const Result& result) OVERRIDE {
+      {
+        // Ensure that the strike register client lock is not held.
+        QuicCryptoServerConfigPeer peer(&test_->config_);
+        base::Lock* m = peer.GetStrikeRegisterClientLock();
+        // In Chromium, we will dead lock if the lock is held by the current
+        // thread. Chromium doesn't have AssertNotHeld API call.
+        // m->AssertNotHeld();
+        base::AutoLock lock(*m);
+      }
       ASSERT_FALSE(*called_);
       test_->ProcessValidationResult(
           client_hello, result, should_succeed_, error_substr_);
@@ -104,17 +128,33 @@ class CryptoServerTest : public ::testing::Test {
     bool* called_;
   };
 
+  void CheckServerHello(const CryptoHandshakeMessage& server_hello) {
+    const QuicTag* versions;
+    size_t num_versions;
+    server_hello.GetTaglist(kVER, &versions, &num_versions);
+    ASSERT_EQ(QuicSupportedVersions().size(), num_versions);
+    for (size_t i = 0; i < num_versions; ++i) {
+      EXPECT_EQ(QuicVersionToQuicTag(QuicSupportedVersions()[i]), versions[i]);
+    }
+
+    StringPiece address;
+    ASSERT_TRUE(server_hello.GetStringPiece(kCADR, &address));
+    QuicSocketAddressCoder decoder;
+    ASSERT_TRUE(decoder.Decode(address.data(), address.size()));
+    EXPECT_EQ(client_address_.address(), decoder.ip());
+    EXPECT_EQ(client_address_.port(), decoder.port());
+  }
+
   void ShouldSucceed(const CryptoHandshakeMessage& message) {
     bool called = false;
-    ShouldSucceed(message, &called);
+    RunValidate(message, new ValidateCallback(this, true, "", &called));
     EXPECT_TRUE(called);
   }
 
-  void ShouldSucceed(const CryptoHandshakeMessage& message,
-                     bool* called) {
-    config_.ValidateClientHello(
-        message, addr_, &clock_,
-        new ValidateCallback(this, true, "", called));
+  void RunValidate(
+      const CryptoHandshakeMessage& message,
+      ValidateClientHelloResultCallback* cb) {
+    config_.ValidateClientHello(message, client_address_, &clock_, cb);
   }
 
   void ShouldFailMentioning(const char* error_substr,
@@ -128,7 +168,7 @@ class CryptoServerTest : public ::testing::Test {
                             const CryptoHandshakeMessage& message,
                             bool* called) {
     config_.ValidateClientHello(
-        message, addr_, &clock_,
+        message, client_address_, &clock_,
         new ValidateCallback(this, false, error_substr, called));
   }
 
@@ -138,7 +178,7 @@ class CryptoServerTest : public ::testing::Test {
                                const char* error_substr) {
     string error_details;
     QuicErrorCode error = config_.ProcessClientHello(
-        result, 1 /* GUID */, addr_,
+        result, 1 /* GUID */, client_address_,
         supported_versions_.front(), supported_versions_, &clock_, rand_,
         &params_, &out_, &error_details);
 
@@ -179,13 +219,12 @@ class CryptoServerTest : public ::testing::Test {
  protected:
   QuicRandom* const rand_;
   MockClock clock_;
+  const IPEndPoint client_address_;
   QuicVersionVector supported_versions_;
   QuicCryptoServerConfig config_;
   QuicCryptoServerConfig::ConfigOptions config_options_;
   QuicCryptoNegotiatedParameters params_;
   CryptoHandshakeMessage out_;
-  IPAddressNumber ip_;
-  IPEndPoint addr_;
   uint8 orbit_[kOrbitSize];
 
   // These strings contain hex escaped values from the server suitable for
@@ -312,17 +351,12 @@ TEST_F(CryptoServerTest, ReplayProtection) {
   ShouldSucceed(msg);
   // The message should be accepted now.
   ASSERT_EQ(kSHLO, out_.tag());
+  CheckServerHello(out_);
 
   ShouldSucceed(msg);
   // The message should accepted twice when replay protection is off.
   ASSERT_EQ(kSHLO, out_.tag());
-  const QuicTag* versions;
-  size_t num_versions;
-  out_.GetTaglist(kVER, &versions, &num_versions);
-  ASSERT_EQ(QuicSupportedVersions().size(), num_versions);
-  for (size_t i = 0; i < num_versions; ++i) {
-    EXPECT_EQ(QuicVersionToQuicTag(QuicSupportedVersions()[i]), versions[i]);
-  }
+  CheckServerHello(out_);
 }
 
 TEST(CryptoServerConfigGenerationTest, Determinism) {
@@ -447,7 +481,7 @@ TEST_F(AsyncStrikeServerVerificationTest, AsyncReplayProtection) {
   out_.set_tag(0);
 
   bool called = false;
-  ShouldSucceed(msg, &called);
+  RunValidate(msg, new ValidateCallback(this, true, "", &called));
   // The verification request was queued.
   ASSERT_FALSE(called);
   EXPECT_EQ(0u, out_.tag());
@@ -461,7 +495,7 @@ TEST_F(AsyncStrikeServerVerificationTest, AsyncReplayProtection) {
   EXPECT_EQ(kSHLO, out_.tag());
 
   // Rejected if replayed.
-  ShouldSucceed(msg, &called);
+  RunValidate(msg, new ValidateCallback(this, true, "", &called));
   // The verification request was queued.
   ASSERT_FALSE(called);
   EXPECT_EQ(1, strike_register_client_->PendingVerifications());

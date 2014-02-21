@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
 using bookmarks_helper::AddURL;
@@ -26,6 +26,6 @@ class CrossPlatformSyncTest : public SyncTest {
 IN_PROC_BROWSER_TEST_F(CrossPlatformSyncTest, DISABLED_AddBookmark) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
   ASSERT_TRUE(AddURL(0, L"Google", GURL("http://www.google.co.uk")));
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Added a bookmark."));
+  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
   ASSERT_TRUE(ModelMatchesVerifier(0));
 }

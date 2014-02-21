@@ -7,7 +7,9 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
+#include "base/location.h"
 #include "base/strings/string_number_conversions.h"
+#include "chromeos/cert_loader.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
@@ -21,6 +23,7 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/shill_property_util.h"
+#include "chromeos/tpm_token_loader.h"
 #include "dbus/object_path.h"
 #include "net/cert/x509_certificate.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -67,11 +70,16 @@ bool VPNRequiresCredentials(const std::string& service_path,
     NET_LOG_EVENT("OpenVPN Is Configured", service_path);
   } else {
     bool passphrase_required = false;
-    std::string passphrase;
     provider_properties.GetBooleanWithoutPathExpansion(
         shill::kL2tpIpsecPskRequiredProperty, &passphrase_required);
     if (passphrase_required) {
       NET_LOG_EVENT("VPN: PSK Required", service_path);
+      return true;
+    }
+    provider_properties.GetBooleanWithoutPathExpansion(
+        shill::kPassphraseRequiredProperty, &passphrase_required);
+    if (passphrase_required) {
+      NET_LOG_EVENT("VPN: Passphrase Required", service_path);
       return true;
     }
     NET_LOG_EVENT("VPN Is Configured", service_path);
@@ -160,14 +168,16 @@ void NetworkConnectionHandler::Init(
     LoginState::Get()->AddObserver(this);
     logged_in_ = LoginState::Get()->IsUserLoggedIn();
   }
+
   if (CertLoader::IsInitialized()) {
     cert_loader_ = CertLoader::Get();
     cert_loader_->AddObserver(this);
     certificates_loaded_ = cert_loader_->certificates_loaded();
   } else {
-    // TODO(stevenjb): Require a mock or stub cert_loader in tests.
+    // TODO(tbarzic): Require a mock or stub cert_loader in tests.
     certificates_loaded_ = true;
   }
+
   if (network_state_handler) {
     network_state_handler_ = network_state_handler;
     network_state_handler_->AddObserver(this, FROM_HERE);
@@ -190,9 +200,15 @@ void NetworkConnectionHandler::OnCertificatesLoaded(
   if (queued_connect_) {
     NET_LOG_EVENT("Connecting to Queued Network",
                   queued_connect_->service_path);
-    ConnectToNetwork(queued_connect_->service_path,
-                     queued_connect_->success_callback,
-                     queued_connect_->error_callback,
+
+    // Make a copy of |queued_connect_| parameters, because |queued_connect_|
+    // will get reset at the beginning of |ConnectToNetwork|.
+    std::string service_path = queued_connect_->service_path;
+    base::Closure success_callback = queued_connect_->success_callback;
+    network_handler::ErrorCallback error_callback =
+        queued_connect_->error_callback;
+
+    ConnectToNetwork(service_path, success_callback, error_callback,
                      false /* check_error_state */);
   } else if (initial_load) {
     // Once certificates have loaded, connect to the "best" available network.
@@ -363,7 +379,7 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
   // Get VPN provider type and host (required for configuration) and ensure
   // that required VPN non-cert properties are set.
   const base::DictionaryValue* provider_properties = NULL;
-  std::string vpn_provider_type, vpn_provider_host;
+  std::string vpn_provider_type, vpn_provider_host, vpn_client_cert_id;
   if (type == shill::kTypeVPN) {
     // VPN Provider values are read from the "Provider" dictionary, not the
     // "Provider.Type", etc keys (which are used only to set the values).
@@ -373,6 +389,8 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
           shill::kTypeProperty, &vpn_provider_type);
       provider_properties->GetStringWithoutPathExpansion(
           shill::kHostProperty, &vpn_provider_host);
+      provider_properties->GetStringWithoutPathExpansion(
+          shill::kL2tpIpsecClientCertIdProperty, &vpn_client_cert_id);
     }
     if (vpn_provider_type.empty() || vpn_provider_host.empty()) {
       ErrorCallbackForPendingRequest(service_path, kErrorConfigurationRequired);
@@ -380,12 +398,26 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
     }
   }
 
+  scoped_ptr<NetworkUIData> ui_data =
+      shill_property_util::GetUIDataFromProperties(service_properties);
+
   client_cert::ConfigType client_cert_type = client_cert::CONFIG_TYPE_NONE;
   if (type == shill::kTypeVPN) {
-    if (vpn_provider_type == shill::kProviderOpenVpn)
+    if (vpn_provider_type == shill::kProviderOpenVpn) {
       client_cert_type = client_cert::CONFIG_TYPE_OPENVPN;
-    else
-      client_cert_type = client_cert::CONFIG_TYPE_IPSEC;
+    } else {
+      // L2TP/IPSec only requires a certificate if one is specified in ONC
+      // or one was configured by the UI. Otherwise it is L2TP/IPSec with
+      // PSK and doesn't require a certificate.
+      //
+      // TODO(benchan): Modify shill to specify the authentication type via
+      // the kL2tpIpsecAuthenticationType property, so that Chrome doesn't need
+      // to deduce the authentication type based on the
+      // kL2tpIpsecClientCertIdProperty here (and also in VPNConfigView).
+      if (!vpn_client_cert_id.empty() ||
+          (ui_data && ui_data->certificate_type() != CLIENT_CERT_TYPE_NONE))
+        client_cert_type = client_cert::CONFIG_TYPE_IPSEC;
+    }
   } else if (type == shill::kTypeWifi && security == shill::kSecurity8021x) {
     client_cert_type = client_cert::CONFIG_TYPE_EAP;
   }
@@ -399,8 +431,6 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
     // Check certificate properties in kUIDataProperty if configured.
     // Note: Wifi/VPNConfigView set these properties explicitly, in which case
     //   only the TPM must be configured.
-    scoped_ptr<NetworkUIData> ui_data =
-        shill_property_util::GetUIDataFromProperties(service_properties);
     if (ui_data && ui_data->certificate_type() == CLIENT_CERT_TYPE_PATTERN) {
       // User must be logged in to connect to a network requiring a certificate.
       if (!logged_in_ || !cert_loader_) {
@@ -410,6 +440,7 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
 
       // If certificates have not been loaded yet, queue the connect request.
       if (!certificates_loaded_) {
+        NET_LOG_EVENT("Certificates not loaded", "");
         ConnectRequest* request = GetPendingRequest(service_path);
         if (!request) {
           NET_LOG_ERROR("No pending request to queue", service_path);
@@ -444,8 +475,8 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
       // previously configured client cert.
       client_cert::SetShillProperties(
           client_cert_type,
-          base::IntToString(cert_loader_->tpm_token_slot_id()),
-          cert_loader_->tpm_user_pin(),
+          base::IntToString(cert_loader_->TPMTokenSlotID()),
+          TPMTokenLoader::Get()->tpm_user_pin(),
           pkcs11_id.empty() ? NULL : &pkcs11_id,
           &config_properties);
     }
@@ -459,6 +490,13 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
             service_path, vpn_provider_type, *provider_properties)) {
       NET_LOG_USER("VPN Requires Credentials", service_path);
       ErrorCallbackForPendingRequest(service_path, kErrorConfigurationRequired);
+      return;
+    }
+
+    // If it's L2TP/IPsec PSK, there is no properties to configure, so proceed
+    // to connect.
+    if (client_cert_type == client_cert::CONFIG_TYPE_NONE) {
+      CallShillConnect(service_path);
       return;
     }
   }
@@ -625,7 +663,8 @@ std::string NetworkConnectionHandler::CertificateIsConfigured(
     return std::string();
   // Find the matching certificate.
   scoped_refptr<net::X509Certificate> matching_cert =
-      client_cert::GetCertificateMatch(ui_data->certificate_pattern());
+      client_cert::GetCertificateMatch(ui_data->certificate_pattern(),
+                                       cert_loader_->cert_list());
   if (!matching_cert.get())
     return std::string();
   return CertLoader::GetPkcs11IdForCert(*matching_cert.get());

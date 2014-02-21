@@ -60,7 +60,7 @@ void OutdatedUpgradeBubbleView::ShowBubble(views::View* anchor_view,
   views::BubbleDelegateView::CreateBubble(upgrade_bubble_);
   upgrade_bubble_->StartFade(true);
   content::RecordAction(
-      content::UserMetricsAction("OutdatedUpgradeBubble.Show"));
+      base::UserMetricsAction("OutdatedUpgradeBubble.Show"));
 }
 
 bool OutdatedUpgradeBubbleView::IsAvailable() {
@@ -96,17 +96,17 @@ void OutdatedUpgradeBubbleView::Init() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   reinstall_button_ = new views::LabelButton(
       this, l10n_util::GetStringFUTF16(IDS_REINSTALL_APP, product_name));
-  reinstall_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  reinstall_button_->SetStyle(views::Button::STYLE_BUTTON);
   reinstall_button_->SetIsDefault(true);
-  reinstall_button_->SetFont(rb.GetFont(ui::ResourceBundle::BoldFont));
+  reinstall_button_->SetFontList(rb.GetFontList(ui::ResourceBundle::BoldFont));
 
   later_button_ = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_LATER));
-  later_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  later_button_->SetStyle(views::Button::STYLE_BUTTON);
 
   views::Label* title_label = new views::Label(
       l10n_util::GetStringFUTF16(IDS_UPGRADE_BUBBLE_TITLE, product_name));
-  title_label->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  title_label->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   views::Label* text_label = new views::Label(
@@ -192,7 +192,7 @@ void OutdatedUpgradeBubbleView::HandleButtonPressed(views::Button* sender) {
         "OutdatedUpgradeBubble.NumLaterPerReinstall", num_ignored_bubbles_,
         0, kMaxIgnored, kNumIgnoredBuckets);
     content::RecordAction(
-        content::UserMetricsAction("OutdatedUpgradeBubble.Reinstall"));
+        base::UserMetricsAction("OutdatedUpgradeBubble.Reinstall"));
     navigator_->OpenURL(content::OpenURLParams(GURL(kDownloadChromeUrl),
                                                content::Referrer(),
                                                NEW_FOREGROUND_TAB,
@@ -201,7 +201,7 @@ void OutdatedUpgradeBubbleView::HandleButtonPressed(views::Button* sender) {
   } else {
     DCHECK_EQ(later_button_, sender);
     content::RecordAction(
-        content::UserMetricsAction("OutdatedUpgradeBubble.Later"));
+        base::UserMetricsAction("OutdatedUpgradeBubble.Later"));
   }
   StartFade(false);
 }

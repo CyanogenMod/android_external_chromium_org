@@ -43,7 +43,7 @@ TextInputTestHelper::~TextInputTestHelper() {
   GetInputMethod()->RemoveObserver(this);
 }
 
-string16 TextInputTestHelper::GetSurroundingText() const {
+base::string16 TextInputTestHelper::GetSurroundingText() const {
   return surrounding_text_;
 }
 
@@ -76,6 +76,9 @@ void TextInputTestHelper::OnTextInputTypeChanged(
   latest_text_input_type_ = client->GetTextInputType();
   if (waiting_type_ == WAIT_ON_TEXT_INPUT_TYPE_CHANGED)
     base::MessageLoop::current()->Quit();
+}
+
+void TextInputTestHelper::OnShowImeIfNeeded() {
 }
 
 void TextInputTestHelper::OnInputMethodDestroyed(

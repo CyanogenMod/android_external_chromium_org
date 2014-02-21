@@ -6,12 +6,14 @@
 #define CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_REGISTRY_H_
 
 #include <map>
+#include <set>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
+#include "content/common/service_worker/service_worker_status_code.h"
 
 class GURL;
 
@@ -39,33 +41,52 @@ class CONTENT_EXPORT EmbeddedWorkerRegistry
   // Creates and removes a new worker instance entry for bookkeeping.
   // This doesn't actually start or stop the worker.
   scoped_ptr<EmbeddedWorkerInstance> CreateWorker();
-  void RemoveWorker(int embedded_worker_id);
 
   // Called from EmbeddedWorkerInstance, relayed to the child process.
-  bool StartWorker(int process_id,
-                   int embedded_worker_id,
-                   int64 service_worker_version_id,
-                   const GURL& script_url);
-  bool StopWorker(int process_id,
-                  int embedded_worker_id);
+  ServiceWorkerStatusCode StartWorker(int process_id,
+                                      int embedded_worker_id,
+                                      int64 service_worker_version_id,
+                                      const GURL& script_url);
+  ServiceWorkerStatusCode StopWorker(int process_id,
+                                     int embedded_worker_id);
+
+  // Called back from EmbeddedWorker in the child process, relayed via
+  // ServiceWorkerDispatcherHost.
+  void OnWorkerStarted(int process_id, int thread_id, int embedded_worker_id);
+  void OnWorkerStopped(int process_id, int embedded_worker_id);
+  void OnSendMessageToBrowser(int embedded_worker_id,
+                              int request_id,
+                              const IPC::Message& message);
 
   // Keeps a map from process_id to sender information.
   void AddChildProcessSender(int process_id, IPC::Sender* sender);
   void RemoveChildProcessSender(int process_id);
 
+  // Returns an embedded worker instance for given |embedded_worker_id|.
+  EmbeddedWorkerInstance* GetWorker(int embedded_worker_id);
+
  private:
   friend class base::RefCounted<EmbeddedWorkerRegistry>;
-
-  ~EmbeddedWorkerRegistry();
-  bool Send(int process_id, IPC::Message* message);
+  friend class EmbeddedWorkerInstance;
 
   typedef std::map<int, EmbeddedWorkerInstance*> WorkerInstanceMap;
   typedef std::map<int, IPC::Sender*> ProcessToSenderMap;
+
+  ~EmbeddedWorkerRegistry();
+  ServiceWorkerStatusCode Send(int process_id, IPC::Message* message);
+
+  // RemoveWorker is called when EmbeddedWorkerInstance is destructed.
+  // |process_id| could be invalid (i.e. -1) if it's not running.
+  void RemoveWorker(int process_id, int embedded_worker_id);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
 
   WorkerInstanceMap worker_map_;
   ProcessToSenderMap process_sender_map_;
+
+  // Map from process_id to embedded_worker_id.
+  // This map only contains running workers.
+  std::map<int, std::set<int> > worker_process_map_;
 
   int next_embedded_worker_id_;
 

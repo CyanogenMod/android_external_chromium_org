@@ -134,6 +134,9 @@ void RecordDownloadInterrupted(DownloadInterruptReason reason,
                                int64 received,
                                int64 total);
 
+// Record that a download has been classified as malicious.
+void RecordMaliciousDownloadClassified(DownloadDangerType danger_type);
+
 // Record a dangerous download accept event.
 void RecordDangerousDownloadAccept(
     DownloadDangerType danger_type,
@@ -217,6 +220,19 @@ enum SavePackageEvent {
 };
 
 void RecordSavePackageEvent(SavePackageEvent event);
+
+enum OriginStateOnResumption {
+  ORIGIN_STATE_ON_RESUMPTION_ADDITIONAL_REDIRECTS = 1<<0,
+  ORIGIN_STATE_ON_RESUMPTION_VALIDATORS_CHANGED = 1<<1,
+  ORIGIN_STATE_ON_RESUMPTION_CONTENT_DISPOSITION_CHANGED = 1<<2,
+  ORIGIN_STATE_ON_RESUMPTION_MAX = 1<<3
+};
+
+// Record the state of the origin information across a download resumption
+// request. |state| is a combination of values from OriginStateOnResumption
+// enum.
+void RecordOriginStateOnResumption(bool is_partial,
+                                   int state);
 
 }  // namespace content
 

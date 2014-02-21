@@ -52,7 +52,8 @@ class ServiceWatcher {
     UPDATE_ADDED,
     UPDATE_CHANGED,
     UPDATE_REMOVED,
-    UPDATE_INVALIDATED
+    UPDATE_INVALIDATED,
+    UPDATE_TYPE_LAST = UPDATE_INVALIDATED
   };
 
   // Called when a service has been added or removed for a certain service name.
@@ -67,6 +68,8 @@ class ServiceWatcher {
   // Probe for services of this type.
   virtual void DiscoverNewServices(bool force_update) = 0;
 
+  virtual void SetActivelyRefreshServices(bool actively_refresh_services) = 0;
+
   virtual std::string GetServiceType() const = 0;
 };
 
@@ -77,7 +80,8 @@ class ServiceResolver {
   enum RequestStatus {
     STATUS_SUCCESS,
     STATUS_REQUEST_TIMEOUT,
-    STATUS_KNOWN_NONEXISTENT
+    STATUS_KNOWN_NONEXISTENT,
+    REQUEST_STATUS_LAST = STATUS_KNOWN_NONEXISTENT
   };
 
   // A callback called once the service has been resolved.

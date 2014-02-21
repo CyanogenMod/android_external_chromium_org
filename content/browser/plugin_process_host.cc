@@ -56,6 +56,7 @@
 #include "base/win/windows_version.h"
 #include "content/common/plugin_constants_win.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
+#include "ui/gfx/switches.h"
 #endif
 
 namespace content {
@@ -195,6 +196,9 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 #endif
     switches::kEnableStatsTable,
     switches::kFullMemoryCrashReport,
+#if defined(OS_WIN)
+    switches::kHighDPISupport,
+#endif
     switches::kLoggingLevel,
     switches::kLogPluginMessages,
     switches::kNoSandbox,
@@ -226,7 +230,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 #if defined(OS_POSIX)
   base::EnvironmentMap env;
 #if defined(OS_MACOSX) && !defined(__LP64__)
-  if (!browser_command_line.HasSwitch(switches::kDisableCarbonInterposing)) {
+  if (browser_command_line.HasSwitch(switches::kEnableCarbonInterposing)) {
     std::string interpose_list = GetContentClient()->GetCarbonInterposePath();
     if (!interpose_list.empty()) {
       // Add our interposing library for Carbon. This is stripped back out in
@@ -245,6 +249,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
   process_->Launch(
 #if defined(OS_WIN)
       new PluginSandboxedProcessLauncherDelegate,
+      false,
 #elif defined(OS_POSIX)
       false,
       env,

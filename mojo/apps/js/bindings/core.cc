@@ -22,14 +22,14 @@ namespace js {
 namespace {
 
 gin::Dictionary CreateMessagePipe(const gin::Arguments& args) {
-  MojoHandle handle_0 = MOJO_HANDLE_INVALID;
-  MojoHandle handle_1 = MOJO_HANDLE_INVALID;
-  MojoResult result = MojoCreateMessagePipe(&handle_0, &handle_1);
+  MojoHandle handle0 = MOJO_HANDLE_INVALID;
+  MojoHandle handle1 = MOJO_HANDLE_INVALID;
+  MojoResult result = MojoCreateMessagePipe(&handle0, &handle1);
   CHECK(result == MOJO_RESULT_OK);
 
   gin::Dictionary dictionary = gin::Dictionary::CreateEmpty(args.isolate());
-  dictionary.Set("handle0", handle_0);
-  dictionary.Set("handle1", handle_1);
+  dictionary.Set("handle0", handle0);
+  dictionary.Set("handle1", handle1);
   return dictionary;
 }
 
@@ -88,7 +88,7 @@ gin::WrapperInfo g_wrapper_info = { gin::kEmbedderNativeGin };
 
 const char Core::kModuleName[] = "mojo/apps/js/bindings/core";
 
-v8::Local<v8::ObjectTemplate> Core::GetTemplate(v8::Isolate* isolate) {
+v8::Local<v8::Value> Core::GetModule(v8::Isolate* isolate) {
   gin::PerIsolateData* data = gin::PerIsolateData::From(isolate);
   v8::Local<v8::ObjectTemplate> templ = data->GetObjectTemplate(
       &g_wrapper_info);
@@ -123,6 +123,8 @@ v8::Local<v8::ObjectTemplate> Core::GetTemplate(v8::Isolate* isolate) {
         .SetValue("RESULT_INTERNAL", MOJO_RESULT_INTERNAL)
         .SetValue("RESULT_UNAVAILABLE", MOJO_RESULT_UNAVAILABLE)
         .SetValue("RESULT_DATA_LOSS", MOJO_RESULT_DATA_LOSS)
+        .SetValue("RESULT_BUSY", MOJO_RESULT_BUSY)
+        .SetValue("RESULT_SHOULD_WAIT", MOJO_RESULT_SHOULD_WAIT)
 
         .SetValue("DEADLINE_INDEFINITE", MOJO_DEADLINE_INDEFINITE)
 
@@ -141,7 +143,7 @@ v8::Local<v8::ObjectTemplate> Core::GetTemplate(v8::Isolate* isolate) {
     data->SetObjectTemplate(&g_wrapper_info, templ);
   }
 
-  return templ;
+  return templ->NewInstance();
 }
 
 }  // namespace js

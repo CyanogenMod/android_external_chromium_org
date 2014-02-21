@@ -31,8 +31,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/aura/remote_root_window_host_win.h"
-#include "ui/surface/accelerated_surface_win.h"
+#include "ui/aura/remote_window_tree_host_win.h"
 #include "url/gurl.h"
 
 namespace {
@@ -55,7 +54,7 @@ void CloseOpenAshBrowsers() {
 
 void OpenURL(const GURL& url) {
   chrome::NavigateParams params(
-      ProfileManager::GetDefaultProfileOrOffTheRecord(),
+      ProfileManager::GetActiveUserProfile(),
       GURL(url),
       content::PAGE_TRANSITION_TYPED);
   params.disposition = NEW_FOREGROUND_TAB;
@@ -75,13 +74,13 @@ ChromeMetroViewerProcessHost::ChromeMetroViewerProcessHost()
 void ChromeMetroViewerProcessHost::OnChannelError() {
   // TODO(cpu): At some point we only close the browser. Right now this
   // is very convenient for developing.
-  DLOG(INFO) << "viewer channel error : Quitting browser";
+  DVLOG(1) << "viewer channel error : Quitting browser";
 
   // Unset environment variable to let breakpad know that metro process wasn't
   // connected.
   ::SetEnvironmentVariableA(env_vars::kMetroConnected, NULL);
 
-  aura::RemoteRootWindowHostWin::Instance()->Disconnected();
+  aura::RemoteWindowTreeHostWin::Instance()->Disconnected();
   g_browser_process->ReleaseModule();
 
   // If browser is trying to quit, we shouldn't reenter the process.
@@ -103,13 +102,13 @@ void ChromeMetroViewerProcessHost::OnChannelError() {
 }
 
 void ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
-  DLOG(INFO) << "ChromeMetroViewerProcessHost::OnChannelConnected: ";
+  DVLOG(1) << "ChromeMetroViewerProcessHost::OnChannelConnected: ";
   // Set environment variable to let breakpad know that metro process was
   // connected.
   ::SetEnvironmentVariableA(env_vars::kMetroConnected, "1");
 
   if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL)) {
-    DLOG(INFO) << "No GPU access, attempting to restart in Desktop\n";
+    DVLOG(1) << "No GPU access, attempting to restart in Desktop\n";
     chrome::AttemptRestartToDesktopMode();
   }
 }
@@ -117,12 +116,18 @@ void ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
 void ChromeMetroViewerProcessHost::OnSetTargetSurface(
     gfx::NativeViewId target_surface) {
   HWND hwnd = reinterpret_cast<HWND>(target_surface);
-  // Tell our root window host that the viewer has connected.
-  aura::RemoteRootWindowHostWin::Instance()->Connected(this, hwnd);
+  // Make hwnd available as early as possible for proper InputMethod
+  // initialization.
+  aura::RemoteWindowTreeHostWin::Instance()->SetRemoteWindowHandle(hwnd);
+
   // Now start the Ash shell environment.
   chrome::OpenAsh();
-  ash::Shell::GetInstance()->CreateLauncher();
-  ash::Shell::GetInstance()->ShowLauncher();
+  ash::Shell::GetInstance()->CreateShelf();
+  ash::Shell::GetInstance()->ShowShelf();
+
+  // Tell our root window host that the viewer has connected.
+  aura::RemoteWindowTreeHostWin::Instance()->Connected(this);
+
   // On Windows 8 ASH we default to SHOW_STATE_MAXIMIZED for the browser
   // window. This is to ensure that we honor metro app conventions by default.
   ash::WindowPositioner::SetMaximizeFirstWindow(true);
@@ -140,7 +145,7 @@ void ChromeMetroViewerProcessHost::OnOpenURL(const base::string16& url) {
 void ChromeMetroViewerProcessHost::OnHandleSearchRequest(
     const base::string16& search_string) {
   GURL url(GetDefaultSearchURLForSearchTerms(
-      ProfileManager::GetDefaultProfileOrOffTheRecord(), search_string));
+      ProfileManager::GetActiveUserProfile(), search_string));
   if (url.is_valid())
     OpenURL(url);
 }
@@ -152,6 +157,6 @@ void ChromeMetroViewerProcessHost::OnWindowSizeChanged(uint32 width,
       base::StringPrintf("%dx%d", width, height)));
   ash::Shell::GetInstance()->display_manager()->OnNativeDisplaysChanged(
       info_list);
-  aura::RemoteRootWindowHostWin::Instance()->HandleWindowSizeChanged(width,
+  aura::RemoteWindowTreeHostWin::Instance()->HandleWindowSizeChanged(width,
                                                                      height);
 }

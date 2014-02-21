@@ -21,19 +21,19 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
-#include "chrome/browser/sync/glue/data_type_controller.h"
-#include "chrome/browser/sync/glue/data_type_encryption_handler.h"
-#include "chrome/browser/sync/glue/data_type_manager.h"
-#include "chrome/browser/sync/glue/data_type_manager_observer.h"
-#include "chrome/browser/sync/glue/failed_data_types_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
-#include "chrome/browser/sync/glue/sync_frontend.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/profile_sync_service_base.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/sessions2/sessions_sync_manager.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/sync_driver/data_type_controller.h"
+#include "components/sync_driver/data_type_encryption_handler.h"
+#include "components/sync_driver/data_type_manager.h"
+#include "components/sync_driver/data_type_manager_observer.h"
+#include "components/sync_driver/failed_data_types_handler.h"
+#include "components/sync_driver/sync_frontend.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -48,6 +48,7 @@
 #include "sync/js/sync_js_controller.h"
 #include "url/gurl.h"
 
+class ManagedUserSigninManagerWrapper;
 class Profile;
 class ProfileOAuth2TokenService;
 class ProfileSyncComponentsFactory;
@@ -259,10 +260,10 @@ class ProfileSyncService
   // Sync server URL for dev channel users
   static const char* kDevServerUrl;
 
-  // Takes ownership of |factory|.
+  // Takes ownership of |factory| and |signin_wrapper|.
   ProfileSyncService(ProfileSyncComponentsFactory* factory,
                      Profile* profile,
-                     SigninManagerBase* signin,
+                     ManagedUserSigninManagerWrapper* signin_wrapper,
                      ProfileOAuth2TokenService* oauth2_token_service,
                      StartBehavior start_behavior);
   virtual ~ProfileSyncService();
@@ -362,6 +363,9 @@ class ProfileSyncService
   // Disables sync for user. Use ShowLoginDialog to enable.
   virtual void DisableForUser();
 
+  // Disables sync for the user and prevents it from starting on next restart.
+  virtual void StopSyncingPermanently();
+
   // SyncFrontend implementation.
   virtual void OnBackendInitialized(
       const syncer::WeakHandle<syncer::JsBackend>& js_backend,
@@ -372,7 +376,6 @@ class ProfileSyncService
   virtual void OnSyncConfigureRetry() OVERRIDE;
   virtual void OnConnectionStatusChange(
       syncer::ConnectionStatus status) OVERRIDE;
-  virtual void OnStopSyncingPermanently() OVERRIDE;
   virtual void OnPassphraseRequired(
       syncer::PassphraseRequiredReason reason,
       const sync_pb::EncryptedData& pending_keys) OVERRIDE;
@@ -551,7 +554,7 @@ class ProfileSyncService
   // This function is used by sync_ui_util.cc to help populate the about:sync
   // page.  It returns a ListValue rather than a DictionaryValue in part to make
   // it easier to iterate over its elements when constructing that page.
-  Value* GetTypeStatusMap() const;
+  base::Value* GetTypeStatusMap() const;
 
   // Overridden by tests.
   // TODO(zea): Remove these and have the dtc's call directly into the SBH.
@@ -576,7 +579,7 @@ class ProfileSyncService
       syncer::ModelTypeSet preferred_types);
 
   // Returns the set of types which are preferred for enabling. This is a
-  // superset of the active types (see GetActiveTypes()).
+  // superset of the active types (see GetActiveDataTypes()).
   virtual syncer::ModelTypeSet GetPreferredDataTypes() const;
 
   // Gets the set of all data types that could be allowed (the set that
@@ -639,7 +642,7 @@ class ProfileSyncService
 
   const GURL& sync_service_url() const { return sync_service_url_; }
   bool auto_start_enabled() const { return auto_start_enabled_; }
-  SigninManagerBase* signin() const { return signin_; }
+  SigninManagerBase* signin() const;
   bool setup_in_progress() const { return setup_in_progress_; }
 
   // Stops the sync backend and sets the flag for suppressing sync startup.
@@ -705,6 +708,8 @@ class ProfileSyncService
   void OverrideNetworkResourcesForTest(
       scoped_ptr<syncer::NetworkResources> network_resources);
 
+  virtual bool IsSessionsDataTypeControllerRunning() const;
+
  protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
@@ -721,14 +726,6 @@ class ProfileSyncService
   syncer::SyncCredentials GetCredentials();
 
   virtual syncer::WeakHandle<syncer::JsEventHandler> GetJsEventHandler();
-
-  // Test need to override this to create backends that allow setting up
-  // initial conditions, such as populating sync nodes.
-  //
-  // TODO(akalin): Figure out a better way to do this.  Ideally, we'd
-  // construct the backend outside this class and pass it in to the
-  // contructor or Initialize().
-  virtual void CreateBackend();
 
   const browser_sync::DataTypeController::TypeMap& data_type_controllers() {
     return data_type_controllers_;
@@ -875,8 +872,6 @@ class ProfileSyncService
                                     bool delete_sync_database,
                                     UnrecoverableErrorReason reason);
 
-  bool IsSessionsDataTypeControllerRunning() const;
-
   // Returns the username (in form of an email address) that should be used in
   // the credentials.
   std::string GetEffectiveUsername();
@@ -939,7 +934,7 @@ class ProfileSyncService
 
   // Encapsulates user signin - used to set/get the user's authenticated
   // email address.
-  SigninManagerBase* signin_;
+  scoped_ptr<ManagedUserSigninManagerWrapper> signin_;
 
   // Information describing an unrecoverable error.
   UnrecoverableErrorReason unrecoverable_error_reason_;

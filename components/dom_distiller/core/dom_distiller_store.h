@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_DOM_DISTILLER_CORE_DOM_DISTILLER_STORE_H_
 #define COMPONENTS_DOM_DISTILLER_CORE_DOM_DISTILLER_STORE_H_
 
+#include <string>
 #include <vector>
 
 #include "base/containers/hash_tables.h"
@@ -37,6 +38,9 @@ class DomDistillerStoreInterface {
   virtual syncer::SyncableService* GetSyncableService() = 0;
 
   virtual bool AddEntry(const ArticleEntry& entry) = 0;
+
+  // Returns false if |entry| is not present or |entry| was not updated.
+  virtual bool UpdateEntry(const ArticleEntry& entry) = 0;
 
   virtual bool RemoveEntry(const ArticleEntry& entry) = 0;
 
@@ -89,6 +93,7 @@ class DomDistillerStore : public syncer::SyncableService,
   // DomDistillerStoreInterface implementation.
   virtual syncer::SyncableService* GetSyncableService() OVERRIDE;
   virtual bool AddEntry(const ArticleEntry& entry) OVERRIDE;
+  virtual bool UpdateEntry(const ArticleEntry& entry) OVERRIDE;
   virtual bool RemoveEntry(const ArticleEntry& entry) OVERRIDE;
   virtual bool GetEntryById(const std::string& entry_id,
                             ArticleEntry* entry) OVERRIDE;
@@ -153,4 +158,4 @@ class DomDistillerStore : public syncer::SyncableService,
 
 }  // namespace dom_distiller
 
-#endif
+#endif  // COMPONENTS_DOM_DISTILLER_CORE_DOM_DISTILLER_STORE_H_

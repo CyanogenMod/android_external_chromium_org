@@ -19,6 +19,9 @@
 #include "media/cast/cast_defines.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/rtcp/rtcp_defines.h"
+#include "media/cast/transport/cast_transport_defines.h"
+#include "media/cast/transport/cast_transport_sender.h"
+#include "media/cast/transport/pacing/paced_sender.h"
 
 namespace media {
 namespace cast {
@@ -26,6 +29,7 @@ namespace cast {
 class LocalRtcpReceiverFeedback;
 class LocalRtcpRttFeedback;
 class PacedPacketSender;
+class ReceiverRtcpEventSubscriber;
 class RtcpReceiver;
 class RtcpSender;
 
@@ -43,7 +47,7 @@ class RtcpSenderFeedback {
 class RtpSenderStatistics {
  public:
   virtual void GetStatistics(const base::TimeTicks& now,
-                             RtcpSenderInfo* sender_info) = 0;
+                             transport::RtcpSenderInfo* sender_info) = 0;
 
   virtual ~RtpSenderStatistics() {}
 };
@@ -60,9 +64,13 @@ class RtpReceiverStatistics {
 
 class Rtcp {
  public:
+  // Rtcp accepts two transports, one to be used by Cast senders
+  // (CastTransportSender) only, and the other (PacedPacketSender) should only
+  // be used by the Cast receivers and test applications.
   Rtcp(scoped_refptr<CastEnvironment> cast_environment,
        RtcpSenderFeedback* sender_feedback,
-       PacedPacketSender* paced_packet_sender,
+       transport::CastTransportSender* const transport_sender,  // Send-side.
+       transport::PacedPacketSender* paced_packet_sender,       // Receive side.
        RtpSenderStatistics* rtp_sender_statistics,
        RtpReceiverStatistics* rtp_receiver_statistics,
        RtcpMode rtcp_mode,
@@ -84,28 +92,27 @@ class Rtcp {
   // Additionally if all messages in |sender_log_message| does
   // not fit in the packet the |sender_log_message| will contain the remaining
   // unsent messages.
-  void SendRtcpFromRtpSender(RtcpSenderLogMessage* sender_log_message);
+  void SendRtcpFromRtpSender(
+      const transport::RtcpSenderLogMessage& sender_log_message);
 
-  // |cast_message| and |receiver_log| is optional; if |cast_message| is
+  // |cast_message| and |event_subscriber| is optional; if |cast_message| is
   // provided the RTCP receiver report will append a Cast message containing
-  // Acks and Nacks; if |receiver_log| is provided the RTCP receiver report will
-  // append the log messages. If no argument is set a normal RTCP receiver
-  // report will be sent. Additionally if all messages in |receiver_log| does
-  // not fit in the packet the |receiver_log| will contain the remaining unsent
-  // messages.
+  // Acks and Nacks; if |event_subscriber| is provided the RTCP receiver report
+  // will append the log messages from the subscriber.
   void SendRtcpFromRtpReceiver(const RtcpCastMessage* cast_message,
-                               RtcpReceiverLogMessage* receiver_log);
+                               ReceiverRtcpEventSubscriber* event_subscriber);
 
   void IncomingRtcpPacket(const uint8* rtcp_buffer, size_t length);
-  bool Rtt(base::TimeDelta* rtt, base::TimeDelta* avg_rtt,
-           base::TimeDelta* min_rtt,  base::TimeDelta* max_rtt) const;
+  bool Rtt(base::TimeDelta* rtt,
+           base::TimeDelta* avg_rtt,
+           base::TimeDelta* min_rtt,
+           base::TimeDelta* max_rtt) const;
   bool RtpTimestampInSenderTime(int frequency,
                                 uint32 rtp_timestamp,
                                 base::TimeTicks* rtp_timestamp_in_ticks) const;
 
  protected:
-  int CheckForWrapAround(uint32 new_timestamp,
-                         uint32 old_timestamp) const;
+  int CheckForWrapAround(uint32 new_timestamp, uint32 old_timestamp) const;
 
   void OnReceivedLipSyncInfo(uint32 rtp_timestamp,
                              uint32 ntp_seconds,
@@ -133,14 +140,25 @@ class Rtcp {
 
   void UpdateNextTimeToSendRtcp();
 
-  void SaveLastSentNtpTime(const base::TimeTicks& now, uint32 last_ntp_seconds,
+  void SaveLastSentNtpTime(const base::TimeTicks& now,
+                           uint32 last_ntp_seconds,
                            uint32 last_ntp_fraction);
 
+  void SendRtcpFromRtpSenderOnTransportThread(
+      uint32 packet_type_flags,
+      const transport::RtcpSenderInfo& sender_info,
+      const transport::RtcpDlrrReportBlock& dlrr,
+      const transport::RtcpSenderLogMessage& sender_log,
+      uint32 sending_ssrc,
+      std::string c_name);
+
   scoped_refptr<CastEnvironment> cast_environment_;
+  transport::CastTransportSender* const transport_sender_;
   const base::TimeDelta rtcp_interval_;
   const RtcpMode rtcp_mode_;
   const uint32 local_ssrc_;
   const uint32 remote_ssrc_;
+  const std::string c_name_;
 
   // Not owned by this class.
   RtpSenderStatistics* const rtp_sender_statistics_;

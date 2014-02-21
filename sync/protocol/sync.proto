@@ -14,10 +14,12 @@ option retain_unknown_fields = true;
 
 package sync_pb;
 
+import "app_list_specifics.proto";
 import "app_notification_specifics.proto";
 import "app_setting_specifics.proto";
 import "app_specifics.proto";
 import "article_specifics.proto";
+import "attachments.proto";
 import "autofill_specifics.proto";
 import "bookmark_specifics.proto";
 import "client_commands.proto";
@@ -34,6 +36,7 @@ import "get_updates_caller_info.proto";
 import "history_delete_directive_specifics.proto";
 import "nigori_specifics.proto";
 import "managed_user_setting_specifics.proto";
+import "managed_user_shared_setting_specifics.proto";
 import "managed_user_specifics.proto";
 import "password_specifics.proto";
 import "preference_specifics.proto";
@@ -41,6 +44,7 @@ import "priority_preference_specifics.proto";
 import "search_engine_specifics.proto";
 import "session_specifics.proto";
 import "sync_enums.proto";
+import "synced_notification_app_info_specifics.proto";
 import "synced_notification_specifics.proto";
 import "theme_specifics.proto";
 import "typed_url_specifics.proto";
@@ -111,6 +115,8 @@ message EntitySpecifics {
   optional AppSettingSpecifics app_setting = 103656;
   optional HistoryDeleteDirectiveSpecifics history_delete_directive = 150251;
   optional SyncedNotificationSpecifics synced_notification = 153108;
+  optional SyncedNotificationAppInfoSpecifics synced_notification_app_info =
+      235816;
   optional DeviceInfoSpecifics device_info = 154522;
   optional ExperimentsSpecifics experiments = 161496;
   optional PriorityPreferenceSpecifics priority_preference = 163425;
@@ -119,7 +125,10 @@ message EntitySpecifics {
   optional FaviconImageSpecifics favicon_image = 182019;
   optional ManagedUserSettingSpecifics managed_user_setting = 186662;
   optional ManagedUserSpecifics managed_user = 194582;
+  optional ManagedUserSharedSettingSpecifics managed_user_shared_setting =
+      202026;
   optional ArticleSpecifics article = 223759;
+  optional AppListSpecifics app_list = 229170;
 }
 
 message SyncEntity {
@@ -423,14 +432,6 @@ message GetUpdateTriggers {
   // first.  Introduced in M29.
   optional bool client_dropped_hints = 2;
 
-  // This flag is set if the invalidation server reports that it may have
-  // dropped some invalidations at some point.  The client will also drop any
-  // locally cached hints that are older than the server-did-drop notification.
-  //
-  // TODO(sync): Determine the format for this.
-  //
-  // optional bool server_dropped_hints = 6;
-
   // This flag is set when the client suspects that its list of invalidation
   // hints may be incomplete.  This may be the case if:
   // - The client is syncing for the first time.
@@ -466,6 +467,10 @@ message GetUpdateTriggers {
   // invalidations.
   // Introduced in M29.
   optional int64 datatype_refresh_nudges = 5;
+
+  // This flag is set if the invalidation server reports that it may have
+  // dropped some invalidations at some point.  Introduced in M33.
+  optional bool server_dropped_hints = 6;
 }
 
 message DataTypeProgressMarker {
@@ -582,10 +587,14 @@ message GetUpdatesMessage {
   // already created.  Should be set to true only by mobile clients.
   optional bool create_mobile_bookmarks_folder = 1000 [default = false];
 
-  // This value is an udpated version of the GetUpdatesCallerInfo's
+  // This value is an updated version of the GetUpdatesCallerInfo's
   // GetUpdatesSource.  It describes the reason for the GetUpdate request.
   // Introduced in M29.
   optional SyncEnums.GetUpdatesOrigin get_updates_origin = 9;
+
+  // Whether this GU also serves as a retry GU. Any GU that happens after
+  // retry timer timeout is a retry GU effectively.
+  optional bool is_retry = 10 [default = false];
 };
 
 message AuthenticateMessage {

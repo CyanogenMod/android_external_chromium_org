@@ -15,26 +15,6 @@
 
 namespace cc {
 
-class TestContextProvider::LostContextCallbackProxy
-    : public blink::WebGraphicsContext3D::WebGraphicsContextLostCallback {
- public:
-  explicit LostContextCallbackProxy(TestContextProvider* provider)
-      : provider_(provider) {
-    provider_->context3d_->setContextLostCallback(this);
-  }
-
-  virtual ~LostContextCallbackProxy() {
-    provider_->context3d_->setContextLostCallback(NULL);
-  }
-
-  virtual void onContextLost() {
-    provider_->OnLostContext();
-  }
-
- private:
-  TestContextProvider* provider_;
-};
-
 // static
 scoped_refptr<TestContextProvider> TestContextProvider::Create() {
   return Create(TestWebGraphicsContext3D::Create().Pass());
@@ -80,7 +60,9 @@ bool TestContextProvider::BindToCurrentThread() {
   }
   bound_ = true;
 
-  lost_context_callback_proxy_.reset(new LostContextCallbackProxy(this));
+  context3d_->set_context_lost_callback(
+      base::Bind(&TestContextProvider::OnLostContext,
+                 base::Unretained(this)));
 
   return true;
 }
@@ -90,13 +72,6 @@ ContextProvider::Capabilities TestContextProvider::ContextCapabilities() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   return context3d_->test_capabilities();
-}
-
-blink::WebGraphicsContext3D* TestContextProvider::Context3d() {
-  DCHECK(bound_);
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-
-  return context3d_.get();
 }
 
 gpu::gles2::GLES2Interface* TestContextProvider::ContextGL() {
@@ -118,8 +93,6 @@ class GrContext* TestContextProvider::GrContext() {
   // TODO(danakj): Make a test GrContext that works with a test Context3d.
   return NULL;
 }
-
-void TestContextProvider::MakeGrContextCurrent() {}
 
 bool TestContextProvider::IsContextLost() {
   DCHECK(bound_);

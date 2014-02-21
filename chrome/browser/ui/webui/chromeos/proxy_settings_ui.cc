@@ -30,14 +30,14 @@ namespace {
 
 class ProxySettingsHTMLSource : public content::URLDataSource {
  public:
-  explicit ProxySettingsHTMLSource(DictionaryValue* localized_strings);
+  explicit ProxySettingsHTMLSource(base::DictionaryValue* localized_strings);
 
   // content::URLDataSource implementation.
   virtual std::string GetSource() const OVERRIDE;
   virtual void StartDataRequest(
       const std::string& path,
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE {
     return "text/html";
@@ -50,13 +50,13 @@ class ProxySettingsHTMLSource : public content::URLDataSource {
   virtual ~ProxySettingsHTMLSource() {}
 
  private:
-  scoped_ptr<DictionaryValue> localized_strings_;
+  scoped_ptr<base::DictionaryValue> localized_strings_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxySettingsHTMLSource);
 };
 
 ProxySettingsHTMLSource::ProxySettingsHTMLSource(
-    DictionaryValue* localized_strings)
+    base::DictionaryValue* localized_strings)
     : localized_strings_(localized_strings) {
 }
 
@@ -67,7 +67,7 @@ std::string ProxySettingsHTMLSource::GetSource() const {
 void ProxySettingsHTMLSource::StartDataRequest(
     const std::string& path,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   webui::SetFontAndTextDirection(localized_strings_.get());
 
@@ -90,17 +90,17 @@ ProxySettingsUI::ProxySettingsUI(content::WebUI* web_ui)
       proxy_handler_(new options::ProxyHandler()),
       core_handler_(new options::CoreChromeOSOptionsHandler()) {
   // |localized_strings| will be owned by ProxySettingsHTMLSource.
-  DictionaryValue* localized_strings = new DictionaryValue();
+  base::DictionaryValue* localized_strings = new base::DictionaryValue();
 
+  web_ui->AddMessageHandler(core_handler_);
   core_handler_->set_handlers_host(this);
   core_handler_->GetLocalizedValues(localized_strings);
-  web_ui->AddMessageHandler(core_handler_);
 
-  proxy_handler_->GetLocalizedValues(localized_strings);
   web_ui->AddMessageHandler(proxy_handler_);
+  proxy_handler_->GetLocalizedValues(localized_strings);
 
   bool keyboard_driven_oobe =
-      system::keyboard_settings::ForceKeyboardDrivenUINavigation();
+      system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation();
   localized_strings->SetString("highlightStrength",
                                keyboard_driven_oobe ? "strong" : "normal");
 

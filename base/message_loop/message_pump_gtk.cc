@@ -14,7 +14,7 @@ namespace base {
 
 namespace {
 
-const char* EventToTypeString(const GdkEvent* event) {
+ALLOW_UNUSED const char* EventToTypeString(const GdkEvent* event) {
   switch (event->type) {
     case GDK_NOTHING:           return "GDK_NOTHING";
     case GDK_DELETE:            return "GDK_DELETE";
@@ -71,7 +71,7 @@ MessagePumpGtk::~MessagePumpGtk() {
 }
 
 void MessagePumpGtk::DispatchEvents(GdkEvent* event) {
-  UNSHIPPED_TRACE_EVENT1("task", "MessagePumpGtk::DispatchEvents",
+  UNSHIPPED_TRACE_EVENT1("toplevel", "MessagePumpGtk::DispatchEvents",
                          "type", EventToTypeString(event));
 
   WillProcessEvent(event);

@@ -32,7 +32,6 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/first_run/first_run.h"
@@ -65,7 +64,7 @@
 #include "chrome/browser/ui/startup/bad_flags_prompt.h"
 #include "chrome/browser/ui/startup/default_browser_prompt.h"
 #include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
-#include "chrome/browser/ui/startup/obsolete_os_infobar_delegate.h"
+#include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
 #include "chrome/browser/ui/startup/session_crashed_infobar_delegate.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
@@ -88,6 +87,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -152,7 +152,7 @@ LaunchMode GetLaunchShortcutKind() {
     std::string appdata_path;
     env->GetVar("USERPROFILE", &appdata_path);
     if (!appdata_path.empty() &&
-        shortcut.find(ASCIIToWide(appdata_path)) != std::wstring::npos)
+        shortcut.find(base::ASCIIToWide(appdata_path)) != std::wstring::npos)
       return LM_SHORTCUT_DESKTOP;
     return LM_SHORTCUT_UNKNOWN;
   }
@@ -206,9 +206,12 @@ bool GetAppLaunchContainer(
   extensions::LaunchContainer launch_container = extensions::GetLaunchContainer(
       extensions_service->extension_prefs(), extension);
 
-  if (!extensions::HasPreferredLaunchContainer(
-          extensions_service->extension_prefs(), extension))
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableStreamlinedHostedApps) &&
+      !extensions::HasPreferredLaunchContainer(
+          extensions_service->extension_prefs(), extension)) {
     launch_container = extensions::LAUNCH_CONTAINER_WINDOW;
+  }
 
   *out_extension = extension;
   *out_launch_container = launch_container;
@@ -371,8 +374,11 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
       RecordCmdLineAppHistogram(extensions::Manifest::TYPE_PLATFORM_APP);
       AppLaunchParams params(profile, extension,
                              extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW);
-      params.command_line = &command_line_;
+      params.command_line = command_line_;
       params.current_directory = cur_dir_;
+      // If we are being launched from the command line, default to native
+      // desktop.
+      params.desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
       OpenApplicationWithReenablePrompt(params);
       return true;
     }
@@ -515,7 +521,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     RecordCmdLineAppHistogram(extension->GetType());
 
     AppLaunchParams params(profile, extension, launch_container, NEW_WINDOW);
-    params.command_line = &command_line_;
+    params.command_line = command_line_;
     params.current_directory = cur_dir_;
     WebContents* tab_in_app_window = OpenApplication(params);
 
@@ -539,7 +545,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     ChildProcessSecurityPolicy* policy =
         ChildProcessSecurityPolicy::GetInstance();
     if (policy->IsWebSafeScheme(url.scheme()) ||
-        url.SchemeIs(chrome::kFileScheme)) {
+        url.SchemeIs(content::kFileScheme)) {
       const extensions::Extension* extension =
           profile->GetExtensionService()->GetInstalledApp(url);
       if (extension) {
@@ -899,7 +905,7 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
     chrome::ShowBadFlagsPrompt(browser);
     GoogleApiKeysInfoBarDelegate::Create(InfoBarService::FromWebContents(
         browser->tab_strip_model()->GetActiveWebContents()));
-    ObsoleteOSInfoBarDelegate::Create(InfoBarService::FromWebContents(
+    ObsoleteSystemInfoBarDelegate::Create(InfoBarService::FromWebContents(
         browser->tab_strip_model()->GetActiveWebContents()));
 
 #if !defined(OS_CHROMEOS)

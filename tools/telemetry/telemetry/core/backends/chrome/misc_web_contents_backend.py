@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 import json
 
+from telemetry.core import exceptions
 from telemetry.core import web_contents
 from telemetry.core.backends.chrome import inspector_backend
 
@@ -12,12 +13,20 @@ class MiscWebContentsBackend(object):
   def __init__(self, browser_backend):
     self._browser_backend = browser_backend
 
+  @property
+  def oobe_exists(self):
+    """Lightweight property to determine if the oobe webui is visible."""
+    return bool(self._FindWebContentsInfo())
+
   def GetOobe(self):
     oobe_web_contents_info = self._FindWebContentsInfo()
     if oobe_web_contents_info:
       debugger_url = oobe_web_contents_info.get('webSocketDebuggerUrl')
       if debugger_url:
-        inspector = self._CreateInspectorBackend(debugger_url)
+        try:
+          inspector = self._CreateInspectorBackend(debugger_url)
+        except exceptions.TabCrashException:
+          return None
         return web_contents.WebContents(inspector)
     return None
 

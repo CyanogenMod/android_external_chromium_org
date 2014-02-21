@@ -32,7 +32,7 @@ using content::WebUIMessageHandler;
 
 namespace {
 
-content::WebUIDataSource* CreateComponentsUIHTMLSource() {
+content::WebUIDataSource* CreateComponentsUIHTMLSource(Profile* profile) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIComponentsHost);
   source->SetUseJsonJSFormatV2();
@@ -48,7 +48,7 @@ content::WebUIDataSource* CreateComponentsUIHTMLSource() {
   source->AddResourcePath("components.js", IDR_COMPONENTS_JS);
   source->SetDefaultResource(IDR_COMPONENTS_HTML);
 #if defined(OS_CHROMEOS)
-  chromeos::AddAccountUITweaksLocalizedValues(source);
+  chromeos::AddAccountUITweaksLocalizedValues(source, profile);
 #endif
   return source;
 }
@@ -69,10 +69,10 @@ class ComponentsDOMHandler : public WebUIMessageHandler {
   virtual void RegisterMessages() OVERRIDE;
 
   // Callback for the "requestComponentsData" message.
-  void HandleRequestComponentsData(const ListValue* args);
+  void HandleRequestComponentsData(const base::ListValue* args);
 
   // Callback for the "checkUpdate" message.
-  void HandleCheckUpdate(const ListValue* args);
+  void HandleCheckUpdate(const base::ListValue* args);
 
  private:
   void LoadComponents();
@@ -95,7 +95,8 @@ void ComponentsDOMHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void ComponentsDOMHandler::HandleRequestComponentsData(const ListValue* args) {
+void ComponentsDOMHandler::HandleRequestComponentsData(
+    const base::ListValue* args) {
   LoadComponents();
 }
 
@@ -103,7 +104,7 @@ void ComponentsDOMHandler::HandleRequestComponentsData(const ListValue* args) {
 // TODO(shrikant): We need to make this button available based on current
 // state e.g. If component state is currently updating then we need to disable
 // button. (https://code.google.com/p/chromium/issues/detail?id=272540)
-void ComponentsDOMHandler::HandleCheckUpdate(const ListValue* args) {
+void ComponentsDOMHandler::HandleCheckUpdate(const base::ListValue* args) {
   if (args->GetSize() != 1) {
     NOTREACHED();
     return;
@@ -119,16 +120,17 @@ void ComponentsDOMHandler::HandleCheckUpdate(const ListValue* args) {
 }
 
 void ComponentsDOMHandler::LoadComponents() {
-  ComponentUpdateService* cus = g_browser_process->component_updater();
-  std::vector<CrxComponentInfo> components;
+  component_updater::ComponentUpdateService* cus =
+      g_browser_process->component_updater();
+  std::vector<component_updater::CrxComponentInfo> components;
   cus->GetComponents(&components);
 
   // Construct DictionaryValues to return to UI.
-  ListValue* component_list = new ListValue();
+  base::ListValue* component_list = new base::ListValue();
   for (size_t j = 0; j < components.size(); ++j) {
-    const CrxComponentInfo& component = components[j];
+    const component_updater::CrxComponentInfo& component = components[j];
 
-    DictionaryValue* component_entry = new DictionaryValue();
+    base::DictionaryValue* component_entry = new base::DictionaryValue();
     component_entry->SetString("id", component.id);
     component_entry->SetString("name", component.name);
     component_entry->SetString("version", component.version);
@@ -136,7 +138,7 @@ void ComponentsDOMHandler::LoadComponents() {
     component_list->Append(component_entry);
   }
 
-  DictionaryValue results;
+  base::DictionaryValue results;
   results.Set("components", component_list);
   web_ui()->CallJavascriptFunction("returnComponentsData", results);
 }
@@ -154,12 +156,13 @@ ComponentsUI::ComponentsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   // Set up the chrome://components/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  content::WebUIDataSource::Add(profile, CreateComponentsUIHTMLSource());
+  content::WebUIDataSource::Add(profile, CreateComponentsUIHTMLSource(profile));
 }
 
 // static
 void ComponentsUI::OnDemandUpdate(const std::string& component_id) {
-  ComponentUpdateService* cus = g_browser_process->component_updater();
+  component_updater::ComponentUpdateService* cus =
+      g_browser_process->component_updater();
   cus->OnDemandUpdate(component_id);
 }
 

@@ -14,6 +14,8 @@
 #include "base/memory/scoped_vector.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/websockets/websocket_handshake_request_info.h"
+#include "net/websockets/websocket_handshake_response_info.h"
 
 class GURL;
 
@@ -57,10 +59,17 @@ class NET_EXPORT_PRIVATE WebSocketStream {
     // WebSocketStream.
     virtual void OnSuccess(scoped_ptr<WebSocketStream> stream) = 0;
 
-    // Called on failure to connect. The parameter is either one of the values
-    // defined in net::WebSocketError, or an error defined by some WebSocket
-    // extension protocol that we implement.
-    virtual void OnFailure(unsigned short websocket_error) = 0;
+    // Called on failure to connect.
+    // |message| contains defails of the failure.
+    virtual void OnFailure(const std::string& message) = 0;
+
+    // Called when the WebSocket Opening Handshake starts.
+    virtual void OnStartOpeningHandshake(
+        scoped_ptr<WebSocketHandshakeRequestInfo> request) = 0;
+
+    // Called when the WebSocket Opening Handshake ends.
+    virtual void OnFinishOpeningHandshake(
+        scoped_ptr<WebSocketHandshakeResponseInfo> response) = 0;
   };
 
   // Create and connect a WebSocketStream of an appropriate type. The actual

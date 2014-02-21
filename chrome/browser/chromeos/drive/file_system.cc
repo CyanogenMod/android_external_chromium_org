@@ -8,9 +8,7 @@
 #include "base/file_util.h"
 #include "base/platform_file.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/change_list_loader.h"
-#include "chrome/browser/chromeos/drive/change_list_processor.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/copy_operation.h"
@@ -24,11 +22,9 @@
 #include "chrome/browser/chromeos/drive/file_system/search_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/touch_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/truncate_operation.h"
-#include "chrome/browser/chromeos/drive/file_system/update_operation.h"
 #include "chrome/browser/chromeos/drive/file_system_observer.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
-#include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/remove_stale_cache_files.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/search_metadata.h"
@@ -76,9 +72,12 @@ FileError GetLocallyStoredResourceEntry(
   if (error != FILE_ERROR_OK)
     return error;
 
-  base::PlatformFileInfo file_info;
-  if (!base::GetFileInfo(local_cache_path, &file_info))
+  // TODO(rvargas): Convert this code to use base::File::Info.
+  base::File::Info file_info;
+  if (!base::GetFileInfo(local_cache_path,
+                         reinterpret_cast<base::File::Info*>(&file_info))) {
     return FILE_ERROR_NOT_FOUND;
+  }
 
   SetPlatformFileInfoToResourceEntry(file_info, entry);
   return FILE_ERROR_OK;
@@ -206,6 +205,7 @@ FileError ResetOnBlockingPool(internal::ResourceMetadata* resource_metadata,
 
 FileSystem::FileSystem(
     PrefService* pref_service,
+    EventLogger* logger,
     internal::FileCache* cache,
     DriveServiceInterface* drive_service,
     JobScheduler* scheduler,
@@ -213,6 +213,7 @@ FileSystem::FileSystem(
     base::SequencedTaskRunner* blocking_task_runner,
     const base::FilePath& temporary_file_directory)
     : pref_service_(pref_service),
+      logger_(logger),
       cache_(cache),
       drive_service_(drive_service),
       scheduler_(scheduler),
@@ -232,7 +233,7 @@ FileSystem::~FileSystem() {
   change_list_loader_->RemoveObserver(this);
 }
 
-void FileSystem::Reload(const FileOperationCallback& callback) {
+void FileSystem::Reset(const FileOperationCallback& callback) {
   // Discard the current loader and operation objects and renew them. This is to
   // avoid that changes initiated before the metadata reset is applied after the
   // reset, which may cause an inconsistent state.
@@ -244,28 +245,32 @@ void FileSystem::Reload(const FileOperationCallback& callback) {
       blocking_task_runner_,
       FROM_HERE,
       base::Bind(&ResetOnBlockingPool, resource_metadata_, cache_),
-      base::Bind(&FileSystem::ReloadAfterReset,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 callback));
-}
-
-void FileSystem::ReloadAfterReset(const FileOperationCallback& callback,
-                                  FileError error) {
-  if (error != FILE_ERROR_OK) {
-    LOG(ERROR) << "Failed to reload Drive file system: "
-               << FileErrorToString(error);
-    callback.Run(error);
-    return;
-  }
-
-  change_list_loader_->LoadIfNeeded(
-      internal::DirectoryFetchInfo(),
-      base::Bind(&FileSystem::OnUpdateChecked, weak_ptr_factory_.GetWeakPtr()));
-  callback.Run(error);
+      callback);
 }
 
 void FileSystem::ResetComponents() {
   file_system::OperationObserver* observer = this;
+
+  about_resource_loader_.reset(new internal::AboutResourceLoader(scheduler_));
+  loader_controller_.reset(new internal::LoaderController);
+  change_list_loader_.reset(new internal::ChangeListLoader(
+      logger_,
+      blocking_task_runner_.get(),
+      resource_metadata_,
+      scheduler_,
+      drive_service_,
+      about_resource_loader_.get(),
+      loader_controller_.get()));
+  change_list_loader_->AddObserver(this);
+
+  sync_client_.reset(new internal::SyncClient(blocking_task_runner_.get(),
+                                              observer,
+                                              scheduler_,
+                                              resource_metadata_,
+                                              cache_,
+                                              loader_controller_.get(),
+                                              temporary_file_directory_));
+
   copy_operation_.reset(
       new file_system::CopyOperation(
           blocking_task_runner_.get(),
@@ -275,13 +280,11 @@ void FileSystem::ResetComponents() {
           cache_,
           drive_service_->GetResourceIdCanonicalizer()));
   create_directory_operation_.reset(new file_system::CreateDirectoryOperation(
-      blocking_task_runner_.get(), observer, scheduler_, resource_metadata_));
+      blocking_task_runner_.get(), observer, resource_metadata_));
   create_file_operation_.reset(
       new file_system::CreateFileOperation(blocking_task_runner_.get(),
                                            observer,
-                                           scheduler_,
-                                           resource_metadata_,
-                                           cache_));
+                                           resource_metadata_));
   move_operation_.reset(
       new file_system::MoveOperation(blocking_task_runner_.get(),
                                      observer,
@@ -314,35 +317,17 @@ void FileSystem::ResetComponents() {
                                          resource_metadata_,
                                          cache_,
                                          temporary_file_directory_));
-  update_operation_.reset(
-      new file_system::UpdateOperation(blocking_task_runner_.get(),
-                                       observer,
-                                       scheduler_,
-                                       resource_metadata_,
-                                       cache_));
   search_operation_.reset(new file_system::SearchOperation(
-      blocking_task_runner_.get(), scheduler_, resource_metadata_));
+      blocking_task_runner_.get(), scheduler_, resource_metadata_,
+      loader_controller_.get()));
   get_file_for_saving_operation_.reset(
-      new file_system::GetFileForSavingOperation(blocking_task_runner_.get(),
+      new file_system::GetFileForSavingOperation(logger_,
+                                                 blocking_task_runner_.get(),
                                                  observer,
                                                  scheduler_,
                                                  resource_metadata_,
                                                  cache_,
                                                  temporary_file_directory_));
-
-  sync_client_.reset(new internal::SyncClient(blocking_task_runner_.get(),
-                                              observer,
-                                              scheduler_,
-                                              resource_metadata_,
-                                              cache_,
-                                              temporary_file_directory_));
-
-  change_list_loader_.reset(new internal::ChangeListLoader(
-      blocking_task_runner_.get(),
-      resource_metadata_,
-      scheduler_,
-      drive_service_));
-  change_list_loader_->AddObserver(this);
 }
 
 void FileSystem::CheckForUpdates() {
@@ -418,7 +403,7 @@ void FileSystem::CreateDirectory(
   DCHECK(!callback.is_null());
 
   // Ensure its parent directory is loaded to the local metadata.
-  LoadDirectoryIfNeeded(
+  change_list_loader_->LoadDirectoryIfNeeded(
       directory_path.DirName(),
       base::Bind(&FileSystem::CreateDirectoryAfterLoad,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -434,15 +419,11 @@ void FileSystem::CreateDirectoryAfterLoad(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  switch (load_error) {
-    case FILE_ERROR_OK:
-    case FILE_ERROR_NOT_FOUND:
-      create_directory_operation_->CreateDirectory(
-          directory_path, is_exclusive, is_recursive, callback);
-      break;
-    default:
-      callback.Run(load_error);
-  }
+  DVLOG_IF(1, load_error != FILE_ERROR_OK) << "LoadDirectoryIfNeeded failed. "
+                                           << FileErrorToString(load_error);
+
+  create_directory_operation_->CreateDirectory(
+      directory_path, is_exclusive, is_recursive, callback);
 }
 
 void FileSystem::CreateFile(const base::FilePath& file_path,
@@ -579,51 +560,12 @@ void FileSystem::GetResourceEntry(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  scoped_ptr<ResourceEntry> entry(new ResourceEntry);
-  ResourceEntry* entry_ptr = entry.get();
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&GetLocallyStoredResourceEntry,
-                 resource_metadata_,
-                 cache_,
-                 file_path,
-                 entry_ptr),
-      base::Bind(&FileSystem::GetResourceEntryAfterGetEntry,
+  change_list_loader_->LoadDirectoryIfNeeded(
+      file_path.DirName(),
+      base::Bind(&FileSystem::GetResourceEntryAfterLoad,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
-                 callback,
-                 base::Passed(&entry)));
-}
-
-void FileSystem::GetResourceEntryAfterGetEntry(
-    const base::FilePath& file_path,
-    const GetResourceEntryCallback& callback,
-    scoped_ptr<ResourceEntry> entry,
-    FileError error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (error == FILE_ERROR_NOT_FOUND) {
-    // If the information about the path is not in the local ResourceMetadata,
-    // try fetching information of the directory and retry.
-    //
-    // Note: this forms mutual recursion between GetResourceEntry and
-    // LoadDirectoryIfNeeded, because directory loading requires the existence
-    // of directory entry itself. The recursion terminates because we always go
-    // up the hierarchy by .DirName() bounded under the Drive root path.
-    if (util::GetDriveGrandRootPath().IsParent(file_path)) {
-      LoadDirectoryIfNeeded(
-          file_path.DirName(),
-          base::Bind(&FileSystem::GetResourceEntryAfterLoad,
-                     weak_ptr_factory_.GetWeakPtr(),
-                     file_path,
-                     callback));
-      return;
-    }
-  }
-
-  callback.Run(error, entry.Pass());
+                 callback));
 }
 
 void FileSystem::GetResourceEntryAfterLoad(
@@ -633,10 +575,8 @@ void FileSystem::GetResourceEntryAfterLoad(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != FILE_ERROR_OK) {
-    callback.Run(error, scoped_ptr<ResourceEntry>());
-    return;
-  }
+  DVLOG_IF(1, error != FILE_ERROR_OK) << "LoadDirectoryIfNeeded failed. "
+                                      << FileErrorToString(error);
 
   scoped_ptr<ResourceEntry> entry(new ResourceEntry);
   ResourceEntry* entry_ptr = entry.get();
@@ -648,9 +588,7 @@ void FileSystem::GetResourceEntryAfterLoad(
                  cache_,
                  file_path,
                  entry_ptr),
-      base::Bind(&RunGetResourceEntryCallback,
-                 callback,
-                 base::Passed(&entry)));
+      base::Bind(&RunGetResourceEntryCallback, callback, base::Passed(&entry)));
 }
 
 void FileSystem::ReadDirectory(
@@ -659,57 +597,12 @@ void FileSystem::ReadDirectory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  LoadDirectoryIfNeeded(
+  change_list_loader_->LoadDirectoryIfNeeded(
       directory_path,
       base::Bind(&FileSystem::ReadDirectoryAfterLoad,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_path,
                  callback));
-}
-
-void FileSystem::LoadDirectoryIfNeeded(const base::FilePath& directory_path,
-                                       const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  GetResourceEntry(
-      directory_path,
-      base::Bind(&FileSystem::LoadDirectoryIfNeededAfterGetEntry,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 directory_path,
-                 callback));
-}
-
-void FileSystem::LoadDirectoryIfNeededAfterGetEntry(
-    const base::FilePath& directory_path,
-    const FileOperationCallback& callback,
-    FileError error,
-    scoped_ptr<ResourceEntry> entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (error != FILE_ERROR_OK) {
-    callback.Run(error);
-    return;
-  }
-
-  if (!entry->file_info().is_directory()) {
-    callback.Run(FILE_ERROR_NOT_A_DIRECTORY);
-    return;
-  }
-
-  // drive/other does not exist on the server.
-  if (entry->local_id() == util::kDriveOtherDirLocalId) {
-    callback.Run(FILE_ERROR_OK);
-    return;
-  }
-
-  // Pass the directory fetch info so we can fetch the contents of the
-  // directory before loading change lists.
-  internal::DirectoryFetchInfo directory_fetch_info(
-      entry->resource_id(),
-      entry->directory_specific_info().changestamp());
-  change_list_loader_->LoadIfNeeded(directory_fetch_info, callback);
 }
 
 void FileSystem::ReadDirectoryAfterLoad(
@@ -719,31 +612,35 @@ void FileSystem::ReadDirectoryAfterLoad(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  DVLOG_IF(1, error != FILE_ERROR_OK) << "LoadIfNeeded failed. "
+  DVLOG_IF(1, error != FILE_ERROR_OK) << "LoadDirectoryIfNeeded failed. "
                                       << FileErrorToString(error);
 
-  resource_metadata_->ReadDirectoryByPathOnUIThread(
-      directory_path,
+  ResourceEntryVector* entries = new ResourceEntryVector;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::ReadDirectoryByPath,
+                 base::Unretained(resource_metadata_),
+                 directory_path,
+                 entries),
       base::Bind(&FileSystem::ReadDirectoryAfterRead,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_path,
-                 callback));
+                 callback,
+                 base::Owned(entries)));
 }
 
-void FileSystem::ReadDirectoryAfterRead(
-    const base::FilePath& directory_path,
-    const ReadDirectoryCallback& callback,
-    FileError error,
-    scoped_ptr<ResourceEntryVector> entries) {
+void FileSystem::ReadDirectoryAfterRead(const base::FilePath& directory_path,
+                                        const ReadDirectoryCallback& callback,
+                                        const ResourceEntryVector* entries,
+                                        FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   if (error != FILE_ERROR_OK) {
-    callback.Run(error,
-                 scoped_ptr<ResourceEntryVector>());
+    callback.Run(error, scoped_ptr<ResourceEntryVector>(), false);
     return;
   }
-  DCHECK(entries.get());  // This is valid for empty directories too.
 
   // TODO(satorux): Stop handling hide_hosted_docs here. crbug.com/256520.
   const bool hide_hosted_docs =
@@ -757,7 +654,7 @@ void FileSystem::ReadDirectoryAfterRead(
     filtered->push_back(entries->at(i));
   }
 
-  callback.Run(FILE_ERROR_OK, filtered.Pass());
+  callback.Run(FILE_ERROR_OK, filtered.Pass(), false);
 }
 
 void FileSystem::GetAvailableSpace(
@@ -765,7 +662,7 @@ void FileSystem::GetAvailableSpace(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  scheduler_->GetAboutResource(
+  about_resource_loader_->GetAboutResource(
       base::Bind(&FileSystem::OnGetAboutResource,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
@@ -820,8 +717,8 @@ void FileSystem::GetShareUrlAfterGetResourceEntry(
     callback.Run(error, GURL());
     return;
   }
-  if (util::IsSpecialResourceId(entry->resource_id())) {
-    // Do not load special directories. Just return.
+  if (entry->resource_id().empty()) {
+    // This entry does not exist on the server. Just return.
     callback.Run(FILE_ERROR_FAILED, GURL());
     return;
   }
@@ -887,13 +784,31 @@ void FileSystem::OnDirectoryChangedByOperation(
   OnDirectoryChanged(directory_path);
 }
 
-void FileSystem::OnCacheFileUploadNeededByOperation(
-    const std::string& local_id) {
-  sync_client_->AddUploadTask(ClientContext(USER_INITIATED), local_id);
+void FileSystem::OnEntryUpdatedByOperation(const std::string& local_id) {
+  sync_client_->AddUpdateTask(ClientContext(USER_INITIATED), local_id);
 }
 
-void FileSystem::OnEntryUpdatedByOperation(const std::string& local_id) {
-  sync_client_->AddUpdateTask(local_id);
+void FileSystem::OnDriveSyncError(file_system::DriveSyncErrorType type,
+                                  const std::string& local_id) {
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::GetFilePath,
+                 base::Unretained(resource_metadata_),
+                 local_id),
+      base::Bind(&FileSystem::OnDriveSyncErrorAfterGetFilePath,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 type));
+}
+
+void FileSystem::OnDriveSyncErrorAfterGetFilePath(
+    file_system::DriveSyncErrorType type,
+    const base::FilePath& path) {
+  if (path.empty())
+    return;
+  FOR_EACH_OBSERVER(FileSystemObserver,
+                    observers_,
+                    OnDriveSyncError(type, path));
 }
 
 void FileSystem::OnDirectoryChanged(const base::FilePath& directory_path) {

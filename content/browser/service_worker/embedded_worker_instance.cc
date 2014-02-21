@@ -5,39 +5,52 @@
 #include "content/browser/service_worker/embedded_worker_instance.h"
 
 #include "content/browser/service_worker/embedded_worker_registry.h"
+#include "content/common/service_worker/embedded_worker_messages.h"
+#include "ipc/ipc_message.h"
 #include "url/gurl.h"
 
 namespace content {
 
 EmbeddedWorkerInstance::~EmbeddedWorkerInstance() {
-  registry_->RemoveWorker(embedded_worker_id_);
+  registry_->RemoveWorker(process_id_, embedded_worker_id_);
 }
 
-bool EmbeddedWorkerInstance::Start(
+ServiceWorkerStatusCode EmbeddedWorkerInstance::Start(
     int64 service_worker_version_id,
     const GURL& script_url) {
   DCHECK(status_ == STOPPED);
   if (!ChooseProcess())
-    return false;
+    return SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND;
   status_ = STARTING;
-  bool success = registry_->StartWorker(
+  ServiceWorkerStatusCode status = registry_->StartWorker(
       process_id_,
       embedded_worker_id_,
       service_worker_version_id,
       script_url);
-  if (!success) {
+  if (status != SERVICE_WORKER_OK) {
     status_ = STOPPED;
     process_id_ = -1;
   }
-  return success;
+  return status;
 }
 
-bool EmbeddedWorkerInstance::Stop() {
+ServiceWorkerStatusCode EmbeddedWorkerInstance::Stop() {
   DCHECK(status_ == STARTING || status_ == RUNNING);
-  const bool success = registry_->StopWorker(process_id_, embedded_worker_id_);
-  if (success)
+  ServiceWorkerStatusCode status =
+      registry_->StopWorker(process_id_, embedded_worker_id_);
+  if (status == SERVICE_WORKER_OK)
     status_ = STOPPING;
-  return success;
+  return status;
+}
+
+ServiceWorkerStatusCode EmbeddedWorkerInstance::SendMessage(
+    int request_id,
+    const IPC::Message& message) {
+  DCHECK(status_ == RUNNING);
+  return registry_->Send(process_id_,
+                         new EmbeddedWorkerContextMsg_SendMessageToWorker(
+                             thread_id_, embedded_worker_id_,
+                             request_id, message));
 }
 
 void EmbeddedWorkerInstance::AddProcessReference(int process_id) {
@@ -68,15 +81,34 @@ EmbeddedWorkerInstance::EmbeddedWorkerInstance(
 }
 
 void EmbeddedWorkerInstance::OnStarted(int thread_id) {
+  // Stop is requested before OnStarted is sent back from the worker.
+  if (status_ == STOPPING)
+    return;
   DCHECK(status_ == STARTING);
   status_ = RUNNING;
   thread_id_ = thread_id;
+  FOR_EACH_OBSERVER(Observer, observer_list_, OnStarted());
 }
 
 void EmbeddedWorkerInstance::OnStopped() {
   status_ = STOPPED;
   process_id_ = -1;
   thread_id_ = -1;
+  FOR_EACH_OBSERVER(Observer, observer_list_, OnStopped());
+}
+
+void EmbeddedWorkerInstance::OnMessageReceived(int request_id,
+                                               const IPC::Message& message) {
+  FOR_EACH_OBSERVER(Observer, observer_list_,
+                    OnMessageReceived(request_id, message));
+}
+
+void EmbeddedWorkerInstance::AddObserver(Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void EmbeddedWorkerInstance::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
 }
 
 bool EmbeddedWorkerInstance::ChooseProcess() {

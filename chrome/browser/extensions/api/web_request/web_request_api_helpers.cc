@@ -14,13 +14,14 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/runtime_data.h"
 #include "net/base/net_log.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
@@ -213,7 +214,7 @@ net::NetLog::ParametersCallback CreateNetLogExtensionIdCallback(
 
 // Creates NetLog parameters to indicate that an extension modified a request.
 // Caller takes ownership of returned value.
-Value* NetLogModificationCallback(
+base::Value* NetLogModificationCallback(
     const EventResponseDelta* delta,
     net::NetLog::LogLevel log_level) {
   base::DictionaryValue* dict = new base::DictionaryValue();
@@ -424,7 +425,7 @@ static bool MergeOnBeforeRequestResponsesHelper(
     if ((*delta)->new_url.is_empty())
       continue;
     if (consider_only_cancel_scheme_urls &&
-        !(*delta)->new_url.SchemeIs(chrome::kDataScheme) &&
+        !(*delta)->new_url.SchemeIs(content::kDataScheme) &&
         (*delta)->new_url.spec() != "about:blank") {
       continue;
     }
@@ -1264,9 +1265,11 @@ void NotifyWebRequestAPIUsed(
   if (!g_browser_process->profile_manager()->IsValidProfile(profile))
     return;
 
-  if (profile->GetExtensionService()->HasUsedWebRequest(extension.get()))
+  extensions::RuntimeData* runtime_data =
+      extensions::ExtensionSystem::Get(profile)->runtime_data();
+  if (runtime_data->HasUsedWebRequest(extension.get()))
     return;
-  profile->GetExtensionService()->SetHasUsedWebRequest(extension.get(), true);
+  runtime_data->SetHasUsedWebRequest(extension.get(), true);
 
   content::BrowserContext* browser_context = profile;
   for (content::RenderProcessHost::iterator it =

@@ -15,12 +15,12 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/alarms.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -219,7 +219,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<AlarmManager>* AlarmManager::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 // static
@@ -236,8 +236,10 @@ void AlarmManager::RemoveAlarmIterator(const AlarmIterator& iter) {
   // Cancel the timer if there are no more alarms.
   // We don't need to reschedule the poll otherwise, because in
   // the worst case we would just poll one extra time.
-  if (alarms_.empty())
+  if (alarms_.empty()) {
     timer_.Stop();
+    next_poll_time_ = base::Time();
+  }
 }
 
 void AlarmManager::OnAlarm(AlarmIterator it) {
@@ -249,9 +251,20 @@ void AlarmManager::OnAlarm(AlarmIterator it) {
   // Update our scheduled time for the next alarm.
   if (double* period_in_minutes =
       alarm.js_alarm->period_in_minutes.get()) {
-    alarm.js_alarm->scheduled_time =
-        (last_poll_time_ +
-         TimeDeltaFromDelay(*period_in_minutes)).ToJsTime();
+    // Get the timer's delay in JS time (i.e., convert it from minutes to
+    // milliseconds).
+    double period_in_js_time =
+        *period_in_minutes * base::Time::kMicrosecondsPerMinute /
+        base::Time::kMicrosecondsPerMillisecond;
+    // Find out how many periods have transpired since the alarm last went off
+    // (it's possible that we missed some).
+    int transpired_periods =
+        (last_poll_time_.ToJsTime() - alarm.js_alarm->scheduled_time) /
+        period_in_js_time;
+    // Schedule the alarm for the next period that is in-line with the original
+    // scheduling.
+    alarm.js_alarm->scheduled_time +=
+        period_in_js_time * (transpired_periods + 1);
   } else {
     RemoveAlarmIterator(it);
   }
@@ -267,8 +280,10 @@ void AlarmManager::AddAlarmImpl(const std::string& extension_id,
     RemoveAlarmIterator(old_alarm);
 
   alarms_[extension_id].push_back(alarm);
-
-  ScheduleNextPoll();
+  base::Time alarm_time =
+      base::Time::FromJsTime(alarm.js_alarm->scheduled_time);
+  if (next_poll_time_.is_null() || alarm_time < next_poll_time_)
+    SetNextPollTime(alarm_time);
 }
 
 void AlarmManager::WriteToStorage(const std::string& extension_id) {
@@ -302,15 +317,21 @@ void AlarmManager::ReadFromStorage(const std::string& extension_id,
   ready_actions_.erase(extension_id);
 }
 
+void AlarmManager::SetNextPollTime(const base::Time& time) {
+  next_poll_time_ = time;
+  timer_.Start(FROM_HERE,
+               std::max(base::TimeDelta::FromSeconds(0), time - clock_->Now()),
+               this,
+               &AlarmManager::PollAlarms);
+}
+
 void AlarmManager::ScheduleNextPoll() {
   // If there are no alarms, stop the timer.
   if (alarms_.empty()) {
     timer_.Stop();
+    next_poll_time_ = base::Time();
     return;
   }
-
-  // TODO(yoz): Try not to reschedule every single time if we're adding
-  // a lot of alarms.
 
   // Find the soonest alarm that is scheduled to run and the smallest
   // granularity of any alarm.
@@ -328,11 +349,11 @@ void AlarmManager::ScheduleNextPoll() {
         soonest_alarm_time = cur_alarm_time;
       if (l_it->granularity < min_granularity)
         min_granularity = l_it->granularity;
-      base::TimeDelta cur_alarm_delta = cur_alarm_time - clock_->Now();
+      base::TimeDelta cur_alarm_delta = cur_alarm_time - last_poll_time_;
+      if (cur_alarm_delta < l_it->minimum_granularity)
+        cur_alarm_delta = l_it->minimum_granularity;
       if (cur_alarm_delta < min_granularity)
         min_granularity = cur_alarm_delta;
-      if (min_granularity < l_it->minimum_granularity)
-        min_granularity = l_it->minimum_granularity;
     }
   }
 
@@ -345,13 +366,7 @@ void AlarmManager::ScheduleNextPoll() {
     next_poll = soonest_alarm_time;
 
   // Schedule the poll.
-  test_next_poll_time_ = next_poll;
-  base::TimeDelta delay = std::max(base::TimeDelta::FromSeconds(0),
-                                   next_poll - clock_->Now());
-  timer_.Start(FROM_HERE,
-               delay,
-               this,
-               &AlarmManager::PollAlarms);
+  SetNextPollTime(next_poll);
 }
 
 void AlarmManager::PollAlarms() {

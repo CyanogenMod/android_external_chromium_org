@@ -15,7 +15,6 @@
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "gpu/command_buffer/common/mailbox.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "url/gurl.h"
 
@@ -35,12 +34,11 @@ GpuListenerInfo::~GpuListenerInfo() {}
 // static
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
-    int gpu_host_id,
     const gpu::GPUInfo& gpu_info,
     const IPC::ChannelHandle& channel_handle) {
   DCHECK(factory->IsMainThread());
   scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
-      factory, gpu_host_id, gpu_info);
+      factory, gpu_info);
   host->Connect(channel_handle);
   return host;
 }
@@ -60,10 +58,8 @@ bool GpuChannelHost::IsValidGpuMemoryBuffer(
 }
 
 GpuChannelHost::GpuChannelHost(GpuChannelHostFactory* factory,
-                               int gpu_host_id,
                                const gpu::GPUInfo& gpu_info)
     : factory_(factory),
-      gpu_host_id_(gpu_host_id),
       gpu_info_(gpu_info) {
   next_transfer_buffer_id_.GetNext();
   next_gpu_memory_buffer_id_.GetNext();
@@ -221,14 +217,6 @@ void GpuChannelHost::DestroyCommandBuffer(
   delete command_buffer;
 }
 
-bool GpuChannelHost::CollectRenderingStatsForSurface(
-    int surface_id, GpuRenderingStats* stats) {
-  TRACE_EVENT0("gpu", "GpuChannelHost::CollectRenderingStats");
-
-  return Send(new GpuChannelMsg_CollectRenderingStatsForSurface(surface_id,
-                                                                stats));
-}
-
 void GpuChannelHost::AddRoute(
     int route_id, base::WeakPtr<IPC::Listener> listener) {
   DCHECK(MessageLoopProxy::current().get());
@@ -273,26 +261,6 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
 #endif
 }
 
-bool GpuChannelHost::GenerateMailboxNames(unsigned num,
-                                          std::vector<gpu::Mailbox>* names) {
-  DCHECK(names->empty());
-  TRACE_EVENT0("gpu", "GenerateMailboxName");
-  size_t generate_count = channel_filter_->GetMailboxNames(num, names);
-
-  if (names->size() < num) {
-    std::vector<gpu::Mailbox> new_names;
-    if (!Send(new GpuChannelMsg_GenerateMailboxNames(num - names->size(),
-                                                     &new_names)))
-      return false;
-    names->insert(names->end(), new_names.begin(), new_names.end());
-  }
-
-  if (generate_count > 0)
-    Send(new GpuChannelMsg_GenerateMailboxNamesAsync(generate_count));
-
-  return true;
-}
-
 int32 GpuChannelHost::ReserveTransferBufferId() {
   return next_transfer_buffer_id_.GetNext();
 }
@@ -328,8 +296,7 @@ GpuChannelHost::~GpuChannelHost() {
 
 
 GpuChannelHost::MessageFilter::MessageFilter()
-    : lost_(false),
-      requested_mailboxes_(0) {
+    : lost_(false) {
 }
 
 GpuChannelHost::MessageFilter::~MessageFilter() {}
@@ -357,21 +324,17 @@ bool GpuChannelHost::MessageFilter::OnMessageReceived(
   if (message.is_reply())
     return false;
 
-  if (message.routing_id() == MSG_ROUTING_CONTROL)
-    return OnControlMessageReceived(message);
-
   ListenerMap::iterator it = listeners_.find(message.routing_id());
+  if (it == listeners_.end())
+    return false;
 
-  if (it != listeners_.end()) {
-    const GpuListenerInfo& info = it->second;
-    info.loop->PostTask(
-        FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&IPC::Listener::OnMessageReceived),
-            info.listener,
-            message));
-  }
-
+  const GpuListenerInfo& info = it->second;
+  info.loop->PostTask(
+      FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(&IPC::Listener::OnMessageReceived),
+          info.listener,
+          message));
   return true;
 }
 
@@ -402,51 +365,5 @@ bool GpuChannelHost::MessageFilter::IsLost() const {
   AutoLock lock(lock_);
   return lost_;
 }
-
-size_t GpuChannelHost::MessageFilter::GetMailboxNames(
-    size_t num, std::vector<gpu::Mailbox>* names) {
-  AutoLock lock(lock_);
-  size_t count = std::min(num, mailbox_name_pool_.size());
-  names->insert(names->begin(),
-                mailbox_name_pool_.end() - count,
-                mailbox_name_pool_.end());
-  mailbox_name_pool_.erase(mailbox_name_pool_.end() - count,
-                           mailbox_name_pool_.end());
-
-  const size_t ideal_mailbox_pool_size = 100;
-  size_t total = mailbox_name_pool_.size() + requested_mailboxes_;
-  DCHECK_LE(total, ideal_mailbox_pool_size);
-  if (total >= ideal_mailbox_pool_size / 2)
-    return 0;
-  size_t request = ideal_mailbox_pool_size - total;
-  requested_mailboxes_ += request;
-  return request;
-}
-
-bool GpuChannelHost::MessageFilter::OnControlMessageReceived(
-    const IPC::Message& message) {
-  bool handled = true;
-
-  IPC_BEGIN_MESSAGE_MAP(GpuChannelHost::MessageFilter, message)
-  IPC_MESSAGE_HANDLER(GpuChannelMsg_GenerateMailboxNamesReply,
-                      OnGenerateMailboxNamesReply)
-  IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-
-  DCHECK(handled);
-  return handled;
-}
-
-void GpuChannelHost::MessageFilter::OnGenerateMailboxNamesReply(
-    const std::vector<gpu::Mailbox>& names) {
-  TRACE_EVENT0("gpu", "OnGenerateMailboxNamesReply");
-  AutoLock lock(lock_);
-  DCHECK_LE(names.size(), requested_mailboxes_);
-  requested_mailboxes_ -= names.size();
-  mailbox_name_pool_.insert(mailbox_name_pool_.end(),
-                            names.begin(),
-                            names.end());
-}
-
 
 }  // namespace content

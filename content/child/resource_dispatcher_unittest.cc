@@ -14,7 +14,6 @@
 #include "content/common/resource_messages.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/net_errors.h"
-#include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
@@ -71,8 +70,10 @@ class TestRequestCallback : public ResourceLoaderBridge::Peer {
   virtual void OnCompletedRequest(
       int error_code,
       bool was_ignored_by_handler,
+      bool stale_copy_in_cache,
       const std::string& security_info,
-      const base::TimeTicks& completion_time) OVERRIDE {
+      const base::TimeTicks& completion_time,
+      int64 total_transfer_size) OVERRIDE {
     EXPECT_FALSE(complete_);
     complete_ = true;
   }
@@ -173,7 +174,7 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     request_info.request_type = ResourceType::SUB_RESOURCE;
     request_info.appcache_host_id = appcache::kNoHostId;
     request_info.routing_id = 0;
-    RequestExtraData extra_data(blink::WebReferrerPolicyDefault,
+    RequestExtraData extra_data(blink::WebPageVisibilityStateVisible,
                                 blink::WebString(),
                                 false, MSG_ROUTING_NONE, true, 0, GURL(),
                                 false, -1, true,
@@ -296,8 +297,10 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
   virtual void OnCompletedRequest(
       int error_code,
       bool was_ignored_by_handler,
+      bool stale_copy_in_cache,
       const std::string& security_info,
-      const base::TimeTicks& completion_time) OVERRIDE {
+      const base::TimeTicks& completion_time,
+      int64 total_transfer_size) OVERRIDE {
   }
 
  protected:
@@ -328,7 +331,7 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
 };
 
 TEST_F(DeferredResourceLoadingTest, DeferredLoadTest) {
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   ResourceLoaderBridge* bridge = CreateBridge();
 
@@ -383,8 +386,10 @@ class TimeConversionTest : public ResourceDispatcherTest,
   virtual void OnCompletedRequest(
       int error_code,
       bool was_ignored_by_handler,
+      bool stale_copy_in_cache,
       const std::string& security_info,
-      const base::TimeTicks& completion_time) OVERRIDE {
+      const base::TimeTicks& completion_time,
+      int64 total_transfer_size) OVERRIDE {
   }
 
   const ResourceResponseInfo& response_info() const { return response_info_; }

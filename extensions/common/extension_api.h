@@ -65,10 +65,19 @@ class ExtensionAPI {
   void RegisterDependencyProvider(const std::string& name,
                                   FeatureProvider* provider);
 
-  // Returns true if the specified API is available. |api_full_name| can be
-  // either a namespace name (like "bookmarks") or a member name (like
-  // "bookmarks.create"). Returns true if the feature and all of its
-  // dependencies are available to the specified context.
+  // Returns true if the API feature |api| and all of its dependencies are
+  // available in |context|.
+  //
+  // Depending on the configuration of |api| (in _api_features.json), either
+  // |extension| or |url| (or both) may determine its availability, but this is
+  // up to the configuration of the individual feature.
+  Feature::Availability IsAvailable(const Feature& api,
+                                    const Extension* extension,
+                                    Feature::Context context,
+                                    const GURL& url);
+  // Same as the previous overload, but takes a feature name instead of an
+  // object. |api_full_name| can be either a namespace name (like "bookmarks")
+  // or a member name (like "bookmarks.create").
   Feature::Availability IsAvailable(const std::string& api_full_name,
                                     const Extension* extension,
                                     Feature::Context context,
@@ -76,7 +85,7 @@ class ExtensionAPI {
 
   // Determines whether an API, or any parts of that API, are available in
   // |context|.
-  bool IsAnyFeatureAvailableToContext(const std::string& api_name,
+  bool IsAnyFeatureAvailableToContext(const Feature& api,
                                       const Extension* extension,
                                       Feature::Context context,
                                       const GURL& url);

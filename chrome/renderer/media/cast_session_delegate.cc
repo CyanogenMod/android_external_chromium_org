@@ -6,12 +6,15 @@
 
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "chrome/renderer/media/cast_transport_sender_ipc.h"
 #include "content/public/renderer/p2p_socket_client.h"
 #include "content/public/renderer/render_thread.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_sender.h"
 #include "media/cast/logging/logging_defines.h"
+#include "media/cast/transport/cast_transport_config.h"
+#include "media/cast/transport/cast_transport_sender.h"
 
 using media::cast::AudioSenderConfig;
 using media::cast::CastEnvironment;
@@ -21,52 +24,19 @@ using media::cast::VideoSenderConfig;
 CastSessionDelegate::CastSessionDelegate()
     : audio_encode_thread_("CastAudioEncodeThread"),
       video_encode_thread_("CastVideoEncodeThread"),
-      audio_configured_(false),
-      video_configured_(false),
+      transport_configured_(false),
       io_message_loop_proxy_(
           content::RenderThread::Get()->GetIOMessageLoopProxy()) {
+  DCHECK(io_message_loop_proxy_);
 }
 
 CastSessionDelegate::~CastSessionDelegate() {
   DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 }
 
-void CastSessionDelegate::SetSocketFactory(
-    scoped_ptr<CastSession::P2PSocketFactory> socket_factory,
-    const net::IPEndPoint& remote_address) {
-  socket_factory_ = socket_factory.Pass();
-  remote_address_ = remote_address;
-}
-
-void CastSessionDelegate::StartAudio(const AudioSenderConfig& config) {
-  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
-
-  audio_configured_ = true;
-  audio_config_ = config;
-  MaybeStartSending();
-}
-
-void CastSessionDelegate::StartVideo(const VideoSenderConfig& config) {
-  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
-
-  video_configured_ = true;
-  video_config_ = config;
-  MaybeStartSending();
-}
-
-void CastSessionDelegate::StartSending() {
-  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
-
+void CastSessionDelegate::Initialize() {
   if (cast_environment_)
-    return;
-
-  if (!socket_factory_) {
-    // TODO(hubbe): Post an error back to the user
-    return;
-  }
-
-  socket_ = socket_factory_->Create();
-  socket_->SetDelegate(this);
+    return;  // Already initialized.
 
   audio_encode_thread_.Start();
   video_encode_thread_.Start();
@@ -76,79 +46,110 @@ void CastSessionDelegate::StartSending() {
   // There's no need to decode so no thread assigned for decoding.
   // Get default logging: All disabled.
   cast_environment_ = new CastEnvironment(
-      &clock_,
+      scoped_ptr<base::TickClock>(new base::DefaultTickClock()).Pass(),
       base::MessageLoopProxy::current(),
       audio_encode_thread_.message_loop_proxy(),
       NULL,
       video_encode_thread_.message_loop_proxy(),
       NULL,
-      media::cast::GetDefaultCastLoggingConfig());
+      base::MessageLoopProxy::current(),
+      media::cast::GetDefaultCastSenderLoggingConfig());
+}
 
-  // TODO(hclam): Implement VideoEncoderController to configure hardware
-  // encoder.
+void CastSessionDelegate::StartAudio(
+    const AudioSenderConfig& config,
+    const FrameInputAvailableCallback& callback) {
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
+
+  audio_config_.reset(new AudioSenderConfig(config));
+  video_frame_input_available_callback_ = callback;
+  StartSendingInternal();
+}
+
+void CastSessionDelegate::StartVideo(
+    const VideoSenderConfig& config,
+    const FrameInputAvailableCallback& callback) {
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
+  audio_frame_input_available_callback_ = callback;
+
+  video_config_.reset(new VideoSenderConfig(config));
+  StartSendingInternal();
+}
+
+void CastSessionDelegate::StartUDP(
+    const net::IPEndPoint& local_endpoint,
+    const net::IPEndPoint& remote_endpoint) {
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
+  transport_configured_ = true;
+  local_endpoint_ = local_endpoint;
+  remote_endpoint_ = remote_endpoint;
+  StartSendingInternal();
+}
+
+void CastSessionDelegate::StatusNotificationCB(
+    media::cast::transport::CastTransportStatus unused_status) {
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
+  // TODO(hubbe): Call javascript UDPTransport error function.
+}
+
+void CastSessionDelegate::StartSendingInternal() {
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
+
+  // No transport, wait.
+  if (!transport_configured_)
+    return;
+
+  // No audio or video, wait.
+  if (!audio_config_ && !video_config_)
+    return;
+
+  Initialize();
+
+  media::cast::transport::CastTransportConfig config;
+
+  // TODO(hubbe): set config.aes_key and config.aes_iv_mask.
+  config.local_endpoint = local_endpoint_;
+  config.receiver_endpoint = remote_endpoint_;
+  if (audio_config_) {
+    config.audio_ssrc = audio_config_->sender_ssrc;
+    config.audio_codec = audio_config_->codec;
+    config.audio_rtp_config = audio_config_->rtp_config;
+    config.audio_frequency = audio_config_->frequency;
+    config.audio_channels = audio_config_->channels;
+  }
+  if (video_config_) {
+    config.video_ssrc = video_config_->sender_ssrc;
+    config.video_codec = video_config_->codec;
+    config.video_rtp_config = video_config_->rtp_config;
+  }
+
+  cast_transport_.reset(new CastTransportSenderIPC(
+      config,
+      base::Bind(&CastSessionDelegate::StatusNotificationCB,
+                 base::Unretained(this))));
+
   cast_sender_.reset(CastSender::CreateCastSender(
       cast_environment_,
-      audio_config_,
-      video_config_,
-      NULL,
-      this));
+      audio_config_.get(),
+      video_config_.get(),
+      NULL,  // GPU.
+      base::Bind(&CastSessionDelegate::InitializationResult,
+                 base::Unretained(this)),
+      cast_transport_.get()));
+  cast_transport_->SetPacketReceiver(cast_sender_->packet_receiver());
 }
 
-  // media::cast::PacketSender Implementation
-bool CastSessionDelegate::SendPacket(
-    const media::cast::Packet& packet) {
-  // TODO(hubbe): Make sure audio and video packets gets the right DSCP.
-  socket_->SendWithDscp(
-      remote_address_,
-      *reinterpret_cast<const std::vector<char> *>(&packet),
-      net::DSCP_AF41);
-  return true;
-}
+void CastSessionDelegate::InitializationResult(
+    media::cast::CastInitializationStatus result) const {
+  DCHECK(cast_sender_);
 
-bool CastSessionDelegate::SendPackets(
-    const media::cast::PacketList& packets) {
-  // TODO(hubbe): Add ability to send multiple packets in one IPC message.
-  for (size_t i = 0; i < packets.size(); i++) {
-    SendPacket(packets[i]);
+  // TODO(pwestin): handle the error codes.
+  if (result == media::cast::STATUS_INITIALIZED) {
+    if (!audio_frame_input_available_callback_.is_null()) {
+      audio_frame_input_available_callback_.Run(cast_sender_->frame_input());
+    }
+    if (!video_frame_input_available_callback_.is_null()) {
+      video_frame_input_available_callback_.Run(cast_sender_->frame_input());
+    }
   }
-  return true;
-}
-
-// content::P2PSocketClient::Delegate Implementation
-void CastSessionDelegate::OnOpen(
-    const net::IPEndPoint& address) {
-  // Called once Init completes. Ignored.
-}
-
-void CastSessionDelegate::OnIncomingTcpConnection(
-    const net::IPEndPoint& address,
-    content::P2PSocketClient* client) {
-  // We only support UDP sockets. This function should not be called
-  // for UDP sockets.
-  NOTREACHED();
-}
-
-void CastSessionDelegate::OnSendComplete() {
-  // Ignored for now.
-}
-
-void CastSessionDelegate::OnError() {
-  // TODO(hubbe): Report this back to the user.
-}
-
-void CastSessionDelegate::OnDataReceived(const net::IPEndPoint& address,
-                                         const std::vector<char>& data) {
-  uint8 *packet_copy = new uint8[data.size()];
-  memcpy(packet_copy, &data[0], data.size());
-  cast_sender_->packet_receiver()->ReceivedPacket(
-      packet_copy,
-      data.size(),
-      base::Bind(&media::cast::PacketReceiver::DeletePacket,
-                 packet_copy));
-}
-
-void CastSessionDelegate::MaybeStartSending() {
-  if (!audio_configured_ || !video_configured_)
-    return;
-  StartSending();
 }

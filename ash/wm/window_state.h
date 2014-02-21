@@ -6,6 +6,7 @@
 #define ASH_WM_WINDOW_STATE_H_
 
 #include "ash/ash_export.h"
+#include "ash/wm/drag_details.h"
 #include "ash/wm/wm_types.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -22,7 +23,9 @@ class Rect;
 }
 
 namespace ash {
-class WindowResizer;
+namespace internal {
+class WorkspaceLayoutManager;
+}
 
 namespace wm {
 class WindowStateDelegate;
@@ -41,7 +44,22 @@ class WindowStateObserver;
 // accessing the window using |window()| is cheap.
 class ASH_EXPORT WindowState : public aura::WindowObserver {
  public:
-  static bool IsMaximizedOrFullscreenState(ui::WindowShowState state);
+
+  // A subclass of State class represents one of the window's states
+  // that corresponds WnidowShowType to in Ash environment, e.g.
+  // maximized, minimized or side snapped, as subclass.
+  // Each subclass defines its own behavior and transition for each WMEvent.
+  class State {
+   public:
+    State() {}
+    virtual ~State() {}
+
+    // Update WindowState based on |event|.
+    virtual void OnWMEvent(WindowState* state, WMEvent event) = 0;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(State);
+  };
 
   explicit WindowState(aura::Window* window);
   virtual ~WindowState();
@@ -65,9 +83,17 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool IsMaximized() const;
   bool IsFullscreen() const;
   bool IsMaximizedOrFullscreen() const;
+
+  // DEPRECATED. TODO(pkotwicz): Remove (crbug.com/326392)
   // True if the window's show state is SHOW_STATE_NORMAL or
   // SHOW_STATE_DEFAULT.
   bool IsNormalShowState() const;
+
+  // True if the window's show type is SHOW_TYPE_NORMAL or SHOW_TYPE_DEFAULT.
+  // Unlike IsNormalShowState(), returns false if the window's show type is
+  // SHOW_TYPE_LEFT_SNAPPED or SHOW_TYPE_RIGHT_SNAPPED.
+  bool IsNormalShowType() const;
+
   bool IsActive() const;
   bool IsDocked() const;
   bool IsSnapped() const;
@@ -88,10 +114,13 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   void Activate();
   void Deactivate();
   void Restore();
-  void ToggleMaximized();
   void ToggleFullscreen();
   void SnapLeft(const gfx::Rect& bounds);
   void SnapRight(const gfx::Rect& bounds);
+
+  // Invoked when a WMevent occurs, which drives the internal
+  // state machine.
+  void OnWMEvent(WMEvent event);
 
   // Sets the window's bounds in screen coordinates.
   void SetBoundsInScreen(const gfx::Rect& bounds_in_screen);
@@ -119,16 +148,14 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   // Deletes and clears the restore bounds property on the window.
   void ClearRestoreBounds();
 
-  // Sets whether the window should always be restored to the restore bounds
-  // (sometimes the workspace layout manager restores the window to its original
-  // bounds instead of the restore bounds. Setting this key overrides that
-  // behaviour). The flag is reset to the default value after the window is
-  // restored.
-  bool always_restores_to_restore_bounds() const {
-    return always_restores_to_restore_bounds_;
+  // True if the window should be unminimized to the restore bounds, as
+  // opposed to the window's current bounds. |unminimized_to_restore_bounds_| is
+  // reset to the default value after the window is unminimized.
+  bool unminimize_to_restore_bounds() const {
+    return unminimize_to_restore_bounds_;
   }
-  void set_always_restores_to_restore_bounds(bool value) {
-    always_restores_to_restore_bounds_ = value;
+  void set_unminimize_to_restore_bounds(bool value) {
+    unminimize_to_restore_bounds_ = value;
   }
 
   // Gets/sets whether the shelf should be hidden when this window is
@@ -175,7 +202,9 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   void RemoveObserver(WindowStateObserver* observer);
 
   // Whether the window is being dragged.
-  bool is_dragged() const { return !!window_resizer_; }
+  bool is_dragged() const {
+    return drag_details_;
+  }
 
   // Whether or not the window's position can be managed by the
   // auto management logic.
@@ -231,18 +260,27 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
     top_row_keys_are_function_keys_ = value;
   }
 
-  // Returns or sets a pointer to WindowResizer when resizing is active.
-  // The pointer to a WindowResizer that is returned is set when a resizer gets
-  // created and cleared when it gets destroyed. WindowState does not own the
-  // |window_resizer_| instance and the resizer's lifetime is controlled
-  // externally. It can be used to avoid creating multiple instances of a
-  // WindowResizer for the same window.
-  WindowResizer* window_resizer() const {
-    return window_resizer_;
-  }
-  void set_window_resizer_(WindowResizer* window_resizer) {
-    window_resizer_ = window_resizer;
-  }
+  // Creates and takes ownership of a pointer to DragDetails when resizing is
+  // active. This should be done before a resizer gets created.
+  void CreateDragDetails(aura::Window* window,
+                         const gfx::Point& point_in_parent,
+                         int window_component,
+                         aura::client::WindowMoveSource source);
+
+  // Deletes and clears a pointer to DragDetails. This should be done when the
+  // resizer gets destroyed.
+  void DeleteDragDetails();
+
+  // Sets the currently stored restore bounds and clears the restore bounds.
+  void SetAndClearRestoreBounds();
+
+  // Adjusts the |bounds| so that they are flush with the edge of the
+  // workspace if the window represented by |window_state| is side snapped.
+  void AdjustSnappedBounds(gfx::Rect* bounds);
+
+  // Returns a pointer to DragDetails during drag operations.
+  const DragDetails* drag_details() const { return drag_details_.get(); }
+  DragDetails* drag_details() { return drag_details_.get(); }
 
   // aura::WindowObserver overrides:
   virtual void OnWindowPropertyChanged(aura::Window* window,
@@ -250,12 +288,26 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
                                        intptr_t old) OVERRIDE;
 
  private:
+  friend class DefaultState;
+  // TODO(oshima): Move more logic from WLM to this class and remove
+  // this friend.
+  friend class internal::WorkspaceLayoutManager;
+
+  WindowStateDelegate* delegate() { return delegate_.get(); }
+
   // Snaps the window to left or right of the desktop with given bounds.
   void SnapWindow(WindowShowType left_or_right,
                   const gfx::Rect& bounds);
 
   // Sets the window show type and updates the show state if necessary.
-  void SetWindowShowType(WindowShowType new_window_show_type);
+  // Note that this does not update the window bounds.
+  void UpdateWindowShowType(WindowShowType new_window_show_type);
+
+  void NotifyPreShowTypeChange(WindowShowType old_window_show_type);
+  void NotifyPostShowTypeChange(WindowShowType old_window_show_type);
+
+  void SetBoundsDirect(const gfx::Rect& bounds);
+  void SetBoundsDirectAnimated(const gfx::Rect& bounds);
 
   // The owner of this window settings.
   aura::Window* window_;
@@ -268,9 +320,9 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool ignored_by_shelf_;
   bool can_consume_system_keys_;
   bool top_row_keys_are_function_keys_;
-  WindowResizer* window_resizer_;
+  scoped_ptr<DragDetails> drag_details_;
 
-  bool always_restores_to_restore_bounds_;
+  bool unminimize_to_restore_bounds_;
   bool hide_shelf_when_fullscreen_;
   bool animate_to_fullscreen_;
   bool minimum_visibility_;
@@ -282,10 +334,13 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
 
   ObserverList<WindowStateObserver> observer_list_;
 
-  // True when in SetWindowShowType(). This is used to avoid reentrance.
-  bool in_set_window_show_type_;
+  // True to ignore a property change event to avoid reentrance in
+  // UpdateWindowShowType()
+  bool ignore_property_change_;
 
   WindowShowType window_show_type_;
+
+  scoped_ptr<State> current_state_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowState);
 };

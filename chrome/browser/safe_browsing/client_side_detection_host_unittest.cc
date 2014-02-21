@@ -48,9 +48,11 @@ using content::RenderViewHostTester;
 using content::WebContents;
 
 namespace {
+
 const bool kFalse = false;
 const bool kTrue = true;
-}
+
+}  // namespace
 
 namespace safe_browsing {
 namespace {
@@ -131,7 +133,7 @@ class MockSafeBrowsingUIManager : public SafeBrowsingUIManager {
   explicit MockSafeBrowsingUIManager(SafeBrowsingService* service)
       : SafeBrowsingUIManager(service) { }
 
-  MOCK_METHOD1(DoDisplayBlockingPage, void(const UnsafeResource& resource));
+  MOCK_METHOD1(DisplayBlockingPage, void(const UnsafeResource& resource));
 
   // Helper function which calls OnBlockingPageComplete for this client
   // object.
@@ -370,6 +372,8 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
     csd_host_->OnSafeBrowsingHit(resource);
     resource.callback.Reset();
 
+    ASSERT_TRUE(csd_host_->DidPageReceiveSafeBrowsingMatch());
+
     // LoadURL created a navigation entry, now simulate the RenderView sending
     // a notification that it actually navigated.
     content::WebContentsTester::For(web_contents())->CommitPendingNavigation();
@@ -377,6 +381,25 @@ class ClientSideDetectionHostTest : public ChromeRenderViewHostTestHarness {
     ASSERT_TRUE(csd_host_->DidPageReceiveSafeBrowsingMatch());
     ASSERT_TRUE(csd_host_->DidShowSBInterstitial());
     TestUnsafeResourceCopied(resource);
+  }
+
+  void NavigateWithoutSBHitAndCommit(const GURL& safe_url) {
+    controller().LoadURL(
+        safe_url, content::Referrer(), content::PAGE_TRANSITION_LINK,
+        std::string());
+
+    ASSERT_TRUE(pending_rvh());
+    if (web_contents()->GetRenderViewHost()->GetProcess()->GetID() ==
+        pending_rvh()->GetProcess()->GetID()) {
+      EXPECT_NE(web_contents()->GetRenderViewHost()->GetRoutingID(),
+                pending_rvh()->GetRoutingID());
+    }
+    ASSERT_FALSE(csd_host_->DidPageReceiveSafeBrowsingMatch());
+    ASSERT_FALSE(csd_host_->DidShowSBInterstitial());
+
+    content::WebContentsTester::For(web_contents())->CommitPendingNavigation();
+    ASSERT_FALSE(csd_host_->DidPageReceiveSafeBrowsingMatch());
+    ASSERT_FALSE(csd_host_->DidShowSBInterstitial());
   }
 
   void CheckIPUrlEqual(const std::vector<IPUrlInfo>& expect,
@@ -442,8 +465,8 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneNotPhishing) {
   EXPECT_TRUE(Mock::VerifyAndClear(csd_host_.get()));
   ASSERT_FALSE(cb.is_null());
 
-  // Make sure DoDisplayBlockingPage is not going to be called.
-  EXPECT_CALL(*ui_manager_.get(), DoDisplayBlockingPage(_)).Times(0);
+  // Make sure DisplayBlockingPage is not going to be called.
+  EXPECT_CALL(*ui_manager_.get(), DisplayBlockingPage(_)).Times(0);
   cb.Run(GURL(verdict.url()), false);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(Mock::VerifyAndClear(ui_manager_.get()));
@@ -483,8 +506,8 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneDisabled) {
   EXPECT_TRUE(Mock::VerifyAndClear(csd_host_.get()));
   ASSERT_FALSE(cb.is_null());
 
-  // Make sure DoDisplayBlockingPage is not going to be called.
-  EXPECT_CALL(*ui_manager_.get(), DoDisplayBlockingPage(_)).Times(0);
+  // Make sure DisplayBlockingPage is not going to be called.
+  EXPECT_CALL(*ui_manager_.get(), DisplayBlockingPage(_)).Times(0);
   cb.Run(GURL(verdict.url()), false);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(Mock::VerifyAndClear(ui_manager_.get()));
@@ -524,7 +547,7 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneShowInterstitial) {
   ASSERT_FALSE(cb.is_null());
 
   UnsafeResource resource;
-  EXPECT_CALL(*ui_manager_.get(), DoDisplayBlockingPage(_))
+  EXPECT_CALL(*ui_manager_.get(), DisplayBlockingPage(_))
       .WillOnce(SaveArg<0>(&resource));
   cb.Run(phishing_url, true);
 
@@ -617,7 +640,7 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneMultiplePings) {
   // We expect that the interstitial is shown for the second phishing URL and
   // not for the first phishing URL.
   UnsafeResource resource;
-  EXPECT_CALL(*ui_manager_.get(), DoDisplayBlockingPage(_))
+  EXPECT_CALL(*ui_manager_.get(), DisplayBlockingPage(_))
       .WillOnce(SaveArg<0>(&resource));
 
   cb.Run(phishing_url, true);  // Should have no effect.
@@ -731,6 +754,11 @@ TEST_F(ClientSideDetectionHostTest,
   OnPhishingDetectionDone(verdict.SerializeAsString());
   base::MessageLoop::current()->Run();
   EXPECT_TRUE(Mock::VerifyAndClear(csd_host_.get()));
+
+  ExpectPreClassificationChecks(start_url, &kFalse, &kFalse, &kFalse, &kFalse,
+                                &kFalse, &kFalse);
+  NavigateWithoutSBHitAndCommit(start_url);
+  WaitAndCheckPreClassificationChecks();
 }
 
 TEST_F(ClientSideDetectionHostTest, UpdateIPUrlMap) {
@@ -942,7 +970,7 @@ TEST_F(ClientSideDetectionHostTest,
   ASSERT_FALSE(cb.is_null());
 
   UnsafeResource resource;
-  EXPECT_CALL(*ui_manager_.get(), DoDisplayBlockingPage(_))
+  EXPECT_CALL(*ui_manager_.get(), DisplayBlockingPage(_))
       .WillOnce(SaveArg<0>(&resource));
   cb.Run(malware_landing_url, malware_ip_url, true);
 
@@ -1125,7 +1153,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
                                 NULL);
 
   UnsafeResource resource;
-  EXPECT_CALL(*ui_manager_.get(), DoDisplayBlockingPage(_))
+  EXPECT_CALL(*ui_manager_.get(), DisplayBlockingPage(_))
       .WillOnce(SaveArg<0>(&resource));
 
   NavigateAndCommit(url);

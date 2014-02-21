@@ -9,18 +9,17 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/translate/language_combobox_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_model.h"
-#include "chrome/common/translate/translate_errors.h"
+#include "components/translate/core/common/translate_errors.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/link_listener.h"
 
-class Browser;
 class PrefService;
-class TranslateBubbleModel;
 
 namespace views {
 class Checkbox;
@@ -41,9 +40,8 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   // Shows the Translate bubble.
   static void ShowBubble(views::View* anchor_view,
                          content::WebContents* web_contents,
-                         TranslateBubbleModel::ViewState type,
-                         TranslateErrors::Type error_type,
-                         Browser* browser);
+                         TranslateTabHelper::TranslateStep step,
+                         TranslateErrors::Type error_type);
 
   // If true, the Translate bubble is being shown.
   static bool IsShowing();
@@ -66,8 +64,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // views::CombboxListener methods.
-  virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
-  virtual void OnComboboxTextButtonClicked(views::Combobox* combobox) OVERRIDE;
+  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
 
   // views::LinkListener method.
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -82,7 +79,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
  private:
   enum LinkID {
     LINK_ID_ADVANCED,
-    LINK_ID_LEARN_MORE,
+    LINK_ID_LANGUAGE_SETTINGS,
   };
 
   enum ButtonID {
@@ -120,7 +117,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
 
   TranslateBubbleView(views::View* anchor_view,
                       scoped_ptr<TranslateBubbleModel> model,
-                      Browser* browser,
+                      TranslateErrors::Type error_type,
                       content::WebContents* web_contents);
 
   // Returns the current child view.
@@ -133,7 +130,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   void HandleLinkClicked(LinkID sender_id);
 
   // Handles the event when the user changes an index of a combobox.
-  void HandleComboboxSelectedIndexChanged(ComboboxID sender_id);
+  void HandleComboboxPerformAction(ComboboxID sender_id);
 
   // Updates the visibilities of child views according to the current view type.
   void UpdateChildVisibilities();
@@ -158,6 +155,9 @@ class TranslateBubbleView : public views::BubbleDelegateView,
 
   // Switches the view type.
   void SwitchView(TranslateBubbleModel::ViewState view_state);
+
+  // Switches to the error view.
+  void SwitchToErrorView(TranslateErrors::Type error_type);
 
   // Updates the advanced view.
   void UpdateAdvancedView();
@@ -184,14 +184,16 @@ class TranslateBubbleView : public views::BubbleDelegateView,
 
   scoped_ptr<TranslateBubbleModel> model_;
 
+  TranslateErrors::Type error_type_;
+
   // Whether the window is an incognito window.
   const bool is_in_incognito_window_;
 
-  // The browser to open the help URL into a new tab.
-  Browser* browser_;
-
   // Whether the translation is acutually executed.
   bool translate_executed_;
+
+  // Whether one of denial buttons is clicked.
+  bool denial_button_clicked_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateBubbleView);
 };

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/guid.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -14,6 +15,8 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::ASCIIToUTF16;
 
 namespace autofill {
 
@@ -58,18 +61,6 @@ TEST(AutofillCreditCardWrapperTest, GetDisplayTextNotEmptyWhenValid) {
   EXPECT_TRUE(wrapper.GetDisplayText(&unused, &unused2));
 }
 
-TEST(WalletInstrumentWrapperTest, GetInfoCreditCardExpMonth) {
-  scoped_ptr<wallet::WalletItems::MaskedInstrument> instrument(
-      wallet::GetTestMaskedInstrument());
-  MonthComboboxModel model;
-  for (int month = 1; month <= 12; ++month) {
-    instrument->expiration_month_ = month;
-    WalletInstrumentWrapper wrapper(instrument.get());
-    EXPECT_EQ(model.GetItemAt(month),
-              wrapper.GetInfo(AutofillType(CREDIT_CARD_EXP_MONTH)));
-  }
-}
-
 TEST(WalletInstrumentWrapperTest, GetDisplayTextEmptyWhenExpired) {
   scoped_ptr<wallet::WalletItems::MaskedInstrument> instrument(
       wallet::GetTestMaskedInstrument());
@@ -100,6 +91,79 @@ TEST(DataModelWrapperTest, GetDisplayTextEmptyWithoutPhone) {
   EXPECT_EQ(base::string16(),
             address_wrapper.GetInfo(AutofillType(PHONE_HOME_WHOLE_NUMBER)));
   EXPECT_FALSE(address_wrapper.GetDisplayText(&unused, &unused2));
+}
+
+TEST(DataModelWrapperTest, GetDisplayText) {
+  AutofillProfile profile = test::GetFullProfile();
+  base::string16 vertical, horizontal;
+  EXPECT_TRUE(
+      AutofillProfileWrapper(&profile).GetDisplayText(&horizontal, &vertical));
+  EXPECT_EQ(
+      ASCIIToUTF16("John H. Doe, 666 Erebus St., Apt 8, Elysium, CA 91111\n"
+                   "johndoe@hades.com\n"
+                   "+1 650-211-1111"),
+      horizontal);
+  EXPECT_EQ(
+      ASCIIToUTF16("John H. Doe\n"
+                   "666 Erebus St.\n"
+                   "Apt 8\n"
+                   "Elysium, CA 91111\n"
+                   "johndoe@hades.com\n"
+                   "+1 650-211-1111"),
+      vertical);
+
+  // A Japanese address.
+  AutofillProfile foreign_profile(
+      base::GenerateGUID(), "http://www.example.com/");
+  foreign_profile.SetRawInfo(
+      ADDRESS_HOME_COUNTRY, ASCIIToUTF16("JP"));
+  foreign_profile.SetRawInfo(
+      ADDRESS_HOME_STATE,
+      base::WideToUTF16(L"\u6771\u4EAC\u90FD"));
+  foreign_profile.SetRawInfo(
+      ADDRESS_HOME_CITY,
+      base::WideToUTF16(L"\u6E0B\u8C37\u533A"));
+  foreign_profile.SetRawInfo(
+      ADDRESS_HOME_DEPENDENT_LOCALITY,
+      base::WideToUTF16(L"\uC911\uAD6C"));
+  foreign_profile.SetRawInfo(
+      ADDRESS_HOME_STREET_ADDRESS,
+      base::WideToUTF16(
+          L"\u685C\u4E18\u753A26-1\n"
+          L"\u30BB\u30EB\u30EA\u30A2\u30F3\u30BF\u30EF\u30FC6\u968E"));
+  foreign_profile.SetRawInfo(
+      NAME_FULL,
+      base::WideToUTF16(L"\u6751\u4E0A \u7F8E\u7D00"));
+  foreign_profile.SetRawInfo(ADDRESS_HOME_ZIP, base::ASCIIToUTF16("150-8512"));
+  foreign_profile.SetRawInfo(
+      PHONE_HOME_WHOLE_NUMBER, ASCIIToUTF16("+81-3-6384-9000"));
+
+  EXPECT_TRUE(AutofillProfileWrapper(&foreign_profile).GetDisplayText(
+      &horizontal, &vertical));
+  EXPECT_EQ(
+      base::WideToUTF16(
+          L"\u3012150-8512\n"
+          L"\u6771\u4EAC\u90FD\u6E0B\u8C37\u533A\n"
+          L"\u685C\u4E18\u753A26-1\n"
+          L"\u30BB\u30EB\u30EA\u30A2\u30F3\u30BF\u30EF\u30FC6\u968E\n"
+          L"\u6751\u4E0A \u7F8E\u7D00\n"
+          L"+81-3-6384-9000"),
+      vertical);
+  // TODO(estade): we should also verify that |horizontal| is correct, but right
+  // now it uses the incorrect address line separator. See:
+  // http://crbug.com/270261
+}
+
+TEST(WalletInstrumentWrapperTest, GetInfoCreditCardExpMonth) {
+  scoped_ptr<wallet::WalletItems::MaskedInstrument> instrument(
+      wallet::GetTestMaskedInstrument());
+  MonthComboboxModel model;
+  for (int month = 1; month <= 12; ++month) {
+    instrument->expiration_month_ = month;
+    WalletInstrumentWrapper wrapper(instrument.get());
+    EXPECT_EQ(model.GetItemAt(month),
+              wrapper.GetInfo(AutofillType(CREDIT_CARD_EXP_MONTH)));
+  }
 }
 
 TEST(DataModelWrapperTest, GetDisplayPhoneNumber) {
@@ -166,27 +230,6 @@ TEST(DataModelWrapperTest, GetDisplayPhoneNumber) {
             profile_wrapper.GetInfoForDisplay(
                 AutofillType(PHONE_HOME_WHOLE_NUMBER)));
 
-}
-
-TEST(FieldMapWrapperTest, BothShippingAndBillingCanCoexist) {
-  DetailInputs inputs;
-
-  DetailInput billing_street;
-  billing_street.type = ADDRESS_BILLING_STREET_ADDRESS;
-  inputs.push_back(billing_street);
-
-  DetailInput shipping_street;
-  shipping_street.type = ADDRESS_HOME_STREET_ADDRESS;
-  inputs.push_back(shipping_street);
-
-  FieldValueMap outputs;
-  outputs[inputs[0].type] = ASCIIToUTF16("123 billing street");
-  outputs[inputs[1].type] = ASCIIToUTF16("123 shipping street");
-
-  FieldMapWrapper wrapper(outputs);
-  wrapper.FillInputs(&inputs);
-
-  EXPECT_NE(inputs[0].initial_value, inputs[1].initial_value);
 }
 
 }  // namespace autofill

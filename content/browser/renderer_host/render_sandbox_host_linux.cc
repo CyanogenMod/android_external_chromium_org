@@ -30,7 +30,7 @@
 #include "base/strings/string_util.h"
 #include "content/child/webkitplatformsupport_impl.h"
 #include "content/common/font_config_ipc_linux.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/set_process_title.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/skia_utils_base.h"
@@ -60,7 +60,7 @@ class SandboxIPCProcess  {
   // browser_socket: the browser's end of the sandbox IPC socketpair. From the
   //   point of view of the renderer, it's talking to the browser but this
   //   object actually services the requests.
-  // sandbox_cmd: the path of the sandbox executable
+  // sandbox_cmd: the path of the sandbox executable.
   SandboxIPCProcess(int lifeline_fd, int browser_socket,
                     std::string sandbox_cmd)
       : lifeline_fd_(lifeline_fd),
@@ -96,11 +96,13 @@ class SandboxIPCProcess  {
 
     int failed_polls = 0;
     for (;;) {
-      const int r = HANDLE_EINTR(poll(pfds, 2, -1));
-      if (r < 1) {
-        LOG(WARNING) << "poll errno:" << errno;
+      const int r = HANDLE_EINTR(poll(pfds, 2, -1 /* no timeout */));
+      // '0' is not a possible return value with no timeout.
+      DCHECK_NE(0, r);
+      if (r < 0) {
+        PLOG(WARNING) << "poll";
         if (failed_polls++ == 3) {
-          LOG(FATAL) << "poll failing. Sandbox host aborting.";
+          LOG(FATAL) << "poll(2) failing. RenderSandboxHostLinux aborting.";
           return;
         }
         continue;
@@ -709,12 +711,12 @@ void RenderSandboxHostLinux::Init(const std::string& sandbox_path) {
   childs_lifeline_fd_ = pipefds[1];
 
   // We need to be monothreaded before we fork().
-#if !defined(TOOLKIT_GTK)
+#if !defined(TOOLKIT_GTK) && !defined(THREAD_SANITIZER)
   // Exclude gtk port as TestSuite in base/tests/test_suite.cc is calling
   // gtk_init.
   // TODO(oshima): Remove ifdef when above issues are resolved.
   DCHECK_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
-#endif
+#endif  // !defined(TOOLKIT_GTK) && !defined(THREAD_SANITIZER)
   pid_ = fork();
   if (pid_ == 0) {
     if (IGNORE_EINTR(close(fds[0])) < 0)

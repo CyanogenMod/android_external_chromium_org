@@ -29,33 +29,29 @@ namespace app.window {
     // creating a new window.
     DOMString? id;
 
-    // Default width of the window. (Deprecated; regular bounds act like this
-    // now.)
-    [nodoc] long? defaultWidth;
+    // Default width of the window.
+    [deprecated="Use $ref:Bounds."] long? defaultWidth;
 
-    // Default height of the window. (Deprecated; regular bounds act like this
-    // now.)
-    [nodoc] long? defaultHeight;
+    // Default height of the window.
+    [deprecated="Use $ref:Bounds."] long? defaultHeight;
 
-    // Default X coordinate of the window. (Deprecated; regular bounds act like
-    // this now.)
-    [nodoc] long? defaultLeft;
+    // Default X coordinate of the window.
+    [deprecated="Use $ref:Bounds."] long? defaultLeft;
 
-    // Default Y coordinate of the window. (Deprecated; regular bounds act like
-    // this now.)
-    [nodoc] long? defaultTop;
+    // Default Y coordinate of the window.
+    [deprecated="Use $ref:Bounds."] long? defaultTop;
 
-    // Width of the window. (Deprecated; use 'bounds'.)
-    [nodoc] long? width;
+    // Width of the window.
+    [deprecated="Use $ref:Bounds."] long? width;
 
-    // Height of the window. (Deprecated; use 'bounds'.)
-    [nodoc] long? height;
+    // Height of the window.
+    [deprecated="Use $ref:Bounds."] long? height;
 
-    // X coordinate of the window. (Deprecated; use 'bounds'.)
-    [nodoc] long? left;
+    // X coordinate of the window.
+    [deprecated="Use $ref:Bounds."] long? left;
 
-    // Y coordinate of the window. (Deprecated; use 'bounds'.)
-    [nodoc] long? top;
+    // Y coordinate of the window.
+    [deprecated="Use $ref:Bounds."] long? top;
 
     // Minimum width of the window.
     long? minWidth;
@@ -105,8 +101,7 @@ namespace app.window {
     // window with the same id already exists that window is activated instead.
     // If you do want to create multiple windows with the same id, you can
     // set this property to false.
-    // (Deprecated; multiple windows with the same id is no longer supported.)
-    [nodoc] boolean? singleton;
+    [deprecated="Multiple windows with the same id is no longer supported."] boolean? singleton;
 
     // If true, the window will stay above most other windows. If there are
     // multiple windows of this kind, the currently focused window will be in
@@ -114,8 +109,10 @@ namespace app.window {
     // permission. Defaults to false.<br>
     // Call <code>setAlwaysOnTop()</code> on the window to change this property
     // after creation.<br>
-    // Currently only available on Dev channel.
     boolean? alwaysOnTop;
+
+    // If true, the window will be focused when created. Defaults to true.
+    boolean? focused;
   };
 
   // Called in the creating window (parent) before the load event is called in
@@ -132,7 +129,13 @@ namespace app.window {
     // Focus the window.
     static void focus();
 
-    // Fullscreens the window.
+    // Fullscreens the window.<br>
+    // The user will be able to restore the window by pressing ESC. An
+    // application can prevent the fullscreen state to be left when ESC is
+    // pressed by requesting the <b>overrideEscFullscreen</b> permission and
+    // canceling the event by calling .preventDefault(), like this:<br>
+    // <code>window.onKeyDown = function(e) { if (e.keyCode == 27 /* ESC */) {
+    // e.preventDefault(); } };</code>
     static void fullscreen();
 
     // Is the window fullscreen?
@@ -169,7 +172,8 @@ namespace app.window {
     static void close();
 
     // Show the window. Does nothing if the window is already visible.
-    static void show();
+    // Focus the window if |focused| is set to true or omitted.
+    static void show(optional boolean focused);
 
     // Hide the window. Does nothing if the window is already hidden.
     static void hide();
@@ -217,12 +221,19 @@ namespace app.window {
     // TODO(stevenjb): Investigate implementing this on Windows and OSX.
     [nodoc] static void setIcon(DOMString iconUrl);
 
+    // Set a badge icon for the window.
+    // TODO(benwells): Document this properly before going to stable.
+    [nodoc] static void setBadgeIcon(DOMString iconUrl);
+
+    // Clear the current for the window.
+    // TODO(benwells): Document this properly before going to stable.
+    [nodoc] static void clearBadge();
+
     // Is the window always on top?
     static boolean isAlwaysOnTop();
 
     // Set whether the window should stay above most other windows. Requires the
     // <code>"alwaysOnTopWindows"</code> permission.
-    // Currently only available on Dev channel.
     static void setAlwaysOnTop(boolean alwaysOnTop);
 
     // The JavaScript 'window' object for the created child.

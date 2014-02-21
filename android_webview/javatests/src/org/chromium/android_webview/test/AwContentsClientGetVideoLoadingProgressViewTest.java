@@ -4,11 +4,12 @@
 
 package org.chromium.android_webview.test;
 
+import android.test.suitebuilder.annotation.SmallTest;
 import android.view.View;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.VideoTestWebServer;
-import org.chromium.base.test.util.DisabledTest;
+import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.TouchCommon;
 
@@ -40,17 +41,13 @@ public class AwContentsClientGetVideoLoadingProgressViewTest extends AwTestBase
     }
 
     private void waitForViewAttached() throws InterruptedException, TimeoutException {
-        mViewAttachedCallbackHelper.waitForCallback(0, 1, 20, TimeUnit.SECONDS);
+        mViewAttachedCallbackHelper.waitForCallback(0, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
 
-    /**
-     * @Feature({"AndroidWebView"})
-     * @SmallTest
-     *
-     * http://crbug.com/238735
-     */
-    @DisabledTest
+    @Feature({"AndroidWebView"})
+    @SmallTest
     public void testGetVideoLoadingProgressView() throws Throwable {
         TestAwContentsClient contentsClient =
                 new FullScreenVideoTestAwContentsClient(getActivity()) {

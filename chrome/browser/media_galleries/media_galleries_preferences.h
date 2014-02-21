@@ -16,8 +16,8 @@
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "chrome/browser/storage_monitor/removable_storage_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/storage_monitor/removable_storage_observer.h"
 
 class Profile;
 
@@ -44,9 +44,11 @@ struct MediaGalleryPermission {
 
 struct MediaGalleryPrefInfo {
   enum Type {
-    kAutoDetected,  // Auto added to the list of galleries.
     kUserAdded,     // Explicitly added by the user.
+    kAutoDetected,  // Auto added to the list of galleries.
     kBlackListed,   // Auto added but then removed by the user.
+    kScanResult,    // Discovered by a disk scan.
+    kRemovedScan,   // Discovered by a disk scan but then removed by the user.
     kInvalidType,
   };
 
@@ -55,6 +57,10 @@ struct MediaGalleryPrefInfo {
 
   // The absolute path of the gallery.
   base::FilePath AbsolutePath() const;
+
+  // True if the gallery should not be displayed to the user
+  // i.e. kBlackListed || kRemovedScan.
+  bool IsBlackListedType() const;
 
   // The ID that identifies this gallery in this Profile.
   MediaGalleryPrefId pref_id;
@@ -97,6 +103,13 @@ struct MediaGalleryPrefInfo {
   // model_name, total_size_in_bytes) were set. False if these fields were
   // never written.
   bool volume_metadata_valid;
+
+  // The following fields are populated with the audio, image, and video file
+  // counts from the last scan. For files where it is hard to determine the
+  // exact type, the file should be counted in all possible counts.
+  int audio_count;
+  int image_count;
+  int video_count;
 
   // 0 if the display_name is set externally and always used for display.
   // 1 if the display_name is only set externally when it is overriding
@@ -172,9 +185,6 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
 
   // Lookup a media gallery and fill in information about it and return true if
   // it exists. Return false if it does not, filling in default information.
-  // TODO(vandebo) figure out if we want this to be async, in which case:
-  // void LookUpGalleryByPath(base::FilePath& path,
-  //                          callback(const MediaGalleryInfo&))
   bool LookUpGalleryByPath(const base::FilePath& path,
                            MediaGalleryPrefInfo* gallery) const;
 
@@ -190,23 +200,41 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
       const extensions::Extension* extension,
       bool include_unpermitted_galleries);
 
-  // Teaches the registry about a new gallery.
-  // Returns the gallery's pref id.
+  // Teaches the registry about a new gallery. If the gallery is in a
+  // blacklisted state, it is unblacklisted. |type| should not be a blacklisted
+  // type. Returns the gallery's pref id.
   MediaGalleryPrefId AddGallery(const std::string& device_id,
                                 const base::FilePath& relative_path,
-                                bool user_added,
+                                MediaGalleryPrefInfo::Type type,
                                 const base::string16& volume_label,
                                 const base::string16& vendor_name,
                                 const base::string16& model_name,
                                 uint64 total_size_in_bytes,
-                                base::Time last_attach_time);
+                                base::Time last_attach_time,
+                                int audio_count,
+                                int image_count,
+                                int video_count);
 
-  // Teach the registry about a user added registry simply from the path.
-  // Returns the gallery's pref id.
-  MediaGalleryPrefId AddGalleryByPath(const base::FilePath& path);
+  // Teach the registry about a gallery simply from the path. If the gallery is
+  // in a blacklisted state, it is unblacklisted. |type| should not be a
+  // blacklisted type. Returns the gallery's pref id.
+  MediaGalleryPrefId AddGalleryByPath(const base::FilePath& path,
+                                      MediaGalleryPrefInfo::Type type);
 
-  // Removes the gallery identified by |id| from the store.
+  // Logically removes the gallery identified by |id| from the store. For
+  // auto added or scan result galleries, this means moving them into a
+  // blacklisted state, otherwise they may come back when they are detected
+  // again.
   void ForgetGalleryById(MediaGalleryPrefId id);
+
+  // Remove the gallery identified by |id| from the store entirely. If it is an
+  // auto added or scan result gallery, it could get added again when the
+  // location is noticed again.
+  void EraseGalleryById(MediaGalleryPrefId id);
+
+  // Returns true if some extension has permission for |id|, which may not be
+  // an auto detected type.
+  bool NonAutoGalleryHasPermission(MediaGalleryPrefId id) const;
 
   MediaGalleryPrefIdSet GalleriesForExtension(
       const extensions::Extension& extension) const;
@@ -218,6 +246,11 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
                                         bool has_permission);
 
   const MediaGalleriesPrefInfoMap& known_galleries() const;
+
+  // These keep track of when we last successfully completed a media scan.
+  // This is used to provide cached results when appropriate.
+  base::Time GetLastScanCompletionTime() const;
+  void SetLastScanCompletionTime(const base::Time& time);
 
   // BrowserContextKeyedService implementation:
   virtual void Shutdown() OVERRIDE;
@@ -265,14 +298,19 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
   MediaGalleryPrefId AddGalleryInternal(const std::string& device_id,
                                         const base::string16& display_name,
                                         const base::FilePath& relative_path,
-                                        bool user_added,
+                                        MediaGalleryPrefInfo::Type type,
                                         const base::string16& volume_label,
                                         const base::string16& vendor_name,
                                         const base::string16& model_name,
                                         uint64 total_size_in_bytes,
                                         base::Time last_attach_time,
                                         bool volume_metadata_valid,
+                                        int audio_count,
+                                        int image_count,
+                                        int video_count,
                                         int prefs_version);
+
+  void EraseOrBlacklistGalleryById(MediaGalleryPrefId id, bool erase);
 
   // Sets permission for the media galleries identified by |gallery_id| for the
   // extension in the given |prefs|. Returns true only if anything changed.

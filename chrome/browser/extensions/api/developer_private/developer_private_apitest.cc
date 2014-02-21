@@ -12,11 +12,6 @@ using extensions::Manifest;
 
 class DeveloperPrivateApiTest : public ExtensionApiTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ExtensionApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kAppsDevtool);
-  }
-
   virtual void LoadExtensions() {
     base::FilePath base_dir = test_data_dir_.AppendASCII("developer");
     LoadNamedExtension(base_dir, "hosted_app");
@@ -50,6 +45,6 @@ IN_PROC_BROWSER_TEST_F(DeveloperPrivateApiTest, Basics) {
 
   InstallNamedExtension(basedir, "simple_extension", Manifest::INTERNAL);
 
-  ASSERT_TRUE(RunExtensionSubtest(
-      "developer/test", "basics.html", kFlagLoadAsComponent));
+  ASSERT_TRUE(RunPlatformAppTestWithFlags(
+      "developer/test", kFlagLoadAsComponent));
 }

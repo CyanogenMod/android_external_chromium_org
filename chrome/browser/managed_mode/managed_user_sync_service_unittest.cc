@@ -6,17 +6,21 @@
 
 #include "base/bind.h"
 #include "base/prefs/scoped_user_pref_update.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory_mock.h"
 #include "sync/protocol/sync.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/default_user_images.h"
+#endif
 
 using sync_pb::ManagedUserSpecifics;
 using syncer::MANAGED_USERS;
@@ -181,11 +185,11 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
   const char kAvatar4[] = "";
   {
     DictionaryPrefUpdate update(prefs(), prefs::kManagedUsers);
-    DictionaryValue* managed_users = update.Get();
-    DictionaryValue* dict = new DictionaryValue;
+    base::DictionaryValue* managed_users = update.Get();
+    base::DictionaryValue* dict = new base::DictionaryValue;
     dict->SetString(kNameKey, kName1);
     managed_users->Set(kUserId1, dict);
-    dict = new DictionaryValue;
+    dict = new base::DictionaryValue;
     dict->SetString(kNameKey, kName2);
     dict->SetBoolean(kAcknowledgedKey, true);
     managed_users->Set(kUserId2, dict);
@@ -212,13 +216,13 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
   EXPECT_EQ(2, result.num_items_before_association());
   EXPECT_EQ(4, result.num_items_after_association());
 
-  const DictionaryValue* managed_users = service()->GetManagedUsers();
+  const base::DictionaryValue* managed_users = service()->GetManagedUsers();
   EXPECT_EQ(4u, managed_users->size());
   EXPECT_TRUE(async_managed_users);
   EXPECT_TRUE(managed_users->Equals(async_managed_users));
 
   {
-    const DictionaryValue* managed_user = NULL;
+    const base::DictionaryValue* managed_user = NULL;
     ASSERT_TRUE(managed_users->GetDictionary(kUserId2, &managed_user));
     ASSERT_TRUE(managed_user);
     std::string name;
@@ -232,7 +236,7 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
     EXPECT_EQ(kAvatar2, avatar);
   }
   {
-    const DictionaryValue* managed_user = NULL;
+    const base::DictionaryValue* managed_user = NULL;
     ASSERT_TRUE(managed_users->GetDictionary(kUserId3, &managed_user));
     ASSERT_TRUE(managed_user);
     std::string name;
@@ -246,7 +250,7 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
     EXPECT_EQ(kAvatar3, avatar);
   }
   {
-    const DictionaryValue* managed_user = NULL;
+    const base::DictionaryValue* managed_user = NULL;
     ASSERT_TRUE(managed_users->GetDictionary(kUserId4, &managed_user));
     ASSERT_TRUE(managed_user);
     std::string name;
@@ -278,23 +282,36 @@ TEST_F(ManagedUserSyncServiceTest, GetAvatarIndex) {
   EXPECT_TRUE(ManagedUserSyncService::GetAvatarIndex(std::string(), &avatar));
   EXPECT_EQ(ManagedUserSyncService::kNoAvatar, avatar);
 
-  std::string avatar_str = ManagedUserSyncService::BuildAvatarString(24);
+  int avatar_index = 4;
 #if defined(OS_CHROMEOS)
-  EXPECT_EQ("chromeos-avatar-index:24", avatar_str);
+  avatar_index += chromeos::kFirstDefaultImageIndex;
+#endif
+  std::string avatar_str =
+      ManagedUserSyncService::BuildAvatarString(avatar_index);
+#if defined(OS_CHROMEOS)
+  EXPECT_EQ(base::StringPrintf("chromeos-avatar-index:%d", avatar_index),
+            avatar_str);
 #else
-  EXPECT_EQ("chrome-avatar-index:24", avatar_str);
+  EXPECT_EQ(base::StringPrintf("chrome-avatar-index:%d", avatar_index),
+            avatar_str);
 #endif
   EXPECT_TRUE(ManagedUserSyncService::GetAvatarIndex(avatar_str, &avatar));
-  EXPECT_EQ(24, avatar);
+  EXPECT_EQ(avatar_index, avatar);
 
-  avatar_str = ManagedUserSyncService::BuildAvatarString(0);
+  avatar_index = 0;
 #if defined(OS_CHROMEOS)
-  EXPECT_EQ("chromeos-avatar-index:0", avatar_str);
+  avatar_index += chromeos::kFirstDefaultImageIndex;
+#endif
+  avatar_str = ManagedUserSyncService::BuildAvatarString(avatar_index);
+#if defined(OS_CHROMEOS)
+  EXPECT_EQ(base::StringPrintf("chromeos-avatar-index:%d", avatar_index),
+            avatar_str);
 #else
-  EXPECT_EQ("chrome-avatar-index:0", avatar_str);
+  EXPECT_EQ(base::StringPrintf("chrome-avatar-index:%d", avatar_index),
+            avatar_str);
 #endif
   EXPECT_TRUE(ManagedUserSyncService::GetAvatarIndex(avatar_str, &avatar));
-  EXPECT_EQ(0, avatar);
+  EXPECT_EQ(avatar_index, avatar);
 
   EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("wrong-prefix:5",
                                                       &avatar));

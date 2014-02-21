@@ -169,7 +169,7 @@ TEST_F(AboutFlagsTest, AddTwoFlagsRemoveOne) {
   SetExperimentEnabled(&flags_storage_, kFlags1, true);
   SetExperimentEnabled(&flags_storage_, kFlags2, true);
 
-  const ListValue* experiments_list = prefs_.GetList(
+  const base::ListValue* experiments_list = prefs_.GetList(
       prefs::kEnabledLabsExperiments);
   ASSERT_TRUE(experiments_list != NULL);
 
@@ -197,7 +197,7 @@ TEST_F(AboutFlagsTest, AddTwoFlagsRemoveBoth) {
   // Add two experiments, check the pref exists.
   SetExperimentEnabled(&flags_storage_, kFlags1, true);
   SetExperimentEnabled(&flags_storage_, kFlags2, true);
-  const ListValue* experiments_list = prefs_.GetList(
+  const base::ListValue* experiments_list = prefs_.GetList(
       prefs::kEnabledLabsExperiments);
   ASSERT_TRUE(experiments_list != NULL);
 
@@ -307,7 +307,7 @@ TEST_F(AboutFlagsTest, PersistAndPrune) {
   EXPECT_FALSE(command_line.HasSwitch(kSwitch3));
 
   // Experiment 3 should show still be persisted in preferences though.
-  const ListValue* experiments_list =
+  const base::ListValue* experiments_list =
       prefs_.GetList(prefs::kEnabledLabsExperiments);
   ASSERT_TRUE(experiments_list);
   EXPECT_EQ(2U, experiments_list->GetSize());
@@ -344,7 +344,7 @@ TEST_F(AboutFlagsTest, CheckValues) {
 #if defined(OS_WIN)
   EXPECT_EQ(std::wstring::npos,
             command_line.GetCommandLineString().find(
-                ASCIIToWide(switch1_with_equals)));
+                base::ASCIIToWide(switch1_with_equals)));
 #else
   EXPECT_EQ(std::string::npos,
             command_line.GetCommandLineString().find(switch1_with_equals));
@@ -357,14 +357,14 @@ TEST_F(AboutFlagsTest, CheckValues) {
 #if defined(OS_WIN)
   EXPECT_NE(std::wstring::npos,
             command_line.GetCommandLineString().find(
-                ASCIIToWide(switch2_with_equals)));
+                base::ASCIIToWide(switch2_with_equals)));
 #else
   EXPECT_NE(std::string::npos,
             command_line.GetCommandLineString().find(switch2_with_equals));
 #endif
 
   // And it should persist.
-  const ListValue* experiments_list =
+  const base::ListValue* experiments_list =
       prefs_.GetList(prefs::kEnabledLabsExperiments);
   ASSERT_TRUE(experiments_list);
   EXPECT_EQ(2U, experiments_list->GetSize());

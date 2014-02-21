@@ -17,7 +17,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/quic_bandwidth.h"
-#include "net/quic/quic_clock.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
@@ -38,8 +37,7 @@ class NET_EXPORT_PRIVATE PacingSender : public SendAlgorithmInterface {
       QuicTime feedback_receive_time,
       const SendAlgorithmInterface::SentPacketsMap& sent_packets) OVERRIDE;
   virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
-                             QuicByteCount acked_bytes,
-                             QuicTime::Delta rtt) OVERRIDE;
+                             QuicByteCount acked_bytes) OVERRIDE;
   virtual void OnPacketLost(QuicPacketSequenceNumber sequence_number,
                             QuicTime ack_receive_time) OVERRIDE;
   virtual bool OnPacketSent(QuicTime sent_time,
@@ -47,7 +45,7 @@ class NET_EXPORT_PRIVATE PacingSender : public SendAlgorithmInterface {
                             QuicByteCount bytes,
                             TransmissionType transmission_type,
                             HasRetransmittableData is_retransmittable) OVERRIDE;
-  virtual void OnRetransmissionTimeout() OVERRIDE;
+  virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
   virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
                                  QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
@@ -56,6 +54,7 @@ class NET_EXPORT_PRIVATE PacingSender : public SendAlgorithmInterface {
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual void UpdateRtt(QuicTime::Delta rtt_sample) OVERRIDE;
   virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
   virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
@@ -68,6 +67,7 @@ class NET_EXPORT_PRIVATE PacingSender : public SendAlgorithmInterface {
   QuicTime next_packet_send_time_;  // When can the next packet be sent.
   bool was_last_send_delayed_;  // True when the last send was delayed.
   QuicByteCount max_segment_size_;
+  bool updated_rtt_;  // True if we have at least one RTT update.
 
   DISALLOW_COPY_AND_ASSIGN(PacingSender);
 };

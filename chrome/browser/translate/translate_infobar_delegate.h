@@ -12,30 +12,16 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
-#include "chrome/browser/translate/translate_prefs.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/translate/translate_ui_delegate.h"
-#include "chrome/common/translate/translate_errors.h"
-#include "components/translate/common/translate_constants.h"
+#include "components/translate/core/browser/translate_prefs.h"
+#include "components/translate/core/common/translate_constants.h"
+#include "components/translate/core/common/translate_errors.h"
 
 class PrefService;
 
-// The defaults after which extra shortcuts for options
-// can be shown.
-struct ShortcutConfiguration {
-  int always_translate_min_count;
-  int never_translate_min_count;
-};
-
 class TranslateInfoBarDelegate : public InfoBarDelegate {
  public:
-  // The different types of infobars that can be shown for translation.
-  enum Type {
-    BEFORE_TRANSLATE,
-    TRANSLATING,
-    AFTER_TRANSLATE,
-    TRANSLATION_ERROR
-  };
-
   // The types of background color animations.
   enum BackgroundAnimationType {
     NONE,
@@ -48,13 +34,12 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   virtual ~TranslateInfoBarDelegate();
 
   // Factory method to create a translate infobar.  |error_type| must be
-  // specified iff |infobar_type| == TRANSLATION_ERROR.  For other infobar
-  // types, |original_language| and |target_language| must be ASCII language
-  // codes (e.g. "en", "fr", etc.) for languages the TranslateManager supports
+  // specified iff |step| == TRANSLATION_ERROR.  For other translate steps,
+  // |original_language| and |target_language| must be ASCII language codes
+  // (e.g. "en", "fr", etc.) for languages the TranslateManager supports
   // translating.  The lone exception is when the user initiates translation
   // from the context menu, in which case it's legal to call this with
-  // |infobar_type| == TRANSLATING and
-  // |original_language| == kUnknownLanguageCode.
+  // |step| == TRANSLATING and |original_language| == kUnknownLanguageCode.
   //
   // If |replace_existing_infobar| is true, the infobar is created and added to
   // the infobar service for |web_contents|, replacing any other translate
@@ -62,12 +47,11 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // if there is no other translate infobar already present.
   static void Create(bool replace_existing_infobar,
                      content::WebContents* web_contents,
-                     Type infobar_type,
+                     TranslateTabHelper::TranslateStep step,
                      const std::string& original_language,
                      const std::string& target_language,
                      TranslateErrors::Type error_type,
-                     PrefService* prefs,
-                     const ShortcutConfiguration& shortcut_config);
+                     PrefService* prefs);
 
   // Returns the number of languages supported.
   size_t num_languages() const { return ui_delegate_.GetNumberOfLanguages(); }
@@ -82,7 +66,7 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
     return ui_delegate_.GetLanguageNameAt(index);
   }
 
-  Type infobar_type() const { return infobar_type_; }
+  TranslateTabHelper::TranslateStep translate_step() const { return step_; }
 
   TranslateErrors::Type error_type() const { return error_type_; }
 
@@ -106,7 +90,7 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
 
   // Returns true if the current infobar indicates an error (in which case it
   // should get a yellow background instead of a blue one).
-  bool is_error() const { return infobar_type_ == TRANSLATION_ERROR; }
+  bool is_error() const { return step_ == TranslateTabHelper::TRANSLATE_ERROR; }
 
   // Returns what kind of background fading effect the infobar should use when
   // its is shown.
@@ -168,19 +152,18 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // should be inverted (some languages express the sentense as "The page has
   // been translate to <lang2> from <lang1>."). It is ignored if
   // |autodetermined_source_language| is true.
-  static void GetAfterTranslateStrings(std::vector<string16>* strings,
+  static void GetAfterTranslateStrings(std::vector<base::string16>* strings,
                                        bool* swap_languages,
                                        bool autodetermined_source_language);
 
  protected:
   TranslateInfoBarDelegate(content::WebContents* web_contents,
-                           Type infobar_type,
+                           TranslateTabHelper::TranslateStep step,
                            TranslateInfoBarDelegate* old_delegate,
                            const std::string& original_language,
                            const std::string& target_language,
                            TranslateErrors::Type error_type,
-                           PrefService* prefs,
-                           ShortcutConfiguration shortcut_config);
+                           PrefService* prefs);
 
  private:
   friend class TranslationInfoBarTest;
@@ -198,7 +181,7 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
        const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual TranslateInfoBarDelegate* AsTranslateInfoBarDelegate() OVERRIDE;
 
-  Type infobar_type_;
+  TranslateTabHelper::TranslateStep step_;
 
   // The type of fading animation if any that should be used when showing this
   // infobar.
@@ -210,10 +193,8 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   TranslateErrors::Type error_type_;
 
   // The translation related preferences.
-  TranslatePrefs prefs_;
+  scoped_ptr<TranslatePrefs> prefs_;
 
-  // Translation shortcut configuration
-  ShortcutConfiguration shortcut_config_;
   DISALLOW_COPY_AND_ASSIGN(TranslateInfoBarDelegate);
 };
 

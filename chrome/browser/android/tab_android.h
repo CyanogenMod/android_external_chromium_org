@@ -49,6 +49,9 @@ class TabAndroid : public CoreTabHelperDelegate,
   static TabAndroid* GetNativeTab(JNIEnv* env, jobject obj);
 
   TabAndroid(JNIEnv* env, jobject obj);
+  virtual ~TabAndroid();
+
+  base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 
   // Return the WebContents, if any, currently owned by this TabAndroid.
   content::WebContents* web_contents() const { return web_contents_.get(); }
@@ -75,32 +78,33 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   void SetSyncId(int sync_id);
 
-  virtual void HandlePopupNavigation(chrome::NavigateParams* params) = 0;
+  virtual void HandlePopupNavigation(chrome::NavigateParams* params);
 
   virtual void OnReceivedHttpAuthRequest(jobject auth_handler,
                                          const base::string16& host,
-                                         const base::string16& realm) = 0;
+                                         const base::string16& realm);
 
   // Called when context menu option to create the bookmark shortcut on
   // homescreen is called.
-  virtual void AddShortcutToBookmark(
-      const GURL& url, const base::string16& title, const SkBitmap& skbitmap,
-      int r_value, int g_value, int b_value) = 0;
+  virtual void AddShortcutToBookmark(const GURL& url,
+                                     const base::string16& title,
+                                     const SkBitmap& skbitmap,
+                                     int r_value,
+                                     int g_value,
+                                     int b_value);
 
   // Called when a bookmark node should be edited.
   virtual void EditBookmark(int64 node_id,
                             const base::string16& node_title,
                             bool is_folder,
-                            bool is_partner_bookmark) = 0;
+                            bool is_partner_bookmark);
+
+  // Called to notify that the new tab page has completely rendered.
+  virtual void OnNewTabPageReady();
 
   // Called to determine if chrome://welcome should contain links to the terms
   // of service and the privacy notice.
-  virtual bool ShouldWelcomePageLinkToTermsOfService() = 0;
-
-  // Called to notify that the new tab page has completely rendered.
-  virtual void OnNewTabPageReady() = 0;
-
-  static void InitTabHelpers(content::WebContents* web_contents);
+  virtual bool ShouldWelcomePageLinkToTermsOfService();
 
   // Register the Tab's native methods through JNI.
   static bool RegisterTabAndroid(JNIEnv* env);
@@ -108,7 +112,9 @@ class TabAndroid : public CoreTabHelperDelegate,
   // CoreTabHelperDelegate ----------------------------------------------------
 
   virtual void SwapTabContents(content::WebContents* old_contents,
-                               content::WebContents* new_contents) OVERRIDE;
+                               content::WebContents* new_contents,
+                               bool did_start_load,
+                               bool did_finish_load) OVERRIDE;
 
   // NotificationObserver -----------------------------------------------------
   virtual void Observe(int type,
@@ -117,16 +123,18 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   // Methods called from Java via JNI -----------------------------------------
 
+  virtual void Destroy(JNIEnv* env, jobject obj);
   virtual void InitWebContents(JNIEnv* env,
                                jobject obj,
                                jboolean incognito,
                                jobject jcontent_view_core,
                                jobject jweb_contents_delegate,
                                jobject jcontext_menu_populator);
-
   virtual void DestroyWebContents(JNIEnv* env,
                                   jobject obj,
                                   jboolean delete_native);
+  base::android::ScopedJavaLocalRef<jobject> GetWebContents(JNIEnv* env,
+                                                            jobject obj);
   base::android::ScopedJavaLocalRef<jobject> GetProfileAndroid(JNIEnv* env,
                                                                jobject obj);
   ToolbarModel::SecurityLevel GetSecurityLevel(JNIEnv* env, jobject obj);
@@ -135,9 +143,6 @@ class TabAndroid : public CoreTabHelperDelegate,
                                            jstring jurl,
                                            jstring jtitle);
   bool Print(JNIEnv* env, jobject obj);
-
- protected:
-  virtual ~TabAndroid();
 
  private:
   JavaObjectWeakGlobalRef weak_java_tab_;

@@ -51,7 +51,9 @@ bool IsSensitiveURL(const GURL& url) {
     // others.
     sensitive_chrome_url = sensitive_chrome_url ||
         EndsWith(url.host(), ".clients.google.com", true) ||
-        url.host() == "sb-ssl.google.com";
+        url.host() == "sb-ssl.google.com" ||
+        (url.host() ==  "chrome.google.com" &&
+             StartsWithASCII(url.path(), "/webstore", true));
   }
   GURL::Replacements replacements;
   replacements.ClearQuery();
@@ -67,8 +69,8 @@ bool IsSensitiveURL(const GURL& url) {
 // covered by CanExtensionAccessURL.
 bool HasWebRequestScheme(const GURL& url) {
   return (url.SchemeIs(chrome::kAboutScheme) ||
-          url.SchemeIs(chrome::kFileScheme) ||
-          url.SchemeIs(chrome::kFileSystemScheme) ||
+          url.SchemeIs(content::kFileScheme) ||
+          url.SchemeIs(content::kFileSystemScheme) ||
           url.SchemeIs(content::kFtpScheme) ||
           url.SchemeIs(content::kHttpScheme) ||
           url.SchemeIs(content::kHttpsScheme) ||

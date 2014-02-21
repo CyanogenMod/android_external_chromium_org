@@ -18,14 +18,11 @@
 #include "base/android/path_utils.h"
 #include "base/android/sys_utils.h"
 #include "base/android/thread_utils.h"
+#include "base/android/trace_event_binding.h"
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_pump_android.h"
 #include "base/power_monitor/power_monitor_device_source_android.h"
-
-#if defined(GOOGLE_TV)
-#include "base/android/context_types.h"
-#endif
 
 namespace base {
 namespace android {
@@ -34,9 +31,6 @@ static RegistrationMethod kBaseRegisteredMethods[] = {
   { "ActivityStatus", base::android::ActivityStatus::RegisterBindings },
   { "BuildInfo", base::android::BuildInfo::RegisterBindings },
   { "CommandLine", base::android::RegisterCommandLine },
-#if defined(GOOGLE_TV)
-  { "ContextTypes", base::android::RegisterContextTypes },
-#endif
   { "ContentUriUtils", base::RegisterContentUriUtils },
   { "CpuFeatures", base::android::RegisterCpuFeatures },
   { "ImportantFileWriterAndroid",
@@ -50,6 +44,7 @@ static RegistrationMethod kBaseRegisteredMethods[] = {
   { "SysUtils", base::android::SysUtils::Register },
   { "PowerMonitor", base::RegisterPowerMonitor },
   { "ThreadUtils", base::RegisterThreadUtils },
+  { "TraceEvent", base::android::RegisterTraceEvent },
 };
 
 bool RegisterJni(JNIEnv* env) {

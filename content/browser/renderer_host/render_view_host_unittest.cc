@@ -5,6 +5,7 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
@@ -28,7 +29,7 @@ class RenderViewHostTestBrowserClient : public TestContentBrowserClient {
   virtual ~RenderViewHostTestBrowserClient() {}
 
   virtual bool IsHandledURL(const GURL& url) OVERRIDE {
-    return url.scheme() == chrome::kFileScheme;
+    return url.scheme() == kFileScheme;
   }
 
  private:
@@ -71,10 +72,9 @@ TEST_F(RenderViewHostTest, CreateFullscreenWidget) {
   test_rvh()->CreateNewFullscreenWidget(routing_id);
 }
 
-// Makes sure that RenderViewHost::is_waiting_for_unload_ack_ is false when
-// reloading a page. If is_waiting_for_unload_ack_ is not false when reloading
-// the contents may get closed out even though the user pressed the reload
-// button.
+// Makes sure that the RenderViewHost is not waiting for an unload ack when
+// reloading a page. If this is not the case, when reloading, the contents may
+// get closed out even though the user pressed the reload button.
 TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   const GURL url1("http://foo1");
   const GURL url2("http://foo2");
@@ -84,12 +84,11 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   // . go to a page.
   // . go to a new page, preferably one that takes a while to resolve, such
   //   as one on a site that doesn't exist.
-  //   . After this step is_waiting_for_unload_ack_ has been set to true on
-  //     the first RVH.
+  //   . After this step IsWaitingForUnloadACK returns true on the first RVH.
   // . click stop before the page has been commited.
   // . click reload.
-  //   . is_waiting_for_unload_ack_ is still true, and the if the hang monitor
-  //     fires the contents gets closed.
+  //   . IsWaitingForUnloadACK still returns true, and if the hang monitor fires
+  //     the contents gets closed.
 
   NavigateAndCommit(url1);
   controller().LoadURL(
@@ -100,7 +99,7 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   test_rvh()->SendShouldCloseACK(true);
   contents()->Stop();
   controller().Reload(false);
-  EXPECT_FALSE(test_rvh()->is_waiting_for_unload_ack());
+  EXPECT_FALSE(test_rvh()->IsWaitingForUnloadACK());
 }
 
 // Ensure we do not grant bindings to a process shared with unprivileged views.
@@ -199,7 +198,7 @@ TEST_F(RenderViewHostTest, DragEnteredFileURLsStillBlocked) {
   GURL sensitive_file_url = net::FilePathToFileURL(sensitive_file_path);
   dropped_data.url = highlighted_file_url;
   dropped_data.filenames.push_back(DropData::FileInfo(
-      UTF8ToUTF16(dragged_file_path.AsUTF8Unsafe()), base::string16()));
+      base::UTF8ToUTF16(dragged_file_path.AsUTF8Unsafe()), base::string16()));
 
   rvh()->DragTargetDragEnter(dropped_data, client_point, screen_point,
                               blink::WebDragOperationNone, 0);
@@ -288,10 +287,10 @@ TEST_F(RenderViewHostTest, NavigationWithBadHistoryItemFiles) {
 }
 
 TEST_F(RenderViewHostTest, RoutingIdSane) {
-  EXPECT_EQ(test_rvh()->GetProcess(),
-            test_rvh()->main_render_frame_host()->GetProcess());
-  EXPECT_NE(test_rvh()->GetRoutingID(),
-            test_rvh()->main_render_frame_host()->routing_id());
+  RenderFrameHostImpl* root_rfh =
+      contents()->GetFrameTree()->root()->current_frame_host();
+  EXPECT_EQ(test_rvh()->GetProcess(), root_rfh->GetProcess());
+  EXPECT_NE(test_rvh()->GetRoutingID(), root_rfh->routing_id());
 }
 
 }  // namespace content

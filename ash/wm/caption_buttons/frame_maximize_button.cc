@@ -4,10 +4,10 @@
 
 #include "ash/wm/caption_buttons/frame_maximize_button.h"
 
-#include "ash/screen_ash.h"
+#include "ash/metrics/user_metrics_recorder.h"
+#include "ash/screen_util.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/touch/touch_uma.h"
 #include "ash/wm/caption_buttons/frame_maximize_button_observer.h"
 #include "ash/wm/caption_buttons/maximize_bubble_controller.h"
@@ -89,8 +89,6 @@ FrameMaximizeButton::FrameMaximizeButton(views::ButtonListener* listener,
       press_is_gesture_(false),
       snap_type_(SNAP_NONE),
       bubble_appearance_delay_ms_(kBubbleAppearanceDelayMS) {
-  // TODO(sky): nuke this. It's temporary while we don't have good images.
-  SetImageAlignment(ALIGN_LEFT, ALIGN_BOTTOM);
 }
 
 FrameMaximizeButton::~FrameMaximizeButton() {
@@ -216,12 +214,12 @@ bool FrameMaximizeButton::OnMousePressed(const ui::MouseEvent& event) {
     if (is_snap_enabled_)
       ProcessStartEvent(event);
   }
-  ImageButton::OnMousePressed(event);
+  FrameCaptionButton::OnMousePressed(event);
   return true;
 }
 
 void FrameMaximizeButton::OnMouseEntered(const ui::MouseEvent& event) {
-  ImageButton::OnMouseEntered(event);
+  FrameCaptionButton::OnMouseEntered(event);
   if (!maximizer_) {
     DCHECK(GetWidget());
     if (!observing_frame_) {
@@ -237,7 +235,7 @@ void FrameMaximizeButton::OnMouseEntered(const ui::MouseEvent& event) {
 }
 
 void FrameMaximizeButton::OnMouseExited(const ui::MouseEvent& event) {
-  ImageButton::OnMouseExited(event);
+  FrameCaptionButton::OnMouseExited(event);
   // Remove the bubble menu when the button is not pressed and the mouse is not
   // within the bubble.
   if (!is_snap_enabled_ && maximizer_) {
@@ -260,20 +258,20 @@ void FrameMaximizeButton::OnMouseExited(const ui::MouseEvent& event) {
 bool FrameMaximizeButton::OnMouseDragged(const ui::MouseEvent& event) {
   if (is_snap_enabled_)
     ProcessUpdateEvent(event);
-  return ImageButton::OnMouseDragged(event);
+  return FrameCaptionButton::OnMouseDragged(event);
 }
 
 void FrameMaximizeButton::OnMouseReleased(const ui::MouseEvent& event) {
   maximizer_.reset();
   bool snap_was_enabled = is_snap_enabled_;
   if (!ProcessEndEvent(event) && snap_was_enabled)
-    ImageButton::OnMouseReleased(event);
+    FrameCaptionButton::OnMouseReleased(event);
   // At this point |this| might be already destroyed.
 }
 
 void FrameMaximizeButton::OnMouseCaptureLost() {
   Cancel(false);
-  ImageButton::OnMouseCaptureLost();
+  FrameCaptionButton::OnMouseCaptureLost();
 }
 
 void FrameMaximizeButton::OnGestureEvent(ui::GestureEvent* event) {
@@ -321,7 +319,7 @@ void FrameMaximizeButton::OnGestureEvent(ui::GestureEvent* event) {
     }
   }
 
-  ImageButton::OnGestureEvent(event);
+  FrameCaptionButton::OnGestureEvent(event);
 }
 
 void FrameMaximizeButton::SetVisible(bool visible) {
@@ -426,7 +424,7 @@ void FrameMaximizeButton::UpdateSnap(const gfx::Point& location,
   if (type == snap_type_) {
     if (snap_sizer_) {
       snap_sizer_->Update(LocationForSnapSizer(location));
-      phantom_window_->Show(ScreenAsh::ConvertRectToScreen(
+      phantom_window_->Show(ScreenUtil::ConvertRectToScreen(
           frame_->GetNativeView()->parent(),
           snap_sizer_->target_bounds()));
     }
@@ -490,12 +488,12 @@ gfx::Rect FrameMaximizeButton::ScreenBoundsForType(
   switch (type) {
     case SNAP_LEFT:
     case SNAP_RIGHT:
-      return ScreenAsh::ConvertRectToScreen(window->parent(),
+      return ScreenUtil::ConvertRectToScreen(window->parent(),
                                             snap_sizer.target_bounds());
     case SNAP_MAXIMIZE:
-      return ScreenAsh::ConvertRectToScreen(
+      return ScreenUtil::ConvertRectToScreen(
           window->parent(),
-          ScreenAsh::GetMaximizedWindowBoundsInParent(window));
+          ScreenUtil::GetMaximizedWindowBoundsInParent(window));
     case SNAP_MINIMIZE: {
       gfx::Rect rect = GetMinimizeAnimationTargetBoundsInScreen(window);
       if (!rect.IsEmpty()) {
@@ -530,7 +528,7 @@ void FrameMaximizeButton::Snap(SnapSizer* snap_sizer) {
     case SNAP_LEFT:
     case SNAP_RIGHT: {
       snap_sizer->SnapWindowToTargetBounds();
-      shell->delegate()->RecordUserMetricsAction(
+      shell->metrics()->RecordUserMetricsAction(
           snap_type_ == SNAP_LEFT ?
               UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_LEFT :
               UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_RIGHT);
@@ -538,17 +536,17 @@ void FrameMaximizeButton::Snap(SnapSizer* snap_sizer) {
     }
     case SNAP_MAXIMIZE:
       frame_->Maximize();
-      shell->delegate()->RecordUserMetricsAction(
+      shell->metrics()->RecordUserMetricsAction(
           UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE);
       break;
     case SNAP_MINIMIZE:
       frame_->Minimize();
-      shell->delegate()->RecordUserMetricsAction(
+      shell->metrics()->RecordUserMetricsAction(
           UMA_WINDOW_MAXIMIZE_BUTTON_MINIMIZE);
       break;
     case SNAP_RESTORE:
       frame_->Restore();
-      shell->delegate()->RecordUserMetricsAction(
+      shell->metrics()->RecordUserMetricsAction(
           UMA_WINDOW_MAXIMIZE_BUTTON_RESTORE);
       break;
     case SNAP_NONE:

@@ -9,11 +9,12 @@
 
 namespace content {
 
-TraceMessageFilter::TraceMessageFilter() :
-    has_child_(false),
-    is_awaiting_end_ack_(false),
-    is_awaiting_capture_monitoring_snapshot_ack_(false),
-    is_awaiting_buffer_percent_full_ack_(false) {
+TraceMessageFilter::TraceMessageFilter()
+    : BrowserMessageFilter(TracingMsgStart),
+      has_child_(false),
+      is_awaiting_end_ack_(false),
+      is_awaiting_capture_monitoring_snapshot_ack_(false),
+      is_awaiting_buffer_percent_full_ack_(false) {
 }
 
 TraceMessageFilter::~TraceMessageFilter() {}
@@ -121,7 +122,7 @@ void TraceMessageFilter::OnEndTracingAck(
   if (is_awaiting_end_ack_) {
     is_awaiting_end_ack_ = false;
     TracingControllerImpl::GetInstance()->OnDisableRecordingAcked(
-        known_categories);
+        this, known_categories);
   } else {
     NOTREACHED();
   }
@@ -132,7 +133,8 @@ void TraceMessageFilter::OnCaptureMonitoringSnapshotAcked() {
   // but check in case the child process is compromised.
   if (is_awaiting_capture_monitoring_snapshot_ack_) {
     is_awaiting_capture_monitoring_snapshot_ack_ = false;
-    TracingControllerImpl::GetInstance()->OnCaptureMonitoringSnapshotAcked();
+    TracingControllerImpl::GetInstance()->OnCaptureMonitoringSnapshotAcked(
+        this);
   } else {
     NOTREACHED();
   }
@@ -160,7 +162,7 @@ void TraceMessageFilter::OnTraceBufferPercentFullReply(float percent_full) {
   if (is_awaiting_buffer_percent_full_ack_) {
     is_awaiting_buffer_percent_full_ack_ = false;
     TracingControllerImpl::GetInstance()->OnTraceBufferPercentFullReply(
-        percent_full);
+        this, percent_full);
   } else {
     NOTREACHED();
   }

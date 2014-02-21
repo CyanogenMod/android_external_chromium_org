@@ -33,6 +33,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/upload_data_stream.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/http/disk_cache_based_quic_server_info.h"
 #include "net/http/http_cache_transaction.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
@@ -40,6 +41,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
+#include "net/quic/crypto/quic_server_info.h"
 
 namespace {
 
@@ -267,12 +269,28 @@ void HttpCache::MetadataWriter::OnIOComplete(int result) {
 
 //-----------------------------------------------------------------------------
 
+class HttpCache::QuicServerInfoFactoryAdaptor : public QuicServerInfoFactory {
+ public:
+  QuicServerInfoFactoryAdaptor(HttpCache* http_cache)
+      : http_cache_(http_cache) {
+  }
+
+  virtual QuicServerInfo* GetForHost(const std::string& hostname) OVERRIDE {
+    return new DiskCacheBasedQuicServerInfo(hostname, http_cache_);
+  }
+
+ private:
+  HttpCache* const http_cache_;
+};
+
+//-----------------------------------------------------------------------------
 HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
                      BackendFactory* backend_factory)
     : net_log_(params.net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
       mode_(NORMAL),
+      quic_server_info_factory_(new QuicServerInfoFactoryAdaptor(this)),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))) {
 }
 
@@ -283,6 +301,7 @@ HttpCache::HttpCache(HttpNetworkSession* session,
       backend_factory_(backend_factory),
       building_backend_(false),
       mode_(NORMAL),
+      quic_server_info_factory_(new QuicServerInfoFactoryAdaptor(this)),
       network_layer_(new HttpNetworkLayer(session)) {
 }
 
@@ -379,7 +398,7 @@ void HttpCache::WriteMetadata(const GURL& url,
   }
 
   HttpCache::Transaction* trans =
-      new HttpCache::Transaction(priority, this, NULL);
+      new HttpCache::Transaction(priority, this);
   MetadataWriter* writer = new MetadataWriter(trans);
 
   // The writer will self destruct when done.
@@ -421,15 +440,14 @@ void HttpCache::InitializeInfiniteCache(const base::FilePath& path) {
 }
 
 int HttpCache::CreateTransaction(RequestPriority priority,
-                                 scoped_ptr<HttpTransaction>* trans,
-                                 HttpTransactionDelegate* delegate) {
+                                 scoped_ptr<HttpTransaction>* trans) {
   // Do lazy initialization of disk cache if needed.
   if (!disk_cache_.get()) {
     // We don't care about the result.
     CreateBackend(NULL, net::CompletionCallback());
   }
 
-  trans->reset(new HttpCache::Transaction(priority, this, delegate));
+  trans->reset(new HttpCache::Transaction(priority, this));
   return OK;
 }
 
@@ -441,6 +459,14 @@ HttpNetworkSession* HttpCache::GetSession() {
   net::HttpNetworkLayer* network =
       static_cast<net::HttpNetworkLayer*>(network_layer_.get());
   return network->GetSession();
+}
+
+scoped_ptr<HttpTransactionFactory>
+HttpCache::SetHttpNetworkTransactionFactoryForTesting(
+    scoped_ptr<HttpTransactionFactory> new_network_layer) {
+  scoped_ptr<HttpTransactionFactory> old_network_layer(network_layer_.Pass());
+  network_layer_ = new_network_layer.Pass();
+  return old_network_layer.Pass();
 }
 
 //-----------------------------------------------------------------------------

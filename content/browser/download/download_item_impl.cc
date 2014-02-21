@@ -57,12 +57,23 @@ namespace content {
 
 namespace {
 
-void DeleteDownloadedFile(const base::FilePath& path) {
+bool DeleteDownloadedFile(const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   // Make sure we only delete files.
-  if (!base::DirectoryExists(path))
-    base::DeleteFile(path, false);
+  if (base::DirectoryExists(path))
+    return true;
+  return base::DeleteFile(path, false);
+}
+
+void DeleteDownloadedFileDone(
+    base::WeakPtr<DownloadItemImpl> item,
+    const base::Callback<void(bool)>& callback,
+    bool success) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (success && item.get())
+    item->OnDownloadedFileRemoved();
+  callback.Run(success);
 }
 
 // Wrapper around DownloadFile::Detach and DownloadFile::Cancel that
@@ -164,7 +175,7 @@ DownloadItemImpl::DownloadItemImpl(
               TARGET_DISPOSITION_PROMPT : TARGET_DISPOSITION_OVERWRITE),
       url_chain_(info.url_chain),
       referrer_url_(info.referrer_url),
-      suggested_filename_(UTF16ToUTF8(info.save_info->suggested_name)),
+      suggested_filename_(base::UTF16ToUTF8(info.save_info->suggested_name)),
       forced_file_path_(info.save_info->file_path),
       transition_type_(info.transition_type),
       has_user_gesture_(info.has_user_gesture),
@@ -407,8 +418,9 @@ void DownloadItemImpl::Cancel(bool user_cancel) {
   // Continuable interruptions leave the intermediate file around.
   if ((state_ == INTERRUPTED_INTERNAL || state_ == RESUMING_INTERNAL) &&
       !current_path_.empty()) {
-    BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                            base::Bind(&DeleteDownloadedFile, current_path_));
+    BrowserThread::PostTask(
+        BrowserThread::FILE, FROM_HERE,
+        base::Bind(base::IgnoreResult(&DeleteDownloadedFile), current_path_));
     current_path_.clear();
   }
 
@@ -614,17 +626,29 @@ bool DownloadItemImpl::GetFileExternallyRemoved() const {
   return file_externally_removed_;
 }
 
-void DownloadItemImpl::DeleteFile() {
+void DownloadItemImpl::DeleteFile(const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if ((GetState() != DownloadItem::COMPLETE) ||
-      file_externally_removed_) {
+  if (GetState() != DownloadItem::COMPLETE) {
+    // Pass a null WeakPtr so it doesn't call OnDownloadedFileRemoved.
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&DeleteDownloadedFileDone,
+                   base::WeakPtr<DownloadItemImpl>(), callback, false));
     return;
   }
-  BrowserThread::PostTaskAndReply(
+  if (current_path_.empty() || file_externally_removed_) {
+    // Pass a null WeakPtr so it doesn't call OnDownloadedFileRemoved.
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&DeleteDownloadedFileDone,
+                   base::WeakPtr<DownloadItemImpl>(), callback, true));
+    return;
+  }
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&DeleteDownloadedFile, current_path_),
-      base::Bind(&DownloadItemImpl::OnDownloadedFileRemoved,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::Bind(&DeleteDownloadedFileDone,
+                 weak_ptr_factory_.GetWeakPtr(), callback));
   current_path_.clear();
 }
 
@@ -805,7 +829,7 @@ std::string DownloadItemImpl::DebugString(bool verbose) const {
         " target_path = \"%" PRFilePath "\"",
         GetTotalBytes(),
         GetReceivedBytes(),
-        InterruptReasonDebugString(last_reason_).c_str(),
+        DownloadInterruptReasonToString(last_reason_).c_str(),
         IsPaused() ? 'T' : 'F',
         DebugResumeModeString(GetResumeMode()),
         auto_resume_count_,
@@ -866,6 +890,7 @@ DownloadItemImpl::ResumeMode DownloadItemImpl::GetResumeMode() const {
     case DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
     case DOWNLOAD_INTERRUPT_REASON_NETWORK_DISCONNECTED:
     case DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN:
+    case DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED:
     case DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
     case DOWNLOAD_INTERRUPT_REASON_CRASH:
@@ -894,6 +919,50 @@ DownloadItemImpl::ResumeMode DownloadItemImpl::GetResumeMode() const {
   }
 
   return mode;
+}
+
+void DownloadItemImpl::MergeOriginInfoOnResume(
+    const DownloadCreateInfo& new_create_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(RESUMING_INTERNAL, state_);
+  DCHECK(!new_create_info.url_chain.empty());
+
+  // We are going to tack on any new redirects to our list of redirects.
+  // When a download is resumed, the URL used for the resumption request is the
+  // one at the end of the previous redirect chain. Tacking additional redirects
+  // to the end of this chain ensures that:
+  // - If the download needs to be resumed again, the ETag/Last-Modified headers
+  //   will be used with the last server that sent them to us.
+  // - The redirect chain contains all the servers that were involved in this
+  //   download since the initial request, in order.
+  std::vector<GURL>::const_iterator chain_iter =
+      new_create_info.url_chain.begin();
+  if (*chain_iter == url_chain_.back())
+    ++chain_iter;
+
+  // Record some stats. If the precondition failed (the server returned
+  // HTTP_PRECONDITION_FAILED), then the download will automatically retried as
+  // a full request rather than a partial. Full restarts clobber validators.
+  int origin_state = 0;
+  if (chain_iter != new_create_info.url_chain.end())
+    origin_state |= ORIGIN_STATE_ON_RESUMPTION_ADDITIONAL_REDIRECTS;
+  if (etag_ != new_create_info.etag ||
+      last_modified_time_ != new_create_info.last_modified)
+    origin_state |= ORIGIN_STATE_ON_RESUMPTION_VALIDATORS_CHANGED;
+  if (content_disposition_ != new_create_info.content_disposition)
+    origin_state |= ORIGIN_STATE_ON_RESUMPTION_CONTENT_DISPOSITION_CHANGED;
+  RecordOriginStateOnResumption(new_create_info.save_info->offset != 0,
+                                origin_state);
+
+  url_chain_.insert(
+      url_chain_.end(), chain_iter, new_create_info.url_chain.end());
+  etag_ = new_create_info.etag;
+  last_modified_time_ = new_create_info.last_modified;
+  content_disposition_ = new_create_info.content_disposition;
+
+  // Don't update observers. This method is expected to be called just before a
+  // DownloadFile is created and Start() is called. The observers will be
+  // notified when the download transitions to the IN_PROGRESS state.
 }
 
 void DownloadItemImpl::NotifyRemoved() {
@@ -1334,23 +1403,20 @@ void DownloadItemImpl::Completed() {
   }
 }
 
-void DownloadItemImpl::OnResumeRequestStarted(DownloadItem* item,
-                                              net::Error error) {
+void DownloadItemImpl::OnResumeRequestStarted(
+    DownloadItem* item,
+    DownloadInterruptReason interrupt_reason) {
   // If |item| is not NULL, then Start() has been called already, and nothing
   // more needs to be done here.
   if (item) {
-    DCHECK_EQ(net::OK, error);
+    DCHECK_EQ(DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
     DCHECK_EQ(static_cast<DownloadItem*>(this), item);
     return;
   }
   // Otherwise, the request failed without passing through
   // DownloadResourceHandler::OnResponseStarted.
-  if (error == net::OK)
-    error = net::ERR_FAILED;
-  DownloadInterruptReason reason =
-      ConvertNetErrorToInterruptReason(error, DOWNLOAD_INTERRUPT_FROM_NETWORK);
-  DCHECK_NE(DOWNLOAD_INTERRUPT_REASON_NONE, reason);
-  Interrupt(reason);
+  DCHECK_NE(DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
+  Interrupt(interrupt_reason);
 }
 
 // **** End of Download progression cascade
@@ -1546,6 +1612,18 @@ void DownloadItemImpl::SetDangerType(DownloadDangerType danger_type) {
     bound_net_log_.AddEvent(
         net::NetLog::TYPE_DOWNLOAD_ITEM_SAFETY_STATE_UPDATED,
         base::Bind(&ItemCheckedNetLogCallback, danger_type));
+  }
+  // Only record the Malicious UMA stat if it's going from {not malicious} ->
+  // {malicious}.
+  if ((danger_type_ == DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT) &&
+      (danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST ||
+       danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
+       danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
+       danger_type == DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED)) {
+    RecordMaliciousDownloadClassified(danger_type);
   }
   danger_type_ = danger_type;
 }

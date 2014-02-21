@@ -243,35 +243,22 @@
   fun:NdrNonEncapsulatedUnionBufferSize
 }
 {
-  bug_314654_a
+  bug_309847
   ThreadSanitizer:Race
-  ...
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstance
-  fun:base::win::ScopedComPtr::CreateInstance
-  fun:media::CoreAudioUtil::CreateDeviceEnumerator
-}
-{
-  bug_314654_b
-  ThreadSanitizer:Race
-  fun:.text
-  fun:.text
-  fun:CoSetState
-  fun:CoSetState
-  fun:CoGetComCatalog
-  fun:CoGetComCatalog
-  fun:CoGetComCatalog
-  fun:CoInitializeSecurity
-  fun:CoTaskMemFree
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstanceEx
-  fun:CoCreateInstance
-  fun:base::win::ScopedComPtr::CreateInstance
+  fun:tracked_objects::ThreadData::TallyADeath
+  fun:tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking
+  fun:base::MessageLoop::RunTask
+  fun:base::MessageLoop::RunTask
+  fun:base::MessageLoop::RunTask
+  fun:base::MessageLoop::DeferOrRunPendingTask
+  fun:base::MessageLoop::DoWork
+  fun:base::MessageLoop::DoWork
+  fun:base::MessagePumpDefault::Run
+  fun:base::MessageLoop::RunHandler
+  fun:base::RunLoop::Run
+  fun:net::test_server::EmbeddedTestServer::PostTaskToIOThreadAndWait
+  fun:net::test_server::EmbeddedTestServer::InitializeAndWaitUntilReady
+  fun:net::test_server::EmbeddedTestServerThreadingTestDelegate::ThreadMain
 }
 {
   bug_326282
@@ -279,4 +266,42 @@
   ...
   fun:file_util::OpenFile
   fun:base::ReadFileToString
+}
+{
+  bug_328521_a
+  ThreadSanitizer:Race
+  fun:PR_Lock
+  fun:pk11_getKeyFromList
+  fun:pk11_CreateSymKey
+  fun:pk11_ImportSymKeyWithTempl
+  fun:PK11_ImportSymKey
+  fun:crypto::HMAC::Init
+  fun:crypto::HMAC::Init
+  fun:crypto::HMAC::Init
+  fun:crypto::HMAC::Init
+  fun:remoting::protocol::AuthenticationMethod::ApplyHashFunction
+  fun:remoting::MakeHostPinHash
+  fun:`anonymous namespace'::VerifyGetPinHashResponse
+  fun:`anonymous namespace'::VerifyGetPinHashResponse
+  fun:`anonymous namespace'::VerifyGetPinHashResponse
+  fun:`anonymous namespace'::VerifyGetPinHashResponse
+  fun:remoting::NativeMessagingHostTest_All_Test::TestBody
+}
+{
+  bug_328521_b
+  ThreadSanitizer:Race
+  fun:PR_Lock
+  fun:sftk_SessionFromHandle
+  fun:NSC_GenerateKeyPair
+  fun:PK11_GenerateKeyPairWithOpFlags
+  fun:PK11_GenerateKeyPairWithFlags
+  fun:PK11_GenerateKeyPair
+  fun:crypto::RSAPrivateKey::CreateWithParams
+  fun:crypto::RSAPrivateKey::CreateWithParams
+  fun:crypto::RSAPrivateKey::Create
+  fun:crypto::RSAPrivateKey::Create
+  fun:remoting::RsaKeyPair::Generate
+  fun:remoting::Me2MeNativeMessagingHost::ProcessGenerateKeyPair
+  fun:remoting::Me2MeNativeMessagingHost::ProcessRequest
+  fun:base::internal::RunnableAdapter::Run
 }

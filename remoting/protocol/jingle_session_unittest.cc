@@ -6,12 +6,16 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "net/socket/socket.h"
 #include "net/socket/stream_socket.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "remoting/base/constants.h"
+#include "remoting/jingle_glue/chromium_port_allocator.h"
 #include "remoting/jingle_glue/fake_signal_strategy.h"
+#include "remoting/jingle_glue/network_settings.h"
 #include "remoting/protocol/authenticator.h"
 #include "remoting/protocol/channel_authenticator.h"
 #include "remoting/protocol/connection_tester.h"
@@ -118,7 +122,7 @@ class JingleSessionTest : public testing::Test {
   virtual void TearDown() {
     CloseSessions();
     CloseSessionManager();
-    message_loop_->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   void CloseSessions() {
@@ -137,9 +141,15 @@ class JingleSessionTest : public testing::Test {
 
     EXPECT_CALL(host_server_listener_, OnSessionManagerReady())
         .Times(1);
-    host_server_.reset(new JingleSessionManager(
-        scoped_ptr<TransportFactory>(new LibjingleTransportFactory()),
-        false));
+
+    NetworkSettings network_settings(NetworkSettings::NAT_TRAVERSAL_OUTGOING);
+
+    scoped_ptr<TransportFactory> host_transport(new LibjingleTransportFactory(
+        NULL,
+        ChromiumPortAllocator::Create(NULL, network_settings)
+            .PassAs<cricket::HttpPortAllocatorBase>(),
+        network_settings));
+    host_server_.reset(new JingleSessionManager(host_transport.Pass()));
     host_server_->Init(host_signal_strategy_.get(), &host_server_listener_);
 
     scoped_ptr<AuthenticatorFactory> factory(
@@ -148,8 +158,13 @@ class JingleSessionTest : public testing::Test {
 
     EXPECT_CALL(client_server_listener_, OnSessionManagerReady())
         .Times(1);
-    client_server_.reset(new JingleSessionManager(
-        scoped_ptr<TransportFactory>(new LibjingleTransportFactory()), false));
+    scoped_ptr<TransportFactory> client_transport(new LibjingleTransportFactory(
+        NULL,
+        ChromiumPortAllocator::Create(NULL, network_settings)
+            .PassAs<cricket::HttpPortAllocatorBase>(),
+        network_settings));
+    client_server_.reset(
+        new JingleSessionManager(client_transport.Pass()));
     client_server_->Init(client_signal_strategy_.get(),
                          &client_server_listener_);
   }
@@ -225,7 +240,7 @@ class JingleSessionTest : public testing::Test {
         CandidateSessionConfig::CreateDefault());
     client_session_->SetEventHandler(&client_session_event_handler_);
 
-    message_loop_->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   void CreateChannel() {
@@ -308,7 +323,7 @@ TEST_F(JingleSessionTest, RejectConnection) {
       kHostJid, authenticator.Pass(), CandidateSessionConfig::CreateDefault());
   client_session_->SetEventHandler(&client_session_event_handler_);
 
-  message_loop_->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Verify that we can connect two endpoints with single-step authentication.

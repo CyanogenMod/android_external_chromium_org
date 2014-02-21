@@ -9,6 +9,7 @@
 
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/win/scoped_co_mem.h"
@@ -204,9 +205,9 @@ class MFReaderCallback
 
   STDMETHOD(OnReadSample)(HRESULT status, DWORD stream_index,
       DWORD stream_flags, LONGLONG time_stamp, IMFSample* sample) {
-    base::Time stamp(base::Time::Now());
+    base::TimeTicks stamp(base::TimeTicks::Now());
     if (!sample) {
-      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0, false, false);
+      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0);
       return S_OK;
     }
 
@@ -220,8 +221,7 @@ class MFReaderCallback
         DWORD length = 0, max_length = 0;
         BYTE* data = NULL;
         buffer->Lock(&data, &max_length, &length);
-        observer_->OnIncomingCapturedFrame(data, length, stamp,
-                                           0, false, false);
+        observer_->OnIncomingCapturedFrame(data, length, stamp, 0);
         buffer->Unlock();
       }
     }
@@ -284,6 +284,60 @@ void VideoCaptureDeviceMFWin::GetDeviceNames(Names* device_names) {
       DLOG(WARNING) << "GetAllocatedString failed: " << std::hex << hr;
     }
     devices[i]->Release();
+  }
+}
+
+// static
+void VideoCaptureDeviceMFWin::GetDeviceSupportedFormats(const Name& device,
+    VideoCaptureFormats* formats) {
+  ScopedComPtr<IMFMediaSource> source;
+  if (!CreateVideoCaptureDevice(device.id().c_str(), source.Receive()))
+    return;
+
+  HRESULT hr;
+  base::win::ScopedComPtr<IMFSourceReader> reader;
+  if (FAILED(hr = MFCreateSourceReaderFromMediaSource(source, NULL,
+                                                      reader.Receive()))) {
+    DLOG(ERROR) << "MFCreateSourceReaderFromMediaSource: " << std::hex << hr;
+    return;
+  }
+
+  DWORD stream_index = 0;
+  ScopedComPtr<IMFMediaType> type;
+  while (SUCCEEDED(hr = reader->GetNativeMediaType(
+         MF_SOURCE_READER_FIRST_VIDEO_STREAM, stream_index, type.Receive()))) {
+    UINT32 width, height;
+    hr = MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width, &height);
+    if (FAILED(hr)) {
+      DLOG(ERROR) << "MFGetAttributeSize: " << std::hex << hr;
+      return;
+    }
+    VideoCaptureFormat capture_format;
+    capture_format.frame_size.SetSize(width, height);
+
+    UINT32 numerator, denominator;
+    hr = MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &numerator, &denominator);
+    if (FAILED(hr)) {
+      DLOG(ERROR) << "MFGetAttributeSize: " << std::hex << hr;
+      return;
+    }
+    capture_format.frame_rate = denominator ? numerator / denominator : 0;
+
+    GUID type_guid;
+    hr = type->GetGUID(MF_MT_SUBTYPE, &type_guid);
+    if (FAILED(hr)) {
+      DLOG(ERROR) << "GetGUID: " << std::hex << hr;
+      return;
+    }
+    FormatFromGuid(type_guid, &capture_format.pixel_format);
+    type.Release();
+    formats->push_back(capture_format);
+    ++stream_index;
+
+    DVLOG(1) << device.name() << " resolution: "
+             << capture_format.frame_size.ToString() << ", fps: "
+             << capture_format.frame_rate << ", pixel format: "
+             << capture_format.pixel_format;
   }
 }
 
@@ -408,18 +462,14 @@ void VideoCaptureDeviceMFWin::StopAndDeAllocate() {
 void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
     const uint8* data,
     int length,
-    const base::Time& time_stamp,
-    int rotation,
-    bool flip_vert,
-    bool flip_horiz) {
+    const base::TimeTicks& time_stamp,
+    int rotation) {
   base::AutoLock lock(lock_);
   if (data && client_.get())
     client_->OnIncomingCapturedFrame(data,
                                      length,
                                      time_stamp,
                                      rotation,
-                                     flip_vert,
-                                     flip_horiz,
                                      capture_format_);
 
   if (capture_) {
@@ -437,9 +487,10 @@ void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
 }
 
 void VideoCaptureDeviceMFWin::OnError(HRESULT hr) {
-  DLOG(ERROR) << "VideoCaptureDeviceMFWin: " << std::hex << hr;
+  std::string log_msg = base::StringPrintf("VideoCaptureDeviceMFWin: %x", hr);
+  DLOG(ERROR) << log_msg;
   if (client_.get())
-    client_->OnError();
+    client_->OnError(log_msg);
 }
 
 }  // namespace media

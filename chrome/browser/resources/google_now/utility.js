@@ -29,13 +29,21 @@
  */
 var NOTIFICATION_CARDS_URL = 'https://www.googleapis.com/chromenow/v1';
 
-var DEBUG_MODE = localStorage['debug_mode'];
+/**
+ * Returns true if debug mode is enabled.
+ * localStorage returns items as strings, which means if we store a boolean,
+ * it returns a string. Use this function to compare against true.
+ * @return {boolean} Whether debug mode is enabled.
+ */
+function isInDebugMode() {
+  return localStorage.debug_mode === 'true';
+}
 
 /**
  * Initializes for debug or release modes of operation.
  */
 function initializeDebug() {
-  if (DEBUG_MODE) {
+  if (isInDebugMode()) {
     NOTIFICATION_CARDS_URL =
         localStorage['server_url'] || NOTIFICATION_CARDS_URL;
   }
@@ -44,10 +52,28 @@ function initializeDebug() {
 initializeDebug();
 
 /**
- * Location Card Storage.
+ * Conditionally allow console.log output based off of the debug mode.
  */
-if (localStorage['locationCardsShown'] === undefined)
-  localStorage['locationCardsShown'] = 0;
+console.log = function() {
+  var originalConsoleLog = console.log;
+  return function() {
+    if (isInDebugMode()) {
+      originalConsoleLog.apply(console, arguments);
+    }
+  };
+}();
+
+/**
+ * Explanation Card Storage.
+ */
+if (localStorage['explanatoryCardsShown'] === undefined)
+  localStorage['explanatoryCardsShown'] = 0;
+
+/**
+ * Location Card Count Cleanup.
+ */
+if (localStorage.locationCardsShown !== undefined)
+  localStorage.removeItem('locationCardsShown');
 
 /**
  * Builds an error object with a message that may be sent to the server.
@@ -171,7 +197,7 @@ function reportError(error) {
     chrome.metricsPrivate.getIsCrashReportingEnabled(function(isEnabled) {
       if (isEnabled)
         sendErrorReport(error);
-      if (DEBUG_MODE)
+      if (isInDebugMode())
         alert(message);
     });
   }
@@ -409,6 +435,17 @@ wrapper.instrumentChromeApiFunction('identity.getAuthToken', 1);
 wrapper.instrumentChromeApiFunction('identity.onSignInChanged.addListener', 0);
 wrapper.instrumentChromeApiFunction('identity.removeCachedAuthToken', 1);
 wrapper.instrumentChromeApiFunction('webstorePrivate.getBrowserLogin', 0);
+
+/**
+ * Add task tracking support to Promises.
+ * @override
+ */
+Promise.prototype.then = function() {
+  var originalThen = Promise.prototype.then;
+  return function(callback) {
+    originalThen.call(this, wrapper.wrapCallback(callback, false));
+  }
+}();
 
 /**
  * Builds the object to manage tasks (mutually exclusive chains of events).

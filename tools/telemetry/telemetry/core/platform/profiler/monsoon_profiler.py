@@ -4,18 +4,10 @@
 
 import csv
 import multiprocessing
-import os
-import sys
 
 from telemetry.core import exceptions
-from telemetry.core import util
 from telemetry.core.platform import profiler
-
-sys.path.append(os.path.join(util.GetTelemetryDir(), 'third_party', 'internal'))
-try:
-  import monsoon  # pylint: disable=F0401
-except ImportError:
-  monsoon = None
+from telemetry.core.platform.profiler import monsoon
 
 
 def _CollectData(output_path, is_collecting):
@@ -42,7 +34,7 @@ def _CollectData(output_path, is_collecting):
     mon.StopDataCollection()
 
   # Add x-axis labels.
-  plot_data = [(i / 5000., sample) for i, sample in enumerate(samples)]
+  plot_data = [(i / 5000., sample(0)) for i, sample in enumerate(samples)]
 
   # Print data in csv.
   with open(output_path, 'w') as output_file:
@@ -80,11 +72,9 @@ class MonsoonProfiler(profiler.Profiler):
 
   @classmethod
   def is_supported(cls, browser_type):
-    if not monsoon:
-      return False
     try:
       monsoon.Monsoon(wait=False)
-    except IOError:
+    except EnvironmentError:
       return False
     else:
       return True

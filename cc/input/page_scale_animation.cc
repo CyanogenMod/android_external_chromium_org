@@ -16,22 +16,22 @@ namespace {
 
 // This takes a viewport-relative vector and returns a vector whose values are
 // between 0 and 1, representing the percentage position within the viewport.
-gfx::Vector2dF NormalizeFromViewport(gfx::Vector2dF denormalized,
-                                     gfx::SizeF viewport_size) {
+gfx::Vector2dF NormalizeFromViewport(const gfx::Vector2dF& denormalized,
+                                     const gfx::SizeF& viewport_size) {
   return gfx::ScaleVector2d(denormalized,
                             1.f / viewport_size.width(),
                             1.f / viewport_size.height());
 }
 
-gfx::Vector2dF DenormalizeToViewport(gfx::Vector2dF normalized,
-                                     gfx::SizeF viewport_size) {
+gfx::Vector2dF DenormalizeToViewport(const gfx::Vector2dF& normalized,
+                                     const gfx::SizeF& viewport_size) {
   return gfx::ScaleVector2d(normalized,
                             viewport_size.width(),
                             viewport_size.height());
 }
 
-gfx::Vector2dF InterpolateBetween(gfx::Vector2dF start,
-                                  gfx::Vector2dF end,
+gfx::Vector2dF InterpolateBetween(const gfx::Vector2dF& start,
+                                  const gfx::Vector2dF& end,
                                   float interp) {
   return start + gfx::ScaleVector2d(end - start, interp);
 }
@@ -41,10 +41,10 @@ gfx::Vector2dF InterpolateBetween(gfx::Vector2dF start,
 namespace cc {
 
 scoped_ptr<PageScaleAnimation> PageScaleAnimation::Create(
-    gfx::Vector2dF start_scroll_offset,
+    const gfx::Vector2dF& start_scroll_offset,
     float start_page_scale_factor,
-    gfx::SizeF viewport_size,
-    gfx::SizeF root_layer_size,
+    const gfx::SizeF& viewport_size,
+    const gfx::SizeF& root_layer_size,
     scoped_ptr<TimingFunction> timing_function) {
   return make_scoped_ptr(new PageScaleAnimation(start_scroll_offset,
                                                 start_page_scale_factor,
@@ -54,10 +54,10 @@ scoped_ptr<PageScaleAnimation> PageScaleAnimation::Create(
 }
 
 PageScaleAnimation::PageScaleAnimation(
-    gfx::Vector2dF start_scroll_offset,
+    const gfx::Vector2dF& start_scroll_offset,
     float start_page_scale_factor,
-    gfx::SizeF viewport_size,
-    gfx::SizeF root_layer_size,
+    const gfx::SizeF& viewport_size,
+    const gfx::SizeF& root_layer_size,
     scoped_ptr<TimingFunction> timing_function)
     : start_page_scale_factor_(start_page_scale_factor),
       target_page_scale_factor_(0.f),
@@ -72,7 +72,7 @@ PageScaleAnimation::PageScaleAnimation(
 
 PageScaleAnimation::~PageScaleAnimation() {}
 
-void PageScaleAnimation::ZoomTo(gfx::Vector2dF target_scroll_offset,
+void PageScaleAnimation::ZoomTo(const gfx::Vector2dF& target_scroll_offset,
                                 float target_page_scale_factor,
                                 double duration) {
   target_page_scale_factor_ = target_page_scale_factor;
@@ -92,7 +92,7 @@ void PageScaleAnimation::ZoomTo(gfx::Vector2dF target_scroll_offset,
   start_anchor_ = target_anchor_;
 }
 
-void PageScaleAnimation::ZoomWithAnchor(gfx::Vector2dF anchor,
+void PageScaleAnimation::ZoomWithAnchor(const gfx::Vector2dF& anchor,
                                         float target_page_scale_factor,
                                         double duration) {
   start_anchor_ = anchor;

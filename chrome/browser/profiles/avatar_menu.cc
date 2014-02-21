@@ -24,6 +24,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -95,13 +96,10 @@ bool AvatarMenu::ShouldShowAvatarMenu() {
   // implementations.
   if (profiles::IsMultipleProfilesEnabled()) {
 #if defined(OS_CHROMEOS)
-    // On ChromeOS the menu will be shown in M-31 mode when it is possible to
-    // have two users logged in at the same time.
-    return ash::switches::UseFullMultiProfileMode() &&
-           ChromeShellDelegate::instance() &&
-           ChromeShellDelegate::instance()->IsMultiProfilesEnabled();
+    // On ChromeOS the menu will not be shown.
+    return false;
 #else
-    return profiles::IsNewProfileManagementEnabled() ||
+    return switches::IsNewProfileManagement() ||
            (g_browser_process->profile_manager() &&
             g_browser_process->profile_manager()->GetNumberOfProfiles() > 1);
 #endif
@@ -114,12 +112,14 @@ bool AvatarMenu::CompareItems(const Item* item1, const Item* item2) {
       base::i18n::ToLower(item2->name)) < 0;
 }
 
-void AvatarMenu::SwitchToProfile(size_t index, bool always_create) {
+void AvatarMenu::SwitchToProfile(size_t index,
+                                 bool always_create,
+                                 ProfileMetrics::ProfileOpen metric) {
   DCHECK(profiles::IsMultipleProfilesEnabled() ||
          index == GetActiveProfileIndex());
   const Item& item = GetItemAt(index);
 
-  if (profiles::IsNewProfileManagementEnabled()) {
+  if (switches::IsNewProfileManagement()) {
     // Don't open a browser window for signed-out profiles.
     if (item.signin_required) {
       chrome::ShowUserManager(item.profile_path);
@@ -135,8 +135,8 @@ void AvatarMenu::SwitchToProfile(size_t index, bool always_create) {
     desktop_type = browser_->host_desktop_type();
 
   profiles::SwitchToProfile(path, desktop_type, always_create,
-                            profiles::ProfileSwitchingDoneCallback());
-  ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_ICON);
+                            profiles::ProfileSwitchingDoneCallback(),
+                            metric);
 }
 
 void AvatarMenu::AddNewProfile(ProfileMetrics::ProfileAdd type) {
@@ -191,7 +191,8 @@ base::string16 AvatarMenu::GetManagedUserInformation() const {
 #if defined(ENABLE_MANAGED_USERS)
     ManagedUserService* service = ManagedUserServiceFactory::GetForProfile(
         browser_->profile());
-    base::string16 custodian = UTF8ToUTF16(service->GetCustodianEmailAddress());
+    base::string16 custodian =
+        base::UTF8ToUTF16(service->GetCustodianEmailAddress());
     return l10n_util::GetStringFUTF16(IDS_MANAGED_USER_INFO, custodian);
 #endif
   }

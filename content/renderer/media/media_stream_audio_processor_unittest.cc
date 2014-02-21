@@ -10,11 +10,11 @@
 #include "base/time/time.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_audio_processor.h"
-#include "content/renderer/media/rtc_media_constraints.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_bus.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 
 using ::testing::_;
@@ -50,36 +50,6 @@ void ReadDataFromSpeechFile(char* data, int length) {
   DCHECK(data_file_size64 > length);
 }
 
-void ApplyFixedAudioConstraints(RTCMediaConstraints* constraints) {
-  // Constant constraint keys which enables default audio constraints on
-  // mediastreams with audio.
-  struct {
-    const char* key;
-    const char* value;
-  } static const kDefaultAudioConstraints[] = {
-    { webrtc::MediaConstraintsInterface::kEchoCancellation,
-      webrtc::MediaConstraintsInterface::kValueTrue },
-  #if defined(OS_CHROMEOS) || defined(OS_MACOSX)
-    // Enable the extended filter mode AEC on platforms with known echo issues.
-    { webrtc::MediaConstraintsInterface::kExperimentalEchoCancellation,
-      webrtc::MediaConstraintsInterface::kValueTrue },
-  #endif
-    { webrtc::MediaConstraintsInterface::kAutoGainControl,
-      webrtc::MediaConstraintsInterface::kValueTrue },
-    { webrtc::MediaConstraintsInterface::kExperimentalAutoGainControl,
-      webrtc::MediaConstraintsInterface::kValueTrue },
-    { webrtc::MediaConstraintsInterface::kNoiseSuppression,
-      webrtc::MediaConstraintsInterface::kValueTrue },
-    { webrtc::MediaConstraintsInterface::kHighpassFilter,
-      webrtc::MediaConstraintsInterface::kValueTrue },
-  };
-
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
-    constraints->AddMandatory(kDefaultAudioConstraints[i].key,
-                              kDefaultAudioConstraints[i].value, false);
-  }
-}
-
 }  // namespace
 
 class MediaStreamAudioProcessorTest : public ::testing::Test {
@@ -87,8 +57,6 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
   MediaStreamAudioProcessorTest()
       : params_(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
                 media::CHANNEL_LAYOUT_STEREO, 48000, 16, 512) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableAudioTrackProcessing);
   }
 
  protected:
@@ -118,8 +86,10 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
           params_.frames_per_buffer(), base::TimeDelta::FromMilliseconds(10));
 
       int16* output = NULL;
+      int new_volume = 0;
       while(audio_processor->ProcessAndConsumeData(
-          base::TimeDelta::FromMilliseconds(10), 255, false, &output)) {
+          base::TimeDelta::FromMilliseconds(10), 255, false, &new_volume,
+          &output)) {
         EXPECT_TRUE(output != NULL);
         EXPECT_EQ(audio_processor->OutputFormat().sample_rate(),
                   expected_output_sample_rate);
@@ -133,31 +103,68 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
     }
   }
 
+  void VerifyDefaultComponents(MediaStreamAudioProcessor* audio_processor) {
+    webrtc::AudioProcessing* audio_processing =
+        audio_processor->audio_processing_.get();
+#if defined(OS_ANDROID)
+    EXPECT_TRUE(audio_processing->echo_control_mobile()->is_enabled());
+    EXPECT_TRUE(audio_processing->echo_control_mobile()->routing_mode() ==
+        webrtc::EchoControlMobile::kSpeakerphone);
+    EXPECT_FALSE(audio_processing->echo_cancellation()->is_enabled());
+#elif !defined(OS_IOS)
+    EXPECT_TRUE(audio_processing->echo_cancellation()->is_enabled());
+    EXPECT_TRUE(audio_processing->echo_cancellation()->suppression_level() ==
+        webrtc::EchoCancellation::kHighSuppression);
+    EXPECT_TRUE(audio_processing->echo_cancellation()->are_metrics_enabled());
+    EXPECT_TRUE(
+        audio_processing->echo_cancellation()->is_delay_logging_enabled());
+#endif
+
+    EXPECT_TRUE(audio_processing->noise_suppression()->is_enabled());
+    EXPECT_TRUE(audio_processing->noise_suppression()->level() ==
+        webrtc::NoiseSuppression::kHigh);
+    EXPECT_TRUE(audio_processing->high_pass_filter()->is_enabled());
+    EXPECT_TRUE(audio_processing->gain_control()->is_enabled());
+#if defined(OS_ANDROID) || defined(OS_IOS)
+    EXPECT_TRUE(audio_processing->gain_control()->mode() ==
+        webrtc::GainControl::kFixedDigital);
+    EXPECT_FALSE(audio_processing->voice_detection()->is_enabled());
+#else
+    EXPECT_TRUE(audio_processing->gain_control()->mode() ==
+        webrtc::GainControl::kAdaptiveAnalog);
+    EXPECT_TRUE(audio_processing->voice_detection()->is_enabled());
+    EXPECT_TRUE(audio_processing->voice_detection()->likelihood() ==
+        webrtc::VoiceDetection::kVeryLowLikelihood);
+#endif
+  }
+
   media::AudioParameters params_;
 };
 
 TEST_F(MediaStreamAudioProcessorTest, WithoutAudioProcessing) {
-  // Setup the audio processor with empty constraint.
-  RTCMediaConstraints constraints;
-  MediaStreamAudioProcessor audio_processor(&constraints);
-  audio_processor.SetCaptureFormat(params_);
-  EXPECT_FALSE(audio_processor.has_audio_processing());
+  // Setup the audio processor without enabling the flag.
+  blink::WebMediaConstraints constraints;
+  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
+      new MediaStreamAudioProcessor(params_, constraints, 0));
+  EXPECT_FALSE(audio_processor->has_audio_processing());
 
-  ProcessDataAndVerifyFormat(&audio_processor,
+  ProcessDataAndVerifyFormat(audio_processor,
                              params_.sample_rate(),
                              params_.channels(),
                              params_.sample_rate() / 100);
 }
 
 TEST_F(MediaStreamAudioProcessorTest, WithAudioProcessing) {
-  // Setup the audio processor with default constraint.
-  RTCMediaConstraints constraints;
-  ApplyFixedAudioConstraints(&constraints);
-  MediaStreamAudioProcessor audio_processor(&constraints);
-  audio_processor.SetCaptureFormat(params_);
-  EXPECT_TRUE(audio_processor.has_audio_processing());
+  // Setup the audio processor with enabling the flag.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAudioTrackProcessing);
+  blink::WebMediaConstraints constraints;
+  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
+      new MediaStreamAudioProcessor(params_, constraints, 0));
+  EXPECT_TRUE(audio_processor->has_audio_processing());
+  VerifyDefaultComponents(audio_processor);
 
-  ProcessDataAndVerifyFormat(&audio_processor,
+  ProcessDataAndVerifyFormat(audio_processor,
                              kAudioProcessingSampleRate,
                              kAudioProcessingNumberOfChannel,
                              kAudioProcessingSampleRate / 100);

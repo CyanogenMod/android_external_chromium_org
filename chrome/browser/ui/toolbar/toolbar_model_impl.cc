@@ -152,8 +152,22 @@ GURL ToolbarModelImpl::GetURL() const {
 }
 
 bool ToolbarModelImpl::WouldOmitURLDueToOriginChip() const {
-  return chrome::ShouldDisplayOriginChip() && ShouldDisplayURL() &&
-      url_replacement_enabled();
+  // When users type URLs and hit enter, continue to show those URLs until
+  // the navigation commits, because having the omnibox clear immediately
+  // feels like the input was ignored.
+  const NavigationController* navigation_controller = GetNavigationController();
+  if (navigation_controller) {
+    const NavigationEntry* entry = navigation_controller->GetPendingEntry();
+    if (entry &&
+        (entry->GetTransitionType() & content::PAGE_TRANSITION_TYPED) != 0) {
+      return false;
+    }
+  }
+
+  bool should_display_origin_chip =
+      chrome::ShouldDisplayOriginChip() || chrome::ShouldDisplayOriginChipV2();
+  return should_display_origin_chip && delegate_->InTabbedBrowser() &&
+      ShouldDisplayURL() && url_replacement_enabled();
 }
 
 bool ToolbarModelImpl::WouldPerformSearchTermReplacement(
@@ -179,9 +193,9 @@ bool ToolbarModelImpl::ShouldDisplayURL() const {
 
     GURL url = entry->GetURL();
     GURL virtual_url = entry->GetVirtualURL();
-    if (url.SchemeIs(chrome::kChromeUIScheme) ||
-        virtual_url.SchemeIs(chrome::kChromeUIScheme)) {
-      if (!url.SchemeIs(chrome::kChromeUIScheme))
+    if (url.SchemeIs(content::kChromeUIScheme) ||
+        virtual_url.SchemeIs(content::kChromeUIScheme)) {
+      if (!url.SchemeIs(content::kChromeUIScheme))
         url = virtual_url;
       return url.host() != chrome::kChromeUINewTabHost;
     }
@@ -206,6 +220,12 @@ int ToolbarModelImpl::GetIcon() const {
         chrome::DISPLAY_SEARCH_BUTTON_NEVER) ?
             IDR_OMNIBOX_SEARCH_SECURED : IDR_OMNIBOX_SEARCH;
   }
+
+  // When the original site chip experiment is running, the icon in the location
+  // bar, when not the search icon, should be the page icon.
+  if (chrome::ShouldDisplayOriginChip())
+    return GetIconForSecurityLevel(NONE);
+
   return GetIconForSecurityLevel(GetSecurityLevel(false));
 }
 
@@ -244,8 +264,8 @@ base::string16 ToolbarModelImpl::GetEVCertName(
 
   return l10n_util::GetStringFUTF16(
       IDS_SECURE_CONNECTION_EV,
-      UTF8ToUTF16(cert.subject().organization_names[0]),
-      UTF8ToUTF16(cert.subject().country_name));
+      base::UTF8ToUTF16(cert.subject().organization_names[0]),
+      base::UTF8ToUTF16(cert.subject().country_name));
 }
 
 NavigationController* ToolbarModelImpl::GetNavigationController() const {

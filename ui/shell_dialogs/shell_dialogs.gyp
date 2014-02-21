@@ -33,8 +33,6 @@
         'gtk/select_file_dialog_impl_kde.cc',
         'linux_shell_dialog.cc',
         'linux_shell_dialog.h',
-        'print_settings_dialog_win.cc',
-        'print_settings_dialog_win.h',
         'select_file_dialog.cc',
         'select_file_dialog.h',
         'select_file_dialog_android.cc',
@@ -85,5 +83,19 @@
         ],
       ],
     },  # target_name: shell_dialogs
+    {
+      'target_name': 'shell_dialogs_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:test_support_base',
+        '../../base/base.gyp:run_all_unittests',
+        '../../testing/gtest.gyp:gtest',
+        'shell_dialogs',
+      ],
+      'sources': [
+        'select_file_dialog_win_unittest.cc',
+      ],
+    },
   ],
 }

@@ -4,13 +4,15 @@
 
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_window_ids.h"
 #include "ash/shell/example_factory.h"
+#include "ash/shell_window_ids.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/corewm/tooltip_controller.h"
 #include "ui/views/widget/widget.h"
@@ -24,11 +26,11 @@ namespace shell {
 class LockView : public views::WidgetDelegateView,
                  public views::ButtonListener {
  public:
-  LockView()
-      : unlock_button_(new views::LabelButton(this, ASCIIToUTF16("Unlock"))) {
-    unlock_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  LockView() : unlock_button_(new views::LabelButton(
+                                  this, base::ASCIIToUTF16("Unlock"))) {
+    unlock_button_->SetStyle(views::Button::STYLE_BUTTON);
     AddChildView(unlock_button_);
-    unlock_button_->set_focusable(true);
+    unlock_button_->SetFocusable(true);
   }
   virtual ~LockView() {}
 
@@ -41,11 +43,12 @@ class LockView : public views::WidgetDelegateView,
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     canvas->FillRect(GetLocalBounds(), SK_ColorYELLOW);
-    base::string16 text = ASCIIToUTF16("LOCKED!");
-    int string_width = font_.GetStringWidth(text);
-    canvas->DrawStringInt(text, font_, SK_ColorRED, (width() - string_width)/ 2,
-                          (height() - font_.GetHeight()) / 2,
-                          string_width, font_.GetHeight());
+    base::string16 text = base::ASCIIToUTF16("LOCKED!");
+    int string_width = gfx::GetStringWidth(text, font_list_);
+    canvas->DrawStringRect(text, font_list_, SK_ColorRED,
+                           gfx::Rect((width() - string_width)/ 2,
+                                     (height() - font_list_.GetHeight()) / 2,
+                                     string_width, font_list_.GetHeight()));
   }
   virtual void Layout() OVERRIDE {
     gfx::Rect bounds = GetLocalBounds();
@@ -73,7 +76,7 @@ class LockView : public views::WidgetDelegateView,
     GetWidget()->Close();
   }
 
-  gfx::Font font_;
+  gfx::FontList font_list_;
   views::LabelButton* unlock_button_;
 
   DISALLOW_COPY_AND_ASSIGN(LockView);

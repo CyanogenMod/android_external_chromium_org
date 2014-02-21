@@ -20,6 +20,7 @@
 #include "base/time/time.h"
 #include "base/version.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/updater/extension_cache.h"
 #include "chrome/browser/extensions/updater/request_queue_impl.h"
 #include "chrome/browser/extensions/updater/safe_manifest_parser.h"
 #include "chrome/browser/metrics/metrics_service.h"
@@ -77,14 +78,15 @@ const char kNotFromWebstoreInstallSource[] = "notfromwebstore";
 const char kDefaultInstallSource[] = "";
 
 #define RETRY_HISTOGRAM(name, retry_count, url) \
-    if ((url).DomainIs("google.com")) \
+    if ((url).DomainIs("google.com")) { \
       UMA_HISTOGRAM_CUSTOM_COUNTS( \
           "Extensions." name "RetryCountGoogleUrl", retry_count, 1, \
           kMaxRetries, kMaxRetries+1); \
-    else \
+    } else { \
       UMA_HISTOGRAM_CUSTOM_COUNTS( \
           "Extensions." name "RetryCountOtherUrl", retry_count, 1, \
-          kMaxRetries, kMaxRetries+1)
+          kMaxRetries, kMaxRetries+1); \
+    }
 
 bool ShouldRetryRequest(const net::URLRequestStatus& status,
                         int response_code) {
@@ -101,7 +103,8 @@ UpdateDetails::UpdateDetails(const std::string& id, const Version& version)
 
 UpdateDetails::~UpdateDetails() {}
 
-ExtensionDownloader::ExtensionFetch::ExtensionFetch() : url() {}
+ExtensionDownloader::ExtensionFetch::ExtensionFetch()
+    : url(), is_protected(false) {}
 
 ExtensionDownloader::ExtensionFetch::ExtensionFetch(
     const std::string& id,
@@ -110,7 +113,7 @@ ExtensionDownloader::ExtensionFetch::ExtensionFetch(
     const std::string& version,
     const std::set<int>& request_ids)
     : id(id), url(url), package_hash(package_hash), version(version),
-      request_ids(request_ids) {}
+      request_ids(request_ids), is_protected(false) {}
 
 ExtensionDownloader::ExtensionFetch::~ExtensionFetch() {}
 
@@ -125,7 +128,8 @@ ExtensionDownloader::ExtensionDownloader(
                      base::Unretained(this))),
       extensions_queue_(&kDefaultBackoffPolicy,
           base::Bind(&ExtensionDownloader::CreateExtensionFetcher,
-                     base::Unretained(this))) {
+                     base::Unretained(this))),
+      extension_cache_(NULL) {
   DCHECK(delegate_);
   DCHECK(request_context_);
 }
@@ -171,7 +175,18 @@ bool ExtensionDownloader::AddPendingExtension(const std::string& id,
                           request_id);
 }
 
-void ExtensionDownloader::StartAllPending() {
+void ExtensionDownloader::StartAllPending(ExtensionCache* cache) {
+  if (cache) {
+    extension_cache_ = cache;
+    extension_cache_->Start(base::Bind(
+        &ExtensionDownloader::DoStartAllPending,
+        weak_ptr_factory_.GetWeakPtr()));
+  } else {
+    DoStartAllPending();
+  }
+}
+
+void ExtensionDownloader::DoStartAllPending() {
   ReportStats();
   url_stats_ = URLStats();
 
@@ -619,28 +634,50 @@ void ExtensionDownloader::FetchUpdatedExtension(
     extensions_queue_.active_request()->request_ids.insert(
         fetch_data->request_ids.begin(), fetch_data->request_ids.end());
   } else {
-    extensions_queue_.ScheduleRequest(fetch_data.Pass());
+    std::string version;
+    if (extension_cache_ &&
+        extension_cache_->GetExtension(fetch_data->id, NULL, &version) &&
+        version == fetch_data->version) {
+      base::FilePath crx_path;
+      // Now get .crx file path and mark extension as used.
+      extension_cache_->GetExtension(fetch_data->id, &crx_path, &version);
+      NotifyDelegateDownloadFinished(fetch_data.Pass(), crx_path, false);
+    } else {
+      extensions_queue_.ScheduleRequest(fetch_data.Pass());
+    }
   }
 }
 
+void ExtensionDownloader::NotifyDelegateDownloadFinished(
+    scoped_ptr<ExtensionFetch> fetch_data,
+    const base::FilePath& crx_path,
+    bool file_ownership_passed) {
+  delegate_->OnExtensionDownloadFinished(fetch_data->id, crx_path,
+      file_ownership_passed, fetch_data->url, fetch_data->version,
+      ping_results_[fetch_data->id], fetch_data->request_ids);
+  ping_results_.erase(fetch_data->id);
+}
+
 void ExtensionDownloader::CreateExtensionFetcher() {
+  const ExtensionFetch* fetch = extensions_queue_.active_request();
+  int load_flags = net::LOAD_DISABLE_CACHE;
+  if (!fetch->is_protected || !fetch->url.SchemeIs("https")) {
+      load_flags |= net::LOAD_DO_NOT_SEND_COOKIES |
+                    net::LOAD_DO_NOT_SAVE_COOKIES;
+  }
   extension_fetcher_.reset(net::URLFetcher::Create(
-      kExtensionFetcherId, extensions_queue_.active_request()->url,
-      net::URLFetcher::GET, this));
+      kExtensionFetcherId, fetch->url, net::URLFetcher::GET, this));
   extension_fetcher_->SetRequestContext(request_context_);
-  extension_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
-                                   net::LOAD_DO_NOT_SAVE_COOKIES |
-                                   net::LOAD_DISABLE_CACHE);
+  extension_fetcher_->SetLoadFlags(load_flags);
   extension_fetcher_->SetAutomaticallyRetryOnNetworkChanges(3);
   // Download CRX files to a temp file. The blacklist is small and will be
   // processed in memory, so it is fetched into a string.
-  if (extensions_queue_.active_request()->id != kBlacklistAppID) {
+  if (fetch->id != kBlacklistAppID) {
     extension_fetcher_->SaveResponseToTemporaryFile(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
   }
 
-  VLOG(2) << "Starting fetch of " << extensions_queue_.active_request()->url
-          << " for " << extensions_queue_.active_request()->id;
+  VLOG(2) << "Starting fetch of " << fetch->url << " for " << fetch->id;
 
   extension_fetcher_->Start();
 }
@@ -652,10 +689,6 @@ void ExtensionDownloader::OnCRXFetchComplete(
     int response_code,
     const base::TimeDelta& backoff_delay) {
   const std::string& id = extensions_queue_.active_request()->id;
-  const std::set<int>& request_ids =
-      extensions_queue_.active_request()->request_ids;
-  const ExtensionDownloaderDelegate::PingResult& ping = ping_results_[id];
-
   if (status.status() == net::URLRequestStatus::SUCCESS &&
       (response_code == 200 || url.SchemeIsFile())) {
     RETRY_HISTOGRAM("CrxFetchSuccess",
@@ -663,10 +696,28 @@ void ExtensionDownloader::OnCRXFetchComplete(
     base::FilePath crx_path;
     // Take ownership of the file at |crx_path|.
     CHECK(source->GetResponseAsFilePath(true, &crx_path));
-    delegate_->OnExtensionDownloadFinished(
-        id, crx_path, url, extensions_queue_.active_request()->version,
-        ping, request_ids);
+    scoped_ptr<ExtensionFetch> fetch_data =
+        extensions_queue_.reset_active_request();
+    if (extension_cache_) {
+      const std::string& version = fetch_data->version;
+      extension_cache_->PutExtension(id, crx_path, version,
+          base::Bind(&ExtensionDownloader::NotifyDelegateDownloadFinished,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     base::Passed(&fetch_data)));
+    } else {
+      NotifyDelegateDownloadFinished(fetch_data.Pass(), crx_path, true);
+    }
+  } else if (status.status() == net::URLRequestStatus::SUCCESS &&
+             (response_code == 401 || response_code == 403) &&
+             !extensions_queue_.active_request()->is_protected) {
+    // On 401 or 403, requeue this fetch with cookies enabled.
+    extensions_queue_.active_request()->is_protected = true;
+    extensions_queue_.RetryRequest(backoff_delay);
   } else {
+    const std::set<int>& request_ids =
+        extensions_queue_.active_request()->request_ids;
+    const ExtensionDownloaderDelegate::PingResult& ping = ping_results_[id];
+
     VLOG(1) << "Failed to fetch extension '" << url.possibly_invalid_spec()
             << "' response code:" << response_code;
     if (ShouldRetryRequest(status, response_code) &&
@@ -680,12 +731,11 @@ void ExtensionDownloader::OnCRXFetchComplete(
       delegate_->OnExtensionDownloadFailed(
           id, ExtensionDownloaderDelegate::CRX_FETCH_FAILED, ping, request_ids);
     }
+    ping_results_.erase(id);
+    extensions_queue_.reset_active_request();
   }
 
   extension_fetcher_.reset();
-  if (extensions_queue_.active_request())
-    ping_results_.erase(id);
-  extensions_queue_.reset_active_request();
 
   // If there are any pending downloads left, start the next one.
   extensions_queue_.StartNextRequest();

@@ -12,10 +12,10 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
@@ -31,6 +31,7 @@ const char kJsScreenPath[] = "cr.ui.Oobe";
 
 // JS API callbacks names.
 const char kJsApiEnableHighContrast[] = "enableHighContrast";
+const char kJsApiEnableVirtualKeyboard[] = "enableVirtualKeyboard";
 const char kJsApiEnableScreenMagnifier[] = "enableScreenMagnifier";
 const char kJsApiEnableLargeCursor[] = "enableLargeCursor";
 const char kJsApiEnableSpokenFeedback[] = "enableSpokenFeedback";
@@ -66,6 +67,10 @@ CoreOobeHandler::CoreOobeHandler(OobeUI* oobe_ui)
       this,
       chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
       content::NotificationService::AllSources());
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
+      content::NotificationService::AllSources());
 }
 
 CoreOobeHandler::~CoreOobeHandler() {
@@ -86,6 +91,7 @@ void CoreOobeHandler::DeclareLocalizedValues(LocalizedValuesBuilder* builder) {
   builder->Add("largeCursorOption", IDS_OOBE_LARGE_CURSOR_OPTION);
   builder->Add("highContrastOption", IDS_OOBE_HIGH_CONTRAST_MODE_OPTION);
   builder->Add("screenMagnifierOption", IDS_OOBE_SCREEN_MAGNIFIER_OPTION);
+  builder->Add("virtualKeyboardOption", IDS_OOBE_VIRTUAL_KEYBOARD_OPTION);
 
   // Strings for the device requisition prompt.
   builder->Add("deviceRequisitionPromptCancel",
@@ -98,8 +104,6 @@ void CoreOobeHandler::DeclareLocalizedValues(LocalizedValuesBuilder* builder) {
                IDS_CONFIRM_MESSAGEBOX_NO_BUTTON_LABEL);
   builder->Add("deviceRequisitionRemoraPromptOk",
                IDS_CONFIRM_MESSAGEBOX_YES_BUTTON_LABEL);
-  builder->Add("deviceRequisitionRemoraPromptTitle",
-               IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TITLE);
   builder->Add("deviceRequisitionRemoraPromptText",
                IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TEXT);
 }
@@ -126,6 +130,8 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleEnableHighContrast);
   AddCallback(kJsApiEnableLargeCursor,
               &CoreOobeHandler::HandleEnableLargeCursor);
+  AddCallback(kJsApiEnableVirtualKeyboard,
+              &CoreOobeHandler::HandleEnableVirtualKeyboard);
   AddCallback(kJsApiEnableScreenMagnifier,
               &CoreOobeHandler::HandleEnableScreenMagnifier);
   AddCallback(kJsApiEnableSpokenFeedback,
@@ -220,6 +226,10 @@ void CoreOobeHandler::HandleEnableLargeCursor(bool enabled) {
   AccessibilityManager::Get()->EnableLargeCursor(enabled);
 }
 
+void CoreOobeHandler::HandleEnableVirtualKeyboard(bool enabled) {
+  AccessibilityManager::Get()->EnableVirtualKeyboard(enabled);
+}
+
 void CoreOobeHandler::HandleEnableScreenMagnifier(bool enabled) {
   // TODO(nkostylev): Add support for partial screen magnifier.
   DCHECK(MagnificationManager::Get());
@@ -235,10 +245,11 @@ void CoreOobeHandler::HandleEnableSpokenFeedback() {
 
 void CoreOobeHandler::HandleSetDeviceRequisition(
     const std::string& requisition) {
-  g_browser_process->browser_policy_connector()->GetDeviceCloudPolicyManager()->
-      SetDeviceRequisition(requisition);
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  connector->GetDeviceCloudPolicyManager()->SetDeviceRequisition(requisition);
   // Exit Chrome to force the restart as soon as a new requisition is set.
-  chrome::ExitCleanly();
+  chrome::AttemptRestart();
 }
 
 void CoreOobeHandler::HandleScreenAssetsLoaded(
@@ -274,6 +285,8 @@ void CoreOobeHandler::UpdateA11yState() {
                        AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
   a11y_info.SetBoolean("screenMagnifierEnabled",
                        MagnificationManager::Get()->IsMagnifierEnabled());
+  a11y_info.SetBoolean("virtualKeyboardEnabled",
+                       AccessibilityManager::Get()->IsVirtualKeyboardEnabled());
   CallJS("refreshA11yInfo", a11y_info);
 }
 
@@ -287,7 +300,7 @@ void CoreOobeHandler::UpdateOobeUIVisibility() {
   }
   CallJS("showVersion", should_show_version);
   CallJS("showOobeUI", show_oobe_ui_);
-  if (system::keyboard_settings::ForceKeyboardDrivenUINavigation())
+  if (system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation())
     CallJS("enableKeyboardFlow", true);
 }
 
@@ -307,9 +320,10 @@ void CoreOobeHandler::UpdateLabel(const std::string& id,
 }
 
 void CoreOobeHandler::UpdateDeviceRequisition() {
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   CallJS("updateDeviceRequisition",
-         g_browser_process->browser_policy_connector()->
-             GetDeviceCloudPolicyManager()->GetDeviceRequisition());
+         connector->GetDeviceCloudPolicyManager()->GetDeviceRequisition());
 }
 
 void CoreOobeHandler::Observe(int type,
@@ -319,7 +333,9 @@ void CoreOobeHandler::Observe(int type,
           chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE ||
       type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR ||
       type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER ||
-      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK) {
+      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK ||
+      type == chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD)
+  {
     UpdateA11yState();
   } else {
     NOTREACHED() << "Unexpected notification " << type;

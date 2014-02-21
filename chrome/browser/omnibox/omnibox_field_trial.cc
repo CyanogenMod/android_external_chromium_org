@@ -4,6 +4,7 @@
 
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 
+#include <cmath>
 #include <string>
 
 #include "base/metrics/field_trial.h"
@@ -11,6 +12,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/common/metrics/variations/variation_ids.h"
@@ -18,6 +20,9 @@
 #include "components/variations/metrics_util.h"
 
 namespace {
+
+typedef std::map<std::string, std::string> VariationParams;
+typedef HUPScoringParams::ScoreBuckets ScoreBuckets;
 
 // Field trial names.
 const char kHUPCullRedirectsFieldTrialName[] = "OmniboxHUPCullRedirects";
@@ -57,10 +62,6 @@ const base::FieldTrial::Probability
 const base::FieldTrial::Probability
     kHUPCreateShorterMatchFieldTrialExperimentFraction = 0;
 
-// Experiment group names.
-
-const char kStopTimerExperimentGroupName[] = "UseStopTimer";
-
 // Field trial IDs.
 // Though they are not literally "const", they are set only once, in
 // ActivateStaticTrials() below.
@@ -83,8 +84,66 @@ std::string DynamicFieldTrialName(int id) {
   return base::StringPrintf("%s%d", kAutocompleteDynamicFieldTrialPrefix, id);
 }
 
+void InitializeScoreBuckets(const VariationParams& params,
+                            const char* relevance_cap_param,
+                            const char* half_life_param,
+                            const char* score_buckets_param,
+                            ScoreBuckets* score_buckets) {
+  VariationParams::const_iterator it = params.find(relevance_cap_param);
+  if (it != params.end()) {
+    int relevance_cap;
+    if (base::StringToInt(it->second, &relevance_cap))
+      score_buckets->set_relevance_cap(relevance_cap);
+  }
+
+  it = params.find(half_life_param);
+  if (it != params.end()) {
+    int half_life_days;
+    if (base::StringToInt(it->second, &half_life_days))
+      score_buckets->set_half_life_days(half_life_days);
+  }
+
+  it = params.find(score_buckets_param);
+  if (it != params.end()) {
+    // The value of the score bucket is a comma-separated list of
+    // {DecayedCount + ":" + MaxRelevance}.
+    base::StringPairs kv_pairs;
+    if (base::SplitStringIntoKeyValuePairs(it->second, ':', ',', &kv_pairs)) {
+      for (base::StringPairs::const_iterator it = kv_pairs.begin();
+           it != kv_pairs.end(); ++it) {
+        ScoreBuckets::CountMaxRelevance bucket;
+        base::StringToDouble(it->first, &bucket.first);
+        base::StringToInt(it->second, &bucket.second);
+        score_buckets->buckets().push_back(bucket);
+      }
+      std::sort(score_buckets->buckets().begin(),
+                score_buckets->buckets().end(),
+                std::greater<ScoreBuckets::CountMaxRelevance>());
+    }
+  }
+}
+
 }  // namespace
 
+HUPScoringParams::ScoreBuckets::ScoreBuckets()
+    : relevance_cap_(-1),
+      half_life_days_(-1) {
+}
+
+HUPScoringParams::ScoreBuckets::~ScoreBuckets() {
+}
+
+double HUPScoringParams::ScoreBuckets::HalfLifeTimeDecay(
+    const base::TimeDelta& elapsed_time) const {
+  double time_ms;
+  if ((half_life_days_ <= 0) ||
+      ((time_ms = elapsed_time.InMillisecondsF()) <= 0))
+    return 1.0;
+
+  const double half_life_intervals =
+      time_ms / base::TimeDelta::FromDays(half_life_days_).InMillisecondsF();
+  return pow(2.0, -half_life_intervals);
+}
 
 void OmniboxFieldTrial::ActivateStaticTrials() {
   DCHECK(!static_field_trials_initialized);
@@ -150,6 +209,10 @@ void OmniboxFieldTrial::GetActiveSuggestFieldTrialHashes(
     if (base::FieldTrialList::TrialExists(trial_name))
       field_trial_hashes->push_back(metrics::HashName(trial_name));
   }
+  if (base::FieldTrialList::TrialExists(kBundledExperimentFieldTrialName)) {
+    field_trial_hashes->push_back(
+        metrics::HashName(kBundledExperimentFieldTrialName));
+  }
 }
 
 bool OmniboxFieldTrial::InHUPCullRedirectsFieldTrial() {
@@ -181,9 +244,13 @@ bool OmniboxFieldTrial::InHUPCreateShorterMatchFieldTrialExperimentGroup() {
   return group == hup_dont_create_shorter_match_experiment_group;
 }
 
-bool OmniboxFieldTrial::InStopTimerFieldTrialExperimentGroup() {
-  return (base::FieldTrialList::FindFullName(kStopTimerFieldTrialName) ==
-          kStopTimerExperimentGroupName);
+base::TimeDelta OmniboxFieldTrial::StopTimerFieldTrialDuration() {
+  int stop_timer_ms;
+  if (base::StringToInt(
+      base::FieldTrialList::FindFullName(kStopTimerFieldTrialName),
+          &stop_timer_ms))
+    return base::TimeDelta::FromMilliseconds(stop_timer_ms);
+  return base::TimeDelta::FromMilliseconds(1500);
 }
 
 bool OmniboxFieldTrial::HasDynamicFieldTrialGroupPrefix(
@@ -203,17 +270,25 @@ bool OmniboxFieldTrial::HasDynamicFieldTrialGroupPrefix(
 }
 
 bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
-  return HasDynamicFieldTrialGroupPrefix(kEnableZeroSuggestGroupPrefix);
+  return HasDynamicFieldTrialGroupPrefix(kEnableZeroSuggestGroupPrefix) ||
+      chrome_variations::GetVariationParamValue(
+          kBundledExperimentFieldTrialName, kZeroSuggestRule) == "true";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial() {
   return HasDynamicFieldTrialGroupPrefix(
-      kEnableZeroSuggestMostVisitedGroupPrefix);
+      kEnableZeroSuggestMostVisitedGroupPrefix) ||
+      chrome_variations::GetVariationParamValue(
+          kBundledExperimentFieldTrialName,
+          kZeroSuggestVariantRule) == "MostVisited";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial() {
   return HasDynamicFieldTrialGroupPrefix(
-      kEnableZeroSuggestAfterTypingGroupPrefix);
+      kEnableZeroSuggestAfterTypingGroupPrefix) ||
+      chrome_variations::GetVariationParamValue(
+          kBundledExperimentFieldTrialName,
+          kZeroSuggestVariantRule) == "AfterTyping";
 }
 
 bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
@@ -301,8 +376,34 @@ OmniboxFieldTrial::GetUndemotableTopTypes(
 bool OmniboxFieldTrial::ReorderForLegalDefaultMatch(
     AutocompleteInput::PageClassification current_page_classification) {
   return OmniboxFieldTrial::GetValueForRuleInContext(
-      kReorderForLegalDefaultMatchRule, current_page_classification) ==
-      kReorderForLegalDefaultMatchRuleEnabled;
+      kReorderForLegalDefaultMatchRule, current_page_classification) !=
+      kReorderForLegalDefaultMatchRuleDisabled;
+}
+
+void OmniboxFieldTrial::GetExperimentalHUPScoringParams(
+    HUPScoringParams* scoring_params) {
+  scoring_params->experimental_scoring_enabled = false;
+
+  VariationParams params;
+  if (!chrome_variations::GetVariationParams(kBundledExperimentFieldTrialName,
+                                             &params))
+    return;
+
+  VariationParams::const_iterator it = params.find(kHUPNewScoringEnabledParam);
+  if (it != params.end()) {
+    int enabled = 0;
+    if (base::StringToInt(it->second, &enabled))
+      scoring_params->experimental_scoring_enabled = (enabled != 0);
+  }
+
+  InitializeScoreBuckets(params, kHUPNewScoringTypedCountRelevanceCapParam,
+      kHUPNewScoringTypedCountHalfLifeTimeParam,
+      kHUPNewScoringTypedCountScoreBucketsParam,
+      &scoring_params->typed_count_buckets);
+  InitializeScoreBuckets(params, kHUPNewScoringVisitedCountRelevanceCapParam,
+      kHUPNewScoringVisitedCountHalfLifeTimeParam,
+      kHUPNewScoringVisitedCountScoreBucketsParam,
+      &scoring_params->visited_count_buckets);
 }
 
 int OmniboxFieldTrial::HQPBookmarkValue() {
@@ -319,18 +420,22 @@ int OmniboxFieldTrial::HQPBookmarkValue() {
   return bookmark_value;
 }
 
+bool OmniboxFieldTrial::HQPDiscountFrecencyWhenFewVisits() {
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kHQPDiscountFrecencyWhenFewVisitsRule) == "true";
+}
+
 bool OmniboxFieldTrial::HQPAllowMatchInTLDValue() {
-  std::string allow_match_in_tld_str = chrome_variations::
-      GetVariationParamValue(kBundledExperimentFieldTrialName,
-                             kHQPAllowMatchInTLDRule);
-  return allow_match_in_tld_str == "true";
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kHQPAllowMatchInTLDRule) == "true";
 }
 
 bool OmniboxFieldTrial::HQPAllowMatchInSchemeValue() {
-  std::string allow_match_in_scheme_str = chrome_variations::
-      GetVariationParamValue(kBundledExperimentFieldTrialName,
-                             kHQPAllowMatchInSchemeRule);
-  return allow_match_in_scheme_str == "true";
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kHQPAllowMatchInSchemeRule) == "true";
 }
 
 const char OmniboxFieldTrial::kBundledExperimentFieldTrialName[] =
@@ -344,11 +449,30 @@ const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRule[] =
     "ReorderForLegalDefaultMatch";
 const char OmniboxFieldTrial::kHQPBookmarkValueRule[] =
     "HQPBookmarkValue";
+const char OmniboxFieldTrial::kHQPDiscountFrecencyWhenFewVisitsRule[] =
+    "HQPDiscountFrecencyWhenFewVisits";
 const char OmniboxFieldTrial::kHQPAllowMatchInTLDRule[] = "HQPAllowMatchInTLD";
 const char OmniboxFieldTrial::kHQPAllowMatchInSchemeRule[] =
     "HQPAllowMatchInScheme";
-const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleEnabled[] =
-    "ReorderForLegalDefaultMatch";
+const char OmniboxFieldTrial::kZeroSuggestRule[] = "ZeroSuggest";
+const char OmniboxFieldTrial::kZeroSuggestVariantRule[] = "ZeroSuggestVariant";
+const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleDisabled[] =
+    "DontReorderForLegalDefaultMatch";
+
+const char OmniboxFieldTrial::kHUPNewScoringEnabledParam[] =
+    "HUPExperimentalScoringEnabled";
+const char OmniboxFieldTrial::kHUPNewScoringTypedCountRelevanceCapParam[] =
+    "TypedCountRelevanceCap";
+const char OmniboxFieldTrial::kHUPNewScoringTypedCountHalfLifeTimeParam[] =
+    "TypedCountHalfLifeTime";
+const char OmniboxFieldTrial::kHUPNewScoringTypedCountScoreBucketsParam[] =
+    "TypedCountScoreBuckets";
+const char OmniboxFieldTrial::kHUPNewScoringVisitedCountRelevanceCapParam[] =
+    "VisitedCountRelevanceCap";
+const char OmniboxFieldTrial::kHUPNewScoringVisitedCountHalfLifeTimeParam[] =
+    "VisitedCountHalfLifeTime";
+const char OmniboxFieldTrial::kHUPNewScoringVisitedCountScoreBucketsParam[] =
+    "VisitedCountScoreBuckets";
 
 // Background and implementation details:
 //
@@ -386,7 +510,7 @@ const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleEnabled[] =
 std::string OmniboxFieldTrial::GetValueForRuleInContext(
     const std::string& rule,
     AutocompleteInput::PageClassification page_classification) {
-  std::map<std::string, std::string> params;
+  VariationParams params;
   if (!chrome_variations::GetVariationParams(kBundledExperimentFieldTrialName,
                                              &params)) {
     return std::string();
@@ -396,7 +520,7 @@ std::string OmniboxFieldTrial::GetValueForRuleInContext(
   const std::string instant_extended =
       chrome::IsInstantExtendedAPIEnabled() ? "1" : "0";
   // Look up rule in this exact context.
-  std::map<std::string, std::string>::iterator it = params.find(
+  VariationParams::const_iterator it = params.find(
       rule + ":" + page_classification_str + ":" + instant_extended);
   if (it != params.end())
     return it->second;

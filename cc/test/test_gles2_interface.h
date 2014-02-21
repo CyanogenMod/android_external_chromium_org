@@ -90,6 +90,11 @@ class TestGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
                                GLenum internalformat,
                                GLsizei width,
                                GLsizei height) OVERRIDE;
+  virtual void TexImageIOSurface2DCHROMIUM(GLenum target,
+                                           GLsizei width,
+                                           GLsizei height,
+                                           GLuint io_surface_id,
+                                           GLuint plane) OVERRIDE;
   virtual void TexParameteri(GLenum target, GLenum pname, GLint param) OVERRIDE;
 
   virtual void AsyncTexImage2DCHROMIUM(GLenum target,
@@ -156,6 +161,11 @@ class TestGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
                                       const GLbyte* mailbox) OVERRIDE;
   virtual void ConsumeTextureCHROMIUM(GLenum target,
                                       const GLbyte* mailbox) OVERRIDE;
+
+  virtual void ResizeCHROMIUM(GLuint width,
+                              GLuint height,
+                              float device_scale) OVERRIDE;
+  virtual void LoseContextCHROMIUM(GLenum current, GLenum other) OVERRIDE;
 
  private:
   TestWebGraphicsContext3D* test_context_;

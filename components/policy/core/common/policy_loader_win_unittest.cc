@@ -37,6 +37,8 @@
 #include "components/policy/core/common/schema_map.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::UTF8ToUTF16;
+using base::UTF16ToUTF8;
 using base::win::RegKey;
 
 namespace policy {
@@ -58,8 +60,8 @@ const wchar_t kTestPolicyKey[] = L"chrome.policy.key";
 // is written.
 bool InstallValue(const base::Value& value,
                   HKEY hive,
-                  const string16& path,
-                  const string16& name) {
+                  const base::string16& path,
+                  const base::string16& name) {
   // KEY_ALL_ACCESS causes the ctor to create the key if it does not exist yet.
   RegKey key(hive, path.c_str(), KEY_ALL_ACCESS);
   EXPECT_TRUE(key.Valid());
@@ -85,12 +87,13 @@ bool InstallValue(const base::Value& value,
       double double_value;
       if (!value.GetAsDouble(&double_value))
         return false;
-      string16 str_value = UTF8ToUTF16(base::DoubleToString(double_value));
+      base::string16 str_value =
+          UTF8ToUTF16(base::DoubleToString(double_value));
       return key.WriteValue(name.c_str(), str_value.c_str()) == ERROR_SUCCESS;
     }
 
     case base::Value::TYPE_STRING: {
-      string16 str_value;
+      base::string16 str_value;
       if (!value.GetAsString(&str_value))
         return false;
       return key.WriteValue(name.c_str(), str_value.c_str()) == ERROR_SUCCESS;
@@ -254,29 +257,30 @@ class PRegTestHarness : public PolicyProviderTestHarness,
   static PolicyProviderTestHarness* Create();
 
  private:
-  // Helper to append a string16 to an uint8 buffer.
-  static void AppendChars(std::vector<uint8>* buffer, const string16& chars);
+  // Helper to append a base::string16 to an uint8 buffer.
+  static void AppendChars(std::vector<uint8>* buffer,
+                          const base::string16& chars);
 
   // Appends a record with the given fields to the PReg file.
-  void AppendRecordToPRegFile(const string16& path,
+  void AppendRecordToPRegFile(const base::string16& path,
                               const std::string& key,
                               DWORD type,
                               DWORD size,
                               uint8* data);
 
   // Appends the given DWORD |value| for |path| + |key| to the PReg file.
-  void AppendDWORDToPRegFile(const string16& path,
+  void AppendDWORDToPRegFile(const base::string16& path,
                              const std::string& key,
                              DWORD value);
 
   // Appends the given string |value| for |path| + |key| to the PReg file.
-  void AppendStringToPRegFile(const string16& path,
+  void AppendStringToPRegFile(const base::string16& path,
                               const std::string& key,
                               const std::string& value);
 
   // Appends the given policy |value| for |path| + |key| to the PReg file,
   // converting and recursing as necessary.
-  void AppendPolicyToPRegFile(const string16& path,
+  void AppendPolicyToPRegFile(const base::string16& path,
                               const std::string& key,
                               const base::Value* value);
 
@@ -291,7 +295,7 @@ ScopedGroupPolicyRegistrySandbox::ScopedGroupPolicyRegistrySandbox() {
   // Generate a unique registry key for the override for each test. This
   // makes sure that tests executing in parallel won't delete each other's
   // key, at DeleteKeys().
-  key_name_ = ASCIIToWide(base::StringPrintf(
+  key_name_ = base::ASCIIToWide(base::StringPrintf(
         "SOFTWARE\\chromium unittest %d",
         base::Process::Current().pid()));
   std::wstring hklm_key_name = key_name_ + L"\\HKLM";
@@ -380,7 +384,7 @@ void RegistryTestHarness::InstallStringListPolicy(
     const std::string& policy_name,
     const base::ListValue* policy_value) {
   RegKey key(hive_,
-             (string16(kTestPolicyKey) + ASCIIToUTF16("\\") +
+             (base::string16(kTestPolicyKey) + base::ASCIIToUTF16("\\") +
               UTF8ToUTF16(policy_name)).c_str(),
              KEY_ALL_ACCESS);
   ASSERT_TRUE(key.Valid());
@@ -412,8 +416,8 @@ void RegistryTestHarness::Install3rdPartyPolicy(
     const base::DictionaryValue* policies) {
   // The first level entries are domains, and the second level entries map
   // components to their policy.
-  const string16 kPathPrefix = string16(kTestPolicyKey) + kPathSep +
-                               kThirdParty + kPathSep;
+  const base::string16 kPathPrefix =
+      base::string16(kTestPolicyKey) + kPathSep + kThirdParty + kPathSep;
   for (base::DictionaryValue::Iterator domain(*policies);
        !domain.IsAtEnd(); domain.Advance()) {
     const base::DictionaryValue* components = NULL;
@@ -423,9 +427,8 @@ void RegistryTestHarness::Install3rdPartyPolicy(
     }
     for (base::DictionaryValue::Iterator component(*components);
          !component.IsAtEnd(); component.Advance()) {
-      const string16 path = kPathPrefix +
-                            UTF8ToUTF16(domain.key()) + kPathSep +
-                            UTF8ToUTF16(component.key());
+      const base::string16 path = kPathPrefix +
+          UTF8ToUTF16(domain.key()) + kPathSep + UTF8ToUTF16(component.key());
       InstallValue(component.value(), hive_, path, kMandatory);
     }
   }
@@ -513,8 +516,8 @@ void PRegTestHarness::Install3rdPartyPolicy(
     const base::DictionaryValue* policies) {
   // The first level entries are domains, and the second level entries map
   // components to their policy.
-  const string16 kPathPrefix = string16(kTestPolicyKey) + kPathSep +
-                               kThirdParty + kPathSep;
+  const base::string16 kPathPrefix =
+      base::string16(kTestPolicyKey) + kPathSep + kThirdParty + kPathSep;
   for (base::DictionaryValue::Iterator domain(*policies);
        !domain.IsAtEnd(); domain.Advance()) {
     const base::DictionaryValue* components = NULL;
@@ -522,10 +525,10 @@ void PRegTestHarness::Install3rdPartyPolicy(
       ADD_FAILURE();
       continue;
     }
-    const string16 domain_path = kPathPrefix + UTF8ToUTF16(domain.key());
+    const base::string16 domain_path = kPathPrefix + UTF8ToUTF16(domain.key());
     for (base::DictionaryValue::Iterator component(*components);
          !component.IsAtEnd(); component.Advance()) {
-      const string16 component_path =
+      const base::string16 component_path =
           domain_path + kPathSep + UTF8ToUTF16(component.key());
       AppendPolicyToPRegFile(component_path, UTF16ToUTF8(kMandatory),
                              &component.value());
@@ -553,14 +556,14 @@ PolicyProviderTestHarness* PRegTestHarness::Create() {
 
 // static
 void PRegTestHarness::AppendChars(std::vector<uint8>* buffer,
-                                  const string16& chars) {
-  for (string16::const_iterator c(chars.begin()); c != chars.end(); ++c) {
+                                  const base::string16& chars) {
+  for (base::string16::const_iterator c(chars.begin()); c != chars.end(); ++c) {
     buffer->push_back(*c & 0xff);
     buffer->push_back((*c >> 8) & 0xff);
   }
 }
 
-void PRegTestHarness::AppendRecordToPRegFile(const string16& path,
+void PRegTestHarness::AppendRecordToPRegFile(const base::string16& path,
                                              const std::string& key,
                                              DWORD type,
                                              DWORD size,
@@ -568,9 +571,9 @@ void PRegTestHarness::AppendRecordToPRegFile(const string16& path,
   std::vector<uint8> buffer;
   AppendChars(&buffer, L"[");
   AppendChars(&buffer, path);
-  AppendChars(&buffer, string16(L"\0;", 2));
+  AppendChars(&buffer, base::string16(L"\0;", 2));
   AppendChars(&buffer, UTF8ToUTF16(key));
-  AppendChars(&buffer, string16(L"\0;", 2));
+  AppendChars(&buffer, base::string16(L"\0;", 2));
   type = base::ByteSwapToLE32(type);
   uint8* type_data = reinterpret_cast<uint8*>(&type);
   buffer.insert(buffer.end(), type_data, type_data + sizeof(DWORD));
@@ -589,7 +592,7 @@ void PRegTestHarness::AppendRecordToPRegFile(const string16& path,
                 buffer.size()));
 }
 
-void PRegTestHarness::AppendDWORDToPRegFile(const string16& path,
+void PRegTestHarness::AppendDWORDToPRegFile(const base::string16& path,
                                             const std::string& key,
                                             DWORD value) {
   value = base::ByteSwapToLE32(value);
@@ -597,20 +600,20 @@ void PRegTestHarness::AppendDWORDToPRegFile(const string16& path,
                          reinterpret_cast<uint8*>(&value));
 }
 
-void PRegTestHarness::AppendStringToPRegFile(const string16& path,
+void PRegTestHarness::AppendStringToPRegFile(const base::string16& path,
                                              const std::string& key,
                                              const std::string& value) {
-  string16 string16_value(UTF8ToUTF16(value));
-  std::vector<char16> data;
+  base::string16 string16_value(UTF8ToUTF16(value));
+  std::vector<base::char16> data;
   std::transform(string16_value.begin(), string16_value.end(),
                  std::back_inserter(data), std::ptr_fun(base::ByteSwapToLE16));
   data.push_back(base::ByteSwapToLE16(L'\0'));
 
-  AppendRecordToPRegFile(path, key, REG_SZ, data.size() * sizeof(char16),
+  AppendRecordToPRegFile(path, key, REG_SZ, data.size() * sizeof(base::char16),
                          reinterpret_cast<uint8*>(vector_as_array(&data)));
 }
 
-void PRegTestHarness::AppendPolicyToPRegFile(const string16& path,
+void PRegTestHarness::AppendPolicyToPRegFile(const base::string16& path,
                                              const std::string& key,
                                              const base::Value* value) {
   switch (value->GetType()) {
@@ -639,7 +642,7 @@ void PRegTestHarness::AppendPolicyToPRegFile(const string16& path,
       break;
     }
     case base::Value::TYPE_DICTIONARY: {
-      string16 subpath = path + kPathSep + UTF8ToUTF16(key);
+      base::string16 subpath = path + kPathSep + UTF8ToUTF16(key);
       const base::DictionaryValue* dict = NULL;
       ASSERT_TRUE(value->GetAsDictionary(&dict));
       for (base::DictionaryValue::Iterator entry(*dict); !entry.IsAtEnd();
@@ -649,7 +652,7 @@ void PRegTestHarness::AppendPolicyToPRegFile(const string16& path,
       break;
     }
     case base::Value::TYPE_LIST: {
-      string16 subpath = path + kPathSep + UTF8ToUTF16(key);
+      base::string16 subpath = path + kPathSep + UTF8ToUTF16(key);
       const base::ListValue* list = NULL;
       ASSERT_TRUE(value->GetAsList(&list));
       for (size_t i = 0; i < list->GetSize(); ++i) {
@@ -691,7 +694,7 @@ class PolicyLoaderWinTest : public PolicyTestBase,
  protected:
   // The policy key this tests places data under. This must match the data
   // files in chrome/test/data/policy/gpo.
-  static const char16 kTestPolicyKey[];
+  static const base::char16 kTestPolicyKey[];
 
   PolicyLoaderWinTest()
       : gpo_list_(NULL),
@@ -780,7 +783,7 @@ class PolicyLoaderWinTest : public PolicyTestBase,
   base::FilePath test_data_dir_;
 };
 
-const char16 PolicyLoaderWinTest::kTestPolicyKey[] =
+const base::char16 PolicyLoaderWinTest::kTestPolicyKey[] =
     L"SOFTWARE\\Policies\\Chromium";
 
 TEST_F(PolicyLoaderWinTest, HKLMOverHKCU) {
@@ -818,8 +821,8 @@ TEST_F(PolicyLoaderWinTest, Merge3rdPartyPolicies) {
       "  }"
       "}"));
 
-  const string16 kPathSuffix =
-      kTestPolicyKey + ASCIIToUTF16("\\3rdparty\\extensions\\merge");
+  const base::string16 kPathSuffix =
+      kTestPolicyKey + base::ASCIIToUTF16("\\3rdparty\\extensions\\merge");
 
   const char kUserMandatory[] = "user-mandatory";
   const char kUserRecommended[] = "user-recommended";
@@ -907,8 +910,8 @@ TEST_F(PolicyLoaderWinTest, LoadStringEncodedValues) {
   encoded_policy.SetString("list", encoded_list);
   encoded_policy.SetString("dict", encoded_dict);
 
-  const string16 kPathSuffix =
-      kTestPolicyKey + ASCIIToUTF16("\\3rdparty\\extensions\\string");
+  const base::string16 kPathSuffix =
+      kTestPolicyKey + base::ASCIIToUTF16("\\3rdparty\\extensions\\string");
   EXPECT_TRUE(
       InstallValue(encoded_policy, HKEY_CURRENT_USER, kPathSuffix, kMandatory));
 
@@ -935,8 +938,8 @@ TEST_F(PolicyLoaderWinTest, LoadIntegerEncodedValues) {
   encoded_policy.SetInteger("int", 123);
   encoded_policy.SetInteger("double", 456);
 
-  const string16 kPathSuffix =
-      kTestPolicyKey + ASCIIToUTF16("\\3rdparty\\extensions\\int");
+  const base::string16 kPathSuffix =
+      kTestPolicyKey + base::ASCIIToUTF16("\\3rdparty\\extensions\\int");
   EXPECT_TRUE(
       InstallValue(encoded_policy, HKEY_CURRENT_USER, kPathSuffix, kMandatory));
 
@@ -982,8 +985,8 @@ TEST_F(PolicyLoaderWinTest, DefaultPropertySchemaType) {
   base::DictionaryValue all_policies;
   all_policies.Set("policy", policy.DeepCopy());
 
-  const string16 kPathSuffix =
-      kTestPolicyKey + ASCIIToUTF16("\\3rdparty\\extensions\\test");
+  const base::string16 kPathSuffix =
+      kTestPolicyKey + base::ASCIIToUTF16("\\3rdparty\\extensions\\test");
   EXPECT_TRUE(
       InstallValue(all_policies, HKEY_CURRENT_USER, kPathSuffix, kMandatory));
 
@@ -1159,8 +1162,8 @@ TEST_F(PolicyLoaderWinTest, LBSSupport) {
        "  }"
       "}";
 
-  const string16 kPathSuffix =
-      kTestPolicyKey + ASCIIToUTF16("\\3rdparty\\extensions");
+  const base::string16 kPathSuffix =
+      kTestPolicyKey + base::ASCIIToUTF16("\\3rdparty\\extensions");
 
   base::ListValue list;
   list.AppendString("youtube.com");
@@ -1168,10 +1171,10 @@ TEST_F(PolicyLoaderWinTest, LBSSupport) {
   policy.Set("url_list", list.DeepCopy());
   policy.SetString("alternative_browser_path", "c:\\legacy\\browser.exe");
   base::DictionaryValue root;
-  root.Set(UTF16ToUTF8(kMandatory), policy.DeepCopy());
+  root.Set(base::UTF16ToUTF8(kMandatory), policy.DeepCopy());
   root.SetString(kSchema, kIncompleteSchema);
   EXPECT_TRUE(InstallValue(root, HKEY_LOCAL_MACHINE,
-                           kPathSuffix, ASCIIToUTF16(ns.component_id)));
+                           kPathSuffix, base::ASCIIToUTF16(ns.component_id)));
 
   PolicyBundle expected;
   PolicyMap& expected_policy = expected.Get(ns);

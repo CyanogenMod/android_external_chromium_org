@@ -8,17 +8,20 @@
 #include <string>
 #include <vector>
 
+#include "ui/base/ime/chromeos/ime_bridge.h"
+
 class GURL;
 
 namespace chromeos {
 
 namespace input_method {
+class InputMethodDescriptor;
 struct KeyEventHandle;
 }  // namespace input_method
 
 // InputMethodEngine is used to translate from the Chrome IME API to the native
 // API.
-class InputMethodEngineInterface {
+class InputMethodEngineInterface : public IMEEngineHandlerInterface {
  public:
   struct KeyboardEvent {
     KeyboardEvent();
@@ -27,6 +30,7 @@ class InputMethodEngineInterface {
     std::string type;
     std::string key;
     std::string code;
+    std::string extension_id;
     bool alt_key;
     bool ctrl_key;
     bool shift_key;
@@ -109,6 +113,11 @@ class InputMethodEngineInterface {
     bool is_cursor_visible;
     bool is_vertical;
     bool show_window_at_composition;
+
+    // Auxiliary text is typically displayed in the footer of the candidate
+    // window.
+    std::string auxiliary_text;
+    bool is_auxiliary_text_visible;
   };
 
   struct SegmentInfo {
@@ -162,6 +171,8 @@ class InputMethodEngineInterface {
 
   virtual ~InputMethodEngineInterface() {}
 
+  virtual const input_method::InputMethodDescriptor& GetDescriptor() const = 0;
+
   // Called when the input metho initialization is done.
   // This function is called from private API.
   // TODO(nona): Remove this function.
@@ -184,6 +195,10 @@ class InputMethodEngineInterface {
   virtual bool CommitText(int context_id, const char* text,
                           std::string* error) = 0;
 
+  // Send the sequence of key events.
+  virtual bool SendKeyEvents(int context_id,
+                             const std::vector<KeyboardEvent>& events) = 0;
+
   // This function returns the current property of the candidate window.
   // The caller can use the returned value as the default property and
   // modify some of specified items.
@@ -197,12 +212,6 @@ class InputMethodEngineInterface {
 
   // Show or hide the candidate window.
   virtual bool SetCandidateWindowVisible(bool visible, std::string* error) = 0;
-
-  // Set the text that appears as a label in the candidate window.
-  virtual void SetCandidateWindowAuxText(const char* text) = 0;
-
-  // Show or hide the extra text in the candidate window.
-  virtual void SetCandidateWindowAuxTextVisible(bool visible) = 0;
 
   // Set the list of entries displayed in the candidate window.
   virtual bool SetCandidates(int context_id,
@@ -238,6 +247,9 @@ class InputMethodEngineInterface {
                                      int offset,
                                      size_t number_of_chars,
                                      std::string* error) = 0;
+
+  // Hides the input view window (from API call).
+  virtual void HideInputView() = 0;
 };
 
 }  // namespace chromeos

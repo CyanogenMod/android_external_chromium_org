@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -91,6 +92,10 @@ int TestURLFetcher::GetLoadFlags() const {
 void TestURLFetcher::SetReferrer(const std::string& referrer) {
 }
 
+void TestURLFetcher::SetReferrerPolicy(
+    URLRequest::ReferrerPolicy referrer_policy) {
+}
+
 void TestURLFetcher::SetExtraRequestHeaders(
     const std::string& extra_request_headers) {
   fake_extra_request_headers_.Clear();
@@ -99,11 +104,6 @@ void TestURLFetcher::SetExtraRequestHeaders(
 
 void TestURLFetcher::AddExtraRequestHeader(const std::string& header_line) {
   fake_extra_request_headers_.AddHeaderFromString(header_line);
-}
-
-void TestURLFetcher::GetExtraRequestHeaders(
-    HttpRequestHeaders* headers) const {
-  *headers = fake_extra_request_headers_;
 }
 
 void TestURLFetcher::SetRequestContext(
@@ -151,6 +151,22 @@ void TestURLFetcher::SaveResponseToTemporaryFile(
 
 void TestURLFetcher::SaveResponseWithWriter(
     scoped_ptr<URLFetcherResponseWriter> response_writer) {
+  if (fake_response_destination_ == STRING) {
+    response_writer_ = response_writer.Pass();
+    int response = response_writer_->Initialize(CompletionCallback());
+    // The TestURLFetcher doesn't handle asynchronous writes.
+    DCHECK_EQ(OK, response);
+
+    scoped_refptr<IOBuffer> buffer(new StringIOBuffer(fake_response_string_));
+    response = response_writer_->Write(buffer.get(),
+                                       fake_response_string_.size(),
+                                       CompletionCallback());
+    DCHECK_EQ(static_cast<int>(fake_response_string_.size()), response);
+    response = response_writer_->Finish(CompletionCallback());
+    DCHECK_EQ(OK, response);
+  } else {
+    NOTIMPLEMENTED();
+  }
 }
 
 HttpResponseHeaders* TestURLFetcher::GetResponseHeaders() const {
@@ -211,6 +227,11 @@ bool TestURLFetcher::GetResponseAsFilePath(
 
   *out_response_path = fake_response_file_path_;
   return true;
+}
+
+void TestURLFetcher::GetExtraRequestHeaders(
+    HttpRequestHeaders* headers) const {
+  *headers = fake_extra_request_headers_;
 }
 
 void TestURLFetcher::set_status(const URLRequestStatus& status) {

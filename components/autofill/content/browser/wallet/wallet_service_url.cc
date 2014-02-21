@@ -10,8 +10,12 @@
 #include "base/format_macros.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/common/url_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/url_util.h"
 #include "url/gurl.h"
@@ -30,12 +34,28 @@ const char kSandboxWalletSecureServiceUrl[] =
     "https://wallet-web.sandbox.google.com/";
 
 bool IsWalletProductionEnabled() {
+  // If the command line flag exists, it takes precedence.
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   std::string sandbox_enabled(
       command_line->GetSwitchValueASCII(switches::kWalletServiceUseSandbox));
   if (!sandbox_enabled.empty())
     return sandbox_enabled != "1";
+
+  // Default to sandbox when --reduce-security-for-testing is passed to allow
+  // rAc on http:// pages.
+  if (command_line->HasSwitch(::switches::kReduceSecurityForTesting))
+    return false;
+
+  // TODO(estade): add a build-time flag for Chromium distros to enable this
+  // rather than checking for an official build. http://crbug.com/334088
+#if defined(GOOGLE_CHROME_BUILD)
+  // Default to prod for official builds.
   return true;
+#else
+  // Unofficial builds don't have the proper API keys for production Wallet
+  // servers.
+  return false;
+#endif
 }
 
 GURL GetWalletHostUrl() {
@@ -154,8 +174,8 @@ GURL GetSignInContinueUrl() {
 }
 
 bool IsSignInContinueUrl(const GURL& url, size_t* user_index) {
-  GURL final_url = wallet::GetSignInContinueUrl();
-  if (!url.SchemeIsSecure() ||
+  GURL final_url = GetSignInContinueUrl();
+  if (url.scheme() != final_url.scheme() ||
       url.host() != final_url.host() ||
       url.path() != final_url.path()) {
     return false;
@@ -176,6 +196,15 @@ bool IsSignInContinueUrl(const GURL& url, size_t* user_index) {
   }
 
   return true;
+}
+
+bool IsSignInRelatedUrl(const GURL& url) {
+  size_t unused;
+  return url.GetOrigin() == GetSignInUrl().GetOrigin() ||
+      StartsWith(base::UTF8ToUTF16(url.GetOrigin().host()),
+                 base::ASCIIToUTF16("accounts."),
+                 false) ||
+      IsSignInContinueUrl(url, &unused);
 }
 
 bool IsUsingProd() {

@@ -43,11 +43,15 @@ class TestMultiUserWindowManager : public chrome::MultiUserWindowManager {
   virtual void ShowWindowForUser(
       aura::Window* window, const std::string& user_id) OVERRIDE;
   virtual bool AreWindowsSharedAmongUsers() OVERRIDE;
+  virtual void GetOwnersOfVisibleWindows(
+      std::set<std::string>* user_ids) OVERRIDE;
   virtual bool IsWindowOnDesktopOfUser(aura::Window* window,
                                        const std::string& user_id) OVERRIDE;
   virtual const std::string& GetUserPresentingWindow(
       aura::Window* window) OVERRIDE;
   virtual void AddUser(Profile* profile) OVERRIDE;
+  virtual void AddObserver(Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(Observer* observer) OVERRIDE;
 
  private:
   // The window of the visiting browser.
@@ -112,6 +116,10 @@ bool TestMultiUserWindowManager::AreWindowsSharedAmongUsers() {
   return browser_owner_ != desktop_owner_;
 }
 
+void TestMultiUserWindowManager::GetOwnersOfVisibleWindows(
+    std::set<std::string>* user_ids) {
+}
+
 bool TestMultiUserWindowManager::IsWindowOnDesktopOfUser(
     aura::Window* window,
     const std::string& user_id) {
@@ -129,6 +137,12 @@ const std::string& TestMultiUserWindowManager::GetUserPresentingWindow(
 }
 
 void TestMultiUserWindowManager::AddUser(Profile* profile) {
+}
+
+void TestMultiUserWindowManager::AddObserver(Observer* observer) {
+}
+
+void TestMultiUserWindowManager::RemoveObserver(Observer* observer) {
 }
 
 GURL GetGoogleURL() {

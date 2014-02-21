@@ -22,9 +22,21 @@ void QuicSessionPeer::SetMaxOpenStreams(QuicSession* session,
 }
 
 // static
-WriteBlockedList<QuicStreamId>* QuicSessionPeer::GetWriteblockedStreams(
+QuicHeadersStream* QuicSessionPeer::GetHeadersStream(QuicSession* session) {
+  return session->headers_stream_.get();
+}
+
+// static
+QuicWriteBlockedList* QuicSessionPeer::GetWriteblockedStreams(
     QuicSession* session) {
   return &session->write_blocked_streams_;
+}
+
+// static
+QuicDataStream* QuicSessionPeer::GetIncomingDataStream(
+    QuicSession* session,
+    QuicStreamId stream_id) {
+  return session->GetIncomingDataStream(stream_id);
 }
 
 }  // namespace test

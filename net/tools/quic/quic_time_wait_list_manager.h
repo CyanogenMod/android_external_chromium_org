@@ -10,8 +10,10 @@
 
 #include <deque>
 
+#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/strings/string_piece.h"
+#include "net/base/linked_hash_map.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_writer.h"
@@ -23,6 +25,7 @@ namespace net {
 namespace tools {
 
 class GuidCleanUpAlarm;
+class QuicServerSessionVisitor;
 
 namespace test {
 class QuicTimeWaitListManagerPeer;
@@ -36,12 +39,13 @@ class QuicTimeWaitListManagerPeer;
 // with the guid in time wait state.  After the guid expires its time wait
 // period, a new connection/session will be created if a packet is received
 // for this guid.
-class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
-                                public QuicFramerVisitorInterface {
+class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
  public:
   // writer - the entity that writes to the socket. (Owned by the dispatcher)
+  // visitor - the entity that manages blocked writers. (The dispatcher)
   // epoll_server - used to run clean up alarms. (Owned by the dispatcher)
   QuicTimeWaitListManager(QuicPacketWriter* writer,
+                          QuicServerSessionVisitor* visitor,
                           EpollServer* epoll_server,
                           const QuicVersionVector& supported_versions);
   virtual ~QuicTimeWaitListManager();
@@ -68,7 +72,7 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
   virtual void ProcessPacket(const IPEndPoint& server_address,
                              const IPEndPoint& client_address,
                              QuicGuid guid,
-                             const QuicEncryptedPacket& packet);
+                             QuicPacketSequenceNumber sequence_number);
 
   // Called by the dispatcher when the underlying socket becomes writable again,
   // since we might need to send pending public reset packets which we didn't
@@ -78,48 +82,19 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
   // Used to delete guid entries that have outlived their time wait period.
   void CleanUpOldGuids();
 
-  // QuicFramerVisitorInterface
-  virtual void OnError(QuicFramer* framer) OVERRIDE;
-  virtual bool OnProtocolVersionMismatch(QuicVersion received_version) OVERRIDE;
-  virtual bool OnUnauthenticatedHeader(const QuicPacketHeader& header) OVERRIDE;
-  virtual void OnPacket() OVERRIDE {}
-  virtual void OnPublicResetPacket(
-      const QuicPublicResetPacket& /*packet*/) OVERRIDE {}
-  virtual void OnVersionNegotiationPacket(
-      const QuicVersionNegotiationPacket& /*packet*/) OVERRIDE {}
-
-  virtual void OnPacketComplete() OVERRIDE {}
-  // The following methods should never get called because we always return
-  // false from OnUnauthenticatedHeader(). We never process the encrypted bytes.
-  virtual bool OnPacketHeader(const QuicPacketHeader& header) OVERRIDE;
-  virtual void OnRevivedPacket() OVERRIDE;
-  virtual void OnFecProtectedPayload(base::StringPiece /*payload*/) OVERRIDE;
-  virtual bool OnStreamFrame(const QuicStreamFrame& /*frame*/) OVERRIDE;
-  virtual bool OnAckFrame(const QuicAckFrame& /*frame*/) OVERRIDE;
-  virtual bool OnCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& /*frame*/) OVERRIDE;
-  virtual bool OnRstStreamFrame(const QuicRstStreamFrame& /*frame*/) OVERRIDE;
-  virtual bool OnConnectionCloseFrame(
-      const QuicConnectionCloseFrame & /*frame*/) OVERRIDE;
-  virtual bool OnGoAwayFrame(const QuicGoAwayFrame& /*frame*/) OVERRIDE;
-  virtual void OnFecData(const QuicFecData& /*fec*/) OVERRIDE;
+  // Given a GUID that exists in the time wait list, returns the QuicVersion
+  // associated with it.
+  QuicVersion GetQuicVersionFromGuid(QuicGuid guid);
 
  private:
   friend class test::QuicTimeWaitListManagerPeer;
 
-  // Stores the guid and the time it was added to time wait state.
-  struct GuidAddTime;
   // Internal structure to store pending public reset packets.
   class QueuedPacket;
 
   // Decides if a packet should be sent for this guid based on the number of
   // received packets.
   bool ShouldSendResponse(int received_packet_count);
-
-  // Given a GUID that exists in the time wait list, returns the QuicVersion
-  // associated with it. Used internally to set the framer version before
-  // writing the public reset packet.
-  QuicVersion GetQuicVersionFromGuid(QuicGuid guid);
 
   // Creates a public reset packet and sends it or queues it to be sent later.
   void SendPublicReset(const IPEndPoint& server_address,
@@ -131,11 +106,11 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
   // owner of the packet.
   void SendOrQueuePacket(QueuedPacket* packet);
 
-  // Should only be called when write_blocked_ == false. We only care if the
-  // writing was unsuccessful because the socket got blocked, which can be
-  // tested using write_blocked_ == true. In case of all other errors we drop
-  // the packet. Hence, we return void.
-  void WriteToWire(QueuedPacket* packet);
+  // Sends the packet out. Returns true if the packet was successfully consumed.
+  // If the writer got blocked and did not buffer the packet, we'll need to keep
+  // the packet and retry sending. In case of all other errors we drop the
+  // packet.
+  bool WriteToWire(QueuedPacket* packet);
 
   // Register the alarm with the epoll server to wake up at appropriate time.
   void SetGuidCleanUpAlarm();
@@ -145,34 +120,28 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
   struct GuidData {
     GuidData(int num_packets_,
              QuicVersion version_,
+             QuicTime time_added_,
              QuicEncryptedPacket* close_packet)
         : num_packets(num_packets_),
           version(version_),
+          time_added(time_added_),
           close_packet(close_packet) {}
     int num_packets;
     QuicVersion version;
+    QuicTime time_added;
     QuicEncryptedPacket* close_packet;
   };
-  base::hash_map<QuicGuid, GuidData> guid_map_;
-  typedef base::hash_map<QuicGuid, GuidData>::iterator GuidMapIterator;
 
-  // Maintains a list of GuidAddTime elements which it owns, in the
-  // order they should be deleted.
-  std::deque<GuidAddTime*> time_ordered_guid_list_;
+  // linked_hash_map allows lookup by Guid and traversal in add order.
+  typedef linked_hash_map<QuicGuid, GuidData> GuidMap;
+  GuidMap guid_map_;
 
   // Pending public reset packets that need to be sent out to the client
   // when we are given a chance to write by the dispatcher.
   std::deque<QueuedPacket*> pending_packets_queue_;
 
-  // Used to parse incoming packets.
-  QuicFramer framer_;
-
-  // Server and client address of the last packet processed.
-  IPEndPoint server_address_;
-  IPEndPoint client_address_;
-
   // Used to schedule alarms to delete old guids which have been in the list for
-  // too long. Owned by the dispatcher.
+  // too long.
   EpollServer* epoll_server_;
 
   // Time period for which guids should remain in time wait state.
@@ -185,12 +154,11 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
   // Clock to efficiently measure approximate time from the epoll server.
   QuicEpollClock clock_;
 
-  // Interface that writes given buffer to the socket. Owned by the dispatcher.
+  // Interface that writes given buffer to the socket.
   QuicPacketWriter* writer_;
 
-  // True if the underlying udp socket is write blocked, i.e will return EAGAIN
-  // on sendmsg.
-  bool is_write_blocked_;
+  // Interface that manages blocked writers.
+  QuicServerSessionVisitor* visitor_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicTimeWaitListManager);
 };

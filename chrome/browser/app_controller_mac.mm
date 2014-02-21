@@ -6,7 +6,7 @@
 
 #include "apps/app_shim/app_shim_mac.h"
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
-#include "apps/shell_window_registry.h"
+#include "apps/app_window_registry.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -28,7 +28,6 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
@@ -49,6 +48,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_mac.h"
@@ -77,6 +77,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/mac/app_mode_common.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/service_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -85,6 +86,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
@@ -92,10 +94,10 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+using base::UserMetricsAction;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -187,6 +189,19 @@ void RecordLastRunAppBundlePath() {
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&PrefsSyncCallback),
       base::TimeDelta::FromMilliseconds(1500));
+}
+
+bool IsProfileSignedOut(Profile* profile) {
+  // The signed out status only makes sense at the moment in the context of the
+  // --new-profile-management flag.
+  if (!switches::IsNewProfileManagement())
+    return false;
+  ProfileInfoCache& cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  size_t profile_index = cache.GetIndexOfProfileWithPath(profile->GetPath());
+  if (profile_index == std::string::npos)
+    return false;
+  return cache.ProfileIsSigninRequiredAtIndex(profile_index);
 }
 
 }  // anonymous namespace
@@ -402,7 +417,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
   // If there are no windows, quit immediately.
   if (chrome::BrowserIterator().done() &&
-      !apps::ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(0)) {
+      !apps::AppWindowRegistry::IsAppWindowRegisteredInAnyProfile(0)) {
     return NSTerminateNow;
   }
 
@@ -561,8 +576,10 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 
   // If the window changed to a new BrowserWindowController, update the profile.
   id windowController = [[notify object] windowController];
-  if ([notify name] == NSWindowDidBecomeMainNotification &&
-      [windowController isKindOfClass:[BrowserWindowController class]]) {
+  if (![windowController isKindOfClass:[BrowserWindowController class]])
+    return;
+
+  if ([notify name] == NSWindowDidBecomeMainNotification) {
     // If the profile is incognito, use the original profile.
     Profile* newProfile = [windowController profile]->GetOriginalProfile();
     [self windowChangedToProfile:newProfile];
@@ -722,11 +739,6 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   if (startupUrls_.size()) {
     [self openUrls:startupUrls_];
     [self clearStartupUrls];
-  }
-
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
-  if (!parsed_command_line.HasSwitch(switches::kEnableExposeForTabs)) {
-    [tabposeMenuItem_ setHidden:YES];
   }
 
   PrefService* localState = g_browser_process->local_state();
@@ -972,6 +984,15 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
     return;
 
   NSInteger tag = [sender tag];
+
+  // If there are no browser windows, and we are trying to open a browser
+  // for a locked profile, we have to show the User Manager instead as the
+  // locked profile needs authentication.
+  if (IsProfileSignedOut(lastProfile)) {
+    chrome::ShowUserManager(lastProfile->GetPath());
+    return;
+  }
+
   switch (tag) {
     case IDC_NEW_TAB:
       // Create a new tab in an existing browser window (which we activate) if
@@ -1184,7 +1205,15 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   }
 
   // Otherwise open a new window.
-  CreateBrowser([self lastProfile]);
+  // If the last profile was locked, we have to open the User Manager, as the
+  // profile requires authentication. Similarly, because guest mode is
+  // implemented as forced incognito, we can't open a new guest browser either,
+  // so we have to show the User Manager as well.
+  Profile* lastProfile = [self lastProfile];
+  if (lastProfile->IsGuestSession() || IsProfileSignedOut(lastProfile))
+    chrome::ShowUserManager(lastProfile->GetPath());
+  else
+    CreateBrowser(lastProfile);
 
   // We've handled the reopen event, so return NO to tell AppKit not
   // to do anything.
@@ -1258,11 +1287,15 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   if (lastProfile_)
     return lastProfile_;
 
-  // On first launch, no profile will be stored, so use last from Local State.
-  if (g_browser_process->profile_manager())
-    return g_browser_process->profile_manager()->GetLastUsedProfile();
+  // On first launch, use the logic that ChromeBrowserMain uses to determine
+  // the initial profile.
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager)
+    return NULL;
 
-  return NULL;
+  return profile_manager->GetProfile(GetStartupProfilePath(
+      profile_manager->user_data_dir(),
+      *CommandLine::ForCurrentProcess()));
 }
 
 // Various methods to open URLs that we get in a native fashion. We use
@@ -1321,8 +1354,8 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
     base::string16 title16 = base::SysNSStringToUTF16(printTitle);
     base::string16 printTicket16 = base::SysNSStringToUTF16(printTicket);
     print_dialog_cloud::CreatePrintDialogForFile(
-        ProfileManager::GetDefaultProfile(), NULL,
-        base::FilePath([inputPath UTF8String]), title16,
+        ProfileManager::GetActiveUserProfile(), NULL,
+        base::FilePath([inputPath fileSystemRepresentation]), title16,
         printTicket16, [mime UTF8String], /*delete_on_close=*/false);
   }
 }
@@ -1332,7 +1365,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   std::vector<GURL> gurlVector;
   for (NSString* file in filenames) {
     GURL gurl =
-        net::FilePathToFileURL(base::FilePath(base::SysNSStringToUTF8(file)));
+        net::FilePathToFileURL(base::FilePath([file fileSystemRepresentation]));
     gurlVector.push_back(gurl);
   }
   if (!gurlVector.empty())
@@ -1427,7 +1460,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
            ++cursor, ++position) {
         DCHECK_EQ(applications.GetPosition(cursor->get()), position);
         NSString* itemStr =
-            base::SysUTF16ToNSString(UTF8ToUTF16((*cursor)->name()));
+            base::SysUTF16ToNSString(base::UTF8ToUTF16((*cursor)->name()));
         base::scoped_nsobject<NSMenuItem> appItem(
             [[NSMenuItem alloc] initWithTitle:itemStr
                                        action:@selector(executeApplication:)
@@ -1463,7 +1496,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 }
 
 - (void)initAppShimMenuController {
-  if (apps::IsAppShimsEnabled() && !appShimMenuController_)
+  if (!appShimMenuController_)
     appShimMenuController_.reset([[AppShimMenuController alloc] init]);
 }
 

@@ -22,11 +22,11 @@ namespace {
 const char* kValidSchemes[] = {
   content::kHttpScheme,
   content::kHttpsScheme,
-  chrome::kFileScheme,
+  content::kFileScheme,
   content::kFtpScheme,
-  chrome::kChromeUIScheme,
+  content::kChromeUIScheme,
   extensions::kExtensionScheme,
-  chrome::kFileSystemScheme,
+  content::kFileSystemScheme,
 };
 
 const int kValidSchemeMasks[] = {
@@ -128,8 +128,9 @@ URLPattern::URLPattern(int valid_schemes, const std::string& pattern)
       match_all_urls_(false),
       match_subdomains_(false),
       port_("*") {
-  if (PARSE_SUCCESS != Parse(pattern))
-    NOTREACHED() << "URLPattern is invalid: " << pattern;
+  ParseResult result = Parse(pattern);
+  if (PARSE_SUCCESS != result)
+    NOTREACHED() << "URLPattern invalid: " << pattern << " result " << result;
 }
 
 URLPattern::~URLPattern() {
@@ -191,7 +192,7 @@ URLPattern::ParseResult URLPattern::Parse(const std::string& pattern) {
 
   if (!standard_scheme) {
     path_start_pos = host_start_pos;
-  } else if (scheme_ == chrome::kFileScheme) {
+  } else if (scheme_ == content::kFileScheme) {
     size_t host_end_pos = pattern.find(kPathSeparator, host_start_pos);
     if (host_end_pos == std::string::npos) {
       // Allow hostname omission.
@@ -425,7 +426,7 @@ const std::string& URLPattern::GetAsString() const {
   std::string spec = scheme_ +
       (standard_scheme ? content::kStandardSchemeSeparator : ":");
 
-  if (scheme_ != chrome::kFileScheme && standard_scheme) {
+  if (scheme_ != content::kFileScheme && standard_scheme) {
     if (match_subdomains_) {
       spec += "*";
       if (!host_.empty())
@@ -492,7 +493,7 @@ bool URLPattern::MatchesAllSchemes(
 
 bool URLPattern::MatchesSecurityOriginHelper(const GURL& test) const {
   // Ignore hostname if scheme is file://.
-  if (scheme_ != chrome::kFileScheme && !MatchesHost(test))
+  if (scheme_ != content::kFileScheme && !MatchesHost(test))
     return false;
 
   if (!MatchesPortPattern(base::IntToString(test.EffectiveIntPort())))

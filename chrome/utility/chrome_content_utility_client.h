@@ -6,6 +6,7 @@
 #define CHROME_UTILITY_CHROME_CONTENT_UTILITY_CLIENT_H_
 
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/platform_file.h"
 #include "chrome/common/media_galleries/picasa_types.h"
@@ -19,6 +20,10 @@ struct FileDescriptor;
 
 namespace gfx {
 class Rect;
+}
+
+namespace metadata {
+class MediaMetadataParser;
 }
 
 namespace printing {
@@ -86,12 +91,14 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
       base::PlatformFile bitmap_file);
 
   void OnGetPrinterCapsAndDefaults(const std::string& printer_name);
+  void OnGetPrinterSemanticCapsAndDefaults(const std::string& printer_name);
   void OnStartupPing();
   void OnAnalyzeZipFileForDownloadProtection(
       const IPC::PlatformFileForTransit& zip_file);
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   void OnCheckMediaFile(int64 milliseconds_of_decoding,
                         const IPC::PlatformFileForTransit& media_file);
+  void OnParseMediaMetadata(const std::string& mime_type, int64 total_size);
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
 #if defined(OS_WIN)
@@ -117,6 +124,15 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
 
   typedef ScopedVector<UtilityMessageHandler> Handlers;
   Handlers handlers_;
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  scoped_ptr<metadata::MediaMetadataParser> media_metadata_parser_;
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+
+  // Flag to enable whitelisting.
+  bool filter_messages_;
+  // A list of message_ids to filter.
+  std::set<int> message_id_whitelist_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeContentUtilityClient);
 };

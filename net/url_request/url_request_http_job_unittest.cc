@@ -234,6 +234,8 @@ class FakeWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
 
   virtual bool IsConnectionReusable() const OVERRIDE { return false; }
 
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE { return 0; }
+
   virtual bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const
       OVERRIDE {
     return false;
@@ -253,6 +255,10 @@ class FakeWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
   // Fake implementation of WebSocketHandshakeStreamBase method(s)
   virtual scoped_ptr<WebSocketStream> Upgrade() OVERRIDE {
     return scoped_ptr<WebSocketStream>();
+  }
+
+  virtual std::string GetFailureMessage() const OVERRIDE {
+    return std::string();
   }
 
  private:

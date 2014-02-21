@@ -26,6 +26,7 @@ const char kHelpMessage[] =
                                  "HTTP header\n"
     "  -h, --help                 prints this message\n"
     "  --no-announcement          disables DNS announcements\n"
+    "  --extended-response        responds to PTR with additional records\n"
     "  --simulate-printing-errors simulates some errors for local printing\n"
     "  --unicast-respond          DNS responses will be sent in unicast "
                                  "instead of multicast\n"
@@ -90,7 +91,7 @@ int main(int argc, char* argv[]) {
 
   signal(SIGINT, OnAbort);  // Handle Ctrl+C signal.
 
-  base::MessageLoop loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   g_message_loop = &loop;
   g_message_loop->PostTask(FROM_HERE, base::Bind(&StartPrinter, &printer));
   base::RunLoop runner;

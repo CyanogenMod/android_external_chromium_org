@@ -5,6 +5,8 @@
 #include "google_apis/gcm/engine/connection_factory_impl.h"
 
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "google_apis/gcm/engine/connection_handler_impl.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
 #include "net/base/net_errors.h"
@@ -22,42 +24,33 @@ namespace {
 // The amount of time a Socket read should wait before timing out.
 const int kReadTimeoutMs = 30000;  // 30 seconds.
 
-// Backoff policy.
-const net::BackoffEntry::Policy kConnectionBackoffPolicy = {
-  // Number of initial errors (in sequence) to ignore before applying
-  // exponential back-off rules.
-  0,
+// If a connection is reset after succeeding within this window of time,
+// the previous backoff entry is restored (and the connection success is treated
+// as if it was transient).
+const int kConnectionResetWindowSecs = 10;  // 10 seconds.
 
-  // Initial delay for exponential back-off in ms.
-  10000,  // 10 seconds.
-
-  // Factor by which the waiting time will be multiplied.
-  2,
-
-  // Fuzzing percentage. ex: 10% will spread requests randomly
-  // between 90%-100% of the calculated time.
-  0.2, // 20%.
-
-  // Maximum amount of time we are willing to delay our request in ms.
-  1000 * 3600 * 4, // 4 hours.
-
-  // Time to keep an entry from being discarded even when it
-  // has no significant state, -1 to never discard.
-  -1,
-
-  // Don't use initial delay unless the last request was an error.
-  false,
-};
+// Decides whether the last login was within kConnectionResetWindowSecs of now
+// or not.
+bool ShouldRestorePreviousBackoff(const base::TimeTicks& login_time,
+                                  const base::TimeTicks& now_ticks) {
+  return !login_time.is_null() &&
+      now_ticks - login_time <=
+          base::TimeDelta::FromSeconds(kConnectionResetWindowSecs);
+}
 
 }  // namespace
 
 ConnectionFactoryImpl::ConnectionFactoryImpl(
     const GURL& mcs_endpoint,
+    const net::BackoffEntry::Policy& backoff_policy,
     scoped_refptr<net::HttpNetworkSession> network_session,
     net::NetLog* net_log)
   : mcs_endpoint_(mcs_endpoint),
+    backoff_policy_(backoff_policy),
     network_session_(network_session),
     net_log_(net_log),
+    connecting_(false),
+    logging_in_(false),
     weak_ptr_factory_(this) {
 }
 
@@ -70,7 +63,8 @@ void ConnectionFactoryImpl::Initialize(
     const ConnectionHandler::ProtoSentCallback& write_callback) {
   DCHECK(!connection_handler_);
 
-  backoff_entry_ = CreateBackoffEntry(&kConnectionBackoffPolicy);
+  previous_backoff_ = CreateBackoffEntry(&backoff_policy_);
+  backoff_entry_ = CreateBackoffEntry(&backoff_policy_);
   request_builder_ = request_builder;
 
   net::NetworkChangeNotifier::AddIPAddressObserver(this);
@@ -90,8 +84,8 @@ ConnectionHandler* ConnectionFactoryImpl::GetConnectionHandler() const {
 
 void ConnectionFactoryImpl::Connect() {
   DCHECK(connection_handler_);
-  DCHECK(!IsEndpointReachable());
 
+  connecting_ = true;
   if (backoff_entry_->ShouldRejectRequest()) {
     DVLOG(1) << "Delaying MCS endpoint connection for "
              << backoff_entry_->GetTimeUntilRelease().InMilliseconds()
@@ -100,7 +94,7 @@ void ConnectionFactoryImpl::Connect() {
         FROM_HERE,
         base::Bind(&ConnectionFactoryImpl::Connect,
                    weak_ptr_factory_.GetWeakPtr()),
-        NextRetryAttempt() - base::TimeTicks::Now());
+        backoff_entry_->GetTimeUntilRelease());
     return;
   }
 
@@ -109,7 +103,58 @@ void ConnectionFactoryImpl::Connect() {
 }
 
 bool ConnectionFactoryImpl::IsEndpointReachable() const {
-  return connection_handler_ && connection_handler_->CanSendMessage();
+  return connection_handler_ &&
+      connection_handler_->CanSendMessage() &&
+      !connecting_;
+}
+
+void ConnectionFactoryImpl::SignalConnectionReset(
+    ConnectionResetReason reason) {
+  // A failure can trigger multiple resets, so no need to do anything if a
+  // connection is already in progress.
+  if (connecting_)
+    return;
+
+  UMA_HISTOGRAM_ENUMERATION("GCM.ConnectionResetReason",
+                            reason,
+                            CONNECTION_RESET_COUNT);
+  if (!last_login_time_.is_null()) {
+    UMA_HISTOGRAM_CUSTOM_TIMES("GCM.ConnectionUpTime",
+                               NowTicks() - last_login_time_,
+                               base::TimeDelta::FromSeconds(1),
+                               base::TimeDelta::FromHours(24),
+                               50);
+    // |last_login_time_| will be reset below, before attempting the new
+    // connection.
+  }
+
+  if (connection_handler_)
+    connection_handler_->Reset();
+
+  if (socket_handle_.socket() && socket_handle_.socket()->IsConnected())
+    socket_handle_.socket()->Disconnect();
+  socket_handle_.Reset();
+
+  if (logging_in_) {
+    // Failures prior to login completion just reuse the existing backoff entry.
+    logging_in_ = false;
+    backoff_entry_->InformOfRequest(false);
+  } else if (reason == LOGIN_FAILURE ||
+             ShouldRestorePreviousBackoff(last_login_time_, NowTicks())) {
+    // Failures due to login, or within the reset window of a login, restore
+    // the backoff entry that was saved off at login completion time.
+    backoff_entry_.swap(previous_backoff_);
+    backoff_entry_->InformOfRequest(false);
+  } else {
+    // We shouldn't be in backoff in thise case.
+    DCHECK(backoff_entry_->CanDiscard());
+  }
+
+  // At this point the last login time has been consumed or deemed irrelevant,
+  // reset it.
+  last_login_time_ = base::TimeTicks();
+
+  Connect();
 }
 
 base::TimeTicks ConnectionFactoryImpl::NextRetryAttempt() const {
@@ -139,7 +184,8 @@ void ConnectionFactoryImpl::OnIPAddressChanged() {
 }
 
 void ConnectionFactoryImpl::ConnectImpl() {
-  DCHECK(!IsEndpointReachable());
+  DCHECK(connecting_);
+  DCHECK(!socket_handle_.socket());
 
   // TODO(zea): resolve proxies.
   net::ProxyInfo proxy_info;
@@ -170,7 +216,7 @@ void ConnectionFactoryImpl::InitHandler() {
     DCHECK(login_request.IsInitialized());
   }
 
-  connection_handler_->Init(login_request, socket_handle_.PassSocket());
+  connection_handler_->Init(login_request, socket_handle_.socket());
 }
 
 scoped_ptr<net::BackoffEntry> ConnectionFactoryImpl::CreateBackoffEntry(
@@ -178,28 +224,44 @@ scoped_ptr<net::BackoffEntry> ConnectionFactoryImpl::CreateBackoffEntry(
   return scoped_ptr<net::BackoffEntry>(new net::BackoffEntry(policy));
 }
 
+base::TimeTicks ConnectionFactoryImpl::NowTicks() {
+  return base::TimeTicks::Now();
+}
+
 void ConnectionFactoryImpl::OnConnectDone(int result) {
+  UMA_HISTOGRAM_BOOLEAN("GCM.ConnectionSuccessRate", (result == net::OK));
+
   if (result != net::OK) {
     LOG(ERROR) << "Failed to connect to MCS endpoint with error " << result;
     backoff_entry_->InformOfRequest(false);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("GCM.ConnectionFailureErrorCode", result);
     Connect();
     return;
   }
 
-  DVLOG(1) << "MCS endpoint connection success.";
-
-  // Reset the backoff.
-  backoff_entry_->Reset();
-
+  connecting_ = false;
+  logging_in_ = true;
+  DVLOG(1) << "MCS endpoint socket connection success, starting login.";
   InitHandler();
 }
 
 void ConnectionFactoryImpl::ConnectionHandlerCallback(int result) {
-  // TODO(zea): Consider how to handle errors that may require some sort of
-  // user intervention (login page, etc.).
-  LOG(ERROR) << "Connection reset with error " << result;
-  backoff_entry_->InformOfRequest(false);
-  Connect();
+  DCHECK(!connecting_);
+  if (result != net::OK) {
+    // TODO(zea): Consider how to handle errors that may require some sort of
+    // user intervention (login page, etc.).
+    UMA_HISTOGRAM_SPARSE_SLOWLY("GCM.ConnectionDisconnectErrorCode", result);
+    SignalConnectionReset(SOCKET_FAILURE);
+    return;
+  }
+
+  // Handshake complete, reset backoff. If the login failed with an error,
+  // the client should invoke SignalConnectionReset(LOGIN_FAILURE), which will
+  // restore the previous backoff.
+  last_login_time_ = NowTicks();
+  previous_backoff_.swap(backoff_entry_);
+  backoff_entry_->Reset();
+  logging_in_ = false;
 }
 
 }  // namespace gcm

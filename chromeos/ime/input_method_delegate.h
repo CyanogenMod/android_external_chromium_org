@@ -19,18 +19,21 @@ class InputMethodDelegate {
   InputMethodDelegate() {}
   virtual ~InputMethodDelegate() {}
 
-  // Retrieves the hardware keyboard layout ID. May return an empty string if
-  // the ID is unknown.
-  virtual std::string GetHardwareKeyboardLayout() const = 0;
+  // Returns original VPD value.
+  virtual std::string GetHardwareKeyboardLayouts() const = 0;
 
   // Retrieves localized string for |resource_id|.
-  virtual string16 GetLocalizedString(int resource_id) const = 0;
+  virtual base::string16 GetLocalizedString(int resource_id) const = 0;
+
+  // Set hardware layout string for testting purpose.
+  virtual void SetHardwareKeyboardLayoutForTesting(
+      const std::string& layout) = 0;
 
   // Converts a language code to a language display name, using the
   // current application locale.
   // Examples: "fi"    => "Finnish"
   //           "en-US" => "English (United States)"
-  virtual string16 GetDisplayLanguageName(
+  virtual base::string16 GetDisplayLanguageName(
       const std::string& language_code) const = 0;
 
  private:

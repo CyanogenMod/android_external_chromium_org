@@ -89,7 +89,7 @@ static base::FilePath GetTestDataDir() {
 //    50 / 100 in level. Also go into the playback tab, right-click Speakers,
 //    and set that level to 50 / 100. Otherwise you will get distortion in
 //    the recording.
-class WebrtcAudioQualityBrowserTest : public WebRtcTestBase {
+class WebRtcAudioQualityBrowserTest : public WebRtcTestBase {
  public:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
@@ -370,14 +370,15 @@ bool RunPesq(const base::FilePath& reference_file,
   return true;
 }
 
-#if defined(OS_LINUX) || defined(OS_WIN)
+// Should be enabled for Linux, but is flaky. http://crbug.com/340197.
+#if defined(OS_WIN)
 // Only implemented on Linux and Windows for now.
 #define MAYBE_MANUAL_TestAudioQuality MANUAL_TestAudioQuality
 #else
 #define MAYBE_MANUAL_TestAudioQuality DISABLED_MANUAL_TestAudioQuality
 #endif
 
-IN_PROC_BROWSER_TEST_F(WebrtcAudioQualityBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcAudioQualityBrowserTest,
                        MAYBE_MANUAL_TestAudioQuality) {
 #if defined(OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {

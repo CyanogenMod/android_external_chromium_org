@@ -5,6 +5,7 @@
 from metrics import startup_metric
 from telemetry.page import page_measurement
 
+
 class Startup(page_measurement.PageMeasurement):
   """Performs a measurement of Chromium's startup performance.
 
@@ -14,8 +15,9 @@ class Startup(page_measurement.PageMeasurement):
   tests, you should repeat the page set to ensure it's cached.
   """
 
-  def __init__(self):
-    super(Startup, self).__init__(needs_browser_restart_after_each_run=True)
+  def __init__(self, action_name_to_run = ''):
+    super(Startup, self).__init__(needs_browser_restart_after_each_run=True,
+                                  action_name_to_run=action_name_to_run)
 
   def AddCommandLineOptions(self, parser):
     parser.add_option('--cold', action='store_true',
@@ -44,3 +46,19 @@ class Startup(page_measurement.PageMeasurement):
 
   def MeasurePage(self, page, tab, results):
     startup_metric.StartupMetric().AddResults(tab, results)
+
+
+class StartWithUrl(Startup):
+  """Performs a measurement of Chromium's performance starting with a URL.
+
+  This test must be invoked with either --warm or --cold on the command line. A
+  cold start means none of the Chromium files are in the disk cache. A warm
+  start assumes the OS has already cached much of Chromium's content. For warm
+  tests, you should repeat the page set to ensure it's cached.
+
+  The startup URL is taken from the page set's set_startup_url action. This
+  allows the testing of multiple different URLs in a single benchmark.
+  """
+
+  def __init__(self):
+    super(StartWithUrl, self).__init__(action_name_to_run='navigate_steps')

@@ -16,6 +16,8 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/app_list/search/common/json_response_fetcher.h"
 #include "chrome/browser/ui/app_list/search/people/people_result.h"
 #include "chrome/browser/ui/app_list/search/people/person.h"
@@ -42,6 +44,7 @@ const char kPeopleSearchOAuth2Scope[] =
 
 PeopleProvider::PeopleProvider(Profile* profile)
   : WebserviceSearchProvider(profile),
+    OAuth2TokenService::Consumer("people_provider"),
     people_search_url_(kPeopleSearchUrl),
     skip_request_token_for_test_(false) {
   oauth2_scope_.insert(kPeopleSearchOAuth2Scope);
@@ -56,7 +59,7 @@ void PeopleProvider::Start(const base::string16& query) {
     return;
   }
 
-  query_ = UTF16ToUTF8(query);
+  query_ = base::UTF16ToUTF8(query);
 
   const CacheResult result = cache_->Get(WebserviceCache::PEOPLE, query_);
   if (result.second) {
@@ -117,8 +120,10 @@ void PeopleProvider::RequestAccessToken() {
 
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile_);
   access_token_request_ = token_service->StartRequest(
-      token_service->GetPrimaryAccountId(), oauth2_scope_, this);
+      signin_manager->GetAuthenticatedAccountId(), oauth2_scope_, this);
 }
 
 GURL PeopleProvider::GetQueryUrl(const std::string& query) {
@@ -162,7 +167,7 @@ void PeopleProvider::ProcessPeopleSearchResults(
   }
 
   ClearResults();
-  for (ListValue::const_iterator it = item_list->begin();
+  for (base::ListValue::const_iterator it = item_list->begin();
        it != item_list->end();
        ++it) {
     const base::DictionaryValue* dict;

@@ -4,9 +4,11 @@
 
 #include "chrome/browser/chromeos/drive/file_system/download_operation.h"
 
+#include "base/callback_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
@@ -24,6 +26,21 @@ using content::BrowserThread;
 namespace drive {
 namespace file_system {
 namespace {
+
+// Generates an unused file path with |extension| to |out_path|, as a descendant
+// of |dir|, with its parent directory created.
+bool GeneratesUniquePathWithExtension(
+    const base::FilePath& dir,
+    const base::FilePath::StringType& extension,
+    base::FilePath* out_path) {
+  base::FilePath subdir;
+  if (!base::CreateTemporaryDirInDir(dir, base::FilePath::StringType(),
+                                     &subdir)) {
+    return false;
+  }
+  *out_path = subdir.Append(FILE_PATH_LITERAL("tmp") + extension);
+  return true;
+}
 
 // If the resource is a hosted document, creates a JSON file representing the
 // resource locally, and returns FILE_ERROR_OK with |cache_file_path| storing
@@ -52,22 +69,27 @@ FileError CheckPreConditionForEnsureFileDownloaded(
   if (entry->file_info().is_directory())
     return FILE_ERROR_NOT_A_FILE;
 
-  // The file's entry should have its file specific info.
-  DCHECK(entry->has_file_specific_info());
-
   // For a hosted document, we create a special JSON file to represent the
   // document instead of fetching the document content in one of the exported
   // formats. The JSON file contains the edit URL and resource ID of the
   // document.
   if (entry->file_specific_info().is_hosted_document()) {
+    base::FilePath::StringType extension = base::FilePath::FromUTF8Unsafe(
+        entry->file_specific_info().document_extension()).value();
     base::FilePath gdoc_file_path;
-    base::PlatformFileInfo file_info;
-    if (!base::CreateTemporaryFileInDir(temporary_file_directory,
-                                        &gdoc_file_path) ||
+    // TODO(rvargas): Convert this code to use base::File::Info.
+    base::File::Info file_info;
+    // We add the gdoc file extension in the temporary file, so that in cross
+    // profile drag-and-drop between Drive folders, the destination profiles's
+    // CopyOperation can detect the special JSON file only by the path.
+    if (!GeneratesUniquePathWithExtension(temporary_file_directory,
+                                          extension,
+                                          &gdoc_file_path) ||
         !util::CreateGDocFile(gdoc_file_path,
                               GURL(entry->file_specific_info().alternate_url()),
                               entry->resource_id()) ||
-        !base::GetFileInfo(gdoc_file_path, &file_info))
+        !base::GetFileInfo(gdoc_file_path,
+                           reinterpret_cast<base::File::Info*>(&file_info)))
       return FILE_ERROR_FAILED;
 
     *cache_file_path = gdoc_file_path;
@@ -75,10 +97,28 @@ FileError CheckPreConditionForEnsureFileDownloaded(
     return FILE_ERROR_OK;
   }
 
-  // Leave |cache_file_path| empty when no cache entry is found.
   FileCacheEntry cache_entry;
-  if (!cache->GetCacheEntry(local_id, &cache_entry))
-    return FILE_ERROR_OK;
+  if (!cache->GetCacheEntry(local_id, &cache_entry) ||
+      !cache_entry.is_present()) {  // This file has no cache file.
+    if (!entry->resource_id().empty()) {
+      // This entry exists on the server, leave |cache_file_path| empty to
+      // start download.
+      return FILE_ERROR_OK;
+    }
+
+    // This entry does not exist on the server, store an empty file and mark it
+    // as dirty.
+    base::FilePath empty_file;
+    if (!base::CreateTemporaryFileInDir(temporary_file_directory, &empty_file))
+      return FILE_ERROR_FAILED;
+    error = cache->Store(local_id, std::string(), empty_file,
+                         internal::FileCache::FILE_OPERATION_MOVE);
+    if (error != FILE_ERROR_OK)
+      return error;
+
+    if (!cache->GetCacheEntry(local_id, &cache_entry))
+      return FILE_ERROR_NOT_FOUND;
+  }
 
   // Leave |cache_file_path| empty when the stored file is obsolete and has no
   // local modification.
@@ -97,8 +137,9 @@ FileError CheckPreConditionForEnsureFileDownloaded(
   // drive::FileSystem::CheckLocalModificationAndRun. We should merge them once
   // the drive::FS side is also converted to run fully on blocking pool.
   if (cache_entry.is_dirty()) {
-    base::PlatformFileInfo file_info;
-    if (base::GetFileInfo(*cache_file_path, &file_info))
+    base::File::Info file_info;
+    if (base::GetFileInfo(*cache_file_path,
+                          reinterpret_cast<base::File::Info*>(&file_info)))
       SetPlatformFileInfoToResourceEntry(file_info, entry);
   }
 
@@ -190,19 +231,26 @@ FileError UpdateLocalStateForDownloadFile(
     base::FilePath* cache_file_path) {
   DCHECK(cache);
 
+  // Downloaded file should be deleted on errors.
+  base::ScopedClosureRunner file_deleter(base::Bind(
+      base::IgnoreResult(&base::DeleteFile),
+      downloaded_file_path, false /* recursive */));
+
   FileError error = GDataToFileError(gdata_error);
-  if (error != FILE_ERROR_OK) {
-    base::DeleteFile(downloaded_file_path, false /* recursive */);
+  if (error != FILE_ERROR_OK)
     return error;
-  }
+
+  // Do not overwrite locally edited file with server side contents.
+  FileCacheEntry cache_entry;
+  if (cache->GetCacheEntry(local_id, &cache_entry) && cache_entry.is_dirty())
+    return FILE_ERROR_IN_USE;
 
   // Here the download is completed successfully, so store it into the cache.
   error = cache->Store(local_id, md5, downloaded_file_path,
                        internal::FileCache::FILE_OPERATION_MOVE);
-  if (error != FILE_ERROR_OK) {
-    base::DeleteFile(downloaded_file_path, false /* recursive */);
+  if (error != FILE_ERROR_OK)
     return error;
-  }
+  base::Closure unused_file_deleter_closure = file_deleter.Release();
 
   return cache->GetFile(local_id, cache_file_path);
 }
@@ -379,6 +427,8 @@ void DownloadOperation::EnsureFileDownloadedAfterCheckPreCondition(
     params->OnComplete(*cache_file_path);
     return;
   }
+
+  DCHECK(!params->entry().resource_id().empty());
 
   // If cache file is not found, try to download the file from the server
   // instead. Check if we have enough space, based on the expected file size.

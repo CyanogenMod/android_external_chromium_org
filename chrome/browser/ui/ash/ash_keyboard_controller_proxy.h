@@ -37,6 +37,8 @@ class AshKeyboardControllerProxy
   virtual ~AshKeyboardControllerProxy();
 
  private:
+  friend class AshKeyboardControllerProxyTest;
+
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
 
   // keyboard::KeyboardControllerProxy overrides
@@ -47,7 +49,7 @@ class AshKeyboardControllerProxy
       const content::MediaResponseCallback& callback) OVERRIDE;
   virtual void SetupWebContents(content::WebContents* contents) OVERRIDE;
   virtual void ShowKeyboardContainer(aura::Window* container) OVERRIDE;
-  virtual void HideKeyboardContainer(aura::Window* container) OVERRIDE;
+  virtual void EnsureCaretInWorkArea() OVERRIDE;
 
   // The overridden implementation dispatches
   // chrome.virtualKeyboardPrivate.onTextInputBoxFocused event to extension to

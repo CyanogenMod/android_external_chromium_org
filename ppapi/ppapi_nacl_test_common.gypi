@@ -89,34 +89,34 @@
           'extra_args': [
             '--strip-all',
           ],
+          'create_nmf': '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
+          'create_nmf_args_portable%': [],
         },
         'target_conditions': [
           ['generate_nmf==1 and build_newlib==1', {
             'actions': [
               {
                 'action_name': 'Generate NEWLIB NMF',
-                # Unlike glibc, nexes are not actually inputs - only the names matter.
-                # We don't have the nexes as inputs because the ARM nexe may not
-                # exist.  However, VS 2010 seems to blackhole this entire target if
-                # there are no inputs to this action.  To work around this we add a
-                # bogus input.
-                'inputs': [],
+                'inputs': ['>(create_nmf)'],
                 'outputs': ['>(nmf_newlib)'],
                 'action': [
                   'python',
-                  '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
-                  '>@(_inputs)',
+                  '>(create_nmf)',
                   '--output=>(nmf_newlib)',
+                  '>@(create_nmf_args_portable)',
                 ],
                 'target_conditions': [
                   ['enable_x86_64==1', {
                     'inputs': ['>(out_newlib64)'],
+                    'action': ['>(out_newlib64)'],
                   }],
                   ['enable_x86_32==1', {
                     'inputs': ['>(out_newlib32)'],
+                    'action': ['>(out_newlib32)'],
                   }],
                   ['enable_arm==1', {
                     'inputs': ['>(out_newlib_arm)'],
+                    'action': ['>(out_newlib_arm)'],
                   }],
                 ],
               },
@@ -133,24 +133,25 @@
             'actions': [
               {
                 'action_name': 'Generate GLIBC NMF and copy libs',
-                'inputs': [],
+                'inputs': ['>(create_nmf)'],
                 # NOTE: There is no explicit dependency for the lib32
                 # and lib64 directories created in the PRODUCT_DIR.
                 # They are created as a side-effect of NMF creation.
                 'outputs': ['>(nmf_glibc)'],
                 'action': [
                   'python',
-                  '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
-                  '>@(_inputs)',
+                  '>(create_nmf)',
                   '--objdump=>(nacl_objdump)',
                   '--output=>(nmf_glibc)',
                   '--path-prefix=>(nexe_target)_libs',
                   '--stage-dependencies=<(nacl_glibc_out_dir)',
+                  '>@(create_nmf_args_portable)',
                 ],
                 'target_conditions': [
                   ['enable_x86_64==1', {
                     'inputs': ['>(out_glibc64)'],
                     'action': [
+                      '>(out_glibc64)',
                       '--library-path=>(libdir_glibc64)',
                       '--library-path=>(tc_lib_dir_glibc64)',
                     ],
@@ -158,6 +159,7 @@
                   ['enable_x86_32==1', {
                     'inputs': ['>(out_glibc32)'],
                     'action': [
+                      '>(out_glibc32)',
                       '--library-path=>(libdir_glibc32)',
                       '--library-path=>(tc_lib_dir_glibc32)',
                     ],
@@ -171,13 +173,16 @@
             'actions': [
               {
                 'action_name': 'Generate PNACL NEWLIB NMF',
-                'inputs': ['>(out_pnacl_newlib)'],
+                # NOTE: create_nmf must be first, it is the script python
+                # executes below.
+                'inputs': ['>(create_nmf)', '>(out_pnacl_newlib)'],
                 'outputs': ['>(nmf_pnacl_newlib)'],
                 'action': [
                   'python',
-                  '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
-                  '>@(_inputs)',
+                  '>(create_nmf)',
                   '--output=>(nmf_pnacl_newlib)',
+                  '>(out_pnacl_newlib)',
+                  '>@(create_nmf_args_portable)',
                 ],
               },
             ],

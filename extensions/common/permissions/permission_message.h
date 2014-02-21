@@ -31,6 +31,7 @@ class PermissionMessage {
     kManagement,
     kDebugger,
     kDesktopCapture,
+    kHid,
     kHosts1,
     kHosts2,
     kHosts3,
@@ -79,14 +80,17 @@ class PermissionMessage {
     kStartupPages,
     kMediaGalleriesAllGalleriesDelete,
     kScreenlockPrivate,
+    kOverrideBookmarksUI,
     kEnumBoundary,
   };
   COMPILE_ASSERT(PermissionMessage::kNone > PermissionMessage::kUnknown,
                  kNone_not_greater_than_kUnknown);
 
   // Creates the corresponding permission message.
-  PermissionMessage(ID id, const string16& message);
-  PermissionMessage(ID id, const string16& message, const string16& details);
+  PermissionMessage(ID id, const base::string16& message);
+  PermissionMessage(ID id,
+                    const base::string16& message,
+                    const base::string16& details);
   ~PermissionMessage();
 
   // Gets the id of the permission message, which can be used in UMA
@@ -95,12 +99,12 @@ class PermissionMessage {
 
   // Gets a localized message describing this permission. Please note that
   // the message will be empty for message types TYPE_NONE and TYPE_UNKNOWN.
-  const string16& message() const { return message_; }
+  const base::string16& message() const { return message_; }
 
   // Gets a localized message describing the details for this permission. Please
   // note that the message will be empty for message types TYPE_NONE and
   // TYPE_UNKNOWN.
-  const string16& details() const { return details_; }
+  const base::string16& details() const { return details_; }
 
   // Comparator to work with std::set.
   bool operator<(const PermissionMessage& that) const {
@@ -113,8 +117,8 @@ class PermissionMessage {
 
  private:
   ID id_;
-  string16 message_;
-  string16 details_;
+  base::string16 message_;
+  base::string16 details_;
 };
 
 typedef std::vector<PermissionMessage> PermissionMessages;

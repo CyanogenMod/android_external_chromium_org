@@ -23,6 +23,7 @@ import time
 import urlparse
 import uuid
 
+import app_list_specifics_pb2
 import app_notification_specifics_pb2
 import app_setting_specifics_pb2
 import app_specifics_pb2
@@ -39,6 +40,7 @@ import favicon_tracking_specifics_pb2
 import history_delete_directive_specifics_pb2
 import managed_user_setting_specifics_pb2
 import managed_user_specifics_pb2
+import managed_user_shared_setting_specifics_pb2
 import nigori_specifics_pb2
 import password_specifics_pb2
 import preference_specifics_pb2
@@ -47,6 +49,7 @@ import search_engine_specifics_pb2
 import session_specifics_pb2
 import sync_pb2
 import sync_enums_pb2
+import synced_notification_app_info_specifics_pb2
 import synced_notification_data_pb2
 import synced_notification_render_pb2
 import synced_notification_specifics_pb2
@@ -60,6 +63,7 @@ import typed_url_specifics_pb2
 ALL_TYPES = (
     TOP_LEVEL,  # The type of the 'Google Chrome' folder.
     APPS,
+    APP_LIST,
     APP_NOTIFICATION,
     APP_SETTINGS,
     ARTICLE,
@@ -72,6 +76,7 @@ ALL_TYPES = (
     EXTENSIONS,
     HISTORY_DELETE_DIRECTIVE,
     MANAGED_USER_SETTING,
+    MANAGED_USER_SHARED_SETTING,
     MANAGED_USER,
     NIGORI,
     PASSWORD,
@@ -80,11 +85,12 @@ ALL_TYPES = (
     SEARCH_ENGINE,
     SESSION,
     SYNCED_NOTIFICATION,
+    SYNCED_NOTIFICATION_APP_INFO,
     THEME,
     TYPED_URL,
     EXTENSION_SETTINGS,
     FAVICON_IMAGES,
-    FAVICON_TRACKING) = range(27)
+    FAVICON_TRACKING) = range(30)
 
 # An enumeration on the frequency at which the server should send errors
 # to the client. This would be specified by the url that triggers the error.
@@ -101,6 +107,7 @@ TOP_LEVEL_FOLDER_TAG = 'google_chrome'
 # to that datatype.  Note that TOP_LEVEL has no such token.
 SYNC_TYPE_FIELDS = sync_pb2.EntitySpecifics.DESCRIPTOR.fields_by_name
 SYNC_TYPE_TO_DESCRIPTOR = {
+    APP_LIST: SYNC_TYPE_FIELDS['app_list'],
     APP_NOTIFICATION: SYNC_TYPE_FIELDS['app_notification'],
     APP_SETTINGS: SYNC_TYPE_FIELDS['app_setting'],
     APPS: SYNC_TYPE_FIELDS['app'],
@@ -116,6 +123,8 @@ SYNC_TYPE_TO_DESCRIPTOR = {
     FAVICON_IMAGES: SYNC_TYPE_FIELDS['favicon_image'],
     FAVICON_TRACKING: SYNC_TYPE_FIELDS['favicon_tracking'],
     HISTORY_DELETE_DIRECTIVE: SYNC_TYPE_FIELDS['history_delete_directive'],
+    MANAGED_USER_SHARED_SETTING:
+        SYNC_TYPE_FIELDS['managed_user_shared_setting'],
     MANAGED_USER_SETTING: SYNC_TYPE_FIELDS['managed_user_setting'],
     MANAGED_USER: SYNC_TYPE_FIELDS['managed_user'],
     NIGORI: SYNC_TYPE_FIELDS['nigori'],
@@ -125,6 +134,8 @@ SYNC_TYPE_TO_DESCRIPTOR = {
     SEARCH_ENGINE: SYNC_TYPE_FIELDS['search_engine'],
     SESSION: SYNC_TYPE_FIELDS['session'],
     SYNCED_NOTIFICATION: SYNC_TYPE_FIELDS["synced_notification"],
+    SYNCED_NOTIFICATION_APP_INFO:
+        SYNC_TYPE_FIELDS["synced_notification_app_info"],
     THEME: SYNC_TYPE_FIELDS['theme'],
     TYPED_URL: SYNC_TYPE_FIELDS['typed_url'],
     }
@@ -476,6 +487,8 @@ class SyncDataModel(object):
   _PERMANENT_ITEM_SPECS = [
       PermanentItem('google_chrome_apps', name='Apps',
                     parent_tag=ROOT_ID, sync_type=APPS),
+      PermanentItem('google_chrome_app_list', name='App List',
+                    parent_tag=ROOT_ID, sync_type=APP_LIST),
       PermanentItem('google_chrome_app_notifications', name='App Notifications',
                     parent_tag=ROOT_ID, sync_type=APP_NOTIFICATION),
       PermanentItem('google_chrome_app_settings',
@@ -521,6 +534,9 @@ class SyncDataModel(object):
       PermanentItem('google_chrome_managed_users',
                     name='Managed Users',
                     parent_tag=ROOT_ID, sync_type=MANAGED_USER),
+      PermanentItem('google_chrome_managed_user_shared_settings',
+                    name='Managed User Shared Settings',
+                    parent_tag=ROOT_ID, sync_type=MANAGED_USER_SHARED_SETTING),
       PermanentItem('google_chrome_nigori', name='Nigori',
                     parent_tag=ROOT_ID, sync_type=NIGORI),
       PermanentItem('google_chrome_passwords', name='Passwords',
@@ -533,6 +549,9 @@ class SyncDataModel(object):
       PermanentItem('google_chrome_synced_notifications',
                     name='Synced Notifications',
                     parent_tag=ROOT_ID, sync_type=SYNCED_NOTIFICATION),
+      PermanentItem('google_chrome_synced_notification_app_info',
+                    name='Synced Notification App Info',
+                    parent_tag=ROOT_ID, sync_type=SYNCED_NOTIFICATION_APP_INFO),
       PermanentItem('google_chrome_search_engines', name='Search Engines',
                     parent_tag=ROOT_ID, sync_type=SEARCH_ENGINE),
       PermanentItem('google_chrome_sessions', name='Sessions',
@@ -596,7 +615,6 @@ class SyncDataModel(object):
     generation methods.
 
     Args:
-      datatype: The sync type (python enum) of the identified object.
       tag: The unique, known-to-the-client tag of a server-generated item.
     Returns:
       The string value of the computed server ID.
@@ -1178,7 +1196,6 @@ class SyncDataModel(object):
     entity.parent_id_string = self._ServerTagToId(
         'google_chrome_synced_notifications')
     entity.name = 'Synced notification added for testing'
-    entity.server_defined_unique_tag = unique_notification_id
 
     # Set the version to one more than the greatest version number already seen.
     entries = sorted(self._entries.values(), key=operator.attrgetter('version'))
@@ -1189,7 +1206,7 @@ class SyncDataModel(object):
     entity.client_defined_unique_tag = self._CreateSyncedNotificationClientTag(
         specifics.synced_notification.coalesced_notification.key)
     entity.id_string = self._ClientTagToId(GetEntryType(entity),
-                                          entity.client_defined_unique_tag)
+                                           entity.client_defined_unique_tag)
 
     self._entries[entity.id_string] = copy.deepcopy(entity)
 
@@ -1212,7 +1229,6 @@ class SyncDataModel(object):
 
     return specifics
 
-
   def _CreateSyncedNotificationClientTag(self, key):
     """Create the client_defined_unique_tag value for a SyncedNotification.
 
@@ -1227,7 +1243,6 @@ class SyncDataModel(object):
     serialized_type.synced_notification.CopyFrom(specifics)
     hash_input = serialized_type.SerializeToString() + key
     return base64.b64encode(hashlib.sha1(hash_input).digest())
-
 
 class TestServer(object):
   """An object to handle requests for one (and only one) Chrome Sync account.

@@ -30,6 +30,8 @@ class WebRtcTestBase : public InProcessBrowserTest {
   WebRtcTestBase();
   virtual ~WebRtcTestBase();
 
+  // These all require that the loaded page fulfills the public interface in
+  // chrome/test/data/webrtc/message_handling.js.
   void GetUserMediaAndAccept(content::WebContents* tab_contents) const;
   void GetUserMediaWithSpecificConstraintsAndAccept(
       content::WebContents* tab_contents,
@@ -42,6 +44,12 @@ class WebRtcTestBase : public InProcessBrowserTest {
   void GetUserMedia(content::WebContents* tab_contents,
                     const std::string& constraints) const;
 
+  // Convenience method which opens the page at url, calls GetUserMediaAndAccept
+  // and returns the new tab.
+  content::WebContents* OpenPageAndGetUserMediaInNewTab(const GURL& url) const;
+
+  // Opens the page at |url| where getUserMedia has been invoked through other
+  // means and accepts the user media request.
   content::WebContents* OpenPageAndAcceptUserMedia(const GURL& url) const;
 
   void ConnectToPeerConnectionServer(const std::string& peer_name,
@@ -53,6 +61,13 @@ class WebRtcTestBase : public InProcessBrowserTest {
   // This will only work if the tests are run sequentially by the test runner
   // (i.e. with --test-launcher-developer-mode or --test-launcher-jobs=1).
   void DetectErrorsInJavaScript();
+
+  // Methods for detecting if video is playing (the loaded page must have
+  // chrome/test/data/webrtc/video_detector.js and its dependencies loaded to
+  // make that work). Looks at a 320x240 area of the target video tag.
+  void StartDetectingVideo(content::WebContents* tab_contents,
+                           const std::string& video_element) const;
+  void WaitForVideoToPlay(content::WebContents* tab_contents) const;
 
  private:
   void CloseInfoBarInTab(content::WebContents* tab_contents,

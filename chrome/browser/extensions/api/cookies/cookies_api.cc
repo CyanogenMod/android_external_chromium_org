@@ -18,7 +18,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/cookies/cookies_api_constants.h"
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
@@ -26,6 +25,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -256,7 +256,7 @@ void CookiesGetFunction::GetCookieCallback(const net::CookieList& cookie_list) {
 
   // The cookie doesn't exist; return null.
   if (it == cookie_list.end())
-    SetResult(Value::CreateNullValue());
+    SetResult(base::Value::CreateNullValue());
 
   bool rv = BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -576,7 +576,7 @@ g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 ProfileKeyedAPIFactory<CookiesAPI>* CookiesAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 void CookiesAPI::OnListenerAdded(

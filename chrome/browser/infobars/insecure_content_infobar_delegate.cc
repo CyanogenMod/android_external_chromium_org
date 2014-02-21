@@ -9,6 +9,7 @@
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/render_messages.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_transition_types.h"
@@ -64,11 +65,11 @@ InsecureContentInfoBarDelegate*
   return this;
 }
 
-string16 InsecureContentInfoBarDelegate::GetMessageText() const {
+base::string16 InsecureContentInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_BLOCKED_DISPLAYING_INSECURE_CONTENT);
 }
 
-string16 InsecureContentInfoBarDelegate::GetButtonLabel(
+base::string16 InsecureContentInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16(button == BUTTON_OK ?
       IDS_BLOCK_INSECURE_CONTENT_BUTTON : IDS_ALLOW_INSECURE_CONTENT_BUTTON);
@@ -90,16 +91,17 @@ bool InsecureContentInfoBarDelegate::Cancel() {
       (type_ == DISPLAY) ? DISPLAY_USER_OVERRIDE : RUN_USER_OVERRIDE,
       NUM_EVENTS);
 
-  int32 routing_id = web_contents()->GetRoutingID();
-  web_contents()->Send((type_ == DISPLAY) ?
+  web_contents()->SendToAllFrames((type_ == DISPLAY) ?
       static_cast<IPC::Message*>(
-          new ChromeViewMsg_SetAllowDisplayingInsecureContent(routing_id,
+          new ChromeViewMsg_SetAllowDisplayingInsecureContent(MSG_ROUTING_NONE,
                                                               true)) :
-      new ChromeViewMsg_SetAllowRunningInsecureContent(routing_id, true));
+      new ChromeViewMsg_SetAllowRunningInsecureContent(MSG_ROUTING_NONE, true));
+  web_contents()->GetMainFrame()->Send(new ChromeViewMsg_ReloadFrame(
+      web_contents()->GetMainFrame()->GetRoutingID()));
   return true;
 }
 
-string16 InsecureContentInfoBarDelegate::GetLinkText() const {
+base::string16 InsecureContentInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 

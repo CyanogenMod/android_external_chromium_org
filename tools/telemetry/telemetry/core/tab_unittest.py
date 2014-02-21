@@ -4,6 +4,7 @@
 
 import logging
 
+from telemetry import test
 from telemetry.core import util
 from telemetry.core import exceptions
 from telemetry.unittest import tab_test_case
@@ -55,6 +56,7 @@ class GpuTabTest(tab_test_case.TabTestCase):
     self._extra_browser_args = ['--enable-gpu-benchmarking']
     super(GpuTabTest, self).setUp()
 
+  @test.Disabled('chromeos')
   def testScreenshot(self):
     if not self._tab.screenshot_supported:
       logging.warning('Browser does not support screenshots, skipping test.')
@@ -74,22 +76,3 @@ class GpuTabTest(tab_test_case.TabTestCase):
         0, 255, 0, tolerance=2)
     screenshot.GetPixelColor(32 * pixel_ratio, 32 * pixel_ratio).AssertIsRGB(
         255, 255, 255, tolerance=2)
-
-  def testScreenshotSync(self):
-    if not self._tab.screenshot_supported:
-      logging.warning('Browser does not support screenshots, skipping test.')
-      return
-
-    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
-    self._tab.Navigate(
-      self._browser.http_server.UrlOf('screenshot_sync.html'))
-    self._tab.WaitForDocumentReadyStateToBeComplete()
-
-    def IsTestComplete():
-      return self._tab.EvaluateJavaScript('window.__testComplete')
-    util.WaitFor(IsTestComplete, 120)
-
-    message = self._tab.EvaluateJavaScript('window.__testMessage')
-    if message:
-      logging.error(message)
-    assert self._tab.EvaluateJavaScript('window.__testSuccess')

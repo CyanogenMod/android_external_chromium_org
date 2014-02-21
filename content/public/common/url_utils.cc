@@ -4,12 +4,18 @@
 
 #include "content/public/common/url_utils.h"
 
+#include "base/base_switches.h"
+#include "base/command_line.h"
+#include "base/logging.h"
 #include "build/build_config.h"
 #include "content/common/savable_url_schemes.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "url/gurl.h"
 
 namespace content {
+
+static size_t g_max_url_size = 2 * 1024 * 1024;
 
 const char* const* GetSavableSchemes() {
   return GetSavableSchemesInternal();
@@ -18,10 +24,9 @@ const char* const* GetSavableSchemes() {
 bool HasWebUIScheme(const GURL& url) {
   return
 #if !defined(OS_IOS)
-         url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-         url.SchemeIs(chrome::kChromeInternalScheme) ||
+         url.SchemeIs(kChromeDevToolsScheme) ||
 #endif
-         url.SchemeIs(chrome::kChromeUIScheme);
+         url.SchemeIs(kChromeUIScheme);
 }
 
 bool IsSavableURL(const GURL& url) {
@@ -30,6 +35,19 @@ bool IsSavableURL(const GURL& url) {
       return true;
   }
   return false;
+}
+
+#if defined(OS_ANDROID)
+void SetMaxURLChars(size_t max_chars) {
+  // Check that it is not used by a multiprocesses embedder
+  CommandLine* cmd = CommandLine::ForCurrentProcess();
+  CHECK(cmd->HasSwitch(switches::kSingleProcess));
+  g_max_url_size = max_chars;
+}
+#endif
+
+size_t GetMaxURLChars() {
+  return g_max_url_size;
 }
 
 }  // namespace content

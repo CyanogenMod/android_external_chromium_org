@@ -4,33 +4,100 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_misc.h"
 
+#include "apps/app_window.h"
+#include "apps/app_window_registry.h"
 #include "base/files/file_path.h"
 #include "base/prefs/pref_service.h"
-#include "base/values.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/drive/drive_integration_service.h"
-#include "chrome/browser/chromeos/drive/logging.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/app_installer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/drive/event_logger.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_info_util.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/page_zoom.h"
 #include "google_apis/drive/auth_service.h"
-#include "google_apis/gaia/oauth2_token_service.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
 namespace extensions {
 
 namespace {
 const char kCWSScope[] = "https://www.googleapis.com/auth/chromewebstore";
+
+// Obtains the current app window.
+apps::AppWindow* GetCurrentAppWindow(ChromeSyncExtensionFunction* function) {
+  apps::AppWindowRegistry* const app_window_registry =
+      apps::AppWindowRegistry::Get(function->GetProfile());
+  content::WebContents* const contents = function->GetAssociatedWebContents();
+  content::RenderViewHost* const render_view_host =
+      contents ? contents->GetRenderViewHost() : NULL;
+  return render_view_host ? app_window_registry->GetAppWindowForRenderViewHost(
+                                render_view_host)
+                          : NULL;
 }
+
+std::vector<linked_ptr<api::file_browser_private::ProfileInfo> >
+GetLoggedInProfileInfoList() {
+  DCHECK(chromeos::UserManager::IsInitialized());
+  const std::vector<Profile*>& profiles =
+      g_browser_process->profile_manager()->GetLoadedProfiles();
+  std::set<Profile*> original_profiles;
+  std::vector<linked_ptr<api::file_browser_private::ProfileInfo> >
+      result_profiles;
+
+  for (size_t i = 0; i < profiles.size(); ++i) {
+    // Filter the profile.
+    Profile* const profile = profiles[i]->GetOriginalProfile();
+    if (original_profiles.count(profile))
+      continue;
+    original_profiles.insert(profile);
+    const chromeos::User* const user =
+        chromeos::UserManager::Get()->GetUserByProfile(profile);
+    if (!user || !user->is_logged_in())
+      continue;
+
+    // Make a ProfileInfo.
+    linked_ptr<api::file_browser_private::ProfileInfo> profile_info(
+        new api::file_browser_private::ProfileInfo());
+    profile_info->profile_id = multi_user_util::GetUserIDFromProfile(profile);
+    profile_info->display_name = UTF16ToUTF8(user->GetDisplayName());
+    // TODO(hirono): Remove the property from the profile_info.
+    profile_info->is_current_profile = true;
+
+    // Make an icon URL of the profile.
+    const int kImageSize = 30;
+    const gfx::Image& image = profiles::GetAvatarIconForTitleBar(
+        gfx::Image(user->image()), true, kImageSize, kImageSize);
+    const SkBitmap* const bitmap = image.ToSkBitmap();
+    if (bitmap) {
+      profile_info->image_uri.reset(new std::string(
+          webui::GetBitmapDataUrl(*bitmap)));
+    }
+    result_profiles.push_back(profile_info);
+  }
+
+  return result_profiles;
+}
+} // namespace
 
 bool FileBrowserPrivateLogoutUserForReauthenticationFunction::RunImpl() {
   chromeos::User* user =
@@ -46,7 +113,7 @@ bool FileBrowserPrivateLogoutUserForReauthenticationFunction::RunImpl() {
 }
 
 bool FileBrowserPrivateGetPreferencesFunction::RunImpl() {
-  api::file_browser_private::GetPreferences::Results::Result result;
+  api::file_browser_private::Preferences result;
   const PrefService* const service = GetProfile()->GetPrefs();
 
   result.drive_enabled = drive::util::IsDriveEnabledForProfile(GetProfile());
@@ -64,7 +131,9 @@ bool FileBrowserPrivateGetPreferencesFunction::RunImpl() {
 
   SetResult(result.ToValue().release());
 
-  drive::util::Log(logging::LOG_INFO, "%s succeeded.", name().c_str());
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+  if (logger)
+    logger->Log(logging::LOG_INFO, "%s succeeded.", name().c_str());
   return true;
 }
 
@@ -83,7 +152,9 @@ bool FileBrowserPrivateSetPreferencesFunction::RunImpl() {
     service->SetBoolean(prefs::kDisableDriveHostedFiles,
                         *params->change_info.hosted_files_disabled);
 
-  drive::util::Log(logging::LOG_INFO, "%s succeeded.", name().c_str());
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+  if (logger)
+    logger->Log(logging::LOG_INFO, "%s succeeded.", name().c_str());
   return true;
 }
 
@@ -164,23 +235,22 @@ bool FileBrowserPrivateZoomFunction::RunImpl() {
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  content::RenderViewHost* const view_host = render_view_host();
   content::PageZoom zoom_type;
   switch (params->operation) {
-    case Params::OPERATION_IN:
+    case api::file_browser_private::ZOOM_OPERATION_TYPE_IN:
       zoom_type = content::PAGE_ZOOM_IN;
       break;
-    case Params::OPERATION_OUT:
+    case api::file_browser_private::ZOOM_OPERATION_TYPE_OUT:
       zoom_type = content::PAGE_ZOOM_OUT;
       break;
-    case Params::OPERATION_RESET:
+    case api::file_browser_private::ZOOM_OPERATION_TYPE_RESET:
       zoom_type = content::PAGE_ZOOM_RESET;
       break;
     default:
       NOTREACHED();
       return false;
   }
-  view_host->Zoom(zoom_type);
+  render_view_host()->Zoom(zoom_type);
   return true;
 }
 
@@ -199,7 +269,7 @@ bool FileBrowserPrivateInstallWebstoreItemFunction::RunImpl() {
 
   scoped_refptr<file_manager::AppInstaller> installer(
       new file_manager::AppInstaller(
-          GetAssociatedWebContents(),  // web_contents(),
+          GetAssociatedWebContents(),
           params->item_id,
           GetProfile(),
           callback));
@@ -211,16 +281,21 @@ bool FileBrowserPrivateInstallWebstoreItemFunction::RunImpl() {
 void FileBrowserPrivateInstallWebstoreItemFunction::OnInstallComplete(
     bool success,
     const std::string& error) {
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
   if (success) {
-    drive::util::Log(logging::LOG_INFO,
-                     "App install succeeded. (item id: %s)",
-                     webstore_item_id_.c_str());
+    if (logger) {
+      logger->Log(logging::LOG_INFO,
+                  "App install succeeded. (item id: %s)",
+                  webstore_item_id_.c_str());
+    }
   } else {
-    drive::util::Log(logging::LOG_ERROR,
-                     "App install failed. (item id: %s, reason: %s)",
-                     webstore_item_id_.c_str(),
-                     error.c_str());
-    error_ = error;
+    if (logger) {
+      logger->Log(logging::LOG_ERROR,
+                  "App install failed. (item id: %s, reason: %s)",
+                  webstore_item_id_.c_str(),
+                  error.c_str());
+    }
+    SetError(error);
   }
 
   SendResponse(success);
@@ -244,16 +319,21 @@ bool FileBrowserPrivateRequestWebStoreAccessTokenFunction::RunImpl() {
       g_browser_process->system_request_context();
 
   if (!oauth_service) {
-    drive::util::Log(logging::LOG_ERROR,
-                     "CWS OAuth token fetch failed. OAuth2TokenService can't "
-                     "be retrived.");
+    drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+    if (logger) {
+      logger->Log(logging::LOG_ERROR,
+                  "CWS OAuth token fetch failed. OAuth2TokenService can't "
+                  "be retrieved.");
+    }
     SetResult(base::Value::CreateNullValue());
     return false;
   }
 
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(GetProfile());
   auth_service_.reset(new google_apis::AuthService(
       oauth_service,
-      oauth_service->GetPrimaryAccountId(),
+      signin_manager->GetAuthenticatedAccountId(),
       url_request_context_getter,
       scopes));
   auth_service_->StartAuthentication(base::Bind(
@@ -267,20 +347,101 @@ bool FileBrowserPrivateRequestWebStoreAccessTokenFunction::RunImpl() {
 void FileBrowserPrivateRequestWebStoreAccessTokenFunction::OnAccessTokenFetched(
     google_apis::GDataErrorCode code,
     const std::string& access_token) {
+  drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
+
   if (code == google_apis::HTTP_SUCCESS) {
     DCHECK(auth_service_->HasAccessToken());
     DCHECK(access_token == auth_service_->access_token());
-    drive::util::Log(logging::LOG_INFO,
-                     "CWS OAuth token fetch succeeded.");
+    if (logger)
+      logger->Log(logging::LOG_INFO, "CWS OAuth token fetch succeeded.");
     SetResult(new base::StringValue(access_token));
     SendResponse(true);
   } else {
-    drive::util::Log(logging::LOG_ERROR,
-                     "CWS OAuth token fetch failed. (GDataErrorCode: %s)",
-                     google_apis::GDataErrorCodeToString(code).c_str());
+    if (logger) {
+      logger->Log(logging::LOG_ERROR,
+                  "CWS OAuth token fetch failed. (GDataErrorCode: %s)",
+                  google_apis::GDataErrorCodeToString(code).c_str());
+    }
     SetResult(base::Value::CreateNullValue());
     SendResponse(false);
   }
+}
+
+bool FileBrowserPrivateGetProfilesFunction::RunImpl() {
+  const std::vector<linked_ptr<api::file_browser_private::ProfileInfo> >&
+      profiles = GetLoggedInProfileInfoList();
+
+  // Obtains the display profile ID.
+  apps::AppWindow* const app_window = GetCurrentAppWindow(this);
+  chrome::MultiUserWindowManager* const window_manager =
+      chrome::MultiUserWindowManager::GetInstance();
+  const std::string current_profile_id =
+      multi_user_util::GetUserIDFromProfile(GetProfile());
+  const std::string display_profile_id =
+      window_manager && app_window ? window_manager->GetUserPresentingWindow(
+                                         app_window->GetNativeWindow())
+                                   : "";
+
+  results_ = api::file_browser_private::GetProfiles::Results::Create(
+      profiles,
+      current_profile_id,
+      display_profile_id.empty() ? current_profile_id : display_profile_id);
+  return true;
+}
+
+bool FileBrowserPrivateVisitDesktopFunction::RunImpl() {
+  using api::file_browser_private::VisitDesktop::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  const std::vector<linked_ptr<api::file_browser_private::ProfileInfo> >&
+      profiles = GetLoggedInProfileInfoList();
+
+  // Check the multi-profile support.
+  if (!profiles::IsMultipleProfilesEnabled()) {
+    SetError("Multi-profile support is not enabled.");
+    return false;
+  }
+
+  chrome::MultiUserWindowManager* const window_manager =
+      chrome::MultiUserWindowManager::GetInstance();
+  DCHECK(window_manager);
+
+  // Check if the target user is logged-in or not.
+  bool logged_in = false;
+  for (size_t i = 0; i < profiles.size(); ++i) {
+    if (profiles[i]->profile_id == params->profile_id) {
+      logged_in = true;
+      break;
+    }
+  }
+  if (!logged_in) {
+    SetError("The user is not logged-in now.");
+    return false;
+  }
+
+  // Look for the current app window.
+  apps::AppWindow* const app_window = GetCurrentAppWindow(this);
+  if (!app_window) {
+    SetError("Target window is not found.");
+    return false;
+  }
+
+  // Observe owner changes of windows.
+  file_manager::EventRouter* const event_router =
+      file_manager::FileBrowserPrivateAPI::Get(GetProfile())->event_router();
+  event_router->RegisterMultiUserWindowManagerObserver();
+
+  // Move the window to the user's desktop.
+  window_manager->ShowWindowForUser(app_window->GetNativeWindow(),
+                                    params->profile_id);
+
+  // Check the result.
+  if (!window_manager->IsWindowOnDesktopOfUser(app_window->GetNativeWindow(),
+                                               params->profile_id)) {
+    SetError("The window cannot visit the desktop.");
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace extensions

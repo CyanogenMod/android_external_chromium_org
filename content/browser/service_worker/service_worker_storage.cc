@@ -7,10 +7,9 @@
 #include <string>
 
 #include "base/strings/string_util.h"
-#include "content/browser/service_worker/service_worker_register_job.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 
 namespace {
 // This is temporary until we figure out how registration ids will be
@@ -29,7 +28,7 @@ const base::FilePath::CharType kServiceWorkerDirectory[] =
 ServiceWorkerStorage::ServiceWorkerStorage(
     const base::FilePath& path,
     quota::QuotaManagerProxy* quota_manager_proxy)
-    : quota_manager_proxy_(quota_manager_proxy), weak_factory_(this) {
+    : quota_manager_proxy_(quota_manager_proxy) {
   if (!path.empty())
     path_ = path.Append(kServiceWorkerDirectory);
 }
@@ -46,7 +45,7 @@ ServiceWorkerStorage::~ServiceWorkerStorage() {
 
 void ServiceWorkerStorage::FindRegistrationForPattern(
     const GURL& pattern,
-    const RegistrationCallback& callback) {
+    const FindRegistrationCallback& callback) {
   PatternToRegistrationMap::const_iterator match =
       registration_by_pattern_.find(pattern);
   if (match == registration_by_pattern_.end()) {
@@ -54,18 +53,20 @@ void ServiceWorkerStorage::FindRegistrationForPattern(
         BrowserThread::IO,
         FROM_HERE,
         base::Bind(callback,
-                   REGISTRATION_NOT_FOUND,
+                   false /* found */,
+                   SERVICE_WORKER_OK,
                    scoped_refptr<ServiceWorkerRegistration>()));
     return;
   }
-  BrowserThread::PostTask(BrowserThread::IO,
-                          FROM_HERE,
-                          base::Bind(callback, REGISTRATION_OK, match->second));
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(callback, true /* found */, SERVICE_WORKER_OK, match->second));
 }
 
 void ServiceWorkerStorage::FindRegistrationForDocument(
     const GURL& document_url,
-    const RegistrationCallback& callback) {
+    const FindRegistrationCallback& callback) {
   // TODO(alecflett): This needs to be synchronous in the fast path,
   // but asynchronous in the slow path (when the patterns have to be
   // loaded from disk). For now it is always pessimistically async.
@@ -78,7 +79,8 @@ void ServiceWorkerStorage::FindRegistrationForDocument(
           BrowserThread::IO,
           FROM_HERE,
           base::Bind(callback,
-                     REGISTRATION_OK,
+                     true /* found */,
+                     SERVICE_WORKER_OK,
                      scoped_refptr<ServiceWorkerRegistration>(it->second)));
       return;
     }
@@ -87,31 +89,9 @@ void ServiceWorkerStorage::FindRegistrationForDocument(
       BrowserThread::IO,
       FROM_HERE,
       base::Bind(callback,
-                 REGISTRATION_NOT_FOUND,
+                 false /* found */,
+                 SERVICE_WORKER_OK,
                  scoped_refptr<ServiceWorkerRegistration>()));
-}
-
-void ServiceWorkerStorage::Register(const GURL& pattern,
-                                    const GURL& script_url,
-                                    const RegistrationCallback& callback) {
-  scoped_ptr<ServiceWorkerRegisterJob> job(new ServiceWorkerRegisterJob(
-      weak_factory_.GetWeakPtr(),
-      base::Bind(&ServiceWorkerStorage::RegisterComplete,
-                 weak_factory_.GetWeakPtr(),
-                 callback)));
-  job->StartRegister(pattern, script_url);
-  registration_jobs_.push_back(job.release());
-}
-
-void ServiceWorkerStorage::Unregister(const GURL& pattern,
-                                      const UnregistrationCallback& callback) {
-  scoped_ptr<ServiceWorkerRegisterJob> job(new ServiceWorkerRegisterJob(
-      weak_factory_.GetWeakPtr(),
-      base::Bind(&ServiceWorkerStorage::UnregisterComplete,
-                 weak_factory_.GetWeakPtr(),
-                 callback)));
-  job->StartUnregister(pattern);
-  registration_jobs_.push_back(job.release());
 }
 
 scoped_refptr<ServiceWorkerRegistration> ServiceWorkerStorage::RegisterInternal(
@@ -155,36 +135,6 @@ bool ServiceWorkerStorage::PatternMatches(const GURL& pattern,
   if (pattern.has_query())
     ReplaceSubstringsAfterOffset(&pattern_spec, 0, "?", "\\?");
   return MatchPattern(url.spec(), pattern_spec);
-}
-
-void ServiceWorkerStorage::EraseJob(ServiceWorkerRegisterJob* job) {
-  ScopedVector<ServiceWorkerRegisterJob>::iterator job_position =
-      registration_jobs_.begin();
-  for (; job_position != registration_jobs_.end(); ++job_position) {
-    if (*job_position == job) {
-      registration_jobs_.erase(job_position);
-      return;
-    }
-  }
-  NOTREACHED() << "Deleting non-existent job. ";
-}
-
-void ServiceWorkerStorage::UnregisterComplete(
-    const UnregistrationCallback& callback,
-    ServiceWorkerRegisterJob* job,
-    ServiceWorkerRegistrationStatus status,
-    ServiceWorkerRegistration* previous_registration) {
-  callback.Run(status);
-  EraseJob(job);
-}
-
-void ServiceWorkerStorage::RegisterComplete(
-    const RegistrationCallback& callback,
-    ServiceWorkerRegisterJob* job,
-    ServiceWorkerRegistrationStatus status,
-    ServiceWorkerRegistration* registration) {
-  callback.Run(status, registration);
-  EraseJob(job);
 }
 
 }  // namespace content

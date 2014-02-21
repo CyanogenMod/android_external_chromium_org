@@ -10,8 +10,8 @@
 
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_member.h"
-#include "chrome/browser/password_manager/password_store.h"
-#include "chrome/browser/password_manager/password_store_consumer.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_consumer.h"
 
 namespace autofill {
 struct PasswordForm;
@@ -31,7 +31,7 @@ class PasswordManagerPresenter : public PasswordStore::Observer {
   virtual ~PasswordManagerPresenter();
 
   // PasswordStore::Observer implementation.
-  virtual void OnLoginsChanged() OVERRIDE;
+  virtual void OnLoginsChanged(const PasswordStoreChangeList& changes) OVERRIDE;
 
   // Repopulates the password and exception entries.
   void UpdatePasswordLists();
@@ -81,7 +81,6 @@ class PasswordManagerPresenter : public PasswordStore::Observer {
 
    protected:
     PasswordManagerPresenter* page_;
-    CancelableRequestProvider::Handle pending_login_query_;
   };
 
   // A short class to mediate requests to the password store for passwordlist.
@@ -93,9 +92,6 @@ class PasswordManagerPresenter : public PasswordStore::Observer {
     virtual void Populate() OVERRIDE;
 
     // Send the password store's reply back to the handler.
-    virtual void OnPasswordStoreRequestDone(
-        CancelableRequestProvider::Handle handle,
-        const std::vector<autofill::PasswordForm*>& result) OVERRIDE;
     virtual void OnGetPasswordStoreResults(
         const std::vector<autofill::PasswordForm*>& results) OVERRIDE;
   };
@@ -109,9 +105,6 @@ class PasswordManagerPresenter : public PasswordStore::Observer {
     virtual void Populate() OVERRIDE;
 
     // Send the password store's reply back to the handler.
-    virtual void OnPasswordStoreRequestDone(
-        CancelableRequestProvider::Handle handle,
-        const std::vector<autofill::PasswordForm*>& result) OVERRIDE;
     virtual void OnGetPasswordStoreResults(
         const std::vector<autofill::PasswordForm*>& results) OVERRIDE;
   };

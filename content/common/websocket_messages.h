@@ -26,6 +26,9 @@
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START WebSocketMsgStart
 
+IPC_ENUM_TRAITS_MAX_VALUE(content::WebSocketMessageType,
+                          content::WEB_SOCKET_MESSAGE_TYPE_LAST)
+
 IPC_STRUCT_TRAITS_BEGIN(content::WebSocketHandshakeRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(headers)
@@ -101,8 +104,6 @@ IPC_MESSAGE_ROUTED1(WebSocketMsg_NotifyFailure,
 
 // WebSocket messages that can be sent in either direction.
 
-IPC_ENUM_TRAITS(content::WebSocketMessageType)
-
 // Send a non-control frame on |channel_id|. If the sender is the renderer, it
 // will be sent to the remote server. If the sender is the browser, it comes
 // from the remote server. |fin| indicates that this frame is the last in the
@@ -149,3 +150,7 @@ IPC_MESSAGE_ROUTED3(WebSocketMsg_DropChannel,
                     bool /* was_clean */,
                     unsigned short /* code */,
                     std::string /* reason */)
+
+// Notify the renderer that a closing handshake has been initiated by the
+// server, so that it can set the Javascript readyState to CLOSING.
+IPC_MESSAGE_ROUTED0(WebSocketMsg_NotifyClosing)

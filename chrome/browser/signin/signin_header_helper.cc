@@ -4,19 +4,21 @@
 
 #include "chrome/browser/signin/signin_header_helper.h"
 
-#include "base/command_line.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/profiles/profile_io_data.h"
-#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/android/signin/account_management_screen_helper.h"
+#endif  // defined(OS_ANDROID)
 
 namespace {
 
@@ -28,16 +30,19 @@ const char kGaiaAuthExtensionID[] = "mfffpogegjflfpflabcdkioaeobkgjik";
 void ShowAvatarBubbleUIThread(int child_id, int route_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-#if !defined(OS_ANDROID)
   content::WebContents* web_contents =
       tab_util::GetWebContentsByID(child_id, route_id);
   if (!web_contents)
     return;
 
+#if !defined(OS_ANDROID)
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
   if (browser)
     browser->window()->ShowAvatarBubbleFromAvatarButton();
   // TODO(guohui): need to handle the case when avatar button is not available.
+#else  // defined(OS_ANDROID)
+  AccountManagementScreenHelper::OpenAccountManagementScreen(
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()));
 #endif // OS_ANDROID
 }
 
@@ -62,6 +67,11 @@ void AppendMirrorRequestHeaderIfPossible(
     int route_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
 
+   if (io_data->is_incognito() ||
+       io_data->google_services_username()->GetValue().empty()) {
+     return;
+   }
+
   // Only set the header for Gaia (in the mirror world) and Drive. Gaia needs
   // the header to redirect certain user actions to Chrome native UI. Drive
   // needs the header to tell if the current user is connected. The drive path
@@ -69,16 +79,11 @@ void AppendMirrorRequestHeaderIfPossible(
   // available.
   const GURL& url = redirect_url.is_empty() ? request->url() : redirect_url;
   GURL origin(url.GetOrigin());
-  bool enable_inline = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableInlineSignin);
-  if (!enable_inline ||
-      !profiles::IsNewProfileManagementEnabled() ||
-      io_data->is_incognito() ||
-      io_data->google_services_username()->GetValue().empty() ||
-      (!IsDriveOrigin(origin) &&
-       !gaia::IsGaiaSignonRealm(origin))) {
+  bool is_gaia_origin = !switches::IsEnableWebBasedSignin() &&
+      switches::IsNewProfileManagement() &&
+      gaia::IsGaiaSignonRealm(origin);
+  if (!is_gaia_origin && !IsDriveOrigin(origin))
     return;
-  }
 
   ExtensionRendererState* renderer_state =
       ExtensionRendererState::GetInstance();
@@ -106,7 +111,7 @@ void ProcessMirrorResponseHeaderIfExists(
 
   if (gaia::IsGaiaSignonRealm(request->url().GetOrigin()) &&
       request->response_headers()->HasHeader(kChromeManageAccountsHeader)) {
-    DCHECK(profiles::IsNewProfileManagementEnabled() &&
+    DCHECK(switches::IsNewProfileManagement() &&
            !io_data->is_incognito());
     content::BrowserThread::PostTask(
         content::BrowserThread::UI, FROM_HERE,

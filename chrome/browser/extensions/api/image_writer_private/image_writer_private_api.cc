@@ -27,7 +27,7 @@ bool ImageWriterPrivateWriteFromUrlFunction::RunImpl() {
 
   GURL url(params->image_url);
   if (!url.is_valid()) {
-    error_ = image_writer::error::kInvalidUrl;
+    error_ = image_writer::error::kUrlInvalid;
     return false;
   }
 
@@ -151,8 +151,23 @@ bool ImageWriterPrivateDestroyPartitionsFunction::RunImpl() {
       image_writer_api::DestroyPartitions::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  SendResponse(true);
+  image_writer::OperationManager::Get(GetProfile())->DestroyPartitions(
+      extension_id(),
+      params->storage_unit_id,
+      base::Bind(
+          &ImageWriterPrivateDestroyPartitionsFunction::OnDestroyComplete,
+          this));
   return true;
+}
+
+void ImageWriterPrivateDestroyPartitionsFunction::OnDestroyComplete(
+    bool success,
+    const std::string& error) {
+  if (!success) {
+    error_ = error;
+  }
+
+  SendResponse(success);
 }
 
 ImageWriterPrivateListRemovableStorageDevicesFunction::
@@ -180,7 +195,7 @@ void ImageWriterPrivateListRemovableStorageDevicesFunction::OnDeviceListReady(
         device_list.get()->data);
     SendResponse(true);
   } else {
-    error_ = image_writer::error::kDeviceList;
+    error_ = image_writer::error::kDeviceListError;
     SendResponse(false);
   }
 }

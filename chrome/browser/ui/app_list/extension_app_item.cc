@@ -4,11 +4,11 @@
 
 #include "chrome/browser/ui/app_list/extension_app_item.h"
 
+#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_context_menu.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
@@ -16,12 +16,15 @@
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "sync/api/string_ordinal.h"
@@ -30,6 +33,7 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/rect.h"
 
 using extensions::Extension;
 
@@ -60,6 +64,45 @@ class ShortcutOverlayImageSource : public gfx::CanvasImageSource {
   DISALLOW_COPY_AND_ASSIGN(ShortcutOverlayImageSource);
 };
 
+// Rounds the corners of a given image.
+class RoundedCornersImageSource : public gfx::CanvasImageSource {
+ public:
+  explicit RoundedCornersImageSource(const gfx::ImageSkia& icon)
+      : gfx::CanvasImageSource(icon.size(), false),
+        icon_(icon) {
+  }
+  virtual ~RoundedCornersImageSource() {}
+
+ private:
+  // gfx::CanvasImageSource overrides:
+  virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
+    // The radius used to round the app icon.
+    const size_t kRoundingRadius = 2;
+
+    canvas->DrawImageInt(icon_, 0, 0);
+
+    scoped_ptr<gfx::Canvas> masking_canvas(
+        new gfx::Canvas(gfx::Size(icon_.width(), icon_.height()), 1.0f, false));
+    DCHECK(masking_canvas);
+
+    SkPaint opaque_paint;
+    opaque_paint.setColor(SK_ColorWHITE);
+    opaque_paint.setFlags(SkPaint::kAntiAlias_Flag);
+    masking_canvas->DrawRoundRect(
+        gfx::Rect(icon_.width(), icon_.height()),
+        kRoundingRadius, opaque_paint);
+
+    SkPaint masking_paint;
+    masking_paint.setXfermodeMode(SkXfermode::kDstIn_Mode);
+    canvas->DrawImageInt(
+        gfx::ImageSkia(masking_canvas->ExtractImageRep()), 0, 0, masking_paint);
+  }
+
+  gfx::ImageSkia icon_;
+
+  DISALLOW_COPY_AND_ASSIGN(RoundedCornersImageSource);
+};
+
 extensions::AppSorting* GetAppSorting(Profile* profile) {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -70,12 +113,14 @@ const color_utils::HSL shift = {-1, 0, 0.6};
 
 }  // namespace
 
-ExtensionAppItem::ExtensionAppItem(Profile* profile,
-                                   const std::string& extension_id,
-                                   const std::string& extension_name,
-                                   const gfx::ImageSkia& installing_icon,
-                                   bool is_platform_app)
-    : app_list::AppListItemModel(extension_id),
+ExtensionAppItem::ExtensionAppItem(
+    Profile* profile,
+    const app_list::AppListSyncableService::SyncItem* sync_item,
+    const std::string& extension_id,
+    const std::string& extension_name,
+    const gfx::ImageSkia& installing_icon,
+    bool is_platform_app)
+    : app_list::AppListItem(extension_id),
       profile_(profile),
       extension_id_(extension_id),
       extension_enable_flow_controller_(NULL),
@@ -83,8 +128,16 @@ ExtensionAppItem::ExtensionAppItem(Profile* profile,
       installing_icon_(
           gfx::ImageSkiaOperations::CreateHSLShiftedImage(installing_icon,
                                                           shift)),
-      is_platform_app_(is_platform_app) {
+      is_platform_app_(is_platform_app),
+      has_overlay_(false) {
   Reload();
+  if (sync_item && sync_item->item_ordinal.IsValid()) {
+    // An existing synced position exists, use that.
+    set_position(sync_item->item_ordinal);
+    if (title().empty())
+      SetTitleAndFullName(sync_item->item_name, sync_item->item_name);
+    return;
+  }
   GetAppSorting(profile_)->EnsureValidOrdinals(extension_id_,
                                                syncer::StringOrdinal());
   UpdatePositionFromExtensionOrdering();
@@ -93,12 +146,25 @@ ExtensionAppItem::ExtensionAppItem(Profile* profile,
 ExtensionAppItem::~ExtensionAppItem() {
 }
 
-bool ExtensionAppItem::HasOverlay() const {
+bool ExtensionAppItem::NeedsOverlay() const {
+  // The overlay icon is disabled for hosted apps in windowed mode with
+  // streamlined hosted apps.
+  bool streamlined_hosted_apps = CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kEnableStreamlinedHostedApps);
 #if defined(OS_CHROMEOS)
-  return false;
-#else
-  return !is_platform_app_ && extension_id_ != extension_misc::kChromeAppId;
+  if (!streamlined_hosted_apps)
+    return false;
 #endif
+  const ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
+
+  extensions::LaunchType launch_type = GetExtension()
+      ? extensions::GetLaunchType(service->extension_prefs(), GetExtension())
+      : extensions::LAUNCH_TYPE_WINDOW;
+
+  return !is_platform_app_ && extension_id_ != extension_misc::kChromeAppId &&
+      (!streamlined_hosted_apps ||
+       launch_type != extensions::LAUNCH_TYPE_WINDOW);
 }
 
 void ExtensionAppItem::Reload() {
@@ -115,27 +181,33 @@ void ExtensionAppItem::Reload() {
 }
 
 void ExtensionAppItem::UpdateIcon() {
-  if (!GetExtension()) {
-    gfx::ImageSkia icon = installing_icon_;
-    if (HasOverlay())
-      icon = gfx::ImageSkia(new ShortcutOverlayImageSource(icon), icon.size());
-    SetIcon(icon, !HasOverlay());
-    return;
-  }
-  gfx::ImageSkia icon = icon_->image_skia();
+  gfx::ImageSkia icon = installing_icon_;
 
-  const ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const bool enabled = extension_util::IsAppLaunchable(extension_id_, service);
-  if (!enabled) {
-    const color_utils::HSL shift = {-1, 0, 0.6};
-    icon = gfx::ImageSkiaOperations::CreateHSLShiftedImage(icon, shift);
-  }
+  // Use the app icon if the app exists. Turn the image greyscale if the app is
+  // not launchable.
+  if (GetExtension()) {
+    icon = icon_->image_skia();
+    const bool enabled = extensions::util::IsAppLaunchable(extension_id_,
+                                                           profile_);
+    if (!enabled) {
+      const color_utils::HSL shift = {-1, 0, 0.6};
+      icon = gfx::ImageSkiaOperations::CreateHSLShiftedImage(icon, shift);
+    }
 
-  if (HasOverlay())
+    if (GetExtension()->from_bookmark())
+      icon = gfx::ImageSkia(new RoundedCornersImageSource(icon), icon.size());
+  }
+  // Paint the shortcut overlay if necessary.
+  has_overlay_ = NeedsOverlay();
+  if (has_overlay_)
     icon = gfx::ImageSkia(new ShortcutOverlayImageSource(icon), icon.size());
 
-  SetIcon(icon, !HasOverlay());
+  SetIcon(icon, true);
+}
+
+void ExtensionAppItem::UpdateIconOverlay() {
+  if (has_overlay_ != NeedsOverlay())
+    UpdateIcon();
 }
 
 void ExtensionAppItem::Move(const ExtensionAppItem* prev,
@@ -187,9 +259,7 @@ void ExtensionAppItem::LoadImage(const Extension* extension) {
 }
 
 bool ExtensionAppItem::RunExtensionEnableFlow() {
-  const ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  if (extension_util::IsAppLaunchableWithoutEnabling(extension_id_, service))
+  if (extensions::util::IsAppLaunchableWithoutEnabling(extension_id_, profile_))
     return false;
 
   if (!extension_enable_flow_) {
@@ -249,7 +319,7 @@ void ExtensionAppItem::Activate(int event_flags) {
   if (RunExtensionEnableFlow())
     return;
 
-  content::RecordAction(content::UserMetricsAction("AppList_ClickOnApp"));
+  content::RecordAction(base::UserMetricsAction("AppList_ClickOnApp"));
   CoreAppLauncherHandler::RecordAppListMainLaunch(extension);
   GetController()->ActivateApp(profile_,
                                extension,
@@ -258,20 +328,19 @@ void ExtensionAppItem::Activate(int event_flags) {
 }
 
 ui::MenuModel* ExtensionAppItem::GetContextMenuModel() {
-  if (!context_menu_) {
-    context_menu_.reset(new app_list::AppContextMenu(
-        this, profile_, extension_id_, GetController(),
-        is_platform_app_, false));
-  }
-
+  context_menu_.reset(new app_list::AppContextMenu(
+      this, profile_, extension_id_, GetController()));
+  context_menu_->set_is_platform_app(is_platform_app_);
+  if (IsInFolder())
+    context_menu_->set_is_in_folder(true);
   return context_menu_->GetMenuModel();
 }
 
 // static
-const char ExtensionAppItem::kAppType[] = "ExtensionAppItem";
+const char ExtensionAppItem::kItemType[] = "ExtensionAppItem";
 
-const char* ExtensionAppItem::GetAppType() const {
-  return ExtensionAppItem::kAppType;
+const char* ExtensionAppItem::GetItemType() const {
+  return ExtensionAppItem::kItemType;
 }
 
 void ExtensionAppItem::ExecuteLaunchCommand(int event_flags) {

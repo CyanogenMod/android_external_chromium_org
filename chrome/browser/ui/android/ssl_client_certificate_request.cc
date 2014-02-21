@@ -17,10 +17,12 @@
 #include "jni/SSLClientCertificateRequest_jni.h"
 #include "net/android/keystore_openssl.h"
 #include "net/base/host_port_pair.h"
+#include "net/cert/cert_database.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/openssl_client_key_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_client_cert_type.h"
+
 
 namespace chrome {
 
@@ -91,16 +93,9 @@ void StartClientCertificateRequest(
 
   // Build the |host_name| and |port| JNI parameters, as a String and
   // a jint.
-  net::HostPortPair host_and_port =
-      net::HostPortPair::FromString(cert_request_info->host_and_port);
-
   ScopedJavaLocalRef<jstring> host_name_ref =
-      base::android::ConvertUTF8ToJavaString(env, host_and_port.host());
-  if (host_name_ref.is_null()) {
-    LOG(ERROR) << "Could not extract host name from: '"
-               << cert_request_info->host_and_port << "'";
-    return;
-  }
+      base::android::ConvertUTF8ToJavaString(
+          env, cert_request_info->host_and_port.host());
 
   // Create a copy of the callback on the heap so that its address
   // and ownership can be passed through and returned from Java via JNI.
@@ -112,7 +107,7 @@ void StartClientCertificateRequest(
   if (!chrome::android::
       Java_SSLClientCertificateRequest_selectClientCertificate(
           env, request_id, key_types_ref.obj(), principals_ref.obj(),
-          host_name_ref.obj(), host_and_port.port())) {
+          host_name_ref.obj(), cert_request_info->host_and_port.port())) {
     return;
   }
 
@@ -200,6 +195,21 @@ static void OnSystemRequestCompletion(
                  client_cert,
                  base::Passed(&private_key)),
       base::Bind(*callback, client_cert));
+}
+
+static void NotifyClientCertificatesChanged() {
+  net::CertDatabase::GetInstance()->OnAndroidKeyStoreChanged();
+}
+
+static void NotifyClientCertificatesChangedOnIOThread(JNIEnv* env, jclass) {
+  if (content::BrowserThread::CurrentlyOn(content::BrowserThread::IO)) {
+    NotifyClientCertificatesChanged();
+  } else {
+    content::BrowserThread::PostTask(
+         content::BrowserThread::IO,
+         FROM_HERE,
+         base::Bind(&NotifyClientCertificatesChanged));
+  }
 }
 
 bool RegisterSSLClientCertificateRequestAndroid(JNIEnv* env) {

@@ -32,13 +32,14 @@ class AuraTestBase : public testing::Test {
   aura::Window* CreateNormalWindow(int id, Window* parent,
                                    aura::WindowDelegate* delegate);
 
-  // Creates a transient window that is transient to |parent|.
-  aura::Window* CreateTransientChild(int id, aura::Window* parent);
-
  protected:
   void RunAllPendingInMessageLoop();
 
   void ParentWindow(Window* window);
+
+  // A convenience function for dispatching an event to |dispatcher()|.
+  // Returns whether |event| was handled.
+  bool DispatchEventUsingWindowDispatcher(ui::Event* event);
 
   Window* root_window() { return helper_->root_window(); }
   RootWindow* dispatcher() { return helper_->dispatcher(); }

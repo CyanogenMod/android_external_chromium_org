@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "net/base/net_export.h"
+#include "net/url_request/url_request.h"
 
 class GURL;
 
@@ -170,6 +171,11 @@ class NET_EXPORT URLFetcher {
   // started.
   virtual void SetReferrer(const std::string& referrer) = 0;
 
+  // The referrer policy to apply when updating the referrer during redirects.
+  // The referrer policy may only be changed before Start() is called.
+  virtual void SetReferrerPolicy(
+      URLRequest::ReferrerPolicy referrer_policy) = 0;
+
   // Set extra headers on the request.  Must be called before the request
   // is started.
   // This replaces the entire extra request headers.
@@ -180,9 +186,6 @@ class NET_EXPORT URLFetcher {
   // headers.  Must be called before the request is started.
   // This appends the header to the current extra request headers.
   virtual void AddExtraRequestHeader(const std::string& header_line) = 0;
-
-  virtual void GetExtraRequestHeaders(
-      HttpRequestHeaders* headers) const = 0;
 
   // Set the URLRequestContext on the request.  Must be called before the
   // request is started.

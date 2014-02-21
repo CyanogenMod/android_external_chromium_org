@@ -12,6 +12,7 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/worker_pool.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/shell/browser/shell_network_delegate.h"
@@ -101,7 +102,8 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     url_request_context_->set_network_delegate(network_delegate_.get());
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
-    storage_->set_cookie_store(new net::CookieMonster(NULL, NULL));
+    storage_->set_cookie_store(
+        content::CreateCookieStore(content::CookieStoreConfig()));
     storage_->set_server_bound_cert_service(new net::ServerBoundCertService(
         new net::DefaultServerBoundCertStore(NULL),
         base::WorkerPool::GetTaskRunner(true)));
@@ -203,11 +205,10 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     // ShellContentBrowserClient::IsHandledURL().
     InstallProtocolHandlers(job_factory.get(), &protocol_handlers_);
     bool set_protocol = job_factory->SetProtocolHandler(
-        chrome::kDataScheme,
-        new net::DataProtocolHandler);
+        kDataScheme, new net::DataProtocolHandler);
     DCHECK(set_protocol);
     set_protocol = job_factory->SetProtocolHandler(
-        chrome::kFileScheme,
+        kFileScheme,
         new net::FileProtocolHandler(
             content::BrowserThread::GetBlockingPool()->
                 GetTaskRunnerWithShutdownBehavior(

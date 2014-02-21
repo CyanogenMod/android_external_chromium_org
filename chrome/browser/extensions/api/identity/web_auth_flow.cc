@@ -4,7 +4,7 @@
 
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 
-#include "apps/shell_window.h"
+#include "apps/app_window.h"
 #include "base/base64.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
@@ -12,8 +12,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/identity_private.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -28,10 +26,11 @@
 #include "content/public/browser/web_contents.h"
 #include "crypto/random.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/browser_resources.h"
 #include "url/gurl.h"
 
-using apps::ShellWindow;
+using apps::AppWindow;
 using content::RenderViewHost;
 using content::ResourceRedirectDetails;
 using content::WebContents;
@@ -61,26 +60,26 @@ WebAuthFlow::~WebAuthFlow() {
   registrar_.RemoveAll();
   WebContentsObserver::Observe(NULL);
 
-  if (!shell_window_key_.empty()) {
-    apps::ShellWindowRegistry::Get(profile_)->RemoveObserver(this);
+  if (!app_window_key_.empty()) {
+    apps::AppWindowRegistry::Get(profile_)->RemoveObserver(this);
 
-    if (shell_window_ && shell_window_->web_contents())
-      shell_window_->web_contents()->Close();
+    if (app_window_ && app_window_->web_contents())
+      app_window_->web_contents()->Close();
   }
 }
 
 void WebAuthFlow::Start() {
-  apps::ShellWindowRegistry::Get(profile_)->AddObserver(this);
+  apps::AppWindowRegistry::Get(profile_)->AddObserver(this);
 
   // Attach a random ID string to the window so we can recoginize it
-  // in OnShellWindowAdded.
+  // in OnAppWindowAdded.
   std::string random_bytes;
   crypto::RandBytes(WriteInto(&random_bytes, 33), 32);
-  base::Base64Encode(random_bytes, &shell_window_key_);
+  base::Base64Encode(random_bytes, &app_window_key_);
 
   // identityPrivate.onWebFlowRequest(shell_window_key, provider_url_, mode_)
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->AppendString(shell_window_key_);
+  args->AppendString(app_window_key_);
   args->AppendString(provider_url_.spec());
   if (mode_ == WebAuthFlow::INTERACTIVE)
     args->AppendString("interactive");
@@ -109,11 +108,11 @@ void WebAuthFlow::DetachDelegateAndDelete() {
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-void WebAuthFlow::OnShellWindowAdded(ShellWindow* shell_window) {
-  if (shell_window->window_key() == shell_window_key_ &&
-      shell_window->extension()->id() == extension_misc::kIdentityApiUiAppId) {
-    shell_window_ = shell_window;
-    WebContentsObserver::Observe(shell_window->web_contents());
+void WebAuthFlow::OnAppWindowAdded(AppWindow* app_window) {
+  if (app_window->window_key() == app_window_key_ &&
+      app_window->extension()->id() == extension_misc::kIdentityApiUiAppId) {
+    app_window_ = app_window;
+    WebContentsObserver::Observe(app_window->web_contents());
 
     registrar_.Add(
         this,
@@ -122,12 +121,12 @@ void WebAuthFlow::OnShellWindowAdded(ShellWindow* shell_window) {
   }
 }
 
-void WebAuthFlow::OnShellWindowIconChanged(ShellWindow* shell_window) {}
+void WebAuthFlow::OnAppWindowIconChanged(AppWindow* app_window) {}
 
-void WebAuthFlow::OnShellWindowRemoved(ShellWindow* shell_window) {
-  if (shell_window->window_key() == shell_window_key_ &&
-      shell_window->extension()->id() == extension_misc::kIdentityApiUiAppId) {
-    shell_window_ = NULL;
+void WebAuthFlow::OnAppWindowRemoved(AppWindow* app_window) {
+  if (app_window->window_key() == app_window_key_ &&
+      app_window->extension()->id() == extension_misc::kIdentityApiUiAppId) {
+    app_window_ = NULL;
     registrar_.RemoveAll();
 
     if (delegate_)
@@ -148,7 +147,7 @@ void WebAuthFlow::AfterUrlLoaded() {
 void WebAuthFlow::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
-  DCHECK(shell_window_);
+  DCHECK(app_window_);
 
   if (!delegate_)
     return;
@@ -163,7 +162,7 @@ void WebAuthFlow::Observe(int type,
     if (web_contents &&
         (web_contents->GetEmbedderWebContents() ==
          WebContentsObserver::web_contents())) {
-      // Switch from watching the shell window to the guest inside it.
+      // Switch from watching the app window to the guest inside it.
       embedded_window_created_ = true;
       WebContentsObserver::Observe(web_contents);
 
@@ -192,7 +191,7 @@ void WebAuthFlow::Observe(int type,
 
         if (title->first) {
           delegate_->OnAuthFlowTitleChange(
-              UTF16ToUTF8(title->first->GetTitle()));
+              base::UTF16ToUTF8(title->first->GetTitle()));
         }
         break;
       }

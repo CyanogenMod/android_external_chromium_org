@@ -46,13 +46,12 @@ class BASE_EXPORT_PRIVATE DiscardableMemoryProvider {
   DiscardableMemoryProvider();
   ~DiscardableMemoryProvider();
 
-  static DiscardableMemoryProvider* GetInstance();
+  // Call this to register memory pressure listener. Must be called on a
+  // thread with a MessageLoop current.
+  void RegisterMemoryPressureListener();
 
-  // Sets the instance of DiscardableMemoryProvider to be returned by
-  // GetInstance. This should only be used by tests and must be called
-  // prior to GetInstance(). The ownership of the given provider is
-  // retained by the caller.
-  static void SetInstanceForTest(DiscardableMemoryProvider* provider);
+  // Call this to unregister memory pressure listener.
+  void UnregisterMemoryPressureListener();
 
   // The maximum number of bytes of discardable memory that may be allocated
   // before we force a purge. If this amount is zero, it is interpreted as
@@ -107,7 +106,7 @@ class BASE_EXPORT_PRIVATE DiscardableMemoryProvider {
   typedef HashingMRUCache<const DiscardableMemory*, Allocation> AllocationMap;
 
   // This can be called as a hint that the system is under memory pressure.
-  static void NotifyMemoryPressure(
+  void OnMemoryPressure(
       MemoryPressureListener::MemoryPressureLevel pressure_level);
 
   // Purges |bytes_to_reclaim_under_moderate_pressure_| bytes of
@@ -140,7 +139,7 @@ class BASE_EXPORT_PRIVATE DiscardableMemoryProvider {
 
   // Allows us to be respond when the system reports that it is under memory
   // pressure.
-  MemoryPressureListener memory_pressure_listener_;
+  scoped_ptr<MemoryPressureListener> memory_pressure_listener_;
 
   DISALLOW_COPY_AND_ASSIGN(DiscardableMemoryProvider);
 };

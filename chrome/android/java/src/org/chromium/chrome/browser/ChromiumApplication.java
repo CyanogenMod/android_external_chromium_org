@@ -23,4 +23,15 @@ public abstract class ChromiumApplication extends ContentApplication {
 
     @CalledByNative
     protected abstract void showTermsOfServiceDialog();
+
+    /**
+     * @return Whether parental controls are enabled.  Returning true will disable
+     *         incognito mode.
+     */
+    @CalledByNative
+    protected abstract boolean areParentalControlsEnabled();
+
+    // TODO(yfriedman): This is too widely available. Plumb this through ChromeNetworkDelegate
+    // instead.
+    protected abstract PKCS11AuthenticationManager getPKCS11AuthenticationManager();
 }

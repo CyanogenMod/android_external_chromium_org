@@ -43,6 +43,8 @@
 using content::BrowserThread;
 using content::PluginService;
 
+namespace component_updater {
+
 namespace {
 
 // File name of the Pepper Flash component manifest on different platforms.
@@ -193,7 +195,7 @@ void RegisterPepperFlashWithChrome(const base::FilePath& path,
       continue;
 
     // Do it only if the version we're trying to register is newer.
-    Version registered_version(UTF16ToUTF8(it->version));
+    Version registered_version(base::UTF16ToUTF8(it->version));
     if (registered_version.IsValid() &&
         version.CompareTo(registered_version) <= 0) {
       return;
@@ -407,3 +409,6 @@ void RegisterPepperFlashComponent(ComponentUpdateService* cus) {
                           base::Bind(&StartPepperFlashUpdateRegistration, cus));
 #endif
 }
+
+}  // namespace component_updater
+

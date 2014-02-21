@@ -42,16 +42,14 @@ size_t BackUpToLineBegin(const std::string& data, size_t offset) {
   return 0;
 }
 
-// Assumes DoesLineBeginWithComment().
-std::string StripCommentFromLine(const base::StringPiece& line) {
-  std::string ret = line.as_string();
-  for (size_t i = 0; i < ret.size(); i++) {
-    if (ret[i] == '#') {
-      ret[i] = ' ';
-      break;
-    }
-  }
-  return ret;
+// Assumes DoesLineBeginWithComment(), this strips the # character from the
+// beginning and normalizes preceeding whitespace.
+std::string StripHashFromLine(const base::StringPiece& line) {
+  // Replace the # sign and everything before it with 3 spaces, so that a
+  // normal comment that has a space after the # will be indented 4 spaces
+  // (which makes our formatting come out nicely). If the comment is indented
+  // from there, we want to preserve that indenting.
+  return "   " + line.substr(line.find('#') + 1).as_string();
 }
 
 // Tries to find the comment before the setting of the given value.
@@ -79,7 +77,7 @@ void GetContextForValue(const Value& value,
     if (!DoesLineBeginWithComment(line))
       break;
 
-    comment->insert(0, StripCommentFromLine(line) + "\n");
+    comment->insert(0, StripHashFromLine(line) + "\n");
     line_off = previous_line_offset;
   }
 }
@@ -106,10 +104,10 @@ extern const char kArgs_Help[] =
     "gn args [arg name]\n"
     "  Displays all arguments declared by buildfiles along with their\n"
     "  description. Build arguments are anything in a declare_args() block\n"
-    "  in any buildfile. The comment preceeding the declaration will be\n"
+    "  in any buildfile. The comment preceding the declaration will be\n"
     "  displayed here (so comment well!).\n"
     "\n"
-    "  These arguments can be overriden on the command-line:\n"
+    "  These arguments can be overridden on the command-line:\n"
     "    --args=\"doom_melon_setting=5 component_build=1\"\n"
     "  or in a toolchain definition (see \"gn help buildargs\" for more on\n"
     "  how this all works).\n"
@@ -123,14 +121,14 @@ int RunArgs(const std::vector<std::string>& args) {
   if (!setup->DoSetup() || !setup->Run())
     return 1;
 
-  const Scope::KeyValueMap& build_args =
-      setup->build_settings().build_args().declared_arguments();
+  Scope::KeyValueMap build_args;
+  setup->build_settings().build_args().MergeDeclaredArguments(&build_args);
 
   if (args.size() == 1) {
     // Get help on a specific command.
     Scope::KeyValueMap::const_iterator found_arg = build_args.find(args[0]);
     if (found_arg == build_args.end()) {
-      Err(Location(), "Unknown build arg.",
+      Err(Location(), "Unknown build argument.",
           "You asked for \"" + args[0] + "\" which I didn't find in any "
           "buildfile\nassociated with this build.");
       return 1;
@@ -149,6 +147,12 @@ int RunArgs(const std::vector<std::string>& args) {
   for (Scope::KeyValueMap::const_iterator i = build_args.begin();
        i != build_args.end(); ++i)
     sorted_args.insert(*i);
+
+  OutputString(
+      "Available build arguments. Note that the which arguments are declared\n"
+      "and their default values may depend on other arguments or the current\n"
+      "platform and architecture. So setting some values may add, remove, or\n"
+      "change the default value of other values.\n\n");
 
   for (std::map<base::StringPiece, Value>::iterator i = sorted_args.begin();
        i != sorted_args.end(); ++i) {

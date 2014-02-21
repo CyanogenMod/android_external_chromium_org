@@ -31,6 +31,13 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          'action_name': 'invalidations_resources',
+          'variables': {
+            'grit_grd_file': 'browser/resources/invalidations_resources.grd',
+            },
+          'includes': ['../build/grit_action.gypi' ],
+        },
+        {
           'action_name': 'signin_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/signin_internals_resources.grd',
@@ -56,7 +63,7 @@
       'conditions': [
         ['OS != "ios"', {
           'dependencies': [
-            '../components/components.gyp:dom_distiller_resources',
+            '../components/component_resources.gyp:component_resources',
             '../content/browser/devtools/devtools_resources.gyp:devtools_resources',
             '../content/browser/tracing/tracing_resources.gyp:tracing_resources',
           ],
@@ -140,7 +147,7 @@
                 '<(additional_modules_input_path)',
                 '<@(_outputs)',
               ],
-              'message': 'Transforming additional modules list.',
+              'message': 'Transforming additional modules list',
             }
           ],
         }],
@@ -375,15 +382,10 @@
         {
           'includes': ['chrome_repack_chrome_200_percent.gypi']
         },
-        {
-          'includes': ['chrome_repack_chrome_touch_100_percent.gypi']
-        },
       ],
       'conditions': [
         ['OS != "ios"', {
           'dependencies': [
-            # TODO(zork): Protect this with if use_aura==1
-            '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
             '<(DEPTH)/content/content_resources.gyp:content_resources',
             '<(DEPTH)/device/bluetooth/bluetooth_strings.gyp:device_bluetooth_strings',
             '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
@@ -392,7 +394,13 @@
         }],
         ['use_ash==1', {
           'dependencies': [
+             '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
              '<(DEPTH)/ash/ash.gyp:ash_resources',
+          ],
+        }],
+        ['enable_autofill_dialog==1 and OS!="android"', {
+          'dependencies': [
+            '<(DEPTH)/third_party/libaddressinput/libaddressinput.gyp:libaddressinput_strings',
           ],
         }],
         ['OS != "mac" and OS != "ios"', {
@@ -406,12 +414,6 @@
           # since the framework build phase will copy them into the framework
           # bundle directly.
           'copies': [
-            {
-              'destination': '<(PRODUCT_DIR)',
-              'files': [
-                '<(SHARED_INTERMEDIATE_DIR)/repack/chrome.pak'
-              ],
-            },
             {
               'destination': '<(PRODUCT_DIR)',
               'files': [
@@ -451,16 +453,6 @@
                   'destination': '<(PRODUCT_DIR)',
                   'files': [
                     '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
-                  ],
-                },
-              ],
-            }],
-            ['enable_touch_ui==1', {
-              'copies': [
-                {
-                  'destination': '<(PRODUCT_DIR)',
-                  'files': [
-                    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_touch_100_percent.pak',
                   ],
                 },
               ],

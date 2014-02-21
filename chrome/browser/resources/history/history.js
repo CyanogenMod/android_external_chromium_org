@@ -231,6 +231,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     dropDown.value = 'Open action menu';
     dropDown.title = loadTimeData.getString('actionMenuDescription');
     dropDown.setAttribute('menu', '#action-menu');
+    dropDown.setAttribute('aria-haspopup', 'true');
     cr.ui.decorate(dropDown, MenuButton);
 
     dropDown.addEventListener('mousedown', setActiveVisit);
@@ -1137,8 +1138,10 @@ HistoryView.prototype.groupVisitsByDomain_ = function(visits, results) {
   };
   domains.sort(sortByVisits);
 
-  for (var i = 0, domain; domain = domains[i]; i++)
+  for (var i = 0; i < domains.length; ++i) {
+    var domain = domains[i];
     this.getGroupedVisitsDOM_(results, domain, visitsByDomain[domain]);
+  }
 };
 
 /**
@@ -1364,7 +1367,10 @@ HistoryView.prototype.setTimeColumnWidth_ = function() {
     el.style.minWidth = '-webkit-min-content';
     var width = el.clientWidth;
     el.style.minWidth = '';
-    return width;
+
+    // Add an extra pixel to prevent rounding errors from causing the text to
+    // be ellipsized at certain zoom levels (see crbug.com/329779).
+    return width + 1;
   });
   var maxWidth = widths.length ? Math.max.apply(null, widths) : 0;
 
@@ -1868,10 +1874,12 @@ function removeNode(node, onRemove) {
 
   // Delete the node when the animation is complete.
   node.addEventListener('webkitTransitionEnd', function(e) {
-    if (e.currentTarget != e.target)
-      return;
-
     node.parentNode.removeChild(node);
+
+    // In case there is nested deletion happening, prevent this event from
+    // being handled by listeners on ancestor nodes.
+    e.stopPropagation();
+
     if (onRemove)
       onRemove();
   });

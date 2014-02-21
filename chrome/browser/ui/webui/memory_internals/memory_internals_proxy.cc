@@ -20,12 +20,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
-#include "chrome/browser/search/instant_service.h"
-#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/webui/memory_internals/memory_internals_handler.h"
@@ -107,25 +104,15 @@ void GetAllWebContents(std::set<content::WebContents*>* web_contents) {
       continue;
     const std::vector<content::WebContents*> contentses =
         prerender_manager->GetAllPrerenderingContents();
-    for (size_t j = 0; j < contentses.size(); ++j)
-      web_contents->insert(contentses[j]);
-  }
-  // Add all the Instant Extended prerendered NTPs.
-  for (size_t i = 0; i < profiles.size(); ++i) {
-    const InstantService* instant_service =
-        InstantServiceFactory::GetForProfile(profiles[i]);
-    if (instant_service && instant_service->GetNTPContents())
-      web_contents->insert(instant_service->GetNTPContents());
+    web_contents->insert(contentses.begin(), contentses.end());
   }
 #if defined(ENABLE_FULL_PRINTING)
   // Add all the pages being background printed.
   printing::BackgroundPrintingManager* printing_manager =
       g_browser_process->background_printing_manager();
-  for (printing::BackgroundPrintingManager::WebContentsSet::const_iterator
-           iter = printing_manager->begin();
-       iter != printing_manager->end(); ++iter) {
-    web_contents->insert(*iter);
-  }
+  std::set<content::WebContents*> printing_contents =
+      printing_manager->CurrentContentSet();
+  web_contents->insert(printing_contents.begin(), printing_contents.end());
 #endif
 }
 
@@ -236,13 +223,13 @@ void MemoryInternalsProxy::RequestRendererDetails() {
 }
 
 void MemoryInternalsProxy::OnProcessAvailable(const ProcessData& browser) {
-  base::ListValue* process_info = new ListValue();
-  base::ListValue* extension_info = new ListValue();
+  base::ListValue* process_info = new base::ListValue();
+  base::ListValue* extension_info = new base::ListValue();
   information_->Set("processes", process_info);
   information_->Set("extensions", extension_info);
   for (PMIIterator iter = browser.processes.begin();
        iter != browser.processes.end(); ++iter) {
-    base::DictionaryValue* process = new DictionaryValue();
+    base::DictionaryValue* process = new base::DictionaryValue();
     if (iter->renderer_type == ProcessMemoryInformation::RENDERER_EXTENSION)
       extension_info->Append(process);
     else
@@ -255,7 +242,7 @@ void MemoryInternalsProxy::OnProcessAvailable(const ProcessData& browser) {
                            iter->process_type, iter->renderer_type));
     process->SetInteger("memory_private", iter->working_set.priv);
 
-    base::ListValue* titles = new ListValue();
+    base::ListValue* titles = new base::ListValue();
     process->Set("titles", titles);
     for (size_t i = 0; i < iter->titles.size(); ++i)
       titles->AppendString(iter->titles[i]);

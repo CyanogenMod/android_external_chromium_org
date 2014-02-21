@@ -5,14 +5,15 @@
 #include "apps/app_shim/app_shim_mac.h"
 
 #include "base/command_line.h"
-#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/common/chrome_switches.h"
 
 namespace apps {
 
 bool IsAppShimsEnabled() {
-  return IsAppLauncherEnabled() ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppShims);
+  // Disable app shims in tests because shims created in ~/Applications will not
+  // be cleaned up.
+  return !(CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType) ||
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppShims));
 }
 
 }  // namespace apps

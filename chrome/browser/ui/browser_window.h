@@ -7,14 +7,14 @@
 
 #include "base/callback_forward.h"
 #include "chrome/browser/lifetime/browser_close_manager.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
-#include "chrome/browser/ui/translate/translate_bubble_model.h"
 #include "chrome/common/content_settings_types.h"
-#include "chrome/common/translate/translate_errors.h"
+#include "components/translate/core/common/translate_errors.h"
 #include "ui/base/base_window.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
@@ -31,6 +31,8 @@ class TemplateURL;
 #if !defined(OS_MACOSX)
 class ToolbarView;
 #endif
+
+struct WebApplicationInfo;
 
 namespace autofill {
 class PasswordGenerator;
@@ -202,12 +204,6 @@ class BrowserWindow : public ui::BaseWindow {
   // where we take care of it ourselves at the browser level).
   virtual gfx::Rect GetRootWindowResizerRect() const = 0;
 
-  // Tells the frame not to render as inactive until the next activation change.
-  // This is required on Windows when dropdown selects are shown to prevent the
-  // select from deactivating the browser frame. A stub implementation is
-  // provided here since the functionality is Windows-specific.
-  virtual void DisableInactiveFrame() {}
-
   // Shows a confirmation dialog box for adding a search engine described by
   // |template_url|. Takes ownership of |template_url|.
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
@@ -220,15 +216,23 @@ class BrowserWindow : public ui::BaseWindow {
   // |already_bookmarked| is true if the url is already bookmarked.
   virtual void ShowBookmarkBubble(const GURL& url, bool already_bookmarked) = 0;
 
+  // Shows the Bookmark App bubble.
+  // See Extension::InitFromValueFlags::FROM_BOOKMARK for a description of
+  // bookmark apps.
+  //
+  // |web_app_info| is the WebApplicationInfo being converted into an app.
+  // |extension_id| is the id of the bookmark app.
+  virtual void ShowBookmarkAppBubble(const WebApplicationInfo& web_app_info,
+                                     const std::string& extension_id) = 0;
+
   // Shows the bookmark prompt.
   // TODO(yosin): Make ShowBookmarkPrompt pure virtual.
   virtual void ShowBookmarkPrompt() {}
 
   // Shows the translate bubble.
-  virtual void ShowTranslateBubble(
-      content::WebContents* contents,
-      TranslateBubbleModel::ViewState view_state,
-      TranslateErrors::Type error_type) = 0;
+  virtual void ShowTranslateBubble(content::WebContents* contents,
+                                   TranslateTabHelper::TranslateStep step,
+                                   TranslateErrors::Type error_type) = 0;
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   enum OneClickSigninBubbleType {
@@ -313,9 +317,6 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void Paste() = 0;
 
 #if defined(OS_MACOSX)
-  // Opens the tabpose view.
-  virtual void OpenTabpose() = 0;
-
   // Enters Mac specific fullscreen mode with chrome displayed (e.g. omnibox)
   // on OSX 10.7+, a.k.a. Lion Fullscreen mode.
   // Invalid to call on OSX earlier than 10.7.

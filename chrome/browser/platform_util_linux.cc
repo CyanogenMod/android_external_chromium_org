@@ -64,19 +64,20 @@ void ShowItemInFolderOnFileThread(const base::FilePath& full_path) {
 
 namespace platform_util {
 
-void ShowItemInFolder(const base::FilePath& full_path) {
+void ShowItemInFolder(Profile* profile, const base::FilePath& full_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(&ShowItemInFolderOnFileThread, full_path));
 }
 
-void OpenItem(const base::FilePath& full_path) {
+void OpenItem(Profile* profile, const base::FilePath& full_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(&XDGOpen, full_path.value()));
 }
 
-void OpenExternal(const GURL& url) {
+void OpenExternal(Profile* profile, const GURL& url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (url.SchemeIs("mailto"))
     XDGEmail(url.spec());
   else

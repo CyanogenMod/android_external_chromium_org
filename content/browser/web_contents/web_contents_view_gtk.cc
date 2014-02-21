@@ -253,7 +253,7 @@ void WebContentsViewGtk::SetPageTitle(const base::string16& title) {
   if (content_view) {
     GdkWindow* content_window = gtk_widget_get_window(content_view);
     if (content_window) {
-      gdk_window_set_title(content_window, UTF16ToUTF8(title).c_str());
+      gdk_window_set_title(content_window, base::UTF16ToUTF8(title).c_str());
     }
   }
 }
@@ -362,9 +362,10 @@ gboolean WebContentsViewGtk::OnFocus(GtkWidget* widget,
   return TRUE;
 }
 
-void WebContentsViewGtk::ShowContextMenu(const ContextMenuParams& params) {
+void WebContentsViewGtk::ShowContextMenu(RenderFrameHost* render_frame_host,
+                                         const ContextMenuParams& params) {
   if (delegate_)
-    delegate_->ShowContextMenu(params);
+    delegate_->ShowContextMenu(render_frame_host, params);
   else
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }

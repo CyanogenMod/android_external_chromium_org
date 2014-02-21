@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -35,7 +36,7 @@ OpenFileOperation::OpenFileOperation(
       observer_(observer),
       cache_(cache),
       create_file_operation_(new CreateFileOperation(
-          blocking_task_runner, observer, scheduler, metadata, cache)),
+          blocking_task_runner, observer, metadata)),
       download_operation_(new DownloadOperation(
           blocking_task_runner, observer, scheduler,
           metadata, cache, temporary_file_directory)),
@@ -121,23 +122,28 @@ void OpenFileOperation::OpenFileAfterFileDownloaded(
     return;
   }
 
+  scoped_ptr<base::ScopedClosureRunner>* file_closer =
+      new scoped_ptr<base::ScopedClosureRunner>;
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&internal::FileCache::MarkDirty,
+      base::Bind(&internal::FileCache::OpenForWrite,
                  base::Unretained(cache_),
-                 entry->local_id()),
-      base::Bind(&OpenFileOperation::OpenFileAfterMarkDirty,
+                 entry->local_id(),
+                 file_closer),
+      base::Bind(&OpenFileOperation::OpenFileAfterOpenForWrite,
                  weak_ptr_factory_.GetWeakPtr(),
                  local_file_path,
                  entry->local_id(),
-                 callback));
+                 callback,
+                 base::Owned(file_closer)));
 }
 
-void OpenFileOperation::OpenFileAfterMarkDirty(
+void OpenFileOperation::OpenFileAfterOpenForWrite(
     const base::FilePath& local_file_path,
     const std::string& local_id,
     const OpenFileCallback& callback,
+    scoped_ptr<base::ScopedClosureRunner>* file_closer,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -150,17 +156,21 @@ void OpenFileOperation::OpenFileAfterMarkDirty(
   ++open_files_[local_id];
   callback.Run(error, local_file_path,
                base::Bind(&OpenFileOperation::CloseFile,
-                          weak_ptr_factory_.GetWeakPtr(), local_id));
+                          weak_ptr_factory_.GetWeakPtr(),
+                          local_id,
+                          base::Passed(file_closer)));
 }
 
-void OpenFileOperation::CloseFile(const std::string& local_id) {
+void OpenFileOperation::CloseFile(
+    const std::string& local_id,
+    scoped_ptr<base::ScopedClosureRunner> file_closer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_GT(open_files_[local_id], 0);
 
   if (--open_files_[local_id] == 0) {
     // All clients closes this file, so notify to upload the file.
     open_files_.erase(local_id);
-    observer_->OnCacheFileUploadNeededByOperation(local_id);
+    observer_->OnEntryUpdatedByOperation(local_id);
 
     // Clients may have enlarged the file. By FreeDiskpSpaceIfNeededFor(0),
     // we try to ensure (0 + the-minimum-safe-margin = 512MB as of now) space.

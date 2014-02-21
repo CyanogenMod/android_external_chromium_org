@@ -16,6 +16,8 @@
 #include "ui/message_center/notification_blocker.h"
 #include "ui/message_center/notification_types.h"
 
+using base::UTF8ToUTF16;
+
 namespace message_center {
 namespace {
 
@@ -27,7 +29,7 @@ class MessageCenterImplTest : public testing::Test,
   virtual void SetUp() OVERRIDE {
     MessageCenter::Initialize();
     message_center_ = MessageCenter::Get();
-    loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_DEFAULT));
+    loop_.reset(new base::MessageLoop);
     run_loop_.reset(new base::RunLoop());
     closure_ = run_loop_->QuitClosure();
   }
@@ -724,6 +726,38 @@ TEST_F(MessageCenterImplTest, QueuedDirectUpdates) {
   EXPECT_EQ(new_size, mc_notification->image().Size());
   EXPECT_EQ(new_size, buttons[0].icon.Size());
   EXPECT_EQ(new_size, buttons[1].icon.Size());
+}
+
+TEST_F(MessageCenterImplTest, CachedUnreadCount) {
+  message_center()->AddNotification(
+      scoped_ptr<Notification>(CreateSimpleNotification("id1")));
+  message_center()->AddNotification(
+      scoped_ptr<Notification>(CreateSimpleNotification("id2")));
+  message_center()->AddNotification(
+      scoped_ptr<Notification>(CreateSimpleNotification("id3")));
+  ASSERT_EQ(3u, message_center()->UnreadNotificationCount());
+
+  // Mark 'displayed' on all notifications by using for-loop. This shouldn't
+  // recreate |notifications| inside of the loop.
+  const NotificationList::Notifications& notifications =
+      message_center()->GetVisibleNotifications();
+  for (NotificationList::Notifications::const_iterator iter =
+           notifications.begin(); iter != notifications.end(); ++iter) {
+    message_center()->DisplayedNotification((*iter)->id());
+  }
+  EXPECT_EQ(0u, message_center()->UnreadNotificationCount());
+
+  // Imitate the timeout, which recovers the unread count. Again, this shouldn't
+  // recreate |notifications| inside of the loop.
+  for (NotificationList::Notifications::const_iterator iter =
+           notifications.begin(); iter != notifications.end(); ++iter) {
+    message_center()->MarkSinglePopupAsShown((*iter)->id(), false);
+  }
+  EXPECT_EQ(3u, message_center()->UnreadNotificationCount());
+
+  // Opening the message center will reset the unread count.
+  message_center()->SetVisibility(VISIBILITY_MESSAGE_CENTER);
+  EXPECT_EQ(0u, message_center()->UnreadNotificationCount());
 }
 
 }  // namespace internal

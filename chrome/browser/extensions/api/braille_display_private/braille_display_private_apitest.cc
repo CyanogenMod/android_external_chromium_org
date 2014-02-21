@@ -194,10 +194,25 @@ IN_PROC_BROWSER_TEST_F(BrailleDisplayPrivateApiTest, WriteDots) {
 
 IN_PROC_BROWSER_TEST_F(BrailleDisplayPrivateApiTest, KeyEvents) {
   connection_data_.display_size = 11;
-  connection_data_.pending_keys.push_back(
-      BRLAPI_KEY_TYPE_CMD | BRLAPI_KEY_CMD_LNUP);
-  connection_data_.pending_keys.push_back(
-      BRLAPI_KEY_TYPE_CMD | BRLAPI_KEY_CMD_LNDN);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_LNUP);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_LNDN);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_FWINLT);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_FWINRT);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_TOP);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_BOT);
+  connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                          BRLAPI_KEY_CMD_ROUTE | 5);
+  // Space (0) and all combinations of dots.
+  for (int i = 0; i < 256; ++i) {
+    connection_data_.pending_keys.push_back(BRLAPI_KEY_TYPE_CMD |
+                                            BRLAPI_KEY_CMD_PASSDOTS | i);
+  }
   ASSERT_TRUE(RunComponentExtensionTest("braille_display_private/key_events"));
 }
 
@@ -272,18 +287,18 @@ IN_PROC_BROWSER_TEST_F(BrailleDisplayPrivateAPIUserTest,
   // Log in.
   UserManager::Get()->UserLoggedIn(kTestUserName, kTestUserName, true);
   UserManager::Get()->SessionStarted();
+  Profile* profile = ProfileManager::GetActiveUserProfile();
   ASSERT_FALSE(
-      ProfileHelper::GetSigninProfile()->IsSameProfile(
-          ProfileManager::GetDefaultProfile()))
+      ProfileHelper::GetSigninProfile()->IsSameProfile(profile))
       << ProfileHelper::GetSigninProfile()->GetDebugName() << " vs. "
-      << ProfileManager::GetDefaultProfile()->GetDebugName();
+      << profile->GetDebugName();
 
   // Create API and event delegate for sign in profile.
   BrailleDisplayPrivateAPI signin_api(ProfileHelper::GetSigninProfile());
   MockEventDelegate* signin_delegate = SetMockEventDelegate(&signin_api);
   EXPECT_EQ(0, signin_delegate->GetEventCount());
   // Create api and delegate for the logged in user.
-  BrailleDisplayPrivateAPI user_api(ProfileManager::GetDefaultProfile());
+  BrailleDisplayPrivateAPI user_api(profile);
   MockEventDelegate* user_delegate = SetMockEventDelegate(&user_api);
 
   // Send key event to both profiles.

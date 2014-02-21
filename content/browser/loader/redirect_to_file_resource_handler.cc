@@ -155,6 +155,7 @@ void RedirectToFileResourceHandler::OnResponseCompleted(
     completed_during_write_ = true;
     completed_status_ = status;
     completed_security_info_ = security_info;
+    did_defer_ = true;
     *defer = true;
     return;
   }
@@ -162,7 +163,7 @@ void RedirectToFileResourceHandler::OnResponseCompleted(
 }
 
 void RedirectToFileResourceHandler::DidCreateTemporaryFile(
-    base::PlatformFileError /*error_code*/,
+    base::File::Error /*error_code*/,
     base::PassPlatformFile file_handle,
     const base::FilePath& file_path) {
   deletable_file_ = ShareableFileReference::GetOrCreate(

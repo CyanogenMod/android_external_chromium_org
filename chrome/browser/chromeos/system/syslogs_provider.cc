@@ -51,17 +51,17 @@ const char kContextNetwork[] = "network";
 // Reads a key from the input string erasing the read values + delimiters read
 // from the initial string
 std::string ReadKey(std::string* data) {
+  std::string key;
   size_t equal_sign = data->find("=");
   if (equal_sign == std::string::npos)
-    return std::string("");
-  std::string key = data->substr(0, equal_sign);
-  data->erase(0, equal_sign);
-  if (data->size() > 0) {
-    // erase the equal to sign also
-    data->erase(0,1);
     return key;
-  }
-  return std::string();
+  key = data->substr(0, equal_sign);
+  data->erase(0, equal_sign);
+  if (data->empty())
+    return key;
+  // erase the equal to sign also
+  data->erase(0, 1);
+  return key;
 }
 
 // Reads a value from the input string; erasing the read values from
@@ -93,7 +93,8 @@ std::string ReadValue(std::string* data) {
     std::string value = data->substr(0, next_multi);
     data->erase(0, next_multi + 3);
     return value;
-  } else { // single line value
+  } else {
+    // single line value
     size_t endl_pos = data->find_first_of(kNewLineChars);
     // if we don't find a new line, we just return the rest of the data
     std::string value = data->substr(0, endl_pos);
@@ -181,11 +182,11 @@ LogDictionaryType* GetSystemLogs(base::FilePath* zip_file_name,
 class SyslogsProviderImpl : public SyslogsProvider {
  public:
   // SyslogsProvider implementation:
-  virtual CancelableTaskTracker::TaskId RequestSyslogs(
+  virtual base::CancelableTaskTracker::TaskId RequestSyslogs(
       bool compress_logs,
       SyslogsContext context,
       const ReadCompleteCallback& callback,
-      CancelableTaskTracker* tracker) OVERRIDE;
+      base::CancelableTaskTracker* tracker) OVERRIDE;
 
   static SyslogsProviderImpl* GetInstance();
 
@@ -195,7 +196,7 @@ class SyslogsProviderImpl : public SyslogsProvider {
   // Reads system logs, compresses content if requested.
   // Called from blocking pool thread.
   void ReadSyslogs(
-      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
       bool compress_logs,
       SyslogsContext context,
       const ReadCompleteCallback& callback);
@@ -212,7 +213,7 @@ class SyslogsProviderImpl : public SyslogsProvider {
   // If not canceled, run callback on originating thread (the thread on which
   // ReadSyslogs was run).
   static void RunCallbackIfNotCanceled(
-      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
       base::TaskRunner* origin_runner,
       const ReadCompleteCallback& callback,
       LogDictionaryType* logs,
@@ -224,13 +225,14 @@ class SyslogsProviderImpl : public SyslogsProvider {
 SyslogsProviderImpl::SyslogsProviderImpl() {
 }
 
-CancelableTaskTracker::TaskId SyslogsProviderImpl::RequestSyslogs(
+base::CancelableTaskTracker::TaskId SyslogsProviderImpl::RequestSyslogs(
     bool compress_logs,
     SyslogsContext context,
     const ReadCompleteCallback& callback,
-    CancelableTaskTracker* tracker) {
-  CancelableTaskTracker::IsCanceledCallback is_canceled;
-  CancelableTaskTracker::TaskId id = tracker->NewTrackedTaskId(&is_canceled);
+    base::CancelableTaskTracker* tracker) {
+  base::CancelableTaskTracker::IsCanceledCallback is_canceled;
+  base::CancelableTaskTracker::TaskId id =
+      tracker->NewTrackedTaskId(&is_canceled);
 
   ReadCompleteCallback callback_runner =
       base::Bind(&SyslogsProviderImpl::RunCallbackIfNotCanceled,
@@ -294,7 +296,7 @@ SyslogsMemoryHandler::~SyslogsMemoryHandler() {}
 
 // Called from blocking pool thread.
 void SyslogsProviderImpl::ReadSyslogs(
-    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
     bool compress_logs,
     SyslogsContext context,
     const ReadCompleteCallback& callback) {
@@ -372,7 +374,7 @@ const char* SyslogsProviderImpl::GetSyslogsContextString(
 
 // static
 void SyslogsProviderImpl::RunCallbackIfNotCanceled(
-    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
     base::TaskRunner* origin_runner,
     const ReadCompleteCallback& callback,
     LogDictionaryType* logs,

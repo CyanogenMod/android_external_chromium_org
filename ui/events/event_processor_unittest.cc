@@ -41,7 +41,7 @@ TEST_F(EventProcessorTest, Basic) {
   root()->AddChild(child.Pass());
 
   MouseEvent mouse(ET_MOUSE_MOVED, gfx::Point(10, 10), gfx::Point(10, 10),
-                   EF_NONE);
+                   EF_NONE, EF_NONE);
   DispatchEvent(&mouse);
   EXPECT_TRUE(root()->child_at(0)->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_FALSE(root()->DidReceiveEvent(ET_MOUSE_MOVED));
@@ -130,7 +130,8 @@ TEST_F(EventProcessorTest, Bounds) {
   // Dispatch a mouse event that falls on the parent, but not on the child. When
   // the default event-targeter used, the event will still reach |grandchild|,
   // because the default targeter does not look at the bounds.
-  MouseEvent mouse(ET_MOUSE_MOVED, gfx::Point(1, 1), gfx::Point(1, 1), EF_NONE);
+  MouseEvent mouse(ET_MOUSE_MOVED, gfx::Point(1, 1), gfx::Point(1, 1), EF_NONE,
+                   EF_NONE);
   DispatchEvent(&mouse);
   EXPECT_FALSE(root()->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_FALSE(parent_r->DidReceiveEvent(ET_MOUSE_MOVED));
@@ -141,9 +142,11 @@ TEST_F(EventProcessorTest, Bounds) {
   // Now install a targeter on the parent that looks at the bounds and makes
   // sure the event reaches the target only if the location of the event within
   // the bounds of the target.
+  MouseEvent mouse2(ET_MOUSE_MOVED, gfx::Point(1, 1), gfx::Point(1, 1), EF_NONE,
+                    EF_NONE);
   parent_r->SetEventTargeter(scoped_ptr<EventTargeter>(
       new BoundsEventTargeter<BoundsTestTarget>()));
-  DispatchEvent(&mouse);
+  DispatchEvent(&mouse2);
   EXPECT_FALSE(root()->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_TRUE(parent_r->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_FALSE(child_r->DidReceiveEvent(ET_MOUSE_MOVED));
@@ -151,12 +154,49 @@ TEST_F(EventProcessorTest, Bounds) {
   parent_r->ResetReceivedEvents();
 
   MouseEvent second(ET_MOUSE_MOVED, gfx::Point(12, 12), gfx::Point(12, 12),
-                    EF_NONE);
+                    EF_NONE, EF_NONE);
   DispatchEvent(&second);
   EXPECT_FALSE(root()->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_FALSE(parent_r->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_FALSE(child_r->DidReceiveEvent(ET_MOUSE_MOVED));
   EXPECT_TRUE(grandchild_r->DidReceiveEvent(ET_MOUSE_MOVED));
+}
+
+class IgnoreEventTargeter : public EventTargeter {
+ public:
+  IgnoreEventTargeter() {}
+  virtual ~IgnoreEventTargeter() {}
+
+ private:
+  // EventTargeter:
+  virtual bool SubtreeShouldBeExploredForEvent(
+      EventTarget* target, const LocatedEvent& event) OVERRIDE {
+    return false;
+  }
+};
+
+// Verifies that the EventTargeter installed on an EventTarget can dictate
+// whether the target itself can process an event.
+TEST_F(EventProcessorTest, TargeterChecksOwningEventTarget) {
+  scoped_ptr<TestEventTarget> child(new TestEventTarget());
+  root()->AddChild(child.Pass());
+
+  MouseEvent mouse(ET_MOUSE_MOVED, gfx::Point(10, 10), gfx::Point(10, 10),
+                   EF_NONE, EF_NONE);
+  DispatchEvent(&mouse);
+  EXPECT_TRUE(root()->child_at(0)->DidReceiveEvent(ET_MOUSE_MOVED));
+  EXPECT_FALSE(root()->DidReceiveEvent(ET_MOUSE_MOVED));
+  root()->child_at(0)->ResetReceivedEvents();
+
+  // Install an even handler on |child| which always prevents the target from
+  // receiving event.
+  root()->child_at(0)->SetEventTargeter(
+      scoped_ptr<EventTargeter>(new IgnoreEventTargeter()));
+  MouseEvent mouse2(ET_MOUSE_MOVED, gfx::Point(10, 10), gfx::Point(10, 10),
+                    EF_NONE, EF_NONE);
+  DispatchEvent(&mouse2);
+  EXPECT_FALSE(root()->child_at(0)->DidReceiveEvent(ET_MOUSE_MOVED));
+  EXPECT_TRUE(root()->DidReceiveEvent(ET_MOUSE_MOVED));
 }
 
 }  // namespace test

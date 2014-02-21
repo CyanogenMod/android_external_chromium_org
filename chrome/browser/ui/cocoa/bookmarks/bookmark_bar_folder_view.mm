@@ -11,7 +11,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "content/public/browser/user_metrics.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
@@ -99,11 +99,13 @@ using content::UserMetricsAction;
 }
 
 - (BOOL)wantsPeriodicDraggingUpdates {
-  // TODO(jrg): This should probably return |YES| and the controller should
-  // slide the existing bookmark buttons interactively to the side to make
-  // room for the about-to-be-dropped bookmark.
+  // TODO(jrg): The controller should slide the existing bookmark buttons
+  // interactively to the side to make room for the about-to-be-dropped
+  // bookmark.
   // http://crbug.com/35968
-  return NO;
+
+  // The bookmark_bar_folder_hover_state expects continuous callbacks.
+  return YES;
 }
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)info {

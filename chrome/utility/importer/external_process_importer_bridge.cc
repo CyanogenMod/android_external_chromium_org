@@ -29,7 +29,7 @@ const int kNumFaviconsToSend = 100;
 }
 
 ExternalProcessImporterBridge::ExternalProcessImporterBridge(
-    const DictionaryValue& localized_strings,
+    const base::DictionaryValue& localized_strings,
     IPC::Sender* sender,
     base::TaskRunner* task_runner)
     : sender_(sender),
@@ -41,7 +41,7 @@ ExternalProcessImporterBridge::ExternalProcessImporterBridge(
 
 void ExternalProcessImporterBridge::AddBookmarks(
     const std::vector<ImportedBookmarkEntry>& bookmarks,
-    const string16& first_folder_name) {
+    const base::string16& first_folder_name) {
   Send(new ProfileImportProcessHostMsg_NotifyBookmarksImportStart(
       first_folder_name, bookmarks.size()));
 
@@ -158,8 +158,9 @@ void ExternalProcessImporterBridge::NotifyEnded() {
   // The internal process detects import end when all items have been received.
 }
 
-string16 ExternalProcessImporterBridge::GetLocalizedString(int message_id) {
-  string16 message;
+base::string16 ExternalProcessImporterBridge::GetLocalizedString(
+    int message_id) {
+  base::string16 message;
   localized_strings_->GetString(base::IntToString(message_id), &message);
   return message;
 }

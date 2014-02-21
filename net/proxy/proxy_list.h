@@ -92,12 +92,22 @@ class NET_EXPORT_PRIVATE ProxyList {
   // is bad. This is distinct from Fallback(), above, to allow updating proxy
   // retry information without modifying a given transction's proxy list. Will
   // retry after |retry_delay| if positive, and will use the default proxy retry
-  // duration otherwise.
-  void UpdateRetryInfoOnFallback(ProxyRetryInfoMap* proxy_retry_info,
-                                 base::TimeDelta retry_delay,
-                                 const BoundNetLog& net_log) const;
+  // duration otherwise. Additionally updates |proxy_retry_info| with
+  // |another_proxy_to_bypass| if non-empty.
+  void UpdateRetryInfoOnFallback(
+      ProxyRetryInfoMap* proxy_retry_info,
+      base::TimeDelta retry_delay,
+      const ProxyServer& another_proxy_to_bypass,
+      const BoundNetLog& net_log) const;
 
  private:
+  // Updates |proxy_retry_info| to indicate that the |proxy_to_retry| in
+  // |proxies_| is bad.
+  void AddProxyToRetryList(ProxyRetryInfoMap* proxy_retry_info,
+                           base::TimeDelta retry_delay,
+                           const ProxyServer& proxy_to_retry,
+                           const BoundNetLog& net_log) const;
+
   // List of proxies.
   std::vector<ProxyServer> proxies_;
 };

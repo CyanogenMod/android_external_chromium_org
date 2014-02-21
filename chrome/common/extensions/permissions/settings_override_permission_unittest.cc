@@ -37,12 +37,13 @@ class SettingsOverridePermissionTest : public ExtensionManifestTest {
     if (flags & kHomepage)
       settings_override->SetString("homepage", "http://www.google.com");
     if (flags & kStartupPages) {
-      scoped_ptr<ListValue> startup_pages(new ListValue);
+      scoped_ptr<base::ListValue> startup_pages(new base::ListValue);
       startup_pages->AppendString("http://startup.com/startup.html");
       settings_override->Set("startup_pages", startup_pages.release());
     }
     if (flags & kSearchProvider) {
-      scoped_ptr<DictionaryValue> search_provider(new DictionaryValue);
+      scoped_ptr<base::DictionaryValue> search_provider(
+          new base::DictionaryValue);
       search_provider->SetString("search_url", "http://google.com/search.html");
       search_provider->SetString("name", "test");
       search_provider->SetString("keyword", "lock");
@@ -70,7 +71,7 @@ TEST_F(SettingsOverridePermissionTest, HomePage) {
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Change your home page to: google.com/",
-            UTF16ToUTF8(warnings[0]));
+            base::UTF16ToUTF8(warnings[0]));
 
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
   EXPECT_FALSE(permission_set->HasAPIPermission(
@@ -87,7 +88,7 @@ TEST_F(SettingsOverridePermissionTest, SartupPages) {
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Change your start page to: startup.com/startup.html",
-            UTF16ToUTF8(warnings[0]));
+            base::UTF16ToUTF8(warnings[0]));
 
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   EXPECT_FALSE(permission_set->HasAPIPermission(
@@ -104,7 +105,7 @@ TEST_F(SettingsOverridePermissionTest, SearchSettings) {
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Change your search settings to: google.com",
-            UTF16ToUTF8(warnings[0]));
+            base::UTF16ToUTF8(warnings[0]));
 
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));

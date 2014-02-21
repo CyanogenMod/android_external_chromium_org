@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
@@ -103,6 +104,12 @@ class PepperPluginInstance {
 
   // Sets a read-only property on the <embed> tag for this plugin instance.
   virtual void SetEmbedProperty(PP_Var key, PP_Var value) = 0;
+
+  // Sets the selected text for this plugin.
+  virtual void SetSelectedText(const base::string16& selected_text) = 0;
+
+  // Sets the link currently under the cursor.
+  virtual void SetLinkUnderCursor(const std::string& url) = 0;
 };
 
 }  // namespace content

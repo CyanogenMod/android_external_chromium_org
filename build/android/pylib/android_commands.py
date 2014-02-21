@@ -25,8 +25,6 @@ import constants
 import screenshot
 import system_properties
 
-from utils import host_path_finder
-
 try:
   from pylib import pexpect
 except:
@@ -100,7 +98,8 @@ def GetAttachedDevices(hardware=True, emulator=True, offline=False):
 
   Returns: List of devices.
   """
-  adb_devices_output = cmd_helper.GetCmdOutput([constants.ADB_PATH, 'devices'])
+  adb_devices_output = cmd_helper.GetCmdOutput([constants.GetAdbPath(),
+                                                'devices'])
 
   re_device = re.compile('^([a-zA-Z0-9_:.-]+)\tdevice$', re.MULTILINE)
   online_devices = re_device.findall(adb_devices_output)
@@ -241,7 +240,7 @@ class AndroidCommands(object):
       api_strict_mode: A boolean indicating whether fatal errors should be
           raised if this API is used improperly.
     """
-    adb_dir = os.path.dirname(constants.ADB_PATH)
+    adb_dir = os.path.dirname(constants.GetAdbPath())
     if adb_dir and adb_dir not in os.environ['PATH'].split(os.pathsep):
       # Required by third_party/android_testrunner to call directly 'adb'.
       os.environ['PATH'] += os.pathsep + adb_dir
@@ -495,7 +494,7 @@ class AndroidCommands(object):
       self._adb.SendCommand('wait-for-device')
       new_adb_pids = self.ExtractPid('adbd')
       if new_adb_pids == adb_pids:
-        logging.error('adbd on the device may not have been restarted.')
+        logging.warning('adbd on the device may not have been restarted.')
     except Exception as e:
       logging.error('Exception when trying to kill adbd on the device [%s]', e)
 
@@ -511,11 +510,11 @@ class AndroidCommands(object):
 
   def KillAdbServer(self):
     """Kill adb server."""
-    adb_cmd = [constants.ADB_PATH, 'kill-server']
+    adb_cmd = [constants.GetAdbPath(), 'kill-server']
     ret = cmd_helper.RunCmd(adb_cmd)
     retry = 0
     while retry < 3:
-      ret = cmd_helper.RunCmd(['pgrep', 'adb'])
+      ret, _ = cmd_helper.GetCmdStatusAndOutput(['pgrep', 'adb'])
       if ret != 0:
         # pgrep didn't find adb, kill-server succeeded.
         return 0
@@ -525,11 +524,11 @@ class AndroidCommands(object):
 
   def StartAdbServer(self):
     """Start adb server."""
-    adb_cmd = ['taskset', '-c', '0', constants.ADB_PATH, 'start-server']
-    ret = cmd_helper.RunCmd(adb_cmd)
+    adb_cmd = ['taskset', '-c', '0', constants.GetAdbPath(), 'start-server']
+    ret, _ = cmd_helper.GetCmdStatusAndOutput(adb_cmd)
     retry = 0
     while retry < 3:
-      ret = cmd_helper.RunCmd(['pgrep', 'adb'])
+      ret, _ = cmd_helper.GetCmdStatusAndOutput(['pgrep', 'adb'])
       if ret == 0:
         # pgrep found adb, start-server succeeded.
         # Waiting for device to reconnect before returning success.
@@ -642,6 +641,9 @@ class AndroidCommands(object):
     if "'" in command: logging.warning(command + " contains ' quotes")
     result = self._adb.SendShellCommand(
         "'%s'" % command, timeout_time).splitlines()
+    # TODO(b.kelemen): we should really be able to drop the stderr of the
+    # command or raise an exception based on what the caller wants.
+    result = [ l for l in result if not l.startswith('WARNING') ]
     if ['error: device not found'] == result:
       raise errors.DeviceUnresponsiveError('device not found')
     if log_result:
@@ -1261,7 +1263,7 @@ class AndroidCommands(object):
 
     # Spawn logcat and synchronize with it.
     for _ in range(4):
-      self._logcat = pexpect.spawn(constants.ADB_PATH, args, timeout=10,
+      self._logcat = pexpect.spawn(constants.GetAdbPath(), args, timeout=10,
                                    logfile=logfile)
       if not clear or self.SyncLogCat():
         break
@@ -1343,7 +1345,7 @@ class AndroidCommands(object):
         logging.critical('Found EOF in adb logcat. Restarting...')
         # Rerun spawn with original arguments. Note that self._logcat.args[0] is
         # the path of adb, so we don't want it in the arguments.
-        self._logcat = pexpect.spawn(constants.ADB_PATH,
+        self._logcat = pexpect.spawn(constants.GetAdbPath(),
                                      self._logcat.args[1:],
                                      timeout=self._logcat.timeout,
                                      logfile=self._logcat.logfile)
@@ -1500,20 +1502,6 @@ class AndroidCommands(object):
         }
     logging.warning('Could not find disk IO stats.')
     return None
-
-  def PurgeUnpinnedAshmem(self):
-    """Purges the unpinned ashmem memory for the whole system.
-
-    This can be used to make memory measurements more stable in particular.
-    """
-    host_path = host_path_finder.GetMostRecentHostPath('purge_ashmem')
-    if not host_path:
-      raise Exception('Could not find the purge_ashmem binary.')
-    device_path = os.path.join(constants.TEST_EXECUTABLE_DIR, 'purge_ashmem')
-    self.PushIfNeeded(host_path, device_path)
-    if self.RunShellCommand(device_path, log_result=True):
-      return
-    raise Exception('Error while purging ashmem.')
 
   def GetMemoryUsageForPid(self, pid):
     """Returns the memory usage for given pid.
@@ -1756,6 +1744,36 @@ class AndroidCommands(object):
       raise errors.InstrumentationError(
           'no test results... device setup correctly?')
     return test_results[0]
+
+  def DismissCrashDialogIfNeeded(self):
+    """Dismiss the error/ANR dialog if present.
+
+    Returns: Name of the crashed package if a dialog is focused,
+             None otherwise.
+    """
+    re_focus = re.compile(
+        r'\s*mCurrentFocus.*Application (Error|Not Responding): (\S+)}')
+
+    def _FindFocusedWindow():
+      match = None
+      for line in self.RunShellCommand('dumpsys window windows'):
+        match = re.match(re_focus, line)
+        if match:
+          break
+      return match
+
+    match = _FindFocusedWindow()
+    if not match:
+      return
+    package = match.group(2)
+    logging.warning('Trying to dismiss %s dialog for %s' % match.groups())
+    self.SendKeyEvent(KEYCODE_DPAD_RIGHT)
+    self.SendKeyEvent(KEYCODE_DPAD_RIGHT)
+    self.SendKeyEvent(KEYCODE_ENTER)
+    match = _FindFocusedWindow()
+    if match:
+      logging.error('Still showing a %s dialog for %s' % match.groups())
+    return package
 
 
 class NewLineNormalizer(object):

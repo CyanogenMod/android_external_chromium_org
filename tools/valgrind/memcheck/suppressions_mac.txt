@@ -99,6 +99,31 @@
    fun:-[NSBitmapImageRep(NSBitmapImageFileTypeExtensions) representationUsingType:properties:]
    fun:_ZN3gfx8internal24Get1xPNGBytesFromNSImageEP7NSImage
 }
+# Intentional leaks in AppKit, for an OS-level cache. Only appear on the first
+# run of each reboot.  See also issues 105525, 257276, 340847.
+{
+   bug_257276
+   Memcheck:Leak
+   ...
+   fun:ripc_DrawPath
+   fun:CGContextDrawPath
+}
+{
+   bug_257276_b
+   Memcheck:Leak
+   fun:malloc_zone_malloc
+   fun:_CFRuntimeCreateInstance
+   fun:CFNumberCreate
+   fun:get_colorspace
+   fun:initImagePng
+   fun:_CGImagePluginInitPNG
+   fun:makeImagePlus
+   fun:CGImageSourceCreateImageAtIndex
+   fun:CGImageCreateWithPNGDataProvider
+   fun:setCursorFromBundle
+   fun:CoreCursorSet
+   fun:-[NSCursor set]
+}
 
 # 2. Intentional unit test errors, stuff that is somehow a false positive
 # in our own code, or stuff that is so trivial it's not worth fixing.
@@ -1596,15 +1621,6 @@
    fun:_ZN5blink11WebViewImpl5paintEP9CGContextRKNS_7WebRectE
 }
 {
-   bug_105525
-   Memcheck:Leak
-   ...
-   fun:CGContextDrawPath
-   fun:CGContextFillPath
-   fun:_NSDrawWindowBackgroundRegion
-   fun:-[NSThemeFrame drawWindowBackgroundRegion:]
-}
-{
    bug_105526_read_a
    Memcheck:Unaddressable
    fun:CGSSetWindowColorSpace
@@ -1994,18 +2010,6 @@
    fun:_ZN2v88internal18GvnBasicBlockState32*
 }
 {
-   bug_139633
-   Memcheck:Uninitialized
-   fun:_ZL19ConvertYUVToRGB32_ChhhPh
-   fun:LinearScaleYUVToRGB32RowWithRange_C
-   fun:_ZN5media23ScaleYUVToRGB32WithRectEPKhS1_S1_Phiiiiiiiiiii
-   fun:_ZN8remoting29ConvertAndScaleYUVToRGB32RectEPKhS1_S1_iiRK7SkTSizeIiERK7SkIRectPhiS5_S8_S8_
-   fun:_ZN8remoting10DecoderVp811RenderFrameERK7SkTSizeIiERK7SkIRectPhiP8SkRegion
-   fun:_ZN8remoting13DecoderTester11RenderFrameEv
-   fun:_ZN8remoting13DecoderTester14ReceivedPacketEPNS_11VideoPacketE
-   fun:_ZN8remoting13DecoderTester20ReceivedScopedPacketE10scoped_ptrINS_11VideoPacketEE
-}
-{
    bug_148865
    Memcheck:Leak
    fun:_Znw*
@@ -2037,12 +2041,10 @@
    fun:img_data_lock
    fun:CGSImageDataLock
    fun:ripc_AcquireImage
-   fun:ripc_DrawImages
-   fun:CGContextDrawImages
-   fun:_ZN11CUIRenderer10Draw9PieceElPK13CUIDescriptorm
-   fun:_ZN11CUIRenderer4DrawE6CGRectP9CGContextPK14__CFDictionaryPS5_
-   fun:-[NSButtonCell drawBezelWithFrame:inView:]
+   fun:ripc_DrawImage*
+   fun:CGContextDrawImage*
    ...
+   fun:_ZN11CUIRenderer4DrawE6CGRectP9CGContextPK14__CFDictionaryPS5_
 }
 {
    bug_177540
@@ -2202,8 +2204,8 @@
    fun:CGContextDrawImage
    fun:__-[NSImageRep drawInRect:fromRect:operation:fraction:respectFlipped:hints:]_block_invoke_1
    fun:-[NSImageRep drawInRect:fromRect:operation:fraction:respectFlipped:hints:]
-   fun:_ZN12_GLOBAL__N_129NSImageOrNSImageRepToSkBitmapEP7NSImageP10NSImageRep7_NSSizeb
-   fun:_ZN3gfx20NSImageRepToSkBitmapEP10NSImageRep7_NSSizeb
+   fun:_ZN12_GLOBAL__N_*NSImageOrNSImageRepToSkBitmap*
+   fun:_ZN3gfx*NSImageRepToSkBitmap*
    fun:_ZN3gfx27ImageSkiaFromResizedNSImageEP7NSImage7_NSSize
    fun:_ZN3gfx20ImageSkiaFromNSImageEP7NSImage
    fun:_ZNK3gfx5Image11ToImageSkiaEv
@@ -2261,26 +2263,6 @@
    fun:_Z20Type1GetGlyphMetricsmPK18TStrikeDescriptionPK21TRenderingDescriptionmPKtPvm
    fun:_ZNK19TConcreteFontScaler19GetGlyphIdealBoundsEt
    fun:FPFontGetGlyphIdealBounds
-}
-{
-   bug_257276
-   Memcheck:Leak
-   fun:malloc_zone_calloc
-   fun:ripr_Path
-   fun:ripc_DrawPath
-   fun:CGContextDrawPath
-   fun:CGContextStrokePath
-   fun:-[NSLayoutManager(NSTextViewSupport) _drawLineForGlyphRange:inContext:from:to:at:thickness:lineOrigin:breakForDescenders:flipped:]
-   fun:-[NSLayoutManager(NSTextViewSupport) _drawLineForGlyphRange:type:baselineOffset:lineFragmentRect:lineFragmentGlyphRange:containerOrigin:isStrikethrough:]
-   fun:-[NSLayoutManager(NSTextViewSupport) drawUnderlineForGlyphRange:underlineType:baselineOffset:lineFragmentRect:lineFragmentGlyphRange:containerOrigin:]
-   fun:-[NSLayoutManager(NSTextViewSupport) _lineGlyphRange:type:lineFragmentRect:lineFragmentGlyphRange:containerOrigin:isStrikethrough:]
-   fun:-[NSLayoutManager(NSTextViewSupport) underlineGlyphRange:underlineType:lineFragmentRect:lineFragmentGlyphRange:containerOrigin:]
-   fun:-[NSLayoutManager(NSPrivate) _drawGlyphsForGlyphRange:atPoint:parameters:]
-   fun:-[NSLayoutManager(NSTextViewSupport) drawGlyphsForGlyphRange:atPoint:]
-   fun:-[NSStringDrawingTextStorage drawTextContainer:withRect:graphicsContext:baselineMode:scrollable:padding:]
-   fun:_NSStringDrawingCore
-   fun:-[NSString(NSExtendedStringDrawing) drawWithRect:options:attributes:]
-   fun:-[HyperlinkButtonCell drawTitle:withFrame:inView:]
 }
 {
    bug_257501
@@ -2359,4 +2341,49 @@
    fun:_ZN7WebCore7RuleSet13addChildRules*
    fun:_ZN7WebCore7RuleSet17addRulesFromSheet*
    fun:_ZN7WebCore21CSSDefaultStyleSheets16loadDefaultStyle*
+}
+{
+  bug_340718
+  Memcheck:Leak
+  fun:_Znw*
+  fun:_ZN7WebCore15DatabaseManagerC2Ev
+  fun:_ZN7WebCore15DatabaseManagerC1Ev
+  fun:_ZN7WebCore15DatabaseManager7managerEv
+  fun:_ZN7WebCore11FrameLoader11stopLoadingEv
+}
+{
+  bug_340726
+  Memcheck:Leak
+  fun:_Znw*
+  fun:_ZN4base17LoadNativeLibrary*
+  fun:_ZN3gfx26InitializeStaticGLBindings*
+  fun:_ZN3gfx9GLSurface30InitializeOneOffImplementation*
+  fun:_ZN3gfx9GLSurface24InitializeOneOffForTestsEv
+}
+{
+   bug_340909
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN3WTF17AtomicStringTable6createERNS_13WTFThreadDataE
+   fun:_ZN3WTFL17atomicStringTableEv
+   fun:_ZN3WTFL13atomicStringsEv
+   fun:_ZN3WTFL16addToStringTable*
+   fun:_ZN3WTF12AtomicString18addFromLiteralData*
+   fun:_ZN3WTF12AtomicString*ConstructFromLiteralTagE
+   fun:_ZN3WTF12AtomicString*ConstructFromLiteralTagE
+   fun:_ZN7WebCore9HTMLNames4initEv
+}
+{
+   bug_340957
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN7WebCore7RuleSet18ensurePendingRulesEv
+   fun:_ZN7WebCore7RuleSet21findBestRuleSetAndAdd*
+   fun:_ZN7WebCore7RuleSet7addRule*
+   fun:_ZN7WebCore7RuleSet13addChildRules*
+   fun:_ZN7WebCore7RuleSet17addRulesFromSheet*
+   fun:_ZN7WebCore21CSSDefaultStyleSheets*
+   fun:_ZN7WebCore21CSSDefaultStyleSheets*
+   ...
+   fun:_ZN7WebCore13StyleResolver*
 }

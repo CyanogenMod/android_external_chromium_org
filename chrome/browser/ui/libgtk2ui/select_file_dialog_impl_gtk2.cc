@@ -205,6 +205,15 @@ bool SelectFileDialogImplGTK::HasMultipleFileTypeChoicesImpl() {
 }
 
 void SelectFileDialogImplGTK::OnWindowDestroying(aura::Window* window) {
+  // Remove the |parent| property associated with the |dialog|.
+  for (std::set<GtkWidget*>::iterator it = dialogs_.begin();
+       it != dialogs_.end(); ++it) {
+    aura::Window* parent = reinterpret_cast<aura::Window*>(
+      g_object_get_data(G_OBJECT(*it), kAuraTransientParent));
+    if (parent == window)
+      g_object_set_data(G_OBJECT(*it), kAuraTransientParent, NULL);
+  }
+
   std::set<aura::Window*>::iterator iter = parents_.find(window);
   if (iter != parents_.end()) {
     (*iter)->RemoveObserver(this);
@@ -231,7 +240,7 @@ void SelectFileDialogImplGTK::SelectFileImpl(
     parents_.insert(owning_window);
   }
 
-  std::string title_string = UTF16ToUTF8(title);
+  std::string title_string = base::UTF16ToUTF8(title);
 
   file_type_index_ = file_type_index;
   if (file_types)
@@ -306,7 +315,7 @@ void SelectFileDialogImplGTK::AddFilters(GtkFileChooser* chooser) {
     // The description vector may be blank, in which case we are supposed to
     // use some sort of default description based on the filter.
     if (i < file_types_.extension_description_overrides.size()) {
-      gtk_file_filter_set_name(filter, UTF16ToUTF8(
+      gtk_file_filter_set_name(filter, base::UTF16ToUTF8(
           file_types_.extension_description_overrides[i]).c_str());
     } else {
       // There is no system default filter description so we use
@@ -335,12 +344,14 @@ void SelectFileDialogImplGTK::AddFilters(GtkFileChooser* chooser) {
 
 void SelectFileDialogImplGTK::FileSelected(GtkWidget* dialog,
                                            const base::FilePath& path) {
-  if (type_ == SELECT_SAVEAS_FILE)
+  if (type_ == SELECT_SAVEAS_FILE) {
     *last_saved_path_ = path.DirName();
-  else if (type_ == SELECT_OPEN_FILE || type_ == SELECT_FOLDER)
+  } else if (type_ == SELECT_OPEN_FILE || type_ == SELECT_FOLDER ||
+             type_ == SELECT_UPLOAD_FOLDER) {
     *last_opened_path_ = path.DirName();
-  else
+  } else {
     NOTREACHED();
+  }
 
   if (listener_) {
     GtkFileFilter* selected_filter =

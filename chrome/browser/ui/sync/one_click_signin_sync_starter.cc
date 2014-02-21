@@ -35,6 +35,7 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_dialog.h"
+#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -207,6 +208,7 @@ void OneClickSigninSyncStarter::LoadPolicyWithCachedCredentials() {
       signin->GetUsernameForAuthInProgress(),
       dm_token_,
       client_id_,
+      profile_->GetRequestContext(),
       base::Bind(&OneClickSigninSyncStarter::OnPolicyFetchComplete,
                  weak_pointer_factory_.GetWeakPtr()));
 }
@@ -230,8 +232,8 @@ void OneClickSigninSyncStarter::CreateNewSignedInProfile() {
   size_t icon_index = g_browser_process->profile_manager()->
       GetProfileInfoCache().ChooseAvatarIconIndexForNewProfile();
   ProfileManager::CreateMultiProfileAsync(
-      UTF8ToUTF16(signin->GetUsernameForAuthInProgress()),
-      UTF8ToUTF16(ProfileInfoCache::GetDefaultAvatarIconUrl(icon_index)),
+      base::UTF8ToUTF16(signin->GetUsernameForAuthInProgress()),
+      base::UTF8ToUTF16(ProfileInfoCache::GetDefaultAvatarIconUrl(icon_index)),
       base::Bind(&OneClickSigninSyncStarter::CompleteInitForNewProfile,
                  weak_pointer_factory_.GetWeakPtr(), desktop_type_),
       std::string());
@@ -317,7 +319,7 @@ void OneClickSigninSyncStarter::ConfirmAndSignin() {
     // Display a confirmation dialog to the user.
     browser_->window()->ShowOneClickSigninBubble(
         BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_SAML_MODAL_DIALOG,
-        UTF8ToUTF16(signin->GetUsernameForAuthInProgress()),
+        base::UTF8ToUTF16(signin->GetUsernameForAuthInProgress()),
         base::string16(), // No error message to display.
         base::Bind(&OneClickSigninSyncStarter::UntrustedSigninConfirmed,
                    weak_pointer_factory_.GetWeakPtr()));
@@ -366,6 +368,15 @@ void OneClickSigninSyncStarter::SigninFailed(
 }
 
 void OneClickSigninSyncStarter::SigninSuccess() {
+  if (switches::IsEnableWebBasedSignin())
+    MergeSessionComplete(GoogleServiceAuthError(GoogleServiceAuthError::NONE));
+}
+
+void OneClickSigninSyncStarter::MergeSessionComplete(
+    const GoogleServiceAuthError& error) {
+  // Regardless of whether the merge session completed sucessfully or not,
+  // continue with sync starting.
+
   if (!sync_setup_completed_callback_.is_null())
     sync_setup_completed_callback_.Run(SYNC_SETUP_SUCCESS);
 
@@ -437,12 +448,17 @@ void OneClickSigninSyncStarter::ShowSettingsPage(bool configure_sync) {
   } else {
     EnsureBrowser();
 
-    // If the sign in tab is showing a blank page and is not about to be
-    // closed, use it to show the settings UI.
+    // If the sign in tab is showing the native signin page or the blank page
+    // for web-based flow, and is not about to be closed, use it to show the
+    // settings UI.
     bool use_same_tab = false;
     if (web_contents()) {
       GURL current_url = web_contents()->GetLastCommittedURL();
-      use_same_tab = signin::IsContinueUrlForWebBasedSigninFlow(current_url) &&
+      bool is_chrome_signin_url =
+          current_url.GetOrigin().spec() == chrome::kChromeUIChromeSigninURL;
+      use_same_tab =
+          (is_chrome_signin_url ||
+           signin::IsContinueUrlForWebBasedSigninFlow(current_url)) &&
           !signin::IsAutoCloseEnabledInURL(current_url);
     }
     if (profile_sync_service) {

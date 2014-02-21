@@ -6,7 +6,6 @@
 
 #include "base/lazy_instance.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
@@ -18,6 +17,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 
 using content::BrowserThread;
@@ -131,7 +131,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<TabCaptureRegistry> >
 // static
 ProfileKeyedAPIFactory<TabCaptureRegistry>*
 TabCaptureRegistry::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 const TabCaptureRegistry::RegistryCaptureInfo

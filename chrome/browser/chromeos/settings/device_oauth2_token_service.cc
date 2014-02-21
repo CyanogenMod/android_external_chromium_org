@@ -11,9 +11,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/token_encryptor.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -56,8 +56,8 @@ class DeviceOAuth2TokenService::ValidatingConsumer
   // gaia::GaiaOAuthClient::Delegate implementation.
   virtual void OnRefreshTokenResponse(const std::string& access_token,
                                       int expires_in_seconds) OVERRIDE;
-  virtual void OnGetTokenInfoResponse(scoped_ptr<DictionaryValue> token_info)
-      OVERRIDE;
+  virtual void OnGetTokenInfoResponse(
+      scoped_ptr<base::DictionaryValue> token_info) OVERRIDE;
   virtual void OnOAuthError() OVERRIDE;
   virtual void OnNetworkError(int response_code) OVERRIDE;
 
@@ -88,7 +88,8 @@ DeviceOAuth2TokenService::ValidatingConsumer::ValidatingConsumer(
     DeviceOAuth2TokenService* token_service,
     const std::string& account_id,
     Consumer* consumer)
-        : OAuth2TokenService::RequestImpl(account_id, this),
+        : OAuth2TokenService::Consumer("device_token_service"),
+          OAuth2TokenService::RequestImpl(account_id, this),
           token_service_(token_service),
           consumer_(consumer),
           token_validation_done_(false),
@@ -127,7 +128,7 @@ void DeviceOAuth2TokenService::ValidatingConsumer::OnRefreshTokenResponse(
 }
 
 void DeviceOAuth2TokenService::ValidatingConsumer::OnGetTokenInfoResponse(
-    scoped_ptr<DictionaryValue> token_info) {
+    scoped_ptr<base::DictionaryValue> token_info) {
   std::string gaia_robot_id;
   token_info->GetString("email", &gaia_robot_id);
 
@@ -265,8 +266,8 @@ std::string DeviceOAuth2TokenService::GetRefreshToken(
 }
 
 std::string DeviceOAuth2TokenService::GetRobotAccountId() {
-  policy::BrowserPolicyConnector* connector =
-      g_browser_process->browser_policy_connector();
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (connector)
     return connector->GetDeviceCloudPolicyManager()->GetRobotAccountId();
   return std::string();

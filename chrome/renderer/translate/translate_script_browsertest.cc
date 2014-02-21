@@ -4,9 +4,9 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/translate/translate_errors.h"
 #include "chrome/test/base/chrome_render_view_test.h"
-#include "grit/browser_resources.h"
+#include "components/translate/core/common/translate_errors.h"
+#include "grit/component_resources.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -85,7 +85,7 @@ class TranslateScriptBrowserTest : public ChromeRenderViewTest {
   }
 
   void ExecuteScript(const std::string& script) {
-    WebScriptSource source = WebScriptSource(ASCIIToUTF16(script));
+    WebScriptSource source = WebScriptSource(base::ASCIIToUTF16(script));
     GetMainFrame()->executeScript(source);
   }
 
@@ -111,7 +111,7 @@ class TranslateScriptBrowserTest : public ChromeRenderViewTest {
   }
 
   double ExecuteScriptAndGetNumberResult(const std::string& script) {
-    WebScriptSource source = WebScriptSource(ASCIIToUTF16(script));
+    WebScriptSource source = WebScriptSource(base::ASCIIToUTF16(script));
     v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
     v8::Handle<v8::Value> result =
         GetMainFrame()->executeScriptAndReturnValue(source);
@@ -125,7 +125,7 @@ class TranslateScriptBrowserTest : public ChromeRenderViewTest {
   }
 
   bool ExecuteScriptAndGetBoolResult(const std::string& script) {
-    WebScriptSource source = WebScriptSource(ASCIIToUTF16(script));
+    WebScriptSource source = WebScriptSource(base::ASCIIToUTF16(script));
     v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
     v8::Handle<v8::Value> result =
         GetMainFrame()->executeScriptAndReturnValue(source);

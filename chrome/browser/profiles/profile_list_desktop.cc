@@ -4,16 +4,16 @@
 
 #include "chrome/browser/profiles/profile_list_desktop.h"
 
-#include "base/command_line.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_util.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/common/profile_management_switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 ProfileListDesktop::ProfileListDesktop(ProfileInfoInterface* profile_cache)
-    : profile_info_(profile_cache) {
+    : profile_info_(profile_cache),
+      omitted_item_count_(0) {
 }
 
 ProfileListDesktop::~ProfileListDesktop() {
@@ -39,18 +39,23 @@ void ProfileListDesktop::RebuildMenu() {
 
   const size_t count = profile_info_->GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
+    if (profile_info_->IsOmittedProfileAtIndex(i)) {
+      omitted_item_count_++;
+      continue;
+    }
     bool is_gaia_picture =
         profile_info_->IsUsingGAIAPictureOfProfileAtIndex(i) &&
         profile_info_->GetGAIAPictureOfProfileAtIndex(i);
 
     gfx::Image icon = profile_info_->GetAvatarIconOfProfileAtIndex(i);
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kNewProfileManagement)) {
-      // old avatar menu uses resized-small images
+    if (!switches::IsNewProfileManagement()) {
+      // The old avatar menu uses resized-small images.
       icon = profiles::GetAvatarIconForMenu(icon, is_gaia_picture);
     }
 
-    AvatarMenu::Item* item = new AvatarMenu::Item(i, i, icon);
+    AvatarMenu::Item* item = new AvatarMenu::Item(i - omitted_item_count_,
+                                                  i,
+                                                  icon);
     item->name = profile_info_->GetNameOfProfileAtIndex(i);
     item->sync_state = profile_info_->GetUserNameOfProfileAtIndex(i);
     item->profile_path = profile_info_->GetPathOfProfileAtIndex(i);
@@ -66,11 +71,30 @@ void ProfileListDesktop::RebuildMenu() {
     item->signin_required = profile_info_->ProfileIsSigninRequiredAtIndex(i);
     items_.push_back(item);
   }
+  // One omitted item is expected when a supervised-user profile is in the
+  // process of being registered, but there shouldn't be more than one.
+  VLOG_IF(2, (omitted_item_count_ > 1)) << omitted_item_count_
+                                        << " profiles omitted fom list.";
 }
 
 size_t ProfileListDesktop::MenuIndexFromProfileIndex(size_t index) {
-  // Menu indices correspond to indices in profile cache.
-  return index;
+  const size_t menu_count = GetNumberOfItems();
+  DCHECK_LT(index, menu_count + omitted_item_count_);
+
+  // In the common case, valid profile-cache indices correspond to indices in
+  // the menu.
+  if (!omitted_item_count_)
+    return index;
+
+  for (size_t i = 0; i < menu_count; ++i) {
+    const AvatarMenu::Item item = GetItemAt(i);
+    if (item.profile_index == index)
+      return i;
+  }
+
+  // The desired index was not found; return a fallback value.
+  NOTREACHED();
+  return 0;
 }
 
 void ProfileListDesktop::ActiveProfilePathChanged(base::FilePath& path) {
@@ -79,4 +103,5 @@ void ProfileListDesktop::ActiveProfilePathChanged(base::FilePath& path) {
 
 void ProfileListDesktop::ClearMenu() {
   STLDeleteElements(&items_);
+  omitted_item_count_ = 0;
 }

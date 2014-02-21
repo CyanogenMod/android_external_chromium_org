@@ -17,8 +17,11 @@ namespace chromeos {
 class AppLaunchManager : public StartupAppLauncher::Delegate {
  public:
   AppLaunchManager(Profile* profile, const std::string& app_id)
-      : startup_app_launcher_(new StartupAppLauncher(profile, app_id, this)) {
-  }
+      : startup_app_launcher_(
+            new StartupAppLauncher(profile,
+                                   app_id,
+                                   false /* diagnostic_mode */,
+                                   this)) {}
 
   void Start() {
     startup_app_launcher_->Initialize();
@@ -35,6 +38,10 @@ class AppLaunchManager : public StartupAppLauncher::Delegate {
     // TODO(xiyuan): Remove the crash-restart path for kiosk or add proper
     // network configure handling.
     startup_app_launcher_->ContinueWithNetworkReady();
+  }
+  virtual bool IsNetworkReady() OVERRIDE {
+    // See comments above. Network is assumed to be online here.
+    return true;
   }
   virtual void OnLoadingOAuthFile() OVERRIDE {}
   virtual void OnInitializingTokenService() OVERRIDE {}

@@ -11,12 +11,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/timer.h"
 #include "content/browser/loader/resource_handler.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
-#include "net/base/net_errors.h"
-
 
 namespace net {
 class URLRequest;
@@ -64,6 +63,11 @@ class CONTENT_EXPORT DownloadResourceHandler
                            const GURL& url,
                            bool* defer) OVERRIDE;
 
+  // Pass-through implementation.
+  virtual bool OnBeforeNetworkStart(int request_id,
+                                    const GURL& url,
+                                    bool* defer) OVERRIDE;
+
   // Create a new buffer, which will be handed to the download thread for file
   // writing and deletion.
   virtual bool OnWillRead(int request_id,
@@ -84,6 +88,8 @@ class CONTENT_EXPORT DownloadResourceHandler
 
   void PauseRequest();
   void ResumeRequest();
+
+  // May result in this object being deleted by its owner.
   void CancelRequest();
 
   std::string DebugString() const;
@@ -94,7 +100,8 @@ class CONTENT_EXPORT DownloadResourceHandler
   // Arrange for started_cb_ to be called on the UI thread with the
   // below values, nulling out started_cb_.  Should only be called
   // on the IO thread.
-  void CallStartedCB(DownloadItem* item, net::Error error);
+  void CallStartedCB(DownloadItem* item,
+                     DownloadInterruptReason interrupt_reason);
 
   uint32 download_id_;
   // This is read only on the IO thread, but may only

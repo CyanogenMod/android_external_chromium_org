@@ -14,6 +14,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+using base::ASCIIToUTF16;
+
 class KeywordProviderTest : public testing::Test {
  protected:
   template<class ResultType>
@@ -94,8 +96,8 @@ void KeywordProviderTest::RunTest(
 }
 
 TEST_F(KeywordProviderTest, Edit) {
-  const MatchType<string16> kEmptyMatch = { base::string16(), false };
-  TestData<string16> edit_cases[] = {
+  const MatchType<base::string16> kEmptyMatch = { base::string16(), false };
+  TestData<base::string16> edit_cases[] = {
     // Searching for a nonexistent prefix should give nothing.
     { ASCIIToUTF16("Not Found"), 0,
       { kEmptyMatch, kEmptyMatch, kEmptyMatch } },
@@ -169,7 +171,7 @@ TEST_F(KeywordProviderTest, Edit) {
       { { ASCIIToUTF16("nonsub"), true }, kEmptyMatch, kEmptyMatch } },
   };
 
-  RunTest<string16>(edit_cases, arraysize(edit_cases),
+  RunTest<base::string16>(edit_cases, arraysize(edit_cases),
                     &AutocompleteMatch::fill_into_edit);
 }
 
@@ -209,8 +211,8 @@ TEST_F(KeywordProviderTest, URL) {
 }
 
 TEST_F(KeywordProviderTest, Contents) {
-  const MatchType<string16> kEmptyMatch = { base::string16(), false };
-  TestData<string16> contents_cases[] = {
+  const MatchType<base::string16> kEmptyMatch = { base::string16(), false };
+  TestData<base::string16> contents_cases[] = {
     // No query input -> substitute "<enter query>" into contents.
     { ASCIIToUTF16("z"), 1,
       { { ASCIIToUTF16("Search z for <enter query>"), true },
@@ -247,7 +249,7 @@ TEST_F(KeywordProviderTest, Contents) {
         { ASCIIToUTF16("Search aaaa for 1 2+ 3"), false } } },
   };
 
-  RunTest<string16>(contents_cases, arraysize(contents_cases),
+  RunTest<base::string16>(contents_cases, arraysize(contents_cases),
                     &AutocompleteMatch::contents);
 }
 
@@ -271,9 +273,9 @@ TEST_F(KeywordProviderTest, RemoveKeyword) {
 TEST_F(KeywordProviderTest, GetKeywordForInput) {
   EXPECT_EQ(ASCIIToUTF16("aa"),
       kw_provider_->GetKeywordForText(ASCIIToUTF16("aa")));
-  EXPECT_EQ(string16(),
+  EXPECT_EQ(base::string16(),
       kw_provider_->GetKeywordForText(ASCIIToUTF16("aafoo")));
-  EXPECT_EQ(string16(),
+  EXPECT_EQ(base::string16(),
       kw_provider_->GetKeywordForText(ASCIIToUTF16("aa foo")));
 }
 

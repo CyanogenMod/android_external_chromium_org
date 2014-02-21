@@ -16,7 +16,6 @@ namespace net {
 class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
  public:
   MockCryptoClientStreamFactory();
-
   virtual ~MockCryptoClientStreamFactory() {}
 
   virtual QuicCryptoClientStream* CreateQuicCryptoClientStream(
@@ -29,6 +28,10 @@ class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
     handshake_mode_ = handshake_mode;
   }
 
+  void set_ssl_info(const SSLInfo* ssl_info) {
+    ssl_info_ = ssl_info;
+  }
+
   MockCryptoClientStream* last_stream() const {
     return last_stream_;
   }
@@ -36,6 +39,7 @@ class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
  private:
   MockCryptoClientStream::HandshakeMode handshake_mode_;
   MockCryptoClientStream* last_stream_;
+  const SSLInfo* ssl_info_;
 };
 
 }  // namespace net

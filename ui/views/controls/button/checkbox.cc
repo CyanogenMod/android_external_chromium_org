@@ -15,16 +15,17 @@ namespace views {
 // static
 const char Checkbox::kViewClassName[] = "Checkbox";
 
-Checkbox::Checkbox(const string16& label)
+Checkbox::Checkbox(const base::string16& label)
     : LabelButton(NULL, label),
       checked_(false) {
   SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  LabelButtonBorder* button_border = static_cast<LabelButtonBorder*>(border());
+  scoped_ptr<LabelButtonBorder> button_border(new LabelButtonBorder(style()));
   button_border->SetPainter(false, STATE_HOVERED, NULL);
   button_border->SetPainter(false, STATE_PRESSED, NULL);
   // Inset the trailing side by a couple pixels for the focus border.
   button_border->set_insets(gfx::Insets(0, 0, 0, 2));
-  set_focusable(true);
+  SetBorder(button_border.PassAs<Border>());
+  SetFocusable(true);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
@@ -100,10 +101,12 @@ void Checkbox::GetAccessibleState(ui::AccessibleViewState* state) {
 }
 
 void Checkbox::OnFocus() {
+  LabelButton::OnFocus();
   UpdateImage();
 }
 
 void Checkbox::OnBlur() {
+  LabelButton::OnBlur();
   UpdateImage();
 }
 

@@ -18,7 +18,6 @@
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/common/main_function_params.h"
 
-class ActiveTabTracker;
 class BrowserProcessImpl;
 class ChromeBrowserMainExtraParts;
 class FieldTrialSynchronizer;
@@ -29,12 +28,16 @@ class StartupBrowserCreator;
 class StartupTimeBomb;
 class ShutdownWatcherHelper;
 class ThreeDAPIObserver;
-class TranslateManager;
 
 namespace chrome_browser {
 // For use by ShowMissingLocaleMessageBox.
+#if defined(OS_WIN)
 extern const char kMissingLocaleDataTitle[];
+#endif
+
+#if defined(OS_WIN) || defined(TOOLKIT_GTK)
 extern const char kMissingLocaleDataMessage[];
+#endif
 }
 
 namespace chrome_browser_metrics {
@@ -77,9 +80,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   virtual void PostProfileInit();
   virtual void PreBrowserStart();
   virtual void PostBrowserStart();
-
-  // Override this in subclasses to initialize platform specific field trials.
-  virtual void SetupPlatformFieldTrials();
 
   // Displays a warning message that we can't find any locale data files.
   virtual void ShowMissingLocaleMessageBox() = 0;
@@ -173,7 +173,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // Android's first run is done in Java instead of native.
   scoped_ptr<first_run::MasterPrefs> master_prefs_;
 #endif
-  TranslateManager* translate_manager_;
   Profile* profile_;
   bool run_message_loop_;
   ProcessSingleton::NotifyResult notify_result_;
@@ -186,10 +185,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // PreMainMessageLoopRunThreadsCreated.
   PrefService* local_state_;
   base::FilePath user_data_dir_;
-
-#if !defined(OS_ANDROID)
-  scoped_ptr<ActiveTabTracker> active_tab_tracker_;
-#endif
 
   // Members needed across shutdown methods.
   bool restart_last_session_;

@@ -28,20 +28,18 @@ namespace test {
 
 namespace {
 
-class MockDispatcher : public base::MessageLoop::Dispatcher {
+class MockDispatcher : public base::MessagePumpDispatcher {
  public:
   MockDispatcher() : num_key_events_dispatched_(0) {
   }
 
   int num_key_events_dispatched() { return num_key_events_dispatched_; }
 
-#if defined(OS_WIN) || defined(USE_X11) || defined(USE_OZONE)
-  virtual bool Dispatch(const base::NativeEvent& event) OVERRIDE {
+  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE {
     if (ui::EventTypeFromNative(event) == ui::ET_KEY_RELEASED)
       num_key_events_dispatched_++;
-    return !ui::IsNoopEvent(event);
+    return POST_DISPATCH_NONE;
   }
-#endif
 
  private:
   int num_key_events_dispatched_;
@@ -92,9 +90,9 @@ void DispatchKeyReleaseA() {
   native_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
   dispatcher->host()->PostNativeEvent(native_event);
 #endif
-
-  // Send noop event to signal dispatcher to exit.
-  dispatcher->host()->PostNativeEvent(ui::CreateNoopEvent());
+  // Make sure the inner message-loop terminates after dispatching the events.
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::MessageLoop::current()->QuitClosure());
 }
 
 }  // namespace
@@ -111,8 +109,7 @@ TEST_F(NestedDispatcherTest, AssociatedWindowBelowLockScreen) {
   aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
   aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
       &inner_dispatcher,
-      associated_window.get(),
-      true /* nestable_tasks_allowed */);
+      associated_window.get());
   EXPECT_EQ(0, inner_dispatcher.num_key_events_dispatched());
   Shell::GetInstance()->session_state_delegate()->UnlockScreen();
 }
@@ -121,10 +118,10 @@ TEST_F(NestedDispatcherTest, AssociatedWindowBelowLockScreen) {
 TEST_F(NestedDispatcherTest, AssociatedWindowAboveLockScreen) {
   MockDispatcher inner_dispatcher;
 
-  scoped_ptr<aura::Window>mock_lock_container(
+  scoped_ptr<aura::Window> mock_lock_container(
       CreateTestWindowInShellWithId(0));
-  aura::test::CreateTestWindowWithId(0, mock_lock_container.get());
-  scoped_ptr<aura::Window> associated_window(CreateTestWindowInShellWithId(0));
+  aura::test::CreateTestWindowWithId(1, mock_lock_container.get());
+  scoped_ptr<aura::Window> associated_window(CreateTestWindowInShellWithId(2));
   EXPECT_TRUE(aura::test::WindowIsAbove(associated_window.get(),
       mock_lock_container.get()));
 
@@ -132,8 +129,7 @@ TEST_F(NestedDispatcherTest, AssociatedWindowAboveLockScreen) {
   aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
   aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
       &inner_dispatcher,
-      associated_window.get(),
-      true /* nestable_tasks_allowed */);
+      associated_window.get());
   EXPECT_EQ(1, inner_dispatcher.num_key_events_dispatched());
 }
 
@@ -151,8 +147,7 @@ TEST_F(NestedDispatcherTest, AcceleratorsHandled) {
   DispatchKeyReleaseA();
   aura::client::GetDispatcherClient(root_window)->RunWithDispatcher(
       &inner_dispatcher,
-      root_window,
-      true /* nestable_tasks_allowed */);
+      root_window);
   EXPECT_EQ(0, inner_dispatcher.num_key_events_dispatched());
   EXPECT_EQ(1, target.accelerator_pressed_count());
 }

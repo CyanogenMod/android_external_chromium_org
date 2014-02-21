@@ -12,8 +12,10 @@
 #define GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)                   \
   GPU_OP(CLEAR_ALPHA_IN_READPIXELS,                          \
          clear_alpha_in_readpixels)                          \
-  GPU_OP(CLEAR_UNIFORMS_BEFORE_PROGRAM_USE,                  \
-         clear_uniforms_before_program_use)                  \
+  GPU_OP(CLEAR_UNIFORMS_BEFORE_FIRST_PROGRAM_USE,            \
+         clear_uniforms_before_first_program_use)            \
+  GPU_OP(COUNT_ALL_IN_VARYINGS_PACKING,                      \
+         count_all_in_varyings_packing)                      \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
          disable_angle_instanced_arrays)                     \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
@@ -28,10 +30,10 @@
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
-  GPU_OP(DISABLE_FRAMEBUFFER_MULTISAMPLE,                    \
-         disable_framebuffer_multisample)                    \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
+  GPU_OP(DISABLE_MULTISAMPLING,                              \
+         disable_multisampling)                              \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
          disable_oes_standard_derivatives)                   \
   GPU_OP(ENABLE_CHROMIUM_FAST_NPOT_MO8_TEXTURES,             \
@@ -44,6 +46,8 @@
          force_integrated_gpu)                               \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
+  GPU_OP(INIT_VARYINGS_WITHOUT_STATIC_USE,                   \
+         init_varyings_without_static_use)                   \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
          max_cube_map_texture_size_limit_1024)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_4096,               \

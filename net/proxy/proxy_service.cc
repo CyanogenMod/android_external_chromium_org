@@ -343,7 +343,8 @@ class ProxyService::InitProxyResolver {
  public:
   InitProxyResolver()
       : proxy_resolver_(NULL),
-        next_state_(STATE_NONE) {
+        next_state_(STATE_NONE),
+        quick_check_enabled_(true) {
   }
 
   ~InitProxyResolver() {
@@ -367,6 +368,7 @@ class ProxyService::InitProxyResolver {
 
     decider_.reset(new ProxyScriptDecider(
         proxy_script_fetcher, dhcp_proxy_script_fetcher, net_log));
+    decider_->set_quick_check_enabled(quick_check_enabled_);
     config_ = config;
     wait_delay_ = wait_delay;
     callback_ = callback;
@@ -419,6 +421,9 @@ class ProxyService::InitProxyResolver {
     }
     return LOAD_STATE_RESOLVING_PROXY_FOR_URL;
   }
+
+  void set_quick_check_enabled(bool enabled) { quick_check_enabled_ = enabled; }
+  bool quick_check_enabled() const { return quick_check_enabled_; }
 
  private:
   enum State {
@@ -511,6 +516,7 @@ class ProxyService::InitProxyResolver {
   ProxyResolver* proxy_resolver_;
   CompletionCallback callback_;
   State next_state_;
+  bool quick_check_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(InitProxyResolver);
 };
@@ -581,6 +587,9 @@ class ProxyService::ProxyScriptDeciderPoller {
     return prev;
   }
 
+  void set_quick_check_enabled(bool enabled) { quick_check_enabled_ = enabled; }
+  bool quick_check_enabled() const { return quick_check_enabled_; }
+
  private:
   // Returns the effective poll policy (the one injected by unit-tests, or the
   // default).
@@ -624,6 +633,7 @@ class ProxyService::ProxyScriptDeciderPoller {
     // TODO(eroman): Pass a proper NetLog rather than NULL.
     decider_.reset(new ProxyScriptDecider(
         proxy_script_fetcher_, dhcp_proxy_script_fetcher_, NULL));
+    decider_->set_quick_check_enabled(quick_check_enabled_);
     int result = decider_->Start(
         config_, TimeDelta(), proxy_resolver_expects_pac_bytes_,
         base::Bind(&ProxyScriptDeciderPoller::OnProxyScriptDeciderCompleted,
@@ -709,6 +719,8 @@ class ProxyService::ProxyScriptDeciderPoller {
   static const PacPollPolicy* poll_policy_;
 
   const DefaultPollPolicy default_poll_policy_;
+
+  bool quick_check_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyScriptDeciderPoller);
 };
@@ -873,7 +885,8 @@ ProxyService::ProxyService(ProxyConfigService* config_service,
       current_state_(STATE_NONE) ,
       net_log_(net_log),
       stall_proxy_auto_config_delay_(TimeDelta::FromMilliseconds(
-          kDelayAfterNetworkChangesMs)) {
+          kDelayAfterNetworkChangesMs)),
+      quick_check_enabled_(true) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
   NetworkChangeNotifier::AddDNSObserver(this);
   ResetConfigService(config_service);
@@ -1124,6 +1137,7 @@ void ProxyService::OnInitProxyResolverComplete(int result) {
       result,
       init_proxy_resolver_->script_data(),
       NULL));
+  script_poller_->set_quick_check_enabled(quick_check_enabled_);
 
   init_proxy_resolver_.reset();
 
@@ -1192,10 +1206,13 @@ int ProxyService::ReconsiderProxyAfterError(const GURL& url,
   return did_fallback ? OK : ERR_FAILED;
 }
 
-bool ProxyService::MarkProxyAsBad(const ProxyInfo& result,
-                                  base::TimeDelta retry_delay,
-                                  const BoundNetLog& net_log) {
+bool ProxyService::MarkProxiesAsBad(
+    const ProxyInfo& result,
+    base::TimeDelta retry_delay,
+    const ProxyServer& another_bad_proxy,
+    const BoundNetLog& net_log) {
   result.proxy_list_.UpdateRetryInfoOnFallback(&proxy_retry_info_, retry_delay,
+                                               another_bad_proxy,
                                                net_log);
   return result.proxy_list_.HasUntriedProxies(proxy_retry_info_);
 }
@@ -1483,6 +1500,7 @@ void ProxyService::InitializeUsingLastFetchedConfig() {
       stall_proxy_autoconfig_until_ - TimeTicks::Now();
 
   init_proxy_resolver_.reset(new InitProxyResolver());
+  init_proxy_resolver_->set_quick_check_enabled(quick_check_enabled_);
   int rv = init_proxy_resolver_->Start(
       resolver_.get(),
       proxy_script_fetcher_.get(),

@@ -13,7 +13,7 @@
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
-#include "ui/app_list/app_list_item_model.h"
+#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/pagination_model.h"
@@ -40,10 +40,10 @@ const int kMaxIconLoadingWaitTimeInMs = 50;
 ////////////////////////////////////////////////////////////////////////////////
 // AppListMainView::IconLoader
 
-class AppListMainView::IconLoader : public AppListItemModelObserver {
+class AppListMainView::IconLoader : public AppListItemObserver {
  public:
   IconLoader(AppListMainView* owner,
-             AppListItemModel* item,
+             AppListItem* item,
              float scale)
       : owner_(owner),
         item_(item) {
@@ -58,7 +58,7 @@ class AppListMainView::IconLoader : public AppListItemModelObserver {
   }
 
  private:
-  // AppListItemModelObserver overrides:
+  // AppListItemObserver overrides:
   virtual void ItemIconChanged() OVERRIDE {
     owner_->OnItemIconLoaded(this);
     // Note that IconLoader is released here.
@@ -69,7 +69,7 @@ class AppListMainView::IconLoader : public AppListItemModelObserver {
   virtual void ItemPercentDownloadedChanged() OVERRIDE {}
 
   AppListMainView* owner_;
-  AppListItemModel* item_;
+  AppListItem* item_;
 
   DISALLOW_COPY_AND_ASSIGN(IconLoader);
 };
@@ -100,11 +100,8 @@ AppListMainView::AppListMainView(AppListViewDelegate* delegate,
 }
 
 void AppListMainView::AddContentsView() {
-  contents_view_ =
-      new ContentsView(this,
-                       pagination_model_,
-                       model_,
-                       delegate_ ? delegate_->GetStartPageContents() : NULL);
+  contents_view_ = new ContentsView(
+      this, pagination_model_, model_, delegate_);
   AddChildView(contents_view_);
 
   search_box_view_->set_contents_view(contents_view_);
@@ -179,7 +176,7 @@ void AppListMainView::PreloadIcons(gfx::NativeView parent) {
 
   pending_icon_loaders_.clear();
   for (int i = start_model_index; i < end_model_index; ++i) {
-    AppListItemModel* item = model_->item_list()->item_at(i);
+    AppListItem* item = model_->item_list()->item_at(i);
     if (item->icon().HasRepresentation(scale))
       continue;
 
@@ -203,9 +200,9 @@ void AppListMainView::OnItemIconLoaded(IconLoader* loader) {
   }
 }
 
-void AppListMainView::ActivateApp(AppListItemModel* item, int event_flags) {
+void AppListMainView::ActivateApp(AppListItem* item, int event_flags) {
   // TODO(jennyz): Activate the folder via AppListModel notification.
-  if (item->GetAppType() == AppListFolderItem::kAppType)
+  if (item->GetItemType() == AppListFolderItem::kItemType)
     contents_view_->ShowFolderContent(static_cast<AppListFolderItem*>(item));
   else
     item->Activate(event_flags);
@@ -229,8 +226,10 @@ void AppListMainView::QueryChanged(SearchBoxView* sender) {
     delegate_->StopSearch();
 }
 
-void AppListMainView::OpenResult(SearchResult* result, int event_flags) {
-  delegate_->OpenSearchResult(result, event_flags);
+void AppListMainView::OpenResult(SearchResult* result,
+                                 bool auto_launch,
+                                 int event_flags) {
+  delegate_->OpenSearchResult(result, auto_launch, event_flags);
 }
 
 void AppListMainView::InvokeResultAction(SearchResult* result,

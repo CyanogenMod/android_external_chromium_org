@@ -14,7 +14,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/timer/elapsed_timer.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/dom_activity_logger.h"
@@ -23,6 +22,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/csp_info.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/renderer_resources.h"
@@ -106,8 +106,8 @@ void UserScriptSlave::InitializeIsolatedWorld(int isolated_world_id,
     const char* schemes[] = {
       content::kHttpScheme,
       content::kHttpsScheme,
-      chrome::kFileScheme,
-      chrome::kChromeUIScheme,
+      content::kFileScheme,
+      content::kChromeUIScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
       if (i->MatchesScheme(schemes[j])) {

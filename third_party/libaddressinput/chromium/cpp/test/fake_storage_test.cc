@@ -14,76 +14,32 @@
 
 #include "fake_storage.h"
 
-#include <libaddressinput/callback.h>
-#include <libaddressinput/storage.h>
-#include <libaddressinput/util/scoped_ptr.h>
-
 #include <string>
 
 #include <gtest/gtest.h>
 
-namespace {
+#include "storage_test_runner.h"
 
-using i18n::addressinput::BuildCallback;
-using i18n::addressinput::FakeStorage;
-using i18n::addressinput::scoped_ptr;
-using i18n::addressinput::Storage;
+namespace i18n {
+namespace addressinput {
+
+namespace {
 
 // Tests for FakeStorage object.
 class FakeStorageTest : public testing::Test {
  protected:
-  FakeStorageTest() : storage_(), success_(false), key_(), data_() {}
+  FakeStorageTest() : storage_(), runner_(&storage_) {}
   virtual ~FakeStorageTest() {}
 
-  Storage::Callback* BuildCallback() {
-    return ::BuildCallback(this, &FakeStorageTest::OnDataReady);
-  }
-
   FakeStorage storage_;
-  bool success_;
-  std::string key_;
-  std::string data_;
-
- private:
-  void OnDataReady(bool success,
-                   const std::string& key,
-                   const std::string& data) {
-    success_ = success;
-    key_ = key;
-    data_ = data;
-  }
+  StorageTestRunner runner_;
 };
 
-TEST_F(FakeStorageTest, GetWithoutPutReturnsEmptyData) {
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
-
-  EXPECT_FALSE(success_);
-  EXPECT_EQ("key", key_);
-  EXPECT_TRUE(data_.empty());
-}
-
-TEST_F(FakeStorageTest, GetReturnsWhatWasPut) {
-  storage_.Put("key", "value");
-
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
-
-  EXPECT_TRUE(success_);
-  EXPECT_EQ("key", key_);
-  EXPECT_EQ("value", data_);
-}
-
-TEST_F(FakeStorageTest, SecondPutOverwritesData) {
-  storage_.Put("key", "bad-value");
-  storage_.Put("key", "good-value");
-
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
-
-  EXPECT_TRUE(success_);
-  EXPECT_EQ("key", key_);
-  EXPECT_EQ("good-value", data_);
+TEST_F(FakeStorageTest, StandardStorageTests) {
+  EXPECT_NO_FATAL_FAILURE(runner_.RunAllTests());
 }
 
 }  // namespace
+
+}  // namespace addressinput
+}  // namespace i18n

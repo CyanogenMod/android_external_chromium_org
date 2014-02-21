@@ -11,6 +11,9 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "chrome/browser/ui/ash/ash_util.h"
+#endif
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/core/common/password_form.h"
@@ -43,7 +46,7 @@ gfx::NativeWindow PasswordManagerHandler::GetNativeWindow() {
 #endif
 
 void PasswordManagerHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static const OptionsStringResource resources[] = {
@@ -69,6 +72,18 @@ void PasswordManagerHandler::GetLocalizedValues(
 
   localized_strings->SetString("passwordManagerLearnMoreURL",
                                chrome::kPasswordManagerLearnMoreURL);
+  bool disable_show_passwords = false;
+
+#if defined(OS_WIN) && defined(USE_ASH)
+  // We disable the ability to show passwords when running in Windows Metro
+  // interface.  This is because we cannot pop native Win32 dialogs from the
+  // Metro process.
+  // TODO(wfh): Revisit this if Metro usage grows.
+  if (chrome::IsNativeWindowInAsh(GetNativeWindow()))
+    disable_show_passwords = true;
+#endif
+
+  localized_strings->SetBoolean("disableShowPasswords", disable_show_passwords);
 }
 
 void PasswordManagerHandler::RegisterMessages() {
@@ -94,8 +109,9 @@ void PasswordManagerHandler::InitializeHandler() {
   password_manager_presenter_.Initialize();
 }
 
-void PasswordManagerHandler::HandleRemoveSavedPassword(const ListValue* args) {
-  std::string string_value = UTF16ToUTF8(ExtractStringValue(args));
+void PasswordManagerHandler::HandleRemoveSavedPassword(
+    const base::ListValue* args) {
+  std::string string_value = base::UTF16ToUTF8(ExtractStringValue(args));
   int index;
   if (base::StringToInt(string_value, &index) && index >= 0) {
     password_manager_presenter_.RemoveSavedPassword(static_cast<size_t>(index));
@@ -103,8 +119,8 @@ void PasswordManagerHandler::HandleRemoveSavedPassword(const ListValue* args) {
 }
 
 void PasswordManagerHandler::HandleRemovePasswordException(
-    const ListValue* args) {
-  std::string string_value = UTF16ToUTF8(ExtractStringValue(args));
+    const base::ListValue* args) {
+  std::string string_value = base::UTF16ToUTF8(ExtractStringValue(args));
   int index;
   if (base::StringToInt(string_value, &index) && index >= 0) {
     password_manager_presenter_.RemovePasswordException(
@@ -112,7 +128,8 @@ void PasswordManagerHandler::HandleRemovePasswordException(
   }
 }
 
-void PasswordManagerHandler::HandleRequestShowPassword(const ListValue* args) {
+void PasswordManagerHandler::HandleRequestShowPassword(
+    const base::ListValue* args) {
   int index;
   if (!ExtractIntegerValue(args, &index))
     NOTREACHED();
@@ -127,29 +144,30 @@ void PasswordManagerHandler::ShowPassword(
   web_ui()->CallJavascriptFunction(
       "PasswordManager.showPassword",
       base::FundamentalValue(static_cast<int>(index)),
-      StringValue(password_value));
+      base::StringValue(password_value));
 }
 
-void PasswordManagerHandler::HandleUpdatePasswordLists(const ListValue* args) {
+void PasswordManagerHandler::HandleUpdatePasswordLists(
+    const base::ListValue* args) {
   password_manager_presenter_.UpdatePasswordLists();
 }
 
 void PasswordManagerHandler::SetPasswordList(
     const ScopedVector<autofill::PasswordForm>& password_list,
     bool show_passwords) {
-  ListValue entries;
+  base::ListValue entries;
   languages_ = GetProfile()->GetPrefs()->GetString(prefs::kAcceptLanguages);
-  base::string16 placeholder(ASCIIToUTF16("        "));
+  base::string16 placeholder(base::ASCIIToUTF16("        "));
   for (size_t i = 0; i < password_list.size(); ++i) {
-    ListValue* entry = new ListValue();
-    entry->Append(new StringValue(net::FormatUrl(password_list[i]->origin,
-                                                 languages_)));
-    entry->Append(new StringValue(password_list[i]->username_value));
+    base::ListValue* entry = new base::ListValue();
+    entry->Append(new base::StringValue(net::FormatUrl(password_list[i]->origin,
+                                                       languages_)));
+    entry->Append(new base::StringValue(password_list[i]->username_value));
     if (show_passwords) {
-      entry->Append(new StringValue(password_list[i]->password_value));
+      entry->Append(new base::StringValue(password_list[i]->password_value));
     } else {
       // Use a placeholder value with the same length as the password.
-      entry->Append(new StringValue(
+      entry->Append(new base::StringValue(
           base::string16(password_list[i]->password_value.length(), ' ')));
     }
     entries.Append(entry);
@@ -161,9 +179,9 @@ void PasswordManagerHandler::SetPasswordList(
 
 void PasswordManagerHandler::SetPasswordExceptionList(
     const ScopedVector<autofill::PasswordForm>& password_exception_list) {
-  ListValue entries;
+  base::ListValue entries;
   for (size_t i = 0; i < password_exception_list.size(); ++i) {
-    entries.Append(new StringValue(
+    entries.Append(new base::StringValue(
         net::FormatUrl(password_exception_list[i]->origin, languages_)));
   }
 

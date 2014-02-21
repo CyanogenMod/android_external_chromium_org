@@ -27,12 +27,13 @@ OverdrawMetrics::OverdrawMetrics(bool record_metrics_for_frame)
       pixels_drawn_translucent_(0),
       pixels_culled_for_drawing_(0) {}
 
-static inline float WedgeProduct(gfx::PointF p1, gfx::PointF p2) {
+static inline float WedgeProduct(const gfx::PointF& p1, const gfx::PointF& p2) {
   return p1.x() * p2.y() - p1.y() * p2.x();
 }
 
 // Calculates area of an arbitrary convex polygon with up to 8 points.
-static inline float PolygonArea(gfx::PointF points[8], int num_points) {
+static inline float PolygonArea(const gfx::PointF (&points)[8],
+                                int num_points) {
   if (num_points < 3)
     return 0;
 
@@ -55,7 +56,7 @@ static inline float AreaOfMappedQuad(const gfx::Transform& transform,
   return PolygonArea(clipped_quad, num_vertices_in_clipped_quad);
 }
 
-void OverdrawMetrics::DidPaint(gfx::Rect painted_rect) {
+void OverdrawMetrics::DidPaint(const gfx::Rect& painted_rect) {
   if (!record_metrics_for_frame_)
     return;
 
@@ -69,8 +70,8 @@ void OverdrawMetrics::DidCullTilesForUpload(int count) {
 }
 
 void OverdrawMetrics::DidUpload(const gfx::Transform& transform_to_target,
-                                gfx::Rect upload_rect,
-                                gfx::Rect opaque_rect) {
+                                const gfx::Rect& upload_rect,
+                                const gfx::Rect& opaque_rect) {
   if (!record_metrics_for_frame_)
     return;
 
@@ -103,8 +104,8 @@ void OverdrawMetrics::DidUseRenderSurfaceTextureMemoryBytes(
 
 void OverdrawMetrics::DidCullForDrawing(
     const gfx::Transform& transform_to_target,
-    gfx::Rect before_cull_rect,
-    gfx::Rect after_cull_rect) {
+    const gfx::Rect& before_cull_rect,
+    const gfx::Rect& after_cull_rect) {
   if (!record_metrics_for_frame_)
     return;
 
@@ -117,8 +118,8 @@ void OverdrawMetrics::DidCullForDrawing(
 }
 
 void OverdrawMetrics::DidDraw(const gfx::Transform& transform_to_target,
-                              gfx::Rect after_cull_rect,
-                              gfx::Rect opaque_rect) {
+                              const gfx::Rect& after_cull_rect,
+                              const gfx::Rect& opaque_rect) {
   if (!record_metrics_for_frame_)
     return;
 

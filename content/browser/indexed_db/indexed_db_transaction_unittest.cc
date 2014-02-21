@@ -21,7 +21,7 @@ class IndexedDBTransactionTest : public testing::Test {
   IndexedDBTransactionTest() {
     IndexedDBFactory* factory = NULL;
     backing_store_ = new IndexedDBFakeBackingStore();
-    db_ = IndexedDBDatabase::Create(ASCIIToUTF16("db"),
+    db_ = IndexedDBDatabase::Create(base::ASCIIToUTF16("db"),
                                     backing_store_,
                                     factory,
                                     IndexedDBDatabase::Identifier());
@@ -75,6 +75,49 @@ TEST_F(IndexedDBTransactionTest, Timeout) {
       &IndexedDBTransactionTest::DummyOperation, base::Unretained(this)));
   EXPECT_EQ(IndexedDBTransaction::FINISHED, transaction->state());
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
+}
+
+class AbortObserver {
+ public:
+  AbortObserver() : abort_task_called_(false) {}
+
+  void AbortTask(IndexedDBTransaction* transaction) {
+    abort_task_called_ = true;
+  }
+
+  bool abort_task_called() const { return abort_task_called_; }
+
+ private:
+  bool abort_task_called_;
+  DISALLOW_COPY_AND_ASSIGN(AbortObserver);
+};
+
+TEST_F(IndexedDBTransactionTest, AbortTasks) {
+  const int64 id = 0;
+  const std::set<int64> scope;
+  const bool commit_failure = false;
+  scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
+      id,
+      new MockIndexedDBDatabaseCallbacks(),
+      scope,
+      indexed_db::TRANSACTION_READ_ONLY,
+      db_,
+      new IndexedDBFakeBackingStore::FakeTransaction(commit_failure));
+  db_->TransactionCreated(transaction);
+
+  AbortObserver observer;
+  transaction->ScheduleTask(
+      base::Bind(&IndexedDBTransactionTest::DummyOperation,
+                 base::Unretained(this)),
+      base::Bind(&AbortObserver::AbortTask, base::Unretained(&observer)));
+
+  // Pump the message loop so that the transaction completes all pending tasks,
+  // otherwise it will defer the commit.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_FALSE(observer.abort_task_called());
+  transaction->Commit();
+  EXPECT_TRUE(observer.abort_task_called());
 }
 
 }  // namespace

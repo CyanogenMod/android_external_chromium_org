@@ -237,7 +237,10 @@ void ParallelAuthenticator::CompleteLogin(Profile* profile,
       new AuthAttemptState(
           UserContext(canonicalized,
                       user_context.password,
-                      user_context.auth_code),
+                      user_context.auth_code,
+                      user_context.username_hash,
+                      user_context.using_oauth,
+                      user_context.auth_flow),
           !UserManager::Get()->IsKnownUser(canonicalized)));
 
   // Reset the verified flag.
@@ -343,7 +346,7 @@ void ParallelAuthenticator::LoginAsPublicAccount(const std::string& username) {
 }
 
 void ParallelAuthenticator::LoginAsKioskAccount(
-    const std::string& app_user_id) {
+    const std::string& app_user_id, bool force_ephemeral) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   current_state_.reset(new AuthAttemptState(
       UserContext(app_user_id,
@@ -354,9 +357,10 @@ void ParallelAuthenticator::LoginAsKioskAccount(
       User::USER_TYPE_KIOSK_APP,
       false));
   remove_user_data_on_failure_ = true;
+  int ephemeral_flag = force_ephemeral ? cryptohome::ENSURE_EPHEMERAL : 0;
   MountPublic(current_state_.get(),
         scoped_refptr<ParallelAuthenticator>(this),
-        cryptohome::CREATE_IF_MISSING);
+        cryptohome::CREATE_IF_MISSING | ephemeral_flag);
 }
 
 void ParallelAuthenticator::OnRetailModeLoginSuccess() {

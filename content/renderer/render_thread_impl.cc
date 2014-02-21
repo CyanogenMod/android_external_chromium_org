@@ -22,10 +22,13 @@
 #include "base/path_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "cc/base/switches.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/appcache_frontend_impl.h"
 #include "content/child/child_histogram_message_filter.h"
@@ -64,8 +67,8 @@
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/gpu_benchmarking_extension.h"
-#include "content/renderer/gpu/input_event_filter.h"
-#include "content/renderer/gpu/input_handler_manager.h"
+#include "content/renderer/input/input_event_filter.h"
+#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
@@ -76,13 +79,12 @@
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
 #include "content/renderer/media/webrtc_identity_service.h"
-#include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
-#include "content/renderer/skia_benchmarking_extension.h"
 #include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
@@ -92,7 +94,7 @@
 #include "media/filters/gpu_video_accelerator_factories.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "third_party/skia/include/core/SkGraphics.h"
+#include "skia/ext/event_tracer_impl.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
@@ -106,6 +108,7 @@
 #include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
 #include "v8/include/v8.h"
@@ -115,15 +118,10 @@
 #if defined(OS_WIN)
 #include <windows.h>
 #include <objbase.h>
-#include "base/win/scoped_com_initializer.h"
 #else
 // TODO(port)
 #include "base/memory/scoped_handle.h"
 #include "content/child/npapi/np_channel_base.h"
-#endif
-
-#if defined(OS_MACOSX)
-#include "third_party/WebKit/public/web/mac/WebScrollbarTheme.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -158,6 +156,8 @@ const int64 kInitialIdleHandlerDelayMs = 1000;
 const int64 kShortIdleHandlerDelayMs = 1000;
 const int64 kLongIdleHandlerDelayMs = 30*1000;
 const int kIdleCPUUsageThresholdInPercents = 3;
+const int kMinRasterThreads = 1;
+const int kMaxRasterThreads = 64;
 
 // Keep the global RenderThreadImpl in a TLS slot so it is impossible to access
 // incorrectly from the wrong thread.
@@ -235,7 +235,7 @@ scoped_ptr<base::SharedMemory> AllocateSharedMemoryFunction(size_t size) {
   return RenderThreadImpl::Get()->HostAllocateSharedMemoryBuffer(size);
 }
 
-void EnableWebCoreLogChannels(const std::string& channels) {
+void EnableBlinkPlatformLogChannels(const std::string& channels) {
   if (channels.empty())
     return;
   base::StringTokenizer t(channels, ", ");
@@ -321,19 +321,13 @@ void RenderThreadImpl::Init() {
 
   lazy_tls.Pointer()->Set(this);
 
-#if defined(OS_WIN)
-  // If you are running plugins in this thread you need COM active but in
-  // the normal case you don't.
-  if (RenderProcessImpl::InProcessPlugins())
-    initialize_com_.reset(new base::win::ScopedCOMInitializer());
-#endif
-
   // Register this object as the main thread.
   ChildProcess::current()->set_main_thread(this);
 
   // In single process the single process is all there is.
   suspend_webkit_shared_timer_ = true;
   notify_webkit_of_modal_loop_ = true;
+  webkit_shared_timer_suspended_ = false;
   widget_count_ = 0;
   hidden_widget_count_ = 0;
   idle_notification_delay_in_ms_ = kInitialIdleHandlerDelayMs;
@@ -353,6 +347,9 @@ void RenderThreadImpl::Init() {
   db_message_filter_ = new DBMessageFilter();
   AddFilter(db_message_filter_.get());
 
+  vc_manager_.reset(new VideoCaptureImplManager());
+  AddFilter(vc_manager_->video_capture_message_filter());
+
 #if defined(ENABLE_WEBRTC)
   peer_connection_tracker_.reset(new PeerConnectionTracker());
   AddObserver(peer_connection_tracker_.get());
@@ -362,9 +359,11 @@ void RenderThreadImpl::Init() {
   AddFilter(p2p_socket_dispatcher_.get());
 
   webrtc_identity_service_.reset(new WebRTCIdentityService());
+
+  media_stream_factory_.reset(new MediaStreamDependencyFactory(
+      p2p_socket_dispatcher_.get()));
+  AddObserver(media_stream_factory_.get());
 #endif  // defined(ENABLE_WEBRTC)
-  vc_manager_ = new VideoCaptureImplManager();
-  AddFilter(vc_manager_->video_capture_message_filter());
 
   audio_input_message_filter_ =
       new AudioInputMessageFilter(GetIOMessageLoopProxy());
@@ -373,26 +372,20 @@ void RenderThreadImpl::Init() {
   audio_message_filter_ = new AudioMessageFilter(GetIOMessageLoopProxy());
   AddFilter(audio_message_filter_.get());
 
-  midi_message_filter_ = new MIDIMessageFilter(GetIOMessageLoopProxy());
+  midi_message_filter_ = new MidiMessageFilter(GetIOMessageLoopProxy());
   AddFilter(midi_message_filter_.get());
 
   AddFilter((new IndexedDBMessageFilter(thread_safe_sender()))->GetFilter());
 
+  AddFilter((new EmbeddedWorkerContextMessageFilter())->GetFilter());
+
   GetContentClient()->renderer()->RenderThreadStarted();
 
+  InitSkiaEventTracer();
+
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableGpuBenchmarking))
+  if (command_line.HasSwitch(cc::switches::kEnableGpuBenchmarking))
       RegisterExtension(GpuBenchmarkingExtension::Get());
-
-#if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
-  if (command_line.HasSwitch(switches::kEnableMemoryBenchmarking))
-    RegisterExtension(MemoryBenchmarkingExtension::Get());
-#endif  // USE_TCMALLOC
-
-  if (command_line.HasSwitch(switches::kEnableSkiaBenchmarking)) {
-    LOG(WARNING) << "Enabling unsafe Skia benchmarking extension.";
-    RegisterExtension(SkiaBenchmarkingExtension::Get());
-  }
 
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
@@ -404,11 +397,50 @@ void RenderThreadImpl::Init() {
   memory_pressure_listener_.reset(new base::MemoryPressureListener(
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
-  renderer_process_id_ = base::kNullProcessId;
+  std::vector<base::DiscardableMemoryType> supported_types;
+  base::DiscardableMemory::GetSupportedTypes(&supported_types);
+  DCHECK(!supported_types.empty());
+
+  // The default preferred type is always the first one in list.
+  base::DiscardableMemoryType type = supported_types[0];
+
+  if (command_line.HasSwitch(switches::kUseDiscardableMemory)) {
+    std::string requested_type_name = command_line.GetSwitchValueASCII(
+        switches::kUseDiscardableMemory);
+    base::DiscardableMemoryType requested_type =
+        base::DiscardableMemory::GetNamedType(requested_type_name);
+    if (std::find(supported_types.begin(),
+                  supported_types.end(),
+                  requested_type) != supported_types.end()) {
+      type = requested_type;
+    } else {
+      LOG(ERROR) << "Requested discardable memory type is not supported.";
+    }
+  }
+
+  base::DiscardableMemory::SetPreferredType(type);
+
+  // Allow discardable memory implementations to register memory pressure
+  // listeners.
+  base::DiscardableMemory::RegisterMemoryPressureListeners();
 
   // AllocateGpuMemoryBuffer must be used exclusively on one thread but
   // it doesn't have to be the same thread RenderThreadImpl is created on.
   allocate_gpu_memory_buffer_thread_checker_.DetachFromThread();
+
+  if (command_line.HasSwitch(switches::kNumRasterThreads)) {
+    int num_raster_threads;
+    std::string string_value =
+        command_line.GetSwitchValueASCII(switches::kNumRasterThreads);
+    if (base::StringToInt(string_value, &num_raster_threads) &&
+        num_raster_threads >= kMinRasterThreads &&
+        num_raster_threads <= kMaxRasterThreads) {
+      cc::RasterWorkerPool::SetNumRasterThreads(num_raster_threads);
+    } else {
+      LOG(WARNING) << "Failed to parse switch " <<
+                      switches::kNumRasterThreads  << ": " << string_value;
+    }
+  }
 
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
@@ -440,7 +472,13 @@ void RenderThreadImpl::Shutdown() {
   RemoveFilter(audio_message_filter_.get());
   audio_message_filter_ = NULL;
 
+  // |media_stream_factory_| produces users of |vc_manager_| so it must be
+  // destroyed first.
+#if defined(ENABLE_WEBRTC)
+  media_stream_factory_.reset();
+#endif
   RemoveFilter(vc_manager_->video_capture_message_filter());
+  vc_manager_.reset();
 
   RemoveFilter(db_message_filter_.get());
   db_message_filter_ = NULL;
@@ -484,27 +522,18 @@ void RenderThreadImpl::Shutdown() {
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
   // Certain synchronous messages cannot always be processed synchronously by
-  // the browser, e.g., Chrome frame communicating with the embedding browser.
-  // This could cause a complete hang of Chrome if a windowed plug-in is trying
-  // to communicate with the renderer thread since the browser's UI thread
-  // could be stuck (within a Windows API call) trying to synchronously
-  // communicate with the plug-in.  The remedy is to pump messages on this
-  // thread while the browser is processing this request. This creates an
-  // opportunity for re-entrancy into WebKit, so we need to take care to disable
-  // callbacks, timers, and pending network loads that could trigger such
-  // callbacks.
+  // the browser, e.g., putting up UI and waiting for the user. This could cause
+  // a complete hang of Chrome if a windowed plug-in is trying to communicate
+  // with the renderer thread since the browser's UI thread could be stuck
+  // (within a Windows API call) trying to synchronously communicate with the
+  // plug-in.  The remedy is to pump messages on this thread while the browser
+  // is processing this request. This creates an opportunity for re-entrancy
+  // into WebKit, so we need to take care to disable callbacks, timers, and
+  // pending network loads that could trigger such callbacks.
   bool pumping_events = false;
   if (msg->is_sync()) {
     if (msg->is_caller_pumping_messages()) {
       pumping_events = true;
-    } else {
-      if ((msg->type() == ViewHostMsg_GetCookies::ID ||
-           msg->type() == ViewHostMsg_GetRawCookies::ID ||
-           msg->type() == ViewHostMsg_CookiesEnabled::ID) &&
-          GetContentClient()->renderer()->
-              ShouldPumpEventsDuringCookieMessage()) {
-        pumping_events = true;
-      }
     }
   }
 
@@ -583,15 +612,12 @@ scoped_refptr<base::MessageLoopProxy>
 }
 
 void RenderThreadImpl::AddRoute(int32 routing_id, IPC::Listener* listener) {
-  widget_count_++;
-  return ChildThread::AddRoute(routing_id, listener);
+  ChildThread::AddRoute(routing_id, listener);
 }
 
 void RenderThreadImpl::RemoveRoute(int32 routing_id) {
-  widget_count_--;
-  return ChildThread::RemoveRoute(routing_id);
+  ChildThread::RemoveRoute(routing_id);
 }
-
 int RenderThreadImpl::GenerateRoutingID() {
   int routing_id = MSG_ROUTING_NONE;
   Send(new ViewHostMsg_GenerateRoutingID(&routing_id));
@@ -617,33 +643,6 @@ void RenderThreadImpl::RemoveObserver(RenderProcessObserver* observer) {
 void RenderThreadImpl::SetResourceDispatcherDelegate(
     ResourceDispatcherDelegate* delegate) {
   resource_dispatcher()->set_delegate(delegate);
-}
-
-void RenderThreadImpl::WidgetHidden() {
-  DCHECK_LT(hidden_widget_count_, widget_count_);
-  hidden_widget_count_++;
-
-  if (widget_count_ && hidden_widget_count_ == widget_count_) {
-#if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
-    // TODO(vollick): Remove this this heavy-handed approach once we're polling
-    // the real system memory pressure.
-    base::MemoryPressureListener::NotifyMemoryPressure(
-        base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
-#endif
-    if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
-      ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
-  }
-}
-
-void RenderThreadImpl::WidgetRestored() {
-  DCHECK_GT(hidden_widget_count_, 0);
-  hidden_widget_count_--;
-
-  if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
-    return;
-  }
-
-  ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 }
 
 void RenderThreadImpl::EnsureWebKitInitialized() {
@@ -705,12 +704,10 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       CompositorOutputSurface::CreateFilter(output_surface_loop.get());
   AddFilter(compositor_output_surface_filter_.get());
 
-  WebScriptController::enableV8SingleThreadMode();
-
   RenderThreadImpl::RegisterSchemes();
 
-  EnableWebCoreLogChannels(
-      command_line.GetSwitchValueASCII(switches::kWebCoreLogChannels));
+  EnableBlinkPlatformLogChannels(
+      command_line.GetSwitchValueASCII(switches::kBlinkPlatformLogChannels));
 
   SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
 
@@ -728,17 +725,30 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 
   webkit::SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
+
+  // Limit use of the scaled image cache to when deferred image decoding
+  // is enabled.
+  // TODO(reveman): Allow use of this cache on Android once
+  // SkDiscardablePixelRef is used for decoded images. crbug.com/330041
+  bool use_skia_scaled_image_cache = false;
+#if !defined(OS_ANDROID)
+  use_skia_scaled_image_cache =
+      command_line.HasSwitch(switches::kEnableDeferredImageDecoding) ||
+      cc::switches::IsImplSidePaintingEnabled();
+#endif
+  if (!use_skia_scaled_image_cache)
+    SkGraphics::SetImageCacheByteLimit(0u);
 }
 
 void RenderThreadImpl::RegisterSchemes() {
   // swappedout: pages should not be accessible, and should also
   // be treated as empty documents that can commit synchronously.
-  WebString swappedout_scheme(ASCIIToUTF16(kSwappedOutScheme));
+  WebString swappedout_scheme(base::ASCIIToUTF16(kSwappedOutScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(swappedout_scheme);
   WebSecurityPolicy::registerURLSchemeAsEmptyDocument(swappedout_scheme);
 }
 
-void RenderThreadImpl::RecordAction(const UserMetricsAction& action) {
+void RenderThreadImpl::RecordAction(const base::UserMetricsAction& action) {
   Send(new ViewHostMsg_UserMetricsRecordAction(action.str_));
 }
 
@@ -794,7 +804,13 @@ void RenderThreadImpl::IdleHandler() {
 
   base::allocator::ReleaseFreeMemory();
 
-  v8::V8::IdleNotification();
+  // Continue the idle timer if the webkit shared timer is not suspended or
+  // something is left to do.
+  bool continue_timer = !webkit_shared_timer_suspended_;
+
+  if (!v8::V8::IdleNotification()) {
+    continue_timer = true;
+  }
 
   // Schedule next invocation.
   // Dampen the delay using the algorithm (if delay is in seconds):
@@ -807,8 +823,13 @@ void RenderThreadImpl::IdleHandler() {
   //    delay_ms = delay_ms + 1000*1000 / (delay_ms + 2000).
   // Note that idle_notification_delay_in_ms_ would be reset to
   // kInitialIdleHandlerDelayMs in RenderThreadImpl::WidgetHidden.
-  ScheduleIdleHandler(idle_notification_delay_in_ms_ +
-                      1000000 / (idle_notification_delay_in_ms_ + 2000));
+  if (continue_timer) {
+    ScheduleIdleHandler(idle_notification_delay_in_ms_ +
+                        1000000 / (idle_notification_delay_in_ms_ + 2000));
+
+  } else {
+    idle_timer_.Stop();
+  }
 
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, IdleNotification());
 }
@@ -849,17 +870,6 @@ void RenderThreadImpl::SetIdleNotificationDelayInMs(
   idle_notification_delay_in_ms_ = idle_notification_delay_in_ms;
 }
 
-void RenderThreadImpl::ToggleWebKitSharedTimer(bool suspend) {
-  if (suspend_webkit_shared_timer_) {
-    EnsureWebKitInitialized();
-    if (suspend) {
-      webkit_platform_support_->SuspendSharedTimer();
-    } else {
-      webkit_platform_support_->ResumeSharedTimer();
-    }
-  }
-}
-
 void RenderThreadImpl::UpdateHistograms(int sequence_number) {
   child_histogram_message_filter()->SendHistograms(sequence_number);
 }
@@ -886,6 +896,8 @@ RenderThreadImpl::GetGpuFactories() {
   scoped_refptr<GpuChannelHost> gpu_channel_host = GetGpuChannel();
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories;
+  scoped_refptr<base::MessageLoopProxy> media_loop_proxy =
+      GetMediaThreadMessageLoopProxy();
   if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
     if (!gpu_va_context_provider_ ||
         gpu_va_context_provider_->DestroyedOnMainThread()) {
@@ -901,11 +913,18 @@ RenderThreadImpl::GetGpuFactories() {
                   GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D"),
                   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits())),
           "GPU-VideoAccelerator-Offscreen");
+      if (gpu_va_context_provider_) {
+        media_loop_proxy->PostTask(
+            FROM_HERE,
+            base::Bind(
+                base::IgnoreResult(&cc::ContextProvider::BindToCurrentThread),
+                gpu_va_context_provider_));
+      }
     }
   }
-  if (gpu_channel_host) {
+  if (gpu_va_context_provider_) {
     gpu_factories = new RendererGpuVideoAcceleratorFactories(
-        gpu_channel_host.get(), gpu_va_context_provider_);
+        gpu_channel_host, media_loop_proxy, gpu_va_context_provider_);
   }
   return gpu_factories;
 }
@@ -951,7 +970,7 @@ RenderThreadImpl::OffscreenCompositorContextProvider() {
   return offscreen_compositor_contexts_;
 }
 
-scoped_refptr<cc::ContextProvider>
+scoped_refptr<webkit::gpu::ContextProviderWebContext>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
 #if defined(OS_ANDROID)
@@ -1146,7 +1165,6 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
     IPC_MESSAGE_HANDLER(ViewMsg_NetworkStateChanged, OnNetworkStateChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetRendererProcessID, OnSetRendererProcessID)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
@@ -1217,8 +1235,7 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
   io_message_loop_proxy_ = ChildProcess::current()->io_message_loop_proxy();
   shutdown_event_ = ChildProcess::current()->GetShutDownEvent();
 
-  gpu_channel_ = GpuChannelHost::Create(
-      this, 0, gpu_info, channel_handle);
+  gpu_channel_ = GpuChannelHost::Create(this, gpu_info, channel_handle);
   return gpu_channel_.get();
 }
 
@@ -1247,12 +1264,6 @@ blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
 
 MediaStreamDependencyFactory*
 RenderThreadImpl::GetMediaStreamDependencyFactory() {
-#if defined(ENABLE_WEBRTC)
-  if (!media_stream_factory_) {
-    media_stream_factory_.reset(new MediaStreamDependencyFactory(
-        vc_manager_.get(), p2p_socket_dispatcher_.get()));
-  }
-#endif
   return media_stream_factory_.get();
 }
 
@@ -1289,24 +1300,31 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
   CHECK(false);
 }
 
-void RenderThreadImpl::OnSetRendererProcessID(base::ProcessId process_id) {
-  renderer_process_id_ = process_id;
-}
-
 #if defined(OS_ANDROID)
 void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
-  ToggleWebKitSharedTimer(suspend);
+  if (suspend_webkit_shared_timer_) {
+    EnsureWebKitInitialized();
+    if (suspend) {
+      webkit_platform_support_->SuspendSharedTimer();
+    } else {
+      webkit_platform_support_->ResumeSharedTimer();
+    }
+    webkit_shared_timer_suspended_ = suspend;
+  }
 }
 #endif
 
 #if defined(OS_MACOSX)
-void RenderThreadImpl::OnUpdateScrollbarTheme(float initial_button_delay,
-                                              float autoscroll_button_delay,
-                                              bool jump_on_track_click,
-                                              bool redraw) {
+void RenderThreadImpl::OnUpdateScrollbarTheme(
+    float initial_button_delay,
+    float autoscroll_button_delay,
+    bool jump_on_track_click,
+    blink::ScrollerStyle preferred_scroller_style,
+    bool redraw) {
   blink::WebScrollbarTheme::updateScrollbars(initial_button_delay,
                                              autoscroll_button_delay,
                                              jump_on_track_click,
+                                             preferred_scroller_style,
                                              redraw);
 }
 #endif
@@ -1371,8 +1389,39 @@ void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {
   gamepad_shared_memory_reader_->SampleGamepads(*data);
 }
 
-base::ProcessId RenderThreadImpl::renderer_process_id() const {
-  return renderer_process_id_;
+void RenderThreadImpl::WidgetCreated() {
+  widget_count_++;
+}
+
+void RenderThreadImpl::WidgetDestroyed() {
+  widget_count_--;
+}
+
+void RenderThreadImpl::WidgetHidden() {
+  DCHECK_LT(hidden_widget_count_, widget_count_);
+  hidden_widget_count_++;
+
+  if (widget_count_ && hidden_widget_count_ == widget_count_) {
+#if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
+    // TODO(vollick): Remove this this heavy-handed approach once we're polling
+    // the real system memory pressure.
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
+#endif
+    if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
+      ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
+  }
+}
+
+void RenderThreadImpl::WidgetRestored() {
+  DCHECK_GT(hidden_widget_count_, 0);
+  hidden_widget_count_--;
+
+  if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
+    return;
+  }
+
+  ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 }
 
 }  // namespace content

@@ -52,7 +52,7 @@ Key features this app uses:
 </p>
 
 <ul>
-    <li>Angular JS's autodetection for
+    <li>AngularJS's autodetection for
         <a href="contentSecurityPolicy.html">CSP</a></li>
     <li>Render a list of files fetched from the
         <a href="https://developers.google.com/drive/get-started">Google Drive API</a></li>
@@ -138,6 +138,7 @@ so the content doesn't become too crunched:
 <pre data-filename="background.js">
 chrome.app.runtime.onLaunched.addListener(function(launchData) {
   chrome.app.window.create('../main.html', {
+    id: "GDriveExample",
     bounds: {
       width: 500,
       height: 600

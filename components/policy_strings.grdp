@@ -40,6 +40,9 @@
   <message name="IDS_POLICY_DM_STATUS_SERVICE_MISSING_LICENSES" desc="Message indicating the enterprise server doesn't have enough licenses to allow management.">
     Licenses exhausted
   </message>
+  <message name="IDS_POLICY_DM_STATUS_SERVICE_DEPROVISIONED" desc="Message indicating the administrator has deprovisioned this client on the server.">
+    Deprovisioned
+  </message>
   <message name="IDS_POLICY_DM_STATUS_SERVICE_POLICY_NOT_FOUND" desc="Message indicating that the enterprise server failed to find the policy to be applied to the device.">
     Policy not found
   </message>
@@ -80,6 +83,9 @@
   <message name="IDS_POLICY_VALIDATION_POLICY_PARSE_ERROR" desc="Message indicating a parse error in policy.">
     Error parsing policy settings
   </message>
+  <message name="IDS_POLICY_VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE" desc="Message indicating a policy key had an invalid verification signature.">
+    Bad verification signature.
+  </message>
   <message name="IDS_POLICY_VALIDATION_UNKNOWN_ERROR" desc="Message indicating unknown error in policy validation.">
     Unknown error
   </message>
@@ -109,6 +115,16 @@
     Unknown error
   </message>
 
+  <message name="IDS_POLICY_ASSOCIATION_STATE_ACTIVE" desc="Message indicating that the server actively manages the client.">
+    Active
+  </message>
+  <message name="IDS_POLICY_ASSOCIATION_STATE_UNMANAGED" desc="Message indicating that the server is currently not willing to manage this client.">
+    Unmanaged
+  </message>
+  <message name="IDS_POLICY_ASSOCIATION_STATE_DEPROVISIONED" desc="Message indicating that the server has deprovisioned the client.">
+    Deprovisioned
+  </message>
+
   <message name="IDS_POLICY_TYPE_ERROR" desc="The text displayed in the status column when a policy value has the wrong type.">
     Expected <ph name="VALUE_TYPE">$1<ex>boolean</ex></ph> value.
   </message>
@@ -129,6 +145,9 @@
   </message>
   <message name="IDS_POLICY_LIST_ENTRY_ERROR" desc="The text displayed in the status column for errors in list entry in a policy.">
     List entry "<ph name="ENTRY_INDEX">$1<ex>3</ex></ph>": <ph name="ERROR">$2<ex>Value is out of range.</ex></ph>
+  </message>
+  <message name="IDS_POLICY_SCHEMA_VALIDATION_ERROR" desc="The text displayed in the status column when the policy value doesn't conform to the policy schema.">
+    Schema validation error at "<ph name="ERROR_PATH">$1<ex>AC.Delays.ScreenOff</ex></ph>": <ph name="ERROR">$2<ex>Value is out of range.</ex></ph>
   </message>
   <message name="IDS_POLICY_INVALID_SEARCH_URL_ERROR" desc="The text displayed in the status column when a the URL given for DefaultSearchProviderSearchURL is invalid.">
     Invalid search URL.

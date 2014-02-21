@@ -7,6 +7,7 @@
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_browser_main_parts.h"
 #include "android_webview/browser/aw_contents_client_bridge_base.h"
+#include "android_webview/browser/aw_contents_io_thread_client.h"
 #include "android_webview/browser/aw_cookie_access_policy.h"
 #include "android_webview/browser/aw_quota_permission_context.h"
 #include "android_webview/browser/aw_web_preferences_populater.h"
@@ -56,6 +57,7 @@ public:
   void OnShouldOverrideUrlLoading(int routing_id,
                                   const base::string16& url,
                                   bool* ignore_navigation);
+  void OnSubFrameCreated(int parent_render_frame_id, int child_render_frame_id);
 
 private:
   virtual ~AwContentsMessageFilter();
@@ -66,7 +68,8 @@ private:
 };
 
 AwContentsMessageFilter::AwContentsMessageFilter(int process_id)
-    : process_id_(process_id) {
+    : BrowserMessageFilter(AndroidWebViewMsgStart),
+      process_id_(process_id) {
 }
 
 AwContentsMessageFilter::~AwContentsMessageFilter() {
@@ -85,25 +88,32 @@ bool AwContentsMessageFilter::OnMessageReceived(const IPC::Message& message,
   IPC_BEGIN_MESSAGE_MAP_EX(AwContentsMessageFilter, message, *message_was_ok)
       IPC_MESSAGE_HANDLER(AwViewHostMsg_ShouldOverrideUrlLoading,
                           OnShouldOverrideUrlLoading)
+      IPC_MESSAGE_HANDLER(AwViewHostMsg_SubFrameCreated, OnSubFrameCreated)
       IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void AwContentsMessageFilter::OnShouldOverrideUrlLoading(
-    int routing_id,
+    int render_frame_id,
     const base::string16& url,
     bool* ignore_navigation) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   *ignore_navigation = false;
   AwContentsClientBridgeBase* client =
-      AwContentsClientBridgeBase::FromID(process_id_, routing_id);
+      AwContentsClientBridgeBase::FromID(process_id_, render_frame_id);
   if (client) {
     *ignore_navigation = client->ShouldOverrideUrlLoading(url);
   } else {
     LOG(WARNING) << "Failed to find the associated render view host for url: "
                  << url;
   }
+}
+
+void AwContentsMessageFilter::OnSubFrameCreated(int parent_render_frame_id,
+                                                int child_render_frame_id) {
+  AwContentsIoThreadClient::SubFrameCreated(
+      process_id_, parent_render_frame_id, child_render_frame_id);
 }
 
 class AwAccessTokenStore : public content::AccessTokenStore {
@@ -119,7 +129,7 @@ class AwAccessTokenStore : public content::AccessTokenStore {
     request.Run(access_token_set, NULL);
   }
   virtual void SaveAccessToken(const GURL& server_url,
-                               const string16& access_token) OVERRIDE { }
+                               const base::string16& access_token) OVERRIDE { }
 
  private:
   virtual ~AwAccessTokenStore() { }
@@ -180,7 +190,7 @@ AwContentBrowserClient::GetWebContentsViewDelegate(
   return native_factory_->CreateViewDelegate(web_contents);
 }
 
-void AwContentBrowserClient::RenderProcessHostCreated(
+void AwContentBrowserClient::RenderProcessWillLaunch(
     content::RenderProcessHost* host) {
   // If WebView becomes multi-process capable, this may be insecure.
   // More benefit can be derived from the ChildProcessSecurotyPolicy by
@@ -194,7 +204,7 @@ void AwContentBrowserClient::RenderProcessHostCreated(
   content::ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
       host->GetID(), android_webview::kContentScheme);
   content::ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
-      host->GetID(), chrome::kFileScheme);
+      host->GetID(), content::kFileScheme);
 
   host->AddFilter(new AwContentsMessageFilter(host->GetID()));
 }
@@ -258,13 +268,13 @@ bool AwContentBrowserClient::AllowGetCookie(const GURL& url,
                                             const net::CookieList& cookie_list,
                                             content::ResourceContext* context,
                                             int render_process_id,
-                                            int render_view_id) {
+                                            int render_frame_id) {
   return AwCookieAccessPolicy::GetInstance()->AllowGetCookie(url,
                                                              first_party,
                                                              cookie_list,
                                                              context,
                                                              render_process_id,
-                                                             render_view_id);
+                                                             render_frame_id);
 }
 
 bool AwContentBrowserClient::AllowSetCookie(const GURL& url,
@@ -272,24 +282,24 @@ bool AwContentBrowserClient::AllowSetCookie(const GURL& url,
                                             const std::string& cookie_line,
                                             content::ResourceContext* context,
                                             int render_process_id,
-                                            int render_view_id,
+                                            int render_frame_id,
                                             net::CookieOptions* options) {
   return AwCookieAccessPolicy::GetInstance()->AllowSetCookie(url,
                                                              first_party,
                                                              cookie_line,
                                                              context,
                                                              render_process_id,
-                                                             render_view_id,
+                                                             render_frame_id,
                                                              options);
 }
 
 bool AwContentBrowserClient::AllowWorkerDatabase(
     const GURL& url,
-    const string16& name,
-    const string16& display_name,
+    const base::string16& name,
+    const base::string16& display_name,
     unsigned long estimated_size,
     content::ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_views) {
+    const std::vector<std::pair<int, int> >& render_frames) {
   // Android WebView does not yet support web workers.
   return false;
 }
@@ -297,16 +307,16 @@ bool AwContentBrowserClient::AllowWorkerDatabase(
 bool AwContentBrowserClient::AllowWorkerFileSystem(
     const GURL& url,
     content::ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_views) {
+    const std::vector<std::pair<int, int> >& render_frames) {
   // Android WebView does not yet support web workers.
   return false;
 }
 
 bool AwContentBrowserClient::AllowWorkerIndexedDB(
     const GURL& url,
-    const string16& name,
+    const base::string16& name,
     content::ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_views) {
+    const std::vector<std::pair<int, int> >& render_frames) {
   // Android WebView does not yet support web workers.
   return false;
 }
@@ -318,7 +328,7 @@ AwContentBrowserClient::CreateQuotaPermissionContext() {
 
 void AwContentBrowserClient::AllowCertificateError(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     int cert_error,
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
@@ -327,9 +337,8 @@ void AwContentBrowserClient::AllowCertificateError(
     bool strict_enforcement,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
-
   AwContentsClientBridgeBase* client =
-      AwContentsClientBridgeBase::FromID(render_process_id, render_view_id);
+      AwContentsClientBridgeBase::FromID(render_process_id, render_frame_id);
   bool cancel_request = true;
   if (client)
     client->AllowCertificateError(cert_error,
@@ -343,12 +352,12 @@ void AwContentBrowserClient::AllowCertificateError(
 
 void AwContentBrowserClient::SelectClientCertificate(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) {
   LOG(WARNING) << "Client certificate request from "
-        << cert_request_info->host_and_port
+        << cert_request_info->host_and_port.ToString()
         << " rejected. (Client certificates not supported in WebView)";
   callback.Run(NULL);
 }

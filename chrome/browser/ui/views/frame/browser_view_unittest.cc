@@ -14,13 +14,11 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/url_constants.h"
+#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/single_split_view.h"
 #include "ui/views/controls/webview/webview.h"
-
-#if defined(OS_WIN)
-#include "chrome/browser/ui/views/frame/browser_frame_win.h"
-#endif
 
 namespace {
 
@@ -67,10 +65,12 @@ TEST_F(BrowserViewTest, BrowserViewLayout) {
   TopContainerView* top_container = browser_view()->top_container();
   TabStrip* tabstrip = browser_view()->tabstrip();
   ToolbarView* toolbar = browser_view()->toolbar();
-  views::SingleSplitView* contents_split =
-      browser_view()->GetContentsSplitForTest();
+  views::View* contents_container =
+      browser_view()->GetContentsContainerForTest();
   views::WebView* contents_web_view =
       browser_view()->GetContentsWebViewForTest();
+  views::WebView* devtools_web_view =
+      browser_view()->GetDevToolsWebViewForTest();
 
   // Start with a single tab open to a normal page.
   AddTab(browser, GURL("about:blank"));
@@ -101,8 +101,11 @@ TEST_F(BrowserViewTest, BrowserViewLayout) {
       tabstrip->bounds().bottom() -
           BrowserViewLayout::kToolbarTabStripVerticalOverlap,
       toolbar->y());
-  EXPECT_EQ(0, contents_split->x());
-  EXPECT_EQ(toolbar->bounds().bottom(), contents_split->y());
+  EXPECT_EQ(0, contents_container->x());
+  EXPECT_EQ(toolbar->bounds().bottom(), contents_container->y());
+  EXPECT_EQ(top_container->bounds().bottom(), contents_container->y());
+  EXPECT_EQ(0, devtools_web_view->x());
+  EXPECT_EQ(0, devtools_web_view->y());
   EXPECT_EQ(0, contents_web_view->x());
   EXPECT_EQ(0, contents_web_view->y());
 
@@ -139,8 +142,11 @@ TEST_F(BrowserViewTest, BrowserViewLayout) {
           BrowserViewLayout::kToolbarTabStripVerticalOverlap -
           views::NonClientFrameView::kClientEdgeThickness,
       bookmark_bar->y());
-  EXPECT_EQ(toolbar->bounds().bottom(), contents_split->y());
+  EXPECT_EQ(toolbar->bounds().bottom(), contents_container->y());
   // Contents view has a "top margin" pushing it below the bookmark bar.
+  EXPECT_EQ(bookmark_bar->height() -
+                views::NonClientFrameView::kClientEdgeThickness,
+            devtools_web_view->y());
   EXPECT_EQ(bookmark_bar->height() -
                 views::NonClientFrameView::kClientEdgeThickness,
             contents_web_view->y());
@@ -159,7 +165,55 @@ TEST_F(BrowserViewTest, BrowserViewLayout) {
   BookmarkBarView::DisableAnimationsForTesting(false);
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+class BrowserViewHostedAppTest : public TestWithBrowserView {
+ public:
+  BrowserViewHostedAppTest()
+      : TestWithBrowserView(Browser::TYPE_POPUP,
+                            chrome::HOST_DESKTOP_TYPE_NATIVE,
+                            true) {
+  }
+  virtual ~BrowserViewHostedAppTest() {
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BrowserViewHostedAppTest);
+};
+
+// Test basic layout for hosted apps.
+TEST_F(BrowserViewHostedAppTest, Layout) {
+  // Add a tab because the browser starts out without any tabs at all.
+  AddTab(browser(), GURL("about:blank"));
+
+  views::View* contents_container =
+      browser_view()->GetContentsContainerForTest();
+
+  // The tabstrip, toolbar and bookmark bar should not be visible for hosted
+  // apps.
+  EXPECT_FALSE(browser_view()->tabstrip()->visible());
+  EXPECT_FALSE(browser_view()->toolbar()->visible());
+  EXPECT_FALSE(browser_view()->IsBookmarkBarVisible());
+
+  gfx::Point header_offset;
+  views::View::ConvertPointToTarget(
+      browser_view(),
+      browser_view()->frame()->non_client_view()->frame_view(),
+      &header_offset);
+
+  // The position of the bottom of the header (the bar with the window
+  // controls) in the coordinates of BrowserView.
+  int bottom_of_header = browser_view()->frame()->GetTopInset() -
+      header_offset.y();
+
+  // The web contents should be flush with the bottom of the header.
+  EXPECT_EQ(bottom_of_header, contents_container->y());
+
+  // The find bar should overlap the 1px header/web-contents separator at the
+  // bottom of the header.
+  EXPECT_EQ(browser_view()->frame()->GetTopInset() - 1,
+            browser_view()->GetFindBarBoundingBox().y());
+}
+
+#if defined(OS_WIN)
 
 // This class provides functionality to test the incognito window/normal window
 // switcher button which is added to Windows 8 metro Chrome.
@@ -216,8 +270,22 @@ class BrowserViewIncognitoSwitcherTest : public TestWithBrowserView {
     GetProfile()->SetOffTheRecordProfile(builder.Build());
 
     browser_view_ = new TestBrowserView();
-    browser_view_->SetWindowSwitcherButton(
-        MakeWindowSwitcherButton(NULL, false));
+
+    views::ImageButton* switcher_button = new views::ImageButton(NULL);
+    // The button in the incognito window has the hot-cold images inverted
+    // with respect to the regular browser window.
+    switcher_button->SetImage(
+        views::ImageButton::STATE_NORMAL,
+        ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            IDR_INCOGNITO_SWITCH_OFF));
+    switcher_button->SetImage(
+        views::ImageButton::STATE_HOVERED,
+        ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            IDR_INCOGNITO_SWITCH_ON));
+    switcher_button->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                                        views::ImageButton::ALIGN_MIDDLE);
+
+    browser_view_->SetWindowSwitcherButton(switcher_button);
     return browser_view_;
   }
 
@@ -235,7 +303,6 @@ class BrowserViewIncognitoSwitcherTest : public TestWithBrowserView {
 TEST_F(BrowserViewIncognitoSwitcherTest,
        BrowserViewIncognitoSwitcherEventHandlerTest) {
   // |browser_view_| owns the Browser, not the test class.
-  EXPECT_FALSE(browser());
   EXPECT_TRUE(browser_view()->browser());
   // Test initial state.
   EXPECT_TRUE(browser_view()->IsTabStripVisible());

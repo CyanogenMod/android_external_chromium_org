@@ -9,8 +9,6 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
@@ -26,6 +24,8 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+
+using base::ASCIIToUTF16;
 
 namespace content {
 
@@ -301,10 +301,13 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // complete and isn't conducive to quick turnarounds. As we don't currently
 // strip the app on the build bots, this is bad times.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, CrossSiteAfterCrash) {
+  // Make sure we have a live process before trying to kill it.
+  NavigateToURL(shell(), GURL("about:blank"));
+
   // Cause the renderer to crash.
-  WindowedNotificationObserver crash_observer(
-      NOTIFICATION_RENDERER_PROCESS_CLOSED,
-      NotificationService::AllSources());
+  RenderProcessHostWatcher crash_observer(
+      shell()->web_contents(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
   NavigateToURL(shell(), GURL(kChromeUICrashURL));
   // Wait for browser to notice the renderer crash.
   crash_observer.Wait();

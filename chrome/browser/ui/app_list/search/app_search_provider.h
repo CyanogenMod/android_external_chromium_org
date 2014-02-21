@@ -13,8 +13,11 @@
 
 class AppListControllerDelegate;
 class ExtensionService;
-class ExtensionSet;
 class Profile;
+
+namespace extensions {
+class ExtensionSet;
+}
 
 namespace app_list {
 
@@ -34,7 +37,7 @@ class AppSearchProvider : public SearchProvider,
   typedef ScopedVector<App> Apps;
 
   // Adds extensions to apps container if they should be displayed.
-  void AddApps(const ExtensionSet* extensions, ExtensionService* service);
+  void AddApps(const extensions::ExtensionSet& extensions);
   void RefreshApps();
 
   // content::NotificationObserver overrides:

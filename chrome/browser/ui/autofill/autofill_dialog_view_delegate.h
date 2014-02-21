@@ -149,15 +149,14 @@ class AutofillDialogViewDelegate {
                                         ServerFieldType type,
                                         const base::string16& value) = 0;
 
-
   // Decides whether the combination of all |inputs| is valid, returns a
   // map of field types to validity messages.
   virtual ValidityMessages InputsAreValid(DialogSection section,
                                           const FieldValueMap& inputs) = 0;
 
-  // Called when the user changes the contents of a text field or activates it
-  // (by focusing and then clicking it). |was_edit| is true when the function
-  // was called in response to the user editing the text field.
+  // Called when the user edits or activates a textfield or combobox.
+  // |was_edit| is true when the function was called in response to the user
+  // editing the input.
   virtual void UserEditedOrActivatedInput(DialogSection section,
                                           ServerFieldType type,
                                           gfx::NativeView parent_view,

@@ -8,7 +8,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
-#include "content/browser/renderer_host/input/gesture_event_filter.h"
+#include "content/browser/renderer_host/input/gesture_event_queue.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
@@ -29,6 +29,13 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
+#if defined(OS_ANDROID)
+#include "ui/gfx/android/view_configuration.h"
+#include "ui/gfx/screen.h"
+#else
+#include "ui/events/gestures/gesture_configuration.h"
+#endif
+
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
@@ -41,6 +48,10 @@ using blink::WebMouseWheelEvent;
 namespace content {
 namespace {
 
+// TODO(jdduke): Instead of relying on command line flags or conditional
+// conditional compilation here, we should instead use an InputRouter::Settings
+// construct, supplied and customized by the RenderWidgetHostView. See
+// crbug.com/343917.
 bool GetTouchAckTimeoutDelayMs(size_t* touch_ack_timeout_delay_ms) {
   CommandLine* parsed_command_line = CommandLine::ForCurrentProcess();
   if (!parsed_command_line->HasSwitch(switches::kTouchAckTimeoutDelayMs))
@@ -54,6 +65,37 @@ bool GetTouchAckTimeoutDelayMs(size_t* touch_ack_timeout_delay_ms) {
 
   *touch_ack_timeout_delay_ms = timeout_value;
   return true;
+}
+
+#if defined(OS_ANDROID)
+double GetTouchMoveSlopSuppressionLengthDips() {
+  const double touch_slop_length_pixels =
+      static_cast<double>(gfx::ViewConfiguration::GetTouchSlopInPixels());
+  const double device_scale_factor =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().device_scale_factor();
+  return touch_slop_length_pixels / device_scale_factor;
+}
+#elif defined(USE_AURA)
+double GetTouchMoveSlopSuppressionLengthDips() {
+  return ui::GestureConfiguration::max_touch_move_in_pixels_for_click();
+}
+#else
+double GetTouchMoveSlopSuppressionLengthDips() {
+  return 0;
+}
+#endif
+
+TouchEventQueue::TouchScrollingMode GetTouchScrollingMode() {
+  std::string modeString = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(switches::kTouchScrollingMode);
+  if (modeString == switches::kTouchScrollingModeSyncTouchmove)
+    return TouchEventQueue::TOUCH_SCROLLING_MODE_SYNC_TOUCHMOVE;
+  if (modeString == switches::kTouchScrollingModeAbsorbTouchmove)
+    return TouchEventQueue::TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE;
+  if (modeString != "" &&
+      modeString != switches::kTouchScrollingModeTouchcancel)
+    LOG(ERROR) << "Invalid --touch-scrolling-mode option: " << modeString;
+  return TouchEventQueue::TOUCH_SCROLLING_MODE_DEFAULT;
 }
 
 GestureEventWithLatencyInfo MakeGestureEvent(WebInputEvent::Type type,
@@ -100,15 +142,15 @@ InputRouterImpl::InputRouterImpl(IPC::Sender* sender,
       move_caret_pending_(false),
       mouse_move_pending_(false),
       mouse_wheel_pending_(false),
-      has_touch_handler_(false),
       touch_ack_timeout_enabled_(false),
       touch_ack_timeout_delay_ms_(std::numeric_limits<size_t>::max()),
       current_ack_source_(ACK_SOURCE_NONE),
-      gesture_event_filter_(new GestureEventFilter(this, this)) {
+      gesture_event_queue_(new GestureEventQueue(this, this)) {
   DCHECK(sender);
   DCHECK(client);
   DCHECK(ack_handler);
-  touch_event_queue_.reset(new TouchEventQueue(this));
+  touch_event_queue_.reset(new TouchEventQueue(
+      this, GetTouchScrollingMode(), GetTouchMoveSlopSuppressionLengthDips()));
   touch_ack_timeout_enabled_ =
       GetTouchAckTimeoutDelayMs(&touch_ack_timeout_delay_ms_);
   touch_event_queue_->SetAckTimeoutEnabled(touch_ack_timeout_enabled_,
@@ -146,11 +188,11 @@ void InputRouterImpl::SendMouseEvent(
   }
 
   if (mouse_event.event.type == WebInputEvent::MouseDown &&
-      gesture_event_filter_->GetTouchpadTapSuppressionController()->
+      gesture_event_queue_->GetTouchpadTapSuppressionController()->
           ShouldDeferMouseDown(mouse_event))
       return;
   if (mouse_event.event.type == WebInputEvent::MouseUp &&
-      gesture_event_filter_->GetTouchpadTapSuppressionController()->
+      gesture_event_queue_->GetTouchpadTapSuppressionController()->
           ShouldSuppressMouseUp())
       return;
 
@@ -190,21 +232,22 @@ void InputRouterImpl::SendKeyboardEvent(const NativeWebKeyboardEvent& key_event,
   key_queue_.push_back(key_event);
   HISTOGRAM_COUNTS_100("Renderer.KeyboardQueueSize", key_queue_.size());
 
-  gesture_event_filter_->FlingHasBeenHalted();
+  gesture_event_queue_->FlingHasBeenHalted();
 
   // Only forward the non-native portions of our event.
   FilterAndSendWebInputEvent(key_event, latency_info, is_keyboard_shortcut);
 }
 
 void InputRouterImpl::SendGestureEvent(
-    const GestureEventWithLatencyInfo& gesture_event) {
-  if (touch_action_filter_.FilterGestureEvent(gesture_event.event))
+    const GestureEventWithLatencyInfo& original_gesture_event) {
+  GestureEventWithLatencyInfo gesture_event(original_gesture_event);
+  if (touch_action_filter_.FilterGestureEvent(&gesture_event.event))
     return;
 
   touch_event_queue_->OnGestureScrollEvent(gesture_event);
 
   if (!IsInOverscrollGesture() &&
-      !gesture_event_filter_->ShouldForward(gesture_event)) {
+      !gesture_event_queue_->ShouldForward(gesture_event)) {
     OverscrollController* controller = client_->GetOverscrollController();
     if (controller)
       controller->DiscardingGestureEvent(gesture_event.event);
@@ -258,11 +301,8 @@ const NativeWebKeyboardEvent* InputRouterImpl::GetLastKeyboardEvent() const {
 }
 
 bool InputRouterImpl::ShouldForwardTouchEvent() const {
-  // Always send a touch event if the renderer has a touch-event handler. It is
-  // possible that a renderer stops listening to touch-events while there are
-  // still events in the touch-queue. In such cases, the new events should still
-  // get into the queue.
-  return has_touch_handler_ || !touch_event_queue_->empty();
+  // Always send a touch event if the renderer has a touch-event handler.
+  return touch_event_queue_->has_handlers();
 }
 
 void InputRouterImpl::OnViewUpdated(int view_flags) {
@@ -301,6 +341,7 @@ void InputRouterImpl::OnTouchEventAck(const TouchEventWithLatencyInfo& event,
 void InputRouterImpl::OnGestureEventAck(
     const GestureEventWithLatencyInfo& event,
     InputEventAckState ack_result) {
+  touch_event_queue_->OnGestureEventAck(event, ack_result);
   ProcessAckForOverscroll(event.event, ack_result);
   ack_handler_->OnGestureEventAck(event, ack_result);
 }
@@ -391,12 +432,12 @@ bool InputRouterImpl::OfferToOverscrollController(
 
   bool consumed = disposition == OverscrollController::CONSUMED;
 
-  if (disposition == OverscrollController::SHOULD_FORWARD_TO_GESTURE_FILTER) {
+  if (disposition == OverscrollController::SHOULD_FORWARD_TO_GESTURE_QUEUE) {
     DCHECK(WebInputEvent::isGestureEventType(input_event.type));
     const blink::WebGestureEvent& gesture_event =
         static_cast<const blink::WebGestureEvent&>(input_event);
     // An ACK is expected for the event, so mark it as consumed.
-    consumed = !gesture_event_filter_->ShouldForward(
+    consumed = !gesture_event_queue_->ShouldForward(
         GestureEventWithLatencyInfo(gesture_event, latency_info));
   }
 
@@ -441,12 +482,17 @@ bool InputRouterImpl::OfferToClient(const WebInputEvent& input_event,
 }
 
 bool InputRouterImpl::OfferToRenderer(const WebInputEvent& input_event,
-                                           const ui::LatencyInfo& latency_info,
-                                           bool is_keyboard_shortcut) {
-  input_event_start_time_ = TimeTicks::Now();
+                                      const ui::LatencyInfo& latency_info,
+                                      bool is_keyboard_shortcut) {
   if (Send(new InputMsg_HandleInputEvent(
           routing_id(), &input_event, latency_info, is_keyboard_shortcut))) {
-    client_->IncrementInFlightEventCount();
+    // Ack messages for ignored ack event types are not required, and might
+    // never be sent by the renderer. Consequently, such event types should not
+    // affect event timing or in-flight event count metrics.
+    if (!WebInputEventTraits::IgnoresAckDisposition(input_event.type)) {
+      input_event_start_time_ = TimeTicks::Now();
+      client_->IncrementInFlightEventCount();
+    }
     return true;
   }
   return false;
@@ -455,15 +501,16 @@ bool InputRouterImpl::OfferToRenderer(const WebInputEvent& input_event,
 void InputRouterImpl::OnInputEventAck(WebInputEvent::Type event_type,
                                       InputEventAckState ack_result,
                                       const ui::LatencyInfo& latency_info) {
-  // Log the time delta for processing an input event.
-  TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
-  UMA_HISTOGRAM_TIMES("MPArch.IIR_InputEventDelta", delta);
+  // A synthetic ack will already have been sent for this event, and it should
+  // not affect event timing or in-flight count metrics.
+  if (WebInputEventTraits::IgnoresAckDisposition(event_type))
+    return;
 
   client_->DecrementInFlightEventCount();
 
-  // A synthetic ack will already have been sent for this event.
-  if (WebInputEventTraits::IgnoresAckDisposition(event_type))
-    return;
+  // Log the time delta for processing an input event.
+  TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
+  UMA_HISTOGRAM_TIMES("MPArch.IIR_InputEventDelta", delta);
 
   ProcessInputEventAck(event_type, ack_result, latency_info, RENDERER);
   // WARNING: |this| may be deleted at this point.
@@ -495,11 +542,10 @@ void InputRouterImpl::OnSelectRangeAck() {
 }
 
 void InputRouterImpl::OnHasTouchEventHandlers(bool has_handlers) {
- if (has_touch_handler_ == has_handlers)
-    return;
-  has_touch_handler_ = has_handlers;
-  if (!has_handlers)
-    touch_event_queue_->FlushQueue();
+  TRACE_EVENT1("input", "InputRouterImpl::OnHasTouchEventHandlers",
+               "has_handlers", has_handlers);
+
+  touch_event_queue_->OnHasTouchEventHandlers(has_handlers);
   client_->OnHasTouchEventHandlers(has_handlers);
 }
 
@@ -606,14 +652,14 @@ void InputRouterImpl::ProcessGestureAck(WebInputEvent::Type type,
                                         InputEventAckState ack_result,
                                         const ui::LatencyInfo& latency) {
   // If |ack_result| originated from the overscroll controller, only
-  // feed |gesture_event_filter_| the ack if it was expecting one.
+  // feed |gesture_event_queue_| the ack if it was expecting one.
   if (current_ack_source_ == OVERSCROLL_CONTROLLER &&
-      !gesture_event_filter_->HasQueuedGestureEvents()) {
+      !gesture_event_queue_->HasQueuedGestureEvents()) {
     return;
   }
 
-  // |gesture_event_filter_| will forward to OnGestureEventAck when appropriate.
-  gesture_event_filter_->ProcessGestureAck(ack_result, type, latency);
+  // |gesture_event_queue_| will forward to OnGestureEventAck when appropriate.
+  gesture_event_queue_->ProcessGestureAck(ack_result, type, latency);
 }
 
 void InputRouterImpl::ProcessTouchAck(

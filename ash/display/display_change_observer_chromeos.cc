@@ -37,46 +37,52 @@ const unsigned int kHighDensityDPIThreshold = 160;
 // 1 inch in mm.
 const float kInchInMm = 25.4f;
 
-// Resolution list are sorted by the area in pixels and the larger
-// one comes first.
-struct ResolutionSorter {
-  bool operator()(const Resolution& a, const Resolution& b) {
-    return a.size.width() * a.size.height() > b.size.width() * b.size.height();
+// Display mode list is sorted by (in descending priority):
+//  * the area in pixels.
+//  * refresh rate.
+struct DisplayModeSorter {
+  bool operator()(const DisplayMode& a, const DisplayMode& b) {
+    if (a.size.GetArea() == b.size.GetArea())
+      return (a.refresh_rate > b.refresh_rate);
+    return (a.size.GetArea() > b.size.GetArea());
   }
 };
 
 }  // namespace
 
 // static
-std::vector<Resolution> DisplayChangeObserver::GetResolutionList(
+std::vector<DisplayMode> DisplayChangeObserver::GetDisplayModeList(
     const OutputConfigurator::OutputSnapshot& output) {
-  typedef std::map<std::pair<int,int>, Resolution> ResolutionMap;
-  ResolutionMap resolution_map;
+  typedef std::map<std::pair<int, int>, DisplayMode> DisplayModeMap;
+  DisplayModeMap display_mode_map;
 
   for (std::map<RRMode, OutputConfigurator::ModeInfo>::const_iterator it =
        output.mode_infos.begin(); it != output.mode_infos.end(); ++it) {
     const OutputConfigurator::ModeInfo& mode_info = it->second;
     const std::pair<int, int> size(mode_info.width, mode_info.height);
-    const Resolution resolution(gfx::Size(mode_info.width, mode_info.height),
-                                mode_info.interlaced);
+    const DisplayMode display_mode(gfx::Size(mode_info.width, mode_info.height),
+                                   mode_info.refresh_rate,
+                                   mode_info.interlaced,
+                                   output.native_mode == it->first);
 
-    // Add the resolution if it isn't already present and override interlaced
-    // resolutions with non-interlaced ones.
-    ResolutionMap::iterator resolution_it = resolution_map.find(size);
-    if (resolution_it == resolution_map.end())
-      resolution_map.insert(std::make_pair(size, resolution));
-    else if (resolution_it->second.interlaced && !resolution.interlaced)
-      resolution_it->second = resolution;
+    // Add the display mode if it isn't already present and override interlaced
+    // display modes with non-interlaced ones.
+    DisplayModeMap::iterator display_mode_it = display_mode_map.find(size);
+    if (display_mode_it == display_mode_map.end())
+      display_mode_map.insert(std::make_pair(size, display_mode));
+    else if (display_mode_it->second.interlaced && !display_mode.interlaced)
+      display_mode_it->second = display_mode;
   }
 
-  std::vector<Resolution> resolution_list;
-  for (ResolutionMap::const_iterator iter = resolution_map.begin();
-       iter != resolution_map.end();
+  std::vector<DisplayMode> display_mode_list;
+  for (DisplayModeMap::const_iterator iter = display_mode_map.begin();
+       iter != display_mode_map.end();
        ++iter) {
-    resolution_list.push_back(iter->second);
+    display_mode_list.push_back(iter->second);
   }
-  std::sort(resolution_list.begin(), resolution_list.end(), ResolutionSorter());
-  return resolution_list;
+  std::sort(
+      display_mode_list.begin(), display_mode_list.end(), DisplayModeSorter());
+  return display_mode_list;
 }
 
 DisplayChangeObserver::DisplayChangeObserver() {
@@ -87,32 +93,31 @@ DisplayChangeObserver::~DisplayChangeObserver() {
   Shell::GetInstance()->RemoveShellObserver(this);
 }
 
-chromeos::OutputState DisplayChangeObserver::GetStateForDisplayIds(
+ui::OutputState DisplayChangeObserver::GetStateForDisplayIds(
     const std::vector<int64>& display_ids) const {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshForceMirrorMode)) {
-    return chromeos::STATE_DUAL_MIRROR;
+    return ui::OUTPUT_STATE_DUAL_MIRROR;
   }
 
   CHECK_EQ(2U, display_ids.size());
   DisplayIdPair pair = std::make_pair(display_ids[0], display_ids[1]);
   DisplayLayout layout = Shell::GetInstance()->display_manager()->
       layout_store()->GetRegisteredDisplayLayout(pair);
-  return layout.mirrored ?
-      chromeos::STATE_DUAL_MIRROR : chromeos::STATE_DUAL_EXTENDED;
+  return layout.mirrored ? ui::OUTPUT_STATE_DUAL_MIRROR :
+                           ui::OUTPUT_STATE_DUAL_EXTENDED;
 }
 
 bool DisplayChangeObserver::GetResolutionForDisplayId(int64 display_id,
                                                       int* width,
                                                       int* height) const {
-  gfx::Size resolution;
-  if (!Shell::GetInstance()->display_manager()->
-      GetSelectedResolutionForDisplayId(display_id, &resolution)) {
+  DisplayMode mode;
+  if (!Shell::GetInstance()->display_manager()->GetSelectedModeForDisplayId(
+           display_id, &mode))
     return false;
-  }
 
-  *width = resolution.width();
-  *height = resolution.height();
+  *width = mode.size.width();
+  *height = mode.size.height();
   return true;
 }
 
@@ -123,7 +128,7 @@ void DisplayChangeObserver::OnDisplayModeChanged(
   for (size_t i = 0; i < outputs.size(); ++i) {
     const OutputConfigurator::OutputSnapshot& output = outputs[i];
 
-    if (output.is_internal &&
+    if (output.type == ui::OUTPUT_TYPE_INTERNAL &&
         gfx::Display::InternalDisplayId() == gfx::Display::kInvalidDisplayID) {
       // Fall back to output index. crbug.com/180100
       gfx::Display::SetInternalDisplayId(
@@ -145,13 +150,12 @@ void DisplayChangeObserver::OnDisplayModeChanged(
     gfx::Rect display_bounds(
         output.x, output.y, mode_info->width, mode_info->height);
 
-    std::vector<Resolution> resolutions;
-    if (!output.is_internal)
-      resolutions = GetResolutionList(output);
+    std::vector<DisplayMode> display_modes = GetDisplayModeList(output);
 
-    std::string name = output.is_internal ?
-        l10n_util::GetStringUTF8(IDS_ASH_INTERNAL_DISPLAY_NAME) :
-        chromeos::GetDisplayName(output.output);
+    std::string name =
+        output.type == ui::OUTPUT_TYPE_INTERNAL
+            ? l10n_util::GetStringUTF8(IDS_ASH_INTERNAL_DISPLAY_NAME)
+            : chromeos::GetDisplayName(output.output);
     if (name.empty())
       name = l10n_util::GetStringUTF8(IDS_ASH_STATUS_TRAY_UNKNOWN_DISPLAY_NAME);
 
@@ -167,7 +171,7 @@ void DisplayChangeObserver::OnDisplayModeChanged(
     displays.back().set_device_scale_factor(device_scale_factor);
     displays.back().SetBounds(display_bounds);
     displays.back().set_native(true);
-    displays.back().set_resolutions(resolutions);
+    displays.back().set_display_modes(display_modes);
     displays.back().set_touch_support(
         output.touch_device_id == 0 ? gfx::Display::TOUCH_SUPPORT_UNAVAILABLE :
                                       gfx::Display::TOUCH_SUPPORT_AVAILABLE);

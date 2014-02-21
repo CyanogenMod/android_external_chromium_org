@@ -9,7 +9,8 @@
 #include "ui/gfx/display_observer.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
+#include "ui/views/widget/desktop_aura/x11_desktop_handler.h"
 
 namespace views {
 
@@ -30,6 +31,9 @@ class DesktopScreenX11Test : public views::ViewsTestBase,
     displays.push_back(gfx::Display(kFirstDisplay, gfx::Rect(0, 0, 640, 480)));
     screen_.reset(new DesktopScreenX11(displays));
     screen_->AddObserver(this);
+
+    // We want to have a synchronous activation behavior.
+    X11DesktopHandler::get()->SetWMSupportsActiveWindowForTests(false);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -57,6 +61,7 @@ class DesktopScreenX11Test : public views::ViewsTestBase,
     toplevel_params.native_widget =
         new views::DesktopNativeWidgetAura(toplevel);
     toplevel_params.bounds = bounds;
+    toplevel_params.remove_standard_frame = true;
     toplevel->Init(toplevel_params);
     return toplevel;
   }
@@ -199,29 +204,35 @@ TEST_F(DesktopScreenX11Test, GetPrimaryDisplay) {
 }
 
 TEST_F(DesktopScreenX11Test, GetWindowAtScreenPoint) {
-  Widget* window_one = BuildTopLevelDesktopWidget(gfx::Rect(10, 10, 10, 10));
-  Widget* window_two = BuildTopLevelDesktopWidget(gfx::Rect(50, 50, 10, 10));
-  Widget* window_three = BuildTopLevelDesktopWidget(gfx::Rect(15, 15, 20, 20));
+  Widget* window_one = BuildTopLevelDesktopWidget(gfx::Rect(110, 110, 10, 10));
+  Widget* window_two = BuildTopLevelDesktopWidget(gfx::Rect(150, 150, 10, 10));
+  Widget* window_three =
+      BuildTopLevelDesktopWidget(gfx::Rect(115, 115, 20, 20));
 
-  // Make sure the internal state of DesktopRootWindowHostX11 is set up
+  window_three->Show();
+  window_two->Show();
+  window_one->Show();
+
+  // Make sure the internal state of DesktopWindowTreeHostX11 is set up
   // correctly.
-  ASSERT_EQ(3u, DesktopRootWindowHostX11::GetAllOpenWindows().size());
+  ASSERT_EQ(3u, DesktopWindowTreeHostX11::GetAllOpenWindows().size());
 
   EXPECT_EQ(window_one->GetNativeWindow(),
-            screen()->GetWindowAtScreenPoint(gfx::Point(15, 15)));
+            screen()->GetWindowAtScreenPoint(gfx::Point(115, 115)));
   EXPECT_EQ(window_two->GetNativeWindow(),
-            screen()->GetWindowAtScreenPoint(gfx::Point(55, 55)));
+            screen()->GetWindowAtScreenPoint(gfx::Point(155, 155)));
   EXPECT_EQ(NULL,
-            screen()->GetWindowAtScreenPoint(gfx::Point(100, 100)));
+            screen()->GetWindowAtScreenPoint(gfx::Point(200, 200)));
 
   // Bring the third window in front. It overlaps with the first window.
   // Hit-testing on the intersecting region should give the third window.
   window_three->Activate();
   EXPECT_EQ(window_three->GetNativeWindow(),
-            screen()->GetWindowAtScreenPoint(gfx::Point(15, 15)));
+            screen()->GetWindowAtScreenPoint(gfx::Point(115, 115)));
 
   window_one->CloseNow();
   window_two->CloseNow();
+  window_three->CloseNow();
 }
 
 TEST_F(DesktopScreenX11Test, GetDisplayNearestWindow) {

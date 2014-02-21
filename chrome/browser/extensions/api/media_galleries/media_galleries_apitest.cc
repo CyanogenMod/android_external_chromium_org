@@ -6,20 +6,23 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_writer.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
-#include "base/safe_numerics.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
+#include "chrome/browser/media_galleries/media_folder_finder.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/media_galleries/media_galleries_test_util.h"
-#include "chrome/browser/storage_monitor/storage_info.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
+#include "chrome/browser/media_galleries/media_scan_manager.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/storage_monitor/storage_info.h"
+#include "components/storage_monitor/storage_monitor.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_system.h"
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 #include "chrome/browser/media_galleries/fileapi/picasa_finder.h"
@@ -27,6 +30,12 @@
 #include "chrome/common/media_galleries/picasa_types.h"
 #include "chrome/common/media_galleries/pmp_test_util.h"
 #endif
+
+#if defined(OS_MACOSX)
+#include "base/mac/foundation_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/media_galleries/fileapi/iapps_finder_impl.h"
+#endif  // OS_MACOSX
 
 using extensions::PlatformAppBrowserTest;
 
@@ -40,6 +49,30 @@ base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("C:\\qux");
 #else
 base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("/qux");
 #endif
+
+void DoNothingMediaFolderFinderResultCallback(
+    bool /*success*/,
+    const MediaFolderFinder::MediaFolderFinderResults& /*results*/) {
+}
+
+class DoNothingMediaFolderFinder : public MediaFolderFinder {
+ public:
+  explicit DoNothingMediaFolderFinder(
+      const MediaFolderFinderResultsCallback& callback)
+      : MediaFolderFinder(callback) {
+  }
+  virtual ~DoNothingMediaFolderFinder() {}
+
+  static MediaFolderFinder* CreateDoNothingMediaFolderFinder(
+      const MediaFolderFinderResultsCallback& callback) {
+    return new DoNothingMediaFolderFinder(
+        base::Bind(&DoNothingMediaFolderFinderResultCallback));
+  }
+
+  virtual void StartScan() OVERRIDE {}
+
+ private:
+};
 
 }  // namespace
 
@@ -55,7 +88,7 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     int64 file_size;
     ASSERT_TRUE(base::GetFileSize(GetCommonDataDir().AppendASCII("test.jpg"),
                                   &file_size));
-    test_jpg_size_ = base::checked_numeric_cast<int>(file_size);
+    test_jpg_size_ = base::checked_cast<int>(file_size);
   }
 
   virtual void TearDownOnMainThread() OVERRIDE {
@@ -100,7 +133,9 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     }
 
     base::AutoReset<base::FilePath> reset(&test_data_dir_, temp_dir.path());
-    return RunPlatformAppTestWithArg(extension_name, custom_arg);
+    bool result = RunPlatformAppTestWithArg(extension_name, custom_arg);
+    content::RunAllPendingInMessageLoop();  // avoid race on exit in registry.
+    return result;
   }
 
   void AttachFakeDevice() {
@@ -109,7 +144,7 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
 
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(
         StorageInfo(device_id_, base::string16(), kDevicePath,
-                    ASCIIToUTF16(kDeviceName), base::string16(),
+                    base::ASCIIToUTF16(kDeviceName), base::string16(),
                     base::string16(), 0));
     content::RunAllPendingInMessageLoop();
   }
@@ -145,12 +180,13 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
                                                   &gallery_info));
     preferences->AddGallery(gallery_info.device_id,
                             gallery_info.path,
-                            false /* user_added */,
+                            MediaGalleryPrefInfo::kAutoDetected,
                             gallery_info.volume_label,
                             gallery_info.vendor_name,
                             gallery_info.model_name,
                             gallery_info.total_size_in_bytes,
-                            gallery_info.last_attach_time);
+                            gallery_info.last_attach_time,
+                            0, 0, 0);
 
     content::RunAllPendingInMessageLoop();
 
@@ -196,7 +232,108 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     ASSERT_TRUE(base::CopyFile(
         test_jpg_path, fake_folder_2.AppendASCII("InFirstAlbumOnly.jpg")));
   }
-#endif
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
+
+#if defined(OS_MACOSX)
+  void PopulateIPhotoTestData(const base::FilePath& iphoto_data_root) {
+    std::string xml_contents = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<plist version=\"1.0\">"
+    "<dict>\n"
+
+    "    <key>List of Albums</key>"
+    "    <array>\n"
+
+    "    <dict>\n"
+    "      <key>AlbumId</key>"
+    "      <integer>1</integer>"
+    "      <key>AlbumName</key>"
+    "      <string>Album1</string>"
+    "      <key>KeyList</key>\n"
+    "      <array>"
+    "      <string>1</string>"
+    "      <string>2</string>"
+    "      </array>\n"
+    "    </dict>\n"
+
+    "    <dict>\n"
+    "      <key>AlbumId</key>"
+    "      <integer>2</integer>"
+    "      <key>AlbumName</key>"
+    "      <string>Album2</string>"
+    "      <key>KeyList</key>\n"
+    "      <array>"
+    "      <string>2</string>"
+    "      </array>\n"
+    "    </dict>\n"
+
+    "    </array>\n"
+
+    "   <key>Master Image List</key>\n"
+    "   <dict>\n"
+
+    "  <key>1</key>"
+    "  <dict>\n"
+    "    <key>MediaType</key>"
+    "    <string>Image</string>"
+    "    <key>Caption</key>"
+    "    <string>caption 1</string>"
+    "    <key>GUID</key>"
+    "    <string>1</string>"
+    "    <key>ModDateAsTimerInterval</key>"
+    "    <string>386221543.0000</string>"
+    "    <key>DateAsTimerInterval</key>"
+    "    <string>386221543.0000</string>"
+    "    <key>DateAsTimerIntervalGMT</key>"
+    "    <string>385123456.00</string>"
+    "    <key>ImagePath</key>"
+    "    <string>$path1</string>"
+    "    <key>ThumbPath</key>"
+    "    <string>/thumb/path</string>\n"
+    "  </dict>\n"
+
+    "  <key>2</key>\n"
+    "  <dict>\n"
+    "    <key>MediaType</key>"
+    "    <string>Image</string>"
+    "    <key>Caption</key>"
+    "    <string>caption 2</string>"
+    "    <key>GUID</key>"
+    "    <string>2</string>"
+    "    <key>ModDateAsTimerInterval</key>"
+    "    <string>386221543.0000</string>"
+    "    <key>DateAsTimerInterval</key>"
+    "    <string>386221543.0000</string>"
+    "    <key>DateAsTimerIntervalGMT</key>"
+    "    <string>385123456.00</string>"
+    "    <key>ImagePath</key>"
+    "    <string>$path2</string>"
+    "    <key>ThumbPath</key>"
+    "    <string>/thumb/path2</string>\n"
+    "  </dict>\n"
+
+    "   </dict>\n"  // Master Image List
+
+    "</dict>\n"
+    "</plist>";
+
+    base::FilePath test_jpg_path = GetCommonDataDir().AppendASCII("test.jpg");
+    ASSERT_TRUE(base::CreateDirectory(iphoto_data_root));
+    base::FilePath first_only_jpg =
+        iphoto_data_root.AppendASCII("InFirstAlbumOnly.jpg");
+    base::FilePath in_both_jpg = iphoto_data_root.AppendASCII("InBoth.jpg");
+    ASSERT_TRUE(base::CopyFile(test_jpg_path, first_only_jpg));
+    ASSERT_TRUE(base::CopyFile(test_jpg_path, in_both_jpg));
+    ReplaceFirstSubstringAfterOffset(
+        &xml_contents, 0, std::string("$path1"), first_only_jpg.value());
+    ReplaceFirstSubstringAfterOffset(
+        &xml_contents, 0, std::string("$path2"), in_both_jpg.value());
+
+    base::FilePath album_xml = iphoto_data_root.AppendASCII("AlbumData.xml");
+    ASSERT_NE(-1, file_util::WriteFile(album_xml,
+                                       xml_contents.c_str(),
+                                       xml_contents.size()));
+  }
+#endif  // defined(OS_MACOSX)
 
   base::FilePath GetCommonDataDir() const {
     return test_data_dir_.AppendASCII("api_test")
@@ -212,6 +349,13 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
 
   EnsureMediaDirectoriesExists* ensure_media_directories_exists() const {
     return ensure_media_directories_exists_.get();
+  }
+
+  void InstallDoNothingFolderFinder() {
+    MediaScanManager * scan_manager =
+        g_browser_process->media_file_system_registry()->media_scan_manager();
+    scan_manager->SetMediaFolderFinderFactory(base::Bind(
+        &DoNothingMediaFolderFinder::CreateDoNothingMediaFolderFinder));
   }
 
  private:
@@ -321,3 +465,22 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
   ASSERT_TRUE(RunMediaGalleriesTestWithArg("picasa", custom_args)) << message_;
 }
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+
+#if defined(OS_MACOSX)
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
+                       IPhotoTest) {
+  PopulateIPhotoTestData(
+      ensure_media_directories_exists()->GetFakeIPhotoRootPath());
+
+  base::ListValue custom_args;
+  custom_args.AppendInteger(test_jpg_size());
+  ASSERT_TRUE(RunMediaGalleriesTestWithArg("iphoto", custom_args)) << message_;
+
+  iapps::SetMacPreferencesForTesting(NULL);
+}
+#endif  // defined(OS_MACOSX)
+
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest, Scan) {
+  InstallDoNothingFolderFinder();
+  ASSERT_TRUE(RunMediaGalleriesTest("scan")) << message_;
+}

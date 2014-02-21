@@ -12,7 +12,7 @@
 #include "webkit/browser/appcache/appcache_backend_impl.h"
 #include "webkit/browser/appcache/appcache_policy.h"
 #include "webkit/browser/appcache/appcache_request_handler.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 
 namespace appcache {
 
@@ -487,6 +487,20 @@ void AppCacheHost::NotifyMainResourceIsNamespaceEntry(
 void AppCacheHost::NotifyMainResourceBlocked(const GURL& manifest_url) {
   main_resource_blocked_ = true;
   blocked_manifest_url_ = manifest_url;
+}
+
+void AppCacheHost::PrepareForTransfer() {
+  // This can only happen prior to the document having been loaded.
+  DCHECK(!associated_cache());
+  DCHECK(!is_selection_pending());
+  DCHECK(!group_being_updated_);
+  host_id_ = kNoHostId;
+  frontend_ = NULL;
+}
+
+void AppCacheHost::CompleteTransfer(int host_id, AppCacheFrontend* frontend) {
+  host_id_ = host_id;
+  frontend_ = frontend;
 }
 
 void AppCacheHost::AssociateNoCache(const GURL& manifest_url) {

@@ -8,6 +8,7 @@
 #include <list>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -44,7 +45,9 @@ class CONTENT_EXPORT IndexedDBDatabase
     CURSOR_UPDATE
   };
 
-  typedef std::vector<IndexedDBKey> IndexKeys;
+  // An index and corresponding set of keys
+  typedef std::pair<int64, std::vector<IndexedDBKey> > IndexKeys;
+
   // Identifier is pair of (origin url, database name).
   typedef std::pair<GURL, base::string16> Identifier;
 
@@ -76,13 +79,6 @@ class CONTENT_EXPORT IndexedDBDatabase
       scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
       int64 transaction_id,
       int64 version);
-  void OpenConnection(
-      scoped_refptr<IndexedDBCallbacks> callbacks,
-      scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
-      int64 transaction_id,
-      int64 version,
-      blink::WebIDBDataLoss data_loss,
-      std::string data_loss_message);
   void DeleteDatabase(scoped_refptr<IndexedDBCallbacks> callbacks);
   const IndexedDBDatabaseMetadata& metadata() const { return metadata_; }
 
@@ -97,6 +93,7 @@ class CONTENT_EXPORT IndexedDBDatabase
                          const std::vector<int64>& object_store_ids,
                          uint16 mode);
   void Close(IndexedDBConnection* connection, bool forced);
+  void ForceClose();
 
   void Commit(int64 transaction_id);
   void Abort(int64 transaction_id);
@@ -118,11 +115,8 @@ class CONTENT_EXPORT IndexedDBDatabase
     return transaction_coordinator_;
   }
 
-  void TransactionCreated(scoped_refptr<IndexedDBTransaction> transaction);
-  void TransactionStarted(IndexedDBTransaction* transaction);
-  void TransactionFinished(IndexedDBTransaction* transaction);
-  void TransactionFinishedAndCompleteFired(IndexedDBTransaction* transaction);
-  void TransactionFinishedAndAbortFired(IndexedDBTransaction* transaction);
+  void TransactionCreated(IndexedDBTransaction* transaction);
+  void TransactionFinished(IndexedDBTransaction* transaction, bool committed);
 
   // Called by transactions to report failure committing to the backing store.
   void TransactionCommitFailed();
@@ -139,12 +133,10 @@ class CONTENT_EXPORT IndexedDBDatabase
            scoped_ptr<IndexedDBKey> key,
            PutMode mode,
            scoped_refptr<IndexedDBCallbacks> callbacks,
-           const std::vector<int64>& index_ids,
            const std::vector<IndexKeys>& index_keys);
   void SetIndexKeys(int64 transaction_id,
                     int64 object_store_id,
                     scoped_ptr<IndexedDBKey> primary_key,
-                    const std::vector<int64>& index_ids,
                     const std::vector<IndexKeys>& index_keys);
   void SetIndexesReady(int64 transaction_id,
                        int64 object_store_id,
@@ -196,8 +188,6 @@ class CONTENT_EXPORT IndexedDBDatabase
   void VersionChangeOperation(int64 version,
                               scoped_refptr<IndexedDBCallbacks> callbacks,
                               scoped_ptr<IndexedDBConnection> connection,
-                              blink::WebIDBDataLoss data_loss,
-                              std::string data_loss_message,
                               IndexedDBTransaction* transaction);
   void VersionChangeAbortOperation(const base::string16& previous_version,
                                    int64 previous_int_version,
@@ -255,21 +245,12 @@ class CONTENT_EXPORT IndexedDBDatabase
   void RunVersionChangeTransaction(scoped_refptr<IndexedDBCallbacks> callbacks,
                                    scoped_ptr<IndexedDBConnection> connection,
                                    int64 transaction_id,
-                                   int64 requested_version,
-                                   blink::WebIDBDataLoss data_loss,
-                                   std::string data_loss_message);
+                                   int64 requested_version);
   void RunVersionChangeTransactionFinal(
       scoped_refptr<IndexedDBCallbacks> callbacks,
       scoped_ptr<IndexedDBConnection> connection,
       int64 transaction_id,
       int64 requested_version);
-  void RunVersionChangeTransactionFinal(
-      scoped_refptr<IndexedDBCallbacks> callbacks,
-      scoped_ptr<IndexedDBConnection> connection,
-      int64 transaction_id,
-      int64 requested_version,
-      blink::WebIDBDataLoss data_loss,
-      std::string data_loss_message);
   void ProcessPendingCalls();
 
   bool IsDeleteDatabaseBlocked() const;
@@ -294,7 +275,6 @@ class CONTENT_EXPORT IndexedDBDatabase
   scoped_refptr<IndexedDBFactory> factory_;
 
   IndexedDBTransactionCoordinator transaction_coordinator_;
-  IndexedDBTransaction* running_version_change_transaction_;
 
   typedef std::map<int64, IndexedDBTransaction*> TransactionMap;
   TransactionMap transactions_;

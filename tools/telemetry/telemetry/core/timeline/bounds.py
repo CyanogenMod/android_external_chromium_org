@@ -9,6 +9,18 @@ class Bounds(object):
     self.min_ = None
     self.max_ = None
 
+  @staticmethod
+  def CreateFromEvent(event):
+    bounds = Bounds()
+    bounds.AddEvent(event)
+    return bounds
+
+  def __repr__(self):
+    if self.is_empty_:
+      return "Bounds()"
+    else:
+      return "Bounds(min=%s,max=%s)" % (self.min_, self.max_)
+
   @property
   def is_empty(self):
     return self.is_empty_
@@ -35,6 +47,15 @@ class Bounds(object):
   def center(self):
     return (self.min_ + self.max_) * 0.5
 
+  def Contains(self, other):
+    if self.is_empty or other.is_empty:
+      return False
+    return self.min <= other.min and self.max >= other.max
+
+  def Intersects(self, other):
+    if self.is_empty or other.is_empty:
+      return False
+    return not (other.max < self.min or other.min > self.max)
 
   def Reset(self):
     self.is_empty_ = True
@@ -42,7 +63,7 @@ class Bounds(object):
     self.max_ = None
 
   def AddBounds(self, bounds):
-    if bounds.isEmpty:
+    if bounds.is_empty:
       return
     self.AddValue(bounds.min_)
     self.AddValue(bounds.max_)
@@ -56,6 +77,10 @@ class Bounds(object):
 
     self.max_ = max(self.max_, value)
     self.min_ = min(self.min_, value)
+
+  def AddEvent(self, event):
+    self.AddValue(event.start)
+    self.AddValue(event.start + event.duration)
 
   @staticmethod
   def CompareByMinTimes(a, b):

@@ -54,8 +54,7 @@ enum ChannelModifier {
   CM_MULTI        = 0x01,
   CM_CHROME       = 0x02,
   CM_CHROME_FRAME = 0x04,
-  CM_READY_MODE   = 0x08,
-  CM_FULL         = 0x10
+  CM_FULL         = 0x08
 };
 
 const wchar_t* const kChromeChannels[] = {
@@ -95,10 +94,6 @@ class FakeProductState : public ProductState {
                                             Level install_level,
                                             const char* version,
                                             int channel_modifiers);
-  void AddQuickEnableCfCommand(BrowserDistribution::Type dist_type,
-                               Level install_level,
-                               const char* version,
-                               int channel_modifiers);
   void set_multi_install(bool is_multi_install) {
     multi_install_ = is_multi_install;
   }
@@ -144,7 +139,6 @@ const FakeProductState::ChannelMethodForModifier
   { CM_MULTI,        &ChannelInfo::SetMultiInstall },
   { CM_CHROME,       &ChannelInfo::SetChrome },
   { CM_CHROME_FRAME, &ChannelInfo::SetChromeFrame },
-  { CM_READY_MODE,   &ChannelInfo::SetReadyMode },
   { CM_FULL,         &ChannelInfo::SetFullSuffix }
 };
 
@@ -204,20 +198,10 @@ void FakeProductState::SetUninstallCommand(BrowserDistribution::Type dist_type,
     uninstall_command_.AppendSwitch(installer::switches::kSystemLevel);
   if (is_multi_install) {
     uninstall_command_.AppendSwitch(installer::switches::kMultiInstall);
-    if (dist_type == BrowserDistribution::CHROME_BROWSER) {
+    if (dist_type == BrowserDistribution::CHROME_BROWSER)
       uninstall_command_.AppendSwitch(installer::switches::kChrome);
-      if ((channel_modifiers & CM_READY_MODE) != 0) {
-        uninstall_command_.AppendSwitch(installer::switches::kChromeFrame);
-        uninstall_command_.AppendSwitch(
-            installer::switches::kChromeFrameReadyMode);
-      }
-    } else if (dist_type == BrowserDistribution::CHROME_FRAME) {
+    else if (dist_type == BrowserDistribution::CHROME_FRAME)
       uninstall_command_.AppendSwitch(installer::switches::kChromeFrame);
-      if ((channel_modifiers & CM_READY_MODE) != 0) {
-        uninstall_command_.AppendSwitch(
-            installer::switches::kChromeFrameReadyMode);
-      }
-    }
   } else if (dist_type == BrowserDistribution::CHROME_FRAME) {
     uninstall_command_.AppendSwitch(installer::switches::kChromeFrame);
   }
@@ -308,27 +292,6 @@ void FakeProductState::AddQuickEnableApplicationHostCommand(
   app_cmd.set_is_web_accessible(true);
   app_cmd.set_is_run_as_user(true);
   commands_.Set(installer::kCmdQuickEnableApplicationHost, app_cmd);
-}
-
-// Adds the "quick-enable-cf" Google Update product command.
-void FakeProductState::AddQuickEnableCfCommand(
-    BrowserDistribution::Type dist_type,
-    Level install_level,
-    const char* version,
-    int channel_modifiers) {
-  DCHECK_EQ(dist_type, BrowserDistribution::CHROME_BINARIES);
-  DCHECK_NE(channel_modifiers & CM_MULTI, 0);
-
-  CommandLine cmd_line(GetSetupExePath(dist_type, install_level, version,
-                                       channel_modifiers));
-  cmd_line.AppendSwitch(installer::switches::kMultiInstall);
-  if (install_level == SYSTEM_LEVEL)
-    cmd_line.AppendSwitch(installer::switches::kSystemLevel);
-  cmd_line.AppendSwitch(installer::switches::kChromeFrameQuickEnable);
-  AppCommand app_cmd(cmd_line.GetCommandLineString());
-  app_cmd.set_sends_pings(true);
-  app_cmd.set_is_web_accessible(true);
-  commands_.Set(installer::kCmdQuickEnableCf, app_cmd);
 }
 
 }  // namespace
@@ -433,8 +396,6 @@ void InstallationValidatorTest::SetUpTestCase() {
   ttm[InstallationValidator::CHROME_FRAME_MULTI] = CM_MULTI | CM_CHROME_FRAME;
   ttm[InstallationValidator::CHROME_FRAME_MULTI_CHROME_MULTI] =
       CM_MULTI | CM_CHROME_FRAME | CM_CHROME;
-  ttm[InstallationValidator::CHROME_FRAME_READY_MODE_CHROME_MULTI] =
-      CM_MULTI | CM_CHROME_FRAME | CM_CHROME | CM_READY_MODE;
 }
 
 // static
@@ -484,7 +445,7 @@ void InstallationValidatorTest::set_validation_error_recipient(
 // static
 // Populates |state| with the state of a valid installation of product
 // |prod_type|.  |inst_type| dictates properties of the installation
-// (multi-install, ready-mode, etc).
+// (multi-install, etc).
 void InstallationValidatorTest::MakeProductState(
     BrowserDistribution::Type prod_type,
     InstallationValidator::InstallationType inst_type,
@@ -500,8 +461,7 @@ void InstallationValidatorTest::MakeProductState(
        (inst_type & InstallationValidator::ProductBits::CHROME_MULTI) != 0) ||
       (prod_type == BrowserDistribution::CHROME_FRAME &&
        (inst_type &
-           (InstallationValidator::ProductBits::CHROME_FRAME_MULTI |
-            InstallationValidator::ProductBits::CHROME_FRAME_READY_MODE)) != 0);
+           InstallationValidator::ProductBits::CHROME_FRAME_MULTI) != 0);
 
   const wchar_t* const* channels = &kChromeChannels[0];
   if (prod_type == BrowserDistribution::CHROME_FRAME && !is_multi_install)
@@ -516,12 +476,6 @@ void InstallationValidatorTest::MakeProductState(
                              channel_modifiers, vehicle);
   state->set_multi_install(is_multi_install);
   if (prod_type == BrowserDistribution::CHROME_BINARIES) {
-    if (inst_type == InstallationValidator::CHROME_MULTI ||
-         inst_type ==
-             InstallationValidator::CHROME_FRAME_READY_MODE_CHROME_MULTI) {
-      state->AddQuickEnableCfCommand(prod_type, install_level,
-                                     chrome::kChromeVersion, channel_modifiers);
-    }
     state->AddQueryEULAAcceptanceCommand(prod_type,
                                          install_level,
                                          chrome::kChromeVersion,
@@ -560,12 +514,10 @@ void InstallationValidatorTest::MakeMachineState(
        InstallationValidator::ProductBits::CHROME_MULTI);
   static const int kChromeFrameMask =
       (InstallationValidator::ProductBits::CHROME_FRAME_SINGLE |
-       InstallationValidator::ProductBits::CHROME_FRAME_MULTI |
-       InstallationValidator::ProductBits::CHROME_FRAME_READY_MODE);
+       InstallationValidator::ProductBits::CHROME_FRAME_MULTI);
   static const int kBinariesMask =
       (InstallationValidator::ProductBits::CHROME_MULTI |
-       InstallationValidator::ProductBits::CHROME_FRAME_MULTI |
-       InstallationValidator::ProductBits::CHROME_FRAME_READY_MODE);
+       InstallationValidator::ProductBits::CHROME_FRAME_MULTI);
 
   FakeProductState prod_state;
 
@@ -622,5 +574,4 @@ INSTANTIATE_TEST_CASE_P(
            InstallationValidator::CHROME_FRAME_SINGLE_CHROME_SINGLE,
            InstallationValidator::CHROME_FRAME_SINGLE_CHROME_MULTI,
            InstallationValidator::CHROME_FRAME_MULTI,
-           InstallationValidator::CHROME_FRAME_MULTI_CHROME_MULTI,
-           InstallationValidator::CHROME_FRAME_READY_MODE_CHROME_MULTI));
+           InstallationValidator::CHROME_FRAME_MULTI_CHROME_MULTI));

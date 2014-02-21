@@ -8,12 +8,12 @@
 #include "base/logging.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -87,7 +87,11 @@ struct WhitelistedComponentExtensionIME {
 };
 
 extensions::ComponentLoader* GetComponentLoader() {
-  Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
+  // TODO(skuhne, nkostylev): At this time the only thing which makes sense here
+  // is to use the active profile. Nkostylev is working on getting IME settings
+  // to work for multi user by collecting all settings from all users. Once that
+  // is done we might have to re-visit this decision.
+  Profile* profile = ProfileManager::GetActiveUserProfile();
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);
   ExtensionService* extension_service = extension_system->extension_service();
@@ -131,11 +135,11 @@ bool ComponentExtensionIMEManagerImpl::Unload(const std::string& extension_id,
   return true;
 }
 
-scoped_ptr<DictionaryValue> ComponentExtensionIMEManagerImpl::GetManifest(
+scoped_ptr<base::DictionaryValue> ComponentExtensionIMEManagerImpl::GetManifest(
     const base::FilePath& file_path) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   std::string error;
-  scoped_ptr<DictionaryValue> manifest(
+  scoped_ptr<base::DictionaryValue> manifest(
       extension_file_util::LoadManifest(file_path, &error));
   if (!manifest.get())
     LOG(ERROR) << "Failed at getting manifest";
@@ -172,7 +176,7 @@ bool ComponentExtensionIMEManagerImpl::IsInitialized() {
 
 // static
 bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
-    const DictionaryValue& dict,
+    const base::DictionaryValue& dict,
     ComponentExtensionEngine* out) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   DCHECK(out);
@@ -206,7 +210,7 @@ bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
   DCHECK(!languages.empty());
   out->language_codes.assign(languages.begin(), languages.end());
 
-  const ListValue* layouts = NULL;
+  const base::ListValue* layouts = NULL;
   if (!dict.GetList(extensions::manifest_keys::kLayouts, &layouts))
     return false;
 
@@ -220,7 +224,7 @@ bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
 
 // static
 bool ComponentExtensionIMEManagerImpl::ReadExtensionInfo(
-    const DictionaryValue& manifest,
+    const base::DictionaryValue& manifest,
     const std::string& extension_id,
     ComponentExtensionIME* out) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
@@ -270,7 +274,8 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
     if (!base::ReadFileToString(manifest_path, &component_ime.manifest))
       continue;
 
-    scoped_ptr<DictionaryValue> manifest = GetManifest(component_ime.path);
+    scoped_ptr<base::DictionaryValue> manifest =
+        GetManifest(component_ime.path);
     if (!manifest.get())
       continue;
 
@@ -280,13 +285,13 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
       continue;
     component_ime.id = whitelisted_component_extension[i].id;
 
-    const ListValue* component_list;
+    const base::ListValue* component_list;
     if (!manifest->GetList(extensions::manifest_keys::kInputComponents,
                            &component_list))
       continue;
 
     for (size_t i = 0; i < component_list->GetSize(); ++i) {
-      const DictionaryValue* dictionary;
+      const base::DictionaryValue* dictionary;
       if (!component_list->GetDictionary(i, &dictionary))
         continue;
 

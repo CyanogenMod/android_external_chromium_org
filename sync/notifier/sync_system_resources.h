@@ -19,11 +19,14 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/non_thread_safe.h"
 #include "google/cacheinvalidation/include/system-resources.h"
+#include "jingle/notifier/base/notifier_options.h"
 #include "sync/base/sync_export.h"
 #include "sync/notifier/invalidator_state.h"
 #include "sync/notifier/state_writer.h"
 
 namespace syncer {
+
+class GCMNetworkChannelDelegate;
 
 class SyncLogger : public invalidation::Logger {
  public:
@@ -110,11 +113,21 @@ class SYNC_EXPORT_PRIVATE SyncNetworkChannel
   // Subclass should implement SendEncodedMessage to send encoded message to
   // Tango over network.
   virtual void SendEncodedMessage(const std::string& encoded_message) = 0;
+  virtual void UpdateCredentials(const std::string& email,
+      const std::string& token) = 0;
 
   // Classes interested in network channel state changes should implement
   // SyncNetworkChannel::Observer and register here.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
+
+  // Helper functions that know how to construct network channels from channel
+  // specific parameters.
+  static scoped_ptr<SyncNetworkChannel> CreatePushClientChannel(
+      const notifier::NotifierOptions& notifier_options);
+  static scoped_ptr<SyncNetworkChannel> CreateGCMNetworkChannel(
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      scoped_ptr<GCMNetworkChannelDelegate> delegate);
 
   const std::string& GetServiceContextForTest() const;
 

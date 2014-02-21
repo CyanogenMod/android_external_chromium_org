@@ -99,10 +99,6 @@ GPU_BLACKLIST_FEATURE_TEST(WebGL,
                            "webgl",
                            GPU_FEATURE_TYPE_WEBGL)
 
-GPU_BLACKLIST_FEATURE_TEST(Multisampling,
-                           "multisampling",
-                           GPU_FEATURE_TYPE_MULTISAMPLING)
-
 GPU_BLACKLIST_FEATURE_TEST(Flash3D,
                            "flash_3d",
                            GPU_FEATURE_TYPE_FLASH3D)
@@ -114,10 +110,6 @@ GPU_BLACKLIST_FEATURE_TEST(FlashStage3D,
 GPU_BLACKLIST_FEATURE_TEST(FlashStage3DBaseline,
                            "flash_stage3d_baseline",
                            GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE)
-
-GPU_BLACKLIST_FEATURE_TEST(TextureSharing,
-                           "texture_sharing",
-                           GPU_FEATURE_TYPE_TEXTURE_SHARING)
 
 GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideoDecode,
                            "accelerated_video_decode",

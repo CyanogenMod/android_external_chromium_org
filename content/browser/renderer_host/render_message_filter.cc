@@ -82,7 +82,6 @@
 #include "base/file_descriptor_posix.h"
 #endif
 #if defined(OS_WIN)
-#include "content/browser/renderer_host/backing_store_win.h"
 #include "content/common/font_cache_dispatcher_win.h"
 #endif
 #if defined(OS_ANDROID)
@@ -102,11 +101,20 @@ const int kPluginsRefreshThresholdInSeconds = 3;
 // usage only once and send it as a response for both queries.
 static const int64 kCPUUsageSampleIntervalMs = 900;
 
+const uint32 kFilteredMessageClasses[] = {
+  ChildProcessMsgStart,
+  DesktopNotificationMsgStart,
+  FrameMsgStart,
+  ViewMsgStart,
+};
+
+#if defined(OS_WIN)
 // On Windows, |g_color_profile| can run on an arbitrary background thread.
 // We avoid races by using LazyInstance's constructor lock to initialize the
 // object.
 base::LazyInstance<gfx::ColorProfile>::Leaky g_color_profile =
     LAZY_INSTANCE_INITIALIZER;
+#endif
 
 // Common functionality for converting a sync renderer message to a callback
 // function in the browser. Derive from this, create it on the heap when
@@ -319,7 +327,9 @@ RenderMessageFilter::RenderMessageFilter(
     media::AudioManager* audio_manager,
     MediaInternals* media_internals,
     DOMStorageContextWrapper* dom_storage_context)
-    : resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
+    : BrowserMessageFilter(
+          kFilteredMessageClasses, arraysize(kFilteredMessageClasses)),
+      resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
       plugin_service_(plugin_service),
       profile_data_directory_(browser_context->GetPath()),
       request_context_(request_context),
@@ -432,8 +442,10 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetCPUUsage, OnGetCPUUsage)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetAudioHardwareConfig,
                         OnGetAudioHardwareConfig)
+#if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
+#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvents, OnMediaLogEvents)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Are3DAPIsBlocked, OnAre3DAPIsBlocked)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidLose3DContext, OnDidLose3DContext)
@@ -460,7 +472,7 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
 #if defined(OS_MACOSX)
   // OSX CoreAudio calls must all happen on the main thread.
   if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
-    return audio_manager_->GetMessageLoop().get();
+    return audio_manager_->GetTaskRunner().get();
 #endif
   return NULL;
 }
@@ -560,7 +572,7 @@ void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
   }
 }
 
-void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
+void RenderMessageFilter::OnSetCookie(int render_frame_id,
                                       const GURL& url,
                                       const GURL& first_party_for_cookies,
                                       const std::string& cookie) {
@@ -571,9 +583,8 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
 
   net::CookieOptions options;
   if (GetContentClient()->browser()->AllowSetCookie(
-          url, first_party_for_cookies, cookie,
-          resource_context_, render_process_id_, message.routing_id(),
-          &options)) {
+          url, first_party_for_cookies, cookie, resource_context_,
+          render_process_id_, render_frame_id, &options)) {
     net::URLRequestContext* context = GetRequestContextForURL(url);
     // Pass a null callback since we don't care about when the 'set' completes.
     context->cookie_store()->SetCookieWithOptionsAsync(
@@ -581,7 +592,8 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
   }
 }
 
-void RenderMessageFilter::OnGetCookies(const GURL& url,
+void RenderMessageFilter::OnGetCookies(int render_frame_id,
+                                       const GURL& url,
                                        const GURL& first_party_for_cookies,
                                        IPC::Message* reply_msg) {
   ChildProcessSecurityPolicyImpl* policy =
@@ -601,8 +613,9 @@ void RenderMessageFilter::OnGetCookies(const GURL& url,
   net::CookieMonster* cookie_monster =
       context->cookie_store()->GetCookieMonster();
   cookie_monster->GetAllCookiesForURLAsync(
-      url, base::Bind(&RenderMessageFilter::CheckPolicyForCookies, this, url,
-                      first_party_for_cookies, reply_msg));
+      url, base::Bind(&RenderMessageFilter::CheckPolicyForCookies, this,
+                      render_frame_id, url, first_party_for_cookies,
+                      reply_msg));
 }
 
 void RenderMessageFilter::OnGetRawCookies(
@@ -852,14 +865,21 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
       media::AudioManagerBase::kDefaultDeviceId);
 }
 
-void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 #if defined(OS_WIN)
+void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (BackingStoreWin::ColorManagementEnabled())
+  static bool enabled = false;
+  static bool checked = false;
+  if (!checked) {
+    checked = true;
+    const CommandLine& command = *CommandLine::ForCurrentProcess();
+    enabled = command.HasSwitch(switches::kEnableMonitorProfile);
+  }
+  if (enabled)
     return;
-#endif
   *profile = g_color_profile.Get().profile();
 }
+#endif
 
 void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
                                         const GURL& url,
@@ -985,40 +1005,41 @@ void RenderMessageFilter::OnKeygen(uint32 key_size_index,
       return;
   }
 
+  resource_context_->CreateKeygenHandler(
+      key_size_in_bits,
+      challenge_string,
+      url,
+      base::Bind(
+          &RenderMessageFilter::PostKeygenToWorkerThread, this, reply_msg));
+}
+
+void RenderMessageFilter::PostKeygenToWorkerThread(
+    IPC::Message* reply_msg,
+    scoped_ptr<net::KeygenHandler> keygen_handler) {
   VLOG(1) << "Dispatching keygen task to worker pool.";
   // Dispatch to worker pool, so we do not block the IO thread.
   if (!base::WorkerPool::PostTask(
            FROM_HERE,
-           base::Bind(
-               &RenderMessageFilter::OnKeygenOnWorkerThread, this,
-               key_size_in_bits, challenge_string, url, reply_msg),
+           base::Bind(&RenderMessageFilter::OnKeygenOnWorkerThread,
+                      this,
+                      base::Passed(&keygen_handler),
+                      reply_msg),
            true)) {
     NOTREACHED() << "Failed to dispatch keygen task to worker pool";
     ViewHostMsg_Keygen::WriteReplyParams(reply_msg, std::string());
     Send(reply_msg);
-    return;
   }
 }
 
 void RenderMessageFilter::OnKeygenOnWorkerThread(
-    int key_size_in_bits,
-    const std::string& challenge_string,
-    const GURL& url,
+    scoped_ptr<net::KeygenHandler> keygen_handler,
     IPC::Message* reply_msg) {
   DCHECK(reply_msg);
 
   // Generate a signed public key and challenge, then send it back.
-  net::KeygenHandler keygen_handler(key_size_in_bits, challenge_string, url);
-
-#if defined(USE_NSS)
-  // Attach a password delegate so we can authenticate.
-  keygen_handler.set_crypto_module_password_delegate(
-      GetContentClient()->browser()->GetCryptoPasswordDelegate(url));
-#endif  // defined(USE_NSS)
-
   ViewHostMsg_Keygen::WriteReplyParams(
       reply_msg,
-      keygen_handler.GenKeyAndSignChallenge());
+      keygen_handler->GenKeyAndSignChallenge());
   Send(reply_msg);
 }
 
@@ -1029,6 +1050,7 @@ void RenderMessageFilter::OnMediaLogEvents(
 }
 
 void RenderMessageFilter::CheckPolicyForCookies(
+    int render_frame_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
     IPC::Message* reply_msg,
@@ -1038,7 +1060,7 @@ void RenderMessageFilter::CheckPolicyForCookies(
   // TabSpecificContentSetting for logging purpose.
   if (GetContentClient()->browser()->AllowGetCookie(
           url, first_party_for_cookies, cookie_list, resource_context_,
-          render_process_id_, reply_msg->routing_id())) {
+          render_process_id_, render_frame_id)) {
     // Gets the cookies from cookie store if allowed.
     context->cookie_store()->GetCookiesWithOptionsAsync(
         url, net::CookieOptions(),

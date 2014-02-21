@@ -16,8 +16,8 @@ FakeLayerUpdater::Resource::Resource(FakeLayerUpdater* layer,
 FakeLayerUpdater::Resource::~Resource() {}
 
 void FakeLayerUpdater::Resource::Update(ResourceUpdateQueue* queue,
-                                        gfx::Rect source_rect,
-                                        gfx::Vector2d dest_offset,
+                                        const gfx::Rect& source_rect,
+                                        const gfx::Vector2d& dest_offset,
                                         bool partial_update) {
   const gfx::Rect kRect(0, 0, 10, 10);
   ResourceUpdate upload = ResourceUpdate::Create(
@@ -34,8 +34,8 @@ FakeLayerUpdater::FakeLayerUpdater() : prepare_count_(0), update_count_(0) {}
 
 FakeLayerUpdater::~FakeLayerUpdater() {}
 
-void FakeLayerUpdater::PrepareToUpdate(gfx::Rect content_rect,
-                                       gfx::Size tile_size,
+void FakeLayerUpdater::PrepareToUpdate(const gfx::Rect& content_rect,
+                                       const gfx::Size& tile_size,
                                        float contents_width_scale,
                                        float contents_height_scale,
                                        gfx::Rect* resulting_opaque_rect) {
@@ -49,7 +49,7 @@ void FakeLayerUpdater::PrepareToUpdate(gfx::Rect content_rect,
   *resulting_opaque_rect = opaque_paint_rect_;
 }
 
-void FakeLayerUpdater::SetRectToInvalidate(gfx::Rect rect,
+void FakeLayerUpdater::SetRectToInvalidate(const gfx::Rect& rect,
                                            FakeTiledLayer* layer) {
   rect_to_invalidate_ = rect;
   layer_ = layer;
@@ -148,7 +148,7 @@ LayerUpdater* FakeTiledLayer::Updater() const {
 }
 
 void FakeTiledLayerWithScaledBounds::SetContentBounds(
-    gfx::Size content_bounds) {
+    const gfx::Size& content_bounds) {
   forced_content_bounds_ = content_bounds;
   draw_properties().content_bounds = forced_content_bounds_;
 }

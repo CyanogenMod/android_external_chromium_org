@@ -15,7 +15,7 @@
 
 namespace net {
 
-class QuicBlockedWriterInterface;
+struct WriteResult;
 
 // Chrome specific packet writer which uses a DatagramClientSocket for writing
 // data.
@@ -29,10 +29,10 @@ class NET_EXPORT_PRIVATE QuicDefaultPacketWriter : public QuicPacketWriter {
   virtual WriteResult WritePacket(
       const char* buffer, size_t buf_len,
       const net::IPAddressNumber& self_address,
-      const net::IPEndPoint& peer_address,
-      QuicBlockedWriterInterface* blocked_writer) OVERRIDE;
-
+      const net::IPEndPoint& peer_address) OVERRIDE;
   virtual bool IsWriteBlockedDataBuffered() const OVERRIDE;
+  virtual bool IsWriteBlocked() const OVERRIDE;
+  virtual void SetWritable() OVERRIDE;
 
   void OnWriteComplete(int rv);
   void SetConnection(QuicConnection* connection) {
@@ -43,6 +43,7 @@ class NET_EXPORT_PRIVATE QuicDefaultPacketWriter : public QuicPacketWriter {
   base::WeakPtrFactory<QuicDefaultPacketWriter> weak_factory_;
   DatagramClientSocket* socket_;
   QuicConnection* connection_;
+  bool write_blocked_;
 };
 
 }  // namespace net

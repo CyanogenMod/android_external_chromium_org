@@ -9,6 +9,7 @@
 #include <map>
 
 #include "base/base_paths.h"
+#include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -479,7 +480,11 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "Type=Application\n"
       "Name=GMail\n"
       "Exec=/opt/google/chrome/google-chrome --app=http://gmail.com/\n"
+#if defined(GOOGLE_CHROME_BUILD)
+      "Icon=google-chrome\n"
+#else
       "Icon=chromium-browser\n"
+#endif
       "StartupWMClass=gmail.com\n"
     },
 
@@ -568,12 +573,34 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
             web_app::GenerateApplicationNameFromURL(GURL(test_cases[i].url)),
             GURL(test_cases[i].url),
             std::string(),
-            base::FilePath(),
-            ASCIIToUTF16(test_cases[i].title),
+            base::ASCIIToUTF16(test_cases[i].title),
             test_cases[i].icon_name,
             base::FilePath(),
             test_cases[i].nodisplay));
   }
+}
+
+TEST(ShellIntegrationTest, GetDesktopFileContentsAppList) {
+  const base::FilePath kChromeExePath("/opt/google/chrome/google-chrome");
+  CommandLine command_line(kChromeExePath);
+  command_line.AppendSwitch("--show-app-list");
+  EXPECT_EQ(
+      "#!/usr/bin/env xdg-open\n"
+      "[Desktop Entry]\n"
+      "Version=1.0\n"
+      "Terminal=false\n"
+      "Type=Application\n"
+      "Name=Chrome App Launcher\n"
+      "Exec=/opt/google/chrome/google-chrome --show-app-list\n"
+      "Icon=chrome_app_list\n"
+      "StartupWMClass=chrome-app-list\n",
+      ShellIntegrationLinux::GetDesktopFileContentsForCommand(
+          command_line,
+          "chrome-app-list",
+          GURL(),
+          base::ASCIIToUTF16("Chrome App Launcher"),
+          "chrome_app_list",
+          false));
 }
 
 TEST(ShellIntegrationTest, GetDirectoryFileContents) {
@@ -601,7 +628,11 @@ TEST(ShellIntegrationTest, GetDirectoryFileContents) {
       "Version=1.0\n"
       "Type=Directory\n"
       "Name=Chrome Apps\n"
+#if defined(GOOGLE_CHROME_BUILD)
+      "Icon=google-chrome\n"
+#else
       "Icon=chromium-browser\n"
+#endif
     },
   };
 
@@ -610,7 +641,7 @@ TEST(ShellIntegrationTest, GetDirectoryFileContents) {
     EXPECT_EQ(
         test_cases[i].expected_output,
         ShellIntegrationLinux::GetDirectoryFileContents(
-            ASCIIToUTF16(test_cases[i].title),
+            base::ASCIIToUTF16(test_cases[i].title),
             test_cases[i].icon_name));
   }
 }

@@ -123,6 +123,8 @@ class Context(cr.config.Config, cr.loader.AutoExport):
     # Add the global arguments
     self.AddCommonArguments(self._parser)
     self._gclient = {}
+    # Try to detect the current client information
+    cr.base.client.DetectClient(self)
 
   def AddSubParser(self, source):
     parser = source.AddArguments(self._subparsers)
@@ -202,6 +204,10 @@ class Context(cr.config.Config, cr.loader.AutoExport):
     if not self._gclient:
       self._gclient = cr.base.client.ReadGClient(self)
     return self._gclient
+
+  def WriteGClient(self):
+    if self._gclient:
+      cr.base.client.WriteGClient(self)
 
   def ParseArgs(self, speculative=False):
     cr.plugin.DynamicChoices.only_active = not speculative

@@ -12,13 +12,21 @@
         '../../chrome/version.gypi',
       ],
       'target_defaults': {
+        # This and the force include below is a workaround for intsafe.h in
+        # VS 2010.
+        'msvs_system_include_dirs': [
+          '<(DEPTH)/build',
+        ],
         'msvs_settings': {
-            'VCLinkerTool': {
-                'AdditionalDependencies': [
-                    'D2D1.lib',
-                    'D3D11.lib',
-                ],
-            },
+          'VCLinkerTool': {
+            'AdditionalDependencies': [
+              'D2D1.lib',
+              'D3D11.lib',
+            ],
+          },
+          'VCCLCompilerTool': {
+            'ForcedIncludeFiles': [ 'intsafe_workaround.h', ],
+          },
         },
       },
       'targets': [
@@ -65,6 +73,7 @@
           ],
           'sources': [
             'display_properties.cc',
+            'display_properties.h',
             'metro_driver.cc',
             'metro_driver.h',
             'stdafx.h',

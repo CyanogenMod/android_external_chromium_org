@@ -32,12 +32,13 @@ LOCAL_SRC_FILES := \
 	skia/ext/benchmarking_canvas.cc \
 	skia/ext/bitmap_platform_device_skia.cc \
 	skia/ext/convolver.cc \
+	skia/ext/event_tracer_impl.cc \
 	skia/ext/google_logging.cc \
 	skia/ext/image_operations.cc \
 	skia/ext/lazy_pixel_ref.cc \
-	skia/ext/lazy_pixel_ref_utils.cc \
 	skia/ext/opacity_draw_filter.cc \
 	skia/ext/paint_simplifier.cc \
+	skia/ext/pixel_ref_utils.cc \
 	skia/ext/platform_canvas.cc \
 	skia/ext/platform_device.cc \
 	skia/ext/platform_device_linux.cc \
@@ -74,6 +75,7 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
@@ -82,10 +84,10 @@ MY_CFLAGS_Debug := \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
-	-ffunction-sections
+	-ffunction-sections \
+	-funwind-tables
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -96,21 +98,33 @@ MY_DEFS_Debug := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
+	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
+	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
+	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
+	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
+	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
+	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
+	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
+	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
+	'-DSK_GAMMA_APPLY_TO_A8' \
+	'-DSK_GAMMA_EXPONENT=1.4' \
+	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
@@ -151,7 +165,6 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -183,6 +196,7 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-Wno-unused-but-set-variable \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
@@ -191,10 +205,10 @@ MY_CFLAGS_Release := \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer
+	-fomit-frame-pointer \
+	-funwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
 	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
@@ -205,21 +219,33 @@ MY_DEFS_Release := \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
-	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
+	'-DSK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG=1' \
+	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
+	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
+	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
+	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
+	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
+	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
+	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
+	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
+	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
+	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
+	'-DSK_GAMMA_APPLY_TO_A8' \
+	'-DSK_GAMMA_EXPONENT=1.4' \
+	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
@@ -260,7 +286,6 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-uninitialized \
-	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

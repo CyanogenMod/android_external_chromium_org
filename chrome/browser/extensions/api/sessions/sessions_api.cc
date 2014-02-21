@@ -78,7 +78,7 @@ scoped_ptr<tabs::Tab> CreateTabModelHelper(
   scoped_ptr<tabs::Tab> tab_struct(new tabs::Tab);
 
   GURL gurl = current_navigation.virtual_url();
-  std::string title = UTF16ToUTF8(current_navigation.title());
+  std::string title = base::UTF16ToUTF8(current_navigation.title());
 
   tab_struct->session_id.reset(new std::string(session_id));
   tab_struct->url.reset(new std::string(gurl.spec()));
@@ -87,7 +87,7 @@ scoped_ptr<tabs::Tab> CreateTabModelHelper(
   } else {
     const std::string languages =
         profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
-    tab_struct->title.reset(new std::string(UTF16ToUTF8(
+    tab_struct->title.reset(new std::string(base::UTF16ToUTF8(
         net::FormatUrl(gurl, languages))));
   }
   tab_struct->index = index;
@@ -393,7 +393,7 @@ void SessionsRestoreFunction::SetInvalidIdError(const std::string& invalid_id) {
 
 void SessionsRestoreFunction::SetResultRestoredTab(
     const content::WebContents* contents) {
-  scoped_ptr<DictionaryValue> tab_value(
+  scoped_ptr<base::DictionaryValue> tab_value(
       ExtensionTabUtil::CreateTabValue(contents, GetExtension()));
   scoped_ptr<tabs::Tab> tab(tabs::Tab::FromValue(*tab_value));
   scoped_ptr<api::sessions::Session> restored_session(CreateSessionModelHelper(
@@ -409,7 +409,7 @@ bool SessionsRestoreFunction::SetResultRestoredWindow(int window_id) {
     // error_ is set by GetWindowFromWindowId function call.
     return false;
   }
-  scoped_ptr<DictionaryValue> window_value(
+  scoped_ptr<base::DictionaryValue> window_value(
       controller->CreateWindowValueWithTabs(GetExtension()));
   scoped_ptr<windows::Window> window(windows::Window::FromValue(
       *window_value));
@@ -588,7 +588,7 @@ static base::LazyInstance<ProfileKeyedAPIFactory<SessionsAPI> >
 // static
 ProfileKeyedAPIFactory<SessionsAPI>*
     SessionsAPI::GetFactoryInstance() {
-  return &g_factory.Get();
+  return g_factory.Pointer();
 }
 
 }  // namespace extensions

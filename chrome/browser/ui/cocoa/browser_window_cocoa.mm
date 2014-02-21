@@ -17,15 +17,15 @@
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/fullscreen.h"
-#include "chrome/browser/password_manager/password_manager.h"
+#include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
-#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_commands_mac.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
+#import "chrome/browser/ui/cocoa/browser/avatar_base_controller.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser/edit_search_engine_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/browser/password_generation_bubble_controller.h"
@@ -136,7 +136,7 @@ void BrowserWindowCocoa::Show() {
     [window() orderOut:controller_];
     [window() miniaturize:controller_];
   } else if (initial_show_state_ == ui::SHOW_STATE_FULLSCREEN) {
-    chrome::ToggleFullscreenMode(browser_);
+    chrome::ToggleFullscreenWithChromeOrFallback(browser_);
   }
   initial_show_state_ = ui::SHOW_STATE_DEFAULT;
 
@@ -478,10 +478,16 @@ void BrowserWindowCocoa::ShowBookmarkBubble(const GURL& url,
                       alreadyBookmarked:(already_bookmarked ? YES : NO)];
 }
 
+void BrowserWindowCocoa::ShowBookmarkAppBubble(
+    const WebApplicationInfo& web_app_info,
+    const std::string& extension_id) {
+  NOTIMPLEMENTED();
+}
+
 void BrowserWindowCocoa::ShowTranslateBubble(
-      content::WebContents* contents,
-      TranslateBubbleModel::ViewState view_state,
-      TranslateErrors::Type error_type) {
+    content::WebContents* contents,
+    TranslateTabHelper::TranslateStep step,
+    TranslateErrors::Type error_type) {
   NOTIMPLEMENTED();
 }
 
@@ -594,10 +600,6 @@ void BrowserWindowCocoa::Paste() {
   [NSApp sendAction:@selector(paste:) to:nil from:nil];
 }
 
-void BrowserWindowCocoa::OpenTabpose() {
-  [controller_ openTabpose];
-}
-
 void BrowserWindowCocoa::EnterFullscreenWithChrome() {
   // This method cannot be called if simplified fullscreen is enabled.
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -690,7 +692,7 @@ void BrowserWindowCocoa::ShowAvatarBubble(WebContents* web_contents,
 }
 
 void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton() {
-  AvatarButtonController* controller = [controller_ avatarButtonController];
+  AvatarBaseController* controller = [controller_ avatarButtonController];
   [controller showAvatarBubble:[controller buttonView]];
 }
 
@@ -705,14 +707,15 @@ void BrowserWindowCocoa::ShowPasswordGenerationBubble(
                                     rect.x() + rect.width()/2,
                                     rect.bottom());
 
-  PasswordGenerationBubbleController* controller =
-      [[PasswordGenerationBubbleController alloc]
-        initWithWindow:browser_->window()->GetNativeWindow()
-            anchoredAt:point
-        renderViewHost:web_contents->GetRenderViewHost()
-        passwordManager:PasswordManager::FromWebContents(web_contents)
-        usingGenerator:password_generator
-               forForm:form];
+  PasswordGenerationBubbleController* controller = [
+          [PasswordGenerationBubbleController alloc]
+       initWithWindow:browser_->window()->GetNativeWindow()
+           anchoredAt:point
+       renderViewHost:web_contents->GetRenderViewHost()
+      passwordManager:ChromePasswordManagerClient::GetManagerFromWebContents(
+                          web_contents)
+       usingGenerator:password_generator
+              forForm:form];
   [controller showWindow:nil];
 }
 

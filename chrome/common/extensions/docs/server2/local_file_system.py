@@ -7,13 +7,18 @@ import sys
 
 from docs_server_utils import StringIdentity
 from file_system import FileSystem, FileNotFoundError, StatInfo
-from future import Future
+from future import Gettable, Future
+from path_util import AssertIsDirectory, AssertIsValid
+from test_util import ChromiumPath
+
 
 def _ConvertToFilepath(path):
   return path.replace('/', os.sep)
 
+
 def _ConvertFromFilepath(path):
   return path.replace(os.sep, '/')
+
 
 def _ReadFile(filename):
   try:
@@ -21,6 +26,7 @@ def _ReadFile(filename):
       return f.read()
   except IOError as e:
     raise FileNotFoundError('Read failed for %s: %s' % (filename, e))
+
 
 def _ListDir(dir_name):
   all_files = []
@@ -37,6 +43,7 @@ def _ListDir(dir_name):
     else:
       all_files.append(posix_path)
   return all_files
+
 
 def _CreateStatInfo(path):
   try:
@@ -56,36 +63,44 @@ def _CreateStatInfo(path):
   except OSError as e:
     raise FileNotFoundError('os.stat failed for %s: %s' % (path, e))
 
+
 class LocalFileSystem(FileSystem):
   '''FileSystem implementation which fetches resources from the local
   filesystem.
   '''
   def __init__(self, base_path):
+    AssertIsDirectory(base_path)
     self._base_path = _ConvertToFilepath(base_path)
 
   @staticmethod
-  def Create():
-    return LocalFileSystem(
-        os.path.join(sys.path[0], '..', '..', '..', '..', '..'))
+  def Create(*path):
+    return LocalFileSystem(ChromiumPath(*path))
 
   def Read(self, paths):
-    result = {}
-    for path in paths:
-      full_path = os.path.join(self._base_path,
-                               _ConvertToFilepath(path).lstrip(os.sep))
-      if path.endswith('/'):
-        result[path] = _ListDir(full_path)
-      else:
-        result[path] = _ReadFile(full_path)
-    return Future(value=result)
+    def resolve():
+      result = {}
+      for path in paths:
+        AssertIsValid(path)
+        full_path = os.path.join(self._base_path,
+                                 _ConvertToFilepath(path).lstrip(os.sep))
+        if path == '' or path.endswith('/'):
+          result[path] = _ListDir(full_path)
+        else:
+          result[path] = _ReadFile(full_path)
+      return result
+    return Future(delegate=Gettable(resolve))
 
   def Refresh(self):
     return Future(value=())
 
   def Stat(self, path):
+    AssertIsValid(path)
     full_path = os.path.join(self._base_path,
                              _ConvertToFilepath(path).lstrip(os.sep))
     return _CreateStatInfo(full_path)
 
   def GetIdentity(self):
     return '@'.join((self.__class__.__name__, StringIdentity(self._base_path)))
+
+  def __repr__(self):
+    return 'LocalFileSystem(%s)' % self._base_path

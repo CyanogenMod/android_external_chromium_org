@@ -41,49 +41,60 @@ util.ferr = function(msg) {
 };
 
 /**
- * Install a sensible toString() on the FileError object.
- *
- * FileError.prototype.code is a numeric code describing the cause of the
- * error.  The FileError constructor has a named property for each possible
- * error code, but provides no way to map the code to the named property.
- * This toString() implementation fixes that.
- */
-util.installFileErrorToString = function() {
-  FileError.prototype.toString = function() {
-    return '[object FileError: ' + util.getFileErrorMnemonic(this.code) + ']';
-  };
-};
-
-/**
- * @param {number} code The file error code.
- * @return {string} The file error mnemonic.
- */
-util.getFileErrorMnemonic = function(code) {
-  for (var key in FileError) {
-    if (key.search(/_ERR$/) != -1 && FileError[key] == code)
-      return key;
-  }
-
-  return code;
-};
-
-/**
- * @param {number} code File error code (from FileError object).
+ * @param {string} name File error name.
  * @return {string} Translated file error string.
  */
-util.getFileErrorString = function(code) {
-  for (var key in FileError) {
-    var match = /(.*)_ERR$/.exec(key);
-    if (match && FileError[key] == code) {
-      // This would convert 1 to 'NOT_FOUND'.
-      code = match[1];
+util.getFileErrorString = function(name) {
+  var candidateMessageFragment;
+  switch (name) {
+    case 'NotFoundError':
+      candidateMessageFragment = 'NOT_FOUND';
       break;
-    }
+    case 'SecurityError':
+      candidateMessageFragment = 'SECURITY';
+      break;
+    case 'NotReadableError':
+      candidateMessageFragment = 'NOT_READABLE';
+      break;
+    case 'NoModificationAllowedError':
+      candidateMessageFragment = 'NO_MODIFICATION_ALLOWED';
+      break;
+    case 'InvalidStateError':
+      candidateMessageFragment = 'INVALID_STATE';
+      break;
+    case 'InvalidModificationError':
+      candidateMessageFragment = 'INVALID_MODIFICATION';
+      break;
+    case 'PathExistsError':
+      candidateMessageFragment = 'PATH_EXISTS';
+      break;
+    case 'QuotaExceededError':
+      candidateMessageFragment = 'QUOTA_EXCEEDED';
+      break;
   }
-  console.warn('File error: ' + code);
-  return loadTimeData.getString('FILE_ERROR_' + code) ||
+
+  return loadTimeData.getString('FILE_ERROR_' + candidateMessageFragment) ||
       loadTimeData.getString('FILE_ERROR_GENERIC');
 };
+
+/**
+ * Mapping table for FileError.code style enum to DOMError.name string.
+ *
+ * @enum {string}
+ * @const
+ */
+util.FileError = Object.freeze({
+  ABORT_ERR: 'AbortError',
+  INVALID_MODIFICATION_ERR: 'InvalidModificationError',
+  INVALID_STATE_ERR: 'InvalidStateError',
+  NO_MODIFICATION_ALLOWED_ERR: 'NoModificationAllowedError',
+  NOT_FOUND_ERR: 'NotFoundError',
+  NOT_READABLE_ERR: 'NotReadable',
+  PATH_EXISTS_ERR: 'PathExistsError',
+  QUOTA_EXCEEDED_ERR: 'QuotaExceededError',
+  TYPE_MISMATCH_ERR: 'TypeMismatchError',
+  ENCODING_ERR: 'EncodingError',
+});
 
 /**
  * @param {string} str String to escape.
@@ -293,7 +304,7 @@ util.resolvePath = function(root, path, resultCallback, errorCallback) {
       path, {create: false},
       resultCallback,
       function(err) {
-        if (err.code == FileError.TYPE_MISMATCH_ERR) {
+        if (err.name == util.FileError.TYPE_MISMATCH_ERR) {
           // Bah.  It's a directory, ask again.
           root.getDirectory(
               path, {create: false},
@@ -303,67 +314,6 @@ util.resolvePath = function(root, path, resultCallback, errorCallback) {
           errorCallback(err);
         }
       });
-};
-
-/**
- * Locate the file referred to by path, creating directories or the file
- * itself if necessary.
- * @param {DirEntry} root The root entry.
- * @param {string} path The file path.
- * @param {function(FileEntry)} successCallback The callback.
- * @param {function(FileError)} errorCallback The callback.
- */
-util.getOrCreateFile = function(root, path, successCallback, errorCallback) {
-  var dirname = null;
-  var basename = null;
-
-  var onDirFound = function(dirEntry) {
-    dirEntry.getFile(basename, { create: true },
-                     successCallback, errorCallback);
-  };
-
-  var i = path.lastIndexOf('/');
-  if (i > -1) {
-    dirname = path.substr(0, i);
-    basename = path.substr(i + 1);
-  } else {
-    basename = path;
-  }
-
-  if (!dirname) {
-    onDirFound(root);
-    return;
-  }
-
-  util.getOrCreateDirectory(root, dirname, onDirFound, errorCallback);
-};
-
-/**
- * Locate the directory referred to by path, creating directories along the
- * way.
- * @param {DirEntry} root The root entry.
- * @param {string} path The directory path.
- * @param {function(FileEntry)} successCallback The callback.
- * @param {function(FileError)} errorCallback The callback.
- */
-util.getOrCreateDirectory = function(root, path, successCallback,
-                                     errorCallback) {
-  var names = path.split('/');
-
-  var getOrCreateNextName = function(dir) {
-    if (!names.length)
-      return successCallback(dir);
-
-    var name;
-    do {
-      name = names.shift();
-    } while (!name || name == '.');
-
-    dir.getDirectory(name, { create: true }, getOrCreateNextName,
-                     errorCallback);
-  };
-
-  getOrCreateNextName(root);
 };
 
 /**
@@ -387,10 +337,10 @@ util.rename = function(entry, newName, successCallback, errorCallback) {
         parent, newName, {create: false},
         function(entry) {
           // The entry with the name already exists.
-          errorCallback(util.createFileError(FileError.PATH_EXISTS_ERR));
+          errorCallback(util.createDOMError(util.FileError.PATH_EXISTS_ERR));
         },
         function(error) {
-          if (error.code != FileError.NOT_FOUND_ERR) {
+          if (error.name != util.FileError.NOT_FOUND_ERR) {
             // Unexpected error is found.
             errorCallback(error);
             return;
@@ -449,7 +399,7 @@ util.deduplicatePath = function(dirEntry, relativePath, onSuccess, onError) {
     // We expect to be unable to resolve the target file, since we're going
     // to create it during the copy.  However, if the resolve fails with
     // anything other than NOT_FOUND, that's trouble.
-    if (err.code != FileError.NOT_FOUND_ERR) {
+    if (err.name != util.FileError.NOT_FOUND_ERR) {
       onError(err);
       return;
     }
@@ -464,7 +414,7 @@ util.deduplicatePath = function(dirEntry, relativePath, onSuccess, onError) {
       // Hit the limit of the number of retrial.
       // Note that we cannot create FileError object directly, so here we use
       // Object.create instead.
-      onError(util.createFileError(FileError.PATH_EXISTS_ERR));
+      onError(util.createDOMError(util.FileError.PATH_EXISTS_ERR));
       return;
     }
 
@@ -672,27 +622,28 @@ util.createChild = function(parent, opt_className, opt_tag) {
 };
 
 /**
- * Update the app state.
+ * Updates the app state.
  *
- * @param {string} path Path to be put in the address bar after the hash.
- *   If null the hash is left unchanged.
- * @param {string|Object=} opt_param Search parameter. Used directly if string,
- *   stringified if object. If omitted the search query is left unchanged.
+ * @param {string} currentDirectoryURL Currently opened directory as an URL.
+ *     If null the value is left unchanged.
+ * @param {string} selectionURL Currently selected entry as an URL. If null the
+ *     value is left unchanged.
+ * @param {string|Object=} opt_param Additional parameters, to be stored. If
+ *     null, then left unchanged.
  */
-util.updateAppState = function(path, opt_param) {
+util.updateAppState = function(currentDirectoryURL, selectionURL, opt_param) {
   window.appState = window.appState || {};
-  if (typeof opt_param == 'string')
-    window.appState.params = {};
-  else if (typeof opt_param == 'object')
+  if (opt_param !== undefined && opt_param !== null)
     window.appState.params = opt_param;
-  if (path)
-    window.appState.defaultPath = path;
+  if (currentDirectoryURL !== null)
+    window.appState.currentDirectoryURL = currentDirectoryURL;
+  if (selectionURL !== null)
+    window.appState.selectionURL = selectionURL;
   util.saveAppState();
-  return;
 };
 
 /**
- * Return a translated string.
+ * Returns a translated string.
  *
  * Wrapper function to make dealing with translated strings more concise.
  * Equivalent to loadTimeData.getString(id).
@@ -705,7 +656,7 @@ function str(id) {
 }
 
 /**
- * Return a translated string with arguments replaced.
+ * Returns a translated string with arguments replaced.
  *
  * Wrapper function to make dealing with translated strings more concise.
  * Equivalent to loadTimeData.getStringF(id, ...).
@@ -1045,35 +996,38 @@ util.toggleFullScreen = function(appWindow, enabled) {
 /**
  * The type of a file operation.
  * @enum {string}
+ * @const
  */
-util.FileOperationType = {
+util.FileOperationType = Object.freeze({
   COPY: 'COPY',
   MOVE: 'MOVE',
   ZIP: 'ZIP',
-};
+});
 
 /**
  * The type of a file operation error.
  * @enum {number}
+ * @const
  */
-util.FileOperationErrorType = {
+util.FileOperationErrorType = Object.freeze({
   UNEXPECTED_SOURCE_FILE: 0,
   TARGET_EXISTS: 1,
   FILESYSTEM_ERROR: 2,
-};
+});
 
 /**
  * The kind of an entry changed event.
  * @enum {number}
+ * @const
  */
-util.EntryChangedKind = {
+util.EntryChangedKind = Object.freeze({
   CREATED: 0,
   DELETED: 1,
-};
+});
 
 /**
  * Obtains whether an entry is fake or not.
- * @param {Entry|Object} entry Entry of fake entry.
+ * @param {!Entry|!Object} entry Entry or a fake entry.
  * @return {boolean} True if the given entry is fake.
  */
 util.isFakeEntry = function(entry) {
@@ -1081,16 +1035,40 @@ util.isFakeEntry = function(entry) {
 };
 
 /**
- * Creates a FileError instance with given code.
- * Note that we cannot create FileError instance by "new FileError(code)",
- * unfortunately, so here we use Object.create.
- * @param {number} code Error code for the FileError.
- * @return {FileError} FileError instance
+ * Creates an instance of UserDOMError with given error name that looks like a
+ * FileError except that it does not have the deprecated FileError.code member.
+ *
+ * TODO(uekawa): remove reference to FileError.
+ *
+ * @param {string} name Error name for the file error.
+ * @return {UserDOMError} FileError instance
  */
-util.createFileError = function(code) {
-  return Object.create(FileError.prototype, {
-    code: { get: function() { return code; } }
-  });
+util.createDOMError = function(name) {
+  return new util.UserDOMError(name);
+};
+
+/**
+ * Creates a DOMError-like object to be used in place of returning file errors.
+ *
+ * @param {string} name Error name for the file error.
+ * @constructor
+ */
+util.UserDOMError = function(name) {
+  /**
+   * @type {string}
+   * @private
+   */
+  this.name_ = name;
+  Object.freeze(this);
+};
+
+util.UserDOMError.prototype = {
+  /**
+   * @return {string} File error name.
+   */
+  get name() {
+    return this.name_;
+  }
 };
 
 /**
@@ -1103,31 +1081,31 @@ util.createFileError = function(code) {
 util.isSameEntry = function(entry1, entry2) {
   // Currently, we can assume there is only one root.
   // When we support multi-file system, we need to look at filesystem, too.
-  return (entry1 && entry2 && entry1.fullPath === entry2.fullPath) ||
+  return (entry1 && entry2 && entry1.toURL() === entry2.toURL()) ||
       (!entry1 && !entry2);
 };
 
 /**
- * @param {Entry|Object} parent The parent entry. Can be a fake.
- * @param {Entry|Object} child The child entry. Can be a fake.
- * @return {boolean} True if parent entry is actualy the parent of the child
- *     entry.
- */
-util.isParentEntry = function(parent, child) {
-  // Currently, we can assume there is only one root.
-  // When we support multi-file system, we need to look at filesystem, too.
-  return PathUtil.isParentPath(parent.fullPath, child.fullPath);
-};
-
-/**
- * Views files in the browser.
+ * Checks if the child entry is a descendant of another entry. If the entries
+ * point to the same file or directory, then returns false.
  *
- * @param {Array.<string>} urls URLs of files to view.
- * @param {function(bool)} callback Callback notifying success or not.
+ * @param {DirectoryEntry|Object} ancestorEntry The ancestor directory entry.
+ *     Can be a fake.
+ * @param {Entry|Object} childEntry The child entry. Can be a fake.
+ * @return {boolean} True if the child entry is contained in the ancestor path.
  */
-util.viewFilesInBrowser = function(urls, callback) {
-  var taskId = chrome.runtime.id + '|file|view-in-browser';
-  chrome.fileBrowserPrivate.executeTask(taskId, urls, callback);
+util.isDescendantEntry = function(ancestorEntry, childEntry) {
+  if (!ancestorEntry.isDirectory)
+    return false;
+
+  // TODO(mtomasz): Do not work on URLs. Instead consider comparing file systems
+  // and paths.
+  if (util.isSameEntry(ancestorEntry, childEntry))
+    return false;
+  if (childEntry.toURL().indexOf(ancestorEntry.toURL() + '/') !== 0)
+    return false;
+
+  return true;
 };
 
 /**
@@ -1139,11 +1117,7 @@ util.viewFilesInBrowser = function(urls, callback) {
  * @param {string} url URL to visit.
  */
 util.visitURL = function(url) {
-  var params = {url: url};
-  chrome.tabs.create(params, function() {
-    if (chrome.runtime.lastError)
-      chrome.windows.create(params);
-  });
+  window.open(url);
 };
 
 /**
@@ -1174,11 +1148,12 @@ util.entriesToURLs = function(entries) {
  * Converts array of URLs to an array of corresponding Entries.
  *
  * @param {Array.<string>} urls Input array of URLs.
- * @param {function(Array.<Entry>)} callback Completion callback with array of
- *     Entries.
+ * @param {function(Array.<Entry>, Array.<URL>)} callback Completion callback
+ *     with array of success Entries and failure URLs.
  */
 util.URLsToEntries = function(urls, callback) {
   var result = [];
+  var failureUrl = [];
   AsyncUtil.forEach(
       urls,
       function(forEachCallback, url) {
@@ -1188,12 +1163,66 @@ util.URLsToEntries = function(urls, callback) {
         }, function() {
           // Not an error. Possibly, the file is not accessible anymore.
           console.warn('Failed to resolve the file with url: ' + url + '.');
+          failureUrl.push(url);
           forEachCallback();
         });
       },
-      function() {
-        callback(result);
-      });
+      callback.bind(null, result, failureUrl));
+};
+
+/**
+ * Returns whether the window is teleported or not.
+ * @param {DOMWindow} window Window.
+ * @return {Promise.<boolean>} Whether the window is teleported or not.
+ */
+util.isTeleported = function(window) {
+  return new Promise(function(onFulfilled) {
+    window.chrome.fileBrowserPrivate.getProfiles(function(profiles,
+                                                          currentId,
+                                                          displayedId) {
+      onFullfilled(currentId !== displayedId);
+    });
+  });
+};
+
+/**
+ * Sets up and shows the alert to inform a user the task is opened in the
+ * desktop of the running profile.
+ *
+ * TODO(hirono): Move the function from the util namespace.
+ * @param {cr.ui.AlertDialog} alertDialog Alert dialog to be shown.
+ * @param {Array.<Entry>} entries List of opened entries.
+ */
+util.showOpenInOtherDesktopAlert = function(alertDialog, entries) {
+  if (!entries.length)
+    return;
+  chrome.fileBrowserPrivate.getProfiles(function(profiles,
+                                                 currentId,
+                                                 displayedId) {
+    // Find strings.
+    var displayName;
+    for (var i = 0; i < profiles.length; i++) {
+      if (profiles[i].profileId === currentId) {
+        displayName = profiles[i].displayName;
+        break;
+      }
+    }
+    if (!displayName) {
+      console.warn('Display name is not found.');
+      return;
+    }
+
+    var title = entries.size > 1 ?
+        entries[0].name + '\u2026' /* ellipsis */ : entries[0].name;
+    var message = strf(entries.size > 1 ?
+                       'OPEN_IN_OTHER_DESKTOP_MESSAGE_PLURAL' :
+                       'OPEN_IN_OTHER_DESKTOP_MESSAGE',
+                       displayName,
+                       currentId);
+
+    // Show the dialog.
+    alertDialog.showWithTitle(title, message);
+  }.bind(this));
 };
 
 /**
@@ -1255,5 +1284,6 @@ util.VolumeType = Object.freeze({
   DRIVE: 'drive',
   DOWNLOADS: 'downloads',
   REMOVABLE: 'removable',
-  ARCHIVE: 'archive'
+  ARCHIVE: 'archive',
+  CLOUD_DEVICE: 'cloud_device'
 });

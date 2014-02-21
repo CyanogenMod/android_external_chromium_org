@@ -257,6 +257,11 @@ void Shell::PlatformResizeSubViews() {
   // Not needed; the subviews are bound.
 }
 
+bool Shell::PlatformHandleContextMenu(
+    const content::ContextMenuParams& params) {
+  return false;
+}
+
 void Shell::Close() {
   if (headless_) {
     delete this;
@@ -339,7 +344,7 @@ void Shell::PlatformSetTitle(const base::string16& title) {
   if (headless_)
     return;
 
-  std::string title_utf8 = UTF16ToUTF8(title);
+  std::string title_utf8 = base::UTF16ToUTF8(title);
   gtk_window_set_title(GTK_WINDOW(window_), title_utf8.c_str());
 }
 

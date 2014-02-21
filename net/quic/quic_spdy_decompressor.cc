@@ -36,7 +36,6 @@ class SpdyFramerVisitor : public SpdyFramerVisitorInterface {
   virtual void OnSynStream(SpdyStreamId stream_id,
                            SpdyStreamId associated_stream_id,
                            SpdyPriority priority,
-                           uint8 credential_slot,
                            bool fin,
                            bool unidirectional) OVERRIDE {}
   virtual void OnSynReply(SpdyStreamId stream_id, bool fin) OVERRIDE {}
@@ -45,16 +44,12 @@ class SpdyFramerVisitor : public SpdyFramerVisitorInterface {
   virtual void OnSetting(SpdySettingsIds id,
                          uint8 flags,
                          uint32 value) OVERRIDE {}
-  virtual void OnPing(uint32 unique_id) OVERRIDE {}
+  virtual void OnPing(SpdyPingId unique_id) OVERRIDE {}
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
                         SpdyGoAwayStatus status) OVERRIDE {}
   virtual void OnHeaders(SpdyStreamId stream_id, bool fin) OVERRIDE {}
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE {}
-  virtual bool OnCredentialFrameData(const char* credential_data,
-                                     size_t len) OVERRIDE {
-    return false;
-  }
   virtual void OnPushPromise(SpdyStreamId stream_id,
                              SpdyStreamId promised_stream_id) OVERRIDE {}
   void set_visitor(QuicSpdyDecompressor::Visitor* visitor) {

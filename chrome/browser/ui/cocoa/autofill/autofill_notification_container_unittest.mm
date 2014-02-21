@@ -9,7 +9,7 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "chrome/browser/ui/autofill/mock_autofill_dialog_view_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 namespace {
 
@@ -40,7 +40,7 @@ TEST_F(AutofillNotificationContainerTest, Subviews) {
   notifications.push_back(
       autofill::DialogNotification(
           autofill::DialogNotification::REQUIRED_ACTION,
-          ASCIIToUTF16("test")));
+          base::ASCIIToUTF16("test")));
   ASSERT_FALSE(notifications[0].HasArrow());
   [container_ setNotifications:notifications];
 
@@ -50,7 +50,7 @@ TEST_F(AutofillNotificationContainerTest, Subviews) {
   notifications.push_back(
       autofill::DialogNotification(
           autofill::DialogNotification::REQUIRED_ACTION,
-          ASCIIToUTF16("test")));
+          base::ASCIIToUTF16("test")));
   ASSERT_FALSE(notifications[1].HasArrow());
   [container_ setNotifications:notifications];
 

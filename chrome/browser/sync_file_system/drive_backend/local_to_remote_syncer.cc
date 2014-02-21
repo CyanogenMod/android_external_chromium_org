@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/format_macros.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/sequenced_task_runner.h"
@@ -20,7 +21,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
+#include "chrome/browser/sync_file_system/logger.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -44,6 +45,12 @@ void ReturnRetryOnSuccess(const SyncStatusCallback& callback,
   callback.Run(status);
 }
 
+bool IsLocalFileMissing(const SyncFileMetadata& local_metadata,
+                        const FileChange& local_change) {
+  return local_metadata.file_type == SYNC_FILE_TYPE_UNKNOWN ||
+         local_change.IsDelete();
+}
+
 }  // namespace
 
 LocalToRemoteSyncer::LocalToRemoteSyncer(SyncEngineContext* sync_context,
@@ -52,12 +59,16 @@ LocalToRemoteSyncer::LocalToRemoteSyncer(SyncEngineContext* sync_context,
                                          const base::FilePath& local_path,
                                          const fileapi::FileSystemURL& url)
     : sync_context_(sync_context),
-      local_metadata_(local_metadata),
       local_change_(local_change),
+      local_is_missing_(IsLocalFileMissing(local_metadata, local_change)),
       local_path_(local_path),
       url_(url),
       sync_action_(SYNC_ACTION_NONE),
+      needs_remote_change_listing_(false),
       weak_ptr_factory_(this) {
+  DCHECK(local_is_missing_ ||
+         local_change.file_type() == local_metadata.file_type)
+      << local_change.DebugString() << " metadata:" << local_metadata.file_type;
 }
 
 LocalToRemoteSyncer::~LocalToRemoteSyncer() {
@@ -65,6 +76,8 @@ LocalToRemoteSyncer::~LocalToRemoteSyncer() {
 
 void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
   if (!IsContextReady()) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Local -> Remote] Context not ready.");
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
     return;
@@ -73,6 +86,21 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
   SyncStatusCallback wrapped_callback = base::Bind(
       &LocalToRemoteSyncer::SyncCompleted, weak_ptr_factory_.GetWeakPtr(),
       callback);
+
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Local -> Remote] Start: %s on %s@%s %s",
+            local_change_.DebugString().c_str(),
+            url_.path().AsUTF8Unsafe().c_str(),
+            url_.origin().host().c_str(),
+            local_is_missing_ ? "(missing)" : "");
+
+  if (local_is_missing_ && !local_change_.IsDelete()) {
+    // Stray file, we can just return.
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Local -> Remote]: Missing file for non-delete change");
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
 
   std::string app_id = url_.origin().host();
   base::FilePath path = url_.path();
@@ -83,6 +111,8 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
           app_id, path,
           active_ancestor_tracker.get(), &active_ancestor_path)) {
     // The app is disabled or not registered.
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Local -> Remote]: App is disabled or not registered");
     callback.Run(SYNC_STATUS_UNKNOWN_ORIGIN);
     return;
   }
@@ -104,7 +134,8 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
     bool should_success = active_ancestor_path.AppendRelativePath(
         path, &missing_entries);
     if (!should_success) {
-      NOTREACHED();
+      NOTREACHED() << "[Local -> Remote]: Detected invalid ancestor: "
+                   << active_ancestor_path.value();
       callback.Run(SYNC_STATUS_FAILED);
       return;
     }
@@ -114,8 +145,9 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
   fileapi::VirtualPath::GetComponents(missing_entries, &missing_components);
 
   if (!missing_components.empty()) {
-    if (local_change_.IsDelete() ||
-        local_metadata_.file_type == SYNC_FILE_TYPE_UNKNOWN) {
+    if (local_is_missing_) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Local -> Remote]: Both local and remote are marked missing");
       // !IsDelete() but SYNC_FILE_TYPE_UNKNOWN could happen when a file is
       // deleted by recursive deletion (which is not recorded by tracker)
       // but there're remaining changes for the same file in the tracker.
@@ -133,6 +165,8 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
     if (active_ancestor_details.file_kind() == FILE_KIND_FOLDER) {
       remote_parent_folder_tracker_ = active_ancestor_tracker.Pass();
       target_path_ = active_ancestor_path.Append(missing_components[0]);
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Local -> Remote]: Detected missing parent folder.");
       CreateRemoteFolder(wrapped_callback);
       return;
     }
@@ -143,6 +177,8 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
                         active_ancestor_tracker->parent_tracker_id());
     remote_file_tracker_ = active_ancestor_tracker.Pass();
     target_path_ = active_ancestor_path;
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Local -> Remote]: Detected non-folder file in its path.");
     DeleteRemoteFile(base::Bind(&LocalToRemoteSyncer::DidDeleteForCreateFolder,
                                 weak_ptr_factory_.GetWeakPtr(),
                                 wrapped_callback));
@@ -160,6 +196,9 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
     DCHECK(target_path_ == active_ancestor_path);
 
     if (remote_file_tracker_->dirty()) {
+      util::Log(logging::LOG_VERBOSE, FROM_HERE,
+                "[Local -> Remote]: Detected conflicting dirty tracker:%"
+                PRId64, remote_file_tracker_->tracker_id());
       // Both local and remote file has pending modification.
       HandleConflict(wrapped_callback);
       return;
@@ -179,18 +218,30 @@ void LocalToRemoteSyncer::Run(const SyncStatusCallback& callback) {
   target_path_ = url_.path();
   DCHECK(target_path_ == active_ancestor_path.Append(missing_components[0]));
   if (local_change_.file_type() == SYNC_FILE_TYPE_FILE) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "[Local -> Remote]: Detected a new file.");
     UploadNewFile(wrapped_callback);
     return;
   }
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Local -> Remote]: Detected a new folder.");
   CreateRemoteFolder(wrapped_callback);
 }
 
 void LocalToRemoteSyncer::SyncCompleted(const SyncStatusCallback& callback,
                                         SyncStatusCode status) {
-  if (status == SYNC_STATUS_OK && target_path_ != url_.path()) {
-    callback.Run(SYNC_STATUS_RETRY);
-    return;
-  }
+  if (status == SYNC_STATUS_OK && target_path_ != url_.path())
+    status = SYNC_STATUS_RETRY;
+
+  if (needs_remote_change_listing_)
+    status = SYNC_STATUS_FILE_BUSY;
+
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "[Local -> Remote]: Finished: action=%s, status=%s for %s@%s",
+            SyncActionToString(sync_action_),
+            SyncStatusCodeToString(status),
+            target_path_.AsUTF8Unsafe().c_str(),
+            url_.origin().host().c_str());
 
   callback.Run(status);
 }
@@ -200,6 +251,11 @@ void LocalToRemoteSyncer::HandleConflict(const SyncStatusCallback& callback) {
   DCHECK(remote_file_tracker_->has_synced_details());
   DCHECK(remote_file_tracker_->active());
   DCHECK(remote_file_tracker_->dirty());
+
+  if (local_is_missing_) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
 
   if (local_change_.IsFile()) {
     UploadNewFile(callback);
@@ -240,21 +296,19 @@ void LocalToRemoteSyncer::HandleExistingRemoteFile(
   DCHECK(remote_file_tracker_->active());
   DCHECK(remote_file_tracker_->has_synced_details());
 
-  if (local_change_.IsDelete() ||
-      local_metadata_.file_type == SYNC_FILE_TYPE_UNKNOWN) {
+  if (local_is_missing_) {
     // Local file deletion for existing remote file.
     DeleteRemoteFile(callback);
     return;
   }
 
   DCHECK(local_change_.IsAddOrUpdate());
-  DCHECK(local_change_.file_type() == SYNC_FILE_TYPE_FILE ||
-         local_change_.file_type() == SYNC_FILE_TYPE_DIRECTORY);
+  DCHECK(local_change_.IsFile() || local_change_.IsDirectory());
 
   const FileDetails& synced_details = remote_file_tracker_->synced_details();
   DCHECK(synced_details.file_kind() == FILE_KIND_FILE ||
          synced_details.file_kind() == FILE_KIND_FOLDER);
-  if (local_change_.file_type() == SYNC_FILE_TYPE_FILE) {
+  if (local_change_.IsFile()) {
     if (synced_details.file_kind() == FILE_KIND_FILE) {
       // Non-conflicting local file update to existing remote regular file.
       UploadExistingFile(callback);
@@ -271,7 +325,7 @@ void LocalToRemoteSyncer::HandleExistingRemoteFile(
     return;
   }
 
-  DCHECK_EQ(SYNC_FILE_TYPE_DIRECTORY, local_change_.file_type());
+  DCHECK(local_change_.IsDirectory());
   if (synced_details.file_kind() == FILE_KIND_FILE) {
     // Non-conflicting local folder creation to existing remote *file*.
     // Assuming this case as local file deletion + local folder creation, delete
@@ -303,11 +357,12 @@ void LocalToRemoteSyncer::DeleteRemoteFile(
 void LocalToRemoteSyncer::DidDeleteRemoteFile(
     const SyncStatusCallback& callback,
     google_apis::GDataErrorCode error) {
-  if (error != google_apis::HTTP_SUCCESS &&
+  SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
+  if (status != SYNC_STATUS_OK &&
       error != google_apis::HTTP_NOT_FOUND &&
       error != google_apis::HTTP_PRECONDITION &&
       error != google_apis::HTTP_CONFLICT) {
-    callback.Run(GDataErrorCodeToSyncStatusCode(error));
+    callback.Run(status);
     return;
   }
 
@@ -315,6 +370,11 @@ void LocalToRemoteSyncer::DidDeleteRemoteFile(
   // For PRECONDITION / CONFLICT case, the remote file is modified since the
   // last sync completed.  As our policy for deletion-modification conflict
   // resolution, ignore the local deletion.
+  if (error == google_apis::HTTP_NOT_FOUND) {
+    metadata_database()->UpdateByDeletedRemoteFile(
+        remote_file_tracker_->file_id(), callback);
+    return;
+  }
   callback.Run(SYNC_STATUS_OK);
 }
 
@@ -341,11 +401,14 @@ void LocalToRemoteSyncer::DidGetMD5ForUpload(
   }
 
   sync_action_ = SYNC_ACTION_UPDATED;
+
+  drive::DriveUploader::UploadExistingFileOptions options;
+  options.etag = remote_file_tracker_->synced_details().etag();
   drive_uploader()->UploadExistingFile(
       remote_file_tracker_->file_id(),
       local_path_,
       "application/octet_stream",
-      remote_file_tracker_->synced_details().etag(),
+      options,
       base::Bind(&LocalToRemoteSyncer::DidUploadExistingFile,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback),
@@ -358,11 +421,14 @@ void LocalToRemoteSyncer::DidUploadExistingFile(
     const GURL&,
     scoped_ptr<google_apis::ResourceEntry> entry) {
   if (error == google_apis::HTTP_PRECONDITION ||
-      error == google_apis::HTTP_CONFLICT) {
+      error == google_apis::HTTP_CONFLICT ||
+      error == google_apis::HTTP_NOT_FOUND) {
     // The remote file has unfetched remote change.  Fetch latest metadata and
     // update database with it.
     // TODO(tzik): Consider adding local side low-priority dirtiness handling to
     // handle this as ListChangesTask.
+
+    needs_remote_change_listing_ = true;
     UpdateRemoteMetadata(remote_file_tracker_->file_id(),
                          base::Bind(&ReturnRetryOnSuccess, callback));
     return;
@@ -503,6 +569,7 @@ void LocalToRemoteSyncer::UploadNewFile(const SyncStatusCallback& callback) {
       local_path_,
       title.AsUTF8Unsafe(),
       GetMimeTypeFromTitle(title),
+      drive::DriveUploader::UploadNewFileOptions(),
       base::Bind(&LocalToRemoteSyncer::DidUploadNewFile,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback),
@@ -514,6 +581,9 @@ void LocalToRemoteSyncer::DidUploadNewFile(
     google_apis::GDataErrorCode error,
     const GURL& upload_location,
     scoped_ptr<google_apis::ResourceEntry> entry) {
+  if (error == google_apis::HTTP_NOT_FOUND)
+    needs_remote_change_listing_ = true;
+
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK) {
     callback.Run(status);
@@ -554,24 +624,38 @@ void LocalToRemoteSyncer::DidCreateRemoteFolder(
     const SyncStatusCallback& callback,
     const std::string& file_id,
     SyncStatusCode status) {
+  if (status == SYNC_FILE_ERROR_NOT_FOUND)
+    needs_remote_change_listing_ = true;
+
   scoped_ptr<FolderCreator> deleter = folder_creator_.Pass();
   if (status != SYNC_STATUS_OK) {
     callback.Run(status);
     return;
   }
 
-  if (metadata_database()->TryNoSideEffectActivation(
+  MetadataDatabase::ActivationStatus activation_status =
+      metadata_database()->TryActivateTracker(
           remote_parent_folder_tracker_->tracker_id(),
-          file_id, callback)) {
-    // |callback| will be invoked by MetadataDatabase in this case.
-    return;
+          file_id, callback);
+  switch (activation_status) {
+    case MetadataDatabase::ACTIVATION_PENDING:
+      // |callback| will be invoked by MetadataDatabase later in this case.
+      return;
+    case MetadataDatabase::ACTIVATION_FAILED_ANOTHER_ACTIVE_TRACKER:
+      // The activation failed due to another tracker that has another parent.
+      // Detach the folder from the current parent to avoid using this folder as
+      // active folder.
+      drive_service()->RemoveResourceFromDirectory(
+          remote_parent_folder_tracker_->file_id(), file_id,
+          base::Bind(&LocalToRemoteSyncer::DidDetachResourceForCreationConflict,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     callback));
+      return;
   }
 
-  drive_service()->RemoveResourceFromDirectory(
-      remote_parent_folder_tracker_->file_id(), file_id,
-      base::Bind(&LocalToRemoteSyncer::DidDetachResourceForCreationConflict,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 callback));
+  NOTREACHED();
+  callback.Run(SYNC_STATUS_FAILED);
+  return;
 }
 
 void LocalToRemoteSyncer::DidDetachResourceForCreationConflict(

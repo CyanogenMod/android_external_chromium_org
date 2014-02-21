@@ -8,6 +8,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/image_decoder.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
@@ -27,6 +28,7 @@ namespace options {
 // ChromeOS user image options page UI handler.
 class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
                                     public ui::SelectFileDialog::Listener,
+                                    public content::NotificationObserver,
                                     public ImageDecoder::Delegate {
  public:
   ChangePictureOptionsHandler();
@@ -134,6 +136,10 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   // Last ImageDecoder instance used to decode an image blob received by
   // HandlePhotoTaken.
   scoped_refptr<ImageDecoder> image_decoder_;
+
+ private:
+  // Last known state of the camera.
+  bool was_camera_present_;
 
   DISALLOW_COPY_AND_ASSIGN(ChangePictureOptionsHandler);
 };

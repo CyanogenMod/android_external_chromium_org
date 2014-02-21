@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "6.19",
+  "version": "7.0",
   "entries": [
     {
       "id": 1,
@@ -148,22 +148,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ],
       "features": [
         "all"
-      ]
-    },
-    {
-      "id": 16,
-      "description": "Multisampling is buggy in ATI cards on older MacOSX",
-      "cr_bugs": [67752, 83153],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.7.2"
-        }
-      },
-      "vendor_id": "0x1002",
-      "features": [
-        "multisampling"
       ]
     },
     {
@@ -369,19 +353,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 33,
-      "description": "Multisampling is buggy in Intel IvyBridge",
-      "cr_bugs": [116370],
-      "os": {
-        "type": "linux"
-      },
-      "vendor_id": "0x8086",
-      "device_id": ["0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
-      "features": [
-          "multisampling"
-      ]
-    },
-    {
       "id": 34,
       "description": "S3 Trio (used in Virtual PC) is not compatible",
       "cr_bugs": [119948],
@@ -566,8 +537,8 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 50,
-      "description": "Disable VMware software renderer",
-      "cr_bugs": [145531],
+      "description": "Disable VMware software renderer on older Mesa",
+      "cr_bugs": [145531, 332596],
       "os": {
         "type": "linux"
       },
@@ -575,6 +546,22 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "beginwith",
         "value": "VMware"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "9.2.1"
+          },
+          "gl_renderer": {
+            "op": "contains",
+            "value": "SVGA3D"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -676,38 +663,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 60,
-      "description": "Multisampling is buggy on Mac with NVIDIA gpu prior to 10.8.3",
-      "cr_bugs": [137303],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8.3"
-        }
-      },
-      "vendor_id": "0x10de",
-      "features": [
-        "multisampling"
-      ]
-    },
-    {
-      "id": 61,
-      "description": "Multisampling is buggy on Mac with Intel gpu prior to 10.8.3",
-      "cr_bugs": [137303],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8.3"
-        }
-      },
-      "vendor_id": "0x8086",
-      "features": [
-        "multisampling"
-      ]
-    },
-    {
       "id": 62,
       "description": "Accelerated 2D canvas buggy on old Qualcomm Adreno",
       "cr_bugs": [161575],
@@ -724,22 +679,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "accelerated_2d_canvas"
-      ]
-    },
-    {
-      "id": 63,
-      "description": "Multisampling is buggy on Mac with AMD gpu prior to 10.8.3",
-      "cr_bugs": [162466],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8.3"
-        }
-      },
-      "vendor_id": "0x1002",
-      "features": [
-        "multisampling"
       ]
     },
     {
@@ -918,27 +857,8 @@ LONG_STRING_CONST(
           "value": "6.0"
         }
       },
-      "exceptions": [
-        {
-          "driver_vendor": {
-            "op": "=",
-            "value": "osmesa"
-          }
-        }
-      ],
       "features": [
         "all"
-      ]
-    },
-    {
-      "id": 80,
-      "description": "Texture sharing should be disabled on all Windows machines",
-      "cr_bugs": [304369, 315215],
-      "os": {
-        "type": "win"
-      },
-      "features": [
-        "texture_sharing"
       ]
     },
     {
@@ -989,19 +909,116 @@ LONG_STRING_CONST(
       ]
     },
     {
-      "id": 84,
-      "description": "Incorrect rendering in pink with NVIDIA driver 9.18.13.3165 on Windows",
-      "cr_bugs": [319115],
+      "id": 85,
+      "description": "Samsung Gaxlaxy S4 is too buggy to use for video decoding",
+      "cr_bugs": [329072],
+      "os": {
+        "type": "android"
+      },
+      "machine_model": {
+        "name": {
+          "op": "=",
+          "value": "SCH-I545"
+        }
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 86,
+      "description": "Intel Graphics Media Accelerator 3150 causes the GPU process to hang running WebGL",
+      "cr_bugs": [305431],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0xa011"],
+      "features": [
+        "webgl"
+      ]
+    },
+    {
+      "id": 87,
+      "description": "Accelerated video decode on Intel driver 10.18.10.3308 is incompatible with the GPU sandbox",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "=",
+        "value": "10.18.10.3308"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 88,
+      "description": "Accelerated video decode on AMD driver 13.152.1.8000 is incompatible with the GPU sandbox",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_version": {
+        "op": "=",
+        "value": "13.152.1.8000"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 89,
+      "description": "Accelerated video decode interferes with GPU sandbox on certain AMD drivers",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_version": {
+        "op": "between",
+        "value": "8.810.4.5000",
+        "value2": "8.970.100.1100"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 90,
+      "description": "Accelerated video decode interferes with GPU sandbox on certain NVIDIA drivers",
+      "cr_bugs": [298968],
       "os": {
         "type": "win"
       },
       "vendor_id": "0x10de",
       "driver_version": {
-        "op": "=",
-        "value": "9.18.13.3165"
+        "op": "between",
+        "value": "8.17.12.5729",
+        "value2": "8.17.12.8026"
       },
       "features": [
-        "all"
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 91,
+      "description": "Accelerated video decode interferes with GPU sandbox on certain NVIDIA drivers",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "between",
+        "value": "9.18.13.783",
+        "value2": "9.18.13.1090"
+      },
+      "features": [
+        "accelerated_video_decode"
       ]
     }
   ]

@@ -29,7 +29,8 @@ class BookmarkLoadObserver : public BaseBookmarkModelObserver {
  private:
   // BaseBookmarkModelObserver:
   virtual void BookmarkModelChanged() OVERRIDE;
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE;
 
   base::Closure quit_task_;
 
@@ -43,7 +44,8 @@ BookmarkLoadObserver::~BookmarkLoadObserver() {}
 
 void BookmarkLoadObserver::BookmarkModelChanged() {}
 
-void BookmarkLoadObserver::Loaded(BookmarkModel* model, bool ids_reassigned) {
+void BookmarkLoadObserver::BookmarkModelLoaded(BookmarkModel* model,
+                                               bool ids_reassigned) {
   quit_task_.Run();
 }
 
@@ -69,14 +71,15 @@ std::string::size_type AddNodesFromString(BookmarkModel* model,
       if (tell == folder_tell) {
         node_name = node_name.substr(0, part_length - 2);
         const BookmarkNode* new_node =
-            model->AddFolder(node, index, UTF8ToUTF16(node_name));
+            model->AddFolder(node, index, base::UTF8ToUTF16(node_name));
         end_pos = AddNodesFromString(model, new_node, model_string,
                                      end_pos + 1);
       } else {
         std::string url_string("http://");
         url_string += std::string(node_name.begin(), node_name.end());
         url_string += ".com";
-        model->AddURL(node, index, UTF8ToUTF16(node_name), GURL(url_string));
+        model->AddURL(
+            node, index, base::UTF8ToUTF16(node_name), GURL(url_string));
         ++end_pos;
       }
       ++index;
@@ -117,10 +120,10 @@ std::string ModelStringFromNode(const BookmarkNode* node) {
   for (int i = 0; i < child_count; ++i) {
     const BookmarkNode* child = node->GetChild(i);
     if (child->is_folder()) {
-      child_string += UTF16ToUTF8(child->GetTitle()) + ":[ " +
+      child_string += base::UTF16ToUTF8(child->GetTitle()) + ":[ " +
           ModelStringFromNode(child) + "] ";
     } else {
-      child_string += UTF16ToUTF8(child->GetTitle()) + " ";
+      child_string += base::UTF16ToUTF8(child->GetTitle()) + " ";
     }
   }
   return child_string;

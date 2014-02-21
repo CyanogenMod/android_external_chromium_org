@@ -46,7 +46,7 @@
 //       TextServiceImpl
 //         -> ChromeAppViewAsh
 //         -- (process boundary) --
-//         -> RemoteRootWindowHostWin
+//         -> RemoteWindowTreeHostWin
 //         -> RemoteInputMethodWin
 //
 //   browser process -> metro_driver process
@@ -55,7 +55,7 @@
 //       - MetroViewerHostMsg_ImeTextInputClientUpdated
 //     Message Routing:
 //       RemoteInputMethodWin
-//         -> RemoteRootWindowHostWin
+//         -> RemoteWindowTreeHostWin
 //         -- (process boundary) --
 //         -> ChromeAppViewAsh
 //         -> TextServiceImpl
@@ -87,7 +87,6 @@
 
 namespace metro_driver {
 namespace {
-typedef TSFTextStore TextStore;
 
 // Japanese IME expects the default value of this compartment is
 // TF_SENTENCEMODE_PHRASEPREDICT to emulate IMM32 behavior. This value is
@@ -375,7 +374,7 @@ class TextServiceImpl : public TextService,
   }
 
   virtual void OnCompositionChanged(
-      const string16& text,
+      const base::string16& text,
       int32 selection_start,
       int32 selection_end,
       const std::vector<metro_viewer::UnderlineInfo>& underlines) OVERRIDE {
@@ -387,7 +386,7 @@ class TextServiceImpl : public TextService,
                                     underlines);
   }
 
-  virtual void OnTextCommitted(const string16& text) OVERRIDE {
+  virtual void OnTextCommitted(const base::string16& text) OVERRIDE {
     if (!delegate_)
       return;
     delegate_->OnTextCommitted(text);

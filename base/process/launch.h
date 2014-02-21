@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #ifndef BASE_PROCESS_LAUNCH_H_
 #define BASE_PROCESS_LAUNCH_H_
 
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,6 +28,10 @@ class CommandLine;
 
 namespace base {
 
+#if defined(OS_WIN)
+typedef std::vector<HANDLE> HandlesToInheritVector;
+#endif
+// TODO(viettrungluu): Only define this on POSIX?
 typedef std::vector<std::pair<int, int> > FileHandleMappingVector;
 
 // Options for launching a subprocess that are passed to LaunchProcess().
@@ -43,13 +46,19 @@ struct BASE_EXPORT LaunchOptions {
 #if defined(OS_WIN)
   bool start_hidden;
 
+  // If non-null, inherit exactly the list of handles in this vector (these
+  // handles must be inheritable). This is only supported on Vista and higher.
+  HandlesToInheritVector* handles_to_inherit;
+
   // If true, the new process inherits handles from the parent. In production
   // code this flag should be used only when running short-lived, trusted
   // binaries, because open handles from other libraries and subsystems will
   // leak to the child process, causing errors such as open socket hangs.
+  // Note: If |handles_to_inherit| is non-null, this flag is ignored and only
+  // those handles will be inherited (on Vista and higher).
   bool inherit_handles;
 
-  // If non-NULL, runs as if the user represented by the token had launched it.
+  // If non-null, runs as if the user represented by the token had launched it.
   // Whether the application is visible on the interactive desktop depends on
   // the token belonging to an interactive logon session.
   //
@@ -61,7 +70,7 @@ struct BASE_EXPORT LaunchOptions {
   // If true, use an empty string for the desktop name.
   bool empty_desktop_name;
 
-  // If non-NULL, launches the application in that job object. The process will
+  // If non-null, launches the application in that job object. The process will
   // be terminated immediately and LaunchProcess() will fail if assignment to
   // the job object fails.
   HANDLE job_handle;
@@ -83,7 +92,7 @@ struct BASE_EXPORT LaunchOptions {
   // the same environment. See AlterEnvironment().
   EnvironmentMap environ;
 
-  // If non-NULL, remap file descriptors according to the mapping of
+  // If non-null, remap file descriptors according to the mapping of
   // src fd->dest fd to propagate FDs into the child process.
   // This pointer is owned by the caller and must live through the
   // call to LaunchProcess().
@@ -92,7 +101,7 @@ struct BASE_EXPORT LaunchOptions {
   // Each element is an RLIMIT_* constant that should be raised to its
   // rlim_max.  This pointer is owned by the caller and must live through
   // the call to LaunchProcess().
-  const std::set<int>* maximize_rlimits;
+  const std::vector<int>* maximize_rlimits;
 
   // If true, start the process in a new process group, instead of
   // inheriting the parent's process group.  The pgid of the child process
@@ -118,7 +127,7 @@ struct BASE_EXPORT LaunchOptions {
 //
 // Returns true upon success.
 //
-// Upon success, if |process_handle| is non-NULL, it will be filled in with the
+// Upon success, if |process_handle| is non-null, it will be filled in with the
 // handle of the launched process.  NOTE: In this case, the caller is
 // responsible for closing the handle so that it doesn't leak!
 // Otherwise, the process handle will be implicitly closed.
@@ -149,6 +158,16 @@ BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
 BASE_EXPORT bool LaunchProcess(const string16& cmdline,
                                const LaunchOptions& options,
                                win::ScopedHandle* process_handle);
+
+// Launches a process with elevated privileges.  This does not behave exactly
+// like LaunchProcess as it uses ShellExecuteEx instead of CreateProcess to
+// create the process.  This means the process will have elevated privileges
+// and thus some common operations like OpenProcess will fail. The process will
+// be available through the |process_handle| argument.  Currently the only
+// supported LaunchOptions are |start_hidden| and |wait|.
+BASE_EXPORT bool LaunchElevatedProcess(const CommandLine& cmdline,
+                                       const LaunchOptions& options,
+                                       ProcessHandle* process_handle);
 
 #elif defined(OS_POSIX)
 // A POSIX-specific version of LaunchProcess that takes an argv array

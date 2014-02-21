@@ -106,6 +106,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
 
+  // Informs that the focused DOM node has changed.
+  virtual void FocusedNodeChanged(bool is_editable_node) = 0;
+
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
@@ -135,7 +138,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
-      const ui::LatencyInfo& latency_info) = 0;
+      const std::vector<ui::LatencyInfo>& latency_info) = 0;
 
   // Notifies the View that the renderer has ceased to exist.
   virtual void RenderProcessGone(base::TerminationStatus status,
@@ -178,7 +181,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      const SkBitmap::Config config) = 0;
 
   // Copies a given subset of the compositing surface's content into a YV12
   // VideoFrame, and invokes a callback with a success/fail parameter. |target|
@@ -296,19 +300,24 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // be used to inject synthetic input events.
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget() = 0;
 
-  virtual void GestureEventAck(int gesture_event_type,
+  virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) = 0;
 
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) = 0;
 
+  virtual void DidStopFlinging() = 0;
+
   virtual void SetPopupType(blink::WebPopupType popup_type) = 0;
   virtual blink::WebPopupType GetPopupType() = 0;
 
+  // Get the BrowserAccessibilityManager if it exists, may return NULL.
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const = 0;
-  virtual void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params) = 0;
+  // Create a BrowserAccessibilityManager for this view if it's possible to
+  // create one and if one doesn't exist already. Some ports may not create
+  // one depending on the current state.
+  virtual void CreateBrowserAccessibilityManagerIfNeeded() = 0;
 
   // Return a value that is incremented each time the renderer swaps a new frame
   // to the view.
@@ -318,9 +327,6 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void DidReceiveRendererFrame() = 0;
 
 #if defined(OS_MACOSX)
-  // Called just before GetBackingStore blocks for an updated frame.
-  virtual void AboutToWaitForBackingStoreMsg() = 0;
-
   // Does any event handling necessary for plugin IME; should be called after
   // the plugin has already had a chance to process the event. If plugin IME is
   // not enabled, this is a no-op, so it is always safe to call.
@@ -332,14 +338,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 #if defined(OS_ANDROID)
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) = 0;
-  virtual void HasTouchEventHandlers(bool need_touch_events) = 0;
 #endif
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-  virtual void WillWmDestroy() = 0;
-#endif
-
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
 

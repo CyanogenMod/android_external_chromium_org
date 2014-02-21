@@ -13,14 +13,13 @@ import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.test.util.CallbackHelper;
-import org.chromium.content.browser.test.util.Criteria;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -31,63 +30,6 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
     private static final String DATA_URL = "data:text/html,<div/>";
     private static final String REDIRECT_TARGET_PATH = "/redirect_target.html";
     private static final String TITLE = "TITLE";
-
-    private static final long TEST_TIMEOUT = 20000L;
-    private static final long CHECK_INTERVAL = 100;
-
-    private static class TestAwContentsClient
-            extends org.chromium.android_webview.test.TestAwContentsClient {
-
-        public static class ShouldOverrideUrlLoadingHelper extends CallbackHelper {
-            private String mShouldOverrideUrlLoadingUrl;
-            private String mPreviousShouldOverrideUrlLoadingUrl;
-            private boolean mShouldOverrideUrlLoadingReturnValue = false;
-            void setShouldOverrideUrlLoadingUrl(String url) {
-                mShouldOverrideUrlLoadingUrl = url;
-            }
-            void setPreviousShouldOverrideUrlLoadingUrl(String url) {
-                mPreviousShouldOverrideUrlLoadingUrl = url;
-            }
-            void setShouldOverrideUrlLoadingReturnValue(boolean value) {
-                mShouldOverrideUrlLoadingReturnValue = value;
-            }
-            public String getShouldOverrideUrlLoadingUrl() {
-                assert getCallCount() > 0;
-                return mShouldOverrideUrlLoadingUrl;
-            }
-            public String getPreviousShouldOverrideUrlLoadingUrl() {
-                assert getCallCount() > 1;
-                return mPreviousShouldOverrideUrlLoadingUrl;
-            }
-            public boolean getShouldOverrideUrlLoadingReturnValue() {
-                return mShouldOverrideUrlLoadingReturnValue;
-            }
-            public void notifyCalled(String url) {
-                mPreviousShouldOverrideUrlLoadingUrl = mShouldOverrideUrlLoadingUrl;
-                mShouldOverrideUrlLoadingUrl = url;
-                notifyCalled();
-            }
-        }
-
-        @Override
-        public boolean shouldOverrideUrlLoading(String url) {
-            super.shouldOverrideUrlLoading(url);
-            boolean returnValue =
-                mShouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingReturnValue();
-            mShouldOverrideUrlLoadingHelper.notifyCalled(url);
-            return returnValue;
-        }
-
-        private ShouldOverrideUrlLoadingHelper mShouldOverrideUrlLoadingHelper;
-
-        public TestAwContentsClient() {
-            mShouldOverrideUrlLoadingHelper = new ShouldOverrideUrlLoadingHelper();
-        }
-
-        public ShouldOverrideUrlLoadingHelper getShouldOverrideUrlLoadingHelper() {
-            return mShouldOverrideUrlLoadingHelper;
-        }
-    }
 
     private TestWebServer mWebServer;
 
@@ -339,6 +281,16 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
     public void testNotCalledForAnchorNavigations() throws Throwable {
+        doTestNotCalledForAnchorNavigations(false);
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Navigation"})
+    public void testNotCalledForAnchorNavigationsWithNonHierarchicalScheme() throws Throwable {
+        doTestNotCalledForAnchorNavigations(true);
+    }
+
+    private void doTestNotCalledForAnchorNavigations(boolean useLoadData) throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -351,7 +303,12 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
         addPageToTestServer(mWebServer, anchorLinkPath,
                 getHtmlForPageWithSimpleLinkTo(anchorLinkUrl + "#anchor"));
 
-        loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(), anchorLinkUrl);
+        if (useLoadData) {
+            loadDataSync(awContents, contentsClient.getOnPageFinishedHelper(),
+                    getHtmlForPageWithSimpleLinkTo("#anchor"), "text/html", false);
+        } else {
+            loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(), anchorLinkUrl);
+        }
 
         final int shouldOverrideUrlLoadingCallCount =
             shouldOverrideUrlLoadingHelper.getCallCount();
@@ -618,12 +575,12 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
         clickOnLinkUsingJs(awContents, contentsClient);
 
         // Wait for the target URL to be fetched from the server.
-        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+        poll(new Callable<Boolean>() {
             @Override
-            public boolean isSatisfied() {
+            public Boolean call() throws Exception {
                 return mWebServer.getRequestCount(REDIRECT_TARGET_PATH) == 1;
             }
-        }, WAIT_TIMEOUT_SECONDS * 1000L, CHECK_INTERVAL));
+        });
 
         // Since the targetURL was loaded from the test server it means all processing related
         // to dispatching a shouldOverrideUrlLoading callback had finished and checking the call
@@ -658,12 +615,12 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
         shouldOverrideUrlLoadingHelper.waitForCallback(shouldOverrideUrlLoadingCallCount);
 
         // Wait for the target URL to be fetched from the server.
-        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+        poll(new Callable<Boolean>() {
             @Override
-            public boolean isSatisfied() {
+            public Boolean call() throws Exception {
                 return mWebServer.getRequestCount(REDIRECT_TARGET_PATH) == 1;
             }
-        }, WAIT_TIMEOUT_SECONDS * 1000L, CHECK_INTERVAL));
+        });
 
         assertEquals(redirectTargetUrl,
                 shouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingUrl());
@@ -693,12 +650,12 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
         loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(), pageWithIframeUrl);
 
         // Wait for the redirect target URL to be fetched from the server.
-        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+        poll(new Callable<Boolean>() {
             @Override
-            public boolean isSatisfied() {
+            public Boolean call() throws Exception {
                 return mWebServer.getRequestCount(REDIRECT_TARGET_PATH) == 1;
             }
-        }, WAIT_TIMEOUT_SECONDS * 1000L, CHECK_INTERVAL));
+        });
 
         assertEquals(shouldOverrideUrlLoadingCallCount,
                 shouldOverrideUrlLoadingHelper.getCallCount());
@@ -861,7 +818,7 @@ public class AwContentsClientShouldOverrideUrlLoadingTest extends AwTestBase {
             }
         });
         contentsClient.getOnPageFinishedHelper().waitForCallback(currentCallCount, 1,
-                WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
         assertEquals(0, shouldOverrideUrlLoadingHelper.getCallCount());
     }

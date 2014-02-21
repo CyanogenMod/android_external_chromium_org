@@ -7,7 +7,6 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_MOUNT_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_MOUNT_H_
 
-#include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -54,11 +53,6 @@ class FileBrowserPrivateRemoveMountFunction
 
   // AsyncExtensionFunction overrides.
   virtual bool RunImpl() OVERRIDE;
-
- private:
-  // A callback method to handle the result of GetSelectedFileInfo.
-  void GetSelectedFileInfoResponse(
-      const std::vector<ui::SelectedFileInfo>& files);
 };
 
 // Implements chrome.fileBrowserPrivate.getVolumeMetadataList method.

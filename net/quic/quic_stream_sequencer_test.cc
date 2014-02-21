@@ -7,10 +7,13 @@
 #include <utility>
 #include <vector>
 
+#include "base/logging.h"
 #include "base/rand_util.h"
 #include "net/base/ip_endpoint.h"
+#include "net/quic/quic_utils.h"
 #include "net/quic/reliable_quic_stream.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/test/gtest_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -70,11 +73,14 @@ class MockStream : public ReliableQuicStream {
   }
 
   MOCK_METHOD0(OnFinRead, void());
-  MOCK_METHOD2(ProcessData, uint32(const char* data, uint32 data_len));
+  MOCK_METHOD2(ProcessRawData, uint32(const char* data, uint32 data_len));
   MOCK_METHOD2(CloseConnectionWithDetails, void(QuicErrorCode error,
                                                 const string& details));
   MOCK_METHOD1(Reset, void(QuicRstStreamErrorCode error));
   MOCK_METHOD0(OnCanWrite, void());
+  virtual QuicPriority EffectivePriority() const {
+    return QuicUtils::HighestPriority();
+  }
 };
 
 namespace {
@@ -85,8 +91,8 @@ static const char kPayload[] =
 class QuicStreamSequencerTest : public ::testing::Test {
  protected:
   QuicStreamSequencerTest()
-      : connection_(new MockConnection(1, IPEndPoint(), false)),
-        session_(connection_, true),
+      : connection_(new MockConnection(false)),
+        session_(connection_),
         stream_(&session_, 1),
         sequencer_(new QuicStreamSequencerPeer(&stream_)) {
   }
@@ -136,7 +142,7 @@ class QuicStreamSequencerTest : public ::testing::Test {
 };
 
 TEST_F(QuicStreamSequencerTest, RejectOldFrame) {
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3))
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3))
       .WillOnce(Return(3));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
@@ -149,14 +155,12 @@ TEST_F(QuicStreamSequencerTest, RejectOldFrame) {
 }
 
 TEST_F(QuicStreamSequencerTest, RejectOverlyLargeFrame) {
-  // TODO(rch): enable when chromium supports EXPECT_DFATAL.
-  /*
   EXPECT_DFATAL(sequencer_.reset(new QuicStreamSequencerPeer(2, &stream_)),
                 "Setting max frame memory to 2.  "
                 "Some frames will be impossible to handle.");
 
-  EXPECT_DEBUG_DEATH(sequencer_->OnFrame(0, "abc"), "");
-  */
+  EXPECT_DFATAL(sequencer_->OnFrame(0, "abc"),
+                "data_len: 3 > max_frame_memory_: 2");
 }
 
 TEST_F(QuicStreamSequencerTest, DropFramePastBuffering) {
@@ -166,7 +170,7 @@ TEST_F(QuicStreamSequencerTest, DropFramePastBuffering) {
 }
 
 TEST_F(QuicStreamSequencerTest, RejectBufferedFrame) {
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_EQ(1u, sequencer_->frames()->size());
@@ -178,9 +182,40 @@ TEST_F(QuicStreamSequencerTest, RejectBufferedFrame) {
 }
 
 TEST_F(QuicStreamSequencerTest, FullFrameConsumed) {
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
+  EXPECT_EQ(0u, sequencer_->frames()->size());
+  EXPECT_EQ(3u, sequencer_->num_bytes_consumed());
+}
+
+TEST_F(QuicStreamSequencerTest, BlockedThenFullFrameConsumed) {
+  sequencer_->SetBlockedUntilFlush();
+
+  EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
+  EXPECT_EQ(1u, sequencer_->frames()->size());
+  EXPECT_EQ(0u, sequencer_->num_bytes_consumed());
+
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
+  sequencer_->FlushBufferedFrames();
+  EXPECT_EQ(0u, sequencer_->frames()->size());
+  EXPECT_EQ(3u, sequencer_->num_bytes_consumed());
+
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("def"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, OnFinRead());
+  EXPECT_TRUE(sequencer_->OnFinFrame(3, "def"));
+}
+
+TEST_F(QuicStreamSequencerTest, BlockedThenFullFrameAndFinConsumed) {
+  sequencer_->SetBlockedUntilFlush();
+
+  EXPECT_TRUE(sequencer_->OnFinFrame(0, "abc"));
+  EXPECT_EQ(1u, sequencer_->frames()->size());
+  EXPECT_EQ(0u, sequencer_->num_bytes_consumed());
+
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, OnFinRead());
+  sequencer_->FlushBufferedFrames();
   EXPECT_EQ(0u, sequencer_->frames()->size());
   EXPECT_EQ(3u, sequencer_->num_bytes_consumed());
 }
@@ -201,7 +236,7 @@ TEST_F(QuicStreamSequencerTest, EmptyFinFrame) {
 }
 
 TEST_F(QuicStreamSequencerTest, PartialFrameConsumed) {
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(2));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(2));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_EQ(1u, sequencer_->frames()->size());
@@ -210,7 +245,7 @@ TEST_F(QuicStreamSequencerTest, PartialFrameConsumed) {
 }
 
 TEST_F(QuicStreamSequencerTest, NextxFrameNotConsumed) {
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(0));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_EQ(1u, sequencer_->frames()->size());
@@ -230,19 +265,22 @@ TEST_F(QuicStreamSequencerTest, OutOfOrderFrameProcessed) {
   EXPECT_TRUE(sequencer_->OnFrame(6, "ghi"));
   EXPECT_EQ(1u, sequencer_->frames()->size());
   EXPECT_EQ(0u, sequencer_->num_bytes_consumed());
+  EXPECT_EQ(3u, sequencer_->num_bytes_buffered());
   // Buffer the second
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
   EXPECT_EQ(2u, sequencer_->frames()->size());
   EXPECT_EQ(0u, sequencer_->num_bytes_consumed());
+  EXPECT_EQ(6u, sequencer_->num_bytes_buffered());
 
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("def"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("ghi"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("def"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("ghi"), 3)).WillOnce(Return(3));
 
   // Ack right away
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_EQ(9u, sequencer_->num_bytes_consumed());
+  EXPECT_EQ(0u, sequencer_->num_bytes_buffered());
 
   EXPECT_EQ(0u, sequencer_->frames()->size());
 }
@@ -256,28 +294,32 @@ TEST_F(QuicStreamSequencerTest, OutOfOrderFramesProcessedWithBuffering) {
   // We can afford to buffer this.
   EXPECT_TRUE(sequencer_->OnFrame(6, "ghi"));
   EXPECT_EQ(0u, sequencer_->num_bytes_consumed());
+  EXPECT_EQ(3u, sequencer_->num_bytes_buffered());
 
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
 
   // Ack right away
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_EQ(3u, sequencer_->num_bytes_consumed());
+  EXPECT_EQ(3u, sequencer_->num_bytes_buffered());
 
   // We should be willing to buffer this now.
   EXPECT_TRUE(sequencer_->OnFrame(9, "jkl"));
   EXPECT_EQ(3u, sequencer_->num_bytes_consumed());
+  EXPECT_EQ(6u, sequencer_->num_bytes_buffered());
 
-  EXPECT_CALL(stream_, ProcessData(StrEq("def"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("ghi"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("jkl"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("def"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("ghi"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("jkl"), 3)).WillOnce(Return(3));
 
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
   EXPECT_EQ(12u, sequencer_->num_bytes_consumed());
   EXPECT_EQ(0u, sequencer_->frames()->size());
+  EXPECT_EQ(0u, sequencer_->num_bytes_buffered());
 }
 
-TEST_F(QuicStreamSequencerTest, OutOfOrderFramesBlockignWithReadv) {
+TEST_F(QuicStreamSequencerTest, OutOfOrderFramesBlockingWithReadv) {
   sequencer_->SetMemoryLimit(9);
   char buffer[20];
   iovec iov[2];
@@ -297,9 +339,9 @@ TEST_F(QuicStreamSequencerTest, OutOfOrderFramesBlockignWithReadv) {
   // Push pqr - process
 
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("def"), 3)).WillOnce(Return(0));
-  EXPECT_CALL(stream_, ProcessData(StrEq("pqr"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("def"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("pqr"), 3)).WillOnce(Return(3));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
@@ -307,17 +349,23 @@ TEST_F(QuicStreamSequencerTest, OutOfOrderFramesBlockignWithReadv) {
   EXPECT_FALSE(sequencer_->OnFrame(12, "mno"));
   EXPECT_TRUE(sequencer_->OnFrame(6, "ghi"));
 
+  // defghijkl buffered
+  EXPECT_EQ(9u, sequencer_->num_bytes_buffered());
+
   // Read 3 bytes.
   EXPECT_EQ(3, sequencer_->Readv(iov, 2));
   EXPECT_EQ(0, strncmp(buffer, "def", 3));
+  EXPECT_EQ(6u, sequencer_->num_bytes_buffered());
 
-  // Now we have space to bufer this.
+  // Now we have space to buffer this.
   EXPECT_TRUE(sequencer_->OnFrame(12, "mno"));
+  EXPECT_EQ(9u, sequencer_->num_bytes_buffered());
 
   // Read the remaining 9 bytes.
   iov[1].iov_len = 19;
   EXPECT_EQ(9, sequencer_->Readv(iov, 2));
   EXPECT_EQ(0, strncmp(buffer, "ghijklmno", 9));
+  EXPECT_EQ(0u, sequencer_->num_bytes_buffered());
 
   EXPECT_TRUE(sequencer_->OnFrame(15, "pqr"));
 }
@@ -327,9 +375,9 @@ TEST_F(QuicStreamSequencerTest, OutOfOrderFramesBlockignWithGetReadableRegion) {
   sequencer_->SetMemoryLimit(9);
 
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("def"), 3)).WillOnce(Return(0));
-  EXPECT_CALL(stream_, ProcessData(StrEq("pqr"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("def"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("pqr"), 3)).WillOnce(Return(3));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
@@ -337,21 +385,27 @@ TEST_F(QuicStreamSequencerTest, OutOfOrderFramesBlockignWithGetReadableRegion) {
   EXPECT_FALSE(sequencer_->OnFrame(12, "mno"));
   EXPECT_TRUE(sequencer_->OnFrame(6, "ghi"));
 
+  // defghijkl buffered
+  EXPECT_EQ(9u, sequencer_->num_bytes_buffered());
+
   // Read 3 bytes.
   const char* expected[] = {"def", "ghi", "jkl"};
   ASSERT_TRUE(VerifyReadableRegions(expected, arraysize(expected)));
   char buffer[9];
   iovec read_iov = { &buffer[0], 3 };
   ASSERT_EQ(3, sequencer_->Readv(&read_iov, 1));
+  EXPECT_EQ(6u, sequencer_->num_bytes_buffered());
 
-  // Now we have space to bufer this.
+  // Now we have space to buffer this.
   EXPECT_TRUE(sequencer_->OnFrame(12, "mno"));
+  EXPECT_EQ(9u, sequencer_->num_bytes_buffered());
 
   // Read the remaining 9 bytes.
   const char* expected2[] = {"ghi", "jkl", "mno"};
   ASSERT_TRUE(VerifyReadableRegions(expected2, arraysize(expected2)));
   read_iov.iov_len = 9;
   ASSERT_EQ(9, sequencer_->Readv(&read_iov, 1));
+  EXPECT_EQ(0u, sequencer_->num_bytes_buffered());
 
   EXPECT_TRUE(sequencer_->OnFrame(15, "pqr"));
 }
@@ -361,11 +415,14 @@ TEST_F(QuicStreamSequencerTest, MarkConsumed) {
   sequencer_->SetMemoryLimit(9);
 
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(0));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
   EXPECT_TRUE(sequencer_->OnFrame(6, "ghi"));
+
+  // abcdefghi buffered
+  EXPECT_EQ(9u, sequencer_->num_bytes_buffered());
 
   // Peek into the data.
   const char* expected[] = {"abc", "def", "ghi"};
@@ -376,24 +433,27 @@ TEST_F(QuicStreamSequencerTest, MarkConsumed) {
   // Verify data.
   const char* expected2[] = {"bc", "def", "ghi"};
   ASSERT_TRUE(VerifyReadableRegions(expected2, arraysize(expected2)));
+  EXPECT_EQ(8u, sequencer_->num_bytes_buffered());
 
   // Consume 2 bytes.
   sequencer_->MarkConsumed(2);
   // Verify data.
   const char* expected3[] = {"def", "ghi"};
   ASSERT_TRUE(VerifyReadableRegions(expected3, arraysize(expected3)));
+  EXPECT_EQ(6u, sequencer_->num_bytes_buffered());
 
   // Consume 5 bytes.
   sequencer_->MarkConsumed(5);
   // Verify data.
   const char* expected4[] = {"i"};
   ASSERT_TRUE(VerifyReadableRegions(expected4, arraysize(expected4)));
+  EXPECT_EQ(1u, sequencer_->num_bytes_buffered());
 }
 
 TEST_F(QuicStreamSequencerTest, MarkConsumedError) {
   // TODO(rch): enable when chromium supports EXPECT_DFATAL.
   /*
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(0));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_TRUE(sequencer_->OnFrame(9, "jklmnopqrstuvwxyz"));
@@ -414,7 +474,7 @@ TEST_F(QuicStreamSequencerTest, MarkConsumedError) {
 
 TEST_F(QuicStreamSequencerTest, MarkConsumedWithMissingPacket) {
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(0));
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
@@ -430,7 +490,7 @@ TEST_F(QuicStreamSequencerTest, MarkConsumedWithMissingPacket) {
 TEST_F(QuicStreamSequencerTest, BasicHalfCloseOrdered) {
   InSequence s;
 
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
   EXPECT_CALL(stream_, OnFinRead());
   EXPECT_TRUE(sequencer_->OnFinFrame(0, "abc"));
 
@@ -441,8 +501,8 @@ TEST_F(QuicStreamSequencerTest, BasicHalfCloseUnorderedWithFlush) {
   sequencer_->OnFinFrame(6, "");
   EXPECT_EQ(6u, sequencer_->close_offset());
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
-  EXPECT_CALL(stream_, ProcessData(StrEq("def"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("def"), 3)).WillOnce(Return(3));
   EXPECT_CALL(stream_, OnFinRead());
 
   EXPECT_TRUE(sequencer_->OnFrame(3, "def"));
@@ -453,7 +513,7 @@ TEST_F(QuicStreamSequencerTest, BasicHalfUnordered) {
   sequencer_->OnFinFrame(3, "");
   EXPECT_EQ(3u, sequencer_->close_offset());
   InSequence s;
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(3));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(3));
   EXPECT_CALL(stream_, OnFinRead());
 
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
@@ -467,7 +527,7 @@ TEST_F(QuicStreamSequencerTest, TerminateWithReadv) {
 
   EXPECT_FALSE(sequencer_->IsClosed());
 
-  EXPECT_CALL(stream_, ProcessData(StrEq("abc"), 3)).WillOnce(Return(0));
+  EXPECT_CALL(stream_, ProcessRawData(StrEq("abc"), 3)).WillOnce(Return(0));
   EXPECT_TRUE(sequencer_->OnFrame(0, "abc"));
 
   iovec iov = { &buffer[0], 3 };
@@ -535,7 +595,7 @@ TEST_F(QuicSequencerRandomTest, RandomFramesNoDroppingNoBackup) {
   InSequence s;
   for (size_t i = 0; i < list_.size(); ++i) {
     string* data = &list_[i].second;
-    EXPECT_CALL(stream_, ProcessData(StrEq(*data), data->size()))
+    EXPECT_CALL(stream_, ProcessRawData(StrEq(*data), data->size()))
         .WillOnce(Return(data->size()));
   }
 
@@ -558,7 +618,7 @@ TEST_F(QuicSequencerRandomTest, RandomFramesDroppingNoBackup) {
   InSequence s;
   for (size_t i = 0; i < list_.size(); ++i) {
     string* data = &list_[i].second;
-    EXPECT_CALL(stream_, ProcessData(StrEq(*data), data->size()))
+    EXPECT_CALL(stream_, ProcessRawData(StrEq(*data), data->size()))
         .WillOnce(Return(data->size()));
   }
 

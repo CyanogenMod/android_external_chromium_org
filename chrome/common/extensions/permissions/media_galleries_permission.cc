@@ -17,11 +17,22 @@ namespace {
 
 // copyTo permission requires delete permission as a prerequisite.
 // delete permission requires read permission as a prerequisite.
-bool IsValidPermissionSet(bool has_read, bool has_copy_to, bool has_delete) {
-  if (has_copy_to)
-    return has_read && has_delete;
-  if (has_delete)
-    return has_read;
+bool IsValidPermissionSet(bool has_read, bool has_copy_to, bool has_delete,
+                          std::string* error) {
+  if (has_copy_to) {
+    if (has_read && has_delete)
+      return true;
+    if (error)
+      *error = "copyTo permission requires read and delete permissions";
+    return false;
+  }
+  if (has_delete) {
+    if (has_read)
+      return true;
+    if (error)
+      *error = "delete permission requires read permission";
+    return false;
+  }
   return true;
 }
 
@@ -31,6 +42,7 @@ namespace extensions {
 
 const char MediaGalleriesPermission::kAllAutoDetectedPermission[] =
     "allAutoDetected";
+const char MediaGalleriesPermission::kScanPermission[] = "scan";
 const char MediaGalleriesPermission::kReadPermission[] = "read";
 const char MediaGalleriesPermission::kCopyToPermission[] = "copyTo";
 const char MediaGalleriesPermission::kDeletePermission[] = "delete";
@@ -44,9 +56,11 @@ MediaGalleriesPermission::MediaGalleriesPermission(
 MediaGalleriesPermission::~MediaGalleriesPermission() {
 }
 
-bool MediaGalleriesPermission::FromValue(const base::Value* value) {
+bool MediaGalleriesPermission::FromValue(const base::Value* value,
+                                         std::string* error) {
   if (!SetDisjunctionPermission<MediaGalleriesPermissionData,
-                                MediaGalleriesPermission>::FromValue(value)) {
+                                MediaGalleriesPermission>::FromValue(value,
+                                                                     error)) {
     return false;
   }
 
@@ -55,7 +69,8 @@ bool MediaGalleriesPermission::FromValue(const base::Value* value) {
   bool has_delete = false;
   for (std::set<MediaGalleriesPermissionData>::const_iterator it =
       data_set_.begin(); it != data_set_.end(); ++it) {
-    if (it->permission() == kAllAutoDetectedPermission) {
+    if (it->permission() == kAllAutoDetectedPermission ||
+        it->permission() == kScanPermission) {
       continue;
     }
     if (it->permission() == kReadPermission) {
@@ -78,7 +93,7 @@ bool MediaGalleriesPermission::FromValue(const base::Value* value) {
     return false;
   }
 
-  return IsValidPermissionSet(has_read, has_copy_to, has_delete);
+  return IsValidPermissionSet(has_read, has_copy_to, has_delete, error);
 }
 
 PermissionMessages MediaGalleriesPermission::GetMessages() const {
@@ -102,7 +117,7 @@ PermissionMessages MediaGalleriesPermission::GetMessages() const {
       has_delete = true;
   }
 
-  if (!IsValidPermissionSet(has_read, has_copy_to, has_delete)) {
+  if (!IsValidPermissionSet(has_read, has_copy_to, has_delete, NULL)) {
     NOTREACHED();
     return result;
   }

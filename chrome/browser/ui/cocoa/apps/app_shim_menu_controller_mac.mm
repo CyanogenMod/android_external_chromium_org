@@ -5,8 +5,8 @@
 #import "chrome/browser/ui/cocoa/apps/app_shim_menu_controller_mac.h"
 
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
-#include "apps/shell_window.h"
-#include "apps/shell_window_registry.h"
+#include "apps/app_window.h"
+#include "apps/app_window_registry.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -237,6 +237,12 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
   [[fileMenuItem_ submenu] addItem:[openDoppelganger_ menuItem]];
   [[fileMenuItem_ submenu] addItem:[NSMenuItem separatorItem]];
   AddDuplicateItem(fileMenuItem_, IDC_FILE_MENU, IDC_CLOSE_WINDOW);
+  // Set the expected key equivalent explicitly here because
+  // -[AppControllerMac adjustCloseWindowMenuItemKeyEquivalent:] sets it to
+  // "W" (Cmd+Shift+w) when a tabbed window has focus; it will change it back
+  // to Cmd+w when a non-tabbed window has focus.
+  [[[fileMenuItem_ submenu] itemWithTag:IDC_CLOSE_WINDOW]
+      setKeyEquivalent:@"w"];
 
   // Edit menu. This copies the menu entirely and removes
   // "Paste and Match Style" and "Find". This is because the last two items,
@@ -274,11 +280,10 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
   id window = [notification object];
   NSString* name = [notification name];
   if ([name isEqualToString:NSWindowDidBecomeMainNotification]) {
-    apps::ShellWindow* shellWindow =
-        apps::ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
-            window);
-    if (shellWindow)
-      [self addMenuItems:shellWindow->extension()];
+    apps::AppWindow* appWindow =
+        apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(window);
+    if (appWindow)
+      [self addMenuItems:appWindow->extension()];
     else
       [self removeMenuItems];
   } else if ([name isEqualToString:NSWindowWillCloseNotification]) {
@@ -350,27 +355,27 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
 }
 
 - (void)quitCurrentPlatformApp {
-  apps::ShellWindow* shellWindow =
-      apps::ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
+  apps::AppWindow* appWindow =
+      apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
           [NSApp keyWindow]);
-  if (shellWindow)
-    apps::ExtensionAppShimHandler::QuitAppForWindow(shellWindow);
+  if (appWindow)
+    apps::ExtensionAppShimHandler::QuitAppForWindow(appWindow);
 }
 
 - (void)hideCurrentPlatformApp {
-  apps::ShellWindow* shellWindow =
-      apps::ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
+  apps::AppWindow* appWindow =
+      apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
           [NSApp keyWindow]);
-  if (shellWindow)
-    apps::ExtensionAppShimHandler::HideAppForWindow(shellWindow);
+  if (appWindow)
+    apps::ExtensionAppShimHandler::HideAppForWindow(appWindow);
 }
 
 - (void)focusCurrentPlatformApp {
-  apps::ShellWindow* shellWindow =
-      apps::ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
+  apps::AppWindow* appWindow =
+      apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
           [NSApp keyWindow]);
-  if (shellWindow)
-    apps::ExtensionAppShimHandler::FocusAppForWindow(shellWindow);
+  if (appWindow)
+    apps::ExtensionAppShimHandler::FocusAppForWindow(appWindow);
 }
 
 @end
