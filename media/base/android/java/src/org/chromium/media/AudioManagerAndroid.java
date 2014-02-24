@@ -199,9 +199,9 @@ class AudioManagerAndroid {
         mIsInitialized = true;
 
         mSettingsObserverThread = new SettingsObserverThread();
-        mSettingsObserverThread.start();
         synchronized (mSettingsObserverLock) {
             try {
+                mSettingsObserverThread.start();
                 mSettingsObserverLock.wait();
             } catch (InterruptedException e) {
                 Log.e(TAG, "unregisterHeadsetReceiver exception: " + e.getMessage());
