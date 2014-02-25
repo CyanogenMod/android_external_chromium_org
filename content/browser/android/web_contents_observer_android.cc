@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -219,6 +220,10 @@ void WebContentsObserverAndroid::DidFinishLoad(
       ConvertUTF8ToJavaString(env, url_string));
   Java_WebContentsObserverAndroid_didFinishLoad(
       env, obj.obj(), frame_id, jstring_url.obj(), is_main_frame);
+  std::string str = validated_url.spec();
+  std::string str1 = "http";
+  if(str.substr(0,str1.size()) == str1 && is_main_frame)
+    LOG(INFO) << "Browser Finished Loading URL: " << str;
 }
 
 void WebContentsObserverAndroid::NavigationEntryCommitted(

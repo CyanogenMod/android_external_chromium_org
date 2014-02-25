@@ -1,4 +1,5 @@
 // Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013, 2014 Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -937,6 +938,11 @@ void ContentViewCoreImpl::LoadUrl(
   DCHECK(url);
   NavigationController::LoadURLParams params(
       GURL(ConvertJavaStringToUTF8(env, url)));
+
+  std::string str = ConvertJavaStringToUTF8(env, url).c_str();
+  std::string str1 = "http";
+  if(str.substr(0,str1.size()) == str1)
+    LOG(INFO) << "Browser Started Loading URL: " << str;
 
   params.load_type = static_cast<NavigationController::LoadURLType>(
       load_url_type);
