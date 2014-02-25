@@ -2743,6 +2743,9 @@
             'browser/ui/app_list/test/fast_show_pickler_unittest.cc',
           ],
         }],
+        ['OS == "android" and clang == 1 and clang_use_lto != 0', {
+          'ldflags' : [ '-flto' ]
+        }],
       ],
     },
     {

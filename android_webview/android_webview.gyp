@@ -44,6 +44,9 @@
             '-Wl,--fatal-warnings',
           ],
         }],
+        ['clang==1 and clang_use_lto!=0', {
+          'ldflags' : [ '-flto' ]
+        }],
       ],
       'sources': [
         'lib/main/webview_entry_point.cc',

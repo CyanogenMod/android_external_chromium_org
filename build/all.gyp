@@ -51,6 +51,7 @@
             '../android_webview/android_webview.gyp:android_webview_apk',
             '../chrome/chrome.gyp:chromium_testshell',
             '../remoting/remoting.gyp:remoting_apk',
+            '../build/android/setup.gyp:copy_system_libraries',
             '../tools/telemetry/telemetry.gyp:*#host',
             # TODO(nyquist) This should instead by a target for sync when all of
             # the sync-related code for Android has been upstreamed.

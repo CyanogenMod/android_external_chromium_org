@@ -29,18 +29,15 @@
     '<(DEPTH)/build/android/gyp/util/build_utils.py',
     '<(DEPTH)/build/android/gyp/strip_library_for_device.py',
     '<(ordered_libraries_file)',
+    '<(ordered_libsfile_abs_path)',
     '>@(input_paths)',
   ],
   'outputs': [
     '<(stamp)',
-  ],
-  'conditions': [
-    ['component == "shared_library"', {
-      # Add a fake output to force the build to always re-run this step. This
-      # is required because the real inputs are not known at gyp-time and
-      # changing base.so may not trigger changes to dependent libraries.
-      'outputs': [ '<(stamp).fake' ]
-    }],
+    # Add a fake output to force the build to always re-run this step. This
+    # is required because the real inputs are not known at gyp-time and
+    # changing base.so may not trigger changes to dependent libraries.
+    '<(strip_stamp).fake',
   ],
   'action': [
     'python', '<(DEPTH)/build/android/gyp/strip_library_for_device.py',
@@ -49,6 +46,7 @@
     '--stripped-libraries-dir=<(stripped_libraries_dir)',
     '--libraries-dir=<(SHARED_LIB_DIR)',
     '--libraries-file=<(ordered_libraries_file)',
-    '--stamp=<(stamp)',
+    '--lib-absolute-path=<(ordered_libsfile_abs_path)',
+    '--stamp=<(strip_stamp)',
   ],
 }

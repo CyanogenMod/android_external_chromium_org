@@ -42,8 +42,25 @@ common_vars_defines() {
 
   # The following defines will affect ARM code generation of both C/C++ compiler
   # and V8 mksnapshot.
+  case "${TARGET_PRODUCT}" in
+    "snapdragon")
+      TARGET_ARCH="arm"
+      echo "TARGET_PRODUCT: ${TARGET_PRODUCT} " >& 2
+      ;;
+    *)
+      echo "TARGET_PRODUCT: ${TARGET_PRODUCT} is default " >& 2
+      ;;
+  esac
+
   case "${TARGET_ARCH}" in
     "arm")
+      case "${TARGET_PRODUCT}" in
+        "snapdragon")
+          DEFINES+=" arm_neon=1"
+          ;;
+        *)
+          ;;
+      esac
       DEFINES+=" target_arch=arm"
       ;;
     "x86")
@@ -107,6 +124,16 @@ sdk_build_init() {
   if [[ -z "${ANDROID_SDK_ROOT}" || ! -d "${ANDROID_SDK_ROOT}" ]]; then
     export ANDROID_SDK_ROOT="${CHROME_SRC}/third_party/android_tools/sdk/"
   fi
+
+  # Unset toolchain. This makes it easy to switch between architectures.
+  unset ANDROID_BUILD_TOP
+
+  # Set default target.
+  export TARGET_PRODUCT="${TARGET_PRODUCT:-snapdragon}"
+
+  # Unset toolchain so that it can be set based on TARGET_PRODUCT.
+  # This makes it easy to switch between architectures.
+  unset ANDROID_TOOLCHAIN
 
   common_vars_defines
 

@@ -43,6 +43,9 @@
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator', ],
         }],
+        ['OS == "android" and clang == 1 and clang_use_lto != 0', {
+          'ldflags' : [ '-flto' ]
+        }],
       ],
     },
     {

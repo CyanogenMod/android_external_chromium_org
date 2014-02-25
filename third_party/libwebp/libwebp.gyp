@@ -66,6 +66,16 @@
     {
       'target_name': 'libwebp_dsp_neon',
       'conditions': [
+        ['clang==1 and clang_use_integrated_as!=0', {
+          'variables': {
+          # Do not use clang's integrated assembler.  It doesn't grok
+          # some neon instructions.
+          'clang_use_integrated_as': 0,
+          },
+           'includes': [
+           '../../build/clang.gypi',
+          ],
+        }],
         ['target_arch == "arm" and arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
           'type': 'static_library',
           'include_dirs': ['.'],

@@ -838,6 +838,9 @@
             'browser/geolocation/wifi_data_provider_linux_unittest.cc',
           ],
         }],
+        ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+          'ldflags' : [ '-flto' ]
+        }],
       ],
     },
   ],
@@ -1175,6 +1178,9 @@
                 'renderer/savable_resources_browsertest.cc',
               ],
             }],
+            ['OS == "android" and clang == 1 and clang_use_lto != 0', {
+              'ldflags' : [ '-flto' ]
+            }],
           ],
         },
         {
@@ -1207,6 +1213,9 @@
               'dependencies': [
                 '../testing/android/native_test.gyp:native_test_native_code',
               ],
+            }],
+            ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+              'ldflags' : [ '-flto' ]
             }],
           ],
         },
@@ -1310,6 +1319,9 @@
                 'include_dirs': [
                   '<(DEPTH)/third_party/libva',
                 ],
+              }],
+              ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+                'ldflags' : [ '-flto' ]
               }],
               ['use_x11==1', {
                 'dependencies': [
@@ -1457,6 +1469,11 @@
           'sources': [
             'shell/android/linker_test_apk/chromium_linker_test_android.cc',
             'shell/android/linker_test_apk/chromium_linker_test_linker_tests.cc',
+          ],
+          'conditions': [
+            ['OS == "android" and clang == 1 and clang_use_lto != 0', {
+              'ldflags' : [ '-flto' ]
+            }],
           ],
         },
         {

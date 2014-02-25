@@ -358,6 +358,9 @@
                 }],
               ],
             }],
+            ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+              'ldflags' : [ '-flto' ]
+            }],
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
@@ -387,6 +390,9 @@
              'dependencies': [
                '../testing/android/native_test.gyp:native_test_native_code',
              ],
+           }],
+           ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+             'ldflags' : [ '-flto' ]
            }],
          ],
          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -476,6 +482,9 @@
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
+            }],
+            ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+              'ldflags' : [ '-flto' ]
             }],
           ],
         },

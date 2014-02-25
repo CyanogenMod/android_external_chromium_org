@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 {
   'conditions': [
-    ['component == "shared_library"', {
+    ['component == "shared_library" or swe_component == "shared_library"', {
       'targets': [
         {
           # These libraries from the Android ndk are required to be packaged with
@@ -16,7 +16,7 @@
             {
               'destination': '<(SHARED_LIB_DIR)/',
               'files': [
-                '<(android_stlport_libs_dir)/libstlport_shared.so',
+                '<(android_stlport_libs_dir)/libstlport_sh_r8e.so',
               ],
             },
           ],
@@ -79,4 +79,3 @@
     }, # build_output_dirs
   ]
 }
-

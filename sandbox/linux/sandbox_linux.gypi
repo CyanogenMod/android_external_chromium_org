@@ -83,6 +83,18 @@
     {
       'target_name': 'seccomp_bpf',
       'type': 'static_library',
+      'conditions': [
+        ['clang==1 and clang_use_integrated_as!=0', {
+          'variables': {
+          # Do not use clang's integrated assembler.  It doesn't grok
+          # some neon instructions.
+          'clang_use_integrated_as': 0,
+          },
+          'includes': [
+            '../../build/clang.gypi',
+          ],
+        }],
+      ],
       'sources': [
         'seccomp-bpf/basicblock.cc',
         'seccomp-bpf/basicblock.h',

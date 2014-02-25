@@ -46,6 +46,9 @@
             }],
           ],
         }],
+        ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+          'ldflags' : [ '-flto' ]
+        }],
       ],
     },
   ],

@@ -89,6 +89,11 @@
         'native/input_stream_unittest.cc',
         'native/state_serializer_unittest.cc',
       ],
+      'conditions': [
+        ['OS == "android" and gtest_target_type == "shared_library" and clang == 1 and clang_use_lto != 0', {
+          'ldflags' : [ '-flto' ]
+        }],
+      ],
     },
     {
       'target_name': 'android_webview_unittest_java',

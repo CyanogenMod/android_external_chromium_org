@@ -28,6 +28,8 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
+#include "base/logging.h"
+
 namespace cc {
 
 static inline SkPaint CreatePaint() {
@@ -197,6 +199,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudContents() {
       FrameRateCounter* fps_counter = layer_tree_impl()->frame_rate_counter();
       fps_graph_.value = fps_counter->GetAverageFPS();
       fps_counter->GetMinAndMaxFPS(&fps_graph_.min, &fps_graph_.max);
+      LOG(INFO) << "Average FPS: " << fps_graph_.value;
     }
 
     if (debug_state.continuous_painting) {

@@ -140,7 +140,7 @@
 #if defined(COMPILER_MSVC)
 #define OVERRIDE override
 #elif defined(__clang__)
-#define OVERRIDE override
+#define OVERRIDE 
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
 // GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
