@@ -28,6 +28,7 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme_aura.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/views_delegate.h"
@@ -522,14 +523,7 @@ void NativeWidgetAura::Deactivate() {
 }
 
 bool NativeWidgetAura::IsActive() const {
-  if (!window_)
-    return false;
-
-  // We may up here during destruction of the root, in which case
-  // GetRootWindow() returns NULL (~RootWindow() has run and we're in ~Window).
-  aura::Window* root = window_->GetRootWindow();
-  return root &&
-      aura::client::GetActivationClient(root)->GetActiveWindow() == window_;
+  return window_ && corewm::IsActiveWindow(window_);
 }
 
 void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
