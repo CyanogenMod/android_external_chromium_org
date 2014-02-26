@@ -81,6 +81,9 @@ const char kDisable3DAPIs[]                 = "disable-3d-apis";
 // Disable gpu-accelerated 2d canvas.
 const char kDisableAccelerated2dCanvas[]    = "disable-accelerated-2d-canvas";
 
+// Disable threaded canvas rendering.
+const char kDisableParallelCanvasMode[]     = "disable-parallel-canvas-mode";
+
 // Disables accelerated compositing for backgrounds of root layers with
 // background-attachment: fixed.
 const char kDisableAcceleratedFixedRootBackground[] =

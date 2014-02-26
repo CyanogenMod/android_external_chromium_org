@@ -37,6 +37,7 @@ CONTENT_EXPORT extern const char kDefaultTileHeight[];
 CONTENT_EXPORT extern const char kDisable2dCanvasAntialiasing[];
 CONTENT_EXPORT extern const char kDisable3DAPIs[];
 CONTENT_EXPORT extern const char kDisableAccelerated2dCanvas[];
+CONTENT_EXPORT extern const char kDisableParallelCanvasMode[];
 CONTENT_EXPORT extern const char kDisableAcceleratedFixedRootBackground[];
 CONTENT_EXPORT extern const char kDisableAcceleratedOverflowScroll[];
 CONTENT_EXPORT extern const char kDisableLayerSquashing[];

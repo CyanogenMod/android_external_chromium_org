@@ -40,6 +40,8 @@ GpuBlacklist* GpuBlacklist::Create() {
                             GPU_FEATURE_TYPE_GPU_RASTERIZATION);
   list->AddSupportedFeature("gpu_rasterization_field_trial",
                             GPU_FEATURE_TYPE_GPU_RASTERIZATION_FIELD_TRIAL);
+  list->AddSupportedFeature("parallel_canvas",
+                            GPU_FEATURE_TYPE_PARALLEL_CANVAS_MODE);
   list->AddSupportedFeature(
       "gpu_rasterization_expanded_heuristics",
       GPU_FEATURE_TYPE_GPU_RASTERIZATION_EXPANDED_HEURISTICS);

@@ -100,6 +100,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual blink::WebIDBFactory* idbFactory();
   virtual blink::WebFileSystem* fileSystem();
   virtual bool canAccelerate2dCanvas();
+  virtual bool isThreadedCanvasRenderingEnabled();
   virtual bool isThreadedCompositingEnabled();
   virtual double audioHardwareSampleRate();
   virtual size_t audioHardwareBufferSize();
@@ -133,6 +134,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       blink::WebGraphicsContext3D* share_context);
   virtual blink::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
+  virtual blink::WebGraphicsContext3DProvider*
+      createCanvasOffscreenGraphicsContext3DProvider();
   virtual blink::WebCompositorSupport* compositorSupport();
   virtual blink::WebString convertIDNToUnicode(
       const blink::WebString& host, const blink::WebString& languages);

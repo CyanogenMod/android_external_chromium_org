@@ -28,6 +28,7 @@ class CONTENT_EXPORT WebGraphicsContext3DProviderImpl
   // WebGraphicsContext3DProvider implementation.
   virtual blink::WebGraphicsContext3D* context3d() OVERRIDE;
   virtual GrContext* grContext() OVERRIDE;
+  virtual bool bindToCurrentThread() OVERRIDE;
 
  private:
   scoped_refptr<webkit::gpu::ContextProviderWebContext> provider_;

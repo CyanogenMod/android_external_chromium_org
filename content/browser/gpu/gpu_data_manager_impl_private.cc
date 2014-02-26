@@ -574,6 +574,9 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
       !command_line->HasSwitch(switches::kDisableWebRtcHWEncoding))
     command_line->AppendSwitch(switches::kDisableWebRtcHWEncoding);
 #endif
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_PARALLEL_CANVAS_MODE) &&
+      !command_line->HasSwitch(switches::kDisableParallelCanvasMode))
+    command_line->AppendSwitch(switches::kDisableParallelCanvasMode);
 
 #if defined(USE_AURA)
   if (!CanUseGpuBrowserCompositor())

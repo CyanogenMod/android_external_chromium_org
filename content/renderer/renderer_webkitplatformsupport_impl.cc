@@ -658,6 +658,10 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
   return host->gpu_info().SupportsAccelerated2dCanvas();
 }
 
+bool RendererWebKitPlatformSupportImpl::isThreadedCanvasRenderingEnabled() {
+    return !CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableParallelCanvasMode);
+}
+
 bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   // thread can be NULL in tests.
@@ -982,6 +986,17 @@ blink::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
   scoped_refptr<webkit::gpu::ContextProviderWebContext> provider =
       RenderThreadImpl::current()->SharedMainThreadContextProvider();
+  if (!provider)
+    return NULL;
+  return new WebGraphicsContext3DProviderImpl(provider);
+}
+
+//------------------------------------------------------------------------------
+
+blink::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
+    createCanvasOffscreenGraphicsContext3DProvider() {
+  scoped_refptr<webkit::gpu::ContextProviderWebContext> provider =
+      RenderThreadImpl::current()->OffscreenCanvasContextProvider();
   if (!provider)
     return NULL;
   return new WebGraphicsContext3DProviderImpl(provider);

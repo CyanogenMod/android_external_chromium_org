@@ -1171,6 +1171,27 @@ RenderThreadImpl::CreateOffscreenContext3d() {
 }
 
 scoped_refptr<webkit::gpu::ContextProviderWebContext>
+RenderThreadImpl::OffscreenCanvasContextProvider() {
+  DCHECK(IsMainThread());
+  if (!offscreen_canvas_contexts_ ||
+      offscreen_canvas_contexts_->DestroyedOnMainThread()) {
+    offscreen_canvas_contexts_ = NULL;
+#if defined(OS_ANDROID)
+    if (SynchronousCompositorFactory* factory =
+            SynchronousCompositorFactory::GetInstance()) {
+      offscreen_canvas_contexts_ = factory->CreateOffscreenContextProvider(
+          GetOffscreenAttribs(), "Offscreen-CanvasThread");
+    }
+#endif
+    if (!offscreen_canvas_contexts_) {
+      offscreen_canvas_contexts_ = ContextProviderCommandBuffer::Create(
+          CreateOffscreenContext3d(), "Offscreen-CanvasThread");
+    }
+  }
+  return offscreen_canvas_contexts_;
+}
+
+scoped_refptr<webkit::gpu::ContextProviderWebContext>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
   if (!shared_main_thread_contexts_ ||
