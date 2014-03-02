@@ -227,6 +227,7 @@ static const MimeInfo secondary_mappings[] = {
   { "application/javascript", "js" },
   { "application/font-woff", "woff" },
   { "image/bmp", "bmp" },
+  { "image/vnd.wap.wbmp", "wbmp" },
   { "image/x-icon", "ico" },
   { "image/vnd.microsoft.icon", "ico" },
   { "image/jpeg", "jfif,pjpeg,pjp" },
@@ -334,6 +335,7 @@ static const char* const supported_image_types[] = {
   "image/png",
   "image/gif",
   "image/bmp",
+  "image/vnd.wap.wbmp",
   "image/vnd.microsoft.icon",    // ico
   "image/x-icon",    // ico
   "image/x-xbitmap",  // xbm
@@ -1134,6 +1136,7 @@ namespace {
 // http://plugindoc.mozdev.org/winmime.php
 static const char* const kStandardImageTypes[] = {
   "image/bmp",
+  "image/vnd.wap.wbmp",
   "image/cis-cod",
   "image/gif",
   "image/ief",
