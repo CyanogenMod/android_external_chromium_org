@@ -277,18 +277,24 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedFrame(
 
   // Chopped pixels in width/height in case video capture device has odd
   // numbers for width/height.
+#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
   int chopped_width = 0;
   int chopped_height = 0;
+#endif
   int new_unrotated_width = frame_format.frame_size.width();
   int new_unrotated_height = frame_format.frame_size.height();
 
   if (new_unrotated_width & 1) {
     --new_unrotated_width;
+#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
     chopped_width = 1;
+#endif
   }
   if (new_unrotated_height & 1) {
     --new_unrotated_height;
+#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
     chopped_height = 1;
+#endif
   }
 
   int destination_width = new_unrotated_width;
