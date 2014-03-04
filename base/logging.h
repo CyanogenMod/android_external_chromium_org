@@ -477,10 +477,10 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // Official release builds always disable and remove DCHECK and DLOG.
 #undef LOGGING_IS_OFFICIAL_BUILD
 #define LOGGING_IS_OFFICIAL_BUILD 1
-#elif !defined(LOGGING_IS_OFFICIAL_BUILD)
-// Unless otherwise specified, unofficial release builds include
-// DCHECK and DLOG.
-#define LOGGING_IS_OFFICIAL_BUILD 0
+#else
+// WebView: Force logging off in Android release branch.
+#undef LOGGING_IS_OFFICIAL_BUILD
+#define LOGGING_IS_OFFICIAL_BUILD 1
 #endif
 
 // The actual stream used isn't important.
@@ -991,8 +991,8 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 #if defined(OS_ANDROID) && defined(OFFICIAL_BUILD)
 #define NOTIMPLEMENTED_POLICY 0
 #else
-// Select default policy: LOG(ERROR)
-#define NOTIMPLEMENTED_POLICY 4
+// WebView: Hide NOTIMPLEMENTED entirely in Android release branch.
+#define NOTIMPLEMENTED_POLICY 0
 #endif
 #endif
 
