@@ -11,7 +11,9 @@ vars = {
     'git_url':
          'https://chromium.googlesource.com',
     'webkit_rev':
-         '@8b151ecb470d6f926a31cb6bff02282b796a981d'
+         '@8b151ecb470d6f926a31cb6bff02282b796a981d',
+    'webtech_devx_url':
+         'http://webtech-devx.qualcomm.com/swe/packages'
 }
 
 deps = {
@@ -155,6 +157,8 @@ deps = {
         Var('git_url') + '/external/swarming.client.git@5b47578a4c25b1447172c78bcfce8c1fc7a69839',
     'src/v8':
         Var('git_url') + '/external/v8.git@10af9e3f2f8822684fe246b58d028630e12aca1e',
+    'src/third_party/llvm-snapdragon':
+        Var('webtech_devx_url') + '/llvm-snapdragon.git@40653a45a211c6037e2f0635916dce34a73bc9da',
 }
 
 deps_os = {
