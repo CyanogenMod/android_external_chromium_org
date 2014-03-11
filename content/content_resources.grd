@@ -46,6 +46,9 @@
         <include name="IDR_MOJO_UNICODE_JS" file="../mojo/public/js/bindings/unicode.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_MOJO_VALIDATOR_JS" file="../mojo/public/js/bindings/validator.js" flattenhtml="true" type="BINDATA" />
       </if>
+      <if expr="is_android">
+        <include name="IDR_MOBILE_YOUTUBE_PLUGIN_HTML" file="renderer/resources/mobile_youtube_plugin.html" flattenhtml="true" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>

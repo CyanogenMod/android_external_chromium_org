@@ -130,4 +130,20 @@ public class AwContentViewClient extends ContentViewClient {
         return !CommandLine.getInstance().hasSwitch(
                 ContentSwitches.DISABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE);
     }
+
+//SWE-feature-hide-title-bar
+    /**
+     * Notifies the client that the position of the top controls has changed.
+     * @param topControlsOffsetYPix The Y offset of the top controls in physical pixels.
+     * @param contentOffsetYPix The Y offset of the content in physical pixels.
+     * @param overdrawBottomHeightPix The overdraw height.
+     */
+    @Override
+    public void onOffsetsForFullscreenChanged(
+            float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
+        mAwContentsClient.onOffsetsForFullscreenChanged(topControlsOffsetYPix,
+                                                        contentOffsetYPix,
+                                                        overdrawBottomHeightPix);
+    }
+//SWE-feature-hide-title-bar
 }

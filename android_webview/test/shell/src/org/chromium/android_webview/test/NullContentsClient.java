@@ -189,6 +189,14 @@ public class NullContentsClient extends AwContentsClient {
                                 long contentLength) {
     }
 
+//SWE-feature-showfilechooser
+    @Override
+    public void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
+            FileChooserParams fileChooserParams){
+
+     }
+//SWE-feature-showfilechooser
+
     @Override
     public boolean onCreateWindow(boolean isDialog, boolean isUserGesture) {
         return false;
@@ -263,4 +271,10 @@ public class NullContentsClient extends AwContentsClient {
     }
  // SWE-feature-username-password
 
+//SWE-feature-showfilechooser
+    @Override
+    public void onOffsetsForFullscreenChanged(
+        float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
+    }
+//SWE-feature-showfilechooser
 }

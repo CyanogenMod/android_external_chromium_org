@@ -58,6 +58,9 @@ CONTENT_EXPORT extern const int kHistogramSynchronizerReservedSequenceNumber;
 CONTENT_EXPORT extern const char kFlashHwVideoDecodeFieldTrialName[];
 CONTENT_EXPORT extern const char kFlashHwVideoDecodeFieldTrialEnabledName[];
 
+CONTENT_EXPORT extern const char kPluginPlaceholderDataURL[];
+CONTENT_EXPORT extern const char kFlashYouTubeURLPrefix[];
+
 }  // namespace content
 
 #endif  // CONTENT_PUBLIC_COMMON_CONTENT_CONSTANTS_H_

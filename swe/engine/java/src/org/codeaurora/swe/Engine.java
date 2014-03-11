@@ -93,17 +93,21 @@ public class Engine {
             mAWCRenderingMode = false;
         }
 
-        //SWE-FIXME - disable it for now.
-        //CommandLine.getInstance().appendSwitch("enable-experimental-form-filling");
-        //CommandLine.getInstance().appendSwitch("enable-interactive-autocomplete");
-        //CommandLine.getInstance().appendSwitch("enable-top-controls-position-calculation");
-        //CommandLine.getInstance().appendSwitchWithValue("top-controls-height", "52");
-        //CommandLine.getInstance().appendSwitchWithValue("top-controls-show-threshold", "0.5");
-        //CommandLine.getInstance().appendSwitchWithValue("top-controls-hide-threshold", "0.5");
+        CommandLine.getInstance().appendSwitch("enable-experimental-form-filling");
+        CommandLine.getInstance().appendSwitch("enable-interactive-autocomplete");
 
-        //SWE- these needs to be called in application code.
-        //ResourceExtractor.setMandatoryPaksToExtract(MP_MANDATORY_PAKS);
-        //PathUtils.setPrivateDataDirectorySuffix("swe_webview");
+        //SWE-hide-title-bar - enable following flags
+        CommandLine.getInstance().appendSwitch("enable-top-controls-position-calculation");
+        CommandLine.getInstance().appendSwitchWithValue("top-controls-height", "52");
+        CommandLine.getInstance().appendSwitchWithValue("top-controls-show-threshold", "0.5");
+        CommandLine.getInstance().appendSwitchWithValue("top-controls-hide-threshold", "0.5");
+        //SWE-hide-title-bar
+    }
+
+    //This should be called each time Application.onCreate is called.
+    public static void initializeApplicationParameters() {
+        ResourceExtractor.setMandatoryPaksToExtract(MP_MANDATORY_PAKS);
+        PathUtils.setPrivateDataDirectorySuffix("swe_webview");
     }
 
     public static void initialize(Context context) {
@@ -132,6 +136,7 @@ public class Engine {
      */
     public static void initialize(Context context,
                                   final StartupCallback callback) {
+        initializeApplicationParameters();
         if (sInitialized) {
             return;
         }
@@ -173,15 +178,12 @@ public class Engine {
             mContext.getSharedPreferences("webview", Context.MODE_PRIVATE);
         // Create Browser Context
         sBrowserContext = AwBrowserContext.getInstance(sharedPreferences);
-        // initialize Geolocation Permission for Incognito
-        //SWE-FIXME
-        //sBrowserContext.setGeolocationPermissions((AwGeolocationPermissions)
-          //          GeolocationPermissions.create(sharedPreferences, true));
         // initialize Geolocation Permission for Normal tab
-        //SWE-FIXME
-        //sBrowserContext.setIncognitoGeolocationPermissions((AwGeolocationPermissions)
-          //          GeolocationPermissions.create(sharedPreferences, false));
-
+        sBrowserContext.setGeolocationPermissions((AwGeolocationPermissions)
+                    GeolocationPermissions.create(sharedPreferences, true));
+        // initialize Geolocation Permission for Incognito
+        sBrowserContext.setIncognitoGeolocationPermissions((AwGeolocationPermissions)
+                    GeolocationPermissions.create(sharedPreferences, false));
 // SWE-feature-username-password
         // initialize AwEncryptionHelper
         sBrowserContext.createAwEncryptionHelper(mContext);

@@ -55,8 +55,7 @@ import org.json.JSONException;
  * (for the duration of the page) or permanently. This class deals only with
  * permanent permissions.
 */
-//SWE-FIXME AwGeolocationPermissions is now final
-public final class GeolocationPermissions {
+public final class GeolocationPermissions extends AwGeolocationPermissions  {
 
     private static GeolocationPermissions sGeolocationPermissions;
     private static GeolocationPermissions sIncognitoGeolocationPermissions;
@@ -110,20 +109,16 @@ public final class GeolocationPermissions {
 
     public static GeolocationPermissions getInstance() {
         if (sGeolocationPermissions == null) {
-            sGeolocationPermissions = null;
-            //SWE-FIXME
-            //(GeolocationPermissions)
-              //      Engine.getAwBrowserContext().getGeolocationPermissions();
+            sGeolocationPermissions = (GeolocationPermissions)
+                Engine.getAwBrowserContext().getGeolocationPermissions();
         }
         return sGeolocationPermissions;
     }
 
     public static GeolocationPermissions getIncognitoInstance() {
         if (sIncognitoGeolocationPermissions == null) {
-            sIncognitoGeolocationPermissions = null;
-            //SWE-FIXME
-            //(GeolocationPermissions)
-              //      Engine.getAwBrowserContext().getIncognitoGeolocationPermissions();
+            sIncognitoGeolocationPermissions = (GeolocationPermissions)
+                Engine.getAwBrowserContext().getIncognitoGeolocationPermissions();
         }
         return sIncognitoGeolocationPermissions;
     }
@@ -212,9 +207,9 @@ public final class GeolocationPermissions {
      */
     private GeolocationPermissions(SharedPreferences sharedPreferences,
             boolean privateBrowsing) {
-        //SWE-FIXME
-        //super(sharedPreferences);
+        super(sharedPreferences);
         mPrivateBrowsing = privateBrowsing;
+        mSharedPreferences = sharedPreferences;
         mPolicies = new HashMap<String, GeolocationPolicy>();
         //Parse sharedPreferences
         for (String name : mSharedPreferences.getAll().keySet()) {
@@ -256,8 +251,7 @@ public final class GeolocationPermissions {
         return expired;
     }
 
-    //SWE-FIXME
-    //@Override
+    @Override
     public void allow(String origin) {
         try {
             // if origin is a JSON string create a policy with the specified expiration
@@ -275,8 +269,7 @@ public final class GeolocationPermissions {
         }
     }
 
-    //SWE-FIXME
-    //@Override
+    @Override
     public void deny(String origin) {
         try {
             // if origin is a JSON string create a policy with the specified expiration
@@ -294,8 +287,7 @@ public final class GeolocationPermissions {
         }
     }
 
-    //SWE-FIXME
-    //@Override
+    @Override
     public void clear(String origin) {
         // Sanitize origin in case it is a URL
         String key = getOriginFromUrl(origin);
@@ -310,8 +302,7 @@ public final class GeolocationPermissions {
         }
     }
 
-    //SWE-FIXME
-    //@Override
+    @Override
     public void clearAll() {
         mPolicies.clear();
         removeAllPoliciesOnFile();
@@ -325,8 +316,7 @@ public final class GeolocationPermissions {
     /**
      * Method to get if an origin is set to be allowed.
      */
-    //SWE-FIXME
-    //@Override
+    @Override
     public boolean isOriginAllowed(String origin) {
         // Sanitize origin in case it is a URL
         String key = getOriginFromUrl(origin);
@@ -338,8 +328,8 @@ public final class GeolocationPermissions {
      * Method to get if there is a persistent policy for the specified origin
      * that has not yet expired.
      */
-    //SWE-FIXME
-    //@Override
+
+    @Override
     public boolean hasOrigin(String origin) {
         // Sanitize origin in case it is a URL
         String key = getOriginFromUrl(origin);

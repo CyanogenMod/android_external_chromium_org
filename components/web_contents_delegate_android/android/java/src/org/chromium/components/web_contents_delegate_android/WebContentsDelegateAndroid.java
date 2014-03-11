@@ -88,6 +88,12 @@ public class WebContentsDelegateAndroid {
         onLoadProgressChanged(mMostRecentProgress);
     }
 
+//SWE-feature-youtube-plugin
+    @CalledByNative
+    public void InitiateIntent(String url, ContentViewCore contentViewCore) {
+    }
+//SWE-feature-youtube-plugin
+
     /**
      * @param progress The load progress [0, 100] for the current web contents.
      */

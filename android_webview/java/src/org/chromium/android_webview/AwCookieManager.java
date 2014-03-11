@@ -101,6 +101,13 @@ public final class AwCookieManager {
         return cookie == null || cookie.trim().isEmpty() ? null : cookie;
     }
 
+//SWE-feature-incognito
+    public String getIncognitoCookie(final String url) {
+        String cookie = nativeGetIncognitoCookie(url.toString());
+        return cookie == null || cookie.trim().isEmpty() ? null : cookie;
+    }
+//SWE-feature-incognito
+
     /**
      * Remove all session cookies, the cookies without an expiration date.
      * The value of the callback is true iff at least one cookie was removed.
@@ -135,6 +142,12 @@ public final class AwCookieManager {
     public boolean hasCookies() {
         return nativeHasCookies();
     }
+
+//SWE-feature-incognito
+    public boolean hasIncognitoCookies() {
+        return nativeHasIncognitoCookies();
+    }
+//SWE-feature-incognito
 
     /**
      * Remove all expired cookies
@@ -219,6 +232,7 @@ public final class AwCookieManager {
             CookieCallback<Boolean> callback);
     private native void nativeSetCookieSync(String url, String value);
     private native String nativeGetCookie(String url);
+    private native String nativeGetIncognitoCookie(String url);
 
     private native void nativeRemoveSessionCookies(CookieCallback<Boolean> callback);
     private native void nativeRemoveSessionCookiesSync();
@@ -228,6 +242,7 @@ public final class AwCookieManager {
     private native void nativeFlushCookieStore();
 
     private native boolean nativeHasCookies();
+    private native boolean nativeHasIncognitoCookies();
 
     private native boolean nativeAllowFileSchemeCookies();
     private native void nativeSetAcceptFileSchemeCookies(boolean accept);

@@ -112,6 +112,11 @@ class WebContentsDelegateAndroid : public content::WebContentsDelegate {
   JavaObjectWeakGlobalRef weak_java_delegate_;
 
   scoped_ptr<ValidationMessageBubbleAndroid> validation_message_bubble_;
+
+  // Intercept YouTube Flash specific urls & kick it up to Java triggering an
+  // intent to the YouTube application
+  void OpenYouTubeUrl(content::WebContents* source, const GURL& url);
+
 };
 
 bool RegisterWebContentsDelegateAndroid(JNIEnv* env);

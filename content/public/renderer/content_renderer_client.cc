@@ -4,6 +4,12 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
+#include "components/plugins/renderer/mobile_youtube_plugin.h"
+#include "content/public/common/content_constants.h"
+#include "grit/content_resources.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "ui/base/resource/resource_bundle.h"
+
 namespace content {
 
 SkBitmap* ContentRendererClient::GetSadPluginBitmap() {
@@ -23,8 +29,39 @@ bool ContentRendererClient::OverrideCreatePlugin(
     blink::WebLocalFrame* frame,
     const blink::WebPluginParams& params,
     blink::WebPlugin** plugin) {
-  return false;
+
+  *plugin = CreatePlugin(render_frame, frame, params);
+  return true;
 }
+
+//SWE-feature-youtube-plugin
+// CreatePlugin previously was the stop-point in rendering plugins
+// (returned NULL). Added handling of Flash-YouTube specific plugins only
+blink::WebPlugin* ContentRendererClient::CreatePlugin(
+    RenderFrame* render_frame,
+    blink::WebLocalFrame* frame,
+    const blink::WebPluginParams& original_params) {
+  GURL url(original_params.url);
+  std::string orig_mime_type = original_params.mimeType.utf8();
+
+#if defined(OS_ANDROID)
+  if (plugins::MobileYouTubePlugin::IsYouTubeURL(url, orig_mime_type)) {
+    base::StringPiece template_html(
+        ResourceBundle::GetSharedInstance().GetRawDataResource(
+            IDR_MOBILE_YOUTUBE_PLUGIN_HTML));
+
+    return (new plugins::MobileYouTubePlugin(
+                render_frame,
+                frame,
+                original_params,
+                template_html,
+                GURL(kPluginPlaceholderDataURL)))->plugin();
+  }
+#endif
+
+  return NULL;
+}
+//SWE-feature-youtube-plugin
 
 blink::WebPlugin* ContentRendererClient::CreatePluginReplacement(
     RenderFrame* render_frame,

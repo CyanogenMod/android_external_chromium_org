@@ -64,6 +64,10 @@ class AwResourceDispatcherHostDelegate
       content::ResourceContext* resource_context,
       content::ResourceResponse* response) OVERRIDE;
 
+  virtual bool ShouldForceDownloadResource(
+    const GURL& url,
+    const std::string& mime_type) OVERRIDE;
+
   void RemovePendingThrottleOnIoThread(IoThreadClientThrottle* throttle);
 
   static void OnIoThreadClientReady(int new_render_process_id,
@@ -71,6 +75,8 @@ class AwResourceDispatcherHostDelegate
   static void AddPendingThrottle(int render_process_id,
                                  int render_frame_id,
                                  IoThreadClientThrottle* pending_throttle);
+  static void SetAllowMediaDownloads(bool allowMediaDownloads);
+  static bool GetAllowMediaDownloads();
 
  private:
   friend struct base::DefaultLazyInstanceTraits<
@@ -94,6 +100,10 @@ class AwResourceDispatcherHostDelegate
 
   // Only accessed on the IO thread.
   PendingThrottleMap pending_throttles_;
+
+  static bool sAllowMediaDownloads;
+
+
 
   DISALLOW_COPY_AND_ASSIGN(AwResourceDispatcherHostDelegate);
 };

@@ -194,6 +194,9 @@ bool IoThreadClientThrottle::ShouldBlockRequest() {
   return false;
 }
 
+// SWE-feature-allow-media-download
+bool AwResourceDispatcherHostDelegate::sAllowMediaDownloads = false;
+
 // static
 void AwResourceDispatcherHostDelegate::ResourceDispatcherHostCreated() {
   content::ResourceDispatcherHost::Get()->SetDelegate(
@@ -336,6 +339,30 @@ void AwResourceDispatcherHostDelegate::OnResponseStarted(
     }
   }
 }
+
+// SWE-feature-allow-media-download
+void AwResourceDispatcherHostDelegate::SetAllowMediaDownloads(bool allow) {
+  AwResourceDispatcherHostDelegate::sAllowMediaDownloads = allow;
+}
+
+//static
+bool AwResourceDispatcherHostDelegate::GetAllowMediaDownloads() {
+  return sAllowMediaDownloads;
+}
+
+bool AwResourceDispatcherHostDelegate::ShouldForceDownloadResource(
+    const GURL& url,
+    const std::string& mime_type) {
+
+  // if media type is allowed for download and only if mimetype is
+  // audio or video we allow is to download
+  if ( AwResourceDispatcherHostDelegate::GetAllowMediaDownloads() &&
+        (mime_type.compare(0, 6, "audio/") == 0 || mime_type.compare(0, 6, "video/") == 0) ) {
+    return true;
+  }
+  return false;
+}
+// SWE-feature-allow-media-download
 
 void AwResourceDispatcherHostDelegate::RemovePendingThrottleOnIoThread(
     IoThreadClientThrottle* throttle) {

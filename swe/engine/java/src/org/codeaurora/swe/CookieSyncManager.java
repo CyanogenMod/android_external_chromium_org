@@ -35,7 +35,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
-import android.webkit.WebViewDatabase;
 
 import org.codeaurora.swe.utils.Logger;
 

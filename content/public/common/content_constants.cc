@@ -41,4 +41,8 @@ const int kHistogramSynchronizerReservedSequenceNumber = 0;
 const char kFlashHwVideoDecodeFieldTrialName[] = "FlashHardwareVideoDecode";
 const char kFlashHwVideoDecodeFieldTrialEnabledName[] = "HwVideo";
 
+const char kPluginPlaceholderDataURL[] = "chrome://pluginplaceholderdata/";
+
+const char kFlashYouTubeURLPrefix[] = "vnd.youtube:";
+
 }  // namespace content

@@ -23,7 +23,8 @@ public class AwBrowserContext {
 
     private SharedPreferences mSharedPreferences;
 
-    private AwGeolocationPermissions mGeolocationPermissions;
+    private static AwGeolocationPermissions mGeolocationPermissions = null;
+    private static AwGeolocationPermissions mIncognitoGeolocationPermissions = null;
     private AwCookieManager mCookieManager;
     private AwFormDatabase mFormDatabase;
     private HttpAuthDatabase mHttpAuthDatabase;
@@ -39,27 +40,29 @@ public class AwBrowserContext {
         return sAwBrowserContext;
     }
 
-
     public AwBrowserContext(SharedPreferences sharedPreferences) {
         mSharedPreferences = sharedPreferences;
     }
 
     public AwGeolocationPermissions getGeolocationPermissions() {
-        if (mGeolocationPermissions == null) {
-            mGeolocationPermissions = new AwGeolocationPermissions(mSharedPreferences);
-        }
         return mGeolocationPermissions;
     }
 
+//SWE-feature-geolocation
     public AwGeolocationPermissions getIncognitoGeolocationPermissions() {
-        //SWE-FIXME
-        return null;
+        return mIncognitoGeolocationPermissions;
+    }
+
+    public void setGeolocationPermissions(AwGeolocationPermissions
+            geolocationPermissions) {
+        mGeolocationPermissions = geolocationPermissions;
     }
 
     public void setIncognitoGeolocationPermissions(AwGeolocationPermissions
             incognitoGeolocationPermissions) {
-        //SWE-FIXME
+        mIncognitoGeolocationPermissions = incognitoGeolocationPermissions;
     }
+//SWE-feature-geolocation
 
 // SWE-feature-username-password
     public void createAwEncryptionHelper(Context context) {

@@ -59,6 +59,7 @@ class AwSettings : public content::WebContentsObserver {
   void SetSavePassword(JNIEnv* env, jobject obj, jboolean save);
   bool GetSavePassword();
   void ClearPasswords(JNIEnv* env, jobject obj);
+  void SetAllowMediaDownloads(JNIEnv* env, jobject obj, jboolean allow);
 
  private:
   AwRenderViewHostExt* GetAwRenderViewHostExt();
@@ -72,7 +73,6 @@ class AwSettings : public content::WebContentsObserver {
   bool renderer_prefs_initialized_;
 
   JavaObjectWeakGlobalRef aw_settings_;
-  content::RenderViewHost* render_view_host_;
 };
 
 bool RegisterAwSettings(JNIEnv* env);

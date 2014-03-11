@@ -538,6 +538,18 @@ public class WebSettings {
 
     /* SWE: The following APIs have no Chromium specific implementation,
      * i.e. - they do not have a direct corresponding Chromium functionality.
+     * The API is to check if audio and video mimetype based urls which do not
+     * have "Content-Dispostion: attachment" in response header
+     * should be allowed to download or not
+     * If yes user is asked for a prompt and if not not they are played
+     * inline
+     */
+    public void setAllowMediaDownloads(boolean allow) {
+        mAwSettings.setAllowMediaDownloads(allow);
+    }
+
+    /* SWE: The following APIs have no Chromium specific implementation,
+     * i.e. - they do not have a direct corresponding Chromium functionality.
      * We are just storing the value locally and not propagating it anywhere.
      */
     public synchronized void setRenderPriority(RenderPriority priority) {
@@ -733,6 +745,10 @@ public class WebSettings {
     public void setDoubleTapZoom(int doubleTapZoom) {
         //SWE-FIXME
         //mAwSettings.setDoubleTapZoom(doubleTapZoom);
+    }
+
+    public void setHTTPRequestHeaders(String headers) {
+        mAwSettings.setHTTPRequestHeaders(headers);
     }
 
     /**

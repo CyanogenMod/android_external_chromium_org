@@ -250,9 +250,11 @@ void AwURLRequestIncognitoContextGetter::InitializeURLRequestContext() {
 
   main_http_factory_.reset(main_cache);
   url_request_context_->set_http_transaction_factory(main_cache);
-  //SWE-feature-incognito: Use a non-persistent cookie store
+//SWE-feature-incognito: Use a non-persistent cookie store
   net::CookieMonster* incognito_cookie_monster = cookie_store_->GetCookieMonster();
   url_request_context_->set_cookie_store(incognito_cookie_monster);
+  DidCreateIncognitoCookieMonster(incognito_cookie_monster);
+//SWE-feature-incognito: Use a non-persistent cookie store
 
   job_factory_ = CreateJobFactory(&protocol_handlers_,
                                   request_interceptors_.Pass());

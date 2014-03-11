@@ -62,7 +62,7 @@ class AwContentsIoThreadClientImpl : public AwContentsIoThreadClient {
   virtual void NewLoginRequest(const std::string& realm,
                                const std::string& account,
                                const std::string& args) OVERRIDE;
-
+  virtual std::string getHTTPRequestHeaders() OVERRIDE;
  private:
   bool pending_association_;
   base::android::ScopedJavaGlobalRef<jobject> java_object_;

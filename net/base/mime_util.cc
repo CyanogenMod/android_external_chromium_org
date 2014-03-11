@@ -357,6 +357,13 @@ static const char* const common_media_types[] = {
   "video/webm",
   "audio/webm",
 
+  // 3GPP
+//SWE-feature-support-3gp-mimetype
+#if defined(OS_ANDROID)  // Android does support 3GPP formats
+  "video/3gpp",
+#endif
+//SWE-feature-support-3gp-mimetype
+
   // Wav.
   "audio/wav",
   "audio/x-wav",

@@ -147,6 +147,7 @@ class CookieManager {
 
   scoped_refptr<net::CookieStore> GetCookieStore();
 
+  void SetIncognitoCookieMonster(net::CookieMonster* incognito_cookie_monster);
   void SetShouldAcceptCookies(bool accept);
   bool GetShouldAcceptCookies();
   void SetCookie(const GURL& host,
@@ -155,6 +156,7 @@ class CookieManager {
   void SetCookieSync(const GURL& host,
                  const std::string& cookie_value);
   std::string GetCookie(const GURL& host);
+  std::string GetIncognitoCookie(const GURL& host);
   void RemoveSessionCookies(scoped_ptr<BoolCookieCallbackHolder> callback);
   void RemoveAllCookies(scoped_ptr<BoolCookieCallbackHolder> callback);
   void RemoveAllCookiesSync();
@@ -162,6 +164,7 @@ class CookieManager {
   void RemoveExpiredCookies();
   void FlushCookieStore();
   bool HasCookies();
+  bool HasIncognitoCookies();
   bool AllowFileSchemeCookies();
   void SetAcceptFileSchemeCookies(bool accept);
 
@@ -184,6 +187,12 @@ class CookieManager {
   void GetCookieValueAsyncHelper(const GURL& host,
                                  std::string* result,
                                  base::Closure complete);
+//SWE-feature-incognito
+  void GetIncognitoCookieValueAsyncHelper(
+      const GURL& host,
+      std::string* result,
+      base::Closure complete);
+//SWE-feature-incognito
   void GetCookieValueCompleted(base::Closure complete,
                                std::string* result,
                                const std::string& value);
@@ -195,6 +204,10 @@ class CookieManager {
   void FlushCookieStoreAsyncHelper(base::Closure complete);
 
   void HasCookiesAsyncHelper(bool* result, base::Closure complete);
+//SWE-feature-incognito
+  void HasIncognitoCookiesAsyncHelper(bool* result,
+                             base::Closure complete);
+//SWE-feature-incognito
   void HasCookiesCompleted(base::Closure complete,
                            bool* result,
                            const CookieList& cookies);
@@ -208,6 +221,10 @@ class CookieManager {
   void SetAcceptFileSchemeCookiesLocked(bool accept);
 
   scoped_refptr<net::CookieMonster> cookie_monster_;
+//SWE-feature-incognito
+  scoped_refptr<net::CookieMonster> incognito_cookie_monster_;
+//SWE-feature-incognito
+
   scoped_refptr<base::MessageLoopProxy> cookie_monster_proxy_;
   base::Lock cookie_monster_lock_;
 
@@ -328,6 +345,13 @@ scoped_refptr<net::CookieStore> CookieManager::GetCookieStore() {
   return cookie_monster_;
 }
 
+//SWE-feature-incognito
+void CookieManager::SetIncognitoCookieMonster(net::CookieMonster* incognito_cookie_monster) {
+  DCHECK(!incognito_cookie_monster_.get());
+  incognito_cookie_monster_ = incognito_cookie_monster;
+}
+//SWE-feature-incognito
+
 void CookieManager::SetShouldAcceptCookies(bool accept) {
   AwCookieAccessPolicy::GetInstance()->SetShouldAcceptCookies(accept);
 }
@@ -377,6 +401,18 @@ std::string CookieManager::GetCookie(const GURL& host) {
   return cookie_value;
 }
 
+//SWE-feature-incognito
+std::string CookieManager::GetIncognitoCookie(const GURL& host) {
+  std::string cookie_value;
+  ExecCookieTaskSync(base::Bind(&CookieManager::GetIncognitoCookieValueAsyncHelper,
+                            base::Unretained(this),
+                            host,
+                            &cookie_value));
+
+  return cookie_value;
+}
+//SWE-feature-incognito
+
 void CookieManager::GetCookieValueAsyncHelper(
     const GURL& host,
     std::string* result,
@@ -392,6 +428,24 @@ void CookieManager::GetCookieValueAsyncHelper(
                  complete,
                  result));
 }
+
+//SWE-feature-incognito
+void CookieManager::GetIncognitoCookieValueAsyncHelper(
+    const GURL& host,
+    std::string* result,
+    base::Closure complete) {
+  net::CookieOptions options;
+  options.set_include_httponly();
+
+  incognito_cookie_monster_->GetCookiesWithOptionsAsync(
+      host,
+      options,
+      base::Bind(&CookieManager::GetCookieValueCompleted,
+                 base::Unretained(this),
+                 complete,
+                 result));
+}
+//SWE-feature-incognito
 
 void CookieManager::GetCookieValueCompleted(base::Closure complete,
                                             std::string* result,
@@ -473,6 +527,16 @@ bool CookieManager::HasCookies() {
   return has_cookies;
 }
 
+//SWE-feature-incognito
+bool CookieManager::HasIncognitoCookies() {
+  bool has_cookies;
+  ExecCookieTaskSync(base::Bind(&CookieManager::HasIncognitoCookiesAsyncHelper,
+                            base::Unretained(this),
+                            &has_cookies));
+  return has_cookies;
+}
+//SWE-feature-incognito
+
 // TODO(kristianm): Simplify this, copying the entire list around
 // should not be needed.
 void CookieManager::HasCookiesAsyncHelper(bool* result,
@@ -483,6 +547,17 @@ void CookieManager::HasCookiesAsyncHelper(bool* result,
                  complete,
                  result));
 }
+
+//SWE-feature-incognito
+void CookieManager::HasIncognitoCookiesAsyncHelper(bool* result,
+                                  base::Closure complete) {
+  incognito_cookie_monster_->GetAllCookiesAsync(
+      base::Bind(&CookieManager::HasCookiesCompleted,
+                 base::Unretained(this),
+                 complete,
+                 result));
+}
+//SWE-feature-incognito
 
 void CookieManager::HasCookiesCompleted(base::Closure complete,
                                         bool* result,
@@ -557,6 +632,17 @@ static jstring GetCookie(JNIEnv* env, jobject obj, jstring url) {
       CookieManager::GetInstance()->GetCookie(host)).Release();
 }
 
+//SWE-feature-incognito
+static jstring GetIncognitoCookie(JNIEnv* env, jobject obj, jstring url) {
+  GURL host(ConvertJavaStringToUTF16(env, url));
+
+  return base::android::ConvertUTF8ToJavaString(
+      env,
+      CookieManager::GetInstance()->GetIncognitoCookie(host)).Release();
+}
+//SWE-feature-incognito
+
+
 static void RemoveSessionCookies(JNIEnv* env,
                                 jobject obj,
                                 jobject java_callback) {
@@ -591,6 +677,12 @@ static jboolean HasCookies(JNIEnv* env, jobject obj) {
   return CookieManager::GetInstance()->HasCookies();
 }
 
+//SWE-feature-incognito
+static jboolean HasIncognitoCookies(JNIEnv* env, jobject obj) {
+  return CookieManager::GetInstance()->HasIncognitoCookies();
+}
+//SWE-feature-incognito
+
 static jboolean AllowFileSchemeCookies(JNIEnv* env, jobject obj) {
   return CookieManager::GetInstance()->AllowFileSchemeCookies();
 }
@@ -604,6 +696,12 @@ scoped_refptr<net::CookieStore> CreateCookieStore(
     AwBrowserContext* browser_context) {
   return CookieManager::GetInstance()->GetCookieStore();
 }
+
+//SWE-feature-incognito
+void SetIncognitoCookieMonsterOnNetworkStackInit(net::CookieMonster* incognito_cookie_monster) {
+  CookieManager::GetInstance()->SetIncognitoCookieMonster(incognito_cookie_monster);
+}
+//SWE-feature-incognito
 
 bool RegisterCookieManager(JNIEnv* env) {
   return RegisterNativesImpl(env);

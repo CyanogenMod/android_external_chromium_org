@@ -60,6 +60,8 @@ import org.chromium.content_public.browser.JavaScriptCallback;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
+import org.json.JSONArray;
+import org.json.JSONException;
 
 import java.io.File;
 import java.lang.annotation.Annotation;
@@ -202,6 +204,7 @@ public class AwContents {
     // This can be accessed on any thread after construction. See AwContentsIoThreadClient.
     private final AwSettings mSettings;
     private final ScrollAccessibilityHelper mScrollAccessibilityHelper;
+    private final boolean mPrivateBrowsing;
 
     private boolean mIsPaused;
     private boolean mIsViewVisible;
@@ -348,6 +351,13 @@ public class AwContents {
             }
             return awWebResourceResponse;
         }
+
+//SWE-feature-custom-http-headers
+        @Override
+        public String getHTTPRequestHeaders() {
+            return mSettings.getHTTPRequestHeaders();
+        }
+//SWE-feature-custom-http-headers
 
         @Override
         public boolean shouldBlockContentUrls() {
@@ -609,6 +619,7 @@ public class AwContents {
         mZoomControls = new AwZoomControls(this);
         mIoThreadClient = new IoThreadClientImpl();
         mInterceptNavigationDelegate = new InterceptNavigationDelegateImpl();
+        mPrivateBrowsing = privateBrowsing;
 
         AwSettings.ZoomSupportChangeListener zoomListener =
                 new AwSettings.ZoomSupportChangeListener() {
@@ -2053,19 +2064,29 @@ public class AwContents {
     private class AwGeolocationCallback implements GeolocationPermissions.Callback {
 
         @Override
-        public void invoke(final String origin, final boolean allow, final boolean retain) {
+        public void invoke(final String jsonString, final boolean allow, final boolean retain) {
             ThreadUtils.runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
                     if (retain) {
                         if (allow) {
-                            mBrowserContext.getGeolocationPermissions().allow(origin);
+                            AwContents.this.getGeolocationPermissions().allow(jsonString);
                         } else {
-                            mBrowserContext.getGeolocationPermissions().deny(origin);
+                            AwContents.this.getGeolocationPermissions().deny(jsonString);
                         }
                     }
                     if (mNativeAwContents == 0) return;
-                    nativeInvokeGeolocationCallback(mNativeAwContents, allow, origin);
+//SWE-feature-incognito-geolocation
+                    // Extract origin from jsonString prior to passing to native.
+                    try {
+                        JSONArray jsonArray = new JSONArray(jsonString);
+                        nativeInvokeGeolocationCallback(mNativeAwContents,
+                                allow, jsonArray.getString(1));
+                    } catch (JSONException e) {
+                        // otherwise assume jsonString is origin
+                        nativeInvokeGeolocationCallback(mNativeAwContents, allow, jsonString);
+                    }
+//SWE-feature-incognito-geolocation
                 }
             });
         }
@@ -2074,8 +2095,8 @@ public class AwContents {
     @CalledByNative
     private void onGeolocationPermissionsShowPrompt(String origin) {
         if (mNativeAwContents == 0) return;
-        AwGeolocationPermissions permissions = mBrowserContext.getGeolocationPermissions();
-        // Reject if geoloaction is disabled, or the origin has a retained deny
+        AwGeolocationPermissions permissions = getGeolocationPermissions();
+        // Reject if geolocation is disabled, or the origin has a retained deny
         if (!mSettings.getGeolocationEnabled()) {
             nativeInvokeGeolocationCallback(mNativeAwContents, false, origin);
             return;
@@ -2089,6 +2110,16 @@ public class AwContents {
         mContentsClient.onGeolocationPermissionsShowPrompt(
                 origin, new AwGeolocationCallback());
     }
+
+//SWE-feature-incognito-geolocation
+    private AwGeolocationPermissions getGeolocationPermissions() {
+        if (mPrivateBrowsing) {
+            return mBrowserContext.getIncognitoGeolocationPermissions();
+        } else {
+            return mBrowserContext.getGeolocationPermissions();
+        }
+    }
+//SWE-feature-incognito-geolocation
 
     @CalledByNative
     private void onGeolocationPermissionsHidePrompt() {

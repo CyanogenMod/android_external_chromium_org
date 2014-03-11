@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "android_webview/native/aw_settings.h"
-
+#include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 #include "android_webview/common/aw_content_client.h"
 #include "android_webview/native/aw_contents.h"
@@ -26,8 +26,10 @@
 #include "android_webview/browser/aw_password_manager_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/aw_incognito_browser_context.h"
 #include "android_webview/browser/net/aw_network_delegate.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "android_webview/browser/net/aw_url_request_incognito_context_getter.h"
 #include "content/public/common/user_agent.h"
 #include "base/logging.h"
 
@@ -225,10 +227,17 @@ void AwSettings::UpdateDoNotTrackLocked(JNIEnv* env, jobject obj, jboolean flag)
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!web_contents()) return;
   AwURLRequestContextGetter* context_getter = static_cast<AwURLRequestContextGetter*>(
-    AwBrowserContext::FromWebContents(web_contents())->GetRequestContext());
-  if (!context_getter) return;
+    AwBrowserContext::GetDefault()->GetRequestContext());
+  AwURLRequestIncognitoContextGetter* context_getter_incognito =
+    static_cast<AwURLRequestIncognitoContextGetter*>(
+    AwIncognitoBrowserContext::GetDefault()->GetRequestContext());
+  DCHECK(context_getter);
+  DCHECK(context_getter_incognito);
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
       base::Bind(&AwURLRequestContextGetter::SetDoNotTrack, context_getter, flag));
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+      base::Bind(&AwURLRequestIncognitoContextGetter::SetDoNotTrack,
+        context_getter_incognito, flag));
 }
 // SWE-feature-do-not-track
 
@@ -286,6 +295,12 @@ ScopedJavaLocalRef<jobject> AwSettings::GetAutoFillProfile(JNIEnv* env, jobject 
 }
 // SWE-feature-autofill-profile
 
+// SWE-feature-allow-media-download
+void AwSettings::SetAllowMediaDownloads(JNIEnv* env, jobject obj, jboolean allow) {
+  AwResourceDispatcherHostDelegate::SetAllowMediaDownloads(allow);
+}
+
+
 void AwSettings::RenderViewCreated(content::RenderViewHost* render_view_host) {
   // A single WebContents can normally have 0 to many RenderViewHost instances
   // associated with it.
@@ -299,8 +314,9 @@ void AwSettings::RenderViewCreated(content::RenderViewHost* render_view_host) {
 // SWE-feature-multiprocess
   if (!AwContents::isRunningMultiProcess())
     DCHECK(web_contents()->GetRenderViewHost() == render_view_host);
+
 // SWE-feature-multiprocess
-  UpdateEverything();
+UpdateEverything();
 }
 
 void AwSettings::WebContentsDestroyed() {
@@ -335,6 +351,12 @@ void AwSettings::PopulateWebPreferencesLocked(
     web_prefs->force_enable_zoom = text_size_percent >= 130;
     // Use the default zoom factor value when Text Autosizer is turned on.
     render_view_host_ext->SetTextZoomFactor(1);
+//SWE-feature-default-zoom
+  }  else if (Java_AwSettings_getForceUserScalableLocked(env, obj)) {
+      web_prefs->force_enable_zoom = true;
+      render_view_host_ext->SetTextZoomFactor(content::ZoomFactorToZoomLevel(
+        text_size_percent / 100.0f));
+//SWE-feature-default-zoom
   } else {
     web_prefs->force_enable_zoom = false;
     render_view_host_ext->SetTextZoomFactor(text_size_percent / 100.0f);

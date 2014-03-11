@@ -61,6 +61,16 @@ CHROME_PACKAGE_NAMES = {
        None]
 }
 
+#SWE-feature-telemetry-support
+SWE_PACKAGE_NAMES = {
+  'android-swe-browser':
+      ['com.android.swe.browser',
+        android_browser_backend.SWEBrowserBackendSettings,
+        'SWE_AndroidBrowser.apk']
+}
+
+CHROME_PACKAGE_NAMES.update(SWE_PACKAGE_NAMES)
+#SWE-feature-telemetry-support
 
 class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
@@ -261,8 +271,11 @@ Waiting for device...
 
   packages = adb.RunShellCommand('pm list packages')
   possible_browsers = []
+#SWE-feature-telemetry-support
+  possible_packages = dict(CHROME_PACKAGE_NAMES.items() + SWE_PACKAGE_NAMES.items())
+#SWE-feature-telemetry-support
 
-  for name, package_info in CHROME_PACKAGE_NAMES.iteritems():
+  for name, package_info in possible_packages.iteritems():
     [package, backend_settings, local_apk] = package_info
     b = PossibleAndroidBrowser(
         name,

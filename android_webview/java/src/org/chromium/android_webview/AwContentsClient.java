@@ -149,8 +149,8 @@ public abstract class AwContentsClient {
             String mimeType, long contentLength);
 
     // TODO(joth): Make abstract once this has rolled in downstream.
-    public /*abstract*/ void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
-            FileChooserParams fileChooserParams) { }
+    public abstract void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
+            FileChooserParams fileChooserParams);
 
     public abstract void onGeolocationPermissionsShowPrompt(String origin,
             GeolocationPermissions.Callback callback);
@@ -229,4 +229,9 @@ public abstract class AwContentsClient {
 
     public abstract void onNewAsyncBitmap(byte[] data, int size, int width, int height);
 
+    //SWE-feature-hide-title-bar
+    public abstract void onOffsetsForFullscreenChanged(float topControlsOffsetYPix,
+                                              float contentOffsetYPix,
+                                              float overdrawBottomHeightPix);
+    //SWE-feature-hide-title-bar
 }

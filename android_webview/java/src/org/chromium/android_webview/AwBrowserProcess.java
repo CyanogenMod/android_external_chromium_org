@@ -20,7 +20,7 @@ import java.util.UUID;
  * Wrapper for the steps needed to initialize the java and native sides of webview chromium.
  */
 public abstract class AwBrowserProcess {
-    private static final String PRIVATE_DATA_DIRECTORY_SUFFIX = "webview";
+    private static final String PRIVATE_DATA_DIRECTORY_SUFFIX = "swe_webview";
     private static final String TAG = "AwBrowserProcess";
 
     /**

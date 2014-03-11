@@ -14,6 +14,11 @@
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_server.h"
 #include "net/url_request/url_request.h"
+#include "content/public/browser/resource_request_info.h"
+#include "android_webview/browser/aw_contents_io_thread_client.h"
+
+//SWE-feature-custom-http-headers
+using content::ResourceRequestInfo;
 
 namespace android_webview {
 
@@ -38,13 +43,25 @@ int AwNetworkDelegate::OnBeforeSendHeaders(
     net::HttpRequestHeaders* headers) {
 
   DCHECK(headers);
-// SWE-feature-do-not-track
+//SWE-feature-do-not-track
   if (enable_do_not_track_)
       headers->SetHeaderIfMissing("DNT", "1");
-// SWE-feature-do-not-track
+//SWE-feature-do-not-track
   headers->SetHeaderIfMissing(
       "X-Requested-With",
       base::android::BuildInfo::GetInstance()->package_name());
+//SWE-feature-custom-http-headers
+  // Get extra headers from client
+  int render_process_id, render_frame_id;
+  if (ResourceRequestInfo::GetRenderFrameForRequest(
+        request, &render_process_id, &render_frame_id)) {
+    scoped_ptr<AwContentsIoThreadClient> io_client =
+          AwContentsIoThreadClient::FromID(render_process_id, render_frame_id);
+    if (io_client.get())
+      headers->AddHeadersFromString(io_client->getHTTPRequestHeaders());
+
+  }
+//SWE-feature-custom-http-headers
   return net::OK;
 }
 

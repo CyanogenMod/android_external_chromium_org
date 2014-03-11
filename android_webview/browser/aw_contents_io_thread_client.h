@@ -67,6 +67,12 @@ class AwContentsIoThreadClient {
                               int parent_render_frame_id,
                               int child_render_frame_id);
 
+//SWE-feature-custom-http-headers
+  // This method is called to add additional HTTP header
+  // before the request is made.
+  virtual std::string getHTTPRequestHeaders() = 0;
+//SWE-feature-custom-http-headers
+
   // This method is called on the IO thread only.
   virtual scoped_ptr<AwWebResourceResponse> ShouldInterceptRequest(
       const GURL& location,

@@ -13,7 +13,9 @@
 # To remove all SWE android browser flags, pass an empty string for the flags:
 #   swe_command_line ""
 
-CMD_LINE_FILE=/data/data/com.android.swe.browser/config/swe-command-line
+#SWE-feature-command-line
+# File name has to be in sync with COMMAND_LINE_FILE defined in Engine.java.
+CMD_LINE_FILE=/data/local/tmp/swe-command-line
 
 if [ $# -eq 0 ] ; then
   # If nothing specified, print the command line (stripping off "content_shell")

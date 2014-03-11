@@ -8,6 +8,7 @@
     '../base/base.gyp:base',
     '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
     '../cc/cc.gyp:cc',
+    '../components/components.gyp:plugins_renderer',
     '../gin/gin.gyp:gin',
     '../gpu/gpu.gyp:gpu',
     '../jingle/jingle.gyp:jingle_glue',

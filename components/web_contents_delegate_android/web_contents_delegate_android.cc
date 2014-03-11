@@ -9,6 +9,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "base/strings/string_util.h"
 #include "components/web_contents_delegate_android/color_chooser_android.h"
 #include "components/web_contents_delegate_android/validation_message_bubble_android.h"
 #include "content/public/browser/android/content_view_core.h"
@@ -20,6 +21,7 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "jni/WebContentsDelegateAndroid_jni.h"
@@ -69,6 +71,13 @@ WebContents* WebContentsDelegateAndroid::OpenURLFromTab(
     const content::OpenURLParams& params) {
   const GURL& url = params.url;
   WindowOpenDisposition disposition = params.disposition;
+//SWE-feature-youtube-plugin
+  //Handle YouTube (flash content) specific urls
+  if (StartsWithASCII(url.spec(), content::kFlashYouTubeURLPrefix, false)){
+    OpenYouTubeUrl(source, url);
+    return NULL;
+  }
+//SWE-feature-youtube-plugin
 
   if (!source || (disposition != CURRENT_TAB &&
                   disposition != NEW_FOREGROUND_TAB &&
@@ -200,6 +209,22 @@ void WebContentsDelegateAndroid::LoadProgressChanged(WebContents* source,
       obj.obj(),
       progress);
 }
+
+//SWE-feature-youtube-plugin
+void WebContentsDelegateAndroid::OpenYouTubeUrl(WebContents* source, const GURL& url) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
+  ScopedJavaLocalRef<jstring> java_url = ConvertUTF8ToJavaString(env, url.spec());
+  ScopedJavaLocalRef<jobject> java_content_view_core =
+      content::ContentViewCore::FromWebContents(source)->GetJavaObject();
+
+  if (obj.is_null() || java_url.is_null() || java_content_view_core.is_null())
+    return;
+
+  Java_WebContentsDelegateAndroid_InitiateIntent(env, obj.obj(), java_url.obj(),
+                                                        java_content_view_core.obj());
+}
+//SWE-feature-youtube-plugin
 
 void WebContentsDelegateAndroid::RendererUnresponsive(WebContents* source) {
   JNIEnv* env = AttachCurrentThread();

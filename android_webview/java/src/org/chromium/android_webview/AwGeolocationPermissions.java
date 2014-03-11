@@ -18,11 +18,11 @@ import java.util.Set;
  *
  * Callbacks are posted on the UI thread.
  */
-public final class AwGeolocationPermissions {
+public class AwGeolocationPermissions {
 
     private static final String PREF_PREFIX =
             "AwGeolocationPermissions%";
-    private final SharedPreferences mSharedPreferences;
+    protected final SharedPreferences mSharedPreferences;
 
     public AwGeolocationPermissions(SharedPreferences sharedPreferences) {
         mSharedPreferences = sharedPreferences;

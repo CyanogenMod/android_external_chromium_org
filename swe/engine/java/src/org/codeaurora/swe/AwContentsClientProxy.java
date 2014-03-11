@@ -522,13 +522,16 @@ class AwContentsClientProxy extends AwContentsClient {
         showRememberPasswordDialog(mWebView, callback);
     }
 
-    //SWE-FIXME
-    /*@Override
+//SWE-feature-hide-title-bar
+    @Override
     public void onOffsetsForFullscreenChanged(
-            float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
+            float topControlsOffsetYPix,
+            float contentOffsetYPix,
+            float overdrawBottomHeightPix) {
         mWebView.onOffsetsForFullscreenChanged(topControlsOffsetYPix,
             contentOffsetYPix, overdrawBottomHeightPix);
         mWebChromeClient.onOffsetsForFullscreenChanged(topControlsOffsetYPix,
             contentOffsetYPix, overdrawBottomHeightPix);
-    }*/
+    }
+//SWE-feature-hide-title-bar
 }

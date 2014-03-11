@@ -7,6 +7,7 @@ package org.chromium.content.browser;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.SearchManager;
+import android.content.ActivityNotFoundException;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -88,6 +89,7 @@ import org.chromium.ui.gfx.DeviceDisplayInfo;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -2212,6 +2214,24 @@ public class ContentViewCore
         getContentViewClient().onSelectionEvent(eventType);
     }
 
+//SWE-feature-youtube-plugin
+    public void launchIntent(String intentUrl) {
+        Intent intent;
+        try {
+            intent = Intent.parseUri(intentUrl, Intent.URI_INTENT_SCHEME);
+        } catch (URISyntaxException ex) {
+            Log.e(TAG, "Bad URI " + intentUrl + ": " + ex.getMessage());
+            return;
+        }
+
+        try {
+            mContext.startActivity(intent);
+        } catch (ActivityNotFoundException ex) {
+            Log.e(TAG, "No application exists to handle " + intentUrl);
+        }
+    }
+//SWE-feature-youtube-plugin
+
     public boolean getUseDesktopUserAgent() {
         if (mNativeContentViewCore != 0) {
             return nativeGetUseDesktopUserAgent(mNativeContentViewCore);
@@ -2349,6 +2369,10 @@ public class ContentViewCore
             int compositionStart, int compositionEnd, boolean showImeIfNeeded,
             boolean isNonImeChange) {
         TraceEvent.begin();
+
+        //SWE: FixMe: Do not call focus if not required
+        onFocusChanged(true);
+
         mFocusedNodeEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
         if (!mFocusedNodeEditable) hidePastePopup();
 

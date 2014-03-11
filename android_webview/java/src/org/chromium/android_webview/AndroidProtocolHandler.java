@@ -11,9 +11,12 @@ import android.util.Log;
 import android.util.TypedValue;
 
 import org.chromium.base.CalledByNative;
+import org.chromium.base.CalledByNativeUnchecked;
 import org.chromium.base.JNINamespace;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.InputStream;
 import java.net.URLConnection;
 import java.util.List;
@@ -146,6 +149,51 @@ public class AndroidProtocolHandler {
             return null;
         }
     }
+
+//SWE-feature-uri-encoding
+     /**
+     * Determine the charset for an Android resource.
+     * @param context The context manager.
+     * @param stream The opened input stream which to examine.
+     * @param url The url from which the stream was opened.
+     * @return The default charset.
+     */
+    @CalledByNativeUnchecked
+    public static String getCharset(Context context, InputStream stream, String url) {
+        // Assume all the stream must use UTF-8 encoding.
+        String charset = AwResource.getDefaultTextEncoding();
+        Uri uri = verifyUrl(url);
+        if (uri == null || stream == null) {
+            return null;
+        }
+        // Read the inputstream to detect if we
+        // have a charset defined
+        String mime = getMimeType(context, stream, url);
+        String path = uri.getPath();
+        // Only if we are HTML
+        if ( mime!= null && mime.equalsIgnoreCase("text/html")) {
+            if (uri.getScheme().equals(FILE_SCHEME) &&
+                    (path.startsWith(nativeGetAndroidAssetPath()) ||
+                        path.startsWith(nativeGetAndroidResourcePath()))) {
+                BufferedReader r = new BufferedReader(new InputStreamReader(stream));
+                String line;
+                try {
+                    while ((line = r.readLine()) != null) {
+                        if (line.contains("text/html; charset=")) {
+                            // use the default already defined
+                            // in the html.
+                            charset = "";
+                            break;
+                        }
+                    }
+                    // reset the stream to start
+                    stream.reset();
+                } catch (IOException e) {}
+            }
+        }
+        return charset;
+    }
+//SWE-feature-uri-encoding
 
     /**
      * Determine the mime type for an Android resource.

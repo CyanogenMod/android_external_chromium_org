@@ -21,6 +21,10 @@ public abstract class AwContentsIoThreadClient {
     @CalledByNative
     public abstract int getCacheMode();
 
+    // SWE-feature-custom-http-headers
+    @CalledByNative
+    public abstract String getHTTPRequestHeaders();
+
     @CalledByNative
     public abstract boolean shouldBlockContentUrls();
 

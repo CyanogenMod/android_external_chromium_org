@@ -30,6 +30,7 @@
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
+using base::android::ConvertJavaStringToUTF8;
 using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 using base::android::ToJavaArrayOfStrings;
@@ -232,6 +233,20 @@ AwContentsIoThreadClientImpl::GetCacheMode() const {
       Java_AwContentsIoThreadClient_getCacheMode(
           env, java_object_.obj()));
 }
+
+//SWE-feature-custom-http-headers
+std::string AwContentsIoThreadClientImpl::getHTTPRequestHeaders() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if (java_object_.is_null())
+    return "";
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> scoped_java_string =
+      Java_AwContentsIoThreadClient_getHTTPRequestHeaders(
+          env, java_object_.obj());
+  return ConvertJavaStringToUTF8(env, scoped_java_string.obj());
+}
+//SWE-feature-custom-http-headers
 
 scoped_ptr<AwWebResourceResponse>
 AwContentsIoThreadClientImpl::ShouldInterceptRequest(

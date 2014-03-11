@@ -412,6 +412,10 @@ void ContentViewCoreImpl::UpdateFrameInfo(
       controls_offset.y(),
       content_offset.y(),
       overdraw_bottom_height);
+
+  //SWE-feature-hide-title-bar
+  root_layer_->SetTransform(gfx::Transform(1, 0, 0, 1, 0, content_offset.y() * GetDpiScale()));
+  //SWE-feature-hide-title-bar
 }
 
 void ContentViewCoreImpl::SetTitle(const base::string16& title) {

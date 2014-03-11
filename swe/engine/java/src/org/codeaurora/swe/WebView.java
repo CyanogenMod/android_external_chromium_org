@@ -1185,17 +1185,31 @@ public class WebView extends FrameLayout {
         return (int) Math.ceil(mAwContents.getContentViewCore().getContentHeightCss());
     }
 
-    public void onOffsetsForFullscreenChanged(
-            float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
-            if (mCurrentTouchOffsetY == Float.MAX_VALUE) {
+    public void onOffsetsForFullscreenChanged(float topControlsOffsetYPix,
+                                              float contentOffsetYPix,
+                                              float overdrawBottomHeightPix) {
+        if (mCurrentTouchOffsetY == Float.MAX_VALUE) {
+            mCurrentTouchOffsetY = -contentOffsetYPix;
+            mLastMotionEventUp = false;
+        }
+
+        if (topControlsOffsetYPix == 0.0f || contentOffsetYPix == 0.0f) {
+            if (mLastMotionEventUp) {
                 mCurrentTouchOffsetY = -contentOffsetYPix;
+                mLastMotionEventUp = false;
             }
-            if (topControlsOffsetYPix == 0.0f || contentOffsetYPix == 0.0f) {
-                if (mLastMotionEventUp) {
-                    mCurrentTouchOffsetY = -contentOffsetYPix;
-                    mLastMotionEventUp = false;
-                }
-            }
+
+            //Let the engine know about the viewport size change
+            //float to int will take the floor value of the offset
+            mAwContents.getContentViewCore()
+                .setViewportSizeOffset(0, (int)contentOffsetYPix);
+        }
+
+        //Reaffirm top controls state if incongruent
+        if (mHideTopControls && !mShowTopControls && contentOffsetYPix != 0.0f) {
+            mAwContents.getContentViewCore()
+                .updateTopControlsState(true, false, false);
+        }
     }
     protected AwSettings getAWSettings() {
         return mAwContents.getSettings();
@@ -1425,7 +1439,7 @@ public class WebView extends FrameLayout {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         super.onTouchEvent(event);
-        /*if (event.getAction() == MotionEvent.ACTION_UP) {
+        if (event.getAction() == MotionEvent.ACTION_UP) {
             mLastMotionEventUp = true;
         } else if (event.getAction() == MotionEvent.ACTION_DOWN) {
             mLastMotionEventUp = false;
@@ -1433,8 +1447,7 @@ public class WebView extends FrameLayout {
         MotionEvent offset = createOffsetMotionEvent(event);
         boolean consumed = mAwContents.onTouchEvent(offset);
         offset.recycle();
-        return consumed;*/
-        return mAwContents.onTouchEvent(event);
+        return consumed;
     }
 
     @Override
@@ -1615,14 +1628,19 @@ public class WebView extends FrameLayout {
         return false;
     }
 
-    public void setFullScreen(boolean fullscreen) {
+    private boolean mHideTopControls = true;
+    private boolean mShowTopControls = true;
+
+    //bHide set to true hides the controls
+    //bShow set to true shows the controls
+    //both set to true makes the controls to have default behavior
+    public void updateTopControls(boolean bHide, boolean bShow, boolean bAnimate) {
         ContentViewCore core = getContentViewCore();
         if (core == null) return;
-        if (fullscreen) {
-            core.updateTopControlsState(true, false, true);
-        } else {
-            core.updateTopControlsState(false, true, true);
-        }
+        if (mHideTopControls == bHide && mShowTopControls == bShow) return;
+        mHideTopControls = bHide;
+        mShowTopControls = bShow;
+        core.updateTopControlsState(bHide, bShow, bAnimate);
     }
 
 }

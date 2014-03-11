@@ -50,6 +50,13 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
         mContentsClient.onProgressChanged(progress);
     }
 
+//SWE-feature-youtube-plugin
+    @Override
+    public void InitiateIntent(String url, ContentViewCore contentViewCore) {
+        contentViewCore.launchIntent(url);
+    }
+//SWE-feature-youtube-plugin
+
     @Override
     public void handleKeyboardEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -128,12 +135,6 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
         // This is only called in chrome layers.
         assert false;
     }
-
-// SWE-feature-fullscreen-mode
-    public boolean isFullscreenForTabOrPending() {
-        return mContentsClient.isTabFullScreen();
-    }
-// SWE-feature-fullscreen-mode
 
     @Override
     public void closeContents() {
@@ -220,7 +221,17 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
             ContentVideoView videoView = ContentVideoView.getContentVideoView();
             if (videoView != null) videoView.exitFullscreen(false);
         }
+//SWE-feature-fullscreen-mode
+        mContentsClient.toggleFullscreenModeForTab(enterFullscreen);
+//SWE-feature-fullscreen-mode
     }
+
+//SWE-feature-fullscreen-mode
+    @Override
+    public boolean isFullscreenForTabOrPending() {
+        return mContentsClient.isTabFullScreen();
+    }
+//SWE-feature-fullscreen-mode
 
     private static class GetDisplayNameTask extends AsyncTask<Void, Void, String[]> {
         final int mProcessId;

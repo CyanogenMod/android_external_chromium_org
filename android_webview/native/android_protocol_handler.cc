@@ -8,6 +8,7 @@
 #include "android_webview/browser/net/aw_url_request_job_factory.h"
 #include "android_webview/common/url_constants.h"
 #include "android_webview/native/input_stream_impl.h"
+#include "android_webview/common/aw_resource.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/jni_weak_ref.h"
@@ -198,8 +199,27 @@ bool AndroidStreamReaderURLRequestJobDelegateImpl::GetCharset(
     net::URLRequest* request,
     android_webview::InputStream* stream,
     std::string* charset) {
-  // TODO: We should probably be getting this from the managed side.
-  return false;
+//SWE-feature-getcharset
+  DCHECK(env);
+  DCHECK(request);
+  DCHECK(charset);
+
+  // Query the mime type from the Java side. It is possible for the query to
+  // fail, as the mime type cannot be determined for all supported schemes.
+  ScopedJavaLocalRef<jstring> url =
+      ConvertUTF8ToJavaString(env, request->url().spec());
+  const InputStreamImpl* stream_impl =
+      InputStreamImpl::FromInputStream(stream);
+  ScopedJavaLocalRef<jstring> returned_type =
+      android_webview::Java_AndroidProtocolHandler_getCharset(
+          env,
+          GetResourceContext(env).obj(),
+          stream_impl->jobj(), url.obj());
+  if (ClearException(env) || returned_type.is_null())
+    return false;
+  *charset = base::android::ConvertJavaStringToUTF8(returned_type);
+  return true;
+//SWE-feature-getcharset
 }
 
 void AndroidStreamReaderURLRequestJobDelegateImpl::AppendResponseHeaders(

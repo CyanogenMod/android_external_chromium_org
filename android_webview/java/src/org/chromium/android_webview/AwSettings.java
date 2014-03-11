@@ -96,6 +96,7 @@ public class AwSettings {
     private boolean mLoadWithOverviewMode = false;
     private boolean mMediaPlaybackRequiresUserGesture = true;
     private String mDefaultVideoPosterURL;
+    private String mExtraHTTPHeaders;
     private float mInitialPageScalePercent = 0;
     private boolean mSpatialNavigationEnabled;  // Default depends on device features.
     private boolean mEnableSupportedHardwareAcceleratedFeatures = false;
@@ -113,6 +114,7 @@ public class AwSettings {
     private boolean mBlockNetworkLoads;  // Default depends on permission of embedding APK.
     private boolean mAllowContentUrlAccess = true;
     private boolean mAllowFileUrlAccess = true;
+    private boolean mForceEnableUserScalable = false;
     private int mCacheMode = WebSettings.LOAD_DEFAULT;
     private boolean mShouldFocusFirstNode = true;
     private boolean mGeolocationEnabled = true;
@@ -233,6 +235,13 @@ public class AwSettings {
                 mAllowFileAccessFromFileURLs = true;
             }
 
+//SWE-feature-enable-webgl
+            if (AwContents.isUsingSurfaceView() &&
+                AwContents.isRunningMultiProcess()) {
+                mEnableSupportedHardwareAcceleratedFeatures = true;
+            }
+//SWE-feature-enable-webgl
+
             mDefaultTextEncoding = AwResource.getDefaultTextEncoding();
             mUserAgent = LazyDefaultUserAgent.sInstance;
 
@@ -270,6 +279,12 @@ public class AwSettings {
             mDIPScale = dipScale;
             // TODO(joth): This should also be synced over to native side, but right now
             // the setDIPScale call is always followed by a setWebContents() which covers this.
+        }
+    }
+
+    public double getDIPScale() {
+        synchronized (mAwSettingsLock) {
+            return mDIPScale;
         }
     }
 
@@ -356,12 +371,50 @@ public class AwSettings {
         }
     }
 
+//SWE-feature-default-zoom
+    public void setForceUserScalable(boolean forceEnableUserScalable) {
+        synchronized (mAwSettingsLock) {
+            if (mForceEnableUserScalable!= forceEnableUserScalable) {
+                mForceEnableUserScalable = forceEnableUserScalable;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    public boolean getForceUserScalable() {
+        synchronized (mAwSettingsLock) {
+            return mForceEnableUserScalable;
+        }
+    }
+
+    @CalledByNative
+    private boolean getForceUserScalableLocked() {
+        return mForceEnableUserScalable;
+    }
+//SWE-feature-default-zoom
+
     /**
      * See {@link android.webkit.WebSettings#getAllowFileAccess}.
      */
     public boolean getAllowFileAccess() {
         synchronized (mAwSettingsLock) {
             return mAllowFileUrlAccess;
+        }
+    }
+
+    // SWE-feature-custom-http-headers
+    public void setHTTPRequestHeaders(String headers) {
+        synchronized (mAwSettingsLock) {
+            if (headers != null) {
+                mExtraHTTPHeaders = headers;
+            }
+        }
+    }
+
+    // SWE-feature-custom-http-headers
+    public String getHTTPRequestHeaders() {
+        synchronized (mAwSettingsLock) {
+            return mExtraHTTPHeaders;
         }
     }
 
@@ -530,6 +583,11 @@ public class AwSettings {
                 });
             }
         }
+    }
+
+    // SWE-feature-allow-media-download
+    public void setAllowMediaDownloads(final boolean allow) {
+        nativeSetAllowMediaDownloads(mNativeAwSettings, allow);
     }
 
     /**
@@ -1820,11 +1878,11 @@ public class AwSettings {
           String phoneNumber);
 
     private native void nativeRemoveAutoFillProfile(long nativeAwSettings, String uniqueId);
-
     private native void nativeRemoveAllAutoFillProfiles(long nativeAwSettings);
     private native AutoFillProfile[] nativeGetAllAutoFillProfiles(long nativeAwSettings);
     private native AutoFillProfile nativeGetAutoFillProfile(long nativeAwSettings, String uniqueId);
 
     private native void nativeUpdateDoNotTrackLocked(long nativeAwSettings, boolean flag);
     private native void nativeClearPasswords(long nativeAwSettings);
+    private native void nativeSetAllowMediaDownloads(long nativeAwSettings, boolean allow);
 }
