@@ -16,6 +16,9 @@
     'include_dirs': [
       '../third_party/skia/src/core',
     ],
+    'defines': [
+      'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
+    ],
   },
   'link_settings': {
     # This actually causes the final binary to be linked against skia.
