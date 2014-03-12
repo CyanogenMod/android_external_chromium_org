@@ -1981,10 +1981,7 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
     // Track the URL of the original request.  We use the first entry of the
     // redirect chain if it exists because the chain may have started in another
     // process.
-    if (params.redirects.size() > 0)
-      params.original_request_url = params.redirects.at(0);
-    else
-      params.original_request_url = original_request.url();
+    params.original_request_url = GetOriginalRequestURL(ds);
 
     params.history_list_was_cleared =
         navigation_state->history_list_was_cleared();
@@ -6472,6 +6469,22 @@ void RenderViewImpl::DidStopLoadingIcons() {
                                 ToFaviconType(icon_urls[i].iconType())));
   }
   SendUpdateFaviconURL(urls);
+}
+
+GURL RenderViewImpl::GetOriginalRequestURL(WebDataSource* ds) {
+  // WebDataSource has unreachable URL means that the frame is loaded through
+  // blink::WebFrame::loadData(), and the base URL will be in the redirect
+  // chain. However, we never visited the baseURL. So in this case, we should
+  // use the unreachable URL as the original URL.
+  if (ds->hasUnreachableURL())
+    return ds->unreachableURL();
+
+  std::vector<GURL> redirects;
+  GetRedirectChain(ds, &redirects);
+  if (!redirects.empty())
+    return redirects.at(0);
+
+  return ds->originalRequest().url();
 }
 
 }  // namespace content
