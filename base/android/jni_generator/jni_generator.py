@@ -17,6 +17,7 @@ import subprocess
 import sys
 import textwrap
 import zipfile
+import platform
 
 
 class ParseError(Exception):
@@ -552,7 +553,12 @@ class JNIFromJavaSource(object):
     # parser. Maybe we could ditch JNIFromJavaSource and just always use
     # JNIFromJavaP; or maybe we could rewrite this script in Java and use APT.
     # http://code.google.com/p/chromium/issues/detail?id=138941
-    p = subprocess.Popen(args=['cpp', '-fpreprocessed'],
+    system = platform.system()
+    if system == 'Darwin':
+      cpp_args = ['cpp']
+    else:
+      cpp_args = ['cpp', '-fpreprocessed']
+    p = subprocess.Popen(args=cpp_args,
                          stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
