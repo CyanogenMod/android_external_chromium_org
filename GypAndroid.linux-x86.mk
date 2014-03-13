@@ -108,6 +108,8 @@ include $(LOCAL_PATH)/skia/skia.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_chrome.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_library.target.linux-x86.mk
+include $(LOCAL_PATH)/skia/skia_opts.target.linux-x86.mk
+include $(LOCAL_PATH)/skia/skia_opts_ssse3.target.linux-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-x86.mk
@@ -162,10 +164,12 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-x86.
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_generate_devtools_grd.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/angle/src/translator.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-x86.mk
@@ -204,6 +208,7 @@ include $(LOCAL_PATH)/third_party/protobuf/protobuf_lite.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/protobuf/protoc.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/qcms/qcms.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/sfntly/sfntly.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.linux-x86.mk
