@@ -59,6 +59,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/in_process_command_buffer.cc \
 	gpu/command_buffer/service/logger.cc \
 	gpu/command_buffer/service/mailbox_manager.cc \
+	gpu/command_buffer/service/mailbox_synchronizer.cc \
 	gpu/command_buffer/service/memory_program_cache.cc \
 	gpu/command_buffer/service/program_manager.cc \
 	gpu/command_buffer/service/query_manager.cc \
@@ -69,6 +70,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/shader_translator.cc \
 	gpu/command_buffer/service/shader_translator_cache.cc \
 	gpu/command_buffer/service/stream_texture_manager_in_process_android.cc \
+	gpu/command_buffer/service/texture_definition.cc \
 	gpu/command_buffer/service/texture_manager.cc \
 	gpu/command_buffer/service/transfer_buffer_manager.cc \
 	gpu/command_buffer/service/vertex_array_manager.cc \

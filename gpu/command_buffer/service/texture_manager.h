@@ -167,9 +167,13 @@ class GPU_EXPORT Texture {
     return estimated_size() > 0;
   }
 
+  void OnWillModifyPixels();
+  void OnDidModifyPixels();
+
  private:
   friend class MailboxManager;
   friend class MailboxManagerTest;
+  friend class TextureDefinition;
   friend class TextureManager;
   friend class TextureRef;
   friend class TextureTestHelper;

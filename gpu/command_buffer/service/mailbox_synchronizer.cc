@@ -1,0 +1,188 @@
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "gpu/command_buffer/service/mailbox_synchronizer.h"
+
+#include "base/bind.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/texture_manager.h"
+
+namespace gpu {
+namespace gles2 {
+
+namespace {
+
+MailboxSynchronizer* g_instance = NULL;
+
+}  // anonymous namespace
+
+// static
+bool MailboxSynchronizer::Initialize() {
+  DCHECK(!g_instance);
+  g_instance = new MailboxSynchronizer;
+  return true;
+}
+
+// static
+void MailboxSynchronizer::Terminate() {
+  DCHECK(g_instance);
+  delete g_instance;
+  g_instance = NULL;
+}
+
+// static
+MailboxSynchronizer* MailboxSynchronizer::GetInstance() {
+  return g_instance;
+}
+
+MailboxSynchronizer::TargetName::TargetName(unsigned target,
+                                            const Mailbox& mailbox)
+    : target(target), mailbox(mailbox) {}
+
+MailboxSynchronizer::TextureGroup::TextureGroup(
+    const TextureDefinition& definition)
+    : definition(definition) {}
+
+MailboxSynchronizer::TextureGroup::~TextureGroup() {}
+
+MailboxSynchronizer::TextureVersion::TextureVersion(
+    linked_ptr<TextureGroup> group)
+    : version(group->definition.version()), group(group) {}
+
+MailboxSynchronizer::TextureVersion::~TextureVersion() {}
+
+MailboxSynchronizer::MailboxSynchronizer() {}
+
+MailboxSynchronizer::~MailboxSynchronizer() {
+  DCHECK_EQ(0U, textures_.size());
+}
+
+void MailboxSynchronizer::ReassociateMailboxLocked(
+    const TargetName& target_name,
+    TextureGroup* group) {
+  lock_.AssertAcquired();
+  for (TextureMap::iterator it = textures_.begin(); it != textures_.end();
+       it++) {
+    std::set<TargetName>::iterator mb_it =
+        it->second.group->mailboxes.find(target_name);
+    if (it->second.group != group &&
+        mb_it != it->second.group->mailboxes.end()) {
+      it->second.group->mailboxes.erase(mb_it);
+    }
+  }
+  group->mailboxes.insert(target_name);
+}
+
+linked_ptr<MailboxSynchronizer::TextureGroup>
+MailboxSynchronizer::GetGroupForMailboxLocked(const TargetName& target_name) {
+  lock_.AssertAcquired();
+  for (TextureMap::iterator it = textures_.begin(); it != textures_.end();
+       it++) {
+    std::set<TargetName>::const_iterator mb_it =
+        it->second.group->mailboxes.find(target_name);
+    if (mb_it != it->second.group->mailboxes.end())
+      return it->second.group;
+  }
+  return make_linked_ptr<MailboxSynchronizer::TextureGroup>(NULL);
+}
+
+Texture* MailboxSynchronizer::CreateTextureFromMailbox(unsigned target,
+                                                       const Mailbox& mailbox) {
+  base::AutoLock lock(lock_);
+  TargetName target_name(target, mailbox);
+  linked_ptr<TextureGroup> group = GetGroupForMailboxLocked(target_name);
+  if (group.get()) {
+    Texture* new_texture = group->definition.CreateTexture();
+    if (new_texture)
+      textures_.insert(std::make_pair(new_texture, TextureVersion(group)));
+    return new_texture;
+  }
+
+  return NULL;
+}
+
+void MailboxSynchronizer::TextureDeleted(Texture* texture) {
+  base::AutoLock lock(lock_);
+  textures_.erase(texture);
+}
+
+void MailboxSynchronizer::PushTextureUpdates(MailboxManager* manager) {
+  base::AutoLock lock(lock_);
+  for (MailboxManager::MailboxToTextureMap::const_iterator texture_it =
+           manager->mailbox_to_textures_.begin();
+       texture_it != manager->mailbox_to_textures_.end();
+       texture_it++) {
+    TargetName target_name(texture_it->first.target, texture_it->first.mailbox);
+    Texture* texture = texture_it->second->first;
+    // TODO(sievers)
+    bool needs_mips = texture->min_filter() != GL_NEAREST &&
+                      texture->min_filter() != GL_LINEAR;
+    if (target_name.target != GL_TEXTURE_2D || needs_mips)
+      continue;
+
+    TextureMap::iterator it = textures_.find(texture);
+    if (it != textures_.end()) {
+      gfx::GLImage* gl_image = texture->GetLevelImage(texture->target(), 0);
+      TextureGroup* group = it->second.group.get();
+      std::set<TargetName>::const_iterator mb_it =
+          group->mailboxes.find(target_name);
+      scoped_refptr<NativeImageBuffer> image = group->definition.image();
+      if (mb_it == group->mailboxes.end()) {
+        // We previously did not associate this texture with the given mailbox.
+        // Unlink other texture groups from the mailbox.
+        ReassociateMailboxLocked(target_name, group);
+      }
+
+      // Make sure we don't clobber with an older version
+      if (group->definition.IsNewerThan(it->second.version))
+        continue;
+
+      // Also don't push redundant updates. Note that it would break the
+      // versioning.
+      if (group->definition.Matches(texture))
+        continue;
+
+      if (gl_image && !image->IsClient(gl_image)) {
+        LOG(ERROR) << "MailboxSync: Incompatible attachment";
+        return;
+      }
+
+      group->definition = TextureDefinition(
+          target_name.target,
+          texture,
+          ++it->second.version,
+          gl_image ? image : NULL);
+    } else {
+      linked_ptr<TextureGroup> group = make_linked_ptr(new TextureGroup(
+          TextureDefinition(target_name.target, texture, 1, NULL)));
+
+      // Unlink other textures from this mailbox in case the name is not new.
+      ReassociateMailboxLocked(target_name, group.get());
+      textures_.insert(std::make_pair(texture, TextureVersion(group)));
+    }
+  }
+  // Make sure all write fences are flushed.
+  glFlush();
+}
+
+void MailboxSynchronizer::PullTextureUpdates(MailboxManager* manager) {
+  base::AutoLock lock(lock_);
+  for (MailboxManager::MailboxToTextureMap::const_iterator texture_it =
+           manager->mailbox_to_textures_.begin();
+       texture_it != manager->mailbox_to_textures_.end();
+       texture_it++) {
+    Texture* texture = texture_it->second->first;
+    TextureMap::iterator it = textures_.find(texture);
+    if (it != textures_.end()) {
+      TextureDefinition& definition = it->second.group->definition;
+      if (!definition.IsNewerThan(it->second.version))
+        continue;
+      it->second.version = definition.version();
+      definition.UpdateTexture(texture);
+    }
+  }
+}
+
+}  // namespace gles2
+}  // namespace gpu

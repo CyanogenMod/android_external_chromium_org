@@ -119,6 +119,9 @@ class RenderbufferAttachment
     renderbuffer_->AddToSignature(signature);
   }
 
+  virtual void OnWillRenderTo() const OVERRIDE {}
+  virtual void OnDidRenderTo() const OVERRIDE {}
+
  protected:
   virtual ~RenderbufferAttachment() { }
 
@@ -241,6 +244,14 @@ class TextureAttachment
     DCHECK(signature);
     texture_manager->AddToSignature(
         texture_ref_.get(), target_, level_, signature);
+  }
+
+  virtual void OnWillRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnWillModifyPixels();
+  }
+
+  virtual void OnDidRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnDidModifyPixels();
   }
 
  protected:
