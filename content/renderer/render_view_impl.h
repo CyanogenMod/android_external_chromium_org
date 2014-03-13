@@ -1112,6 +1112,12 @@ class CONTENT_EXPORT RenderViewImpl
       const gfx::Range& selection_range,
       const ContextMenuParams& params);
 
+
+  // Returns the original request url. If there is no redirect, the original
+  // url is the same as ds->request()->url(). If the WebDataSource belongs to a
+  // frame was loaded by loadData, the original url will be ds->unreachableURL()
+  static GURL GetOriginalRequestURL(blink::WebDataSource* ds);
+
   // Starts nav_state_sync_timer_ if it isn't already running.
   void StartNavStateSyncTimerIfNecessary();
 
