@@ -525,6 +525,9 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
     unsigned int type,
     bool premultiply_alpha,
     bool flip_y) {
+  // ---> FORK <----
+  return false;
+  // ---> END FORK <----
   if (is_remote_ || !texture_id_)
     return false;
 
