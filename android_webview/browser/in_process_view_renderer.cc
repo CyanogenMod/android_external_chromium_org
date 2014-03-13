@@ -961,15 +961,7 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
   if (!need_invalidate || block_invalidates_)
     return;
 
-  if (draw_info) {
-    draw_info->dirty_left = cached_global_visible_rect_.x();
-    draw_info->dirty_top = cached_global_visible_rect_.y();
-    draw_info->dirty_right = cached_global_visible_rect_.right();
-    draw_info->dirty_bottom = cached_global_visible_rect_.bottom();
-    draw_info->status_mask |= AwDrawGLInfo::kStatusMaskDraw;
-  } else {
-    client_->PostInvalidate();
-  }
+  client_->PostInvalidate();
 
   bool throttle_fallback_tick = (is_paused_ && !on_new_picture_enable_) ||
                                 (attached_to_window_ && !window_visible_);
