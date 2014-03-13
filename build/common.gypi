@@ -1469,6 +1469,7 @@
         'use_system_expat%': '<(android_webview_build)',
         'use_system_icu%': '<(android_webview_build)',
         'use_system_stlport%': '<(android_webview_build)',
+        'use_system_skia%': '<(android_webview_build)',
 
         # Copy it out one scope.
         'android_webview_build%': '<(android_webview_build)',
