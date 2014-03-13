@@ -13,7 +13,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -99,17 +98,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DWEBKIT_COMPOSITOR_BINDINGS_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
-	'-DSK_ENABLE_INST_COUNT=0' \
-	'-DSK_SUPPORT_GPU=1' \
-	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
-	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
-	'-DGR_GL_IGNORE_ES3_MSAA=0' \
-	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
-	'-DSK_BUILD_FOR_ANDROID' \
-	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
@@ -129,6 +118,7 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
@@ -137,16 +127,9 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
-	$(LOCAL_PATH)/third_party/skia/include/core \
-	$(LOCAL_PATH)/third_party/skia/include/effects \
-	$(LOCAL_PATH)/third_party/skia/include/pdf \
-	$(LOCAL_PATH)/third_party/skia/include/gpu \
-	$(LOCAL_PATH)/third_party/skia/include/lazy \
-	$(LOCAL_PATH)/third_party/skia/include/pathops \
-	$(LOCAL_PATH)/third_party/skia/include/pipe \
-	$(LOCAL_PATH)/third_party/skia/include/ports \
-	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
@@ -229,17 +212,7 @@ MY_DEFS_Release := \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DWEBKIT_COMPOSITOR_BINDINGS_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
-	'-DSK_ENABLE_INST_COUNT=0' \
-	'-DSK_SUPPORT_GPU=1' \
-	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
-	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
-	'-DGR_GL_IGNORE_ES3_MSAA=0' \
-	'-DSK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1' \
-	'-DSK_BUILD_FOR_ANDROID' \
-	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
@@ -260,6 +233,7 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
@@ -268,16 +242,9 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
-	$(LOCAL_PATH)/third_party/skia/include/core \
-	$(LOCAL_PATH)/third_party/skia/include/effects \
-	$(LOCAL_PATH)/third_party/skia/include/pdf \
-	$(LOCAL_PATH)/third_party/skia/include/gpu \
-	$(LOCAL_PATH)/third_party/skia/include/lazy \
-	$(LOCAL_PATH)/third_party/skia/include/pathops \
-	$(LOCAL_PATH)/third_party/skia/include/pipe \
-	$(LOCAL_PATH)/third_party/skia/include/ports \
-	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
@@ -350,13 +317,13 @@ LOCAL_LDFLAGS_Release := \
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
-LOCAL_STATIC_LIBRARIES := \
-	skia_skia_library_gyp
+LOCAL_STATIC_LIBRARIES :=
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true
 
 LOCAL_SHARED_LIBRARIES := \
+	libskia \
 	libstlport \
 	libdl
 
