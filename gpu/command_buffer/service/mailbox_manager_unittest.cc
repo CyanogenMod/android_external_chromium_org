@@ -350,9 +350,34 @@ TEST_F(MailboxManagerSyncTest, ProduceConsumeResize) {
   EXPECT_EQ(16, width);
   EXPECT_EQ(32, height);
 
+  // Should have gotten a new attachment
+  EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) != NULL);
+  // Resize original texture again....
+  SetLevelInfo(texture,
+               GL_TEXTURE_2D,
+               0,
+               GL_RGBA,
+               64,
+               64,
+               1,
+               0,
+               GL_RGBA,
+               GL_UNSIGNED_BYTE,
+               true);
+  // ...and immediately delete the texture which should save the changes.
+  SetupUpdateTexParamExpectations(
+      kNewTextureId, GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT);
   DestroyTexture(texture);
-  // Should be still around since there is a ref from manager2.
+
+  // Should be still around since there is a ref from manager2
   EXPECT_EQ(new_texture, manager2_->ConsumeTexture(GL_TEXTURE_2D, name));
+
+  // The last change to the texture should be visible without a sync point (i.e.
+  // push).
+  manager2_->PullTextureUpdates();
+  new_texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height);
+  EXPECT_EQ(64, width);
+  EXPECT_EQ(64, height);
 
   DestroyTexture(new_texture);
   EXPECT_EQ(NULL, manager_->ConsumeTexture(GL_TEXTURE_2D, name));

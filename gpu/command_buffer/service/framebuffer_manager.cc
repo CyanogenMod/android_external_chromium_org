@@ -626,6 +626,20 @@ void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
   manager_->OnTextureRefDetached(texture);
 }
 
+void Framebuffer::OnWillRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnWillRenderTo();
+  }
+}
+
+void Framebuffer::OnDidRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnDidRenderTo();
+  }
+}
+
 bool FramebufferManager::GetClientId(
     GLuint service_id, GLuint* client_id) const {
   // This doesn't need to be fast. It's only used during slow queries.

@@ -302,7 +302,7 @@ class ScopedGLErrorSuppressor {
 // unit zero in case the client has changed that to something invalid.
 class ScopedTexture2DBinder {
  public:
-  ScopedTexture2DBinder(ContextState* state, GLuint id);
+  explicit ScopedTexture2DBinder(ContextState* state, GLuint id);
   ~ScopedTexture2DBinder();
 
  private:
@@ -314,7 +314,7 @@ class ScopedTexture2DBinder {
 // object goes out of scope.
 class ScopedRenderBufferBinder {
  public:
-  ScopedRenderBufferBinder(ContextState* state, GLuint id);
+  explicit ScopedRenderBufferBinder(ContextState* state, GLuint id);
   ~ScopedRenderBufferBinder();
 
  private:
@@ -326,7 +326,7 @@ class ScopedRenderBufferBinder {
 // object goes out of scope.
 class ScopedFrameBufferBinder {
  public:
-  ScopedFrameBufferBinder(GLES2DecoderImpl* decoder, GLuint id);
+  explicit ScopedFrameBufferBinder(GLES2DecoderImpl* decoder, GLuint id);
   ~ScopedFrameBufferBinder();
 
  private:
@@ -340,9 +340,9 @@ class ScopedFrameBufferBinder {
 // true, the resolved framebuffer is not visible to the parent.
 class ScopedResolvedFrameBufferBinder {
  public:
-  ScopedResolvedFrameBufferBinder(GLES2DecoderImpl* decoder,
-                                  bool enforce_internal_framebuffer,
-                                  bool internal);
+  explicit ScopedResolvedFrameBufferBinder(GLES2DecoderImpl* decoder,
+                                           bool enforce_internal_framebuffer,
+                                           bool internal);
   ~ScopedResolvedFrameBufferBinder();
 
  private:
@@ -353,7 +353,7 @@ class ScopedResolvedFrameBufferBinder {
 
 class ScopedModifyPixels {
  public:
-  ScopedModifyPixels(TextureRef* ref);
+  explicit ScopedModifyPixels(TextureRef* ref);
   ~ScopedModifyPixels();
 
  private:
@@ -372,24 +372,22 @@ ScopedModifyPixels::~ScopedModifyPixels() {
 
 class ScopedRenderTo {
  public:
-  ScopedRenderTo(Framebuffer* framebuffer);
+  explicit ScopedRenderTo(Framebuffer* framebuffer);
   ~ScopedRenderTo();
 
  private:
-  const Framebuffer::Attachment* color_buffer_;
+  const Framebuffer* framebuffer_;
 };
 
-ScopedRenderTo::ScopedRenderTo(Framebuffer* framebuffer) : color_buffer_(NULL) {
-  if (framebuffer) {
-    color_buffer_ = framebuffer->GetAttachment(GL_COLOR_ATTACHMENT0);
-    if (color_buffer_)
-      color_buffer_->OnWillRenderTo();
-  }
+ScopedRenderTo::ScopedRenderTo(Framebuffer* framebuffer)
+    : framebuffer_(framebuffer) {
+  if (framebuffer)
+    framebuffer_->OnWillRenderTo();
 }
 
 ScopedRenderTo::~ScopedRenderTo() {
-  if (color_buffer_)
-    color_buffer_->OnDidRenderTo();
+  if (framebuffer_)
+    framebuffer_->OnDidRenderTo();
 }
 
 // Encapsulates an OpenGL texture.

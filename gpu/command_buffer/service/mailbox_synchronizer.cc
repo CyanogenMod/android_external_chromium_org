@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -104,7 +104,12 @@ Texture* MailboxSynchronizer::CreateTextureFromMailbox(unsigned target,
 
 void MailboxSynchronizer::TextureDeleted(Texture* texture) {
   base::AutoLock lock(lock_);
-  textures_.erase(texture);
+  TextureMap::iterator it = textures_.find(texture);
+  if (it != textures_.end()) {
+    // TODO: We could avoid the update if this was the last ref.
+    UpdateTextureLocked(it->first, it->second);
+    textures_.erase(it);
+  }
 }
 
 void MailboxSynchronizer::PushTextureUpdates(MailboxManager* manager) {
@@ -115,7 +120,9 @@ void MailboxSynchronizer::PushTextureUpdates(MailboxManager* manager) {
        texture_it++) {
     TargetName target_name(texture_it->first.target, texture_it->first.mailbox);
     Texture* texture = texture_it->second->first;
-    // TODO(sievers)
+    // TODO(sievers): crbug.com/352274
+    // Should probably only fail if it already *has* mipmaps, while allowing
+    // incomplete textures here. Also reconsider how to fail otherwise.
     bool needs_mips = texture->min_filter() != GL_NEAREST &&
                       texture->min_filter() != GL_LINEAR;
     if (target_name.target != GL_TEXTURE_2D || needs_mips)
@@ -123,36 +130,17 @@ void MailboxSynchronizer::PushTextureUpdates(MailboxManager* manager) {
 
     TextureMap::iterator it = textures_.find(texture);
     if (it != textures_.end()) {
-      gfx::GLImage* gl_image = texture->GetLevelImage(texture->target(), 0);
-      TextureGroup* group = it->second.group.get();
+      TextureVersion& texture_version = it->second;
+      TextureGroup* group = texture_version.group.get();
       std::set<TargetName>::const_iterator mb_it =
           group->mailboxes.find(target_name);
-      scoped_refptr<NativeImageBuffer> image = group->definition.image();
       if (mb_it == group->mailboxes.end()) {
         // We previously did not associate this texture with the given mailbox.
         // Unlink other texture groups from the mailbox.
         ReassociateMailboxLocked(target_name, group);
       }
+      UpdateTextureLocked(texture, texture_version);
 
-      // Make sure we don't clobber with an older version
-      if (group->definition.IsNewerThan(it->second.version))
-        continue;
-
-      // Also don't push redundant updates. Note that it would break the
-      // versioning.
-      if (group->definition.Matches(texture))
-        continue;
-
-      if (gl_image && !image->IsClient(gl_image)) {
-        LOG(ERROR) << "MailboxSync: Incompatible attachment";
-        return;
-      }
-
-      group->definition = TextureDefinition(
-          target_name.target,
-          texture,
-          ++it->second.version,
-          gl_image ? image : NULL);
     } else {
       linked_ptr<TextureGroup> group = make_linked_ptr(new TextureGroup(
           TextureDefinition(target_name.target, texture, 1, NULL)));
@@ -166,6 +154,33 @@ void MailboxSynchronizer::PushTextureUpdates(MailboxManager* manager) {
   glFlush();
 }
 
+void MailboxSynchronizer::UpdateTextureLocked(Texture* texture,
+                                              TextureVersion& texture_version) {
+  lock_.AssertAcquired();
+  gfx::GLImage* gl_image = texture->GetLevelImage(texture->target(), 0);
+  TextureGroup* group = texture_version.group.get();
+  scoped_refptr<NativeImageBuffer> image_buffer = group->definition.image();
+
+  // Make sure we don't clobber with an older version
+  if (!group->definition.IsOlderThan(texture_version.version))
+    return;
+
+  // Also don't push redundant updates. Note that it would break the
+  // versioning.
+  if (group->definition.Matches(texture))
+    return;
+
+  if (gl_image && !image_buffer->IsClient(gl_image)) {
+    LOG(ERROR) << "MailboxSync: Incompatible attachment";
+    return;
+  }
+
+  group->definition = TextureDefinition(texture->target(),
+                                        texture,
+                                        ++texture_version.version,
+                                        gl_image ? image_buffer : NULL);
+}
+
 void MailboxSynchronizer::PullTextureUpdates(MailboxManager* manager) {
   base::AutoLock lock(lock_);
   for (MailboxManager::MailboxToTextureMap::const_iterator texture_it =
@@ -176,7 +191,8 @@ void MailboxSynchronizer::PullTextureUpdates(MailboxManager* manager) {
     TextureMap::iterator it = textures_.find(texture);
     if (it != textures_.end()) {
       TextureDefinition& definition = it->second.group->definition;
-      if (!definition.IsNewerThan(it->second.version))
+      if (it->second.version == definition.version() ||
+          definition.IsOlderThan(it->second.version))
         continue;
       it->second.version = definition.version();
       definition.UpdateTexture(texture);

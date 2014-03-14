@@ -139,6 +139,8 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   }
 
   void OnTextureRefDetached(TextureRef* texture);
+  void OnWillRenderTo() const;
+  void OnDidRenderTo() const;
 
  private:
   friend class FramebufferManager;

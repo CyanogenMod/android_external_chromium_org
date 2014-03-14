@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,7 @@ class Texture;
 
 class NativeImageBuffer : public base::RefCountedThreadSafe<NativeImageBuffer> {
  public:
-  static NativeImageBuffer* Create(GLuint texture_id);
+  static scoped_refptr<NativeImageBuffer> Create(GLuint texture_id);
   virtual void BindToTexture(GLenum target) = 0;
 
   void AddClient(gfx::GLImage* client);
@@ -69,19 +69,19 @@ class TextureDefinition {
   TextureDefinition(GLenum target,
                     Texture* texture,
                     unsigned int version,
-                    NativeImageBuffer* image);
+                    const scoped_refptr<NativeImageBuffer>& image);
   virtual ~TextureDefinition();
 
   Texture* CreateTexture() const;
   void UpdateTexture(Texture* texture) const;
 
   unsigned int version() const { return version_; }
-  bool IsNewerThan(unsigned int version) const {
-    return (int)(version_ - version) > 0;
+  bool IsOlderThan(unsigned int version) const {
+    return (version - version_) < 0x80000000;
   }
   bool Matches(const Texture* texture) const;
 
-  scoped_refptr<NativeImageBuffer> image() { return image_; }
+  scoped_refptr<NativeImageBuffer> image() { return image_buffer_; }
 
  private:
   struct LevelInfo {
@@ -111,7 +111,7 @@ class TextureDefinition {
 
   unsigned int version_;
   GLenum target_;
-  scoped_refptr<NativeImageBuffer> image_;
+  scoped_refptr<NativeImageBuffer> image_buffer_;
   GLenum min_filter_;
   GLenum mag_filter_;
   GLenum wrap_s_;

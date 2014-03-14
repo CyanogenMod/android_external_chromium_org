@@ -41,7 +41,7 @@ Texture* MailboxManager::ConsumeTexture(unsigned target,
     Texture* texture = sync_->CreateTextureFromMailbox(target, mailbox);
     if (texture) {
       InsertTexture(target_name, texture);
-      DCHECK_EQ(0U, texture->refs_.size()); // TODO
+      DCHECK_EQ(0U, texture->refs_.size());
     }
     return texture;
   }

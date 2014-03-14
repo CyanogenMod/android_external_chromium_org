@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,7 +98,7 @@ void GLImageSync::SetReleaseAfterUse() {
 #if !defined(OS_MACOSX)
 class NativeImageBufferEGL : public NativeImageBuffer {
  public:
-  static NativeImageBufferEGL* Create(GLuint texture_id);
+  static scoped_refptr<NativeImageBufferEGL> Create(GLuint texture_id);
 
  private:
   explicit NativeImageBufferEGL(EGLDisplay display, EGLImageKHR image);
@@ -111,14 +111,14 @@ class NativeImageBufferEGL : public NativeImageBuffer {
   DISALLOW_COPY_AND_ASSIGN(NativeImageBufferEGL);
 };
 
-NativeImageBufferEGL* NativeImageBufferEGL::Create(GLuint texture_id) {
+scoped_refptr<NativeImageBufferEGL> NativeImageBufferEGL::Create(
+    GLuint texture_id) {
   EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
   EGLContext egl_context = eglGetCurrentContext();
 
-  if (egl_context == EGL_NO_CONTEXT || egl_display == EGL_NO_DISPLAY ||
-      !glIsTexture(texture_id)) {
-    return NULL;
-  }
+  DCHECK_NE(EGL_NO_CONTEXT, egl_context);
+  DCHECK_NE(EGL_NO_DISPLAY, egl_display);
+  DCHECK(glIsTexture(texture_id));
 
   // TODO: Need to generate and check EGL_KHR_gl_texture_2D_image
   if (!gfx::g_driver_egl.ext.b_EGL_KHR_image_base ||
@@ -155,8 +155,8 @@ NativeImageBufferEGL::~NativeImageBufferEGL() {
 void NativeImageBufferEGL::BindToTexture(GLenum target) {
   DCHECK(egl_image_ != EGL_NO_IMAGE_KHR);
   glEGLImageTargetTexture2DOES(target, egl_image_);
-  DCHECK_EQ(EGL_SUCCESS, (EGLint)eglGetError());
-  DCHECK_EQ(GL_NO_ERROR, (GLint)glGetError());
+  DCHECK_EQ(static_cast<EGLint>(EGL_SUCCESS), eglGetError());
+  DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
 }
 #endif
 
@@ -174,7 +174,7 @@ class NativeImageBufferStub : public NativeImageBuffer {
 }  // anonymous namespace
 
 // static
-NativeImageBuffer* NativeImageBuffer::Create(GLuint texture_id) {
+scoped_refptr<NativeImageBuffer> NativeImageBuffer::Create(GLuint texture_id) {
   switch (gfx::GetGLImplementation()) {
 #if !defined(OS_MACOSX)
     case gfx::kGLImplementationEGLGLES2:
@@ -279,10 +279,10 @@ void NativeImageBuffer::DidRead(gfx::GLImage* client) {
 
 void NativeImageBuffer::DidWrite(gfx::GLImage* client) {
   base::AutoLock lock(lock_);
-  // TODO(sievers): This is super-risky. We need to somehow find out
-  // about when the current context gets flushed, so that we will only
-  // ever wait on the write fence (esp. from another context) if it was
-  // flushed and is guaranteed to clear.
+  // TODO(sievers): crbug.com/352419
+  // This is super-risky. We need to somehow find out about when the current
+  // context gets flushed, so that we will only ever wait on the write fence
+  // (esp. from another context) if it was flushed and is guaranteed to clear.
   // On the other hand, proactively flushing here is not feasible in terms
   // of perf when there are multiple draw calls per frame.
   write_fence_.reset(gfx::GLFence::CreateWithoutFlush());
@@ -315,13 +315,15 @@ TextureDefinition::LevelInfo::LevelInfo(GLenum target,
 
 TextureDefinition::LevelInfo::~LevelInfo() {}
 
-TextureDefinition::TextureDefinition(GLenum target,
-                                     Texture* texture,
-                                     unsigned int version,
-                                     NativeImageBuffer* image)
+TextureDefinition::TextureDefinition(
+    GLenum target,
+    Texture* texture,
+    unsigned int version,
+    const scoped_refptr<NativeImageBuffer>& image_buffer)
     : version_(version),
       target_(target),
-      image_(image ? image : NativeImageBuffer::Create(texture->service_id())),
+      image_buffer_(image_buffer ? image_buffer : NativeImageBuffer::Create(
+                                                      texture->service_id())),
       min_filter_(texture->min_filter()),
       mag_filter_(texture->mag_filter()),
       wrap_s_(texture->wrap_s()),
@@ -336,7 +338,7 @@ TextureDefinition::TextureDefinition(GLenum target,
   DCHECK(texture->level_infos_[0][0].width);
   DCHECK(texture->level_infos_[0][0].height);
 
-  scoped_refptr<gfx::GLImage> gl_image(new GLImageSync(image_));
+  scoped_refptr<gfx::GLImage> gl_image(new GLImageSync(image_buffer_));
   texture->SetLevelImage(NULL, target, 0, gl_image);
 
   // TODO: all levels
@@ -361,7 +363,7 @@ TextureDefinition::~TextureDefinition() {
 }
 
 Texture* TextureDefinition::CreateTexture() const {
-  if (!image_)
+  if (!image_buffer_)
     return NULL;
 
   GLuint texture_id;
@@ -379,9 +381,14 @@ void TextureDefinition::UpdateTexture(Texture* texture) const {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter_);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s_);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t_);
-  DCHECK(image_);
-  if (image_)
-    image_->BindToTexture(target_);
+  if (image_buffer_)
+    image_buffer_->BindToTexture(target_);
+  // We have to make sure the changes are visible to other clients in this share
+  // group. As far as the clients are concerned, the mailbox semantics only
+  // demand a single flush from the client after changes are first made,
+  // and it is not visible to them when another share group boundary is crossed.
+  // We could probably track this and be a bit smarter about when to flush
+  // though.
   glFlush();
 
   texture->level_infos_.resize(1);
@@ -406,8 +413,8 @@ void TextureDefinition::UpdateTexture(Texture* texture) const {
                             info.cleared);
     }
   }
-  if (image_)
-    texture->SetLevelImage(NULL, target_, 0, new GLImageSync(image_));
+  if (image_buffer_)
+    texture->SetLevelImage(NULL, target_, 0, new GLImageSync(image_buffer_));
 
   texture->target_ = target_;
   texture->SetImmutable(immutable_);
@@ -428,7 +435,7 @@ bool TextureDefinition::Matches(const Texture* texture) const {
   }
 
   // All structural changes should have orphaned the texture.
-  if (image_ && !texture->GetLevelImage(texture->target(), 0))
+  if (image_buffer_ && !texture->GetLevelImage(texture->target(), 0))
     return false;
 
   return true;
