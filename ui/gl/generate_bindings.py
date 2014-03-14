@@ -840,7 +840,7 @@ EGL_FUNCTIONS = [
   'arguments':
       'EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, '
       'const EGLint* attrib_list',
-  'other_extensions': ['EGL_KHR_image_base'] },
+  'other_extensions': ['EGL_KHR_image_base', 'EGL_KHR_gl_texture_2D_image'] },
 { 'return_type': 'EGLBoolean',
   'names': ['eglDestroyImageKHR'],
   'arguments': 'EGLDisplay dpy, EGLImageKHR image',
