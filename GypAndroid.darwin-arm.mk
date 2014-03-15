@@ -103,8 +103,6 @@ include $(LOCAL_PATH)/skia/skia.target.darwin-arm.mk
 include $(LOCAL_PATH)/skia/skia_chrome.target.darwin-arm.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.darwin-arm.mk
 include $(LOCAL_PATH)/skia/skia_library.target.darwin-arm.mk
-include $(LOCAL_PATH)/skia/skia_opts.target.darwin-arm.mk
-include $(LOCAL_PATH)/skia/skia_opts_neon.target.darwin-arm.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-arm.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-arm.mk
@@ -160,12 +158,10 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-arm
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_generate_devtools_grd.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle/src/translator.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-arm.mk
@@ -204,7 +200,6 @@ include $(LOCAL_PATH)/third_party/protobuf/protobuf_lite.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/protobuf/protoc.host.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/qcms/qcms.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/sfntly/sfntly.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.darwin-arm.mk
