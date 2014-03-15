@@ -100,6 +100,7 @@ include $(LOCAL_PATH)/skia/skia.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_chrome.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_library.target.darwin-mips.mk
+include $(LOCAL_PATH)/skia/skia_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-mips.mk
@@ -154,10 +155,12 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-mip
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_generate_devtools_grd.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/angle/src/translator.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-mips.mk
@@ -196,6 +199,7 @@ include $(LOCAL_PATH)/third_party/protobuf/protobuf_lite.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/protobuf/protoc.host.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/qcms/qcms.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/sfntly/sfntly.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.darwin-mips.mk

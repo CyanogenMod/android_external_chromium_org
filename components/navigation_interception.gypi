@@ -16,7 +16,6 @@
             '../content/content.gyp:content_browser',
             '../content/content.gyp:content_common',
             '../net/net.gyp:net',
-            '../skia/skia.gyp:skia',
           ],
           'include_dirs': [
             '..',
