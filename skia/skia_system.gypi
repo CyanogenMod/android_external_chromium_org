@@ -14,8 +14,6 @@
     # version of skia is already required to be the same as the chromium version
     # so using the bundled headers shouldn't break anything.
     'include_dirs': [
-      '<(android_src)/external/skia/include',
-      '<(android_src)/external/skia/include/core',
       '../third_party/skia/src/core',
     ],
     'defines': [
