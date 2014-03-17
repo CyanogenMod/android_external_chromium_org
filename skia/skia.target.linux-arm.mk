@@ -12,7 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
+	$(call intermediates-dir-for,GYP,skia_skia_library_gyp)/skia_library.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
